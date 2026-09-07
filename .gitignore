@@ -5,6 +5,7 @@ secrets/
 
 # Build products
 build/
+.ci-output/
 DerivedData/
 *.xcodeproj/xcuserdata/
 GlobalHoldings_Update_Signing_PrivateKey_KEEP_SECRET.txt

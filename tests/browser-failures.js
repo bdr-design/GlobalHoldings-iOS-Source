@@ -16,5 +16,5 @@ const {serve}=require('./helpers/web-server'),{installMapFixture}=require('./hel
   await page.evaluate(()=>window.restoreStorage());await page.click('#skipFounder');assert.strictEqual(await page.evaluate(()=>__GH_STATE__.cash),50000000);assert.strictEqual(await page.evaluate(()=>__GH_STATE__.finance.journalEntries.length),1);
  });
  }finally{await browser.close();await server.close();}
- fs.mkdirSync('build/ci',{recursive:true});const report={suite:'browser-failures',browser:process.env.GH_BROWSER||'chromium',results};fs.writeFileSync('build/ci/browser-failures-'+report.browser+'.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+ fs.mkdirSync('.ci-output/ci',{recursive:true});const report={suite:'browser-failures',browser:process.env.GH_BROWSER||'chromium',results};fs.writeFileSync('.ci-output/ci/browser-failures-'+report.browser+'.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 })().catch(e=>{console.error(e);process.exitCode=1;});

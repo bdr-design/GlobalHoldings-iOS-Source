@@ -63,6 +63,12 @@ await test('map provider times out, opens its circuit and recovers after the coo
 await test('malformed route geometry and invalid distances never enter route state',async()=>{
  const {s}=harness(['map-provider-core']);for(const route of [{distance:NaN,duration:10,geometry:{coordinates:[[46,24],[47,25]]}},{distance:1,duration:10,geometry:{coordinates:[[46,24],[999,25]]}},{distance:1,duration:10,geometry:{coordinates:[]}}]){const p=s.GH_MAP_PROVIDER.create({fetchImpl:async()=>({ok:true,json:async()=>({code:'Ok',routes:[route]})})});assert.strictEqual((await p.road([24,46],[25,47])).ok,false);}
 });
+await test('CI output paths cannot collide with the BUILD file on case-insensitive macOS volumes',()=>{
+ const files=['.github/workflows/build-unsigned-ipa.yml','scripts/test_runner.cjs','tests/browser-e2e.js','tests/browser-failures.js'];
+ const joined=files.map(file=>fs.readFileSync(file,'utf8')).join('\n');
+ for(const forbidden of ['GITHUB_WORKSPACE/build',"ws / 'build' /",'build/ci'])assert(!joined.includes(forbidden),`case-folding collision remains: ${forbidden}`);
+ assert(joined.includes('.ci-output/ci'));
+});
 await test('actual Swift bootstrap JavaScript parses, honors native durability and blocks future schema',()=>{
  const swift=fs.readFileSync('iOS/GlobalHoldings/GlobalSaveVault.swift','utf8');const body=swift.slice(swift.indexOf('func bootstrapJavaScript'),swift.indexOf('private func envelopes'));
  const template=body.match(/return (?:compatibility \+ )?"""([\s\S]*?)"""/)[1];
