@@ -31,7 +31,7 @@ const {serve}=require('./helpers/web-server'),{installMapFixture,expectedNetwork
  // intentionally discarded as a background/suspended browser clock jump.
  const simStart=current.simSeconds,targetSim=simStart+duration+1;
  let safeClockSteps=0;
- while(safeClockSteps<900&&await page.evaluate(target=>__GH_STATE__.simSeconds<target,targetSim)){await page.clock.runFor(2500);safeClockSteps++;}
+ while(safeClockSteps<1400&&await page.evaluate(target=>__GH_STATE__.simSeconds<target,targetSim)){await page.clock.runFor(1000);safeClockSteps++;}
  const simAfterTrip=(await state()).simSeconds;console.log('SIM_TRIP_WINDOW',JSON.stringify({simStart,targetSim,simAfterTrip,safeClockSteps}));
  assert(simAfterTrip>=targetSim,'simulation time did not cover the selected trip within the protected clock-step ceiling');
  await speed(0);current=await state();assert(current.tripRevenueAccrued.air>0);assert(current.tripFuelAccrued.air>0);assert(current.tripMaintenanceAccrued.air>0);assert(current.assets.find(a=>a.id===asset.id).lastTrip.revenue>0);record('18 Actual simulated trip produces income and operating expenses');
