@@ -1,0 +1,9 @@
+const fs=require('fs');const assert=(x,m)=>{if(!x)throw new Error(m)};
+const project=fs.readFileSync('project.yml','utf8'),storage=fs.readFileSync('iOS/GlobalHoldings/GlobalGameStorage.swift','utf8'),app=fs.readFileSync('WebApp/app.js','utf8');
+assert(project.includes('MARKETING_VERSION: "2.9.0"'),'MARKETING_VERSION must be 2.5.0');
+assert(project.includes('CURRENT_PROJECT_VERSION: "'+fs.readFileSync('BUILD','utf8').trim()+'"'),'CURRENT_PROJECT_VERSION must match BUILD');
+assert(project.includes('CFBundleShortVersionString: "2.9.0"'),'Info.plist marketing version mismatch');
+assert(project.includes('CFBundleVersion: "'+fs.readFileSync('BUILD','utf8').trim()+'"'),'Info.plist build mismatch');
+assert(storage.includes('?? "2.9.0"'),'Native bundled version fallback mismatch');
+assert(app.includes("const APP_VERSION = '2.9.0'"),'WebApp version mismatch');
+console.log('Native metadata 2.5.0 guard: PASS');

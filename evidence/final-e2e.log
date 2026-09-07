@@ -1,0 +1,22 @@
+E2E 1–2 New Group and exact capital
+E2E 3 Open company
+E2E 4 Fund company through Finance UI
+E2E 5 Create base through directory UI
+E2E 6 AI recommends an asset
+E2E 7 Request and AI study without debit
+E2E 8–10 Authorization, verified payment and exactly three pending orders
+E2E 11–12 Simulated delivery of exactly three assets to selected base
+E2E 13–14 HR need, authorization and verified hiring
+E2E 15 Request closes with delivery and workforce evidence
+E2E 16 Create route through directory UI
+E2E 17 Depart from the actual origin with complete crew
+TRIP_SECONDS 2742.848065348335
+E2E trip clock remaining 629s
+E2E trip clock remaining 329s
+E2E trip clock remaining 29s
+E2E 18 Actual simulated trip produces income and operating expenses
+E2E 19 Save and verified persisted business state
+E2E 20 Reload preserves funds, assets, crew, requests and operating results
+E2E 21 Reset returns to verified pristine state
+E2E No unexpected browser errors
+{"suite":"browser-lifecycle","browser":"chromium","browserVersion":"140.0.7339.186","steps":["1–2 New Group and exact capital","3 Open company","4 Fund company through Finance UI","5 Create base through directory UI","6 AI recommends an asset","7 Request and AI study without debit","8–10 Authorization, verified payment and exactly three pending orders","11–12 Simulated delivery of exactly three assets to selected base","13–14 HR need, authorization and verified hiring","15 Request closes with delivery and workforce evidence","16 Create route through directory UI","17 Depart from the actual origin with complete crew","18 Actual simulated trip produces income and operating expenses","19 Save and verified persisted business state","20 Reload preserves funds, assets, crew, requests and operating results","21 Reset returns to verified pristine state","No unexpected browser errors"],"evidence":{"health":{"integrity":{"version":"2.9.0","status":"healthy","counts":{"critical":0,"warning":0,"total":0},"byDomain":{},"issues":[]},"critical":[]},"cash":909045451.616328,"simSeconds":2856.8000000003753,"assetCount":3,"deliveryCount":3,"routeCount":1,"journalBalanced":true}}

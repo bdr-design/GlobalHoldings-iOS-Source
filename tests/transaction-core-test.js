@@ -1,0 +1,12 @@
+const assert=require('assert');
+const tx=require('../WebApp/transaction-core.js');
+assert.strictEqual(tx.VERSION,'2.9.0');
+const target={cash:100,nested:{value:1},items:[1,2]};
+let result=tx.execute(target,{label:'ok',validate:()=>({ok:true}),apply:()=>{target.cash=75;target.nested.value=2;return 'done';}});
+assert.strictEqual(result.committed,true);assert.strictEqual(target.cash,75);assert.strictEqual(target.nested.value,2);
+const before=JSON.stringify(target);
+assert.throws(()=>tx.execute(target,{label:'rollback',apply:()=>{target.cash=0;target.nested.value=99;target.items.push(3);throw new Error('forced');}}),/forced/);
+assert.strictEqual(JSON.stringify(target),before,'Rollback did not restore the entire target');
+result=tx.execute(target,{label:'reject',validate:()=>({ok:false,reason:'conflict'}),apply:()=>{throw new Error('must not run');}});
+assert.deepStrictEqual(result,{committed:false,reason:'conflict',label:'reject'});
+console.log('Transaction Core 2.2 atomic rollback: PASS');

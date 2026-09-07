@@ -1,0 +1,15 @@
+const fs=require('fs'),path=require('path'),assert=require('assert'),crypto=require('crypto');
+const root=path.resolve(__dirname,'..');
+const adv=fs.readFileSync(path.join(root,'WebApp/advanced-core.js'),'utf8');
+const native=fs.readFileSync(path.join(root,'iOS/GlobalHoldings/GlobalGameStorage.swift'),'utf8');
+const builder=fs.readFileSync(path.join(root,'scripts/build_update.py'),'utf8');
+assert(adv.includes("[String(file.path||'').split('\\\\').join('/'),String(file.sha256||'').toLowerCase(),Number(file.size)]"),'Web preflight index must use [path,sha256,size] rows');
+assert(adv.includes("JSON.stringify(indexRows).replace(/\\//g,'\\\\/')"),'Web preflight must emulate Foundation slash escaping');
+assert(builder.includes("index=[[f['path'],f['sha256'],f['size']] for f in files]"),'builder canonical index drifted');
+assert(builder.includes("compact(v).replace(b'/', b'\\\\/')"),'builder Foundation slash canonicalization drifted');
+assert(native.includes('let index: [[Any]] = files.map { [$0.path, $0.sha256, $0.size] }'),'Native canonical index drifted');
+assert(adv.includes("typeof pack.operationsJSON!=='string'"),'Web must require canonical operationsJSON bytes');
+assert(native.includes('guard let operationsJSON = root["operationsJSON"] as? String'),'Native must require canonical operationsJSON bytes');
+assert(adv.includes("packageType!=='full-web'||pack.manifest.installMode!=='clean-snapshot-v1'"),'Web clean-snapshot contract missing');
+assert(native.includes('(manifest["packageType"] as? String) == "full-web"')&&native.includes('(manifest["installMode"] as? String) == "clean-snapshot-v1"'),'Native clean-snapshot contract missing');
+console.log('Update canonical contract Build242: PASS');

@@ -1,0 +1,24 @@
+const fs=require('fs'),assert=require('assert');
+const read=f=>fs.readFileSync(`WebApp/${f}`,'utf8');
+const app=read('app.js'),adv=read('advanced-core.js'),realism=read('realism-core.js'),market=read('market-core.js'),proc=read('procurement-core.js'),save=read('save-schema.js'),html=read('index.html');
+const owners=['domain-command-core.js','finance-core.js','procurement-core.js','contracts-core.js','banking-core.js','market-core.js','strategy-core.js','facility-core.js','fleet-core.js','route-core.js','operations-core.js','governance-core.js','corporate-core.js','ai-executive-core.js','hr-core.js'];
+for(const f of owners){assert.strictEqual((html.match(new RegExp(`src=["']${f.replace('.','\\.')}["']`,'g'))||[]).length,1,`${f} must load exactly once`);}
+assert(app.includes("'market','tick-prices'"),'market hourly tick is not delegated to Market Core');
+assert(!app.includes("state.market.forEach(s=>"),'app.js owns stock price mutation');
+assert(!app.includes("competitors.forEach(c=>{c.price="),'app.js owns competitor price mutation');
+assert(market.includes("cmd==='tick-prices'"),'Market Core lacks deterministic tick-prices command');
+assert(market.includes('GH_DETERMINISM'),'Market Core does not use deterministic RNG');
+const buyStart=app.indexOf('function buyAsset('),buyEnd=app.indexOf('function openBranch(',buyStart),buy=app.slice(buyStart,buyEnd);
+assert(buy.includes("'procurement','purchase-assets'"),'buyAsset does not use Procurement Core');
+for(const forbidden of ['deliveries.push(','companyBook(type).debt','state.unlockedSectors.push(','state.assets.push('])assert(!buy.includes(forbidden),`buyAsset contains legacy mutation: ${forbidden}`);
+assert(proc.includes("cmd==='purchase-assets'"),'Procurement Core lacks purchase-assets owner');
+assert(!realism.includes('state.assets.push({...snap'),'Realism directly inserts delivered assets');
+assert(!realism.includes('state.energy[c.capacityKey]'),'Realism directly commissions energy capacity');
+assert(!realism.includes("state.groupValue=(Number(state.groupValue)||0)+(snap.ownership"),'Realism directly changes group value on delivery');
+assert(realism.includes("'fleet','record-delivery'"),'Realism does not delegate delivery to Fleet Core');
+assert(realism.includes("'facilities','commission-energy'"),'Realism does not delegate commissioning to Facilities Core');
+assert(realism.includes("'corporate','adjust-group-value'"),'Realism does not delegate valuation to Corporate Core');
+assert(app.includes("'operations','record-alert'"),'UI alerts are not delegated to Operations Core');
+assert(!/ctx\.state\.(?:assets|finance|companyFinance|globalBases|customHubs|customRoutes|energy|bank|governance|research|esg|hired|crew)\s*=/.test(adv),'advanced-core owns a business domain directly');
+assert(save.includes("SAVE_SCHEMA_VERSION='2.0.0'")||save.includes('SAVE_SCHEMA_VERSION = \'2.0.0\''),'Save Schema changed from 2.0.0');
+console.log('Full Domain Ownership Build247: PASS');

@@ -1,0 +1,507 @@
+name: Build Global Holdings iOS — Verified Source Gates
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'GlobalHoldings_Full_Source_*.zip'
+      - 'project.yml'
+      - 'BUILD'
+      - 'WebApp/**'
+      - 'iOS/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'requirements-ci.txt'
+      - 'eslint.config.cjs'
+      - 'SOURCE_INTEGRITY_SHA256.txt'
+      - '.github/workflows/build-globalholdings-ios.yml'
+      - '.github/workflows/build-unsigned-ipa.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: globalholdings-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ipa:
+    name: Verify source → QA → Build unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Use the tested Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.19.0'
+
+      # The workflow supports both repository layouts:
+      #   A) project.yml/BUILD are at repository root.
+      #   B) repository root contains one or more GlobalHoldings_Full_Source_*.zip files.
+      # In layout B it selects the highest valid BUILD and refuses an ambiguous tie.
+      - name: Discover and extract authoritative source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/build/ci"
+
+          python3 - <<'PY'
+          import glob, os, re, sys, zipfile
+          from pathlib import Path
+
+          ws = Path(os.environ['GITHUB_WORKSPACE'])
+          env_file = Path(os.environ['GITHUB_ENV'])
+          out = []
+
+          def parse_project(text: str):
+              version = re.search(r'^\s*MARKETING_VERSION:\s*["\']?([^"\'\s]+)', text, re.M)
+              build = re.search(r'^\s*CURRENT_PROJECT_VERSION:\s*["\']?([^"\'\s]+)', text, re.M)
+              if not version or not build:
+                  raise ValueError('project.yml is missing MARKETING_VERSION/CURRENT_PROJECT_VERSION')
+              return version.group(1), build.group(1)
+
+          archives = sorted(ws.glob('GlobalHoldings_Full_Source_*.zip'))
+          if len(archives) > 1:
+              raise SystemExit('Multiple Full Source ZIPs are forbidden; retain exactly one authoritative source')
+
+          # Direct-source repository mode.
+          direct_project = ws / 'project.yml'
+          direct_build = ws / 'BUILD'
+          if direct_project.is_file() and direct_build.is_file():
+              version, project_build = parse_project(direct_project.read_text(encoding='utf-8'))
+              build = direct_build.read_text(encoding='utf-8').strip()
+              if build != project_build:
+                  raise SystemExit(f'BUILD={build} disagrees with project.yml CURRENT_PROJECT_VERSION={project_build}')
+              out = [
+                  f'PROJECT_DIR={ws}',
+                  'SOURCE_ZIP=',
+                  f'EXPECTED_VERSION={version}',
+                  f'EXPECTED_BUILD={build}',
+                  'SOURCE_MODE=direct',
+              ]
+          else:
+              candidates = []
+              for raw in sorted(glob.glob(str(ws / 'GlobalHoldings_Full_Source_*.zip'))):
+                  p = Path(raw)
+                  try:
+                      with zipfile.ZipFile(p) as z:
+                          bad = z.testzip()
+                          if bad:
+                              print(f'::warning file={p.name}::Ignoring corrupt ZIP; first bad member: {bad}')
+                              continue
+                          names = [n for n in z.namelist() if not n.endswith('/')]
+                          project_entries = [n for n in names if n.endswith('/project.yml') or n == 'project.yml']
+                          build_entries = [n for n in names if n.endswith('/BUILD') or n == 'BUILD']
+                          matched = []
+                          for pe in project_entries:
+                              root = pe[:-len('project.yml')]
+                              be = root + 'BUILD'
+                              if be in build_entries:
+                                  matched.append((root, pe, be))
+                          if len(matched) != 1:
+                              print(f'::warning file={p.name}::Ignoring ZIP because it does not contain exactly one source root with project.yml + BUILD')
+                              continue
+                          root, pe, be = matched[0]
+                          version, project_build = parse_project(z.read(pe).decode('utf-8'))
+                          build_text = z.read(be).decode('utf-8').strip()
+                          if not build_text.isdigit() or build_text != project_build:
+                              print(f'::warning file={p.name}::Ignoring ZIP due to inconsistent BUILD metadata')
+                              continue
+                          candidates.append((int(build_text), version, p, root))
+                  except Exception as exc:
+                      print(f'::warning file={p.name}::Ignoring unreadable ZIP: {exc}')
+
+              if not candidates:
+                  raise SystemExit('No valid GlobalHoldings_Full_Source_*.zip was found in repository root')
+
+              highest = max(x[0] for x in candidates)
+              winners = [x for x in candidates if x[0] == highest]
+              if len(winners) != 1:
+                  names = ', '.join(x[2].name for x in winners)
+                  raise SystemExit(f'Ambiguous source: multiple valid archives claim highest BUILD {highest}: {names}')
+
+              build_num, version, source_zip, archive_root = winners[0]
+              extract = ws / 'build' / 'source'
+              if extract.exists():
+                  import shutil
+                  shutil.rmtree(extract)
+              extract.mkdir(parents=True)
+              with zipfile.ZipFile(source_zip) as z:
+                  seen = set()
+                  for info in z.infolist():
+                      name = info.filename.rstrip('/')
+                      if name in seen or name.startswith('/') or '\\' in name or any(p in ('', '.', '..') for p in name.split('/')) or (info.external_attr >> 16) & 0o170000 == 0o120000:
+                          raise SystemExit('Unsafe, duplicate or symlink source entry: ' + name)
+                      seen.add(name)
+                  z.extractall(extract)
+              project_dir = extract / archive_root
+              if not (project_dir / 'project.yml').is_file():
+                  raise SystemExit('Selected archive extracted but project.yml is missing from detected root')
+
+              out = [
+                  f'PROJECT_DIR={project_dir}',
+                  f'SOURCE_ZIP={source_zip}',
+                  f'EXPECTED_VERSION={version}',
+                  f'EXPECTED_BUILD={build_num}',
+                  'SOURCE_MODE=archive',
+              ]
+
+          with env_file.open('a', encoding='utf-8') as f:
+              for line in out:
+                  f.write(line + '\n')
+                  print(line)
+          PY
+
+      - name: Verify source archive and integrity manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+
+          if [[ -n "${SOURCE_ZIP:-}" ]]; then
+            echo "Validating archive container: $SOURCE_ZIP"
+            unzip -t "$SOURCE_ZIP" >/dev/null
+          fi
+
+          test -s SOURCE_INTEGRITY_SHA256.txt
+
+          python3 - <<'PY'
+          import hashlib, os, re, sys
+          from pathlib import Path
+
+          root = Path(os.environ['PROJECT_DIR']).resolve()
+          manifest = root / 'SOURCE_INTEGRITY_SHA256.txt'
+          expected = {}
+          line_re = re.compile(r'^([0-9a-fA-F]{64})  (.+)$')
+
+          for idx, raw in enumerate(manifest.read_text(encoding='utf-8').splitlines(), 1):
+              if not raw.strip():
+                  continue
+              m = line_re.match(raw)
+              if not m:
+                  raise SystemExit(f'Malformed integrity manifest line {idx}: {raw!r}')
+              digest, rel = m.group(1).lower(), m.group(2)
+              if rel.startswith('/') or '..' in Path(rel).parts:
+                  raise SystemExit(f'Unsafe manifest path at line {idx}: {rel}')
+              if rel in expected:
+                  raise SystemExit(f'Duplicate manifest path: {rel}')
+              expected[rel] = digest
+
+          if not expected:
+              raise SystemExit('Integrity manifest is empty')
+
+          ignored_roots = {'build', 'node_modules', '.git', 'GlobalHoldings.xcodeproj'}
+          actual_files = set()
+          for p in root.rglob('*'):
+              if not p.is_file():
+                  continue
+              rel = p.relative_to(root).as_posix()
+              if rel == 'SOURCE_INTEGRITY_SHA256.txt':
+                  continue
+              if any(part in ignored_roots for part in Path(rel).parts):
+                  continue
+              actual_files.add(rel)
+
+          manifest_files = set(expected)
+          missing_from_manifest = sorted(actual_files - manifest_files)
+          missing_from_source = sorted(manifest_files - actual_files)
+          if missing_from_manifest:
+              print('::error::Files exist but are not covered by SOURCE_INTEGRITY_SHA256.txt:')
+              for item in missing_from_manifest[:50]: print('  ' + item)
+              raise SystemExit(1)
+          if missing_from_source:
+              print('::error::Manifest references files missing from source:')
+              for item in missing_from_source[:50]: print('  ' + item)
+              raise SystemExit(1)
+
+          for rel, wanted in sorted(expected.items()):
+              data = (root / rel).read_bytes()
+              got = hashlib.sha256(data).hexdigest()
+              if got != wanted:
+                  print(f'::error file={rel}::SHA-256 mismatch: expected {wanted}, got {got}')
+                  raise SystemExit(1)
+
+          print(f'Source integrity: PASS ({len(expected)} files)')
+          PY
+
+      - name: Verify release metadata and immutable contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          root = Path(os.environ['PROJECT_DIR'])
+          expected_version = os.environ['EXPECTED_VERSION']
+          expected_build = os.environ['EXPECTED_BUILD']
+
+          project = (root / 'project.yml').read_text(encoding='utf-8')
+          def value(key):
+              m = re.search(rf'^\s*{re.escape(key)}:\s*["\']?([^"\'\s]+)', project, re.M)
+              if not m: raise SystemExit(f'project.yml missing {key}')
+              return m.group(1)
+
+          checks = {
+              'BUILD file': (root / 'BUILD').read_text(encoding='utf-8').strip(),
+              'CURRENT_PROJECT_VERSION': value('CURRENT_PROJECT_VERSION'),
+              'CFBundleVersion': value('CFBundleVersion'),
+          }
+          for label, got in checks.items():
+              if got != expected_build:
+                  raise SystemExit(f'{label}={got}, expected {expected_build}')
+
+          for label, got in {
+              'MARKETING_VERSION': value('MARKETING_VERSION'),
+              'CFBundleShortVersionString': value('CFBundleShortVersionString'),
+          }.items():
+              if got != expected_version:
+                  raise SystemExit(f'{label}={got}, expected {expected_version}')
+
+          pkg = json.loads((root / 'package.json').read_text(encoding='utf-8'))
+          expected_pkg = f'{expected_version}-build{expected_build}'
+          if pkg.get('version') != expected_pkg:
+              raise SystemExit(f'package.json version={pkg.get("version")}, expected {expected_pkg}')
+
+          save_schema = (root / 'WebApp' / 'save-schema.js').read_text(encoding='utf-8')
+          m = re.search(r"SAVE_SCHEMA_VERSION\s*=\s*['\"]([^'\"]+)", save_schema)
+          if not m:
+              raise SystemExit('Could not read SAVE_SCHEMA_VERSION')
+          if m.group(1) != '2.0.0':
+              raise SystemExit(f'Save Schema changed unexpectedly: {m.group(1)} (expected 2.0.0)')
+
+          print(f'Release metadata: PASS — {expected_version} / Build {expected_build} / Save Schema 2.0.0')
+          PY
+
+          python3 scripts/runtime_guard.py
+          test -s package-lock.json
+
+      - name: Install exactly locked JavaScript dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          npm ci --no-audit --no-fund
+          npm run lint
+
+      - name: Prepare isolated Python environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENV_DIR="$GITHUB_WORKSPACE/.venv-globalholdings"
+          rm -rf "$VENV_DIR"
+          python3 -m venv "$VENV_DIR"
+          "$VENV_DIR/bin/python" -m pip install --disable-pip-version-check -r "$PROJECT_DIR/requirements-ci.txt"
+          echo "VIRTUAL_ENV=$VENV_DIR" >> "$GITHUB_ENV"
+          echo "$VENV_DIR/bin" >> "$GITHUB_PATH"
+          "$VENV_DIR/bin/python" -c "import cryptography; print('cryptography:', cryptography.__version__)"
+
+      - name: Validate every JavaScript runtime file
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          JS_LIST="$GITHUB_WORKSPACE/build/ci/javascript-files.txt"
+          find WebApp -type f -name '*.js' | sort > "$JS_LIST"
+          JS_COUNT="$(wc -l < "$JS_LIST" | tr -d ' ')"
+          [[ "$JS_COUNT" -gt 0 ]] || { echo '::error::No WebApp JavaScript files found'; exit 1; }
+          while IFS= read -r file; do
+            [[ -n "$file" ]] || continue
+            echo "node --check $file"
+            node --check "$file"
+          done < "$JS_LIST"
+          echo "JavaScript syntax: PASS ($JS_COUNT files)"
+
+      - name: Run native/source contract guard and all repository guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          python3 scripts/swift_contract_guard.py
+
+          npm run test:guards
+
+      - name: Run navigation, lifecycle and failure browser scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          npx playwright install chromium webkit
+          npm run test:browser
+          npm run test:e2e
+          node tests/browser-failures.js
+          GH_BROWSER=webkit npm run test:browser
+          GH_BROWSER=webkit npm run test:e2e
+          GH_BROWSER=webkit node tests/browser-failures.js
+
+      - name: Validate Swift syntax on the macOS/Xcode toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          xcrun swiftc -parse iOS/GlobalHoldings/*.swift
+          echo 'Swift syntax: PASS'
+
+      - name: Install XcodeGen
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          xcodegen --version
+
+      - name: Generate and verify Xcode project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          rm -rf GlobalHoldings.xcodeproj
+          xcodegen generate --spec project.yml
+          test -d GlobalHoldings.xcodeproj
+          xcodebuild -project GlobalHoldings.xcodeproj -list | tee "$GITHUB_WORKSPACE/build/ci/xcode-project-list.log"
+          grep -q 'GlobalHoldings' "$GITHUB_WORKSPACE/build/ci/xcode-project-list.log" || { echo '::error::GlobalHoldings scheme was not generated'; exit 1; }
+
+      - name: Build real iPhoneOS Release application without signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          DERIVED_DATA="$GITHUB_WORKSPACE/build/DerivedData"
+          rm -rf "$DERIVED_DATA"
+
+          set -o pipefail
+          XCODE_LOG="$GITHUB_WORKSPACE/build/ci/xcodebuild.log"
+          set +e
+          xcodebuild \
+            -project GlobalHoldings.xcodeproj \
+            -scheme GlobalHoldings \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean build 2>&1 | tee "$XCODE_LOG"
+          XCODE_STATUS=${PIPESTATUS[0]}
+          set -e
+          if [[ "$XCODE_STATUS" -ne 0 ]]; then
+            echo '::group::Xcode compiler errors'
+            grep -nE '(^|:)[[:space:]]*(fatal )?error:|SwiftCompile|CompileSwift|Ld .* failed|Undefined symbols' "$XCODE_LOG" | tail -n 160 || true
+            echo '::endgroup::'
+            exit "$XCODE_STATUS"
+          fi
+
+          APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          [[ -d "$APP_PATH" ]] || { echo "::error::Expected application not found at $APP_PATH"; find "$DERIVED_DATA/Build/Products" -type d -name '*.app' -print || true; exit 1; }
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate built app metadata and exact WebApp payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          test -f "$APP_PATH/GlobalHoldings"
+          PLIST="$APP_PATH/Info.plist"
+          test -f "$PLIST"
+
+          VERSION_VALUE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+          BUILD_VALUE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
+          BUNDLE_VALUE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
+          FAMILY_VALUE="$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$PLIST")"
+
+          [[ "$VERSION_VALUE" == "$EXPECTED_VERSION" ]] || { echo "::error::CFBundleShortVersionString=$VERSION_VALUE expected $EXPECTED_VERSION"; exit 1; }
+          [[ "$BUILD_VALUE" == "$EXPECTED_BUILD" ]] || { echo "::error::CFBundleVersion=$BUILD_VALUE expected $EXPECTED_BUILD"; exit 1; }
+          [[ "$BUNDLE_VALUE" == 'com.example.globalholdings' ]] || { echo "::error::Unexpected bundle identifier: $BUNDLE_VALUE"; exit 1; }
+          [[ "$FAMILY_VALUE" == '1' ]] || { echo "::error::Build is not iPhone-only: UIDeviceFamily[0]=$FAMILY_VALUE"; exit 1; }
+
+          python3 - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          src = Path(os.environ['PROJECT_DIR']) / 'WebApp'
+          dst = Path(os.environ['APP_PATH']) / 'WebApp'
+          if not dst.is_dir(): raise SystemExit('Built application is missing WebApp directory')
+          def files(root): return {p.relative_to(root).as_posix(): p for p in root.rglob('*') if p.is_file()}
+          a, b = files(src), files(dst)
+          if set(a) != set(b):
+              print('Missing from app:', sorted(set(a)-set(b)))
+              print('Unexpected in app:', sorted(set(b)-set(a)))
+              raise SystemExit('Built WebApp file set differs from source')
+          for rel in sorted(a):
+              ha = hashlib.sha256(a[rel].read_bytes()).digest()
+              hb = hashlib.sha256(b[rel].read_bytes()).digest()
+              if ha != hb: raise SystemExit(f'Built WebApp content mismatch: {rel}')
+          print(f'Built WebApp exact-copy verification: PASS ({len(a)} files)')
+          PY
+
+      - name: Package versioned unsigned IPA
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_ROOT="$GITHUB_WORKSPACE/build"
+          PAYLOAD_DIR="$BUILD_ROOT/Payload"
+          VERSION_SAFE="${EXPECTED_VERSION//./_}"
+          IPA_NAME="GlobalHoldings_v${VERSION_SAFE}_build${EXPECTED_BUILD}_unsigned.ipa"
+          IPA_PATH="$BUILD_ROOT/$IPA_NAME"
+
+          rm -rf "$PAYLOAD_DIR"
+          rm -f "$IPA_PATH"
+          mkdir -p "$PAYLOAD_DIR"
+          ditto "$APP_PATH" "$PAYLOAD_DIR/GlobalHoldings.app"
+          (
+            cd "$BUILD_ROOT"
+            /usr/bin/zip -qry "$IPA_NAME" Payload
+          )
+          test -s "$IPA_PATH"
+          unzip -t "$IPA_PATH" >/dev/null
+          IPA_SHA256="$(shasum -a 256 "$IPA_PATH" | awk '{print $1}')"
+          echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
+          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+          echo "IPA_SHA256=$IPA_SHA256" >> "$GITHUB_ENV"
+          ARTIFACT_NAME="GlobalHoldings-v${EXPECTED_VERSION}-build${EXPECTED_BUILD}-unsigned-IPA"
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> "$GITHUB_ENV"
+          echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\nbuild=%s\nsha256=%s\nsource_mode=%s\n' "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$IPA_SHA256" "$SOURCE_MODE" > "$BUILD_ROOT/ci/IPA_METADATA.txt"
+          cat "$BUILD_ROOT/ci/IPA_METADATA.txt"
+
+      - name: Validate final IPA contents against source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          test -s "$IPA_PATH"
+          unzip -t "$IPA_PATH" >/dev/null
+
+          python3 scripts/runtime_guard.py --compare "$APP_PATH/WebApp" --ipa "$IPA_PATH"
+
+          echo "Final IPA integrity: PASS — $IPA_NAME — SHA-256 $IPA_SHA256"
+
+      - name: Publish unsigned IPA only after all gates pass
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: ${{ steps.package.outputs.ipa_path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish verification logs and browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: GlobalHoldings-CI-diagnostics-${{ github.run_id }}
+          path: |
+            build/ci
+            ${{ env.PROJECT_DIR }}/build/ci
+            ${{ env.PROJECT_DIR }}/tests/screenshots
+          if-no-files-found: ignore
+          retention-days: 14

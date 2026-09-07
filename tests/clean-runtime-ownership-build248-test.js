@@ -1,0 +1,13 @@
+const fs=require('fs'),path=require('path');
+const root=path.join(__dirname,'..'),read=f=>fs.readFileSync(path.join(root,'WebApp',f),'utf8');
+const app=read('app.js'),adv=read('advanced-core.js'),real=read('realism-core.js'),econ=read('economics-core.js');
+const fail=(m)=>{throw new Error(m)};
+if(/GH_ADVANCED\?\.sectorEconomics|GH_ADVANCED\.sectorEconomics/.test(app))fail('app.js still owns/uses sector economics through Advanced');
+if(/function\s+sectorEconomics\s*\(/.test(adv))fail('advanced-core.js still contains sectorEconomics business logic');
+if(!/GH_ECONOMICS_CORE/.test(app)||!/function\s+sectorEconomics\s*\(/.test(econ))fail('Economics Core not wired');
+for(const pattern of [/state\.profile\.creditRating\s*=/,/state\.profile\.reputation\s*=/,/state\.esg\.(?:environment|social|governance)\s*=/,/state\.advanced\.economy\.(?:electricityPriceMWh|gasCostMWh|baseRate|freightIndex)\s*=/,/c\.commissioned\s*=\s*true/,/q\.studyScore\s*=/])if(pattern.test(real))fail(`realism-core cross-domain mutation remains: ${pattern}`);
+if(/state\.todayProfit\s*\+=|state\.groupValue\s*\+=|companyBook\([^)]*\)\.accounts\[0\]\.balance\s*\+=/.test(app))fail('simulation commit still writes Finance/Corporate business results directly');
+if(!/apply-simulation-journal/.test(app)||!/adjust-group-value/.test(app))fail('simulation ownership handoff missing');
+if(!/tick-sustainability/.test(real)||!/complete-construction/.test(real)||!/attach-study-result/.test(real))fail('cross-domain handoff missing from Realism');
+const version=fs.readFileSync(path.join(root,'VERSION'),'utf8').trim();if(version!=='2.9.0')fail(`VERSION ${version}`);
+console.log('Clean Runtime Ownership Build249: PASS');

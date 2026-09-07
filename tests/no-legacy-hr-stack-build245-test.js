@@ -1,0 +1,10 @@
+const fs=require('fs'),assert=require('assert');
+const app=fs.readFileSync('WebApp/app.js','utf8'),adv=fs.readFileSync('WebApp/advanced-core.js','utf8'),index=fs.readFileSync('WebApp/index.html','utf8');
+assert(index.includes('<script src="hr-core.js"></script>'),'HR Core not loaded');
+assert(!app.includes('const AI_CREW_STANDARDS='),'legacy crew demand owner still exists');
+assert(!app.includes('const FACILITY_STAFF_STANDARDS='),'legacy facility demand owner still exists');
+assert(!adv.includes('ONE CLICK HR'),'legacy workforce UI still exposed');
+for(const tab of ['لوحة HR','الوظائف والاحتياج','الاستقطاب','العقود','AI للموارد البشرية'])assert(adv.includes(tab),`new HR tab missing ${tab}`);
+assert(app.includes("'hr','hire',{company:sector,source,scope:'crew'}"),'crew helper must be scoped');
+assert(app.includes("'hr','hire',{company,source,scope:'facility'}"),'facility helper must be scoped');
+console.log('No Legacy HR Stack Build245: PASS');

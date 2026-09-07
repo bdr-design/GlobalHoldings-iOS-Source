@@ -1,0 +1,11 @@
+'use strict';
+const fs=require('fs');
+const path=require('path');
+const root=path.resolve(__dirname,'..');
+const builder=fs.readFileSync(path.join(root,'scripts','build_update.py'),'utf8');
+const storage=fs.readFileSync(path.join(root,'iOS','GlobalHoldings','GlobalGameStorage.swift'),'utf8');
+if(!builder.includes("'operationsJSON':compact(OPERATIONS).decode('utf-8')")) throw new Error('Builder must emit canonical operationsJSON');
+if(/['\"]operations['\"]\s*:\s*OPERATIONS/.test(builder)) throw new Error('Builder must not emit a standalone operations array');
+if(!storage.includes('guard root["operations"] == nil else')) throw new Error('Native firewall must continue rejecting standalone operations');
+if(!storage.includes('operationsJSON هو المصدر الوحيد للتنفيذ')) throw new Error('Native canonical-operation rejection contract missing');
+console.log('PASS update builder canonical-only Build245 guard');

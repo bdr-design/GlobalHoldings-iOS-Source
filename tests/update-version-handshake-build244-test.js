@@ -1,0 +1,12 @@
+const fs=require('fs');
+const assert=require('assert');
+const app=fs.readFileSync('WebApp/app.js','utf8');
+const adv=fs.readFileSync('WebApp/advanced-core.js','utf8');
+const builder=fs.readFileSync('scripts/build_update.py','utf8');
+const native=fs.readFileSync('iOS/GlobalHoldings/GlobalGameStorage.swift','utf8');
+assert(app.includes("const APP_VERSION = '2.9.0';"),'runtime must report 2.5.0 for Native boot confirmation');
+assert(adv.includes("const VERSION = '2.9.0';"),'web update gate must report 2.5.0');
+assert(builder.includes("VERSION='2.9.0'"),'signed package must target 2.5.0');
+assert(native.includes('compareVersion(version, currentVersion) != .orderedDescending'),'native anti-reinstall/downgrade gate must remain enabled');
+assert(native.includes('operationsJSON هو المصدر الوحيد للتنفيذ'),'canonical operations-only gate must remain enabled');
+console.log('Build245 2.5.0 update/runtime handshake PASS');

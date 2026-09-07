@@ -1,0 +1,15 @@
+const fs=require('fs'),assert=require('assert');
+const workflow=fs.readFileSync('.github/workflows/build-unsigned-ipa.yml','utf8');
+const browser=fs.readFileSync('tests/browser-qa.js','utf8');
+const html=fs.readFileSync('WebApp/index.html','utf8');
+const project=fs.readFileSync('project.yml','utf8');
+assert(!/\b(mapfile|readarray)\b/.test(workflow),'CI must remain compatible with macOS Bash 3.2');
+assert(browser.includes("require('./helpers/web-server')")&&browser.includes('server.baseURL'),'Browser QA must own the local server lifecycle');
+assert(workflow.includes("grep -nE '(^|:)[[:space:]]*(fatal )?error:"),'Xcode failure path must surface compiler errors');
+assert(workflow.includes('XCODE_STATUS=${PIPESTATUS[0]}'),'Xcode pipeline must preserve real xcodebuild exit status');
+const build=fs.readFileSync('BUILD','utf8').trim();assert(project.includes('CURRENT_PROJECT_VERSION: "'+build+'"')&&project.includes('CFBundleVersion: "'+build+'"'),'Native metadata must match the authoritative BUILD');
+const mobile=(html.match(/<nav class="bottom-nav[\s\S]*?<\/nav>/)||[''])[0];
+assert.strictEqual((mobile.match(/<button/g)||[]).length,5,'iPhone navigation must have exactly five primary destinations');
+assert(browser.includes("openHubChild(landscape.page, 'control', 'assets')"),'Browser QA must traverse Operations → Assets using current workspace ownership');
+assert(browser.includes("openHubChild(portrait.page, 'leadershipHub', 'intelligence')"),'Browser QA must traverse Leadership → Intelligence using current workspace ownership');
+console.log('CI/E2E hardening Build250 guard: PASS');

@@ -1,0 +1,17 @@
+# Never commit update signing private keys
+*Update_Signing_PrivateKey*
+*.privatekey
+secrets/
+
+# Build products
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+GlobalHoldings_Update_Signing_PrivateKey_KEEP_SECRET.txt
+.venv-signing/
+.venv-globalholdings/
+
+node_modules/
+tests/screenshots/
+__pycache__/
+*.pyc

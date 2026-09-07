@@ -1,0 +1,26 @@
+{
+  "suite": "browser-failures",
+  "browser": "chromium",
+  "results": [
+    {
+      "name": "Malformed save is retained",
+      "passed": true
+    },
+    {
+      "name": "Future schema is retained",
+      "passed": true
+    },
+    {
+      "name": "Old native bridge fails closed before state writes",
+      "passed": true
+    },
+    {
+      "name": "CDN outage retains founding and finance access",
+      "passed": true
+    },
+    {
+      "name": "Quota failure rolls founding back and allows a clean retry",
+      "passed": true
+    }
+  ]
+}

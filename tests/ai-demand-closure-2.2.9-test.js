@@ -1,0 +1,10 @@
+const fs=require('fs'),assert=require('assert');
+const a=fs.readFileSync('WebApp/advanced-core.js','utf8'),r=fs.readFileSync('WebApp/request-core.js','utf8'),app=fs.readFileSync('WebApp/app.js','utf8');
+for(const required of ['blocked_funding','delivering','readiness','completed'])assert(r.includes(required),`request lifecycle missing ${required}`);
+assert(r.includes('function aiDependency')&&r.includes('DEPENDENCY_CREATED'),'unified dependency creation missing');
+for(const dep of ["'funding'","'capacity'","'workforce'"])assert(r.includes(dep),`closure dependency type missing ${dep}`);
+assert(r.includes("Number(r.study?.totalCost||0)>remaining"),'annual-plan full budget guard missing');
+assert(a.includes('pendingAssets')&&a.includes('aiPendingProcurementQty'),'annual plan does not subtract pending central assets');
+assert(a.includes("r.kind==='capacity'"),'AI cannot execute linked capacity closure request');
+assert(!/data-gh-action=["'](?:acquire-asset|procurement-pay-transfer|procurement-pay-cheque)["']/.test(app),'legacy direct procurement action is exposed in app UI');
+console.log('AI Demand Closure Engine 2.3.9: PASS');

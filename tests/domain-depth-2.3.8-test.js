@@ -1,0 +1,16 @@
+const fs=require('fs');const vm=require('vm');const assert=require('assert');
+const realismText=fs.readFileSync('WebApp/realism-core.js','utf8');
+const adv=fs.readFileSync('WebApp/advanced-core.js','utf8');
+const integrityText=fs.readFileSync('WebApp/integrity-core.js','utf8');
+const governance=fs.readFileSync('WebApp/governance-core.js','utf8');
+const nav=fs.readFileSync('WebApp/index.html','utf8');
+assert(realismText.includes("const VERSION='2.9.0'"),'realism version');
+for(const token of ['dispatchReliability','maintenanceReserveCoverage','ciiRatio','correctiveAction','eexiReadiness','lpiProxy','roundTripEfficiency','storageHealth','cet1Headroom','provisionCoverage'])assert(realismText.includes(token),`missing calibrated metric ${token}`);
+for(const token of ['leaseLiability','rouAsset','depr','updatePrograms'])assert(realismText.includes(token),`missing financial/program depth ${token}`);
+for(const token of ['air|dispatch-reliability','sea|cii-corrective','road|lpi-quality','power|reserve-margin','bank|nsfr-review'])assert(adv.includes(token),`AI does not consume ${token}`);
+for(const token of ['BANK_CET1_REGULATORY_MIN','AIR_DISPATCH_RELIABILITY_LOW','SEA_CII_CORRECTIVE_ACTION','ROAD_LPI_PROXY_LOW','POWER_RESERVE_MARGIN_NEGATIVE'])assert(integrityText.includes(token),`integrity missing ${token}`);
+assert(governance.includes("maturity:0"),'ESG programs must start staged in Governance Core');
+assert(!adv.includes("su.programs[pid]={at:s.simSeconds,cost,company,status:'نشط'}")&&!governance.includes("status:'نشط'"),'legacy instant ESG program remains');
+const roots=[...nav.matchAll(/data-panel="(leadershipHub|companies|control|finance|governanceHub|systemHub)"/g)].map(x=>x[1]);
+assert.strictEqual(new Set(roots).size,6,'no new top-level domain may be added');
+console.log('Domain depth calibration 2.3.9: PASS');

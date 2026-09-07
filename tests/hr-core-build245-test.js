@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const src=fs.readFileSync('WebApp/hr-core.js','utf8');const sb={console,structuredClone,globalThis:null};sb.globalThis=sb;sb.window=sb;vm.runInNewContext(src,sb);const hr=sb.GH_HR_CORE;assert(hr&&hr.VERSION==='2.9.0');
+const candidates=[{id:'H3',name:'CEO',role:'الرئيس التنفيذي',salary:50000},{id:'H4',name:'COO Air',role:'طيران',salary:40000}];
+const state={simSeconds:0,sequences:{},assets:[{id:'A1',type:'air'},{id:'A2',type:'air'}],crew:[{id:'pilots',name:'طيارون',count:1,salaryMin:100,salaryMax:200},{id:'cabin',name:'ضيافة',count:2,salaryMin:80,salaryMax:120},{id:'aeng',name:'مهندسون',count:0,salaryMin:120,salaryMax:180}],globalBases:[{id:'B1',company:'air',kind:'airport-base',owned:true,name:'قاعدة 1'},{id:'PUB',company:'air',kind:'airport-base',owned:false,name:'عام'}],customHubs:[],advanced:{facilities:{}},hired:[]};
+const ctx={candidates,getDynamicFacilities:()=>state.globalBases};
+let snap=hr.snapshot(state,ctx,'air');assert.strictEqual(snap.crewMissing,21,'2 aircraft must create exact crew gap');assert(snap.facilityMissing>0,'owned base staffing gap missing');assert(!snap.facilities.some(x=>x.facilityId==='PUB'),'non-owned facility must never become HR demand');
+const crewOnly=hr.executeHiring(state,ctx,'air','test','crew');assert.strictEqual(crewOnly.crew.reduce((n,x)=>n+x.count,0),21);assert.strictEqual(crewOnly.facilities.length,0);assert.strictEqual(state.advanced.facilities.B1,undefined,'crew scope must not silently staff facilities');
+snap=hr.snapshot(state,ctx,'air');assert.strictEqual(snap.crewMissing,0);assert(snap.facilityMissing>0);
+const all=hr.executeHiring(state,ctx,'air','test','all');assert(all.facilities.length>0);assert(all.executives.length>0);assert.strictEqual(hr.snapshot(state,ctx,'air').total,0);
+const again=hr.executeHiring(state,ctx,'air','test','all');assert.strictEqual(again.total,0,'HR hiring must be idempotent when no gap exists');
+console.log('HR Core Build245: PASS');

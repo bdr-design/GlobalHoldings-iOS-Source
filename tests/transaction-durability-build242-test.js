@@ -1,0 +1,11 @@
+const assert=require('assert');
+global.structuredClone=global.structuredClone||((x)=>JSON.parse(JSON.stringify(x)));
+delete require.cache[require.resolve('../WebApp/transaction-core.js')];
+const tx=require('../WebApp/transaction-core.js');
+let state={value:1};
+assert.throws(()=>tx.execute(state,{label:'durable-fail',apply(){state.value=2;tx.afterCommit(()=>{throw new Error('disk');},{critical:true});}}),/disk/);
+assert.strictEqual(state.value,1,'critical durability failure must rollback state');
+let uiRan=false;
+const r=tx.execute(state,{label:'ui-fail',apply(){state.value=3;tx.afterCommit(()=>{uiRan=true;throw new Error('ui');});}});
+assert(r.committed&&state.value===3&&uiRan,'non-critical side effect must not rollback committed state');
+console.log('Build242 transaction durability: PASS');

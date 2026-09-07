@@ -1,0 +1,22 @@
+const fs=require('fs');
+const assert=require('assert');
+const app=fs.readFileSync('WebApp/app.js','utf8');
+const sim=fs.readFileSync('WebApp/simulation-core.js','utf8');
+const tx=fs.readFileSync('WebApp/transaction-core.js','utf8');
+const html=fs.readFileSync('WebApp/index.html','utf8');
+for(const legacy of ['processTick','simulationBacklogSeconds','advanceSimulationChronologically','processSimulationSlice'])assert(!new RegExp(`\\b${legacy}\\b`).test(app),`Legacy simulation path returned: ${legacy}`);
+assert(/const APP_VERSION = '2\.9\.0'/.test(app));
+assert(/const SAVE_SCHEMA_VERSION = '2\.0\.0'/.test(app),'Save schema must remain 2.0.0');
+assert(/GH_TRANSACTION_CORE\?\.execute/.test(app)&&/tx\.execute\(state/.test(app),'App does not use Transaction Core');
+assert(!/onDay\s*:|onHour\s*:/.test(app.slice(app.indexOf('GH_SIMULATION_CORE.create'),app.indexOf('function assetStatus'))),'Boundary callbacks escaped the atomic job');
+assert(/processFinancialDay\(boundary\.day\)/.test(app)&&/processMarket\(boundary\.hour\)/.test(app),'Boundaries are not committed inside the transaction');
+assert(/simulationContextGuard\(\)!==contextGuard/.test(app),'Global simulation context conflict guard missing');
+assert(/records\.find\(rec=>simulationAssetGuard/.test(app),'All-asset conflict rejection missing');
+assert(!/eligible\s*=/.test(app.slice(app.indexOf('function createSimulationSliceJob'),app.indexOf('function assetStatus'))),'Partial eligible-asset commit path is forbidden');
+
+const draftBlock=app.slice(app.indexOf('function processAssetDraft'),app.indexOf('function processFinancialDay'));
+assert(!/simMeta\.speed|\bfast\b/.test(draftBlock),'Business outcome must not branch on user simulation speed');
+const order=['world-data.js','catalog.js','realism-core.js','advanced-core.js','transaction-core.js','simulation-core.js','app.js'].map(x=>html.indexOf(`src="${x}"`));
+assert(order.every(x=>x>=0)&&order.every((x,i)=>i===0||x>order[i-1]),`Unsafe script order: ${order}`);
+assert(/const VERSION='2\.9\.0'/.test(sim));assert(/const VERSION='2\.9\.0'/.test(tx));
+console.log('Simulation architecture guard 2.2: PASS');

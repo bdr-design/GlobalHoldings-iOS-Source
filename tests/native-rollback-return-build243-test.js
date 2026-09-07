@@ -1,0 +1,10 @@
+'use strict';
+const fs=require('fs'),path=require('path'),assert=require('assert');
+const R=path.resolve(__dirname,'..');
+const storage=fs.readFileSync(path.join(R,'iOS/GlobalHoldings/GlobalGameStorage.swift'),'utf8');
+const vc=fs.readFileSync(path.join(R,'iOS/GlobalHoldings/GameViewController.swift'),'utf8');
+assert(/func\s+rollbackPendingUpdate\s*\(reason:\s*String\)\s*throws\s*->\s*String/.test(storage),'rollbackPendingUpdate must return restored runtime version');
+assert(storage.includes('return try rollbackJournalLocked(journal, reason: reason)'),'journal rollback must return rollbackJournalLocked restored version');
+assert(vc.includes('let restoredVersion = try GlobalGameStorage.shared.rollbackPendingUpdate(reason: reason)'),'GameViewController must consume restored runtime version');
+assert(vc.includes('reportUpdateLifecycle(phase: "ROLLED_BACK", version: restoredVersion'),'ROLLED_BACK lifecycle must report restored runtime version');
+console.log('native-rollback-return-build243-test: PASS');

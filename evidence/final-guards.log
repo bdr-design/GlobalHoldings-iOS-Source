@@ -1,0 +1,119 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> global-holdings-source-guards@2.9.0-build251 test
+> npm run lint && npm run test:runtime && npm run test:guards
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> global-holdings-source-guards@2.9.0-build251 lint
+> eslint WebApp/*.js && node scripts/ownership_guard.cjs
+
+AST OWNERSHIP / NO DYNAMIC CODE GUARD: PASS (14 domain owners)
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> global-holdings-source-guards@2.9.0-build251 test:runtime
+> python3 scripts/runtime_guard.py && python3 scripts/swift_contract_guard.py
+
+RUNTIME EXACT FILE/HASH GUARD: PASS (74 files)
+SWIFT/NATIVE CONTRACT GUARD: PASS
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> global-holdings-source-guards@2.9.0-build251 test:guards
+> node scripts/test_runner.cjs
+
+PASS action-contract-test.js
+PASS advanced-test.js
+PASS ai-demand-closure-2.2.9-test.js
+PASS asset-acquisition-build245-test.js
+PASS asset-request-center-2.2.9-test.js
+PASS atomic-baseline-build242-test.js
+PASS atomic-finance-ai-build242-test.js
+PASS audit-archive-build242-test.js
+PASS baseline-2.2-integrity-test.js
+PASS business-core-architecture-guard-test.js
+PASS central-control-plane-build243-test.js
+PASS central-control-plane-source-guard-build243-test.js
+PASS ci-e2e-hardening-build250-test.js
+PASS clean-atomic-update-installer-2.3.3-test.js
+PASS clean-atomic-update-installer-2.3.4-test.js
+PASS clean-baseline-fault-contract-build242-test.js
+PASS clean-runtime-ownership-build248-test.js
+PASS control-plane-save-schema-build243-test.js
+PASS core-business-lifecycle-2.3.1-test.js
+PASS core-contracts-build251-test.js
+PASS correctness-firewall-build251-test.js
+PASS cross-speed-determinism-2.3.1-test.js
+PASS defensive-baseline-2.2.1-test.js
+PASS delivery-destination-build245-test.js
+PASS delta-update-tool-test.js
+PASS department-life-2.3.8-test.js
+PASS department-workflow-depth-2.3.8-test.js
+PASS dependency-integrity-2.3.1-test.js
+PASS determinism-core-test.js
+PASS deterministic-state-2.3.6-test.js
+PASS deterministic-state-2.3.8-test.js
+PASS diagnostics-center-test.js
+PASS diagnostics-lifecycle-2.2.8-test.js
+PASS domain-depth-2.3.8-test.js
+PASS final-clean-baseline-build249-test.js
+PASS finance-accrual-audit-build242-test.js
+PASS finance-accrual-native-finalize-build242-test.js
+PASS finance-integrity-2.3.8-test.js
+PASS finance-transfer-journal-build242-test.js
+PASS financial-documents-2.3.4-test.js
+PASS full-domain-ownership-build247-test.js
+PASS game-lifecycle-migration-build249-test.js
+PASS global-network-operations-test.js
+PASS guardian-noise-reduction-build243-test.js
+PASS hr-core-build245-test.js
+PASS interaction-integrity-2.3.2-test.js
+PASS ios-update-bridge-test.js
+PASS native-metadata-2.2.5-test.js
+PASS native-metadata-2.2.6-test.js
+PASS native-metadata-2.2.7-test.js
+PASS native-metadata-2.2.9-test.js
+PASS native-metadata-2.3.0-test.js
+PASS native-metadata-2.3.2-test.js
+PASS native-metadata-2.3.3-test.js
+PASS native-metadata-2.3.4-test.js
+PASS native-metadata-2.3.6-test.js
+PASS native-metadata-2.3.8-test.js
+PASS native-rollback-return-build243-test.js
+PASS native-staging-canonical-path-test.js
+PASS native-update-housekeeping-build243-test.js
+PASS navigation-architecture-2.3.0-test.js
+PASS navigation-restructure-test.js
+PASS no-legacy-hr-stack-build245-test.js
+PASS operations-cadence-2.2.7-test.js
+PASS panel-ownership-2.3.8-test.js
+PASS persistence-integrity-2.3.6-test.js
+PASS persistence-integrity-2.3.8-test.js
+PASS persistence-pressure-and-native-build251-test.js
+PASS prevention-contracts-build251-test.js
+PASS protective-update-firewall-build242-test.js
+PASS release-contract-build242-test.js
+PASS request-center-single-path-build245-test.js
+PASS runtime-package-build251-test.js
+PASS simulation-architecture-guard-test.js
+PASS simulation-core-atomic-test.js
+PASS simulation-speed-load-test.js
+PASS simulation-stress-test.js
+PASS smoke-test.js
+PASS speed-contract-build242-test.js
+PASS system-completion-2.3.6-test.js
+PASS system-completion-2.3.8-test.js
+PASS topbar-layout-integrity-test.js
+PASS transaction-core-test.js
+PASS transaction-durability-build242-test.js
+PASS transaction-reference-rollback-test.js
+PASS transaction-scoped-simulation-test.js
+PASS update-builder-canonical-only-build244-test.js
+PASS update-canonical-contract-build242-test.js
+PASS update-package-test.js
+PASS update-version-handshake-build244-test.js
+PASS visual-registry-test.js
+PASS workflow-control-2.3.8-test.js
+PASS workflow-delta-postcheck-build243-test.js
+PASS workflow-gateway-architecture-guard-test.js
+PASS workspace-information-architecture-build246-test.js
+Repository suites: 95/95

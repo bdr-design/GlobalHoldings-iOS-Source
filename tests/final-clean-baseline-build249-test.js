@@ -1,0 +1,12 @@
+const fs=require('fs'),assert=require('assert');
+const app=fs.readFileSync('WebApp/app.js','utf8'),html=fs.readFileSync('WebApp/index.html','utf8'),life=fs.readFileSync('WebApp/game-lifecycle-core.js','utf8'),mig=fs.readFileSync('WebApp/migration-core.js','utf8');
+assert(html.indexOf('migration-core.js')<html.indexOf('app.js'),'Migration Core must load before app');
+assert(html.indexOf('game-lifecycle-core.js')<html.indexOf('app.js'),'Game Lifecycle Core must load before app');
+assert(app.includes('GH_MIGRATION_CORE.load'),'app must delegate save loading');
+assert(app.includes('GH_GAME_LIFECYCLE.reset')&&life.includes('pristine(defaultState,options.resetEpoch'),'reset must delegate clean snapshot creation');
+assert(app.includes('GH_GAME_LIFECYCLE.foundGroup'),'founding must delegate business initialization');
+assert(!app.includes('state.profile={name:$(\'founderName\')'),'founding business state returned to UI layer');
+assert(!app.includes('state=clone(defaultState);\n      state.resetEpoch'),'reset business snapshot returned to UI layer');
+assert(life.includes("s.saveVersion='2.0.0'")&&mig.includes("state.saveVersion!=='2.0.0'"),'Save Schema 2.0.0 must be pinned in lifecycle/migration');
+assert(!/PRIVATE_KEY|SIGNING_PRIVATE_KEY_B64/.test(life+mig),'private signing material must never enter runtime lifecycle cores');
+console.log('Final Clean Baseline ownership guard: PASS');

@@ -1,0 +1,10 @@
+const fs=require('fs'),assert=require('assert');
+const adv=fs.readFileSync('WebApp/advanced-core.js','utf8'),req=fs.readFileSync('WebApp/request-core.js','utf8');
+assert(adv.includes('ASSET ACQUISITION 2.5')&&adv.includes('مركز اقتناء الأصول'),'new asset acquisition center missing');
+assert(adv.includes('وجهة ثابتة:')&&adv.includes('الوصول الفعلي'),'delivery transparency UI missing');
+assert(adv.includes('asset-request-ai-recommend'),'AI recommendation action missing');
+assert(req.includes("const VERSION='2.9.0'"));
+assert(req.includes('operations:PROCUREMENT_DELIVERY_CONTRACT_BROKEN'),'central incident fingerprint missing');
+assert(req.includes("status:proposal.planMasterId?'authorized':'awaiting_authorization'"),'annual-plan bounded authority regression');
+assert(req.includes("p.requests=[]"),'legacy procurement path must be migrated then retired');
+console.log('Request Center Single Path Build245: PASS');

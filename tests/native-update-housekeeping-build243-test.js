@@ -1,0 +1,11 @@
+'use strict';
+const fs=require('fs'), path=require('path'), assert=require('assert');
+const R=path.resolve(__dirname,'..');
+const storage=fs.readFileSync(path.join(R,'iOS/GlobalHoldings/GlobalGameStorage.swift'),'utf8');
+assert(/func\s+rollbackPendingUpdate\s*\(reason:\s*String\)\s*throws\s*->\s*String/.test(storage),'rollbackPendingUpdate must return the restored runtime version');
+assert(storage.includes('private func cleanupIncomingUpdates()'),'cleanupIncomingUpdates must exist');
+assert(storage.includes('let cutoff = Date().addingTimeInterval(-24 * 60 * 60)'),'incoming cleanup must be stale-only, not destructive to fresh imports');
+assert(storage.includes('guard isSupportedUpdate(item) else { continue }'),'incoming cleanup must only target supported update packages');
+assert(storage.includes('modified < cutoff else { continue }'),'incoming cleanup must preserve fresh update packages');
+assert(/try\?\s+fileManager\.removeItem\(at:\s*packageURL\)[\s\S]{0,120}cleanupIncomingUpdates\(\)/.test(storage),'housekeeping must run only after the applied package is removed');
+console.log('native-update-housekeeping-build243-test: PASS');

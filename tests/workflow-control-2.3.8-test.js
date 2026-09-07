@@ -1,0 +1,13 @@
+const assert=require('assert');
+global.window=global;global.confirm=()=>true;
+const diagnostics=[];global.GH_DIAGNOSTICS={record:(s,t,d,severity)=>diagnostics.push({t,d,severity})};
+global.GH_EVENT_LEDGER={append:(s,e)=>{s.events=(s.events||[]);s.events.push(e);}};
+global.GH_INTEGRITY_CORE={check:()=>({status:'healthy',counts:{critical:0,warning:0,total:0},issues:[]})};
+global.GH_INTERACTION_NOTICE=()=>{};
+const core=require('../WebApp/workflow-core.js');
+const state={simSeconds:99};
+assert.strictEqual(core.confirm('test',{state,confirmFn:()=>true}),true);
+assert.ok(state.workflowControl.history.some(x=>x.type==='WORKFLOW_CONFIRM_ACCEPTED'));
+core.notify('hello','info',{state});
+assert.ok(state.workflowControl.history.some(x=>x.type==='WORKFLOW_NOTICE'));
+(async()=>{const out=await core.run(()=>42,{state,action:'demo',panel:'finance'});assert.strictEqual(out.value,42);assert.strictEqual(out.integrity.status,'healthy');assert.ok(state.workflowControl.history.some(x=>x.type==='WORKFLOW_OK'));console.log('workflow-control-2.3.9: PASS');})().catch(e=>{console.error(e);process.exit(1)});
