@@ -66,7 +66,7 @@ await test('malformed route geometry and invalid distances never enter route sta
 await test('CI output paths cannot collide with the BUILD file on case-insensitive macOS volumes',()=>{
  const files=['.github/workflows/build-unsigned-ipa.yml','scripts/test_runner.cjs','tests/browser-e2e.js','tests/browser-failures.js'];
  const joined=files.map(file=>fs.readFileSync(file,'utf8')).join('\n');
- for(const forbidden of ['GITHUB_WORKSPACE/build',"ws / 'build' /",'build/ci'])assert(!joined.includes(forbidden),`case-folding collision remains: ${forbidden}`);
+ for(const forbidden of ['GITHUB_WORKSPACE/build',"ws / 'build' /",'build/ci','$BUILD_ROOT/ci'])assert(!joined.includes(forbidden),`unsafe CI output path remains: ${forbidden}`);
  assert(joined.includes('.ci-output/ci'));
 });
 await test('actual Swift bootstrap JavaScript parses, honors native durability and blocks future schema',()=>{

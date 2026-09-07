@@ -448,6 +448,7 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_ROOT="$GITHUB_WORKSPACE/.ci-output/package"
+          CI_DIR="$GITHUB_WORKSPACE/.ci-output/ci"
           PAYLOAD_DIR="$BUILD_ROOT/Payload"
           VERSION_SAFE="${EXPECTED_VERSION//./_}"
           IPA_NAME="GlobalHoldings_v${VERSION_SAFE}_build${EXPECTED_BUILD}_unsigned.ipa"
@@ -455,7 +456,7 @@ jobs:
 
           rm -rf "$PAYLOAD_DIR"
           rm -f "$IPA_PATH"
-          mkdir -p "$PAYLOAD_DIR"
+          mkdir -p "$PAYLOAD_DIR" "$CI_DIR"
           ditto "$APP_PATH" "$PAYLOAD_DIR/GlobalHoldings.app"
           (
             cd "$BUILD_ROOT"
@@ -471,8 +472,8 @@ jobs:
           echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> "$GITHUB_ENV"
           echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
           echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
-          printf 'version=%s\nbuild=%s\nsha256=%s\nsource_mode=%s\n' "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$IPA_SHA256" "$SOURCE_MODE" > "$BUILD_ROOT/ci/IPA_METADATA.txt"
-          cat "$BUILD_ROOT/ci/IPA_METADATA.txt"
+          printf 'version=%s\nbuild=%s\nsha256=%s\nsource_mode=%s\n' "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$IPA_SHA256" "$SOURCE_MODE" > "$CI_DIR/IPA_METADATA.txt"
+          cat "$CI_DIR/IPA_METADATA.txt"
 
       - name: Validate final IPA contents against source
         shell: bash
