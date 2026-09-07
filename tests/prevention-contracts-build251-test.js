@@ -25,6 +25,11 @@ await test('swallowed inner failure still poisons the enclosing transaction',()=
  s.GH_DOMAIN_COMMANDS.register('sample',{execute(){state.cash=0;throw new Error('inner');}});
  assert.throws(()=>s.GH_TRANSACTION_CORE.execute(state,{apply(){try{s.GH_DOMAIN_COMMANDS.dispatch({state},'sample','run');}catch{}state.cash=50;}}),/inner/);assert.strictEqual(state.cash,100);
 });
+await test('AI proposal studies never dispatch before request registration',()=>{
+ const source=fs.readFileSync('WebApp/advanced-core.js','utf8');
+ assert(source.includes("if(!stored)return {...request.study,score,...study}"));
+ assert(!source.includes("try{return domainCommand(ctx,'ai','study-request'"));
+});
 await test('idempotency TTL expires only after its documented simulation-time window',()=>{
  const {s}=harness(['transaction-core','domain-command-core']),state=minimal();let applied=0;
  s.GH_DOMAIN_COMMANDS.register('sample',{execute(){applied++;return {done:true};}});
