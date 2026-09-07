@@ -296,7 +296,9 @@
   function aiEnsureRequestStudy(request,ctx){
     if(!request)return {score:0};
     const dims=aiStudyDimensions(request,ctx),prior=Number(request.study?.score??request.studyScore??request.score)||0,score=Math.max(dims.score,prior>0?Math.round(prior):0),study={criteria:'الاحتياج · الأثر المالي · الجاهزية التشغيلية · السعة · السيولة · المخاطر · الجدوى الاستراتيجية',dimensions:{urgency:dims.urgency,operations:dims.operations,financial:dims.financial,risk:dims.risk,strategic:dims.strategic,confidence:dims.confidence}};
-    try{return domainCommand(ctx,'ai','study-request',{id:request.id,score,study},'ai-study');}catch{return {...request.study,score,...study};}
+    const stored=request.id&&(ctx.state.advanced?.ai?.requests||[]).find(x=>x.id===request.id);
+    if(!stored)return {...request.study,score,...study};
+    return domainCommand(ctx,'ai','study-request',{id:stored.id,score,study},'ai-study');
   }
   function aiBackfillPendingStudies(ctx){const ai=ctx.state.advanced?.ai;if(!ai)return 0;let fixed=0;for(const r of (ai.requests||[])){if(r.status!=='بانتظار التفويض')continue;const before=Number(r.study?.score)||0;aiEnsureRequestStudy(r,ctx);if(before<=0)fixed++;}return fixed;}
   const AI_PLAN_TYPES=['air','sea','road','power','bank'];
