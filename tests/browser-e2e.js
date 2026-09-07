@@ -29,9 +29,11 @@ const {serve}=require('./helpers/web-server'),{installMapFixture,expectedNetwork
  const asset=portfolioAssets.slice().sort((a,b)=>(a.tripSeconds||Infinity)-(b.tripSeconds||Infinity))[0],duration=asset.tripSeconds;assert(duration>0);console.log('TRIP_SECONDS',duration);await page.click('#drawerClose');await speed(4);
  // Advance below the production three-second stall guard so no interval is
  // intentionally discarded as a background/suspended browser clock jump.
- const simStart=current.simSeconds;
- for(let remaining=Math.ceil(duration/4*1000)+10000;remaining>0;){const batch=Math.min(2500,remaining);await page.clock.runFor(batch);remaining-=batch;}
- assert((await state()).simSeconds>=simStart+duration,'simulation time did not cover the selected trip');
+ const simStart=current.simSeconds,targetSim=simStart+duration+1;
+ let safeClockSteps=0;
+ while(safeClockSteps<900&&await page.evaluate(target=>__GH_STATE__.simSeconds<target,targetSim)){await page.clock.runFor(2500);safeClockSteps++;}
+ const simAfterTrip=(await state()).simSeconds;console.log('SIM_TRIP_WINDOW',JSON.stringify({simStart,targetSim,simAfterTrip,safeClockSteps}));
+ assert(simAfterTrip>=targetSim,'simulation time did not cover the selected trip within the protected clock-step ceiling');
  await speed(0);current=await state();assert(current.tripRevenueAccrued.air>0);assert(current.tripFuelAccrued.air>0);assert(current.tripMaintenanceAccrued.air>0);assert(current.assets.find(a=>a.id===asset.id).lastTrip.revenue>0);record('18 Actual simulated trip produces income and operating expenses');
  await panel('systemHub');await page.locator('[data-open="settings"]').first().click();await page.click('[data-gh-action="save-slot"][data-slot="0"]');
  const health=await page.evaluate(()=>({integrity:GH_INTEGRITY_CORE.check(__GH_STATE__),critical:__GH_STATE__.controlPlane.incidents.filter(i=>i.severity==='critical'&&i.status!=='resolved')}));assert.strictEqual(health.integrity.counts.critical,0,JSON.stringify(health.integrity));assert.strictEqual(health.critical.length,0,JSON.stringify(health.critical));evidence.health=health;
