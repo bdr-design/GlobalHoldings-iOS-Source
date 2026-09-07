@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   function create({fetchImpl=(...args)=>globalThis.fetch(...args),now=()=>Date.now(),timeoutMs=12000,failureLimit=3,cooldownMs=30000}={}){
     let failures=0,openUntil=0,lastError=null;
     const valid=c=>Array.isArray(c)&&c.length===2&&c.every(Number.isFinite)&&Math.abs(c[0])<=90&&Math.abs(c[1])<=180;

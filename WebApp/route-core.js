@@ -1,4 +1,4 @@
-(()=>{'use strict';const VERSION='2.9.0';
+(()=>{'use strict';const VERSION='2.9.1';
 function ensure(s){s.customRoutes=Array.isArray(s.customRoutes)?s.customRoutes:[];s.routeEndpoints=s.routeEndpoints&&typeof s.routeEndpoints==='object'?s.routeEndpoints:{};s.routeCache=s.routeCache&&typeof s.routeCache==='object'?s.routeCache:{};return s;}
 function signature(r){const key=c=>Array.isArray(c)?`${Number(c[0]).toFixed(3)},${Number(c[1]).toFixed(3)}`:'';const a=key(r?.route?.[0]),b=key(r?.route?.[r?.route?.length-1]);return `${r?.type||''}:${[a,b].sort().join('::')}`;}
 function execute(ctx,cmd,p){const s=ctx.state||ctx;ensure(s);if(cmd==='create'){const route={...p.route};if(!route.id||!route.type||!Array.isArray(route.route)||route.route.length<2)throw new Error('invalid-route');const sig=signature(route);if(s.customRoutes.some(r=>signature(r)===sig))throw new Error('duplicate-route');s.customRoutes.push(route);return route;}

@@ -1,5 +1,5 @@
 (()=>{'use strict';
-const VERSION='2.9.0',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
+const VERSION='2.9.1',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
 function ensure(s){s.globalBases=Array.isArray(s.globalBases)?s.globalBases:[];s.customHubs=Array.isArray(s.customHubs)?s.customHubs:[];s.branches=Array.isArray(s.branches)?s.branches:[];s.advanced=s.advanced||{};s.advanced.facilities=s.advanced.facilities&&typeof s.advanced.facilities==='object'?s.advanced.facilities:{};s.energy=s.energy||{};return s;}
 function all(s){ensure(s);return [...s.globalBases,...s.customHubs];}
 function find(s,id){return all(s).find(x=>x.id===id)||null;}

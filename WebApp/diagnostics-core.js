@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0',LIMIT=240,ALLOWED_SPEEDS=[0,1,2,4];
+  const VERSION='2.9.1',LIMIT=240,ALLOWED_SPEEDS=[0,1,2,4];
   let installed=false,lastLongTaskAt=0,eventSeq=0;
   function ensure(state){
     state.diagnostics=state.diagnostics&&typeof state.diagnostics==='object'?state.diagnostics:{};

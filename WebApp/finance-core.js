@@ -1,6 +1,6 @@
 (()=>{
 'use strict';
-const VERSION='2.9.0',TYPES=['group','air','sea','road','power','bank'];
+const VERSION='2.9.1',TYPES=['group','air','sea','road','power','bank'];
 const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
 const num=v=>Math.max(0,Number(v)||0), now=s=>Number(s.simSeconds)||0;
 function companyName(s,t){return t==='group'?(s.profile?.name||'المجموعة'):(s.companyRegistry?.[t]?.legalName||({air:'الطيران',sea:'الشحن البحري',road:'النقل البري',power:'الطاقة',bank:'البنك'}[t]||t));}

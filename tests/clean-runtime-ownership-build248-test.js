@@ -9,5 +9,5 @@ for(const pattern of [/state\.profile\.creditRating\s*=/,/state\.profile\.reputa
 if(/state\.todayProfit\s*\+=|state\.groupValue\s*\+=|companyBook\([^)]*\)\.accounts\[0\]\.balance\s*\+=/.test(app))fail('simulation commit still writes Finance/Corporate business results directly');
 if(!/apply-simulation-journal/.test(app)||!/adjust-group-value/.test(app))fail('simulation ownership handoff missing');
 if(!/tick-sustainability/.test(real)||!/complete-construction/.test(real)||!/attach-study-result/.test(real))fail('cross-domain handoff missing from Realism');
-const version=fs.readFileSync(path.join(root,'VERSION'),'utf8').trim();if(version!=='2.9.0')fail(`VERSION ${version}`);
+const version=fs.readFileSync(path.join(root,'VERSION'),'utf8').trim();if(version!=='2.9.1')fail(`VERSION ${version}`);
 console.log('Clean Runtime Ownership Build249: PASS');

@@ -1,5 +1,5 @@
 (()=>{'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const bankZero=defaults=>({...clone(defaults.bank),branches:0,deposits:0,loans:0,hqla:0,stableFunding:0,requiredStableFunding:0,wholesaleFunding:0,offBalance:0,feeIncomeYTD:0,provisions:0,corporateClients:{},creditFacilities:[],lettersOfCredit:[],guarantees:[],cashSweeps:[],tradeFinance:[],riskReviews:[]});
   function pristine(defaultState,resetEpoch=Date.now()){

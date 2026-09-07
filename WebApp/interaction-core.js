@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   const locks=new WeakSet();
   function state(){return globalThis.__GH_STATE__||globalThis.state||globalThis.window?.state||null;}
   function record(type,detail={},severity='info',explicitState=null){

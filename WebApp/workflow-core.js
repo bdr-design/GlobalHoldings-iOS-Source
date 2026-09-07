@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0',HISTORY_LIMIT=240;
+  const VERSION='2.9.1',HISTORY_LIMIT=240;
   function state(explicit){return explicit||globalThis.__GH_STATE__||globalThis.state||globalThis.window?.state||null;}
   function ensure(s){
     if(!s)return null;

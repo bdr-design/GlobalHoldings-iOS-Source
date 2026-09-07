@@ -4,7 +4,7 @@ const side=(index.match(/<nav class="side-nav domain-rail"[\s\S]*?<\/nav>/)||[])
 for(const panel of ['leadershipHub','companies','control','peopleHub','finance','governanceHub','systemHub'])assert(side.includes(`data-panel="${panel}"`),`rail missing ${panel}`);
 const start=app.indexOf('function renderControl(){'),end=app.indexOf('\n\n  function renderContracts',start),control=start>=0&&end>start?app.slice(start,end):'';assert(control,'renderControl missing');
 assert(!control.includes("card('labor'"),'HR must not be a child card of Operations');assert(control.includes('data-open="peopleHub"'),'Operations should cross-link to People without owning it');
-assert(adv.includes("peopleHub:['الأفراد','إدارة الموارد البشرية والتنظيم']"),'People meta missing');assert(ui.includes("peopleHub:'الأفراد',labor:'الأفراد'"),'People domain owner missing');
+assert(adv.includes("peopleHub:['الموارد البشرية','الطواقم والتنظيم']"),'People meta missing');assert(ui.includes("peopleHub:'الموارد البشرية',labor:'الموارد البشرية'"),'People domain owner missing');
 assert(!ui.includes("labor:'التشغيل'"),'legacy labor ownership remains');
 assert(app.includes('OPERATIONS DOMAIN · 2.6'),'operations workspace version marker missing');assert(app.includes('HR والمال والحوكمة تبقى مجالات مستقلة'),'cross-domain ownership statement missing');
 console.log('Workspace Information Architecture Build246: PASS');

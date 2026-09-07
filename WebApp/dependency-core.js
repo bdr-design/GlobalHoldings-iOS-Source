@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   function ensure(state){state.dependencyGraph=state.dependencyGraph&&typeof state.dependencyGraph==='object'?state.dependencyGraph:{};const g=state.dependencyGraph;g.edges=Array.isArray(g.edges)?g.edges:[];g.updatedAtSim=Number(g.updatedAtSim)||0;return g;}
   function key(parent,child,type){return `${parent}|${child}|${type||'depends_on'}`;}
   function link(state,parentId,childId,type='depends_on',meta={}){const g=ensure(state),k=key(parentId,childId,type);let e=g.edges.find(x=>x.key===k);if(!e){e={key:k,parentId:String(parentId),childId:String(childId),type:String(type),status:'open',createdAtSim:Number(state.simSeconds)||0,meta:{...meta}};g.edges.push(e);}else e.meta={...(e.meta||{}),...meta};g.updatedAtSim=Number(state.simSeconds)||0;return e;}

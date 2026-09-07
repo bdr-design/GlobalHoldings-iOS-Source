@@ -4,10 +4,10 @@ const localStorage={getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>sto
 const sandbox={module:{exports:{}},console,localStorage,structuredClone:global.structuredClone,Blob:global.Blob,URL:{createObjectURL:()=> 'blob:test',revokeObjectURL(){}},document:{createElement:()=>({click(){this.clicked=true;}})},setTimeout:fn=>fn(),GH_SAVE_SCHEMA:{SAVE_SCHEMA_VERSION:'2.0.0',validate:s=>({ok:!!s&&s.saveVersion==='2.0.0'&&Array.isArray(s.assets)&&Array.isArray(s.market),errors:[]})}};
 sandbox.globalThis=sandbox;sandbox.window=sandbox;
 vm.runInNewContext(fs.readFileSync('WebApp/persistence-core.js','utf8'),sandbox);
-const p=sandbox.module.exports||sandbox.GH_PERSISTENCE;assert(p&&p.VERSION==='2.9.0');
+const p=sandbox.module.exports||sandbox.GH_PERSISTENCE;assert(p&&p.VERSION==='2.9.1');
 const state={saveVersion:'2.0.0',simSeconds:172800,assets:[],market:[],advanced:{saveSlots:[null,null,null]}};
-let out=p.saveSlot(0,state,{appVersion:'2.9.0'});assert(out.ok);assert.strictEqual(out.meta.day,3);assert(p.slotStatus(0).exists);
+let out=p.saveSlot(0,state,{appVersion:'2.9.1'});assert(out.ok);assert.strictEqual(out.meta.day,3);assert(p.slotStatus(0).exists);
 store.set('global-holdings-save-slot-2','{"saveVersion":"bad"}');assert(!p.slotStatus(1).exists);
-out=p.loadSlot(0,{storageKey:'main',appVersion:'2.9.0'});assert(out.ok);assert(store.get('main').includes('"simSeconds":172800'));
+out=p.loadSlot(0,{storageKey:'main',appVersion:'2.9.1'});assert(out.ok);assert(store.get('main').includes('"simSeconds":172800'));
 p.migrateMetadata(state);assert.strictEqual(state.advanced.saveSlots[0].date,'اليوم 3');assert.strictEqual(state.advanced.saveSlots[1],null);
 console.log('Persistence integrity 2.3.9: PASS');

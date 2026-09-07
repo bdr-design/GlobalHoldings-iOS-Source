@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0',SAVE_SCHEMA_VERSION='2.0.0';
+  const VERSION='2.9.1',SAVE_SCHEMA_VERSION='2.0.0';
   function object(v){return !!v&&typeof v==='object'&&!Array.isArray(v);}
   function finite(v){return v!==null&&v!==''&&typeof v!=='boolean'&&Number.isFinite(Number(v));}
   function structured(v){if(typeof globalThis.structuredClone==='function')try{return globalThis.structuredClone(v);}catch(_e){}return JSON.parse(JSON.stringify(v));}

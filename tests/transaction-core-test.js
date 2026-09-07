@@ -1,6 +1,6 @@
 const assert=require('assert');
 const tx=require('../WebApp/transaction-core.js');
-assert.strictEqual(tx.VERSION,'2.9.0');
+assert.strictEqual(tx.VERSION,'2.9.1');
 const target={cash:100,nested:{value:1},items:[1,2]};
 let result=tx.execute(target,{label:'ok',validate:()=>({ok:true}),apply:()=>{target.cash=75;target.nested.value=2;return 'done';}});
 assert.strictEqual(result.committed,true);assert.strictEqual(target.cash,75);assert.strictEqual(target.nested.value,2);

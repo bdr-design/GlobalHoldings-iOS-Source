@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0', IDEMPOTENCY_LIMIT=512, IDEMPOTENCY_TTL=7*86400;
+  const VERSION='2.9.1', IDEMPOTENCY_LIMIT=512, IDEMPOTENCY_TTL=7*86400;
   const owners=new Map();
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const now=s=>Number(s?.simSeconds)||0;

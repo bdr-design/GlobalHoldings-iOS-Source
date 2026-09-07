@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   function ensure(state){state.demandClosure=state.demandClosure&&typeof state.demandClosure==='object'?state.demandClosure:{};const d=state.demandClosure;delete d.lastSweepAtMs;d.lastSweepSim=Number(d.lastSweepSim)||0;d.metrics=d.metrics&&typeof d.metrics==='object'?d.metrics:{};d.stalled=Array.isArray(d.stalled)?d.stalled:[];return d;}
   function aiStatusResolved(x){return ['منفذ','مكتمل','مغلق','approved','completed','resolved'].includes(String(x?.status||''));}
   function reconcile(state){const d=ensure(state),reqs=state.advanced?.procurement?.assetRequests||[],ai=state.advanced?.ai?.requests||[],aiArchive=state.advanced?.ai?.requestArchive||[],deliveries=state.realism?.procurement?.deliveries||[];let open=0,blocked=0,delivering=0,readiness=0;const stalled=[];

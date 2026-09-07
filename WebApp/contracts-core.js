@@ -1,5 +1,5 @@
 (()=>{'use strict';
-const VERSION='2.9.0',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
+const VERSION='2.9.1',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
 function ensure(s){s.contractRegistry=s.contractRegistry&&typeof s.contractRegistry==='object'&&!Array.isArray(s.contractRegistry)?s.contractRegistry:{};s.acceptedContracts=Array.isArray(s.acceptedContracts)?s.acceptedContracts:[];s.failedBids=Array.isArray(s.failedBids)?s.failedBids:[];s.contractStartDays=s.contractStartDays&&typeof s.contractStartDays==='object'&&!Array.isArray(s.contractStartDays)?s.contractStartDays:{};return s;}
 function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);
  if(cmd==='bid'){const id=String(p.id||'');if(!id)throw new Error('contract-id-required');if(s.acceptedContracts.includes(id))throw new Error('contract-already-signed');const won=!!p.won;if(won){const row={status:'بانتظار التوقيع',number:p.number||`GH-CN-${Math.floor(now(s))}-${Object.keys(s.contractRegistry).length+1}`,wonAt:now(s),client:p.client||'',sector:p.sector||''};s.contractRegistry[id]=row;return {won:true,record:row};}if(!s.failedBids.includes(id))s.failedBids.push(id);return {won:false};}

@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   const DEFINITIONS={assetRequest:{
     awaiting_review:['awaiting_authorization','rejected','cancelled'],
     awaiting_authorization:['authorized','rejected','cancelled'],

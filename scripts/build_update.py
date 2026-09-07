@@ -6,7 +6,7 @@ from update_signing import sign_manifest
 from datetime import datetime, timezone
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-WEB=ROOT/'WebApp'; UPDATES=ROOT/'updates'; VERSION='2.9.0'
+WEB=ROOT/'WebApp'; UPDATES=ROOT/'updates'; VERSION='2.9.1'
 ALLOWED={'.html','.js','.css','.webp','.png','.jpg','.jpeg','.json','.txt'}
 OPERATIONS=[
   {'type':'content-config','value':{
@@ -16,7 +16,7 @@ OPERATIONS=[
     'boundaryTransactions':'day-hour-finance-market-ai-inside-slice-commit','conflictPolicy':'reject-entire-slice-no-partial-eligible-commit',
     'lifecycleSafety':'visibility-cancel-persist-no-background-catchup','timeControls':'pause-x1-x2-x4',
     'assetDisposal':'return-to-owned-center-atomic-sale-v1','companyBudgets':'budget-actual-forecast-variance-v2',
-    'assetRequestCenter':'single-source-demand-closure-v3','aiDemandClosure':'lifecycle-dependency-policy-event-ledger-v3','aiGovernance':'investment-committee-npv-irr-payback-v5','aiProactiveReview':'simulation-hour-supervised-v6',
+    'assetRequestCenter':'one-approval-ai-portfolio-v1','aiAssetOrchestration':'market-center-diversity-delivery-staff-route-depart-v1','navigationIA':'unified-domain-names-height-safe-rail-v1','aiDemandClosure':'lifecycle-dependency-policy-event-ledger-v3','aiGovernance':'investment-committee-npv-irr-payback-v5','aiProactiveReview':'simulation-hour-supervised-v6',
     'procurementApproval':'atomic-delivery-clock-slice-cadence-v3','companyIdentity':'editable-live-name-logo-v2',
     'financialDocuments':'authority-inspired-cheques-transfers-v6','systemCompletion':'action-center-ui-quality-deterministic-business-ids-v3','workflowControl':'central-confirm-feedback-post-integrity-v1','financeIntegrity':'entity-ledger-account-document-invariants-v1','persistenceGateway':'validated-slots-native-vault-save-revision-v2','deterministicState':'sim-time-cache-and-sequence-identifiers-v1','corporateBank':'credit-trade-liquidity-v1',
     'bankRisk':'basel-cet1-rwa-lcr-nsfr-v3','economyEngine':'causal-correlated-deterministic-v2',
@@ -33,7 +33,7 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-full-2.9.0-build251-correctness-firewall','name':'Global Holdings 2.9.0 Build 251 — Correctness Firewall','version':VERSION,'minGameVersion':'2.3.3','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'2.9.0 Build 251 requires the rebuilt Build251 native app, correlated durable save ACKs and the runtime manifest. Save Schema remains 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
+    manifest={'id':'gh-internal-2.9.1-build251-ai-asset-orchestrator','name':'Global Holdings 2.9.1 — AI Asset Orchestrator','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'تحديث داخلي متوافق مع تطبيق Build251: منظومة أصول ذكية باعتماد واحد، استلام وتوظيف ومسارات ومغادرة تلقائية، وشريط جانبي آمن الارتفاع بأسماء موحدة. Save Schema يبقى 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
     sign_manifest(manifest)
@@ -43,6 +43,6 @@ def main():
     for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
     for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Update_V290_BUILD251_CORRECTNESS_FIREWALL.{ext}').write_text(payload,encoding='utf-8')
-    print(f'Built 2.9.0 Build251 correctness firewall snapshot: {len(files)} files, {total:,} unpacked bytes')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD251_AI_ASSET_ORCHESTRATOR.{ext}').write_text(payload,encoding='utf-8')
+    print(f'Built 2.9.1 Build251-compatible AI asset orchestrator snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()

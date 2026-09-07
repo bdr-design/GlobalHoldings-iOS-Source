@@ -1,5 +1,5 @@
 (()=>{'use strict';
-const VERSION='2.9.0';
+const VERSION='2.9.1';
 const num=v=>Number(v)||0;
 function companyModel(state,type){
   const core=globalThis.GH_CORPORATE_CORE;

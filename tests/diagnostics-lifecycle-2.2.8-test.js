@@ -1,9 +1,9 @@
 const assert=require('assert');
-global.GH_TRANSACTION_CORE={VERSION:'2.9.0',execute(){}};
-global.GH_SIMULATION_CORE={VERSION:'2.9.0',create(){}};
-global.GH_SAVE_SCHEMA={VERSION:'2.9.0',normalize(){}};
-global.GH_DETERMINISM={VERSION:'2.9.0'};
-global.GH_REQUEST_CORE={VERSION:'2.9.0'};global.GH_LIFECYCLE_CORE={VERSION:'2.9.0',validate(){return true}};global.GH_POLICY_CORE={VERSION:'2.9.0'};global.GH_DEPENDENCY_CORE={VERSION:'2.9.0',detectCycles(){return []}};global.GH_EVENT_LEDGER={VERSION:'2.9.0',summary(){return {count:0}}};global.GH_DEMAND_CLOSURE={VERSION:'2.9.0',reconcile(){return {closureRate:100}}};global.GH_INTEGRITY_CORE={VERSION:'2.9.0',check(){return {issues:[],counts:{critical:0,warning:0,total:0},status:'healthy'}}};
+global.GH_TRANSACTION_CORE={VERSION:'2.9.1',execute(){}};
+global.GH_SIMULATION_CORE={VERSION:'2.9.1',create(){}};
+global.GH_SAVE_SCHEMA={VERSION:'2.9.1',normalize(){}};
+global.GH_DETERMINISM={VERSION:'2.9.1'};
+global.GH_REQUEST_CORE={VERSION:'2.9.1'};global.GH_LIFECYCLE_CORE={VERSION:'2.9.1',validate(){return true}};global.GH_POLICY_CORE={VERSION:'2.9.1'};global.GH_DEPENDENCY_CORE={VERSION:'2.9.1',detectCycles(){return []}};global.GH_EVENT_LEDGER={VERSION:'2.9.1',summary(){return {count:0}}};global.GH_DEMAND_CLOSURE={VERSION:'2.9.1',reconcile(){return {closureRate:100}}};global.GH_INTEGRITY_CORE={VERSION:'2.9.1',check(){return {issues:[],counts:{critical:0,warning:0,total:0},status:'healthy'}}};
 const d=require('../WebApp/diagnostics-core.js');
 const state={simSeconds:0,speed:1,saveVersion:'2.0.0',cash:1,debt:0,groupValue:1,assets:[],finance:{companyBooks:{},receivables:[],payables:[],invoices:[],cheques:[]},advanced:{ai:{}},simulationKernel:{},diagnostics:{}};
 let r=d.runHealthCheck(state,{simulation:{}},{recordEvent:false,trackTransitions:true});

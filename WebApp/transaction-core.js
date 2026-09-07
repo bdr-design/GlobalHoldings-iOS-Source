@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   let activeContext=null;
   function jsonClone(value){if(value===undefined)return undefined;return JSON.parse(JSON.stringify(value));}
   function deepClone(value){if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}

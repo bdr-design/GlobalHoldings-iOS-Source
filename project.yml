@@ -8,8 +8,8 @@ settings:
     SWIFT_VERSION: 5.0
     IPHONEOS_DEPLOYMENT_TARGET: 17.0
     TARGETED_DEVICE_FAMILY: "1"
-    MARKETING_VERSION: "2.9.0"
-    CURRENT_PROJECT_VERSION: "251"
+    MARKETING_VERSION: "2.9.1"
+    CURRENT_PROJECT_VERSION: "252"
 targets:
   GlobalHoldings:
     type: application
@@ -24,8 +24,8 @@ targets:
       path: iOS/GlobalHoldings/Info.plist
       properties:
         CFBundleDisplayName: "Global Holdings"
-        CFBundleShortVersionString: "2.9.0"
-        CFBundleVersion: "251"
+        CFBundleShortVersionString: "2.9.1"
+        CFBundleVersion: "252"
         LSRequiresIPhoneOS: true
         UIRequiresFullScreen: true
         UIDeviceFamily:

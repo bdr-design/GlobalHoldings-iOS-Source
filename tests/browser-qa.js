@@ -56,6 +56,8 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
 
   const landscape = await openAt('landscape', {width: 844, height: 390});
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-map.png'});
+  const railGeometry=await landscape.page.evaluate(()=>{const rail=document.querySelector('.side-nav'),buttons=[...rail.querySelectorAll('button')],viewport=window.innerHeight;return{client:rail.clientHeight,scroll:rail.scrollHeight,buttons:buttons.map(b=>{const r=b.getBoundingClientRect();return{top:r.top,bottom:r.bottom,visible:getComputedStyle(b).display!=='none'&&r.height>0&&r.top>=0&&r.bottom<=viewport};})};});
+  if(railGeometry.buttons.length!==8||railGeometry.buttons.some(x=>!x.visible)||railGeometry.scroll>railGeometry.client+1)issues.push(`landscape: sidebar options overflow ${JSON.stringify(railGeometry)}`);
 
   await landscape.page.click('#worldDirectoryBtn');
   await landscape.page.locator('#worldSearch').waitFor({state: 'visible', timeout: 10000});
@@ -77,6 +79,9 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   }
 
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-assets.png'});
+  await landscape.page.click('#drawerClose');await openHubChild(landscape.page,'control','procurement');
+  if(!await landscape.page.locator('[data-gh-action="asset-portfolio-build"]').count()||await landscape.page.locator('#assetRequestQty').count())issues.push('landscape: AI portfolio replacement UI is not exclusive');
+  await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-ai-assets.png'});
   await landscape.context.tracing.stop({path:'tests/screenshots/navigation-landscape-trace.zip'});await landscape.context.close();
 
   const portrait = await openAt('portrait', {width: 390, height: 844});

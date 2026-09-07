@@ -3,7 +3,7 @@ const fs=require('fs'),path=require('path'),vm=require('vm');
 const root=path.join(__dirname,'..');
 const src=fs.readFileSync(path.join(root,'WebApp','interaction-core.js'),'utf8');
 const sandbox={console,module:{exports:{}},exports:{},globalThis:null};sandbox.globalThis=sandbox;sandbox.window=sandbox;vm.runInNewContext(src,sandbox);
-const core=sandbox.module.exports||sandbox.GH_INTERACTION;assert(core&&core.VERSION==='2.9.0');
+const core=sandbox.module.exports||sandbox.GH_INTERACTION;assert(core&&core.VERSION==='2.9.1');
 const events=[];sandbox.GH_DIAGNOSTICS={record(_s,t,d,sev){events.push({t,d,sev})}};
 const state={simSeconds:0};
 function button(extra={}){return {disabled:false,dataset:{ghAction:'demo',...extra},textContent:'تنفيذ',classList:{add(){},remove(){}},setAttribute(){},removeAttribute(){},getAttribute(){return null;}};}

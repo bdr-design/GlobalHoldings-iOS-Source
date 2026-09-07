@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   const SCHEMA='2.0.0';
   const TYPES=['group','air','sea','road','power','bank'];
   const SECTORS=['air','sea','road','power','bank'];

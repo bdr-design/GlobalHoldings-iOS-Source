@@ -1,9 +1,10 @@
 const fs=require('fs'),assert=require('assert');
 const adv=fs.readFileSync('WebApp/advanced-core.js','utf8'),req=fs.readFileSync('WebApp/request-core.js','utf8');
-assert(adv.includes('ASSET ACQUISITION 2.5')&&adv.includes('مركز اقتناء الأصول'),'new asset acquisition center missing');
-assert(adv.includes('وجهة ثابتة:')&&adv.includes('الوصول الفعلي'),'delivery transparency UI missing');
-assert(adv.includes('asset-request-ai-recommend'),'AI recommendation action missing');
-assert(req.includes("const VERSION='2.9.0'"));
+assert(adv.includes('AI ASSET ORCHESTRATOR')&&adv.includes('منظومة الأصول الذكية'),'AI asset orchestration center missing');
+assert(adv.includes('أصل + طاقم + مسار')&&adv.includes('اعتماد وتنفيذ كل شيء'),'one-approval execution transparency missing');
+assert(adv.includes('asset-portfolio-build')&&adv.includes('asset-portfolio-authorize'),'AI portfolio actions missing');
+assert(adv.includes('procurement:()=>renderProcurementAI(ctx)'),'legacy procurement renderer must not own the live panel');
+assert(req.includes("const VERSION='2.9.1'"));
 assert(req.includes('operations:PROCUREMENT_DELIVERY_CONTRACT_BROKEN'),'central incident fingerprint missing');
 assert(req.includes("status:proposal.planMasterId?'authorized':'awaiting_authorization'"),'annual-plan bounded authority regression');
 assert(req.includes("p.requests=[]"),'legacy procurement path must be migrated then retired');

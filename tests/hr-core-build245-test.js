@@ -1,5 +1,5 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
-const src=fs.readFileSync('WebApp/hr-core.js','utf8');const sb={console,structuredClone,globalThis:null};sb.globalThis=sb;sb.window=sb;vm.runInNewContext(src,sb);const hr=sb.GH_HR_CORE;assert(hr&&hr.VERSION==='2.9.0');
+const src=fs.readFileSync('WebApp/hr-core.js','utf8');const sb={console,structuredClone,globalThis:null};sb.globalThis=sb;sb.window=sb;vm.runInNewContext(src,sb);const hr=sb.GH_HR_CORE;assert(hr&&hr.VERSION==='2.9.1');
 const candidates=[{id:'H3',name:'CEO',role:'الرئيس التنفيذي',salary:50000},{id:'H4',name:'COO Air',role:'طيران',salary:40000}];
 const state={simSeconds:0,sequences:{},assets:[{id:'A1',type:'air'},{id:'A2',type:'air'}],crew:[{id:'pilots',name:'طيارون',count:1,salaryMin:100,salaryMax:200},{id:'cabin',name:'ضيافة',count:2,salaryMin:80,salaryMax:120},{id:'aeng',name:'مهندسون',count:0,salaryMin:120,salaryMax:180}],globalBases:[{id:'B1',company:'air',kind:'airport-base',owned:true,name:'قاعدة 1'},{id:'PUB',company:'air',kind:'airport-base',owned:false,name:'عام'}],customHubs:[],advanced:{facilities:{}},hired:[]};
 const ctx={candidates,getDynamicFacilities:()=>state.globalBases};

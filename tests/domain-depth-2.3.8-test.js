@@ -4,7 +4,7 @@ const adv=fs.readFileSync('WebApp/advanced-core.js','utf8');
 const integrityText=fs.readFileSync('WebApp/integrity-core.js','utf8');
 const governance=fs.readFileSync('WebApp/governance-core.js','utf8');
 const nav=fs.readFileSync('WebApp/index.html','utf8');
-assert(realismText.includes("const VERSION='2.9.0'"),'realism version');
+assert(realismText.includes("const VERSION='2.9.1'"),'realism version');
 for(const token of ['dispatchReliability','maintenanceReserveCoverage','ciiRatio','correctiveAction','eexiReadiness','lpiProxy','roundTripEfficiency','storageHealth','cet1Headroom','provisionCoverage'])assert(realismText.includes(token),`missing calibrated metric ${token}`);
 for(const token of ['leaseLiability','rouAsset','depr','updatePrograms'])assert(realismText.includes(token),`missing financial/program depth ${token}`);
 for(const token of ['air|dispatch-reliability','sea|cii-corrective','road|lpi-quality','power|reserve-margin','bank|nsfr-review'])assert(adv.includes(token),`AI does not consume ${token}`);

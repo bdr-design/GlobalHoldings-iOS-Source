@@ -1,14 +1,14 @@
 const assert=require('assert');
 const d=require('../WebApp/diagnostics-core.js');
-assert.strictEqual(d.VERSION,'2.9.0');
+assert.strictEqual(d.VERSION,'2.9.1');
 const state={saveVersion:'2.0.0',simSeconds:3600,speed:16,assets:[{id:'A1',progress:.2,condition:90},{id:'A1',progress:.4,condition:101}],finance:{receivables:[],payables:[],invoices:[],cheques:[],companyBooks:{group:{balance:100,debt:0}}},diagnostics:{events:[]},openedCompanies:[],profile:{name:'Test'},eventLog:[],simulationKernel:{lastAtomicCommit:{from:3590,to:3600}}};
 global.GH_TRANSACTION_CORE={execute(){}};global.GH_SIMULATION_CORE={create(){}};global.GH_SAVE_SCHEMA={normalize(){}};
 const report=d.runHealthCheck(state,{simulation:{backlogSeconds:0}});
 assert.strictEqual(report.status,'critical');
 assert(report.issues.some(x=>x.id==='ASSET_DUPLICATE_IDS'));
 assert(report.issues.some(x=>x.id==='ASSET_CONDITION_INVALID'));
-const bundle=d.exportBundle(state,{appVersion:'2.9.0',saveSchemaVersion:'2.0.0',simulation:{backlogSeconds:0}});
+const bundle=d.exportBundle(state,{appVersion:'2.9.1',saveSchemaVersion:'2.0.0',simulation:{backlogSeconds:0}});
 assert.strictEqual(bundle.format,'global-holdings-diagnostic-bundle');
-assert.strictEqual(bundle.appVersion,'2.9.0');
+assert.strictEqual(bundle.appVersion,'2.9.1');
 assert(Array.isArray(bundle.events));
 console.log('Diagnostics Center 2.3.9: PASS');

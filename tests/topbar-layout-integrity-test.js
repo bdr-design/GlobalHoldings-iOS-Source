@@ -30,8 +30,8 @@ function installLayout(bad=false){
   global.innerWidth=1536;global.innerHeight=720;global.getComputedStyle=()=>({display:'block',visibility:'visible'});
 }
 const d=require('../WebApp/diagnostics-core.js');
-for(const k of ['GH_TRANSACTION_CORE','GH_SIMULATION_CORE','GH_SAVE_SCHEMA','GH_DETERMINISM'])global[k]={VERSION:'2.9.0',execute(){},create(){},normalize(){}};
-for(const k of ['GH_REQUEST_CORE','GH_LIFECYCLE_CORE','GH_POLICY_CORE','GH_DEPENDENCY_CORE','GH_EVENT_LEDGER','GH_DEMAND_CLOSURE','GH_INTEGRITY_CORE'])global[k]={VERSION:'2.9.0',check(){return {issues:[]}},detectCycles(){return []},reconcile(){return {}},summary(){return {}}};
+for(const k of ['GH_TRANSACTION_CORE','GH_SIMULATION_CORE','GH_SAVE_SCHEMA','GH_DETERMINISM'])global[k]={VERSION:'2.9.1',execute(){},create(){},normalize(){}};
+for(const k of ['GH_REQUEST_CORE','GH_LIFECYCLE_CORE','GH_POLICY_CORE','GH_DEPENDENCY_CORE','GH_EVENT_LEDGER','GH_DEMAND_CLOSURE','GH_INTEGRITY_CORE'])global[k]={VERSION:'2.9.1',check(){return {issues:[]}},detectCycles(){return []},reconcile(){return {}},summary(){return {}}};
 const state=()=>({simSeconds:10,speed:1,cash:50e6,debt:0,groupValue:50e6,saveVersion:'2.0.0',assets:[],finance:{receivables:[],payables:[],invoices:[],cheques:[],companyBooks:{}},diagnostics:{events:[],counters:{}}});
 installLayout(false);let report=d.runHealthCheck(state(),{});assert(!report.issues.some(x=>x.id.startsWith('UI_')),'Healthy four-button topbar should not trigger UI issue');assert(report.layout&&report.layout.actionButtons.length===4,'Diagnostic layout snapshot must contain all four actions');
 installLayout(true);report=d.runHealthCheck(state(),{});assert(report.issues.some(x=>x.id==='UI_TOPBAR_ACTION_WRAP'),'Wrapped action row must be diagnosed');assert(report.issues.some(x=>x.id==='UI_TOPBAR_ACTION_OVERFLOW'),'Action outside topbar must be diagnosed');

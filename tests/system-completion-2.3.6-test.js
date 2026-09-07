@@ -5,7 +5,7 @@ const advanced=fs.readFileSync('WebApp/advanced-core.js','utf8');
 const app=fs.readFileSync('WebApp/app.js','utf8');
 assert(index.includes('ui-quality-core.js'),'ui-quality-core.js is not loaded');
 assert(index.indexOf('ui-quality-core.js')<index.indexOf('advanced-core.js'),'UI quality core must load before advanced-core');
-assert(advanced.includes("actionCenter:['القيادة','مركز المهام والقرارات']"),'Action Center meta is missing');
+assert(advanced.includes("actionCenter:['القيادة التنفيذية','مركز المهام والقرارات']"),'Action Center meta is missing');
 assert(advanced.includes('function renderActionCenter(ctx)'),'Action Center renderer is missing');
 assert(advanced.includes("['actionCenter','NOW','مركز القرار اليومي'"),'Leadership hub does not expose Action Center');
 assert(app.includes("'actionCenter'"),'app.js does not own Action Center as an advanced panel');

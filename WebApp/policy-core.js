@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   function result(name,checks){const blocked=checks.filter(c=>!c.ok&&c.blocking!==false),warnings=checks.filter(c=>!c.ok&&c.blocking===false);return {policy:name,approved:blocked.length===0,blocked,warnings,checks,at:Date.now()};}
   function procurement(facts={}){return result('ProcurementPolicy',[
     {id:'catalog',ok:!!facts.item,blocking:true,message:'الأصل يجب أن يكون موجودًا في الكتالوج.'},

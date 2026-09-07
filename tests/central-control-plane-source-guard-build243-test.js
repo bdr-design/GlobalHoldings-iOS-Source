@@ -8,7 +8,7 @@ assert(app.includes('installDOMObserver'),'all UI click/change/submit intents mu
 assert(app.includes("name:'AI_HOURLY_EXECUTIVE_CYCLE'"),'AI hourly cycle must enter central command plane');
 assert(read('WebApp/persistence-core.js').includes("'gh-native-save-ack'")&&app.includes("'gh-persistence-status'")&&app.includes("detail.ok?'SAVE_ACK':'SAVE_NACK'"),'validated native save ACK must feed the central plane through persistence owner');
 assert(app.includes("'gh-update-lifecycle'"),'update lifecycle must feed the central plane');
-assert(adv.includes("controlPlane:['النظام','مركز التحكم والسلامة المركزي']"),'dedicated control center panel required');
+assert(adv.includes("controlPlane:['النظام والسلامة','مركز التحكم والسلامة المركزي']"),'dedicated control center panel required');
 for(const ext of ['ghincident','ghdiagnostic','ghtrace','ghhealth','ghsupport'])assert(cp.includes(ext),`missing export ${ext}`);
 assert(interaction.includes('GH_CONTROL_PLANE')&&interaction.includes('executeAsync'),'advanced UI actions must be command-audited');
 assert(cp.includes('previousHash')&&cp.includes('journalHeadHash'),'tamper-evident hash chain required');

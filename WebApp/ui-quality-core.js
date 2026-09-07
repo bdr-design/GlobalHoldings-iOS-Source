@@ -1,12 +1,12 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   const PANEL_DOMAIN={
-    leadershipHub:'القيادة',workspaceHub:'النظام',actionCenter:'القيادة',intelligence:'القيادة',aiApprovals:'القيادة',programs:'القيادة',news:'القيادة',realism:'القيادة',ma:'القيادة',research:'القيادة',esg:'القيادة',career:'القيادة',
-    companies:'الشركات',companyManage:'الشركات',peopleHub:'الأفراد',labor:'الأفراد',control:'التشغيل',network:'التشغيل',expansion:'التشغيل',globalRoute:'التشغيل',routes:'التشغيل',assets:'التشغيل',assetManage:'التشغيل',assignRoute:'التشغيل',ports:'التشغيل',procurement:'التشغيل',contracts:'التشغيل',facilityManage:'التشغيل',
-    finance:'المالية',treasury:'المالية',invoices:'المالية',market:'المالية',bank:'المالية',
-    governanceHub:'الرقابة',governance:'الرقابة',audit:'الرقابة',legal:'الرقابة',insurance:'الرقابة',cyber:'الرقابة',safety:'الرقابة',
-    systemHub:'النظام',more:'النظام',diagnostics:'النظام',controlPlane:'النظام',updates:'النظام',settings:'النظام',energy:'الشركات'
+    leadershipHub:'القيادة التنفيذية',workspaceHub:'النظام والسلامة',actionCenter:'القيادة التنفيذية',intelligence:'القيادة التنفيذية',aiApprovals:'القيادة التنفيذية',programs:'القيادة التنفيذية',news:'القيادة التنفيذية',realism:'القيادة التنفيذية',ma:'القيادة التنفيذية',research:'القيادة التنفيذية',esg:'القيادة التنفيذية',career:'القيادة التنفيذية',
+    companies:'المجموعة والشركات',companyManage:'المجموعة والشركات',peopleHub:'الموارد البشرية',labor:'الموارد البشرية',control:'التشغيل والأصول',network:'التشغيل والأصول',expansion:'التشغيل والأصول',globalRoute:'التشغيل والأصول',routes:'التشغيل والأصول',assets:'التشغيل والأصول',assetManage:'التشغيل والأصول',assignRoute:'التشغيل والأصول',ports:'التشغيل والأصول',procurement:'التشغيل والأصول',contracts:'التشغيل والأصول',facilityManage:'التشغيل والأصول',
+    finance:'المالية والخزينة',treasury:'المالية والخزينة',invoices:'المالية والخزينة',market:'المالية والخزينة',bank:'المالية والخزينة',
+    governanceHub:'الحوكمة والمخاطر',governance:'الحوكمة والمخاطر',audit:'الحوكمة والمخاطر',legal:'الحوكمة والمخاطر',insurance:'الحوكمة والمخاطر',cyber:'الحوكمة والمخاطر',safety:'الحوكمة والمخاطر',
+    systemHub:'النظام والسلامة',more:'النظام والسلامة',diagnostics:'النظام والسلامة',controlPlane:'النظام والسلامة',updates:'النظام والسلامة',settings:'النظام والسلامة',energy:'المجموعة والشركات'
   };
   function record(state,type,detail={},severity='info'){
     try{globalThis.GH_DIAGNOSTICS?.record?.(state,type,detail,severity);}catch(error){console.warn('UI quality diagnostics failed',error);}
@@ -20,6 +20,7 @@
       const priority=blockers.length?'high':r.status==='awaiting_authorization'?'high':'normal';
       out.push(task(`AR:${r.id}`,`${r.id} · ${r.title||'طلب أصل'}`,'التشغيل',priority,'procurement',blockers.join(' · ')||r.nextAction||''));
     });
+    (proc.assetPortfolioPlans||[]).filter(p=>p?.status==='awaiting_authorization').forEach(p=>out.push(task(`AIP:${p.id}`,`${p.title||'محفظة أصول ذكية'} · اعتماد واحد`,'التشغيل والأصول','high','procurement',`AI جهز ${p.summary?.assetCount||0} أصل مع الطواقم والمسارات.`)));
     (state?.realism?.procurement?.deliveries||[]).filter(d=>d?.status!=='delivered'&&Number(d?.dueSimSeconds||Infinity)<now).forEach(d=>out.push(task(`DEL:${d.id}`,`تسليم متأخر · ${d.asset?.model||d.catalogId||d.id}`,'التشغيل','critical','procurement',d.destination||'')));
     const activeIssues=diag.activeIssues&&typeof diag.activeIssues==='object'?Object.values(diag.activeIssues):[];
     activeIssues.forEach(i=>out.push(task(`DIAG:${i.id||i.type}`,i.message||i.title||i.id||'مشكلة نظام','النظام',i.severity==='critical'?'critical':'high','diagnostics',i.detail||'')));

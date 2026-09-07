@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.0';
+  const VERSION='2.9.1';
   const CREW_STANDARDS=Object.freeze({
     air:{pilots:4,cabin:6,aeng:2},
     sea:{captains:2,sailors:14,seng:4},

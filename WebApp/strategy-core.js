@@ -1,5 +1,5 @@
 (()=>{'use strict';
-const VERSION='2.9.0',now=s=>Number(s.simSeconds)||0,num=v=>Math.max(0,Number(v)||0);
+const VERSION='2.9.1',now=s=>Number(s.simSeconds)||0,num=v=>Math.max(0,Number(v)||0);
 function ensure(s){s.advanced=s.advanced||{};s.advanced.programs=s.advanced.programs||{initiatives:[],completed:0,lastReview:0};s.advanced.programs.initiatives=Array.isArray(s.advanced.programs.initiatives)?s.advanced.programs.initiatives:[];s.advanced.economy=s.advanced.economy||{};s.alerts=Array.isArray(s.alerts)?s.alerts:[];s.eventLog=Array.isArray(s.eventLog)?s.eventLog:[];return s.advanced;}
 function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);
  if(cmd==='record-program'||cmd==='plan-program'){if(cmd==='plan-program')globalThis.GH_FINANCE_CORE?.execute?.({state:s},'spend',{company:'group',amount:num(p.studyCost||180000),note:'دراسة برنامج استراتيجي',method:'تحويل بنكي',line:'other'});const row={...p,id:p.id||`PGM-${Math.floor(now(s))}-${s.advanced.programs.initiatives.length+1}`,at:now(s),createdAt:p.createdAt??now(s),status:p.status||'بانتظار الاعتماد'};s.advanced.programs.initiatives.unshift(row);return row;}
