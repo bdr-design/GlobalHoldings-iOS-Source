@@ -2,9 +2,9 @@
   'use strict';
   const VERSION='2.9.1';
   const SCHEMA='2.0.0';
-  const TYPES=['group','air','sea','road','power','bank'];
+  const TYPES=['group','air','sea','road','power','bank','mobility'];
   const SECTORS=['air','sea','road','power','bank'];
-  const names={group:'المجموعة',air:'الطيران',sea:'البحرية',road:'اللوجستيات',power:'الطاقة',bank:'البنك'};
+  const names={group:'المجموعة',air:'الطيران',sea:'البحرية',road:'اللوجستيات',power:'الطاقة',bank:'البنك',mobility:'التنقل الذكي'};
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,Number(n)||0));
   const money=n=>{n=Number(n)||0;const s=n<0?'-':'';n=Math.abs(n);return s+'$'+(n>=1e9?(n/1e9).toFixed(2)+'B':n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':Math.round(n));};
   const esc=v=>String(v??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

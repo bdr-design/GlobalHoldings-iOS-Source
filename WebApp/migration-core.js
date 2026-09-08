@@ -47,9 +47,10 @@
   if (!state.maDeals||typeof state.maDeals!=='object') state.maDeals={};
   if (!state.portfolioBook || typeof state.portfolioBook!=='object') state.portfolioBook={};
   if (!state.contractStartDays) state.contractStartDays = {};
-  if (!state.sectorProfitToday) state.sectorProfitToday = {air:0,sea:0,road:0,power:0,bank:0};
-  if(!state.tripProfitAccrued||typeof state.tripProfitAccrued!=='object')state.tripProfitAccrued={air:0,sea:0,road:0,power:0,bank:0};
-  for(const t of ['air','sea','road','power','bank'])state.tripProfitAccrued[t]=Number(state.tripProfitAccrued[t])||0;
+  if (!state.sectorProfitToday) state.sectorProfitToday = {air:0,sea:0,road:0,power:0,bank:0,mobility:0};
+  state.sectorProfitToday.mobility=Number(state.sectorProfitToday.mobility)||0;
+  if(!state.tripProfitAccrued||typeof state.tripProfitAccrued!=='object')state.tripProfitAccrued={air:0,sea:0,road:0,power:0,bank:0,mobility:0};
+  for(const t of ['air','sea','road','power','bank','mobility'])state.tripProfitAccrued[t]=Number(state.tripProfitAccrued[t])||0;
   if(!state.tripRevenueAccrued||typeof state.tripRevenueAccrued!=='object')state.tripRevenueAccrued={air:0,sea:0,road:0,power:0,bank:0};
   for(const t of ['air','sea','road','power','bank'])state.tripRevenueAccrued[t]=Number(state.tripRevenueAccrued[t])||0;
   if(!state.tripFuelAccrued||typeof state.tripFuelAccrued!=='object')state.tripFuelAccrued={air:0,sea:0,road:0,power:0,bank:0};

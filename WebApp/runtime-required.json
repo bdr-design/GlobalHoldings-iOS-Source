@@ -59,6 +59,7 @@
     "lifecycle-core.js",
     "map-provider-core.js",
     "market-core.js",
+    "mobility-core.js",
     "migration-core.js",
     "operations-core.js",
     "persistence-core.js",
