@@ -14,6 +14,7 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
     await installMapFixture(page);
     await context.tracing.start({screenshots:true,snapshots:true});
     page.on('pageerror', error => issues.push(`${name}: ${error.message}`));
+    page.on('dialog', dialog => dialog.accept());
     page.on('console', message => {
       if (message.type() === 'error' && !expectedNetworkError(message)) {
         issues.push(`${name}: console ${message.text()}`);
@@ -80,7 +81,7 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
 
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-assets.png'});
   await landscape.page.click('#drawerClose');await openHubChild(landscape.page,'control','procurement');
-  if(!await landscape.page.locator('.manual-buy-asset').count()||await landscape.page.locator('#assetRequestQty').count()||await landscape.page.locator('[data-gh-action="asset-portfolio-build"]').count())issues.push('landscape: manual asset purchase UI is not exclusive');
+  if(!await landscape.page.locator('[data-open="assetMarket"]').count()||await landscape.page.locator('#assetRequestQty').count()||await landscape.page.locator('[data-gh-action="asset-portfolio-build"]').count())issues.push('landscape: manual asset purchase UI is not exclusive');
   await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-ai-assets.png'});
   await landscape.page.click('#drawerClose');await clickVisible(landscape.page,'[data-panel="companies"]');await landscape.page.click('[data-companytab="subs"]');
   if(!await landscape.page.locator('.open-company[data-type="mobility"]').count())issues.push('landscape: GH Mobility company card missing');
