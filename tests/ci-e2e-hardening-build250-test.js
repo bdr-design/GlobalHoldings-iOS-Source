@@ -4,6 +4,8 @@ const browser=fs.readFileSync('tests/browser-qa.js','utf8');
 const html=fs.readFileSync('WebApp/index.html','utf8');
 const project=fs.readFileSync('project.yml','utf8');
 assert(!/\b(mapfile|readarray)\b/.test(workflow),'CI must remain compatible with macOS Bash 3.2');
+assert(!workflow.includes('$GITHUB_WORKSPACE/build'),'macOS case-insensitive filesystems make build collide with the authoritative BUILD file');
+assert(workflow.includes('$GITHUB_WORKSPACE/.ci-output/ci'),'CI output must use the collision-proof .ci-output directory');
 assert(browser.includes("require('./helpers/web-server')")&&browser.includes('server.baseURL'),'Browser QA must own the local server lifecycle');
 assert(workflow.includes("grep -nE '(^|:)[[:space:]]*(fatal )?error:"),'Xcode failure path must surface compiler errors');
 assert(workflow.includes('XCODE_STATUS=${PIPESTATUS[0]}'),'Xcode pipeline must preserve real xcodebuild exit status');
