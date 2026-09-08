@@ -1,6 +1,6 @@
 const fs=require('fs'),path=require('path'),assert=require('assert');
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
-const app=read('WebApp/app.js'),finance=read('WebApp/finance-core.js'),adv=read('WebApp/advanced-core.js'),req=read('WebApp/request-core.js'),closure=read('WebApp/demand-closure-core.js'),schema=require(path.join(root,'WebApp/save-schema.js'));
+const app=read('WebApp/app.js'),finance=read('WebApp/finance-core.js'),adv=read('WebApp/advanced-core.js'),closure=read('WebApp/demand-closure-core.js'),schema=require(path.join(root,'WebApp/save-schema.js'));
 const fn=(name,next)=>{const a=app.indexOf(`function ${name}`),b=next?app.indexOf(`function ${next}`,a+1):-1;assert(a>=0,`missing ${name}`);return app.slice(a,b>a?b:Math.min(app.length,a+9000));};
 
 // Liability settlement belongs to Finance Core; UI delegates through domain commands.
@@ -19,9 +19,7 @@ const base={saveVersion:'2.0.0',saveRevision:1,simSeconds:1,assets:[],market:[],
 assert(schema.validate(base).ok,'valid VAT delta period rejected');base.finance.periods[0].amount=75;assert(!schema.validate(base).ok,'invalid cumulative VAT period accepted');
 
 // AI business decisions are simulation-clock deterministic and authority gated.
-for(const [name,text] of [['advanced',adv],['request',req],['closure',closure]]){const business=text.replace(/createdAt:Date\.now\(\)/g,'');assert(!/Date\.now\(\)/.test(business),`${name} business state uses wall clock`);}
-assert(app.includes('proactiveReview(advCtx,true,null,hour)')&&app.includes('GH_REQUEST_CORE?.tick?.(advCtx)'),'simulation-hour AI owner missing');
-assert(req.includes("if(!['authorized','blocked_funding','blocked_capacity','ordering'].includes(r.status))return false"),'procurement authorization/status gate missing');
-assert(req.includes("plan.status!=='approved'")&&req.includes('plan.masterLetterId!==r.authority.id'),'annual-plan authority validation missing');
-assert(req.includes("transition(ctx,r,'awaiting_authorization','AUTHORITY_INVALIDATED')"),'invalid annual plan must fall back to authorization');
+for(const [name,text] of [['advanced',adv],['closure',closure]]){const business=text.replace(/createdAt:Date\.now\(\)/g,'');assert(!/Date\.now\(\)/.test(business),`${name} business state uses wall clock`);}
+assert(app.includes('proactiveReview(advCtx,true,null,hour)')&&!app.includes('GH_REQUEST_CORE?.tick?.(advCtx)'),'simulation-hour AI owner must not depend on removed request core');
+assert(app.includes('manual-buy-asset')&&app.includes('MANUAL-ASSET'),'manual purchase path missing');
 console.log('Atomic finance + deterministic AI Build242: PASS');

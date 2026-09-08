@@ -1,6 +1,6 @@
 const fs=require('fs'),path=require('path'),assert=require('assert');
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
-const app=read('WebApp/app.js'),adv=read('WebApp/advanced-core.js'),req=read('WebApp/request-core.js'),closure=read('WebApp/demand-closure-core.js'),game=read('WebApp/game-lifecycle-core.js');
+const app=read('WebApp/app.js'),adv=read('WebApp/advanced-core.js'),closure=read('WebApp/demand-closure-core.js'),game=read('WebApp/game-lifecycle-core.js');
 const storage=read('iOS/GlobalHoldings/GlobalGameStorage.swift'),vault=read('iOS/GlobalHoldings/GlobalSaveVault.swift'),gvc=read('iOS/GlobalHoldings/GameViewController.swift');
 const schema=require(path.join(root,'WebApp/save-schema.js'));
 
@@ -24,8 +24,9 @@ assert(!adv.includes('lastBoundContext&&applyUpdateOperations'),'WebApp update e
 // Deterministic AI: no wall-clock business cadence in executive paths.
 const proactive=adv.slice(adv.indexOf('function proactiveReview'),adv.indexOf('function renderAI'));
 assert(!proactive.includes('Date.now')&&!proactive.includes('setInterval'),'executive AI review must be simulation-time only');
-assert(!req.includes('Date.now')&&!closure.includes('Date.now'),'request/demand closure business state must not depend on wall clock');
+assert(!closure.includes('Date.now'),'demand closure business state must not depend on wall clock');
 assert(app.includes('proactiveReview(advCtx,true,null,hour)'),'AI hourly owner must be simulation market-hour boundary');
+assert(!app.includes('GH_REQUEST_CORE'),'removed request core must not be part of the app runtime');
 
 // Scalable trip accounting: no per-trip finance-document explosion.
 assert(!app.includes('فاتورة رحلة ${asset.name}'),'per-trip invoice creation must stay removed');

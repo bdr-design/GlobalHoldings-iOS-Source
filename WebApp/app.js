@@ -513,7 +513,7 @@
   window.GH_CONTROL_PLANE.bootstrap(state,{
     simulation:{version:window.GH_SIMULATION_CORE?.VERSION||APP_VERSION,role:'Single owner of simulation time'},
     finance:{version:APP_VERSION,role:'Accounting and money mutation owner'},
-    procurement:{version:window.GH_REQUEST_CORE?.VERSION||APP_VERSION,role:'Asset request and procurement lifecycle'},
+    procurement:{version:window.GH_PROCUREMENT_CORE?.VERSION||APP_VERSION,role:'Manual asset purchasing and delivery lifecycle'},
     assets:{version:APP_VERSION,role:'Asset lifecycle owner'},routes:{version:APP_VERSION,role:'Route lifecycle owner'},staffing:{version:window.GH_HR_CORE?.VERSION||APP_VERSION,role:'HR demand, recruitment and workforce lifecycle owner'},
     ai:{version:window.GH_ADVANCED?.VERSION||APP_VERSION,role:'Supervised executive planning and diagnostics'},
     save:{version:window.GH_PERSISTENCE?.VERSION||APP_VERSION,role:'Browser persistence coordinated with Native Save Vault'},
@@ -584,7 +584,6 @@
   pruneRouteCache();
   if(window.GH_ADVANCED)window.GH_ADVANCED.migrate(state);
   window.GH_PERSISTENCE?.migrateMetadata?.(state);
-  if(window.GH_REQUEST_CORE)window.GH_REQUEST_CORE.migrate(state);
   if(window.GH_REALISM)window.GH_REALISM.migrate(state);
   if (state.saveVersion !== SAVE_SCHEMA_VERSION) state.saveVersion = SAVE_SCHEMA_VERSION;
   state.customRoutes.forEach(route=>{if(route?.id&&Array.isArray(route.route)){routeTemplates[route.id]=prepareRoute(clone(route));}});
@@ -1138,7 +1137,7 @@
     });
 
     if(filter==='all'||filter==='mobility'){
-      for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,80)||[])){
+      for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,120)||[])){
         const pos=interpolateRoute(vehicle.route,vehicle.progress),bearing=routeBearing(vehicle.route,vehicle.progress),moving=vehicle.phase==='moving';
         const icon=L.divIcon({className:`asset-marker mobility${moving?' is-moving':''}`,html:vehicleVisualHtml('mobility',bearing,null,moving),iconSize:[42,42],iconAnchor:[21,21]});
         const marker=L.marker(pos,{icon,zIndexOffset:680}).addTo(map).bindPopup(`<b>${esc(vehicle.name)}</b><br>${esc(vehicle.from)} ← ${esc(vehicle.to)}<br><span>${moving?'رحلة نشطة':'متاح للطلب'} · بطارية ${Math.round(vehicle.battery)}%</span>`);
@@ -1208,7 +1207,7 @@
     }
     lastMarkerFrameAt=now;
     state.assets.forEach(a=>{const m=ownMarkers.get(a.id);if(m){m.setLatLng(assetPosition(a));refreshVehicleMarker(m,a.type,assetBearing(a),a.phase==='moving');}});
-    for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,80)||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){m.setLatLng(interpolateRoute(vehicle.route,vehicle.progress));refreshVehicleMarker(m,'mobility',routeBearing(vehicle.route,vehicle.progress),vehicle.phase==='moving');}}
+    for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,120)||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){m.setLatLng(interpolateRoute(vehicle.route,vehicle.progress));refreshVehicleMarker(m,'mobility',routeBearing(vehicle.route,vehicle.progress),vehicle.phase==='moving');}}
     competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){m.setLatLng(interpolateRoute(a.route,a.progress));refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
   }
 
@@ -1236,7 +1235,7 @@
     $('profitKpi').classList.toggle('positive',state.todayProfit>=0);
     $('profitKpi').classList.toggle('negative',state.todayProfit<0);
     $('alertCount').textContent=Math.min(99,state.alerts.length);
-    const aiCount=(state.advanced?.ai?.requests||[]).filter(r=>r.status==='بانتظار التفويض').length+(state.advanced?.procurement?.assetRequests||[]).filter(r=>r.status==='awaiting_authorization').length;if($('aiRequestCount'))$('aiRequestCount').textContent=Math.min(99,aiCount);
+    const aiCount=(state.advanced?.ai?.requests||[]).filter(r=>r.status==='بانتظار التفويض').length;if($('aiRequestCount'))$('aiRequestCount').textContent=Math.min(99,aiCount);
     $('simDate').textContent=formatSimDate();
     $('godMoneyToggle').checked=!!state.godMoney;
     $('infiniteToggle').checked=!!state.infiniteMoney;
@@ -1345,7 +1344,7 @@
       state.lastFinancialDay++;financialDaysProcessed++;
       for(const c of state.finance.cheques.filter(c=>c.status==='صادر'&&c.dueDay<=state.lastFinancialDay)){
         const result=settleCheque(c);
-        if(result.settled===true){const linked=window.GH_REQUEST_CORE.paymentCleared(advancedContext(),result);pushAlert(`تم صرف الشيك ${result.id} من حساب ${companyFinanceName(result.company)}.${linked.requestId?` ربط الدفع بالطلب ${linked.requestId}.`:''}`);}
+        if(result.settled===true)pushAlert(`تم صرف الشيك ${result.id} من حساب ${companyFinanceName(result.company)} وتسجيله في الدفتر المالي.`);
         else pushAlert(`ارتجع الشيك ${result.id} لعدم كفاية رصيد أو ميزانية ${companyFinanceName(result.company)}.`);
       }
 
@@ -1399,7 +1398,7 @@
     state.lastMarketHour=hour;
     window.GH_DOMAIN_COMMANDS.dispatch({state},'market','tick-prices',{hour},{actor:'simulation-market'});
     if(window.GH_REALISM)window.GH_REALISM.onHour(state,hour);
-    if(window.GH_ADVANCED){const advCtx=advancedContext();const aiCycle=()=>{window.GH_ADVANCED.onMarketHour(state,hour);if(window.GH_ADVANCED.proactiveReview)window.GH_ADVANCED.proactiveReview(advCtx,true,null,hour);window.GH_REQUEST_CORE?.tick?.(advCtx);window.GH_DEMAND_CLOSURE?.reconcile?.(state);return {hour,requests:state.advanced?.ai?.requests?.length||0};};const cp=window.GH_CONTROL_PLANE;if(cp?.execute)cp.execute(state,{name:'AI_HOURLY_EXECUTIVE_CYCLE',domain:'ai',actor:'GH Intelligence',correlationId:`AI-HOUR-${hour}`},aiCycle,{atomic:false,integrity:true});else aiCycle();}
+    if(window.GH_ADVANCED){const advCtx=advancedContext();const aiCycle=()=>{window.GH_ADVANCED.onMarketHour(state,hour);if(window.GH_ADVANCED.proactiveReview)window.GH_ADVANCED.proactiveReview(advCtx,true,null,hour);window.GH_DEMAND_CLOSURE?.reconcile?.(state);return {hour,requests:state.advanced?.ai?.requests?.length||0};};const cp=window.GH_CONTROL_PLANE;if(cp?.execute)cp.execute(state,{name:'AI_HOURLY_EXECUTIVE_CYCLE',domain:'ai',actor:'GH Intelligence',correlationId:`AI-HOUR-${hour}`},aiCycle,{atomic:false,integrity:true});else aiCycle();}
   }
 
   // ---------------------------------------------------------------------------
@@ -1546,9 +1545,6 @@
               // Delivery cadence is slice-based, not day-based. This keeps procurement responsive under ×1…×4
               // while remaining inside the same atomic transaction as time and asset state.
               if(window.GH_REALISM?.onSimulationTime)window.GH_REALISM.onSimulationTime(state,simMeta.to);
-              // Close delivered procurement requests at the same authoritative timestamp.
-              // Previously this reconciliation waited for the next hour boundary.
-              window.GH_REQUEST_CORE?.onSimulationTime?.(advancedContext());
               window.GH_MOBILITY_CORE?.onSimulationTime?.({state},simMeta.to);
 
               // Boundary work is inside the SAME transaction as assets and time. A failure rolls all of it back.
@@ -1830,7 +1826,7 @@
     try{
       const cleanupKeys=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k?.startsWith('global-holdings-'))cleanupKeys.push(k);}
       await window.GH_GAME_LIFECYCLE.reset(state,defaultState,{storageKey,resetMarkerKey,appVersion:APP_VERSION,checkpoint:previousState,cleanupKeys,prepare:next=>{
-        window.GH_ADVANCED.migrate(next);window.GH_REALISM.migrate(next);window.GH_EVENT_LEDGER.ensure(next);window.GH_DEPENDENCY_CORE.ensure(next);window.GH_DEMAND_CLOSURE.ensure(next);window.GH_REQUEST_CORE.migrate(next);window.GH_FINANCE_CORE.ensure(next);window.GH_DIAGNOSTICS.ensure(next);window.GH_CONTROL_PLANE.bootstrap(next);next.advanced.saveSlots=[null,null,null];
+        window.GH_ADVANCED.migrate(next);window.GH_REALISM.migrate(next);window.GH_EVENT_LEDGER.ensure(next);window.GH_DEPENDENCY_CORE.ensure(next);window.GH_DEMAND_CLOSURE.ensure(next);window.GH_FINANCE_CORE.ensure(next);window.GH_DIAGNOSTICS.ensure(next);window.GH_CONTROL_PLANE.bootstrap(next);next.advanced.saveSlots=[null,null,null];
       }});
       selectedAssetId=null;placingHub=false;resetHubPlacementGesture();
       Object.keys(routeTemplates).forEach(id=>{if(!BASE_ROUTE_IDS.has(id))delete routeTemplates[id];});
@@ -1863,7 +1859,7 @@
 
   function advancedContext(){
     return {state,fmtMoney,fmtNumber,formatDuration,esc,typeName,facilityKind,findFacility,competitors,assetCatalog,WORLD,storageKey,
-    candidates,getDynamicFacilities,strategicPartners,supplierFor,awardConstruction,payNamedSupplier,canSpend,spend,canCompanySpend,spendCompany,companyOperatingBalance,companyTotalBalance,companyBudget,companyBudgetRemaining,transferBetweenCompanies,bulkTransferFromGroup,transferWithinCompany,creditCompany,pushAlert,save,updateKpis,renderMap,openDrawer,buyAsset,issueCheque,createAutomaticRoutes,routeRuntimeSnapshot:()=>clone(routeTemplates),restoreRouteRuntime:snapshot=>{for(const key of Object.keys(routeTemplates))delete routeTemplates[key];Object.assign(routeTemplates,clone(snapshot||{}));},rankRoutesForAsset,assignRoute,ensureCrewForFleet,ensureFacilityWorkforce,ensureCompanyWorkforce,ensureExecutiveWorkforce,ensureAllWorkforce,workforceNeedSnapshot,requiredCrewForFleet,ensureBankCorporateClients,bankLiquidityMetrics,bankReviewCorporateLimits,bankDrawCorporateFacility,bankIssueTradeInstrument,bankCashSweep,hardResetGame,worldEntityByKey,openGlobalBase,openLogisticsHubAI,buildEnergy,openBankBranch,openBranch,expansionSites:expansionSites.map(x=>({...x})),roadHubCandidates:LOCAL_PLACE_AREAS.map(p=>({...p})),appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,runDiagnostics:runFullDiagnostics,exportDiagnostics:exportDiagnosticsFile,exportControlPlane:exportControlPlaneFile,controlPlane:()=>window.GH_CONTROL_PLANE?.ensure?.(state),controlHealth:()=>window.GH_CONTROL_PLANE?.check?.(state),controlTrace:id=>window.GH_CONTROL_PLANE?.trace?.(state,id),clearDiagnostics:()=>window.GH_DIAGNOSTICS.clear(state),diagnostics:()=>state.diagnostics,businessIntegrity:()=>window.GH_INTEGRITY_CORE.check(state),businessLedger:()=>window.GH_EVENT_LEDGER.summary(state),demandClosure:()=>window.GH_DEMAND_CLOSURE.reconcile(state),dependencyGraph:()=>state.dependencyGraph,currentPanel:activeDrawerPanel,currentArg:activeDrawerArg};
+    candidates,getDynamicFacilities,strategicPartners,supplierFor,awardConstruction,payNamedSupplier,canSpend,spend,canCompanySpend,spendCompany,companyOperatingBalance,companyTotalBalance,companyBudget,companyBudgetRemaining,transferBetweenCompanies,bulkTransferFromGroup,transferWithinCompany,creditCompany,pushAlert,save,updateKpis,renderMap,openDrawer,buyAsset,issueCheque,suggestRoutesOnly,routeRuntimeSnapshot:()=>clone(routeTemplates),restoreRouteRuntime:snapshot=>{for(const key of Object.keys(routeTemplates))delete routeTemplates[key];Object.assign(routeTemplates,clone(snapshot||{}));},rankRoutesForAsset,assignRoute,ensureCrewForFleet,ensureFacilityWorkforce,ensureCompanyWorkforce,ensureExecutiveWorkforce,ensureAllWorkforce,workforceNeedSnapshot,requiredCrewForFleet,ensureBankCorporateClients,bankLiquidityMetrics,bankReviewCorporateLimits,bankDrawCorporateFacility,bankIssueTradeInstrument,bankCashSweep,hardResetGame,worldEntityByKey,openGlobalBase,openLogisticsHubAI,buildEnergy,openBankBranch,openBranch,expansionSites:expansionSites.map(x=>({...x})),roadHubCandidates:LOCAL_PLACE_AREAS.map(p=>({...p})),appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,runDiagnostics:runFullDiagnostics,exportDiagnostics:exportDiagnosticsFile,exportControlPlane:exportControlPlaneFile,controlPlane:()=>window.GH_CONTROL_PLANE?.ensure?.(state),controlHealth:()=>window.GH_CONTROL_PLANE?.check?.(state),controlTrace:id=>window.GH_CONTROL_PLANE?.trace?.(state,id),clearDiagnostics:()=>window.GH_DIAGNOSTICS.clear(state),diagnostics:()=>state.diagnostics,businessIntegrity:()=>window.GH_INTEGRITY_CORE.check(state),businessLedger:()=>window.GH_EVENT_LEDGER.summary(state),demandClosure:()=>window.GH_DEMAND_CLOSURE.reconcile(state),dependencyGraph:()=>state.dependencyGraph,currentPanel:activeDrawerPanel,currentArg:activeDrawerArg};
   }
 
   // Native imports arrive after iOS has already validated and atomically
@@ -1909,7 +1905,7 @@
     // stale UI/logic to survive upgrades and made two implementations compete for ownership.
     if(ADVANCED_OWNED_PANELS.has(panel))return '<div class="empty">تعذر تحميل مكوّن الإدارة لهذا القسم. أعد فتح اللعبة بدل تشغيل واجهة قديمة احتياطية.</div>';
     if(panel==='control')return renderControl(); if(panel==='market')return renderMarket();
-    if(panel==='contracts')return renderContracts(); if(panel==='assets')return renderAssetMarket(arg);
+    if(panel==='contracts')return renderContracts(); if(panel==='assets'||panel==='assetMarket')return renderAssetMarket(arg);
     if(panel==='expansion')return renderExpansion(); if(panel==='finance')return renderFinance(); if(panel==='invoices')return renderInvoices(arg);
     if(panel==='competitors')return renderCompetitors(); if(panel==='assetManage')return renderAssetManage(arg); if(panel==='assignRoute')return renderAssignRoute(arg); if(panel==='ports')return renderPorts();
     if(panel==='network')return renderWorldNetwork(); if(panel==='routes')return renderRouteCenter(); if(panel==='globalRoute')return renderGlobalRoute(arg);
@@ -1928,11 +1924,11 @@
   function renderControl(){
     const card=(panel,code,title,copy)=>`<button class="command-btn" data-open="${panel}"><span>${code}</span><div><b>${title}</b><small>${copy}</small></div></button>`;
     const activeDeliveries=(state.realism?.procurement?.deliveries||[]).filter(d=>d.status!=='delivered').length;
-    const openAssetRequests=(state.advanced?.procurement?.assetRequests||[]).length;
+    const openAssetRequests=(state.realism?.procurement?.deliveries||[]).filter(d=>d.status!=='delivered').length;
     return `<div class="workspace-intro operations-intro"><span>OPERATIONS DOMAIN · 2.6</span><b>من الطلب إلى الحركة الفعلية: شبكة → منشأة → أصل → جاهزية → مسار → عقد → تنفيذ. HR والمال والحوكمة تبقى مجالات مستقلة.</b></div>
-      <div class="metric-row"><div><span>الأصول</span><b>${state.assets.length}</b></div><div><span>طلبات مفتوحة</span><b>${openAssetRequests}</b></div><div><span>توريدات جارية</span><b>${activeDeliveries}</b></div></div>
+      <div class="metric-row"><div><span>الأصول</span><b>${state.assets.length}</b></div><div><span>قيد الوصول</span><b>${openAssetRequests}</b></div><div><span>توريدات جارية</span><b>${activeDeliveries}</b></div></div>
       <div class="section-heading"><h3>الشبكة والبنية التحتية</h3><p>حدد أين تعمل المجموعة قبل إضافة القدرة.</p></div><div class="command-grid grouped workspace-card-grid">${card('network','WORLD','الدليل العالمي',`${fmtNumber(WORLD.meta.airportCount)} مطار · ${fmtNumber(WORLD.meta.portCount)} ميناء`)}${card('expansion','HUB','القواعد والمراكز','افتتاح · سعة · إدارة · جاهزية')}${card('globalRoute','NET','الشبكة الجوية والبحرية','وجهات · مدى · تشغيل عالمي')}${card('routes','ROAD','الشبكة البرية','طرق · نقاط تسليم · هامش')}</div>
-      <div class="section-heading"><h3>القدرة والأصول</h3><p>اقتناء الأصل لا يساوي جاهزيته؛ التسليم والفحص والطاقم مراحل مستقلة.</p></div><div class="command-grid grouped workspace-card-grid">${card('procurement','REQ','اقتناء الأصول','احتياج · AI · اعتماد · شراء · تسليم')}${card('assets','FLT','إدارة الأساطيل','ملكية · حالة · صيانة · تعيين · بيع')}</div>
+      <div class="section-heading"><h3>القدرة والأصول</h3><p>الشراء يدوي بالكامل: اختر الأصل والكمية والقاعدة ثم راقب التسليم. AI يقترح فقط.</p></div><div class="command-grid grouped workspace-card-grid">${card('procurement','BUY','الشراء اليدوي','اختيار أصل · كمية · قاعدة · تسليم')}${card('assets','FLT','إدارة الأساطيل','ملكية · حالة · صيانة · تعيين · بيع')}</div>
       <div class="section-heading"><h3>التجارة والتنفيذ</h3><p>حول القدرة المتاحة إلى التزام تجاري وتشغيل قابل للقياس.</p></div><div class="command-grid grouped workspace-card-grid">${card('contracts','COM','العقود والعملاء','مناقصات · SLA · تنفيذ · فوترة')}</div>
       <article class="list-item domain-crosslink"><div><b>تحتاج موظفين أو طواقم؟</b><small>إدارة HR مستقلة عن التشغيل حتى لا يصبح التوظيف أثرًا جانبيًا لشراء أصل.</small></div><button class="secondary-btn" data-open="peopleHub">فتح HR والأفراد</button></article>`;
   }
@@ -1996,10 +1992,10 @@
     const list = items.map(a=>`<article class="list-item sector-${activeType} asset-market-card"><div class="asset-thumb"><img src="${a.photo}" alt="${esc(a.name)}" loading="lazy"><span class="thumb-tag">${activeTab==='new'?'جديد':`مستعمل ${a.condition}%`}</span></div><div class="list-item-head"><div><h3>${a.icon} ${esc(a.name)}</h3><p>${esc(a.segment)} · ${esc(a.description)}</p></div><span class="tag">★ ${a.rating}</span></div><div class="spec-grid">${specRow(a)}</div>
       <div class="ownership-grid"><div><span>التسليم</span><b>${a.delivery}</b></div><div><span>الضمان</span><b>${a.warranty}</b></div><div><span>قيمة بعد 5 سنوات</span><b>${a.residual5y}%</b></div><div><span>الانبعاثات</span><b>${a.specs.co2Band}</b></div></div>
       <div class="asset-price">${a.priceOriginal?`<s>${fmtMoney(a.priceOriginal)}</s> `:''}<b>${fmtMoney(a.price)}</b><small>تأجير ${fmtMoney(a.leaseMonthly)}/شهر · دفعة تمويل ${Math.round(a.downPayment*100)}%</small></div>
-      <div class="asset-request-routing"><div><span>سياسة الاقتناء</span><b>الطلب والتمويل والاعتماد مركزية</b><small>${hasDeliveryBase?'تتوفر منشآت تسليم متوافقة. أنشئ الطلب من مركز طلبات الأصول ليقوم AI بالدراسة ومنع التكرار ومتابعة الإغلاق.':'لا توجد منشأة تسليم مملوكة متوافقة بعد. سيمنع مركز الطلبات إنشاء طلب غير قابل للتسليم.'}</small></div><div class="action-row"><button class="primary-btn" data-open="procurement">فتح مركز طلبات الأصول</button><button class="secondary-btn compare-asset ${marketCompare.includes(a.id)?'active':''}" data-id="${a.id}">${marketCompare.includes(a.id)?'إزالة من المقارنة':'قارن'}</button></div></div></article>`).join('');
+      <div class="asset-request-routing"><div><span>شراء يدوي مباشر</span><b>أنت تختار الأصل والعدد والقاعدة وطريقة التملك</b><small>${hasDeliveryBase?'لا توجد دراسة أو موافقة AI ولا إنشاء تلقائي لمسار أو طاقم.':'افتح منشأة تسليم متوافقة أولًا؛ لن يسمح النظام بشراء أصل بلا وجهة وصول صحيحة.'}</small></div>${hasDeliveryBase?`<div class="route-builder manual-asset-purchase"><label>قاعدة التسليم<select class="manual-asset-base">${bases.map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('')}</select></label><label>العدد<input class="manual-asset-qty" type="number" min="1" max="50" value="1"></label><label>التملك<select class="manual-asset-mode"><option value="cash">شراء نقدي</option><option value="finance">تمويل</option><option value="lease">تأجير تشغيلي</option></select></label></div>`:''}<div class="action-row"><button class="primary-btn manual-buy-asset" data-type="${activeType}" data-tab="${activeTab}" data-id="${a.id}" ${hasDeliveryBase?'':'disabled'}>شراء يدوي</button><button class="secondary-btn compare-asset ${marketCompare.includes(a.id)?'active':''}" data-id="${a.id}">${marketCompare.includes(a.id)?'إزالة من المقارنة':'قارن'}</button></div></div></article>`).join('');
     const ownedCount=state.assets.filter(a=>a.type===activeType).length,pendingSale=state.assets.filter(a=>a.type===activeType&&a.salePending).length;
     const fleetSale=`<article class="list-item fleet-sale-bar"><div><b>إدارة أصول ${typeName(activeType)}</b><small>${ownedCount} أصل مملوك · ${pendingSale} أمر بيع قيد العودة</small></div><button class="danger-soft sell-all-assets" data-type="${activeType}" ${ownedCount?'':'disabled'}>بيع جميع أصول القطاع</button></article>`;
-    return `${typeTabs}${condTabs}${filterBar}${fleetSale}<div class="section-mini">اختر القاعدة والكمية وطريقة التملك. الأصل يصل متوقفًا ويحتاج مسارًا تشغيليًا متوافقًا.</div>${assetComparePanel(source)}${list||'<div class="empty">لا توجد أصول متاحة بهذا الفلتر.</div>'}`;
+    return `${typeTabs}${condTabs}${filterBar}${fleetSale}<div class="section-mini">الشراء يدوي بالكامل. بعد الوصول عيّن المسار والطاقم يدويًا، ثم استخدم زر تحريك جميع الأصول الجاهزة.</div>${assetComparePanel(source)}${list||'<div class="empty">لا توجد أصول متاحة بهذا الفلتر.</div>'}`;
   }
   function renderAssetMarket(arg){
     if(typeof arg==='string' && assetCatalog[arg]) marketFilterType=arg;
@@ -2043,11 +2039,23 @@
   function renderRouteCenter(){
     dedupeCustomRoutes();
     const points=roadFacilityOptions(),allRoads=operationalRoutes('road'),seen=new Set(),roads=allRoads.filter(r=>{const sig=routePairSignature(r);if(seen.has(sig))return false;seen.add(sig);return true;});
-    const assigned=state.assets.filter(a=>a.type==='road'&&a.routeId).length,idle=state.assets.filter(a=>a.type==='road'&&!a.routeId).length,idleAll=state.assets.filter(a=>!a.routeId).length,ready=state.assets.filter(a=>a.type==='road'&&a.phase==='turnaround').length;
+    const assigned=state.assets.filter(a=>a.routeId).length,idle=state.assets.filter(a=>!a.routeId).length,ready=state.assets.filter(a=>a.routeId&&a.phase==='turnaround').length,suggestions=Array.isArray(state.advanced?.routeSuggestions)?state.advanced.routeSuggestions:[];
     const options=points.map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('');
-    return `<div class="list"><article class="list-item"><div class="list-item-head"><div><h3>مركز المسارات والشبكة</h3><p>GH AI ينشئ شبكة متنوعة حسب الربحية، تغطية الوجهات، استخدام الخطوط وحالة الأصل. المسار المكرر لا يُنشأ مرتين؛ الأصول تشترك في الخط نفسه عند الحاجة.</p></div><span class="tag positive">NETWORK AI 2.0</span></div><div class="metric-row"><div><span>مسارات فريدة</span><b>${roads.length}</b></div><div><span>طرق فعلية</span><b>${roads.filter(r=>r.routingSource).length}</b></div><div><span>قواعد برية</span><b>${points.length}</b></div></div><div class="metric-row"><div><span>شاحنات بلا مسار</span><b>${idle}</b></div><div><span>شاحنات مكلّفة</span><b>${assigned}</b></div><div><span>جاهزة للمغادرة</span><b>${ready}</b></div></div><div class="action-row"><button class="primary-btn auto-create-routes" ${idleAll?'':'disabled'}>إنشاء شبكة AI جديدة</button><button class="secondary-btn depart-all-road" ${ready?'':'disabled'}>مغادرة جميع الشاحنات الجاهزة</button></div></article>
-      <article class="list-item"><h3>إنشاء مسار جديد</h3><p>أنشئ مسارًا يدويًا بين قواعد مملوكة، أو دع AI يضيف نقاط تسليم عامة متنوعة دون اعتبارها قواعد شراء.</p>${points.length?`<div class="route-builder"><label>نقطة الانطلاق<select id="roadFrom">${options}</select></label><label>الوجهة<select id="roadTo">${[...points].reverse().map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('')}</select></label></div><div class="action-row"><button class="primary-btn start-road-route">إنشاء من الخريطة</button>${points.length>=2?'<button class="secondary-btn build-road-route">بين قاعدتين</button>':''}<button class="secondary-btn place-logistics">إضافة مركز</button></div>`:'<div class="empty">افتح مركزًا لوجستيًا أولًا ليكون نقطة الانطلاق.</div>'}</article>
+    return `<div class="list"><article class="list-item"><div class="list-item-head"><div><h3>مركز المسارات اليدوي</h3><p>أنت تنشئ المسارات وتعيّن كل أصل. GH AI يحلل المسارات الموجودة ويعرض اقتراحات فقط؛ لا ينشئ ولا يعيّن ولا يحرّك أي أصل.</p></div><span class="tag positive">MANUAL CONTROL</span></div><div class="metric-row"><div><span>الأصول بلا مسار</span><b>${idle}</b></div><div><span>الأصول المكلّفة</span><b>${assigned}</b></div><div><span>جاهزة للمغادرة</span><b>${ready}</b></div></div><div class="action-row"><button class="secondary-btn suggest-routes" ${state.assets.length?'':'disabled'}>اقتراح AI فقط</button><button class="primary-btn depart-all-assets" ${ready?'':'disabled'}>تحريك جميع الأصول الجاهزة</button></div></article>
+      ${suggestions.length?`<article class="list-item"><h3>اقتراحات AI غير المنفذة</h3><p>لا يتغير أي أصل حتى تفتح تعيينه وتختار بنفسك.</p>${suggestions.slice(0,30).map(x=>`<div class="spec-row"><span>${esc(x.assetName)} · ${esc(x.from)} ← ${esc(x.to)}</span><button class="secondary-btn" data-open="assignRoute" data-arg="${esc(x.assetId)}">تعيين يدوي</button></div>`).join('')}</article>`:''}
+      <article class="list-item"><h3>إنشاء مسار بري يدوي</h3><p>اختر نقطتي التشغيل بنفسك. لا يضيف AI وجهات أو قواعد أو مسارات تلقائيًا.</p>${points.length?`<div class="route-builder"><label>نقطة الانطلاق<select id="roadFrom">${options}</select></label><label>الوجهة<select id="roadTo">${[...points].reverse().map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('')}</select></label></div><div class="action-row"><button class="primary-btn start-road-route">إنشاء من الخريطة</button>${points.length>=2?'<button class="secondary-btn build-road-route">بين قاعدتين</button>':''}<button class="secondary-btn place-logistics">إضافة مركز</button></div>`:'<div class="empty">افتح مركزًا لوجستيًا أولًا ليكون نقطة الانطلاق.</div>'}</article>
       <div class="section-mini">المسارات التشغيلية الفريدة</div>${roads.map(r=>{const count=state.assets.filter(a=>a.routeId===r.id).length,turn=state.assets.filter(a=>a.routeId===r.id&&a.phase==='turnaround').length;return `<article class="list-item sector-road"><div class="list-item-head"><div><h3>${esc(r.name)}</h3><p>${esc(r.from)} → ${esc(r.to)}</p></div><span class="tag ${r.routingSource?'positive':''}">${count} شاحنة</span></div><div class="metric-row"><div><span>المسافة</span><b>${fmtNumber(r.distanceKm)} كم</b></div><div><span>زمن الرحلة</span><b>${formatDuration(r.tripSeconds)}</b></div><div><span>جاهزة الآن</span><b>${turn}</b></div></div><div class="action-row"><button class="secondary-btn depart-route" data-route="${r.id}" ${turn?'':'disabled'}>مغادرة كل شاحنات الخط</button></div><p>${r.routingSource||'سيُستبدل تلقائيًا بهندسة طريق فعلية عند توفر الاتصال.'}</p></article>`}).join('')}</div>`;
+  }
+
+  function suggestRoutesOnly(type=null){
+    const suggestions=[];
+    for(const asset of state.assets.filter(a=>!type||a.type===type)){
+      const best=rankRoutesForAsset(asset.id)[0];
+      if(best)suggestions.push({assetId:asset.id,assetName:asset.name,type:asset.type,routeId:best.routeId,from:best.from,to:best.to,score:Math.round(best.score),margin:best.margin,createdAt:state.simSeconds||0});
+    }
+    state.advanced=state.advanced||{};state.advanced.routeSuggestions=suggestions;save();
+    pushAlert(suggestions.length?`اقترح AI ${suggestions.length} تعيينًا دون إنشاء أو تنفيذ أي مسار. افتح كل أصل واعتمد اختياره يدويًا.`:'لا توجد مسارات يدوية متوافقة ليقترحها AI. أنشئ المسارات أولًا.');
+    openDrawer('routes');return suggestions;
   }
 
   async function createRoadRouteFromForm(){const fromId=$('roadFrom')?.value,toId=$('roadTo')?.value;if(!fromId||!toId||fromId===toId){notice('اختر نقطتي تشغيل مختلفتين.');return;}const from=routeFacility(fromId),to=routeFacility(toId);if(!from||!to)return;const button=document.querySelector('.build-road-route');if(button){button.disabled=true;button.textContent='جاري حساب الطريق…';}const geometry=await requestRoadGeometry(from.coords,to.coords);if(!geometry){notice('لم يجد محرك الطرق اتصالًا بريًا صالحًا بين النقطتين. اختر نقطتين متصلتين بالطرق.');openDrawer('routes');return;}const id=nextId('ROAD-CUSTOM'),durationHours=Math.max(.25,geometry.durationSeconds/3600),fromName=roadLocationName(from),toName=roadLocationName(to),route=prepareRoute({id,type:'road',name:`${fromName} → ${toName}`,from:fromName,to:toName,fromFacility:from.id,toFacility:to.id,route:geometry.route,effectiveSpeedKmh:clamp(geometry.distanceKm/durationHours,42,82),dwellHours:2.5,routingSource:'OSRM · شبكة طرق فعلية'});try{window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','create',{route:clone(route)},{actor:'route-planner'});window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','cache-geometry',{id,route:route.route,distanceKm:route.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'route-planner'});routeTemplates[id]=route;pushAlert(`أُنشئ مسار بري فعلي من ${route.from} إلى ${route.to} بطول ${fmtNumber(route.distanceKm)} كم.`);save();renderMap();openDrawer('routes');}catch(error){notice(`تعذر إنشاء المسار: ${error.message}`);}}
@@ -2187,7 +2195,9 @@
     document.querySelectorAll('.place-global-base').forEach(b=>b.addEventListener('click',startBasePlacement));
     document.querySelectorAll('.build-road-route').forEach(b=>b.addEventListener('click',createRoadRouteFromForm));
     document.querySelectorAll('.start-road-route').forEach(b=>b.addEventListener('click',startRoadRoutePlacement));
-    document.querySelectorAll('.auto-create-routes').forEach(b=>b.addEventListener('click',createAutomaticRoutes));
+    document.querySelectorAll('.suggest-routes').forEach(b=>b.addEventListener('click',()=>suggestRoutesOnly()));
+    document.querySelectorAll('.depart-all-assets').forEach(b=>b.addEventListener('click',()=>{departRouteAssets(null,null);openDrawer('routes');}));
+    document.querySelectorAll('.manual-buy-asset').forEach(b=>b.addEventListener('click',()=>manualPurchaseFromCard(b)));
     document.querySelectorAll('[data-assign]').forEach(b=>b.addEventListener('click',()=>openDrawer('assignRoute',b.dataset.assign)));
     document.querySelectorAll('.choose-global-destination').forEach(b=>b.addEventListener('click',()=>{globalRouteQuery='';openDrawer('globalRoute',{assetId:b.dataset.asset});}));
     document.querySelectorAll('.create-global-route').forEach(b=>b.addEventListener('click',()=>createGlobalRoute(b.dataset.asset,b.dataset.key)));
@@ -2195,7 +2205,6 @@
     document.querySelectorAll('.service-asset').forEach(b=>b.addEventListener('click',()=>serviceAsset(b.dataset.id)));
     document.querySelectorAll('.depart-now').forEach(b=>b.addEventListener('click',()=>departNow(b.dataset.id)));
     document.querySelectorAll('.depart-route').forEach(b=>b.addEventListener('click',()=>{departRouteAssets(b.dataset.route,'road');openDrawer('routes');}));
-    document.querySelectorAll('.depart-all-road').forEach(b=>b.addEventListener('click',()=>{departRouteAssets(null,'road');openDrawer('routes');}));
     document.querySelectorAll('.sell-asset').forEach(b=>b.addEventListener('click',()=>sellAsset(b.dataset.id)));
     document.querySelectorAll('.sell-all-assets').forEach(b=>b.addEventListener('click',()=>sellAllAssets(b.dataset.type)));
     document.querySelectorAll('.reset-save').forEach(b=>b.addEventListener('click',async()=>{await hardResetGame();}));
@@ -2325,6 +2334,14 @@
   function payTaxes(company='group'){company=COMPANY_FINANCE_TYPES.includes(company)?company:'group';try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','pay-taxes',{company},{actor:'finance-ui'}).result;if(!result.amount){pushAlert(`لا توجد فترة ضريبية مستحقة على ${companyFinanceName(company)}.`);return;}pushAlert(`تم سداد ضريبة ${companyFinanceName(company)} بقيمة ${fmtMoney(result.amount)} عن ${result.count} فترة.`);save();openDrawer('finance');}catch(error){notice(`تعذر سداد الضريبة: ${error.message}`);}}
 
   function viewInvoices(company='all'){openDrawer('invoices',{company,tab:'all'});}
+  function manualPurchaseFromCard(button){
+    const card=button?.closest?.('.asset-market-card'),type=button?.dataset?.type,tab=button?.dataset?.tab,id=button?.dataset?.id;
+    const baseId=card?.querySelector('.manual-asset-base')?.value,qty=card?.querySelector('.manual-asset-qty')?.value,mode=card?.querySelector('.manual-asset-mode')?.value||'cash';
+    if(!type||!id||!baseId){notice('اختر أصلًا وقاعدة تسليم متوافقة.');return null;}
+    button.disabled=true;const orderId=buyAsset(type,tab,id,mode,qty,baseId,false,true,nextId('MANUAL-ASSET'));
+    if(!orderId){button.disabled=false;notice('لم يُنفذ الشراء ولم يحدث أي خصم. راجع الرصيد والمورد والسعة.');return null;}
+    pushAlert(`سُجل أمر الشراء اليدوي ${orderId}. لم ينشئ AI أصلًا أو مسارًا أو قرارًا نيابةً عنك.`);save();updateKpis();openDrawer('assetMarket',type);return orderId;
+  }
   function buyAsset(type,tab,id,mode='cash',qty=1,baseId=null,alreadyPaid=false,silent=false,requestRef=null){
     const item=catalogItem(type,id);if(!item){if(!silent)notice('تعذر تنفيذ الشراء؛ هذا الأصل لم يعد متاحًا في الكتالوج.');return null;}qty=clamp(Math.floor(Number(qty)||1),1,50);baseId=baseId||item.base;
     const base=findFacility(baseId);if(!base){if(!silent)notice('تعذر تنفيذ الشراء: قاعدة التسليم غير موجودة.');return null;}
@@ -2337,10 +2354,10 @@
     try{
       const tx=window.GH_TRANSACTION_CORE,out=(tx.isActive()?tx.join:tx.execute)(state,{label:'asset-purchase',apply:()=>{
       const paymentMethod=mode==='cash'?'شيك مصدق':mode==='finance'?'تحويل دفعة مقدمة':'تحويل إيجار تشغيلي';
-      const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'procurement','purchase-assets',{type,tab,item,mode,qty,base,supplier:assetSupplier,prepaid:Boolean(alreadyPaid),requestRef,upfront,totalPrice,paymentMethod,documentLeadDays,leadSeconds,companyName:companyFinanceName(type)},{actor:requestRef?'request-center':'asset-purchase'}).result;
+      const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'procurement','purchase-assets',{type,tab,item,mode,qty,base,supplier:assetSupplier,prepaid:Boolean(alreadyPaid),manual:Boolean(requestRef&&String(requestRef).startsWith('MANUAL-')),requestRef,upfront,totalPrice,paymentMethod,documentLeadDays,leadSeconds,companyName:companyFinanceName(type)},{actor:'asset-purchase'}).result;
       if(!result?.orderId||Number(result.count)!==qty)throw new Error('Procurement Core لم ينشئ عقد التسليم كاملًا.');
       pushAlert(`تم اعتماد ${qty} × ${item.name} من ${assetSupplier?.legalName||assetSupplier?.name||'المورد المختار'}. عقد المورد يسجل Lead Time قدره ${documentLeadDays} يومًا، ونافذة الاستلام التشغيلية داخل اللعبة ${formatDuration(leadSeconds)}؛ لن يدخل الأصل الأسطول قبل وصوله فعليًا إلى ${base.name}.`);
-      save();tx.afterCommit(()=>{updateKpis();if(!silent)openDrawer('procurement');});return result.orderId;
+      save();tx.afterCommit(()=>{updateKpis();if(!silent)openDrawer('assetMarket',type);});return result.orderId;
       }});return out.value;
     }catch(error){
       console.error('فشل معاملة شراء الأصل',error);if(!silent)notice('أُلغي الشراء بالكامل ولم يعتمد أي خصم أو تسليم بسبب فشل المعاملة الوقائية.');return null;
