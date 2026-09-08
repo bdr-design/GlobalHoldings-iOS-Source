@@ -31,8 +31,8 @@ const {scenario}=require('./helpers/business-scenario');
 {
   const app=fs.readFileSync('WebApp/app.js','utf8'),adv=fs.readFileSync('WebApp/advanced-core.js','utf8'),required=JSON.parse(fs.readFileSync('WebApp/runtime-required.json','utf8'));
   assert(app.includes('fallbackRoadGeometry')&&app.includes('options.deterministic'));
-  assert(adv.includes('createAutomaticRoutes(execution.assetIds,{deterministic:true})'));
-  assert(app.includes("if(activateAutomaticRoute(asset,existing))")&&app.includes("if(activateAutomaticRoute(asset,route))"));
+  assert(adv.includes('createAutomaticRoutes(execution.assetIds,{deterministic:true,silent:true,retries:2})'));
+  assert(app.includes('const activation=activateAutomaticRoute(asset,existing)')&&app.includes('const activation=activateAutomaticRoute(asset,route)'));
   assert(required.files.includes('mobility-core.js'));
 }
 

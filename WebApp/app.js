@@ -1134,6 +1134,15 @@
       marker.on('click',()=>showAsset(asset.id)); ownMarkers.set(asset.id,marker);
     });
 
+    if(filter==='all'||filter==='mobility'){
+      for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,80)||[])){
+        const pos=interpolateRoute(vehicle.route,vehicle.progress),bearing=routeBearing(vehicle.route,vehicle.progress),moving=vehicle.phase==='moving';
+        const icon=L.divIcon({className:`asset-marker mobility${moving?' is-moving':''}`,html:vehicleVisualHtml('road',bearing,VEHICLE_MARKER_PHOTOS.road,moving),iconSize:[42,42],iconAnchor:[21,21]});
+        const marker=L.marker(pos,{icon,zIndexOffset:680}).addTo(map).bindPopup(`<b>${esc(vehicle.name)}</b><br>${esc(vehicle.from)} ← ${esc(vehicle.to)}<br><span>${moving?'رحلة نشطة':'متاح للطلب'} · بطارية ${Math.round(vehicle.battery)}%</span>`);
+        marker.on('click',()=>openDrawer('companyManage',{type:'mobility',tab:'operations'}));ownMarkers.set(`mobility:${vehicle.id}`,marker);
+      }
+    }
+
     if(['all','facility','airport','port'].includes(filter)){
       const staticFacilityIds=new Set(facilities.map(f=>f.id));
       const assetBaseIds=new Set(state.assets.map(a=>a.baseFacility).filter(Boolean));
@@ -1178,11 +1187,12 @@
   function updateMapStatus(){
     if(placingHub)return;
     if(['airport','port'].includes(state.activeFilter))return;
-    const moving=state.assets.filter(a=>a.phase==='moving').length;
+    const mobility=window.GH_MOBILITY_CORE?.snapshot?.(state)||{moving:0,vehicles:0};
+    const moving=state.assets.filter(a=>a.phase==='moving').length+mobility.moving;
     const idle=state.assets.filter(a=>a.phase==='idle').length;
     const turn=state.assets.filter(a=>a.phase==='turnaround').length;
     const routed=operationalRoutes('road').filter(r=>r.routingSource).length;
-    $('mapStatus').textContent=`${moving} متحرك · ${turn} في محطة · ${idle} متوقف · ${state.assets.length} أصل · ${routed} مسار بري فعلي`;
+    $('mapStatus').textContent=`${moving} متحرك · ${turn} في محطة · ${idle} متوقف · ${state.assets.length+mobility.vehicles} أصل · ${routed} مسار بري فعلي`;
   }
 
   function updateMarkerPositions(force=false){
@@ -1195,6 +1205,7 @@
     }
     lastMarkerFrameAt=now;
     state.assets.forEach(a=>{const m=ownMarkers.get(a.id);if(m){m.setLatLng(assetPosition(a));refreshVehicleMarker(m,a.type,assetBearing(a),a.phase==='moving');}});
+    for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,80)||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){m.setLatLng(interpolateRoute(vehicle.route,vehicle.progress));refreshVehicleMarker(m,'road',routeBearing(vehicle.route,vehicle.progress),vehicle.phase==='moving');}}
     competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){m.setLatLng(interpolateRoute(a.route,a.progress));refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
   }
 
@@ -2038,16 +2049,20 @@
 
   async function createRoadRouteFromForm(){const fromId=$('roadFrom')?.value,toId=$('roadTo')?.value;if(!fromId||!toId||fromId===toId){notice('اختر نقطتي تشغيل مختلفتين.');return;}const from=routeFacility(fromId),to=routeFacility(toId);if(!from||!to)return;const button=document.querySelector('.build-road-route');if(button){button.disabled=true;button.textContent='جاري حساب الطريق…';}const geometry=await requestRoadGeometry(from.coords,to.coords);if(!geometry){notice('لم يجد محرك الطرق اتصالًا بريًا صالحًا بين النقطتين. اختر نقطتين متصلتين بالطرق.');openDrawer('routes');return;}const id=nextId('ROAD-CUSTOM'),durationHours=Math.max(.25,geometry.durationSeconds/3600),fromName=roadLocationName(from),toName=roadLocationName(to),route=prepareRoute({id,type:'road',name:`${fromName} → ${toName}`,from:fromName,to:toName,fromFacility:from.id,toFacility:to.id,route:geometry.route,effectiveSpeedKmh:clamp(geometry.distanceKm/durationHours,42,82),dwellHours:2.5,routingSource:'OSRM · شبكة طرق فعلية'});try{window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','create',{route:clone(route)},{actor:'route-planner'});window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','cache-geometry',{id,route:route.route,distanceKm:route.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'route-planner'});routeTemplates[id]=route;pushAlert(`أُنشئ مسار بري فعلي من ${route.from} إلى ${route.to} بطول ${fmtNumber(route.distanceKm)} كم.`);save();renderMap();openDrawer('routes');}catch(error){notice(`تعذر إنشاء المسار: ${error.message}`);}}
   function activateAutomaticRoute(asset,route){
-    return runBusinessOperation('activateAutomaticRoute',()=>{try{if(!state.customRoutes.some(r=>r.id===route.id))window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','create',{route:clone(route)},{actor:'ai-route'});routeTemplates[route.id]=route;window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','assign-route',{id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',route},{actor:'ai-route'});window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id:asset.id,route,load:loadLabel(asset)},{actor:'ai-route'});normalizeAsset(asset);return true;}catch(error){console.warn('automatic route activation rejected',error);return false;}
-    });
+    asset=state.assets.find(x=>x.id===asset.id)||asset;
+    if(asset.phase==='moving'&&asset.routeId)return {ok:true,reused:true};
+    const tx=window.GH_TRANSACTION_CORE;
+    try{const result=tx.execute(state,{label:`activate-route:${asset.id}`,apply:()=>{if(!state.customRoutes.some(r=>r.id===route.id))window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','create',{route:clone(route)},{actor:'ai-route'});if(asset.routeId!==route.id||asset.phase!=='turnaround')window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','assign-route',{id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',route},{actor:'ai-route'});window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id:asset.id,route,load:loadLabel(asset)},{actor:'ai-route'});normalizeAsset(asset);delete asset.activationError;asset.activatedAt=state.simSeconds||0;return true;}});routeTemplates[route.id]=route;return {ok:result.value===true,reused:asset.routeId===route.id};}
+    catch(error){const live=state.assets.find(x=>x.id===asset.id)||asset;live.activationError=String(error.message||error);live.activationAttempts=(Number(live.activationAttempts)||0)+1;console.warn('automatic route activation rejected',live.id,error);return {ok:false,error:live.activationError};}
   }
   async function createAutomaticRoutes(assetIds=null,options={}){
     dedupeCustomRoutes();
     const wanted=Array.isArray(assetIds)?new Set(assetIds):null;
-    const idle=state.assets.filter(a=>!a.routeId&&['air','sea','road'].includes(a.type)&&(!wanted||wanted.has(a.id)));let created=0,skipped=0,lastRoadRequest=0;
+    const idle=state.assets.filter(a=>a.phase!=='moving'&&['air','sea','road'].includes(a.type)&&(!wanted||wanted.has(a.id)));let created=0,skipped=0,lastRoadRequest=0;const failures=[];
     const routeUsage=new Map();state.assets.forEach(a=>{const r=routeTemplates[a.routeId];if(r)routeUsage.set(routePairSignature(r),(routeUsage.get(routePairSignature(r))||0)+1);});
     for(let assetIndex=0;assetIndex<idle.length;assetIndex++){
-      const asset=idle[assetIndex],origin=routeOriginForAsset(asset);if(!origin){skipped++;continue;}
+      const asset=idle[assetIndex],origin=routeOriginForAsset(asset);if(!origin){asset.activationError='missing-owned-origin';failures.push({id:asset.id,reason:asset.activationError});skipped++;continue;}
+      const assigned=asset.routeId&&(routeTemplates[asset.routeId]||state.customRoutes.find(r=>r.id===asset.routeId));if(assigned){const activation=activateAutomaticRoute(asset,assigned);if(activation.ok){created++;continue;}const live=state.assets.find(x=>x.id===asset.id);if(live){live.routeId=null;live.phase='idle';}}
       if(asset.type==='road'){
         const owned=roadFacilityOptions().filter(f=>f.id!==origin.id);
         const publicCandidates=(LOCAL_PLACE_AREAS||[]).filter(p=>Array.isArray(p.coords)&&haversine(origin.coords,p.coords)>18&&haversine(origin.coords,p.coords)<1250).map(p=>ensureRoadPublicEndpoint(p));
@@ -2056,19 +2071,19 @@
         for(const candidate of candidates.slice(0,Math.min(8,candidates.length))){if(!routeUsage.has(candidate.sig)||candidate.usage===Math.min(...candidates.map(x=>x.usage))){selected=candidate;break;}}
         selected=selected||candidates[0];if(!selected){skipped++;continue;}
         const existing=operationalRoutes('road').find(r=>routePairSignature(r)===selected.sig);
-        if(existing){if(activateAutomaticRoute(asset,existing)){routeUsage.set(selected.sig,(routeUsage.get(selected.sig)||0)+1);created++;}else skipped++;continue;}
+        if(existing){const activation=activateAutomaticRoute(asset,existing);if(activation.ok){routeUsage.set(selected.sig,(routeUsage.get(selected.sig)||0)+1);created++;}else{failures.push({id:asset.id,reason:activation.error});skipped++;}continue;}
         let geometry=null;if(options.deterministic)geometry=fallbackRoadGeometry(origin.coords,selected.f.coords);else{const wait=Math.max(0,450-(Date.now()-lastRoadRequest));if(wait)await new Promise(resolve=>setTimeout(resolve,wait));lastRoadRequest=Date.now();geometry=await requestRoadGeometry(origin.coords,selected.f.coords)||fallbackRoadGeometry(origin.coords,selected.f.coords);}if(!geometry){skipped++;continue;}
         const route=prepareRoute({id:nextId('ROAD-AUTO'),type:'road',name:`${roadLocationName(origin)} → ${roadLocationName(selected.f)}`,from:roadLocationName(origin),to:roadLocationName(selected.f),fromFacility:origin.id,toFacility:selected.f.id,route:geometry.route,effectiveSpeedKmh:clamp(geometry.distanceKm/Math.max(.25,geometry.durationSeconds/3600),42,82),dwellHours:2.5,routingSource:geometry.fallback?'GH AI Network · مسار حتمي احتياطي':'GH AI Network · OSRM · تنويع ربحي'});
         const eco=computeTripEconomics(asset,route);route.aiScore=Math.round((eco.margin||0)+(eco.margin/Math.max(1,eco.revenue))*250000-(selected.usage*150000));route.aiMargin=eco.margin;route.aiMarginPct=eco.margin/Math.max(1,eco.revenue);
-        if(!geometry.fallback)window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','cache-geometry',{id:route.id,route:route.route,distanceKm:route.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'ai-route'});if(activateAutomaticRoute(asset,route)){routeUsage.set(selected.sig,(routeUsage.get(selected.sig)||0)+1);created++;}else skipped++;continue;
+        if(!geometry.fallback)window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','cache-geometry',{id:route.id,route:route.route,distanceKm:route.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'ai-route'});{const activation=activateAutomaticRoute(asset,route);if(activation.ok){routeUsage.set(selected.sig,(routeUsage.get(selected.sig)||0)+1);created++;}else{failures.push({id:asset.id,reason:activation.error});skipped++;}}continue;
       }
       const kind=asset.type==='air'?'airport':'port',range=assetRangeKm(asset),rawWorld=kind==='airport'?WORLD.airports:WORLD.ports,step=Math.max(1,Math.floor(rawWorld.length/220));
       const globalCandidates=rawWorld.filter((_,i)=>i%step===0).map(row=>kind==='airport'?airportEntity(row):portEntity(row)).filter(entity=>entity?.name).map(entity=>({...entity,id:entity.key}));
       const candidates=[...facilities.filter(f=>f.kind===kind),...globalCandidates].filter((f,i,list)=>f.id!==origin.id&&list.findIndex(x=>x.id===f.id)===i).map(f=>{const distance=haversine(origin.coords,f.coords),sig=endpointPairSignature(asset.type,origin,f),usage=routeUsage.get(sig)||0;return{...f,distance,sig,usage};}).filter(f=>!range||f.distance<=range*.88).sort((a,b)=>a.usage-b.usage||Math.abs(a.distance-range*.52)-Math.abs(b.distance-range*.52));
-      const target=candidates[0];if(!target){skipped++;continue;}const existing=Object.values(routeTemplates).find(r=>r.type===asset.type&&routePairSignature(r)===target.sig);if(existing){if(activateAutomaticRoute(asset,existing)){routeUsage.set(target.sig,target.usage+1);created++;}else skipped++;continue;}
-      const endpoint=ensurePublicRouteEndpoint({...target,key:`auto:${target.id}`}),route=buildPublicRoute(asset,origin,endpoint);if(!route||!routeFitsAsset(asset,route)){skipped++;continue;}route.id=nextId(`${asset.type.toUpperCase()}-AUTO`);route.name=`GH AI · ${route.name}`;const eco=computeTripEconomics(asset,route);route.aiScore=Math.round((eco.margin||0)+(eco.margin/Math.max(1,eco.revenue))*250000-target.usage*200000);route.aiMargin=eco.margin;route.aiMarginPct=eco.margin/Math.max(1,eco.revenue);if(activateAutomaticRoute(asset,route)){routeUsage.set(target.sig,target.usage+1);created++;}else skipped++;
+      const target=candidates[0];if(!target){asset.activationError='no-compatible-destination';failures.push({id:asset.id,reason:asset.activationError});skipped++;continue;}const existing=Object.values(routeTemplates).find(r=>r.type===asset.type&&routePairSignature(r)===target.sig);if(existing){const activation=activateAutomaticRoute(asset,existing);if(activation.ok){routeUsage.set(target.sig,target.usage+1);created++;}else{failures.push({id:asset.id,reason:activation.error});skipped++;}continue;}
+      const endpoint=ensurePublicRouteEndpoint({...target,key:`auto:${target.id}`}),route=buildPublicRoute(asset,origin,endpoint);if(!route||!routeFitsAsset(asset,route)){asset.activationError='route-outside-asset-envelope';failures.push({id:asset.id,reason:asset.activationError});skipped++;continue;}route.id=nextId(`${asset.type.toUpperCase()}-AUTO`);route.name=`GH AI · ${route.name}`;const eco=computeTripEconomics(asset,route);route.aiScore=Math.round((eco.margin||0)+(eco.margin/Math.max(1,eco.revenue))*250000-target.usage*200000);route.aiMargin=eco.margin;route.aiMarginPct=eco.margin/Math.max(1,eco.revenue);{const activation=activateAutomaticRoute(asset,route);if(activation.ok){routeUsage.set(target.sig,target.usage+1);created++;}else{failures.push({id:asset.id,reason:activation.error});skipped++;}}
     }
-    dedupeCustomRoutes();save();renderMap();pushAlert(created?`GH AI أنشأ/وزع ${created} أصلًا على شبكة متنوعة مع منع تكرار نفس الخط وتفضيل الخطوط الأقل ازدحامًا والأعلى جدوى.`:`لم يُنشأ مسار تلقائي. راجع القواعد والمدى واتصال الطرق.`);openDrawer('routes');
+    dedupeCustomRoutes();save();renderMap();if(!options.silent){pushAlert(created?`GH AI شغّل ${created} أصلًا على شبكة متنوعة${failures.length?`، وبقي ${failures.length} في إعادة المحاولة`:''}.`:`لم يُنشأ مسار تلقائي. راجع القواعد والمدى واتصال الطرق.`);openDrawer('routes');}return {expected:idle.length,activated:created,skipped,failures,moving:wanted?state.assets.filter(a=>wanted.has(a.id)&&a.phase==='moving').length:state.assets.filter(a=>a.phase==='moving').length};
   }
 
 

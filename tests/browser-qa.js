@@ -85,6 +85,8 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   await landscape.page.click('#drawerClose');await clickVisible(landscape.page,'[data-panel="companies"]');await landscape.page.click('[data-companytab="subs"]');
   if(!await landscape.page.locator('.open-company[data-type="mobility"]').count())issues.push('landscape: GH Mobility company card missing');
   else{await landscape.page.click('.open-company[data-type="mobility"]');await landscape.page.click('[data-open="companyManage"][data-arg="mobility"]');await landscape.page.click('[data-company-manage-tab="operations"]');if(!await landscape.page.locator('[data-gh-action="mobility-launch"]').count())issues.push('landscape: GH Mobility launch control missing');else{await landscape.page.click('[data-gh-action="mobility-launch"]');const mobility=await landscape.page.evaluate(()=>GH_MOBILITY_CORE.snapshot(__GH_STATE__));if(mobility.status!=='active'||mobility.vehicles!==80||mobility.drivers<108)issues.push(`landscape: GH Mobility launch incomplete ${JSON.stringify(mobility)}`);}}
+  const mobilityEvidence=await landscape.page.evaluate(()=>({snapshot:GH_MOBILITY_CORE.snapshot(__GH_STATE__),live:GH_MOBILITY_CORE.liveVehicles(__GH_STATE__).filter(x=>x.phase==='moving').length,mapMarkers:document.querySelectorAll('.asset-marker.mobility').length}));
+  if(mobilityEvidence.snapshot.status==='active'&&(!mobilityEvidence.live||!mobilityEvidence.mapMarkers))issues.push(`landscape: GH Mobility is not connected to live map ${JSON.stringify(mobilityEvidence)}`);
   await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-mobility.png'});
   await landscape.context.tracing.stop({path:'tests/screenshots/navigation-landscape-trace.zip'});await landscape.context.close();
 
