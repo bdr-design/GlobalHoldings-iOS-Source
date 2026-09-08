@@ -2,7 +2,7 @@
   --bg:#061018;--bg-deep:#030a10;--surface:#0b1823;--surface-2:#102331;--surface-3:#142a39;
   --line:#203a49;--line-soft:rgba(124,166,184,.17);--text:#eef7f8;--muted:#8fa6b0;--faint:#617882;
   --teal:#25d7bd;--teal-2:#0fa68f;--teal-soft:rgba(37,215,189,.12);--blue:#5ea7ff;
-  --gold:#d9b46c;--danger:#ff746e;--good:#45d59e;--air:#6cb7ff;--sea:#32d4c2;--road:#efa766;
+  --gold:#d9b46c;--danger:#ff746e;--good:#45d59e;--air:#6cb7ff;--sea:#32d4c2;--road:#efa766;--mobility:#45d59e;
   --shadow:0 20px 55px rgba(0,0,0,.36);--radius:18px;--radius-sm:12px;
   --font:-apple-system,BlinkMacSystemFont,"SF Arabic","Segoe UI",Tahoma,Arial,sans-serif;
 }
@@ -174,9 +174,13 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke
 .vehicle-photo{display:none}.vehicle-heading{display:none}
 .vehicle-sprite{position:absolute;left:3px;top:3px;width:40px;height:40px;min-width:40px;min-height:40px;max-width:40px;max-height:40px;display:block;overflow:visible;transform-origin:50% 50%;transition:transform .42s linear;z-index:2}
 .vehicle-sprite img{box-sizing:border-box;display:block;width:40px!important;height:40px!important;min-width:40px!important;min-height:40px!important;max-width:40px!important;max-height:40px!important;object-fit:contain;filter:none;pointer-events:none}
-.vehicle-pin.air .vehicle-sprite{transform:scale(.90)}.vehicle-pin.sea .vehicle-sprite{transform:scale(.96)}.vehicle-pin.road .vehicle-sprite{transform:scale(.82)}.vehicle-pin.competitor .vehicle-sprite{filter:hue-rotate(135deg) saturate(.62)}
+.vehicle-pin.air .vehicle-sprite{transform:scale(.90)}.vehicle-pin.sea .vehicle-sprite{transform:scale(.96)}.vehicle-pin.road .vehicle-sprite{transform:scale(.82)}.vehicle-pin.mobility .vehicle-sprite{transform:scale(.86)}.vehicle-pin.competitor .vehicle-sprite{filter:hue-rotate(135deg) saturate(.62)}
+.vehicle-car-glyph{display:block;width:100%;height:100%}
+.vehicle-car-glyph svg{display:block;width:40px;height:40px;pointer-events:none}
+.vehicle-car-glyph svg rect,.vehicle-car-glyph svg circle{fill:var(--mobility);stroke:#061118;stroke-width:1.1}
+.vehicle-car-glyph svg rect.vehicle-car-window{fill:#061118;stroke:none}
 .vehicle-beacon{position:absolute;z-index:3;top:7px;right:8px;width:9px;height:9px;border-radius:50%;background:#7b8b91;border:2px solid #061118;box-shadow:0 0 0 2px rgba(2,11,16,.72)}
-.vehicle-pin.air .vehicle-beacon{background:var(--air)}.vehicle-pin.sea .vehicle-beacon{background:var(--sea)}.vehicle-pin.road .vehicle-beacon{background:var(--road)}
+.vehicle-pin.air .vehicle-beacon{background:var(--air)}.vehicle-pin.sea .vehicle-beacon{background:var(--sea)}.vehicle-pin.road .vehicle-beacon{background:var(--road)}.vehicle-pin.mobility .vehicle-beacon{background:var(--mobility)}
 .vehicle-pin.is-live .vehicle-photo{animation:vehiclePulse 1.7s ease-in-out infinite}.vehicle-pin.is-live .vehicle-beacon{box-shadow:0 0 0 2px rgba(2,11,16,.72),0 0 12px currentColor}
 @keyframes vehiclePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.055)}}
 

@@ -128,7 +128,17 @@
   }
   function updateRating(state){const r=migrate(state),s=r.financial.consolidated||{},ebitda=Number(s.ebitda)||0,enterprise=Math.max(1,Number(state.groupValue)||Number(s.assets)||1),lev=ebitda>1000000?(Number(state.debt)||0)/ebitda:(Number(state.debt)||0)/enterprise*2,liq=(Number(state.cash)||0)/Math.max(1,Number(state.debt)||1),operatingAdj=(Number(s.revenue)||0)<1000000?0:(s.net>0?5:-8),score=clamp(72-lev*7+Math.min(12,liq*5)+operatingAdj-r.risk.register.length*2,32,95);r.rating.score=Math.round(score);r.rating.grade=score>=82?'A':score>=74?'A-':score>=66?'BBB+':score>=58?'BBB':score>=50?'BBB-':score>=42?'BB+':'BB';r.rating.outlook=r.risk.register.some(x=>x.severity==='high')?'Negative':s.net>0?'Stable':'Negative';globalThis.GH_CORPORATE_CORE?.execute?.({state},'set-credit-rating',{grade:r.rating.grade});}
   function updateInsurance(state){
-    const r=migrate(state),condition=(state.assets||[]).length?(state.assets||[]).reduce((n,a)=>n+(Number(a.condition)||100),0)/(state.assets||[]).length:100,incidents=(state.advanced?.safety?.incidents||0),claims=(state.advanced?.insurance?.claims||[]),openClaims=claims.filter(c=>!['مدفوع','مغلق','مرفوض'].includes(c.status)).length,paid=claims.filter(c=>c.status==='مدفوع').reduce((n,c)=>n+(Number(c.paid)||0),0),reserve=claims.reduce((n,c)=>n+(Number(c.reserve)||0),0);
+    const r=migrate(state),condition=(state.assets||[]).length?(state.assets||[]).reduce((n,a)=>n+(Number(a.condition)||100),0)/(state.assets||[]).length:100,incidents=(state.advanced?.safety?.incidents||0),claims=(state.advanced?.insurance?.claims||[]);
+    // تسوية المطالبات: بعد فترة فحص محاكاة (3 أيام) تُصرف المطالبة فعليًا عبر الخزينة بدل ما تبقى معلقة "قيد الفحص" للأبد.
+    const REVIEW_SECONDS=3*86400,nowSec=Math.max(0,Number(state.simSeconds)||0);
+    for(const c of claims){
+      if(c.status==='قيد الفحص'&&nowSec-Number(c.openedAt||0)>=REVIEW_SECONDS){
+        const amount=Math.max(0,Number(c.covered)||0);
+        if(amount>0)globalThis.GH_FINANCE_CORE?.execute?.({state},'credit',{company:c.sector,amount,note:`تعويض مطالبة تأمين ${c.id}`,method:'تحويل شركة تأمين',taxable:false,counterparty:'شركة إعادة التأمين'});
+        c.status='مدفوعة';c.paid=amount;c.paidAt=nowSec;
+      }
+    }
+    const openClaims=claims.filter(c=>!['مدفوعة','مغلقة','مرفوضة'].includes(c.status)).length,paid=claims.filter(c=>c.status==='مدفوعة').reduce((n,c)=>n+(Number(c.paid)||0),0),reserve=claims.reduce((n,c)=>n+(Number(c.reserve)||0),0);
     r.insurance.claimsTrend=clamp((100-condition)*.12+incidents*1.4+openClaims*.8,0,35);r.insurance.renewalIndex=clamp(92+r.insurance.claimsTrend*2+(r.risk.register.length*1.5)+(reserve?paid/Math.max(1,reserve)*12:0),75,190);
   }
   function supplierScores(state){const r=migrate(state);for(const tx of (state.supplierTransactions||[])){const id=tx.supplierId||tx.supplier||'unknown';const x=r.procurement.supplierScores[id]||(r.procurement.supplierScores[id]={name:tx.supplier||id,spend:0,transactions:0,score:82});x.spend+=Number(tx.amount)||0;x.transactions++;x.score=clamp(88-rand(`${id}:${x.transactions}`,0,10),60,98);}}
