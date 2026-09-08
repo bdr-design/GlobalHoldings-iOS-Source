@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
   const VERSION='2.9.1';
-  const COMPANY_TYPES=['group','air','sea','road','power','bank'];
+  const COMPANY_TYPES=['group','air','sea','road','power','bank','mobility'];
   const issue=(id,severity,title,detail,domain='business',evidence={})=>({id,severity,title,detail,domain,evidence});
   const finite=v=>Number.isFinite(Number(v));
   function duplicates(rows,key){const seen=new Set(),dups=[];for(const row of rows||[]){const v=String(row?.[key]??'').trim();if(!v)continue;if(seen.has(v))dups.push(v);else seen.add(v);}return [...new Set(dups)];}
