@@ -379,6 +379,7 @@
     {id:'road',icon:'🚛',name:'اللوجستيات العالمية',sector:'نقل بري ومستودعات',base:'الرياض / دبي'},
     {id:'power',icon:'⚡',name:'الطاقة العالمية',sector:'توليد وبيع الطاقة',base:'الرياض'},
     {id:'bank',icon:'🏦',name:'بنك المجموعة',sector:'خدمات شركات وتمويل',base:'دبي'}
+    ,{id:'mobility',icon:'🚕',name:'GH Mobility للتنقل الذكي',sector:'رحلات حسب الطلب ومنصة شركاء قيادة',base:'الرياض'}
   ];
 
   const contracts = [
@@ -466,7 +467,7 @@
     saveVersion:SAVE_SCHEMA_VERSION,saveRevision:0,onboardingComplete:false,
     profile:{name:'المجموعة العالمية القابضة',shortName:'GH',founder:'المؤسس',englishName:'Global Holdings Group',country:'السعودية',city:'الرياض',firstSector:'air',mode:'balanced',legalForm:'شركة قابضة مساهمة مقفلة',currency:'USD',fiscalYear:'calendar',riskAppetite:'balanced',procurementPolicy:'competitive',signingAuthority:'board',reputation:12,creditRating:'BBB',logo:null,logoStyle:'teal'},
     cash:250000000,debt:84000000,groupValue:412000000,todayProfit:0,
-    sectorProfitToday:{air:0,sea:0,road:0,power:0,bank:0},
+    sectorProfitToday:{air:0,sea:0,road:0,power:0,bank:0,mobility:0},
     speed:1,simSeconds:0,lastFinancialDay:0,lastMarketHour:0,
     godMoney:false,infiniteMoney:false,showCompetitors:true,activeFilter:'all',
     assets:[],unlockedSectors:[],openedCompanies:[],ownedCompanies:[],stakes:{},maDeals:{},hired:[],acceptedContracts:[],contractStartDays:{},failedBids:[],
@@ -530,7 +531,7 @@
   const diag=(type,detail={})=>window.GH_DIAGNOSTICS.record(state,type,detail);
   const nonCritical=(stage,error)=>{diag('NONCRITICAL_ERROR',{stage,message:String(error?.message||error)});console.warn(`[${stage}]`,error);};
   window.GH_MIGRATION_CORE.completeBusinessState(state,{defaultState,initialStocks,crewRolesSeed});
-  const COMPANY_FINANCE_TYPES=['group','air','sea','road','power','bank'];
+  const COMPANY_FINANCE_TYPES=['group','air','sea','road','power','bank','mobility'];
   const companyFinanceName=type=>{if(type==='group')return state.profile.name;const record=state.companyRegistry?.[type];return record?.legalName||typeName(type);};
   function makeCompanyBook(type,balance=0){return window.GH_FINANCE_CORE.makeBook?window.GH_FINANCE_CORE.makeBook(state,type,balance):null;}
   function ensureCompanyFinance(){return window.GH_FINANCE_CORE?.ensure?.(state);}
@@ -554,7 +555,7 @@
   function companyLedger(type,entry){const b=companyBook(type);b.ledger.unshift(entry);}
   function transferBetweenCompanies(from,to,amount,note='تحويل داخلي بين شركات المجموعة'){const out=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','transfer',{from,to,amount,note},{actor:'finance'});return out.ok&&out.result?.transferred===true;}
   function bulkTransferFromGroup(rows,note='توزيع رأسمالي جماعي من الشركة القابضة'){
-    const opened=new Set((state.openedCompanies||[]).filter(t=>['air','sea','road','power','bank'].includes(t)));
+    const opened=new Set((state.openedCompanies||[]).filter(t=>['air','sea','road','power','bank','mobility'].includes(t)));
     const clean=(Array.isArray(rows)?rows:[]).map(x=>({company:String(x.company||''),amount:Math.round((Number(x.amount)||0)*100)/100})).filter(x=>opened.has(x.company)&&x.amount>0);
     if(!clean.length)return {ok:false,reason:'لم تحدد أي مبالغ للشركات.'};
     try{const out=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','bulk-transfer',{rows:clean,note},{actor:'finance-ui'});return {ok:true,...(out.result||{})};}catch(error){return {ok:false,reason:error.message||'تعذر التحويل الجماعي.'};}
@@ -785,7 +786,7 @@
     const key=facilityKindKey(f.kind);
     return `<div class="marker-core facility-real ${key}">${FACILITY_SVG[key]}</div>`;
   }
-  function typeName(type){ return ({air:'طيران',sea:'شحن بحري',road:'نقل بري',power:'طاقة',bank:'خدمات مالية'})[type]||'قطاع متنوع'; }
+  function typeName(type){ return ({air:'طيران',sea:'شحن بحري',road:'نقل بري',power:'طاقة',bank:'خدمات مالية',mobility:'تنقل ذكي حسب الطلب'})[type]||'قطاع متنوع'; }
 
   // ---- محرك اقتصاد الرحلة: كل رقم مالي مشتق فعليًا من مواصفات الأصل والمسار والطاقم ----
   function computeTripEconomics(asset, tpl){
@@ -827,6 +828,12 @@
     const result=await window.GH_MAP_PROVIDER.road(fromCoords,toCoords);
     if(!result.ok){diag('MAP_PROVIDER_DEGRADED',{status:result.status,reason:result.reason},'warning');return null;}
     return result.geometry;
+  }
+  function fallbackRoadGeometry(fromCoords,toCoords){
+    if(!Array.isArray(fromCoords)||!Array.isArray(toCoords))return null;
+    const route=greatCircle(fromCoords,toCoords,Math.max(3,Math.min(18,Math.ceil(haversine(fromCoords,toCoords)/90))));
+    const distanceKm=haversine(fromCoords,toCoords)*1.18,effectiveSpeedKmh=62;
+    return {route,distanceKm,durationSeconds:distanceKm/effectiveSpeedKmh*3600,fallback:true};
   }
   function applyRoadGeometry(routeId,geometry,saveCache=true){
     const tpl=routeTemplates[routeId];if(!tpl||!geometry?.route)return;
@@ -1334,20 +1341,20 @@
       // not three financial documents per individual trip. Cash has already moved
       // atomically with the trips; these documents record that cash movement once.
       for(const type of ['air','sea','road']){const count=Math.max(0,Number(tripCount[type])||0),revenue=Math.max(0,Number(tripRevenue[type])||0),fuel=Math.max(0,Number(tripFuel[type])||0),maint=Math.max(0,Number(tripMaintenance[type])||0);if(revenue>0)postInvoice('دخل',revenue,`تسوية رحلات يومية ${typeName(type)} · ${count} رحلة`,'تسوية تشغيل يومية',true,'مدفوعة',type,'مركز تسوية العملاء');if(fuel>0)postInvoice('مصروف',fuel,`وقود رحلات يومية ${typeName(type)} · ${count} رحلة`,'تسوية مورد وقود يومية',true,'مدفوعة',type,'موردو الوقود المعتمدون');if(maint>0)postInvoice('مصروف',maint,`مخصص صيانة رحلات يومية ${typeName(type)} · ${count} رحلة`,'مخصص صيانة يومي',false,'مدفوعة',type,'مراكز الصيانة المعتمدة');}
-      const sectorContractRevenue={air:0,sea:0,road:0,power:0,bank:0},sectorContractCost={air:0,sea:0,road:0,power:0,bank:0};
+      const sectorContractRevenue={air:0,sea:0,road:0,power:0,bank:0,mobility:0},sectorContractCost={air:0,sea:0,road:0,power:0,bank:0,mobility:0};
       const contractTerms={};for(const id of (state.acceptedContracts||[])){const c=contracts.find(x=>x.id===id);if(!c)continue;contractTerms[id]=Math.max(1,Number(c.termMonths)||1)*30;sectorContractRevenue[c.sector]=(sectorContractRevenue[c.sector]||0)+c.value/(c.termMonths*30);sectorContractCost[c.sector]=(sectorContractCost[c.sector]||0)+c.cost/(c.termMonths*30);}const expiredContracts=window.GH_DOMAIN_COMMANDS.dispatch({state},'contracts','tick-day',{day:state.lastFinancialDay,terms:contractTerms},{actor:'simulation'}).result?.expired||[];for(const id of expiredContracts){const c=contracts.find(x=>x.id===id);if(c)pushAlert(`اكتمل عقد ${c.name} وانتهت مدته التشغيلية بعد ${c.termMonths} شهرًا.`);}
-      const crewBySector={air:crewSectorPayroll('air'),sea:crewSectorPayroll('sea'),road:crewSectorPayroll('road'),power:0,bank:0}; // daily-rate basis; cash payroll settles on day 27 of each 30-day simulation month
-      const leaseBySector={air:0,sea:0,road:0,power:0,bank:0};state.assets.forEach(a=>{if(a.ownership==='lease')leaseBySector[a.type]=(leaseBySector[a.type]||0)+(a.monthlyLease||0)/30;});
-      const baseBySector={air:0,sea:0,road:0,power:0,bank:0},facilityIncomeBySector={air:0,sea:0,road:0,power:0,bank:0},facilityStaffBySector={air:0,sea:0,road:0,power:0,bank:0};
+      const crewBySector={air:crewSectorPayroll('air'),sea:crewSectorPayroll('sea'),road:crewSectorPayroll('road'),power:0,bank:0,mobility:0}; // daily-rate basis; cash payroll settles on day 27 of each 30-day simulation month
+      const leaseBySector={air:0,sea:0,road:0,power:0,bank:0,mobility:0};state.assets.forEach(a=>{if(a.ownership==='lease')leaseBySector[a.type]=(leaseBySector[a.type]||0)+(a.monthlyLease||0)/30;});
+      const baseBySector={air:0,sea:0,road:0,power:0,bank:0,mobility:0},facilityIncomeBySector={air:0,sea:0,road:0,power:0,bank:0,mobility:0},facilityStaffBySector={air:0,sea:0,road:0,power:0,bank:0,mobility:0};
       getDynamicFacilities().filter(f=>f.owned).forEach(f=>{const sector=['airport','airport-base'].includes(f.kind)?'air':['port','port-base'].includes(f.kind)?'sea':['logistics','depot'].includes(f.kind)?'road':f.kind==='power'?'power':f.kind==='bank'?'bank':null;if(sector){baseBySector[sector]+=(f.dailyCost||0);const m=state.advanced?.facilities?.[f.id];if(m){facilityIncomeBySector[sector]+=(Number(m.expectedRevenue)||0)/365;facilityStaffBySector[sector]+=(Number(m.staff)||0)*48+(Number(m.level)||0)*900;}}});
       const eco=window.GH_ECONOMICS_CORE?.sectorEconomics?.(state)||{power:32000,bank:26000,detail:{}};const ed=eco.detail||{};
-      const operatingRevenue={air:sectorContractRevenue.air+facilityIncomeBySector.air,sea:sectorContractRevenue.sea+facilityIncomeBySector.sea,road:sectorContractRevenue.road+facilityIncomeBySector.road,power:sectorContractRevenue.power+facilityIncomeBySector.power+Math.max(0,Number(ed.powerRevenue)||0),bank:sectorContractRevenue.bank+facilityIncomeBySector.bank+Math.max(0,Number(ed.bankRevenue)||0)};
-      const operatingExpense={air:sectorContractCost.air+baseBySector.air+facilityStaffBySector.air+leaseBySector.air,sea:sectorContractCost.sea+baseBySector.sea+facilityStaffBySector.sea+leaseBySector.sea,road:sectorContractCost.road+baseBySector.road+facilityStaffBySector.road+leaseBySector.road,power:sectorContractCost.power+baseBySector.power+facilityStaffBySector.power+Math.max(0,Number(ed.powerExpense)||0),bank:sectorContractCost.bank+baseBySector.bank+facilityStaffBySector.bank+Math.max(0,Number(ed.bankExpense)||0)};
-      const daily={air:operatingRevenue.air-operatingExpense.air,sea:operatingRevenue.sea-operatingExpense.sea,road:operatingRevenue.road-operatingExpense.road,power:operatingRevenue.power-operatingExpense.power,bank:operatingRevenue.bank-operatingExpense.bank};
+      const operatingRevenue={air:sectorContractRevenue.air+facilityIncomeBySector.air,sea:sectorContractRevenue.sea+facilityIncomeBySector.sea,road:sectorContractRevenue.road+facilityIncomeBySector.road,power:sectorContractRevenue.power+facilityIncomeBySector.power+Math.max(0,Number(ed.powerRevenue)||0),bank:sectorContractRevenue.bank+facilityIncomeBySector.bank+Math.max(0,Number(ed.bankRevenue)||0),mobility:0};
+      const operatingExpense={air:sectorContractCost.air+baseBySector.air+facilityStaffBySector.air+leaseBySector.air,sea:sectorContractCost.sea+baseBySector.sea+facilityStaffBySector.sea+leaseBySector.sea,road:sectorContractCost.road+baseBySector.road+facilityStaffBySector.road+leaseBySector.road,power:sectorContractCost.power+baseBySector.power+facilityStaffBySector.power+Math.max(0,Number(ed.powerExpense)||0),bank:sectorContractCost.bank+baseBySector.bank+facilityStaffBySector.bank+Math.max(0,Number(ed.bankExpense)||0),mobility:0};
+      const daily={air:operatingRevenue.air-operatingExpense.air,sea:operatingRevenue.sea-operatingExpense.sea,road:operatingRevenue.road-operatingExpense.road,power:operatingRevenue.power-operatingExpense.power,bank:operatingRevenue.bank-operatingExpense.bank,mobility:0};
       for(const type of ['air','sea','road','power','bank']){
         const revenue=Math.max(0,Number(operatingRevenue[type])||0),expense=Math.max(0,Number(operatingExpense[type])||0);if(revenue>0)window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','credit',{company:type,amount:revenue,note:`إيراد يومي ${typeName(type)} · عقود/منشآت`,method:'قيد تشغيلي يومي',taxable:false,counterparty:'مركز التسوية التشغيلي'},{actor:'financial-close'});if(expense>0){const available=companyOperatingBalance(type),paid=Math.min(available,expense);if(paid>0)spendCompany(type,paid,`مصروف يومي ${typeName(type)} · عقود/منشآت/إيجارات`,'قيد تشغيلي يومي',false);if(paid<expense){const due=expense-paid,number=`${type.toUpperCase()}-ACC-${state.lastFinancialDay}`;postAccruedExpense(type,due,'مصروف تشغيلي مستحق مرحّل من الإقفال اليومي','قيد مستحق',state.lastFinancialDay+7,number,'مصروف تشغيلي');}}
       }
-      const closedSectorProfit={air:(tripProfit.air||0)+daily.air,sea:(tripProfit.sea||0)+daily.sea,road:(tripProfit.road||0)+daily.road,power:(tripProfit.power||0)+daily.power,bank:(tripProfit.bank||0)+daily.bank};
+      const closedSectorProfit={air:(tripProfit.air||0)+daily.air,sea:(tripProfit.sea||0)+daily.sea,road:(tripProfit.road||0)+daily.road,power:(tripProfit.power||0)+daily.power,bank:(tripProfit.bank||0)+daily.bank,mobility:(tripProfit.mobility||0)};
       const executiveAnnualPayroll=state.hired.reduce((sum,id)=>sum+(candidates.find(c=>c.id===id)?.salary||0),0),executiveDailyAccrual=executiveAnnualPayroll/365,overhead=42500+state.assets.length*80,advancedCost=window.GH_ADVANCED?window.GH_ADVANCED.onFinancialDay(state,state.lastFinancialDay):0,realismCost=window.GH_REALISM?window.GH_REALISM.onDay(state,state.lastFinancialDay):0,groupCost=overhead+advancedCost+realismCost;
       if(groupCost>0){const paid=Math.min(companyOperatingBalance('group'),groupCost);if(paid>0)spendCompany('group',paid,'إقفال يومي الشركة القابضة · إدارة وامتثال','قيد يومي',false);if(paid<groupCost){const due=groupCost-paid,number=`GH-ACC-${state.lastFinancialDay}`;postAccruedExpense('group',due,'عجز الشركة القابضة المرحّل','قيد مستحق',state.lastFinancialDay+7,number,'مصروفات إدارية وتشغيلية');}}
       reconcileConsolidatedCash();const net=Object.values(closedSectorProfit).reduce((a,b)=>a+(Number(b)||0),0)-groupCost;window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','record-daily-close',{sectors:closedSectorProfit,net},{actor:'financial-close'});window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','adjust-group-value',{delta:net*.03},{actor:'financial-close'});runOperationsCycle(net);
@@ -1459,7 +1466,7 @@
   const SIMULATION_TRANSACTION_SCOPE=Object.freeze([
     'simSeconds','assets','simulationWorld','todayProfit','groupValue','sectorProfitToday',
     'tripProfitAccrued','tripRevenueAccrued','tripFuelAccrued','tripMaintenanceAccrued','tripCountAccrued','companyFinance','finance','treasury','cash','debt',
-    'alerts','eventLog','sequences','simulationKernel','realism','leasedAssets'
+    'alerts','eventLog','sequences','simulationKernel','realism','mobility','advanced','businessLedger','dependencyGraph','controlPlane','leasedAssets'
   ]);
 
   function createSimulationSliceJob(sliceSeconds,meta={}){
@@ -1525,6 +1532,10 @@
               // Delivery cadence is slice-based, not day-based. This keeps procurement responsive under ×1…×4
               // while remaining inside the same atomic transaction as time and asset state.
               if(window.GH_REALISM?.onSimulationTime)window.GH_REALISM.onSimulationTime(state,simMeta.to);
+              // Close delivered procurement requests at the same authoritative timestamp.
+              // Previously this reconciliation waited for the next hour boundary.
+              window.GH_REQUEST_CORE?.onSimulationTime?.(advancedContext());
+              window.GH_MOBILITY_CORE?.onSimulationTime?.({state},simMeta.to);
 
               // Boundary work is inside the SAME transaction as assets and time. A failure rolls all of it back.
               // Midnight closes the financial day first, then the hourly market/AI checkpoint at the same timestamp.
@@ -2030,7 +2041,7 @@
     return runBusinessOperation('activateAutomaticRoute',()=>{try{if(!state.customRoutes.some(r=>r.id===route.id))window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','create',{route:clone(route)},{actor:'ai-route'});routeTemplates[route.id]=route;window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','assign-route',{id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',route},{actor:'ai-route'});window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id:asset.id,route,load:loadLabel(asset)},{actor:'ai-route'});normalizeAsset(asset);return true;}catch(error){console.warn('automatic route activation rejected',error);return false;}
     });
   }
-  async function createAutomaticRoutes(assetIds=null){
+  async function createAutomaticRoutes(assetIds=null,options={}){
     dedupeCustomRoutes();
     const wanted=Array.isArray(assetIds)?new Set(assetIds):null;
     const idle=state.assets.filter(a=>!a.routeId&&['air','sea','road'].includes(a.type)&&(!wanted||wanted.has(a.id)));let created=0,skipped=0,lastRoadRequest=0;
@@ -2046,17 +2057,16 @@
         selected=selected||candidates[0];if(!selected){skipped++;continue;}
         const existing=operationalRoutes('road').find(r=>routePairSignature(r)===selected.sig);
         if(existing){if(activateAutomaticRoute(asset,existing)){routeUsage.set(selected.sig,(routeUsage.get(selected.sig)||0)+1);created++;}else skipped++;continue;}
-        const wait=Math.max(0,450-(Date.now()-lastRoadRequest));if(wait)await new Promise(resolve=>setTimeout(resolve,wait));lastRoadRequest=Date.now();
-        const geometry=await requestRoadGeometry(origin.coords,selected.f.coords);if(!geometry){skipped++;continue;}
-        const route=prepareRoute({id:nextId('ROAD-AUTO'),type:'road',name:`${roadLocationName(origin)} → ${roadLocationName(selected.f)}`,from:roadLocationName(origin),to:roadLocationName(selected.f),fromFacility:origin.id,toFacility:selected.f.id,route:geometry.route,effectiveSpeedKmh:clamp(geometry.distanceKm/Math.max(.25,geometry.durationSeconds/3600),42,82),dwellHours:2.5,routingSource:'GH AI Network · OSRM · تنويع ربحي'});
+        let geometry=null;if(options.deterministic)geometry=fallbackRoadGeometry(origin.coords,selected.f.coords);else{const wait=Math.max(0,450-(Date.now()-lastRoadRequest));if(wait)await new Promise(resolve=>setTimeout(resolve,wait));lastRoadRequest=Date.now();geometry=await requestRoadGeometry(origin.coords,selected.f.coords)||fallbackRoadGeometry(origin.coords,selected.f.coords);}if(!geometry){skipped++;continue;}
+        const route=prepareRoute({id:nextId('ROAD-AUTO'),type:'road',name:`${roadLocationName(origin)} → ${roadLocationName(selected.f)}`,from:roadLocationName(origin),to:roadLocationName(selected.f),fromFacility:origin.id,toFacility:selected.f.id,route:geometry.route,effectiveSpeedKmh:clamp(geometry.distanceKm/Math.max(.25,geometry.durationSeconds/3600),42,82),dwellHours:2.5,routingSource:geometry.fallback?'GH AI Network · مسار حتمي احتياطي':'GH AI Network · OSRM · تنويع ربحي'});
         const eco=computeTripEconomics(asset,route);route.aiScore=Math.round((eco.margin||0)+(eco.margin/Math.max(1,eco.revenue))*250000-(selected.usage*150000));route.aiMargin=eco.margin;route.aiMarginPct=eco.margin/Math.max(1,eco.revenue);
-        window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','cache-geometry',{id:route.id,route:route.route,distanceKm:route.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'ai-route'});if(activateAutomaticRoute(asset,route)){routeUsage.set(selected.sig,(routeUsage.get(selected.sig)||0)+1);created++;}else skipped++;continue;
+        if(!geometry.fallback)window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','cache-geometry',{id:route.id,route:route.route,distanceKm:route.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'ai-route'});if(activateAutomaticRoute(asset,route)){routeUsage.set(selected.sig,(routeUsage.get(selected.sig)||0)+1);created++;}else skipped++;continue;
       }
       const kind=asset.type==='air'?'airport':'port',range=assetRangeKm(asset),rawWorld=kind==='airport'?WORLD.airports:WORLD.ports,step=Math.max(1,Math.floor(rawWorld.length/220));
       const globalCandidates=rawWorld.filter((_,i)=>i%step===0).map(row=>kind==='airport'?airportEntity(row):portEntity(row)).filter(entity=>entity?.name).map(entity=>({...entity,id:entity.key}));
       const candidates=[...facilities.filter(f=>f.kind===kind),...globalCandidates].filter((f,i,list)=>f.id!==origin.id&&list.findIndex(x=>x.id===f.id)===i).map(f=>{const distance=haversine(origin.coords,f.coords),sig=endpointPairSignature(asset.type,origin,f),usage=routeUsage.get(sig)||0;return{...f,distance,sig,usage};}).filter(f=>!range||f.distance<=range*.88).sort((a,b)=>a.usage-b.usage||Math.abs(a.distance-range*.52)-Math.abs(b.distance-range*.52));
-      const target=candidates[0];if(!target){skipped++;continue;}const existing=Object.values(routeTemplates).find(r=>r.type===asset.type&&routePairSignature(r)===target.sig);if(existing){activateAutomaticRoute(asset,existing);routeUsage.set(target.sig,target.usage+1);created++;continue;}
-      const endpoint=ensurePublicRouteEndpoint({...target,key:`auto:${target.id}`}),route=buildPublicRoute(asset,origin,endpoint);if(!route||!routeFitsAsset(asset,route)){skipped++;continue;}route.id=nextId(`${asset.type.toUpperCase()}-AUTO`);route.name=`GH AI · ${route.name}`;const eco=computeTripEconomics(asset,route);route.aiScore=Math.round((eco.margin||0)+(eco.margin/Math.max(1,eco.revenue))*250000-target.usage*200000);route.aiMargin=eco.margin;route.aiMarginPct=eco.margin/Math.max(1,eco.revenue);activateAutomaticRoute(asset,route);routeUsage.set(target.sig,target.usage+1);created++;
+      const target=candidates[0];if(!target){skipped++;continue;}const existing=Object.values(routeTemplates).find(r=>r.type===asset.type&&routePairSignature(r)===target.sig);if(existing){if(activateAutomaticRoute(asset,existing)){routeUsage.set(target.sig,target.usage+1);created++;}else skipped++;continue;}
+      const endpoint=ensurePublicRouteEndpoint({...target,key:`auto:${target.id}`}),route=buildPublicRoute(asset,origin,endpoint);if(!route||!routeFitsAsset(asset,route)){skipped++;continue;}route.id=nextId(`${asset.type.toUpperCase()}-AUTO`);route.name=`GH AI · ${route.name}`;const eco=computeTripEconomics(asset,route);route.aiScore=Math.round((eco.margin||0)+(eco.margin/Math.max(1,eco.revenue))*250000-target.usage*200000);route.aiMargin=eco.margin;route.aiMarginPct=eco.margin/Math.max(1,eco.revenue);if(activateAutomaticRoute(asset,route)){routeUsage.set(target.sig,target.usage+1);created++;}else skipped++;
     }
     dedupeCustomRoutes();save();renderMap();pushAlert(created?`GH AI أنشأ/وزع ${created} أصلًا على شبكة متنوعة مع منع تكرار نفس الخط وتفضيل الخطوط الأقل ازدحامًا والأعلى جدوى.`:`لم يُنشأ مسار تلقائي. راجع القواعد والمدى واتصال الطرق.`);openDrawer('routes');
   }
@@ -2070,12 +2080,12 @@
 
 
   function companyLogoMarkup(type,size='normal'){
-    const record=type==='group'?state.profile:(state.companyRegistry?.[type]||{}),logo=record.logo||null,style=record.logoStyle||type||state.profile.logoStyle||'teal',abbr=type==='group'?(state.profile.shortName||'GH'):({air:'AIR',sea:'SEA',road:'LOG',power:'NRG',bank:'BNK'}[type]||'CO');
+    const record=type==='group'?state.profile:(state.companyRegistry?.[type]||{}),logo=record.logo||null,style=record.logoStyle||type||state.profile.logoStyle||'teal',abbr=type==='group'?(state.profile.shortName||'GH'):({air:'AIR',sea:'SEA',road:'LOG',power:'NRG',bank:'BNK',mobility:'MOVE'}[type]||'CO');
     return `<div class="company-logo-badge ${size==='small'?'small':''}" data-style="${esc(style)}">${logo?`<img src="${esc(logo)}" alt="">`:`<span>${esc(abbr)}</span>`}</div>`;
   }
   function renderFinance(){
     reconcileConsolidatedCash();ensureBankCorporateClients();
-    const opened=['group',...(state.openedCompanies||[]).filter(t=>['air','sea','road','power','bank'].includes(t))],subs=opened.filter(t=>t!=='group'),debtRatio=Math.round(state.debt/Math.max(1,state.debt+state.groupValue)*100),groupBalance=companyOperatingBalance('group');
+    const opened=['group',...(state.openedCompanies||[]).filter(t=>['air','sea','road','power','bank','mobility'].includes(t))],subs=opened.filter(t=>t!=='group'),debtRatio=Math.round(state.debt/Math.max(1,state.debt+state.groupValue)*100),groupBalance=companyOperatingBalance('group');
     const entityCard=type=>{const b=companyBook(type),oper=b.accounts[0],reserve=b.accounts[1]||{balance:0},budget=companyBudget(type),budgetRemain=companyBudgetRemaining(type),inv=(state.finance.invoices||[]).filter(x=>(x.company||'group')===type),pending=inv.filter(x=>!['مسددة','محصلة','مدفوعة'].includes(x.status)).reduce((n,x)=>n+(Number(x.total)||0),0),budgetPct=budget.enabled&&budget.limit?Math.min(100,Math.round((budget.spent/budget.limit)*100)):0;return `<article class="finance-company-card-v202"><header class="finance-card-head-v202"><div class="finance-card-identity-v202">${companyLogoMarkup(type,'small')}<div><h3>${esc(companyFinanceName(type))}</h3><small>${esc(oper.id)}</small></div></div><div class="finance-card-balance-v202"><span>الرصيد التشغيلي</span><strong>${fmtMoney(oper.balance)}</strong></div></header><div class="finance-card-metrics-v202"><div><span>الاحتياطي</span><b>${fmtMoney(reserve.balance||0)}</b></div><div><span>الدين</span><b>${fmtMoney(b.debt||0)}</b></div><div><span>مستندات مفتوحة</span><b>${fmtMoney(pending)}</b></div><div><span>الميزانية المتبقية</span><b>${budgetRemain===Infinity?'غير محددة':fmtMoney(budgetRemain)}</b></div></div>${budget.enabled?`<div class="finance-budget-progress"><span style="width:${budgetPct}%"></span></div>`:''}<footer class="finance-card-actions-v202"><button class="primary-btn finance-entity-docs" data-company="${type}">المستندات</button><button class="secondary-btn company-reserve-transfer" data-company="${type}" data-direction="reserve">+1M للاحتياطي</button><button class="secondary-btn company-reserve-transfer" data-company="${type}" data-direction="operating">−1M من الاحتياطي</button>${b.taxPayable>0?`<button class="secondary-btn pay-taxes" data-company="${type}">سداد الضريبة</button>`:''}</footer></article>`;};
     const bulkRows=subs.map(t=>`<label class="bulk-company-row"><span>${companyLogoMarkup(t,'tiny')}<b>${esc(companyFinanceName(t))}</b><small>${fmtMoney(companyOperatingBalance(t))}</small></span><input class="bulk-transfer-amount" data-company="${t}" type="number" min="0" step="1000" value="0" inputmode="decimal"></label>`).join('');
     return `<div class="finance-v202"><section class="finance-overview-v202"><div><span class="eyebrow">FINANCE DOMAIN · 2.5.0</span><p>المجال المالي الوحيد للمجموعة: دفاتر الشركات، الخزينة، المستندات، الأسواق والبنك.</p></div><span class="finance-risk-badge ${debtRatio<35?'good':''}">الدين <b>${debtRatio}%</b></span></section>
@@ -2093,7 +2103,7 @@
   function accountOwnerLabel(accountId){for(const t of COMPANY_FINANCE_TYPES){const b=companyBook(t);if((b.accounts||[]).some(x=>x.id===accountId))return companyFinanceName(t);}return String(accountId||'طرف خارجي');}
   function companyKeyForAccount(accountId){if(!accountId)return null;for(const t of COMPANY_FINANCE_TYPES){const b=companyBook(t);if((b.accounts||[]).some(x=>x.id===accountId))return t;}return null;}
   function documentCompanyKey(doc={}){if(COMPANY_FINANCE_TYPES.includes(doc.company))return doc.company;return companyKeyForAccount(doc.accountId)||companyKeyForAccount(doc.from)||companyKeyForAccount(doc.to)||'group';}
-  function financeDocumentIdentity(company){const record=company==='group'?state.profile:(state.companyRegistry?.[company]||{}),account=companyBook(company).accounts[0]?.id||'—';return {company,name:companyFinanceName(company),account,signatory:record.authorizedSignatory||state.profile.founder||'المفوض بالتوقيع',mark:company==='group'?(state.profile.shortName||'GH'):({air:'AIR',sea:'SEA',road:'LOG',power:'NRG',bank:'BNK'}[company]||'CO')};}
+  function financeDocumentIdentity(company){const record=company==='group'?state.profile:(state.companyRegistry?.[company]||{}),account=companyBook(company).accounts[0]?.id||'—';return {company,name:companyFinanceName(company),account,signatory:record.authorizedSignatory||state.profile.founder||'المفوض بالتوقيع',mark:company==='group'?(state.profile.shortName||'GH'):({air:'AIR',sea:'SEA',road:'LOG',power:'NRG',bank:'BNK',mobility:'MOVE'}[company]||'CO')};}
   function transferDirection(x,company){const fromKey=companyKeyForAccount(x.from),toKey=companyKeyForAccount(x.to);if(fromKey&&toKey){if(fromKey===company&&toKey!==company)return {key:'outgoing',label:'حوالة صادرة',watermark:'OUTGOING'};if(toKey===company&&fromKey!==company)return {key:'incoming',label:'حوالة واردة',watermark:'INCOMING'};return {key:'internal',label:'تحويل داخلي',watermark:'INTERNAL'};}if(fromKey===company)return {key:'outgoing',label:'حوالة صادرة',watermark:'OUTGOING'};if(toKey===company)return {key:'incoming',label:'حوالة واردة',watermark:'INCOMING'};return {key:'internal',label:'إشعار تحويل مصرفي',watermark:'TRANSFER'};}
   // Financial documents resolve the current legal-entity identity at render time. No historical logo snapshot is persisted.
   function chequeArt(c){const company=documentCompanyKey(c),i=financeDocumentIdentity(company),statusClass=c.status==='مرتجع'?'failed':c.status==='صادر'?'pending':'',daysLeft=Math.max(0,c.dueDay-Math.floor((state.simSeconds||0)/86400)),issuedDay=Math.floor((c.issuedAt||0)/86400)+1;return `<div class="document-card"><article class="financial-paper cheque-paper authority-inspired"><div class="financial-watermark">CHEQUE</div><header class="authority-head">${companyLogoMarkup(company,'small')}<div><small>OFFICIAL BANKING INSTRUMENT · GLOBAL HOLDINGS</small><h3>شيك مصرفي</h3><p>${esc(i.name)}</p></div><strong>${esc(c.id)}</strong></header><div class="authority-meta"><span>الحساب <b dir="ltr">${esc(c.accountId||i.account)}</b></span><span>يوم الإصدار <b>${issuedDay}</b></span><span>الحالة <b class="doc-status ${statusClass}">${esc(c.status)}</b></span></div><section class="financial-subject"><div><small>ادفعوا لأمر</small><h4>${esc(c.beneficiary||'مستفيد غير محدد')}</h4><p>${esc(c.note||'شيك مصرفي')}</p></div><strong class="financial-amount">${fmtMoney(c.amount)}</strong></section><div class="authority-grid financial-grid"><div><span>مرجع الفاتورة</span><b>${esc(c.invoiceNumber||'—')}</b></div><div><span>تاريخ الاستحقاق</span><b>${c.status==='صادر'?`خلال ${daysLeft} يوم`:`اليوم ${c.dueDay}`}</b></div><div><span>العملة</span><b>USD</b></div><div><span>نوع الأداة</span><b>${esc(c.type||'شيك مصرفي')}</b></div></div><div class="authority-signatures financial-signatures"><div><small>المفوض بالتوقيع</small><b>${esc(i.signatory)}</b></div><div class="authority-stamp"><b>${esc(i.mark)}</b><small>ختم الكيان</small></div><div><small>وحدة التنفيذ</small><b>الخزينة المركزية</b></div></div><footer class="authority-footer"><span>مرجع: ${esc(c.id)} · ${esc(c.invoiceNumber||'بدون فاتورة')}</span><span>مستند مالي مسجل في دفتر ${esc(i.name)}</span></footer></article></div>`;}
@@ -2270,7 +2280,7 @@
   function hire(id){const c=candidates.find(x=>x.id===id);if(!c){pushAlert('تعذر التوظيف؛ هذا المرشح لم يعد متاحًا.');return;}try{const center=findFacility('HQ-RUH')?.name||'المقر الرئيسي';window.GH_DOMAIN_COMMANDS.dispatch({state,candidates},'hr','hire-executive',{candidateId:id,company:'group',center,source:'استقطاب قيادة فردي'},{actor:'hr'});pushAlert(`انضم ${c.name} إلى المجموعة بمنصب ${c.role} بعقد عمل ساري وربط مالي بالمقر الرئيسي.`);save();openDrawer('labor','contracts');}catch(error){notice(`تعذر التوظيف: ${error.message}`);}}
   function tradeStock(sym,qty){try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'market','trade-stock',{sym,qty},{actor:'market-ui'}).result;pushAlert(`${qty>0?'شراء':'بيع'} ${fmtNumber(Math.abs(qty))} سهم من ${sym} بقيمة ${fmtMoney(result.value)}.`);save();updateKpis();openDrawer('market');return true;}catch(error){notice(`تعذر تنفيذ الصفقة: ${error.message}`);return false;}}
   function openCompany(type){
-    const company=companies.find(c=>c.id===type),cost={air:25000000,sea:30000000,road:12000000,power:55000000,bank:75000000}[type];if(!company||!cost){pushAlert('تعذر تأسيس هذه الشركة؛ القطاع غير معروف.');return;}if(state.openedCompanies.includes(type)){pushAlert(`${company.name} مؤسَّسة بالفعل.`);openDrawer('companies','subs');return;}const stamp=nextId('COMPANY').split('-').pop(),short=(state.profile.shortName||'GH').toUpperCase();
+    const company=companies.find(c=>c.id===type),cost={air:25000000,sea:30000000,road:12000000,power:55000000,bank:75000000,mobility:18000000}[type];if(!company||!cost){pushAlert('تعذر تأسيس هذه الشركة؛ القطاع غير معروف.');return;}if(state.openedCompanies.includes(type)){pushAlert(`${company.name} مؤسَّسة بالفعل.`);openDrawer('companies','subs');return;}const stamp=nextId('COMPANY').split('-').pop(),short=(state.profile.shortName||'GH').toUpperCase();
     try{window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','open-company',{type,capital:cost,legalName:company.name,owner:state.profile.name,authorizedSignatory:state.profile.founder,logoStyle:type,taxId:`${short}-${type.toUpperCase()}-${stamp}`,commercialRegistration:`CR-${simDate().getUTCFullYear()}-${stamp}`,businessLicense:`LIC-${type.toUpperCase()}-${stamp}`,formationContract:`INC-${type.toUpperCase()}-${stamp}`,invoices:[{id:`INV-${type.toUpperCase()}-0001`,status:'تأسيس',amount:cost,issuedAt:state.simSeconds,note:'قيد رأس المال المدفوع عند التأسيس'}]},{actor:'corporate-ui'});pushAlert(`تأسست ${company.name} بمنظومة شركة مستقلة وحساب مالي موثق.`);save();updateKpis();openDrawer('companies','subs');}catch(error){pushAlert(`لم تُفتح ${company.name}: ${error.message}`);}
   }
   // ضمان وصول زر التأسيس حتى داخل اللوحات التي يعيد GH Advanced رسمها على الهاتف.

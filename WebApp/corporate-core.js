@@ -1,6 +1,6 @@
 (()=>{'use strict';
 const VERSION='2.9.1',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
-const COMPANY_TYPES=['air','sea','road','power','bank'];
+const COMPANY_TYPES=['air','sea','road','power','bank','mobility'];
 function ensure(s){s.companyRegistry=s.companyRegistry&&typeof s.companyRegistry==='object'?s.companyRegistry:{};s.openedCompanies=Array.isArray(s.openedCompanies)?s.openedCompanies:[];s.unlockedSectors=Array.isArray(s.unlockedSectors)?s.unlockedSectors:[];s.stakes=s.stakes&&typeof s.stakes==='object'?s.stakes:{};s.maDeals=s.maDeals&&typeof s.maDeals==='object'?s.maDeals:{};s.advanced=s.advanced||{};s.advanced.companies=s.advanced.companies&&typeof s.advanced.companies==='object'?s.advanced.companies:{};return s;}
 function model(s,type){ensure(s);return s.advanced.companies[type]||(s.advanced.companies[type]={budget:25000000,serviceLevel:86,riskLimit:72,automation:48,growthTarget:8,capitalPlan:0,customerScore:82,lastDecision:0,upgradeCooldowns:{},history:[]});}
 function validate(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);if(cmd==='open-company'&&!COMPANY_TYPES.includes(p.type))return {ok:false,reason:'invalid-company'};if(['decision','rename-company'].includes(cmd)&&!s.companyRegistry[p.type])return {ok:false,reason:'company-not-found'};return true;}

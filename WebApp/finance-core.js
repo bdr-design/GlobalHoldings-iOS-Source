@@ -1,9 +1,9 @@
 (()=>{
 'use strict';
-const VERSION='2.9.1',TYPES=['group','air','sea','road','power','bank'];
+const VERSION='2.9.1',TYPES=['group','air','sea','road','power','bank','mobility'];
 const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
 const num=v=>Math.max(0,Number(v)||0), now=s=>Number(s.simSeconds)||0;
-function companyName(s,t){return t==='group'?(s.profile?.name||'المجموعة'):(s.companyRegistry?.[t]?.legalName||({air:'الطيران',sea:'الشحن البحري',road:'النقل البري',power:'الطاقة',bank:'البنك'}[t]||t));}
+function companyName(s,t){return t==='group'?(s.profile?.name||'المجموعة'):(s.companyRegistry?.[t]?.legalName||({air:'الطيران',sea:'الشحن البحري',road:'النقل البري',power:'الطاقة',bank:'البنك',mobility:'التنقل الذكي'}[t]||t));}
 function makeBook(s,t,balance=0){const c=t==='group'?'GH':String(t).toUpperCase();return {type:t,accounts:[{id:`${c}-OPER-001`,name:'الحساب الجاري',currency:'USD',balance:num(balance)},{id:`${c}-RES-002`,name:'حساب الاحتياطي',currency:'USD',balance:0}],ledger:[],taxPayable:0,taxPaid:0,vat:{output:0,input:0,creditCarry:0,periodOutputStart:0,periodInputStart:0},debt:0,lastReconciledAt:now(s)};}
 function ensure(s){
  s.finance=s.finance&&typeof s.finance==='object'?s.finance:{};for(const k of ['invoices','payables','receivables','cheques','periods','journalEntries','transfers'])s.finance[k]=Array.isArray(s.finance[k])?s.finance[k]:[];
@@ -48,7 +48,7 @@ function raiseDebt(s,p){const t=TYPES.includes(p.company)?p.company:'group',a=nu
 function repayDebt(s,p){const t=TYPES.includes(p.company)?p.company:'group',b=book(s,t),a=Math.min(num(p.amount),num(b.debt));if(a<=0)return {amount:0,debt:num(b.debt)};if(operating(s,t)<a)throw new Error('insufficient-cash');b.accounts[0].balance-=a;b.debt=Math.max(0,num(b.debt)-a);journal(s,t,p.note||'سداد أصل دين',[{account:p.liabilityAccount||'تسهيلات ائتمانية مستحقة',debit:a},{account:b.accounts[0].id,credit:a}],p.ref||`DEBT-PAY-${Math.floor(now(s))}`);ledger(s,t,{at:now(s),from:b.accounts[0].id,to:p.lender||'جهة تمويل',amount:a,note:p.note||'سداد أصل دين',company:t,kind:'debt-repayment'});reconcile(s);return {amount:a,debt:b.debt};}
 function raiseEquity(s,p){const t=TYPES.includes(p.company)?p.company:'group',a=num(p.amount);if(a<=0)throw new Error('invalid-amount');const b=book(s,t),id=p.ref||`EQUITY-${Math.floor(now(s))}-${s.finance.transfers.length+1}`;b.accounts[0].balance+=a;journal(s,t,p.note||'زيادة رأس مال',[{account:b.accounts[0].id,debit:a},{account:p.equityAccount||'رأس مال وعلاوة إصدار',credit:a}],id);ledger(s,t,{at:now(s),from:p.source||'مستثمرون',to:b.accounts[0].id,amount:a,note:p.note||'زيادة رأس مال',company:t,kind:'equity-financing',reference:id});reconcile(s);return {ref:id,amount:a};}
 
-function zeroSectorMap(){return {air:0,sea:0,road:0,power:0,bank:0};}
+function zeroSectorMap(){return {air:0,sea:0,road:0,power:0,bank:0,mobility:0};}
 function consumeTripAccruals(s){
   ensure(s);
   const result={
@@ -68,7 +68,7 @@ function recordDailyClose(s,p){
 }
 
 function applySimulationJournal(s,p={}){
-  ensure(s);const j=p.journal&&typeof p.journal==='object'?p.journal:{},types=['air','sea','road','power','bank'];
+  ensure(s);const j=p.journal&&typeof p.journal==='object'?p.journal:{},types=['air','sea','road','power','bank','mobility'];
   s.todayProfit=(Number(s.todayProfit)||0)+(Number(j.todayProfit)||0);
   s.sectorProfitToday=s.sectorProfitToday&&typeof s.sectorProfitToday==='object'?s.sectorProfitToday:zeroSectorMap();
   for(const k of ['tripProfitAccrued','tripRevenueAccrued','tripFuelAccrued','tripMaintenanceAccrued','tripCountAccrued'])s[k]=s[k]&&typeof s[k]==='object'?s[k]:zeroSectorMap();

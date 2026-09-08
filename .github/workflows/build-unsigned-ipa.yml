@@ -2,6 +2,8 @@ name: Build Global Holdings iOS — Verified Source Gates
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [ main ]
   push:
     branches: [ main, master ]
     paths:
@@ -50,7 +52,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/.ci-output/ci"
+          mkdir -p "$GITHUB_WORKSPACE/build/ci"
 
           python3 - <<'PY'
           import glob, os, re, sys, zipfile
@@ -128,7 +130,7 @@ jobs:
                   raise SystemExit(f'Ambiguous source: multiple valid archives claim highest BUILD {highest}: {names}')
 
               build_num, version, source_zip, archive_root = winners[0]
-              extract = ws / '.ci-output' / 'source'
+              extract = ws / 'build' / 'source'
               if extract.exists():
                   import shutil
                   shutil.rmtree(extract)
@@ -197,7 +199,7 @@ jobs:
           if not expected:
               raise SystemExit('Integrity manifest is empty')
 
-          ignored_roots = {'build', '.ci-output', 'node_modules', '.git', 'GlobalHoldings.xcodeproj'}
+          ignored_roots = {'build', 'node_modules', '.git', 'GlobalHoldings.xcodeproj'}
           actual_files = set()
           for p in root.rglob('*'):
               if not p.is_file():
@@ -310,7 +312,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
-          JS_LIST="$GITHUB_WORKSPACE/.ci-output/ci/javascript-files.txt"
+          JS_LIST="$GITHUB_WORKSPACE/build/ci/javascript-files.txt"
           find WebApp -type f -name '*.js' | sort > "$JS_LIST"
           JS_COUNT="$(wc -l < "$JS_LIST" | tr -d ' ')"
           [[ "$JS_COUNT" -gt 0 ]] || { echo '::error::No WebApp JavaScript files found'; exit 1; }
@@ -366,19 +368,19 @@ jobs:
           rm -rf GlobalHoldings.xcodeproj
           xcodegen generate --spec project.yml
           test -d GlobalHoldings.xcodeproj
-          xcodebuild -project GlobalHoldings.xcodeproj -list | tee "$GITHUB_WORKSPACE/.ci-output/ci/xcode-project-list.log"
-          grep -q 'GlobalHoldings' "$GITHUB_WORKSPACE/.ci-output/ci/xcode-project-list.log" || { echo '::error::GlobalHoldings scheme was not generated'; exit 1; }
+          xcodebuild -project GlobalHoldings.xcodeproj -list | tee "$GITHUB_WORKSPACE/build/ci/xcode-project-list.log"
+          grep -q 'GlobalHoldings' "$GITHUB_WORKSPACE/build/ci/xcode-project-list.log" || { echo '::error::GlobalHoldings scheme was not generated'; exit 1; }
 
       - name: Build real iPhoneOS Release application without signing
         shell: bash
         run: |
           set -euo pipefail
           cd "$PROJECT_DIR"
-          DERIVED_DATA="$GITHUB_WORKSPACE/.ci-output/DerivedData"
+          DERIVED_DATA="$GITHUB_WORKSPACE/build/DerivedData"
           rm -rf "$DERIVED_DATA"
 
           set -o pipefail
-          XCODE_LOG="$GITHUB_WORKSPACE/.ci-output/ci/xcodebuild.log"
+          XCODE_LOG="$GITHUB_WORKSPACE/build/ci/xcodebuild.log"
           set +e
           xcodebuild \
             -project GlobalHoldings.xcodeproj \
@@ -447,8 +449,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BUILD_ROOT="$GITHUB_WORKSPACE/.ci-output/package"
-          CI_DIR="$GITHUB_WORKSPACE/.ci-output/ci"
+          BUILD_ROOT="$GITHUB_WORKSPACE/build"
           PAYLOAD_DIR="$BUILD_ROOT/Payload"
           VERSION_SAFE="${EXPECTED_VERSION//./_}"
           IPA_NAME="GlobalHoldings_v${VERSION_SAFE}_build${EXPECTED_BUILD}_unsigned.ipa"
@@ -456,7 +457,7 @@ jobs:
 
           rm -rf "$PAYLOAD_DIR"
           rm -f "$IPA_PATH"
-          mkdir -p "$PAYLOAD_DIR" "$CI_DIR"
+          mkdir -p "$PAYLOAD_DIR"
           ditto "$APP_PATH" "$PAYLOAD_DIR/GlobalHoldings.app"
           (
             cd "$BUILD_ROOT"
@@ -472,8 +473,8 @@ jobs:
           echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> "$GITHUB_ENV"
           echo "ipa_path=$IPA_PATH" >> "$GITHUB_OUTPUT"
           echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
-          printf 'version=%s\nbuild=%s\nsha256=%s\nsource_mode=%s\n' "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$IPA_SHA256" "$SOURCE_MODE" > "$CI_DIR/IPA_METADATA.txt"
-          cat "$CI_DIR/IPA_METADATA.txt"
+          printf 'version=%s\nbuild=%s\nsha256=%s\nsource_mode=%s\n' "$EXPECTED_VERSION" "$EXPECTED_BUILD" "$IPA_SHA256" "$SOURCE_MODE" > "$BUILD_ROOT/ci/IPA_METADATA.txt"
+          cat "$BUILD_ROOT/ci/IPA_METADATA.txt"
 
       - name: Validate final IPA contents against source
         shell: bash
@@ -501,8 +502,8 @@ jobs:
         with:
           name: GlobalHoldings-CI-diagnostics-${{ github.run_id }}
           path: |
-            .ci-output/ci
-            ${{ env.PROJECT_DIR }}/.ci-output/ci
+            build/ci
+            ${{ env.PROJECT_DIR }}/build/ci
             ${{ env.PROJECT_DIR }}/tests/screenshots
           if-no-files-found: ignore
           retention-days: 14
