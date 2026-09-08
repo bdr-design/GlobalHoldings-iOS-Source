@@ -22,8 +22,12 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
     });
 
     await page.goto(server.baseURL, {waitUntil: 'domcontentloaded'});
-    await page.locator('#skipFounder').waitFor({state: 'visible', timeout: 10000});
-    await page.click('#skipFounder');
+    // Use the funded sandbox profile so the QA suite can exercise every
+    // subsidiary (including the deliberately large GH Mobility launch) without
+    // turning on God Mode or depending on a persisted browser profile.
+    await page.locator('#founderMode').waitFor({state: 'visible', timeout: 10000});
+    await page.selectOption('#founderMode', 'sandbox');
+    await page.locator('#founderForm button[type="submit"]').click();
     await page.waitForTimeout(800);
     return {context, page};
   }
