@@ -21,7 +21,7 @@ const {serve}=require('./helpers/web-server'),{installMapFixture,expectedNetwork
  await (await visible('[data-panel="companies"]')).click();await page.click('[data-companytab="subs"]');await page.locator('button.open-company[data-type="air"]').click();
  current=await state();assert(current.openedCompanies.includes('air'));record('3 Open company');
  const initialAir=current.companyFinance.air.accounts[0].balance;await panel('finance');await page.selectOption('#companyTransferFrom','group');await page.selectOption('#companyTransferTo','air');await page.fill('#companyTransferAmount','400000000');await page.click('.company-transfer-submit');current=await state();assert.strictEqual(current.companyFinance.air.accounts[0].balance,initialAir+400000000);record('4 Fund company through Finance UI');
- await page.click('#drawerClose');await page.click('#worldDirectoryBtn');await page.fill('#worldSearch','RUH');await page.clock.runFor(300);await page.locator('.open-global-base[data-key="air:OERK"]').click();
+ await page.click('#drawerClose');await page.click('#worldDirectoryBtn');await page.fill('#worldSearch','RUH');await page.clock.runFor(300);await page.locator('.world-result button[data-open="companyFacilities"][data-arg="air"]').first().click();await page.locator('.open-global-base[data-key="air:OERK"]').click();
  current=await state();assert.strictEqual(current.globalBases.length,1);const baseId=current.globalBases[0].id;assert.strictEqual(current.globalBases[0].company,'air');record('5 Create base through directory UI');
  await control('assets');const beforeCompanyCash=(await state()).companyFinance.air.accounts[0].balance;
  const manual=await visible('.manual-buy-asset');await manual.click();await page.waitForTimeout(350);current=await state();

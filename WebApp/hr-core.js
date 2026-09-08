@@ -6,7 +6,7 @@
     sea:{captains:2,sailors:14,seng:4},
     road:{drivers:2,mech:.25}
   });
-  const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,power:32,bank:16,acquired:28});
+  const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,'mobility-center':18,power:32,bank:16,acquired:28});
   const EXECUTIVE_RULES=Object.freeze({
     H3:()=>true,
     H4:s=>(s.assets||[]).some(a=>a.type==='air')||(s.globalBases||[]).some(f=>f.company==='air'),
@@ -31,8 +31,8 @@
     hr.policy=hr.policy&&typeof hr.policy==='object'?hr.policy:{approvalMode:'executive-authorization',contractMonths:24,minimumCoverage:100};
     return hr;
   }
-  function companyOfFacility(f){if(f?.company)return f.company;if(f?.kind==='airport-base')return'air';if(f?.kind==='port-base')return'sea';if(['depot','logistics'].includes(f?.kind))return'road';if(f?.kind==='power')return'power';if(f?.kind==='bank')return'bank';return'group';}
-  function facilityNeed(f){const base=FACILITY_STANDARDS[f?.kind]||12,cap=Number(f?.bays||f?.capacityMW||0),scale=f?.kind==='power'?Math.ceil(cap/250)*4:['depot','logistics'].includes(f?.kind)?Math.ceil(cap/20)*3:0;return Math.max(base,base+scale);}
+  function companyOfFacility(f){if(f?.company)return f.company;if(f?.kind==='airport-base')return'air';if(f?.kind==='port-base')return'sea';if(['depot','logistics'].includes(f?.kind))return'road';if(f?.kind==='mobility-center')return'mobility';if(f?.kind==='power')return'power';if(f?.kind==='bank')return'bank';return'group';}
+  function facilityNeed(f){const base=FACILITY_STANDARDS[f?.kind]||12,cap=Number(f?.bays||f?.capacityMW||0),scale=f?.kind==='power'?Math.ceil(cap/250)*4:['depot','logistics'].includes(f?.kind)?Math.ceil(cap/20)*3:f?.kind==='mobility-center'?Math.ceil(cap/40)*2:0;return Math.max(base,base+scale);}
   function requiredCrewForFleet(state,sector,assetCount=null){
     const count=assetCount==null?(state.assets||[]).filter(a=>a.type===sector).length:Math.max(0,Number(assetCount)||0),standard=CREW_STANDARDS[sector]||{},out={};
     for(const [roleId,ratio] of Object.entries(standard))out[roleId]=Math.ceil(count*ratio);
