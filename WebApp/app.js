@@ -748,14 +748,17 @@
     road:'<svg viewBox="0 0 24 24"><path d="M3 8 H13 L17 12 H19 V16 H3 Z"/><circle cx="6" cy="17" r="1.7"/><circle cx="16" cy="17" r="1.7"/></svg>'
   };
   const VEHICLE_MARKER_PHOTOS={air:'assets/images/map-aircraft-topdown.png',sea:'assets/images/map-container-ship-topdown.png',road:'assets/images/map-truck-topdown.png'};
-  function markerKind(type){return type==='air'?'air':type==='sea'?'sea':'road';}
+  // GH Mobility ركاب وليست شاحنات لوجستية؛ أيقونة سيارة مستقلة كي لا تُعرض كأصول road.
+  const MOBILITY_CAR_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="3" width="11" height="18" rx="4.5"></rect><rect class="vehicle-car-window" x="8" y="7.4" width="8" height="5.2" rx="1.3"></rect><circle cx="5.6" cy="7.6" r="1.35"></circle><circle cx="18.4" cy="7.6" r="1.35"></circle><circle cx="5.6" cy="16.4" r="1.35"></circle><circle cx="18.4" cy="16.4" r="1.35"></circle></svg>';
+  function markerKind(type){return type==='air'?'air':type==='sea'?'sea':type==='mobility'?'mobility':'road';}
   // صورنا العلوية كلها موجّهة إلى أعلى؛ لا تضف انحرافًا خاصًا للشاحنة.
   // الانحراف السابق (-90) كان يجعل الشاحنات تسير بالعرض على الطرق.
   function markerHeading(kind,bearing){return Number(bearing||0);}
   function assetMarkerPhoto(asset){return VEHICLE_MARKER_PHOTOS[markerKind(asset.type)];}
   function vehicleVisualHtml(type,bearing,photo,moving=true,competitor=false){
     const kind=markerKind(type),heading=markerHeading(kind,bearing),className=`vehicle-pin ${kind}${moving?' is-live':''}${competitor?' competitor':''}`;
-    return `<div class="${className}"><span class="vehicle-trail"></span><span class="vehicle-sprite" style="transform:rotate(${heading.toFixed(1)}deg)"><img src="${photo||VEHICLE_MARKER_PHOTOS[kind]}" alt="" draggable="false"></span><span class="vehicle-beacon"></span></div>`;
+    const glyph=kind==='mobility'?`<span class="vehicle-car-glyph">${MOBILITY_CAR_SVG}</span>`:`<img src="${photo||VEHICLE_MARKER_PHOTOS[kind]}" alt="" draggable="false">`;
+    return `<div class="${className}"><span class="vehicle-trail"></span><span class="vehicle-sprite" style="transform:rotate(${heading.toFixed(1)}deg)">${glyph}</span><span class="vehicle-beacon"></span></div>`;
   }
   function vehicleMarkerHtml(asset){return vehicleVisualHtml(asset.type,assetBearing(asset),assetMarkerPhoto(asset),asset.phase==='moving');}
   function competitorMarkerHtml(asset){return vehicleVisualHtml(asset.type,routeBearing(asset.route,asset.progress),VEHICLE_MARKER_PHOTOS[markerKind(asset.type)],true,true);}
@@ -1137,7 +1140,7 @@
     if(filter==='all'||filter==='mobility'){
       for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,80)||[])){
         const pos=interpolateRoute(vehicle.route,vehicle.progress),bearing=routeBearing(vehicle.route,vehicle.progress),moving=vehicle.phase==='moving';
-        const icon=L.divIcon({className:`asset-marker mobility${moving?' is-moving':''}`,html:vehicleVisualHtml('road',bearing,VEHICLE_MARKER_PHOTOS.road,moving),iconSize:[42,42],iconAnchor:[21,21]});
+        const icon=L.divIcon({className:`asset-marker mobility${moving?' is-moving':''}`,html:vehicleVisualHtml('mobility',bearing,null,moving),iconSize:[42,42],iconAnchor:[21,21]});
         const marker=L.marker(pos,{icon,zIndexOffset:680}).addTo(map).bindPopup(`<b>${esc(vehicle.name)}</b><br>${esc(vehicle.from)} ← ${esc(vehicle.to)}<br><span>${moving?'رحلة نشطة':'متاح للطلب'} · بطارية ${Math.round(vehicle.battery)}%</span>`);
         marker.on('click',()=>openDrawer('companyManage',{type:'mobility',tab:'operations'}));ownMarkers.set(`mobility:${vehicle.id}`,marker);
       }
@@ -1205,7 +1208,7 @@
     }
     lastMarkerFrameAt=now;
     state.assets.forEach(a=>{const m=ownMarkers.get(a.id);if(m){m.setLatLng(assetPosition(a));refreshVehicleMarker(m,a.type,assetBearing(a),a.phase==='moving');}});
-    for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,80)||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){m.setLatLng(interpolateRoute(vehicle.route,vehicle.progress));refreshVehicleMarker(m,'road',routeBearing(vehicle.route,vehicle.progress),vehicle.phase==='moving');}}
+    for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,80)||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){m.setLatLng(interpolateRoute(vehicle.route,vehicle.progress));refreshVehicleMarker(m,'mobility',routeBearing(vehicle.route,vehicle.progress),vehicle.phase==='moving');}}
     competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){m.setLatLng(interpolateRoute(a.route,a.progress));refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
   }
 
