@@ -2065,6 +2065,7 @@
     }).join('')}</div>`;
   }
 
+  let lastDepartureBlocked=[];
   function routeCoordKey(coords){return Array.isArray(coords)&&coords.length>=2?`${Number(coords[0]).toFixed(3)},${Number(coords[1]).toFixed(3)}`:'';}
   function routePairSignature(route){
     if(!route)return'';const path=Array.isArray(route.route)?route.route:[],first=path[0],last=path[path.length-1],a=routeCoordKey(first)||String(route.fromFacility||route.from||'').trim(),b=routeCoordKey(last)||String(route.toFacility||route.to||'').trim();return `${route.type||'x'}:${[a,b].sort().join('::')}`;
@@ -2087,6 +2088,7 @@
     const air=state.assets.find(a=>a.type==='air'),sea=state.assets.find(a=>a.type==='sea');
     const globalButtons=`${air?`<button class="secondary-btn open-global-route-center" data-asset="${esc(air.id)}">إنشاء/تعيين مسار جوي</button>`:''}${sea?`<button class="secondary-btn open-global-route-center" data-asset="${esc(sea.id)}">إنشاء/تعيين مسار بحري</button>`:''}`;
     return `<div class="list"><article class="list-item"><div class="list-item-head"><div><h3>مركز المسارات المستقل</h3><p>كل إنشاء وتعيين ومغادرة للمسارات الجوية والبحرية والبرية هنا فقط. GH AI يقترح هندسة الطريق؛ لا ينشئ ولا يعيّن ولا يحرّك دون قرارك.</p></div><span class="tag positive">MANUAL CONTROL</span></div><div class="metric-row"><div><span>أصول بلا مسار</span><b>${idle}</b></div><div><span>أصول مكلّفة</span><b>${assigned}</b></div><div><span>جاهزة للمغادرة</span><b>${ready}</b></div><div><span>Mobility</span><b>${mobility.moving}/${mobility.vehicles} متحركة</b></div></div><div class="action-row"><button class="secondary-btn suggest-routes" ${state.assets.length?'':'disabled'}>اقتراح AI فقط</button><button class="primary-btn depart-all-assets" ${ready?'':'disabled'}>تحريك جميع الأصول الجاهزة</button>${globalButtons}</div></article>
+      ${lastDepartureBlocked.length?`<article class="list-item"><h3>تعطّل ${lastDepartureBlocked.length} أصل عن الانطلاق</h3><p>سبب كل أصل تحديدًا من آخر أمر مغادرة جماعي.</p>${lastDepartureBlocked.map(b=>`<div class="spec-row"><span>${esc(b.name)} · ${esc(typeName(b.type))}</span><span>${esc(b.text)}</span></div>`).join('')}</article>`:''}
       ${suggestions.length?`<article class="list-item"><h3>اقتراحات AI غير المنفذة</h3><p>لا يتغير أي أصل حتى تفتح تعيينه وتختار بنفسك.</p>${suggestions.slice(0,30).map(x=>`<div class="spec-row"><span>${esc(x.assetName)} · ${esc(x.from)} ← ${esc(x.to)}</span><button class="secondary-btn" data-open="assignRoute" data-arg="${esc(x.assetId)}">تعيين يدوي</button></div>`).join('')}</article>`:''}
       ${idleRows?`<article class="list-item"><h3>أصول تنتظر تعيينًا</h3><p>اختيار المسار يتم من هذا المركز فقط، ولا يُنشئ شراءً أو قاعدة جديدة.</p>${idleRows}</article>`:''}
       <article class="list-item"><h3>إنشاء مسار بري يدوي</h3><p>اختر نقطتي التشغيل بنفسك. لا يضيف AI وجهات أو قواعد أو مسارات تلقائيًا.</p>${points.length?`<div class="route-builder"><label>نقطة الانطلاق<select id="roadFrom">${options}</select></label><label>الوجهة<select id="roadTo">${[...points].reverse().map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('')}</select></label></div><div class="action-row"><button class="primary-btn start-road-route">إنشاء من الخريطة</button>${points.length>=2?'<button class="secondary-btn build-road-route">بين قاعدتين</button>':''}<button class="secondary-btn" data-open="companyFacilities" data-arg="road">إضافة مركز من سجل LOG</button></div>`:'<div class="empty">افتح مركزًا لوجستيًا من سجل LOG أولًا ليكون نقطة الانطلاق.</div>'}</article>
@@ -2421,9 +2423,48 @@
     return runBusinessOperation('serviceAsset',()=>{const a=state.assets.find(x=>x.id===id);if(!a){notice('الأصل غير موجود.');return false;}if(a.phase==='moving'){notice('لا يمكن صيانة الأصل أثناء الحركة.');return false;}const cost=a.type==='air'?78000:a.type==='sea'?145000:2800,supplier=a.type==='air'?'Global MRO Aviation':a.type==='sea'?'Oceanic Technical Services':'RoadFleet Maintenance';try{window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','spend',{company:a.type,amount:cost,note:`فاتورة صيانة ${a.name} · ${supplier}`,method:'تحويل بنكي',line:'maintenance'},{actor:'maintenance'});window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','service',{id,conditionGain:6},{actor:'maintenance'});pushAlert(`اعتمدت صيانة ${a.name} لدى ${supplier}.`);save();updateKpis();openDrawer('assetManage',id);return true;}catch(error){notice(`تعذر الصيانة: ${error.message}`);return false;}
     });
   }
-  function crewReadyFor(asset){const by=id=>crewByRole(id)?.count||0;if(asset.type==='air')return by('pilots')>=2&&by('cabin')>=4&&by('aeng')>=1;if(asset.type==='sea')return by('captains')>=1&&by('sailors')>=6&&by('seng')>=1;return by('drivers')>=1&&by('mech')>=1;}
-  function departRouteAssets(routeId,type='road'){const candidates=state.assets.filter(a=>(!type||a.type===type)&&(!routeId||a.routeId===routeId)&&a.phase==='turnaround');let departed=0,blocked=0;for(const a of candidates){if(!crewReadyFor(a)){blocked++;continue;}const tpl=routeTemplates[a.routeId];if(!tpl){blocked++;continue;}try{const ok=window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id:a.id,route:tpl,load:loadLabel(a)},{actor:'dispatch'}).result;if(ok){normalizeAsset(a);departed++;}else blocked++;}catch{blocked++;}}if(departed)pushAlert(`أمر مغادرة جماعي: غادر ${departed} أصلًا${routeId?' على المسار نفسه':''} فورًا.`);if(blocked)pushAlert(`تعذر تحريك ${blocked} أصل بسبب نقص الكادر أو بيانات المسار.`);save();renderMap();return{departed,blocked};}
-  function departNow(id){const a=state.assets.find(x=>x.id===id);if(!a){pushAlert('تعذر تنفيذ المغادرة؛ الأصل غير موجود.');return;}if(a.phase!=='turnaround'){pushAlert(`${a.name} غادر بالفعل أو لم يصل بعد إلى محطة تشغيل.`);save();openDrawer('assetManage',id);return;}const sameRoute=a.routeId?state.assets.filter(x=>x.type===a.type&&x.routeId===a.routeId&&x.phase==='turnaround').length:1;if(a.routeId&&sameRoute>1){departRouteAssets(a.routeId,a.type);openDrawer('assetManage',id);return;}if(!crewReadyFor(a)){pushAlert(`أوقف ${a.name}: لا تتوفر طواقم مؤهلة كافية. استخدم زر سد كامل الاحتياج في الموارد البشرية.`);save();openDrawer('assetManage',id);return;}const tpl=routeTemplates[a.routeId];if(!tpl){notice('لا يوجد مسار تشغيلي صالح لهذا الأصل.');return;}try{window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id,route:tpl,load:loadLabel(a)},{actor:'dispatch'});normalizeAsset(a);pushAlert(`${a.name} غادر فورًا بأمر مباشر.`);save();renderMap();openDrawer('assetManage',id);}catch(error){notice(`تعذر تنفيذ المغادرة: ${error.message}`);}}
+  // مصدر وحيد وموحّد لسبب تعطّل انطلاق أي أصل. يستعمل نفس منطق HR Core الذي تعتمده دورة المحاكاة التلقائية
+  // (انظر استخدام hr.snapshot(...).crewMissing في دورة التقدّم الزمني)، بدل عتبة ثابتة مكررة ومنفصلة كانت هنا سابقًا.
+  function departureBlockReason(asset){
+    const tpl=routeTemplates[asset.routeId];
+    if(!tpl)return {code:'no-route-data',text:'لا يوجد مسار تشغيلي صالح مرتبط بهذا الأصل.'};
+    const hr=window.GH_HR_CORE;
+    if(hr?.snapshot){
+      const need=hr.snapshot(state,hrContext(),asset.type);
+      if(need.crewMissing>0){
+        const gaps=need.crew.filter(g=>g.missing>0).map(g=>`${g.missing} ${g.name}`).join('، ');
+        return {code:'no-crew',text:`نقص طاقم ${typeName(asset.type)}: ${gaps||'كادر غير مكتمل'}. استخدم سد الاحتياج في الموارد البشرية.`};
+      }
+    }
+    return null;
+  }
+  function departRouteAssets(routeId,type='road'){
+    const candidates=state.assets.filter(a=>(!type||a.type===type)&&(!routeId||a.routeId===routeId)&&a.phase==='turnaround');
+    let departed=0;const blockedDetails=[];
+    for(const a of candidates){
+      const block=departureBlockReason(a);
+      if(block){blockedDetails.push({id:a.id,name:a.name,type:a.type,code:block.code,text:block.text});continue;}
+      try{
+        const ok=window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id:a.id,route:routeTemplates[a.routeId],load:loadLabel(a)},{actor:'dispatch'}).result;
+        if(ok){normalizeAsset(a);departed++;}
+        else blockedDetails.push({id:a.id,name:a.name,type:a.type,code:'dispatch-rejected',text:'رفض النظام أمر المغادرة دون سبب مُعاد.'});
+      }catch(error){blockedDetails.push({id:a.id,name:a.name,type:a.type,code:'dispatch-error',text:error.message});}
+    }
+    lastDepartureBlocked=blockedDetails;
+    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'operations','record-alert',{text:`أمر مغادرة جماعي: غادر ${departed} من أصل ${candidates.length} أصلًا جاهزًا${routeId?' على المسار نفسه':''}. المتعطل: ${blockedDetails.length}.`,type:'dispatch'},{actor:'dispatch'});}catch(error){console.warn('operations log rejected',error);}
+    if(departed)pushAlert(`أمر مغادرة جماعي: غادر ${departed} أصلًا${routeId?' على المسار نفسه':''} فورًا.`);
+    if(blockedDetails.length)pushAlert(`تعذر تحريك ${blockedDetails.length} أصل: ${blockedDetails.slice(0,3).map(b=>`${b.name} — ${b.text}`).join(' · ')}${blockedDetails.length>3?' …':''}`);
+    save();renderMap();return{departed,blocked:blockedDetails.length,blockedDetails};
+  }
+  function departNow(id){
+    const a=state.assets.find(x=>x.id===id);if(!a){pushAlert('تعذر تنفيذ المغادرة؛ الأصل غير موجود.');return;}
+    if(a.phase!=='turnaround'){pushAlert(`${a.name} غادر بالفعل أو لم يصل بعد إلى محطة تشغيل.`);save();openDrawer('assetManage',id);return;}
+    const sameRoute=a.routeId?state.assets.filter(x=>x.type===a.type&&x.routeId===a.routeId&&x.phase==='turnaround').length:1;
+    if(a.routeId&&sameRoute>1){departRouteAssets(a.routeId,a.type);openDrawer('assetManage',id);return;}
+    const block=departureBlockReason(a);
+    if(block){pushAlert(`أوقف ${a.name}: ${block.text}`);save();openDrawer('assetManage',id);return;}
+    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id,route:routeTemplates[a.routeId],load:loadLabel(a)},{actor:'dispatch'});normalizeAsset(a);pushAlert(`${a.name} غادر فورًا بأمر مباشر.`);save();renderMap();openDrawer('assetManage',id);}catch(error){notice(`تعذر تنفيذ المغادرة: ${error.message}`);}
+  }
   function saleEstimate(a){const item=catalogItem(a.type,a.catalogId);return a.ownership==='lease'?-(Number(a.monthlyLease)||0)*2:(Number(item?.price)||1000000)*.72*(Number(a.condition||100)/100);}
   function finalizeAssetSale(id,automatic=false){const a=state.assets.find(x=>x.id===id);if(!a||a.phase==='moving')return false;try{if(a.ownership==='lease'){const fee=Math.max(0,(Number(a.monthlyLease)||0)*2);if(!automatic&&!ask(`إنهاء عقد تأجير ${a.name}؟ رسوم الإنهاء ${fmtMoney(fee)}.`))return false;window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','return-lease',{id,fee},{actor:'fleet-disposal'});pushAlert(`أعيد ${a.name} من مركز التشغيل وأنهي عقد التأجير مقابل ${fmtMoney(fee)}.`);}else{const proceeds=Math.max(0,saleEstimate(a));if(!automatic&&!ask(`بيع ${a.name} مقابل قيمة تقديرية ${fmtMoney(proceeds)}؟`))return false;window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','sell',{id,proceeds,buyer:'مشتري أصل معتمد'},{actor:'fleet-disposal'});pushAlert(`تم بيع ${a.name} من مركز التشغيل مقابل ${fmtMoney(proceeds)}.`);}save();updateKpis();if(selectedAssetId===id){selectedAssetId=null;$('assetCard').classList.add('hidden');}renderMap();return true;}catch(error){notice(`تعذر إغلاق عملية الأصل: ${error.message}`);return false;}}
   function requestAssetSale(id,bulk=false){const a=state.assets.find(x=>x.id===id);if(!a){if(!bulk)notice('تعذر تنفيذ العملية؛ هذا الأصل غير موجود.');return false;}if(a.salePending)return true;if(!bulk&&a.phase!=='moving'&&!ask(`إصدار أمر بيع ${a.name}؟ سيتم البيع من مركز التشغيل ولن يحدث أي بيع أثناء رحلة.`))return false;const atOwnedCenter=findFacility(a.baseFacility)?.owned;try{if(a.phase==='moving'){window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','request-sale',{id,returnMode:'owned-center'},{actor:'fleet-disposal'});pushAlert(`صدر أمر بيع ${a.name}. سيكمل الرحلة الحالية؛ وإذا كانت الوجهة محطة عامة فسيعود تلقائيًا إلى مركز المجموعة قبل البيع.`);save();renderMap();if(!bulk)openDrawer('assetManage',id);return true;}if(a.phase==='turnaround'&&!atOwnedCenter&&a.routeId){window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','request-sale',{id,returnMode:'owned-center',departSoon:true},{actor:'fleet-disposal'});pushAlert(`صدر أمر بيع ${a.name}. الأصل في محطة عامة وسيعود تلقائيًا إلى مركز المجموعة قبل البيع.`);save();renderMap();if(!bulk)openDrawer('assetManage',id);return true;}window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','request-sale',{id,returnMode:'owned-center',clearRoute:true,phase:'idle'},{actor:'fleet-disposal'});save();return finalizeAssetSale(id,true);}catch(error){notice(`تعذر إصدار أمر البيع: ${error.message}`);return false;}}
