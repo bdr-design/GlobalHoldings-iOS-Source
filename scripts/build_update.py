@@ -33,7 +33,7 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-internal-2.9.1-build260-dead-ai-procurement-removal','name':'Global Holdings 2.9.1 — Dead AI Procurement System Removal','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD260: أزال نظام طلب/محفظة الأصول عبر AI بالكامل من الجذر (كان يعتمد على وحدة GH_REQUEST_CORE المحذوفة فعليًا من المستودع) بدل الاكتفاء بإخفاء أزراره كما كان سابقًا — حُذفت لوحتا العرض الميتتان، ومولدا مقترحات الشراء، ومسارات التنفيذ والتسجيل المرتبطة بها، مع إبقاء نظام الخطط السنوية (توسعة المواقع والسعة) واقتراحات المسارات وموافقات AI الأخرى تعمل كما هي دون أي تغيير. تحقق آلي شامل عبر مطابقة كل استدعاء أمر نطاق فعلي (dispatch/execute) في المستودع بأكمله مقابل الأوامر الحقيقية المعرّفة في كل نواة — صفر استدعاءات مكسورة قبل وبعد التعديل. Save Schema يبقى 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
+    manifest={'id':'gh-internal-2.9.1-build261-company-types-unification','name':'Global Holdings 2.9.1 — Company Types Source-of-Truth Unification','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD261: وحّد قائمة أنواع الشركات (air/sea/road/power/bank/mobility) على مصدر حقيقة واحد هو GH_CORPORATE_CORE.COMPANY_TYPES بدل 5 نسخ حرفية منفصلة كانت متناثرة في app.js، لتفادي أي انجراف مستقبلي عند إضافة أو تعديل نوع شركة. تحقق آلي إضافي بمطابقة كل معرّف زر واجهة صادر (data-gh-action) مقابل معالجاته الفعلية عبر كامل الملفين الرئيسيين — لم يظهر أي زر مكسور جديد. تحقق أيضًا وتأكد أن تمثيل الشيكات المرئي (بطاقة شيك مصرفي منسّقة) وتسجيل أموال المستثمرين (استثمار المؤسس وطرح الأسهم) يعملان بشكل صحيح كحوالات موثقة في دفتر الأستاذ، دون الحاجة لأي تعديل. Save Schema يبقى 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
     sign_manifest(manifest)
@@ -43,6 +43,6 @@ def main():
     for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
     for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD260_DEAD_AI_PROCUREMENT_REMOVAL.{ext}').write_text(payload,encoding='utf-8')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD261_COMPANY_TYPES_UNIFICATION.{ext}').write_text(payload,encoding='utf-8')
     print(f'Built 2.9.1 Build258 HR manual hiring / dispatch integrity snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()
