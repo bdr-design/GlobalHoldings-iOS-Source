@@ -33,7 +33,7 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-internal-2.9.1-build262-mobility-hr-routes-visibility','name':'Global Holdings 2.9.1 — Mobility City Profit, HR Hiring Log, Route Ranking','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD262: أضاف ثلاث ميزات شفافية مبنية على بيانات حقيقية موجودة أصلًا: (1) ربحية كل مدينة في GH Mobility محسوبة فعليًا من أرباح رحلاتها لا الأسطول فقط، ومتحقق أن مجموعها يطابق الإجمالي العالمي تمامًا؛ (2) سجل قرارات التوظيف اليدوية الأخيرة في لوحة HR (كان مخزنًا في hr.hiringLog دون أي عرض)؛ (3) ترتيب بطاقات مركز المسارات فعليًا حسب متوسط الهامش الحقيقي لكل مسار بدل ترتيب الإدراج العشوائي. Save Schema يبقى 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
+    manifest={'id':'gh-internal-2.9.1-build263-map-pan-to-new-city','name':'Global Holdings 2.9.1 — Pan Map To Newly Active Mobility City','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD263: أصلح سببًا حقيقيًا محتملًا لعدم ظهور مركبات Mobility لمركز/مدينة جديدة على الخريطة — لم تكن الخريطة تنتقل لموقع المدينة الجديدة عند فتح مركزها أو شراء أسطولها، فتبقى المركبات مرسومة بإحداثياتها الصحيحة لكنها خارج إطار العرض الحالي. أضاف panMapTo() وربطه بفتح مركز عاصمة Mobility وبشراء أسطول لمركز قائم. تحقق آلي إضافي (Node) لسلسلة فتح قاعدة كاملة لشركة طيران (مناقصة إنشاء → تسجيل منشأة → احتياج HR → توظيف يدوي) نجحت بلا أي خطأ، ومراجعة آلية حجز/حدود الميزانية أكدت أنها معطّلة افتراضيًا ولا تحجب أي إنفاق يدوي فعلي إلا إذا فعّلها اللاعب صراحة. Save Schema يبقى 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
     sign_manifest(manifest)
@@ -43,6 +43,6 @@ def main():
     for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
     for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD262_MOBILITY_HR_ROUTES_VISIBILITY.{ext}').write_text(payload,encoding='utf-8')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD263_MAP_PAN_TO_NEW_CITY.{ext}').write_text(payload,encoding='utf-8')
     print(f'Built 2.9.1 Build258 HR manual hiring / dispatch integrity snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()
