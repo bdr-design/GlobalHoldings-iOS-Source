@@ -1142,7 +1142,7 @@
       // a stable class for hit-testing/QA even though the base map prefers
       // canvas for heavier layers.
       const mobilityRenderer=layers.mobilityRenderer||(layers.mobilityRenderer=L.svg({padding:.1}));
-      for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,120)||[])){
+      for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,200)||[])){
         const pos=interpolateRoute(vehicle.route,vehicle.progress),moving=vehicle.phase==='moving';
         // Mobility is represented by one tiny canvas point rather than a DOM
         // car icon. It stays on the exact registered route and keeps the map
@@ -1215,7 +1215,7 @@
     }
     lastMarkerFrameAt=now;
     state.assets.forEach(a=>{const m=ownMarkers.get(a.id);if(m){m.setLatLng(assetPosition(a));refreshVehicleMarker(m,a.type,assetBearing(a),a.phase==='moving');}});
-    for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,120)||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m)m.setLatLng(interpolateRoute(vehicle.route,vehicle.progress));}
+    for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,200)||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m)m.setLatLng(interpolateRoute(vehicle.route,vehicle.progress));}
     competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){m.setLatLng(interpolateRoute(a.route,a.progress));refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
   }
 

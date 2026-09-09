@@ -33,7 +33,7 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-internal-2.9.1-build258-hr-manual-and-dispatch-integrity','name':'Global Holdings 2.9.1 — HR Manual Hiring & Dispatch Integrity','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD258: توحيد بيانات الإصدار (BUILD/package.json/package-lock) بعد أن تجاوزتها التزامات BUILD256-257 دون تحديثها؛ إصلاح جذري لتناقض فحص جاهزية الطاقم بين الانطلاق الفردي والجماعي عبر توحيده على HR Core مع بيان سبب دقيق لكل أصل متعطل؛ وإزالة AI نهائيًا من الموارد البشرية (احتياج ثابت محسوب من الأصول والمنشآت، وتوظيف يدوي مباشر بلا طلب اعتماد وسيط). Save Schema يبقى 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
+    manifest={'id':'gh-internal-2.9.1-build259-mobility-multi-center','name':'Global Holdings 2.9.1 — Mobility Multi-Center Operations','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD259: أصلح ربط مراكز عواصم GH Mobility الفعلي — كل مركز مفتوح يحصل الآن على أسطول وسائقين ومناطق وطلبات ومسارات محلية مستقلة فعليًا بدل اسم عاصمة بلا أثر تشغيلي، مع توزيع عادل لعرض المركبات على الخريطة بين المراكز؛ وتحقق مُثبت باختبارات فعلية من دقة ترحيل إيرادات/مصاريف Mobility للحساب الجاري دون تكرار أو فقدان؛ وترحيل آمن للحفظات القديمة أحادية المركز. Save Schema يبقى 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
     sign_manifest(manifest)
@@ -43,6 +43,6 @@ def main():
     for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
     for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD258_HR_MANUAL_DISPATCH_INTEGRITY.{ext}').write_text(payload,encoding='utf-8')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD259_MOBILITY_MULTI_CENTER.{ext}').write_text(payload,encoding='utf-8')
     print(f'Built 2.9.1 Build258 HR manual hiring / dispatch integrity snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()
