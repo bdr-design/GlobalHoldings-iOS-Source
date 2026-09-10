@@ -1047,28 +1047,27 @@
     placementMode='hub';resetHubPlacementGesture();placingHub=true;closeDrawer();closeMapPopovers();document.querySelector('.map-stage').classList.add('placing-hub');
     $('mapStatus').textContent='وضع إنشاء مركز: اضغط مرة واحدة على الموقع، ثم راجع الاسم واعتمد الفتح · التكلفة $8.5M';
   }
-  function startBasePlacement(){
-    placementMode='base';resetHubPlacementGesture();placingHub=true;closeDrawer();closeMapPopovers();document.querySelector('.map-stage').classList.add('placing-hub');
-    $('mapStatus').textContent='وضع فتح قاعدة عالمية: اضغط مرة واحدة في أي دولة، ثم اعتمد الموقع الظاهر · التكلفة $24M';
-  }
   function startRoadRoutePlacement(){
     placementMode='road-route';roadDraftStart=null;resetHubPlacementGesture();placingHub=true;closeDrawer();closeMapPopovers();document.querySelector('.map-stage').classList.add('placing-hub');
     $('mapStatus').textContent='وضع مسار بري: اضغط على قاعدة أو مركز مملوك كبداية، ثم اضغط على الوجهة. لن يظهر أي خط قبل التأكيد.';
   }
   function clearPlacementPreview(){placementDraft=null;if(placementPreviewMarker&&map)try{map.removeLayer(placementPreviewMarker)}catch(error){nonCritical('map-preview-remove',error);}placementPreviewMarker=null;}
   function showPlacementReview(coords){
-    const isBase=placementMode==='base',place=nearestPlace(coords),cost=isBase?24000000:8500000,name=isBase?`قاعدة ${place.city} — ${place.area||'المركز الإقليمي'}`:logisticsCenterName(place);
+    const place=nearestPlace(coords),cost=8500000,name=logisticsCenterName(place);
     const demand=Math.round(58+Math.min(27,Math.abs(coords[1])*0.22)+Math.min(10,state.assets.length*.4)),risk=Math.round(18+Math.min(42,Math.abs(coords[0]-24)*.55)),score=Math.round(demand-risk*.35-(state.cash<cost?35:0));
-    placementDraft={coords,place,isBase,cost,name,study:{demand,risk,score}};if(placementPreviewMarker&&map)try{map.removeLayer(placementPreviewMarker)}catch(error){nonCritical('map-preview-replace',error);}
+    placementDraft={coords,place,cost,name,study:{demand,risk,score}};if(placementPreviewMarker&&map)try{map.removeLayer(placementPreviewMarker)}catch(error){nonCritical('map-preview-replace',error);}
     placementPreviewMarker=L.circleMarker(coords,{radius:11,color:'#25d7bd',weight:3,fillColor:'#06202a',fillOpacity:.92,interactive:false}).addTo(map);
-    $('mapStatus').innerHTML=`<b>${esc(name)}</b><br><span>${esc(place.country)} · ${fmtMoney(cost)}</span><small>GH AI: طلب ${demand}/100 · مخاطر ${risk}/100 · جدوى ${score}/100</small><div class="map-status-actions"><button type="button" id="confirmMapPlacement" ${score<35?'disabled':''}>اعتماد توصية AI</button><button type="button" id="cancelMapPlacement">تغيير</button></div>`;
+    $('mapStatus').innerHTML=`<b>${esc(name)}</b><br><span>${esc(place.country)} · ${fmtMoney(cost)} تقديريًا (السعر النهائي حسب أفضل عرض مناقصة)</span><small>GH AI: طلب ${demand}/100 · مخاطر ${risk}/100 · جدوى ${score}/100</small><div class="map-status-actions"><button type="button" id="confirmMapPlacement" ${score<35?'disabled':''}>اعتماد الموقع وطرح مناقصة إنشاء</button><button type="button" id="cancelMapPlacement">تغيير</button></div>`;
   }
+  // ينفّذ فتح المركز اللوجستي عبر نفس مسار المناقصة/العقد المعتمد في كل مكان آخر بالمشروع
+  // (openLogisticsHubAI)، بدل مسار مباشر منفصل ومكرر كان يخصم مبلغًا ثابتًا لا يطابق حتى
+  // السعر المعروض للاعب، ولا يترك أي أثر مناقصة أو مقاول.
   function confirmPlacement(){
-    return runBusinessOperation('confirmPlacement',()=>{
-    if(!placementDraft?.coords){notice('اختر موقعًا صالحًا على الخريطة أولًا.');return;}const [lat,lng]=placementDraft.coords,name=String(placementDraft.name||'مركز لوجستي جديد').trim(),price=18000000;
-    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','spend',{company:'road',amount:price,note:`إنشاء مركز لوجستي · ${name}`,method:'شيك مصدق',line:'capex'},{actor:'facility-placement'});const facility={id:nextId('HUB'),kind:'logistics',owned:true,name,city:name,country:'مخصص',coords:[lat,lng],capacity:240,dailyCost:32000,photo:PHOTOS.facility_hq};window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'customHubs',groupValueAdd:price*.72},{actor:'facility-placement'});ensureFacilityWorkforce('road',`تشغيل ${name}`);pushAlert(`تم إنشاء ${name} وربطه بمنظومة المرافق والموارد البشرية.`);save();clearPlacementPreview();renderMap();openDrawer('roadNetwork');}catch(error){notice(`تعذر إنشاء المركز: ${error.message}`);}
-
-    });
+    if(!placementDraft?.coords){notice('اختر موقعًا صالحًا على الخريطة أولًا.');return;}
+    const coords=[...placementDraft.coords];
+    const opened=openLogisticsHubAI(coords);
+    if(opened)clearPlacementPreview();
+    return opened;
   }
   function bindMapPlacementControls(){
     $('mapStatus').addEventListener('click',event=>{if(event.target.closest('#confirmMapPlacement')){event.stopPropagation();confirmPlacement();}else if(event.target.closest('#cancelMapPlacement')){event.stopPropagation();clearPlacementPreview();$('mapStatus').textContent='اختر موقعًا آخر على الخريطة.';}});
@@ -2241,12 +2240,10 @@
     document.querySelectorAll('.compare-asset').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.id;if(marketCompare.includes(id))marketCompare=marketCompare.filter(x=>x!==id);else if(marketCompare.length<3)marketCompare.push(id);else{notice('يمكن مقارنة ثلاثة أصول كحد أقصى.');return;}renderAssetMarketInto();}));
     document.querySelectorAll('.open-branch').forEach(b=>b.addEventListener('click',()=>openBranch(b.dataset.id)));
     document.querySelectorAll('.open-global-base').forEach(b=>b.addEventListener('click',()=>openGlobalBase(b.dataset.key)));
-    document.querySelectorAll('.open-global-route').forEach(b=>b.addEventListener('click',()=>openDrawer('globalRoute',{destinationKey:b.dataset.key})));
     document.querySelectorAll('.open-global-route-center').forEach(b=>b.addEventListener('click',()=>{globalRouteQuery='';openDrawer('globalRoute',{assetId:b.dataset.asset});}));
     document.querySelectorAll('.mobility-open-capital-center').forEach(b=>b.addEventListener('click',()=>openMobilityCapitalCenter(b.dataset.capital)));
     document.querySelectorAll('.world-focus').forEach(b=>b.addEventListener('click',()=>focusWorldEntity(b.dataset.key)));
     document.querySelectorAll('.place-logistics').forEach(b=>b.addEventListener('click',startHubPlacement));
-    document.querySelectorAll('.place-global-base').forEach(b=>b.addEventListener('click',startBasePlacement));
     document.querySelectorAll('.build-road-route').forEach(b=>b.addEventListener('click',createRoadRouteFromForm));
     document.querySelectorAll('.start-road-route').forEach(b=>b.addEventListener('click',startRoadRoutePlacement));
     document.querySelectorAll('.suggest-routes').forEach(b=>b.addEventListener('click',()=>suggestRoutesOnly()));
