@@ -654,7 +654,17 @@
     try{const out=window.GH_DOMAIN_COMMANDS.dispatch({state},'procurement','supplier-payment',{company,amount,supplier,note,method,budgetLine},{actor:'procurement'});return out.result||null;}catch(error){console.warn('supplier payment rejected',error);return null;}
   }
   function awardConstruction(company,facilityKind,siteName,baseCost){
-    const tender=constructionBid(company,facilityKind,baseCost,siteName);if(!tender.winner)return null;const w=tender.winner;if(!canCompanySpend(company,w.quote,'capex'))return {insufficient:true,quote:w.quote,supplier:w.supplier,bids:tender.bids};
+    const tender=constructionBid(company,facilityKind,baseCost,siteName);if(!tender.winner)return null;const w=tender.winner;
+    // سد العجز تلقائيًا من الشركة القابضة (نفس منطق ensureFunding في مسار الخطط السنوية) بدل رفض
+    // صامت: الشركة التابعة تبدأ برأس مال صغير (طيران $25M) بينما أول قاعدة مطار تجاري تتجاوز $40M
+    // بعد رفع المناقصة، فكان فتح أي قاعدة مستحيلًا عمليًا رغم وجود سيولة كبيرة لدى المجموعة.
+    if(!canCompanySpend(company,w.quote,'capex')){
+      const have=companyOperatingBalance(company),gap=Math.max(0,w.quote-have),groupHave=companyOperatingBalance('group');
+      if(company!=='group'&&gap>0&&groupHave>=gap&&transferBetweenCompanies('group',company,gap,`تمويل عقد بناء ${siteName} من الشركة القابضة`)){
+        pushAlert(`حُوِّل ${fmtMoney(gap)} من الشركة القابضة إلى ${typeName(company)} لتغطية عقد بناء ${siteName}.`);
+      }
+      if(!canCompanySpend(company,w.quote,'capex'))return {insufficient:true,quote:w.quote,have:companyOperatingBalance(company),groupHave,supplier:w.supplier,bids:tender.bids};
+    }
     try{const out=window.GH_DOMAIN_COMMANDS.dispatch({state},'procurement','award-construction',{company,facilityKind,siteName,bid:w,bids:tender.bids.map(x=>({supplier:x.supplier.legalName||x.supplier.name,quote:x.quote,score:x.score}))},{actor:'procurement'});return out.result||null;}catch(error){console.warn('construction award rejected',error);return null;}
   }
   function ensureBankCorporateClients(){
@@ -1150,7 +1160,7 @@
         // Mobility is represented by one tiny canvas point rather than a DOM
         // car icon. It stays on the exact registered route and keeps the map
         // cheap when hundreds of vehicles are active.
-        const marker=L.circleMarker(pos,{renderer:mobilityRenderer,className:'asset-marker mobility mobility-point',radius:2.6,color:'#050505',weight:1,opacity:.94,fillColor:'#000000',fillOpacity:.98,interactive:true,bubblingMouseEvents:false}).addTo(map);
+        const marker=L.circleMarker(pos,{renderer:mobilityRenderer,className:'asset-marker mobility mobility-point',radius:2.6,color:'#dfe9f7',weight:1,opacity:.85,fillColor:'#000000',fillOpacity:.98,interactive:true,bubblingMouseEvents:false}).addTo(map);
         marker.bindTooltip(`${esc(vehicle.name)} · ${moving?'رحلة نشطة':'متاح'}`,{direction:'top',permanent:false,opacity:.88});
         marker.on('click',()=>openDrawer('companyManage',{type:'mobility',tab:'operations'}));ownMarkers.set(`mobility:${vehicle.id}`,marker);
       }
@@ -1752,7 +1762,7 @@
   }
   function openGlobalBase(key,opts={}){
     return runBusinessOperation('openGlobalBase',()=>{
-    const entity=worldEntityByKey(key);if(!entity){pushAlert('تعذر فتح القاعدة: الموقع غير معروف أو تغيّرت بياناته.');return false;}if(globalBaseFor(key)){pushAlert(`القاعدة في ${entity.name} مفتوحة بالفعل.`);return false;}const baseCost=facilityPrice(entity),dailyCost=facilityDailyCost(entity),company=entity.kind==='airport'?'air':'sea',facilityKind=entity.kind==='airport'?'airport-base':'port-base',build=awardConstruction(company,facilityKind,`قاعدة ${entity.name}`,baseCost);if(!build||build.insufficient){if(!opts.silent)notice(`رصيد حساب ${typeName(company)} غير كافٍ لعقد البناء.`);return false;}const safeCode=String(entity.code||nextId('BASE')).replace(/[^a-z0-9]/gi,'-'),id=`BASE-${entity.kind==='airport'?'AIR':'SEA'}-${safeCode}-${state.globalBases.length+1}`,facility={id,sourceKey:key,company,kind:facilityKind,owned:true,icon:entity.icon,photo:entity.kind==='airport'?PHOTOS.facility_airport:PHOTOS.facility_port,name:`قاعدة ${entity.name}`,city:entity.city,country:entity.country,coords:entity.coords,code:entity.code,iata:entity.iata,icao:entity.icao,elevationFt:entity.elevationFt,terminal:entity.terminal,cost:build.amount,dailyCost,capacity:entity.kind==='airport'?'تشغيل جوي وشحن':'تشغيل بحري ولوجستي',contractor:build.contractor,constructionContractId:build.id,detail:`قاعدة عالمية افتتحتها المجموعة في ${entity.name}.`};
+    const entity=worldEntityByKey(key);if(!entity){pushAlert('تعذر فتح القاعدة: الموقع غير معروف أو تغيّرت بياناته.');return false;}if(globalBaseFor(key)){pushAlert(`القاعدة في ${entity.name} مفتوحة بالفعل.`);return false;}const baseCost=facilityPrice(entity),dailyCost=facilityDailyCost(entity),company=entity.kind==='airport'?'air':'sea',facilityKind=entity.kind==='airport'?'airport-base':'port-base',build=awardConstruction(company,facilityKind,`قاعدة ${entity.name}`,baseCost);if(!build||build.insufficient){if(!opts.silent)notice(build?.insufficient?`تعذر فتح قاعدة ${entity.name}: عرض البناء ${fmtMoney(build.quote)} بينما رصيد ${typeName(company)} ${fmtMoney(build.have)} ورصيد القابضة ${fmtMoney(build.groupHave)}. موّل الشركة أو القابضة أولًا.`:`تعذر فتح قاعدة ${entity.name}: لا يوجد عرض بناء صالح.`);return false;}const safeCode=String(entity.code||nextId('BASE')).replace(/[^a-z0-9]/gi,'-'),id=`BASE-${entity.kind==='airport'?'AIR':'SEA'}-${safeCode}-${state.globalBases.length+1}`,facility={id,sourceKey:key,company,kind:facilityKind,owned:true,icon:entity.icon,photo:entity.kind==='airport'?PHOTOS.facility_airport:PHOTOS.facility_port,name:`قاعدة ${entity.name}`,city:entity.city,country:entity.country,coords:entity.coords,code:entity.code,iata:entity.iata,icao:entity.icao,elevationFt:entity.elevationFt,terminal:entity.terminal,cost:build.amount,dailyCost,capacity:entity.kind==='airport'?'تشغيل جوي وشحن':'تشغيل بحري ولوجستي',contractor:build.contractor,constructionContractId:build.id,detail:`قاعدة عالمية افتتحتها المجموعة في ${entity.name}.`};
     try{window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'globalBases',groupValueAdd:build.amount*.76},{actor:'expansion'});ensureFacilityWorkforce(company,'فتح قاعدة جديدة');pushAlert(`افتتحت ${facility.name} بعقد ${build.id}، وربطت وجهة التسليم والـHR بالقاعدة نفسها.`);save();updateKpis();renderMap();if(!opts.silent)openFacility(id);return true;}catch(error){notice(`ألغي فتح القاعدة بالكامل: ${error.message}`);return false;}
 
     });
@@ -2523,7 +2533,11 @@
   $('fitWorldBtn').addEventListener('click',()=>{if(map)map.setView([22,28],3);closeMapPopovers();});
   document.addEventListener('click',e=>{if(!e.target.closest('.map-popover')&&!e.target.closest('.map-fab')&&!e.target.closest('.speed-dock'))closeMapPopovers();});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&placingHub){placingHub=false;resetHubPlacementGesture();document.querySelector('.map-stage').classList.remove('placing-hub');updateMapStatus();}});
-  document.querySelectorAll('.filter-btn').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();state.activeFilter=btn.dataset.filter;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.toggle('active',b===btn));save();renderMap();}));
+  document.querySelectorAll('.filter-btn').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();state.activeFilter=btn.dataset.filter;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.toggle('active',b===btn));save();renderMap();
+    // اختيار فلتر GH Mobility ينقل الخريطة تلقائيًا لأكثر مدينة نشاطًا؛ الأسطول الحضري يتركّز في مساحة
+    // بضعة كيلومترات ولا يمكن تمييزه إطلاقًا على مستوى تكبير العالم.
+    if(btn.dataset.filter==='mobility'&&window.GH_MOBILITY_CORE?.snapshot?.(state)?.vehicles>0){const m=state.mobility||{},ids=['RUH',...(m.capitalCenters||[]).map(c=>c.capitalId)],best=ids.map(id=>({id,n:window.GH_MOBILITY_CORE.centerSnapshot(state,id).moving})).sort((a,b)=>b.n-a.n)[0];const meta=best&&window.GH_MOBILITY_CORE.centerMeta(state,best.id);if(meta?.coords)panMapTo(meta.coords,11);}
+  }));
   $('competitorToggle').addEventListener('change',e=>{state.showCompetitors=e.target.checked;save();renderMap();});
   document.querySelectorAll('.map-popover button,.map-popover input,.speed-menu button').forEach(el=>el.addEventListener('click',e=>e.stopPropagation()));
   window.addEventListener('resize',()=>requestAnimationFrame(refreshOpenMapPopoverPositions),{passive:true});

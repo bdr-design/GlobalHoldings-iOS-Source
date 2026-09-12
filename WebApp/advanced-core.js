@@ -634,7 +634,7 @@
   async function handleAction(btn,ctx){
     const id=btn.dataset.ghAction,s=ctx.state;
     if(id==='mobility-launch'||id==='mobility-buy-fleet'){
-      try{const result=id==='mobility-launch'?globalThis.GH_MOBILITY_CORE?.launch?.(ctx):globalThis.GH_MOBILITY_CORE?.buyFleet?.(ctx,{quantity:48});if(!result)throw new Error('محرك التنقل غير متاح.');ctx.pushAlert(id==='mobility-launch'?`اكتمل الشراء اليدوي والإطلاق: ${result.vehicles} مركبة و${result.drivers} شريك قيادة.`:`اكتمل شراء الدفعة اليدوية. الأسطول الآن ${result.vehicles} مركبة.`);refresh(ctx,'companyManage',{type:'mobility',tab:'operations'});}catch(error){ctx.pushAlert(`تعذر تنفيذ شراء GH Mobility: ${error.message}`);refresh(ctx,'companyManage',{type:'mobility',tab:'operations'});}return;
+      try{const result=id==='mobility-launch'?globalThis.GH_MOBILITY_CORE?.launch?.(ctx):globalThis.GH_MOBILITY_CORE?.buyFleet?.(ctx,{quantity:48});if(!result)throw new Error('محرك التنقل غير متاح.');ctx.pushAlert(id==='mobility-launch'?`اكتمل الشراء اليدوي والإطلاق: ${result.vehicles} مركبة و${result.drivers} شريك قيادة. انتقلت الخريطة إلى شبكة الرياض.`:`اكتمل شراء الدفعة اليدوية. الأسطول الآن ${result.vehicles} مركبة.`);const ruh=globalThis.GH_MOBILITY_CORE?.centerMeta?.(s,'RUH');ctx.panMapTo?.(ruh?.coords,11);refresh(ctx,'companyManage',{type:'mobility',tab:'operations'});}catch(error){ctx.pushAlert(`تعذر تنفيذ شراء GH Mobility: ${error.message}`);refresh(ctx,'companyManage',{type:'mobility',tab:'operations'});}return;
     }
     if(id==='mobility-buy-fleet-center'){
       const capitalId=btn.dataset.capital||'';
