@@ -236,7 +236,10 @@
     if(type==='mobility')return (state.customHubs||[]).filter(x=>x.kind==='mobility-center');
     return [];
   }
-  function aiFacilityCapacity(state,f){const modeled=Number(state.advanced?.facilities?.[f.id]?.capacity),fallback=['airport','airport-base'].includes(f.kind)?24:['port','port-base'].includes(f.kind)?18:Number(f.bays||42);return Number.isFinite(modeled)&&modeled>0?modeled:fallback;}
+  // مصدر وحيد لحساب سعة أي منشأة (بدل نسخة مستقلة كانت هنا تُكرر نفس الصيغة تقريبًا وتختلف
+  // عنها في حالة الأنواع غير المصنّفة صراحة). نفس الدالة المستخدمة فعليًا لفحص سعة استقبال
+  // التسليم في realism-core.js.
+  function aiFacilityCapacity(state,f){return globalThis.GH_REALISM?.deliveryCapacity?.(state,f)??Number(f.bays||42);}
   function aiBestExpansionRequest(type,ctx,day){
     const s=ctx.state;
     if(type==='group'){

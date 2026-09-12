@@ -1,7 +1,7 @@
 {
   "name": "global-holdings-source-guards",
   "private": true,
-  "version": "2.9.1-build265",
+  "version": "2.9.1-build266",
   "scripts": {
     "test:guards": "node scripts/test_runner.cjs",
     "lint": "eslint WebApp/*.js && node scripts/ownership_guard.cjs",
