@@ -6,7 +6,7 @@
     sea:{captains:2,sailors:14,seng:4},
     road:{drivers:2,mech:.25}
   });
-  const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,power:32,bank:16,acquired:28});
+  const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,'mobility-center':18,power:32,bank:16,acquired:28});
   const EXECUTIVE_RULES=Object.freeze({
     H3:()=>true,
     H4:s=>(s.assets||[]).some(a=>a.type==='air')||(s.globalBases||[]).some(f=>f.company==='air'),
@@ -26,13 +26,12 @@
     hr.employmentContracts=Array.isArray(hr.employmentContracts)?hr.employmentContracts:[];
     hr.requisitions=Array.isArray(hr.requisitions)?hr.requisitions:[];
     hr.hiringLog=Array.isArray(hr.hiringLog)?hr.hiringLog:[];
-    hr.aiReviews=Array.isArray(hr.aiReviews)?hr.aiReviews:[];
     hr.trainingSpend=Math.max(0,Number(hr.trainingSpend)||0);
     hr.policy=hr.policy&&typeof hr.policy==='object'?hr.policy:{approvalMode:'executive-authorization',contractMonths:24,minimumCoverage:100};
     return hr;
   }
-  function companyOfFacility(f){if(f?.company)return f.company;if(f?.kind==='airport-base')return'air';if(f?.kind==='port-base')return'sea';if(['depot','logistics'].includes(f?.kind))return'road';if(f?.kind==='power')return'power';if(f?.kind==='bank')return'bank';return'group';}
-  function facilityNeed(f){const base=FACILITY_STANDARDS[f?.kind]||12,cap=Number(f?.bays||f?.capacityMW||0),scale=f?.kind==='power'?Math.ceil(cap/250)*4:['depot','logistics'].includes(f?.kind)?Math.ceil(cap/20)*3:0;return Math.max(base,base+scale);}
+  function companyOfFacility(f){if(f?.company)return f.company;if(f?.kind==='airport-base')return'air';if(f?.kind==='port-base')return'sea';if(['depot','logistics'].includes(f?.kind))return'road';if(f?.kind==='mobility-center')return'mobility';if(f?.kind==='power')return'power';if(f?.kind==='bank')return'bank';return'group';}
+  function facilityNeed(f){const base=FACILITY_STANDARDS[f?.kind]||12,cap=Number(f?.bays||f?.capacityMW||0),scale=f?.kind==='power'?Math.ceil(cap/250)*4:['depot','logistics'].includes(f?.kind)?Math.ceil(cap/20)*3:f?.kind==='mobility-center'?Math.ceil(cap/40)*2:0;return Math.max(base,base+scale);}
   function requiredCrewForFleet(state,sector,assetCount=null){
     const count=assetCount==null?(state.assets||[]).filter(a=>a.type===sector).length:Math.max(0,Number(assetCount)||0),standard=CREW_STANDARDS[sector]||{},out={};
     for(const [roleId,ratio] of Object.entries(standard))out[roleId]=Math.ceil(count*ratio);
@@ -72,12 +71,9 @@
     const hr=ensure(state),need=snapshot(state,ctx,company);if(!need.total)return null;const existing=hr.requisitions.find(r=>r.status==='open'&&r.company===company);if(existing){existing.need=clone(need);existing.updatedAt=Number(state.simSeconds)||0;return existing;}
     const r={id:nextId(state,'HR-REQ'),company,status:'open',source,createdAt:Number(state.simSeconds)||0,need:clone(need),title:company==='all'?`سد كامل العجز الوظيفي · ${need.total}`:`سد عجز ${company} · ${need.total}`,approvalRequestId:null};hr.requisitions.unshift(r);return r;
   }
-  function aiReview(state,ctx={},company='all'){
-    const hr=ensure(state),need=snapshot(state,ctx,company),review={id:nextId(state,'HR-AI'),at:Number(state.simSeconds)||0,company,need:clone(need),recommendation:need.total?'hire-gap':'no-action',score:need.total?Math.max(70,Math.min(100,80+Math.round((100-need.coverage)*.2))):100};hr.aiReviews.unshift(review);hr.aiReviews=hr.aiReviews.slice(0,120);return review;
-  }
   function tickDay(state,processedDay=null){const hr=ensure(state),d=processedDay==null?day(state):Math.floor(Number(processedDay)||0);let expired=0;for(const c of hr.employmentContracts){const end=Number(c.startDay||0)+Math.max(1,Number(c.termMonths||24))*30;if(c.status==='ساري'&&d>=end){c.status='منتهي';c.endedDay=d;expired++;}}return {day:d,expired};}
   function health(state,ctx={}){const s=snapshot(state,ctx,'all'),hr=ensure(state);return {coverage:s.coverage,missing:s.total,crewMissing:s.crewMissing,facilityMissing:s.facilityMissing,executiveMissing:s.executiveMissing,openRequisitions:hr.requisitions.filter(r=>r.status==='open').length,contracts:hr.employmentContracts.filter(c=>c.status==='ساري').length};}
-  function execute(ctx,cmd,p={}){const state=ctx.state||ctx;if(cmd==='tick-day')return tickDay(state,p.day);if(cmd==='hire')return executeHiring(state,ctx,p.company||'all',p.source||'HR Domain Command',p.scope||'all');if(cmd==='hire-executive'){const hr=ensure(state),id=String(p.candidateId||''),c=(ctx.candidates||p.candidates||[]).find(x=>x.id===id);if(!c)throw new Error('candidate-not-found');state.hired=Array.isArray(state.hired)?state.hired:[];if(state.hired.includes(id))throw new Error('candidate-already-hired');state.hired.push(id);const row=contract(state,{company:p.company||'group',candidateId:id,name:c.name,role:c.role,count:1,center:p.center||'المقر الرئيسي',salary:c.salary,source:p.source||'HR executive recruitment'});hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company:p.company||'group',source:p.source||'HR executive recruitment',total:1,candidateId:id});hr.hiringLog=hr.hiringLog.slice(0,200);return {candidate:c,contract:row};}if(cmd==='requisition')return createRequisition(state,ctx,p.company||'all',p.source||'domain');if(cmd==='ai-review')return aiReview(state,ctx,p.company||'all');throw new Error(`Unknown HR command: ${cmd}`);}
-  const API={VERSION,ensure,snapshot,health,aiReview,createRequisition,executeHiring,requiredCrewForFleet,facilityNeed,companyOfFacility,tickDay,execute};
+  function execute(ctx,cmd,p={}){const state=ctx.state||ctx;if(cmd==='tick-day')return tickDay(state,p.day);if(cmd==='hire')return executeHiring(state,ctx,p.company||'all',p.source||'HR Domain Command',p.scope||'all');if(cmd==='hire-executive'){const hr=ensure(state),id=String(p.candidateId||''),c=(ctx.candidates||p.candidates||[]).find(x=>x.id===id);if(!c)throw new Error('candidate-not-found');state.hired=Array.isArray(state.hired)?state.hired:[];if(state.hired.includes(id))throw new Error('candidate-already-hired');state.hired.push(id);const row=contract(state,{company:p.company||'group',candidateId:id,name:c.name,role:c.role,count:1,center:p.center||'المقر الرئيسي',salary:c.salary,source:p.source||'HR executive recruitment'});hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company:p.company||'group',source:p.source||'HR executive recruitment',total:1,candidateId:id});hr.hiringLog=hr.hiringLog.slice(0,200);return {candidate:c,contract:row};}if(cmd==='requisition')return createRequisition(state,ctx,p.company||'all',p.source||'domain');throw new Error(`Unknown HR command: ${cmd}`);}
+  const API={VERSION,ensure,snapshot,health,createRequisition,executeHiring,requiredCrewForFleet,facilityNeed,companyOfFacility,tickDay,execute};
   globalThis.GH_HR_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('hr',API);if(globalThis.window&&window!==globalThis)window.GH_HR_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

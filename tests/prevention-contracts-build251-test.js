@@ -44,10 +44,11 @@ await test('AI cannot record execution without a matching live authorization',()
  assert.throws(()=>command('ai','record-execution',{id:r.id,result:{ok:true}}),/authority/);
  command('ai','delegate',{id:r.id,letter:{authorizedBy:'Founder'}});assert.throws(()=>command('ai','record-execution',{id:r.id,result:true}),/authority/);
 });
-await test('HR failure after delivery keeps the request open and never departs an understaffed asset',()=>{
- const {s,state,ctx,command,request}=scenario(),r=request(3);s.GH_REQUEST_CORE.authorize(ctx,r.id);s.GH_REQUEST_CORE.tick(ctx);state.simSeconds=61;s.GH_REQUEST_CORE.tick(ctx);
- const old=JSON.stringify(state.crew);s.GH_HR_CORE=undefined;assert.throws(()=>s.GH_REQUEST_CORE.tick(ctx),/HR|hr/);assert.notStrictEqual(r.status,'completed');assert.strictEqual(JSON.stringify(state.crew),old);
- assert.throws(()=>command('fleet','depart',{id:state.assets[0].id,route:{id:'NONE',type:'air'}}));
+await test('manual purchase never assigns a route or executes AI side effects',()=>{
+ const {state,ctx,manualPurchase}=scenario(),before=state.assets.length,order=manualPurchase(2);
+ assert(order&&state.assets.length===before,'manual purchase must create only a delivery contract');
+ assert(state.assets.every(a=>!a.routeId||a.phase==='moving'),'purchase must not assign routes');
+ assert(!state.advanced.ai.requests.some(r=>r.kind==='procurement'),'manual purchase must not create an AI request');
 });
 await test('save/reload migration does not copy subsidiary cash into holding treasury',()=>{
  const {s,state,defaults,load}=scenario();load('migration-core');const before=state.cash,holding=state.treasury.accounts[0].balance,books=JSON.stringify(state.companyFinance);

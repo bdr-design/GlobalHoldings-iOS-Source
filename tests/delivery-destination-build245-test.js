@@ -1,11 +1,9 @@
 const fs=require('fs'),assert=require('assert');
-const realism=fs.readFileSync('WebApp/realism-core.js','utf8'),app=fs.readFileSync('WebApp/app.js','utf8'),req=fs.readFileSync('WebApp/request-core.js','utf8');
+const realism=fs.readFileSync('WebApp/realism-core.js','utf8'),app=fs.readFileSync('WebApp/app.js','utf8');
 assert(realism.includes("const DELIVERY_WINDOW_SECONDS=Object.freeze({air:90,sea:150,road:60})"),'delivery SLA window mismatch');
 assert(app.includes("baseWindow=type==='air'?90:type==='sea'?150:60"),'purchase delivery SLA mismatch');
 assert(!realism.includes('recoveredBaseId'),'silent delivery rebase must be removed');
 assert(realism.includes('approved-destination-missing-or-full'),'exact destination blocking reason missing');
-assert(!req.includes('rebaseIfNeeded'),'request center must not silently choose another base');
-assert(req.includes('d.baseId!==r.baseId'),'created delivery destination contract guard missing');
-assert(req.includes('a.baseFacility!==r.baseId'),'delivered asset destination verification missing');
-assert(req.includes('PROCUREMENT_DELIVERY_CONTRACT_BROKEN')&&req.includes('DELIVERY_VERIFICATION_FAILED'),'critical delivery incidents missing');
+assert(app.includes('manualPurchaseFromCard')&&app.includes('baseId=card?.querySelector'),'manual purchase must pin an explicit delivery destination');
+assert(app.includes('purchase-assets')&&app.includes('leadSeconds'),'procurement delivery contract must retain destination and SLA');
 console.log('Delivery Destination Build245: PASS');

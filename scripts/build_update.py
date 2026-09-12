@@ -16,7 +16,7 @@ OPERATIONS=[
     'boundaryTransactions':'day-hour-finance-market-ai-inside-slice-commit','conflictPolicy':'reject-entire-slice-no-partial-eligible-commit',
     'lifecycleSafety':'visibility-cancel-persist-no-background-catchup','timeControls':'pause-x1-x2-x4',
     'assetDisposal':'return-to-owned-center-atomic-sale-v1','companyBudgets':'budget-actual-forecast-variance-v2',
-    'assetRequestCenter':'one-approval-ai-portfolio-v2-resumable','aiAssetOrchestration':'market-center-delivery-staff-route-depart-recovery-v2','mobilityIntegration':'live-map-trip-finance-hr-v2','investorTransfers':'treasury-journal-idempotent-v1','financialPaper':'local-security-art-v1','navigationIA':'unified-domain-names-height-safe-rail-v1','aiDemandClosure':'lifecycle-dependency-policy-event-ledger-v3','aiGovernance':'investment-committee-npv-irr-payback-v5','aiProactiveReview':'simulation-hour-supervised-v6',
+    'assetRequestCenter':'manual-market-purchase-v1','aiAssetOrchestration':'ai-suggest-only-manual-dispatch-v1','mobilityIntegration':'live-map-trip-finance-hr-v2','investorTransfers':'treasury-journal-idempotent-v1','financialPaper':'local-security-art-v1','navigationIA':'unified-domain-names-height-safe-rail-v1','aiDemandClosure':'lifecycle-dependency-policy-event-ledger-v3','aiGovernance':'investment-committee-npv-irr-payback-v5','aiProactiveReview':'simulation-hour-supervised-v6',
     'procurementApproval':'atomic-delivery-clock-slice-cadence-v3','companyIdentity':'editable-live-name-logo-v2',
     'financialDocuments':'authority-inspired-cheques-transfers-v6','systemCompletion':'action-center-ui-quality-deterministic-business-ids-v3','workflowControl':'central-confirm-feedback-post-integrity-v1','financeIntegrity':'entity-ledger-account-document-invariants-v1','persistenceGateway':'validated-slots-native-vault-save-revision-v2','deterministicState':'sim-time-cache-and-sequence-identifiers-v1','corporateBank':'credit-trade-liquidity-v1',
     'bankRisk':'basel-cet1-rwa-lcr-nsfr-v3','economyEngine':'causal-correlated-deterministic-v2',
@@ -33,7 +33,8 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-internal-2.9.1-build254-root-operational-recovery','name':'Global Holdings 2.9.1 — Root Operational Recovery','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD254: استكمال آمن للأصول والمسارات دون حذف الاستلام، ربط GH Mobility بالخريطة والمالية والرحلات، حوالات مستثمر موثقة، وصور أمان محلية للشيكات. Save Schema يبقى 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
+    manifest={'id':'gh-internal-2.9.1-build267-base-funding-and-map-visibility','name':'Global Holdings 2.9.1 — Base Funding & Mobility Map Visibility','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD267: أول إصدار مبني على اختبار تدفق واجهة حقيقي (jsdom يحمّل كل ملفات WebApp بترتيب index.html ويضغط الأزرار الفعلية). كشف وأصلح خللين حقيقيين على لعبة جديدة: (1) فتح أي قاعدة مطار/ميناء كان يُرفض دائمًا لأن رأس مال الشركة التابعة ($25M) أقل من عرض مناقصة أول قاعدة تجارية (~$44M) ولا يوجد سد تلقائي للعجز من القابضة — الآن تُموَّل الفجوة تلقائيًا من القابضة كتحويل موثق (نفس منطق مسار الخطط السنوية)، ورسالة الرفض تذكر الأرقام الفعلية عند تعذر التمويل حتى من القابضة؛ (2) مركبات Mobility لم تكن تظهر بعد الإطلاق لأن الخريطة تبقى على مستوى تكبير العالم حيث أسطول الرياض كله ≈ 2 بكسل، والنقاط سوداء على الطبقة الداكنة الافتراضية — الآن تنتقل الخريطة للرياض بمستوى مدينة عند الإطلاق، وفلتر GH Mobility يقفز لأكثر مدينة نشاطًا، والنقاط تبقى سوداء (حسب المواصفة) بحدّ فاتح رفيع. Save Schema يبقى 2.0.0.',
+    'fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
     sign_manifest(manifest)
@@ -43,6 +44,6 @@ def main():
     for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
     for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD254_ROOT_OPERATIONAL_RECOVERY.{ext}').write_text(payload,encoding='utf-8')
-    print(f'Built 2.9.1 Build254 root operational recovery snapshot: {len(files)} files, {total:,} unpacked bytes')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD267_BASE_FUNDING_MAP_VISIBILITY.{ext}').write_text(payload,encoding='utf-8')
+    print(f'Built 2.9.1 Build258 HR manual hiring / dispatch integrity snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()

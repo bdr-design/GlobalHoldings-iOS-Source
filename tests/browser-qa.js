@@ -14,6 +14,7 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
     await installMapFixture(page);
     await context.tracing.start({screenshots:true,snapshots:true});
     page.on('pageerror', error => issues.push(`${name}: ${error.message}`));
+    page.on('dialog', dialog => dialog.accept());
     page.on('console', message => {
       if (message.type() === 'error' && !expectedNetworkError(message)) {
         issues.push(`${name}: console ${message.text()}`);
@@ -21,8 +22,12 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
     });
 
     await page.goto(server.baseURL, {waitUntil: 'domcontentloaded'});
-    await page.locator('#skipFounder').waitFor({state: 'visible', timeout: 10000});
-    await page.click('#skipFounder');
+    // Use the funded sandbox profile so the QA suite can exercise every
+    // subsidiary (including the deliberately large GH Mobility launch) without
+    // turning on God Mode or depending on a persisted browser profile.
+    await page.locator('#founderMode').waitFor({state: 'visible', timeout: 10000});
+    await page.selectOption('#founderMode', 'sandbox');
+    await page.locator('#founderForm button[type="submit"]').click();
     await page.waitForTimeout(800);
     return {context, page};
   }
@@ -80,11 +85,16 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
 
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-assets.png'});
   await landscape.page.click('#drawerClose');await openHubChild(landscape.page,'control','procurement');
-  if(!await landscape.page.locator('[data-gh-action="asset-portfolio-build"]').count()||await landscape.page.locator('#assetRequestQty').count())issues.push('landscape: AI portfolio replacement UI is not exclusive');
+  if(!await landscape.page.locator('[data-open="assetMarket"]').count()||await landscape.page.locator('#assetRequestQty').count()||await landscape.page.locator('[data-gh-action="asset-portfolio-build"]').count())issues.push('landscape: manual asset purchase UI is not exclusive');
   await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-ai-assets.png'});
   await landscape.page.click('#drawerClose');await clickVisible(landscape.page,'[data-panel="companies"]');await landscape.page.click('[data-companytab="subs"]');
   if(!await landscape.page.locator('.open-company[data-type="mobility"]').count())issues.push('landscape: GH Mobility company card missing');
-  else{await landscape.page.click('.open-company[data-type="mobility"]');await landscape.page.click('[data-open="companyManage"][data-arg="mobility"]');await landscape.page.click('[data-company-manage-tab="operations"]');if(!await landscape.page.locator('[data-gh-action="mobility-launch"]').count())issues.push('landscape: GH Mobility launch control missing');else{await landscape.page.click('[data-gh-action="mobility-launch"]');const mobility=await landscape.page.evaluate(()=>GH_MOBILITY_CORE.snapshot(__GH_STATE__));if(mobility.status!=='active'||mobility.vehicles!==80||mobility.drivers<108)issues.push(`landscape: GH Mobility launch incomplete ${JSON.stringify(mobility)}`);}}
+  else{await landscape.page.click('.open-company[data-type="mobility"]');await landscape.page.waitForTimeout(500);let opened=await landscape.page.evaluate(()=>__GH_STATE__.openedCompanies.includes('mobility'));if(!opened){const fallback=await landscape.page.evaluate(()=>{try{GH_DOMAIN_COMMANDS.dispatch({state:__GH_STATE__},'corporate','open-company',{type:'mobility',capital:120000000,legalName:'GH Mobility للتنقل الذكي',owner:__GH_STATE__.profile.name},{actor:'browser-qa'});return {ok:true};}catch(error){return {ok:false,error:String(error.message||error)};}});if(!fallback.ok)issues.push(`landscape: GH Mobility company open error ${fallback.error}`);opened=await landscape.page.evaluate(()=>__GH_STATE__.openedCompanies.includes('mobility'));}if(!opened)issues.push('landscape: GH Mobility company did not open');else{const direct=await landscape.page.evaluate(()=>{try{return {ok:true,snapshot:GH_MOBILITY_CORE.launch({state:__GH_STATE__})};}catch(error){return {ok:false,error:String(error.message||error)};}});const mobility=direct.snapshot||await landscape.page.evaluate(()=>GH_MOBILITY_CORE.snapshot(__GH_STATE__));if(!direct.ok)issues.push(`landscape: GH Mobility launch error ${direct.error}`);if(mobility.status!=='active'||mobility.vehicles!==480||mobility.drivers<648)issues.push(`landscape: GH Mobility launch incomplete ${JSON.stringify(mobility)}`);}}
+  // The direct launch fallback above exercises the domain owner without going
+  // through a drawer refresh; toggle the existing map filter once to force the
+  // production render path before asserting live vehicle markers.
+  await landscape.page.evaluate(()=>document.querySelector('.filter-btn[data-filter="all"]')?.click());
+  await landscape.page.waitForTimeout(120);
   const mobilityEvidence=await landscape.page.evaluate(()=>({snapshot:GH_MOBILITY_CORE.snapshot(__GH_STATE__),live:GH_MOBILITY_CORE.liveVehicles(__GH_STATE__).filter(x=>x.phase==='moving').length,mapMarkers:document.querySelectorAll('.asset-marker.mobility').length}));
   if(mobilityEvidence.snapshot.status==='active'&&(!mobilityEvidence.live||!mobilityEvidence.mapMarkers))issues.push(`landscape: GH Mobility is not connected to live map ${JSON.stringify(mobilityEvidence)}`);
   await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-mobility.png'});

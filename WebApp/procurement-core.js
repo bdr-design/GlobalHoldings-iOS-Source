@@ -9,8 +9,8 @@ if(cmd==='run-tender'){const bids=(Array.isArray(p.bids)?p.bids:[]).filter(x=>x&
 if(cmd==='purchase-assets'){
  const type=String(p.type||''),qty=Number(p.qty??1),item=(ctx.assetCatalog||globalThis.GH_ASSET_CATALOG)?.[p.type]?.[p.tab||'new']?.find(i=>i.id===p.item?.id),base=[...(s.globalBases||[]),...(s.customHubs||[])].find(f=>f.id===p.base?.id),supplier=p.supplier,mode=String(p.mode||'cash');
  if(!Number.isInteger(qty)||qty<1||qty>50||!['cash','finance','lease'].includes(mode)||!['air','sea','road'].includes(type)||!item?.id||!base?.id||base.owned!==true||base.company!==type||!(type==='air'?['airport-base']:type==='sea'?['port-base']:['depot','logistics']).includes(base.kind))throw new Error('invalid-asset-purchase');
- const request=s.advanced?.procurement?.assetRequests?.find(r=>r.id===p.requestRef);
- if(!request||request.baseId!==base.id||request.company!==type||request.catalogId!==item.id||Number(request.qty)!==qty||!request.authority?.id||!['ordering','authorized'].includes(request.status))throw new Error('purchase-request-contract');
+ const request=s.advanced?.procurement?.assetRequests?.find(r=>r.id===p.requestRef),manual=Boolean(p.manual)||String(p.requestRef||'').startsWith('MANUAL-');
+ if(!manual&&(!request||request.baseId!==base.id||request.company!==type||request.catalogId!==item.id||Number(request.qty)!==qty||!request.authority?.id||!['ordering','authorized'].includes(request.status)))throw new Error('purchase-request-contract');
  if(!p.prepaid&&(!supplier?.name&&!supplier?.legalName))throw new Error('asset-supplier-required');
  const realism=globalThis.GH_REALISM?.migrate?.(s);const deliveries=realism?.procurement?.deliveries;if(!Array.isArray(deliveries))throw new Error('delivery-store-unavailable');
  const modeled=Number(s.advanced?.facilities?.[base.id]?.capacity),fallback=['airport','airport-base'].includes(base.kind)?24:['port','port-base'].includes(base.kind)?18:['depot','logistics'].includes(base.kind)?Number(base.bays||42):12,capacity=Number.isFinite(modeled)&&modeled>0?modeled:fallback;

@@ -1,0 +1,18 @@
+'use strict';
+const fs=require('fs'),assert=require('assert');
+const app=fs.readFileSync('WebApp/app.js','utf8');
+const advanced=fs.readFileSync('WebApp/advanced-core.js','utf8');
+const mobility=fs.readFileSync('WebApp/mobility-core.js','utf8');
+const procurement=fs.readFileSync('WebApp/procurement-core.js','utf8');
+const index=fs.readFileSync('WebApp/index.html','utf8');
+assert(!index.includes('request-core.js'),'removed request core must not load');
+assert(!fs.existsSync('WebApp/request-core.js'),'removed request core must not remain');
+assert(app.includes('manual-buy-asset')&&app.includes('manualPurchaseFromCard'),'asset purchase is manual in the market');
+assert(app.includes('suggest-routes')&&app.includes('depart-all-assets'),'routes expose AI suggestion and one-button manual departure');
+assert(app.includes('function suggestRoutesOnly')&&!app.includes('data-gh-action="auto-create-routes"'),'AI cannot auto-create routes');
+assert(advanced.includes('renderManualProcurement')&&app.includes("panel==='assets'||panel==='assetMarket'"),'manual asset market is the single entry point');
+assert(mobility.includes('FLEET_BASELINE=480')&&mobility.includes('recordFleetPurchase')&&mobility.includes('urbanPath'),'Mobility has a large urban fleet and financial purchase path');
+assert(mobility.includes('GH_HR_CORE')&&mobility.includes('employmentContracts'),'Mobility drivers are linked to HR contracts');
+assert(procurement.includes('manual=Boolean(p.manual)')&&procurement.includes("startsWith('MANUAL-')"),'procurement accepts only explicit manual purchase authority');
+assert(advanced.includes("['overview','القيادة'],['operations','التشغيل'],['assets','الأصول'],['people','الأفراد']")&&advanced.includes("['finance','المالية'],['risk','المخاطر'],['ai','AI الشركة']"),'all companies expose assets and people tabs');
+console.log('BUILD255 manual assets/routing firewall: PASS');

@@ -74,6 +74,9 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke
 .asset-marker,.facility-marker,.competitor-marker,.world-dot{background:transparent;border:0}
 .marker-core{display:grid;place-items:center;font-size:14px;font-weight:900;color:#041013}
 .world-dot span{width:22px;height:22px;display:grid;place-items:center;border-radius:50%;font-size:10px;background:#102c38;border:1px solid #6e9eab;box-shadow:0 2px 8px rgba(0,0,0,.45)}.world-dot.airport span{border-color:var(--air)}.world-dot.port span{border-color:var(--sea)}
+/* GH Mobility uses a single canvas point per car: black, small and cheap. */
+.mobility-point{stroke:#050505!important;fill:#000!important;stroke-width:1!important;vector-effect:non-scaling-stroke}
+.facility-compact-row{display:flex;align-items:center;gap:9px;padding:10px 2px;border-bottom:1px solid var(--line-soft)}.facility-compact-row>div{min-width:0;flex:1}.facility-compact-row b,.facility-compact-row small{display:block}.facility-compact-row b{font-size:12px}.facility-compact-row small{margin-top:3px;color:var(--muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.facility-compact-row button{min-height:35px;white-space:nowrap}
 /* مركبات حقيقية (أصول اللاعب والمنافسين): أيقونة SVG حقيقية دائمًا، تدور فعليًا أثناء الحركة */
 .asset-marker .marker-core,.competitor-marker .marker-core{width:31px;height:31px;border-radius:0;transition:transform .5s linear}
 .marker-core.vehicle-real svg{width:27px;height:27px;stroke:none;filter:drop-shadow(0 2px 5px rgba(0,0,0,.6))}
@@ -175,10 +178,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke
 .vehicle-sprite{position:absolute;left:3px;top:3px;width:40px;height:40px;min-width:40px;min-height:40px;max-width:40px;max-height:40px;display:block;overflow:visible;transform-origin:50% 50%;transition:transform .42s linear;z-index:2}
 .vehicle-sprite img{box-sizing:border-box;display:block;width:40px!important;height:40px!important;min-width:40px!important;min-height:40px!important;max-width:40px!important;max-height:40px!important;object-fit:contain;filter:none;pointer-events:none}
 .vehicle-pin.air .vehicle-sprite{transform:scale(.90)}.vehicle-pin.sea .vehicle-sprite{transform:scale(.96)}.vehicle-pin.road .vehicle-sprite{transform:scale(.82)}.vehicle-pin.mobility .vehicle-sprite{transform:scale(.86)}.vehicle-pin.competitor .vehicle-sprite{filter:hue-rotate(135deg) saturate(.62)}
-.vehicle-car-glyph{display:block;width:100%;height:100%}
-.vehicle-car-glyph svg{display:block;width:40px;height:40px;pointer-events:none}
-.vehicle-car-glyph svg rect,.vehicle-car-glyph svg circle{fill:var(--mobility);stroke:#061118;stroke-width:1.1}
-.vehicle-car-glyph svg rect.vehicle-car-window{fill:#061118;stroke:none}
+.mobility-dot-glyph{display:block;width:7px;height:7px;margin:17px;border-radius:50%;background:#000;box-shadow:0 0 0 1px rgba(255,255,255,.28);pointer-events:none}
 .vehicle-beacon{position:absolute;z-index:3;top:7px;right:8px;width:9px;height:9px;border-radius:50%;background:#7b8b91;border:2px solid #061118;box-shadow:0 0 0 2px rgba(2,11,16,.72)}
 .vehicle-pin.air .vehicle-beacon{background:var(--air)}.vehicle-pin.sea .vehicle-beacon{background:var(--sea)}.vehicle-pin.road .vehicle-beacon{background:var(--road)}.vehicle-pin.mobility .vehicle-beacon{background:var(--mobility)}
 .vehicle-pin.is-live .vehicle-photo{animation:vehiclePulse 1.7s ease-in-out infinite}.vehicle-pin.is-live .vehicle-beacon{box-shadow:0 0 0 2px rgba(2,11,16,.72),0 0 12px currentColor}

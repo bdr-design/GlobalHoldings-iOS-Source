@@ -1,7 +1,7 @@
 {
   "name": "global-holdings-source-guards",
   "private": true,
-  "version": "2.9.1-build254",
+  "version": "2.9.1-build267",
   "scripts": {
     "test:guards": "node scripts/test_runner.cjs",
     "lint": "eslint WebApp/*.js && node scripts/ownership_guard.cjs",
@@ -13,6 +13,7 @@
   "devDependencies": {
     "acorn": "8.15.0",
     "eslint": "10.10.0",
+    "jsdom": "^30.0.1",
     "leaflet": "1.9.4",
     "playwright": "1.55.1"
   }

@@ -5,6 +5,6 @@ assert(project.includes('MARKETING_VERSION: "2.9.1"')&&project.includes('CURRENT
 assert(project.includes('CFBundleShortVersionString: "2.9.1"')&&project.includes('CFBundleVersion: "'+fs.readFileSync('BUILD','utf8').trim()+'"'));
 assert(app.includes("const APP_VERSION = '2.9.1'"));
 assert(app.includes("const SAVE_SCHEMA_VERSION = '2.0.0'"));
-assert(builder.includes("VERSION='2.9.1'")&&builder.includes('GlobalHoldings_Internal_Update_V291_BUILD254_ROOT_OPERATIONAL_RECOVERY'));
+assert(builder.includes("VERSION='2.9.1'")&&builder.includes(`GlobalHoldings_Internal_Update_V291_BUILD${fs.readFileSync('BUILD','utf8').trim()}_`),'update builder output name must carry the current BUILD number, not a stale one');
 assert(builder.includes("'packageType':'full-web'")&&builder.includes("'installMode':'clean-snapshot-v1'"));
 console.log('Build243 release contract: PASS');
