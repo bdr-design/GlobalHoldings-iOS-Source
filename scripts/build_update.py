@@ -33,7 +33,8 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-internal-2.9.1-build264-unify-facility-opening','name':'Global Holdings 2.9.1 — Unify Facility/Hub Opening, Remove Dead Duplicate Path','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD264: وجد وأزال نظامًا مكررًا حقيقيًا لفتح مركز لوجستي — زر مرئي وحيد للضغط (place-logistics) كان يشغّل مسارًا مباشرًا منفصلًا يخصم مبلغًا ثابتًا 18 مليوناً لا يطابق حتى السعر 8.5 مليون المعروض على اللاعب، ويتجاوز نظام المناقصة/المقاول بالكامل، بينما الدالة الصحيحة المرتبطة بالمناقصة (openLogisticsHubAI) لم تكن مستدعاة من أي مكان إطلاقًا. وحّد المسارين على المناقصة الصحيحة فقط. أزال أيضًا نظام فتح قاعدة عالمية بالضغط في أي مكان الميت وغير القابل للوصول (start-BasePlacement) الذي كان أيضًا يخصم سعرًا خاطئًا وينشئ نوع منشأة خاطئ، ومستمع زر يتيم آخر (open-global-route) بلا أي عنصر HTML مقابل له. Save Schema يبقى 2.0.0.','fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
+    manifest={'id':'gh-internal-2.9.1-build265-unified-operations-log','name':'Global Holdings 2.9.1 — Unified Operations Log','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD265: نفّذ البند 6 (سجل اعتمادات وتنفيذ موحّد) عبر ربط الواجهة أخيرًا بسجل موجود أصلًا في نواة موزّع الأوامر المركزي (domain-command-core.js) ولم يكن معروضًا لأي أحد من قبل — كل أمر نطاق عبر كل الأقسام (شراء، توظيف، مسارات، منشآت...) يُسجَّل تلقائيًا هناك بحالته (نُفِّذ/فشل) دون أن يحتاج أي قسم لتذكّر تسجيل نفسه بشكل منفصل. أضاف قسم سجل كل الأوامر التنفيذية داخل لوحة الاعتمادات، ليكمّل السجل الموجود مسبقًا لطلبات AI وخطابات التفويض — فيصبح متاحًا في مكان واحد: ما سُجِّل، وما احتاج موافقة، وما نُفِّذ، وما فشل ولماذا. تحقق فعلي عبر Node يثبت أن كل أمر ناجح يُسجَّل تلقائيًا بالحقول الكافية. Save Schema يبقى 2.0.0.',
+    'fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
     sign_manifest(manifest)
@@ -43,6 +44,6 @@ def main():
     for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
     for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD264_UNIFY_FACILITY_OPENING.{ext}').write_text(payload,encoding='utf-8')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD265_UNIFIED_OPERATIONS_LOG.{ext}').write_text(payload,encoding='utf-8')
     print(f'Built 2.9.1 Build258 HR manual hiring / dispatch integrity snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()
