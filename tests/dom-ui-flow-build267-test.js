@@ -27,6 +27,13 @@ const scripts = [...fs.readFileSync(path.join(WEBAPP, 'index.html'), 'utf8').mat
 for (const file of scripts) window.eval(fs.readFileSync(path.join(WEBAPP, file), 'utf8'));
 assert.strictEqual(uncaught.length, 0, `boot must not raise uncaught errors: ${uncaught.join(' | ')}`);
 
+// شارة رقم البناء يجب أن تظهر فعليًا على الشاشة الرئيسية بنص واضح (BUILDxxx)، حتى يقدر أي لاعب
+// يتحقق بنفسه من أن جهازه يشغّل فعلاً آخر WebApp مرفوع، لا نسخة قديمة محفوظة على الجهاز.
+const BUILD_NUMBER = parseInt(fs.readFileSync(path.join(__dirname,'..','BUILD'),'utf8').trim(),10);
+const badge = window.document.getElementById('runtimeBuildBadge');
+assert(badge, 'a runtime build badge element must exist in the header');
+assert.strictEqual(badge.textContent, `BUILD${BUILD_NUMBER} · v2.9.1`, 'the badge must show the exact BUILD number embedded in this app.js, matching the repo BUILD file');
+
 const click = sel => { const el = window.document.querySelector(sel); assert(el, `expected element to exist: ${sel}`); el.dispatchEvent(new window.Event('click', { bubbles: true })); };
 const S = window.__GH_STATE__;
 

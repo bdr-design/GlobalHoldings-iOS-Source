@@ -107,6 +107,12 @@ final class GlobalGameStorage {
         Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0") ?? 0
     }
 
+    // القيمة الفعلية المثبتة داخل مجلد WebApp النشط الآن على الجهاز، لا رقم الـIPA نفسه.
+    // اختلافها عن bundledBuild دليل مباشر أن الترقية الأصلية لم تستبدل النسخة القديمة المحفوظة.
+    var installedBuild: Int {
+        UserDefaults.standard.integer(forKey: installedBundledBuildKey)
+    }
+
     func isSupportedUpdate(_ url: URL) -> Bool {
         ["saneiupdate", "ghupdate"].contains(url.pathExtension.lowercased())
     }
