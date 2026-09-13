@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 271;
+  const RUNTIME_BUILD = 272;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -1858,7 +1858,7 @@
   }
 
   const panelMeta={
-    leadershipHub:['القيادة التنفيذية','مركز القيادة والقرار'],companies:['المجموعة والشركات','الشركات التابعة'],control:['التشغيل والأصول','مركز التشغيل والشبكة'],governanceHub:['الحوكمة والمخاطر','مركز الرقابة والامتثال'],systemHub:['النظام والسلامة','الصحة والصيانة'],network:['التشغيل والأصول','الدليل العالمي'],routes:['التشغيل والأصول','مركز المسارات المستقل'],globalRoute:['التشغيل والأصول','مسار عالمي مباشر'],companyFacilities:['التشغيل والأصول','قواعد ومراكز الشركة'],market:['المالية والخزينة','الأسواق والمحفظة'],more:['النظام والسلامة','الصحة والصيانة'],contracts:['التشغيل والأصول','العقود والعملاء'],ma:['القيادة التنفيذية','الاستحواذات والاستثمارات'],labor:['الموارد البشرية','الطواقم والتنظيم'],assets:['التشغيل والأصول','الأساطيل والأصول'],expansion:['التشغيل والأصول','القواعد والمراكز'],finance:['المالية والخزينة','المركز المالي'],invoices:['المالية والخزينة','المستندات والذمم'],news:['القيادة التنفيذية','غرفة الأحداث'],settings:['النظام والسلامة','الحفظ والإعدادات'],diagnostics:['النظام والسلامة','مركز التشخيص'],competitors:['القيادة التنفيذية','المنافسة'],energy:['المجموعة والشركات','مركز إنتاج الطاقة'],bank:['المالية والخزينة','بنك المجموعة'],governance:['الحوكمة والمخاطر','مجلس الإدارة'],insurance:['الحوكمة والمخاطر','التأمين وإدارة المخاطر'],research:['القيادة التنفيذية','البحث والتطوير'],esg:['القيادة التنفيذية','الاستدامة'],career:['القيادة التنفيذية','نضج المجموعة']
+    leadershipHub:['القيادة التنفيذية','مركز القيادة والقرار'],companies:['المجموعة والشركات','الشركات التابعة'],control:['التشغيل والأصول','مركز التشغيل والشبكة'],governanceHub:['الحوكمة والمخاطر','مركز الرقابة والامتثال'],systemHub:['النظام والسلامة','الصحة والصيانة'],network:['التشغيل والأصول','الدليل العالمي'],routes:['التشغيل والأصول','مركز المسارات المستقل'],globalRoute:['التشغيل والأصول','مسار عالمي مباشر'],companyFacilities:['التشغيل والأصول','قواعد ومراكز الشركة'],market:['المالية والخزينة','الأسواق والمحفظة'],contracts:['التشغيل والأصول','العقود والعملاء'],ma:['القيادة التنفيذية','الاستحواذات والاستثمارات'],labor:['الموارد البشرية','الطواقم والتنظيم'],assets:['التشغيل والأصول','الأساطيل والأصول'],expansion:['التشغيل والأصول','القواعد والمراكز'],finance:['المالية والخزينة','المركز المالي'],invoices:['المالية والخزينة','المستندات والذمم'],news:['القيادة التنفيذية','غرفة الأحداث'],settings:['النظام والسلامة','الحفظ والإعدادات'],diagnostics:['النظام والسلامة','مركز التشخيص'],energy:['المجموعة والشركات','مركز إنتاج الطاقة'],bank:['المالية والخزينة','بنك المجموعة'],governance:['الحوكمة والمخاطر','مجلس الإدارة'],insurance:['الحوكمة والمخاطر','التأمين وإدارة المخاطر'],research:['القيادة التنفيذية','البحث والتطوير'],esg:['القيادة التنفيذية','الاستدامة'],career:['القيادة التنفيذية','نضج المجموعة']
   };
 
   const panelRoot = panel => window.GH_ADVANCED?.root(panel) || ({
@@ -2040,7 +2040,7 @@
     return `<article class="list-item comparison"><div class="list-item-head"><div><h3>المقارنة المباشرة</h3><p>حتى ثلاثة أصول ضمن القطاع الحالي.</p></div><span class="tag">${selected.length}/3</span></div><div class="compare-grid">${selected.map(a=>`<div><b>${esc(a.name)}</b><span>${fmtMoney(a.price)}</span><span>${a.specs.rangeKm?`${fmtNumber(a.specs.rangeKm)} كم`:`${fmtNumber(a.specs.rangeNm)} NM`}</span><span>${fmtNumber(a.specs.capacity)} ${a.specs.capacityUnit}</span><button class="compare-asset active" data-id="${a.id}">إزالة</button></div>`).join('')}</div></article>`;
   }
   function renderAssetMarketBody(activeType,activeTab){
-    const typeTabs = `<div class="tabs small"><button class="tab-btn ${activeType==='air'?'active':''}" data-markettype="air">AIR · الطائرات</button><button class="tab-btn ${activeType==='sea'?'active':''}" data-markettype="sea">SEA · السفن</button><button class="tab-btn ${activeType==='road'?'active':''}" data-markettype="road">ROAD · الشاحنات</button></div>`;
+    const typeTabs = `<div class="tabs small"><button class="tab-btn ${activeType==='air'?'active':''}" data-markettype="air">AIR · الطائرات</button><button class="tab-btn ${activeType==='sea'?'active':''}" data-markettype="sea">SEA · السفن</button><button class="tab-btn ${activeType==='road'?'active':''}" data-markettype="road">ROAD · الشاحنات</button><button class="tab-btn" data-open="companyManage" data-arg="mobility">MOBILITY · التنقل</button></div>`;
     const condTabs = `<div class="tabs"><button class="tab-btn ${activeTab==='new'?'active':''}" data-markettab="new">أصل جديد</button><button class="tab-btn ${activeTab==='used'?'active':''}" data-markettab="used">سوق مستعمل</button></div>`;
     const source = (assetCatalog[activeType]||{})[activeTab]||[];
     const segments=[...new Set(source.map(x=>x.segment))];
