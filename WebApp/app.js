@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 272;
+  const RUNTIME_BUILD = 273;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -538,7 +538,6 @@
   const COMPANY_TYPES=window.GH_CORPORATE_CORE?.COMPANY_TYPES||['air','sea','road','power','bank','mobility'];
   const COMPANY_FINANCE_TYPES=['group',...COMPANY_TYPES];
   const companyFinanceName=type=>{if(type==='group')return state.profile.name;const record=state.companyRegistry?.[type];return record?.legalName||typeName(type);};
-  function makeCompanyBook(type,balance=0){return window.GH_FINANCE_CORE.makeBook?window.GH_FINANCE_CORE.makeBook(state,type,balance):null;}
   function ensureCompanyFinance(){return window.GH_FINANCE_CORE?.ensure?.(state);}
   function companyBook(type='group'){return window.GH_FINANCE_CORE.book(state,type);}
   const companyOperatingBalance=type=>window.GH_FINANCE_CORE.operating(state,type);
@@ -546,15 +545,7 @@
   if(!state.companyBudgets||typeof state.companyBudgets!=='object'||Array.isArray(state.companyBudgets))state.companyBudgets={};
   function companyBudget(type='group'){return window.GH_FINANCE_CORE.budget(state,type);}
   const companyBudgetRemaining=type=>window.GH_FINANCE_CORE.remaining(state,type);
-  function budgetLineFor(note='',method=''){return window.GH_FINANCE_CORE.lineFor(note,method);}
-  function budgetLineRemaining(type,line){return window.GH_FINANCE_CORE.lineRemaining(state,type,line);}
-  function consumeCompanyBudget(type,amount,line=null){window.GH_FINANCE_CORE.consumeBudget(state,type,amount,line);return true;}
-  function reserveCompanyBudget(type,amount,line='other'){return window.GH_FINANCE_CORE.reserveBudget(state,type,amount,line);}
-  function consumeReservedCompanyBudget(type,amount,line='other'){window.GH_FINANCE_CORE.consumeReserved(state,type,amount,line);return true;}
-  function releaseCompanyBudgetReservation(type,amount,line='other'){return window.GH_FINANCE_CORE.releaseReserved(state,type,amount,line);}
-
   function transferWithinCompany(type,amount,toReserve=true){return Number(window.GH_DOMAIN_COMMANDS.dispatch(advancedContext(),'finance','transfer-reserve',{company:type,amount,toReserve},{actor:'finance-ui'}).result?.amount)>0;}
-  function consolidatedCash(){return COMPANY_FINANCE_TYPES.reduce((n,t)=>n+companyTotalBalance(t),0);}
   function reconcileConsolidatedCash(){return window.GH_FINANCE_CORE.reconcile(state);}
   function canCompanySpend(type,amount,line=null){return window.GH_FINANCE_CORE.canSpend(state,type,amount,line);}
   function companyLedger(type,entry){const b=companyBook(type);b.ledger.unshift(entry);}
@@ -680,7 +671,6 @@
   function bankDrawCorporateFacility(company,amount=10000000){try{return Number(window.GH_DOMAIN_COMMANDS.dispatch({state},'banking','draw-facility',{company,amount},{actor:'bank'}).result)||0;}catch(error){console.warn(error);return false;}}
   function bankIssueTradeInstrument(kind,company,amount=5000000){try{return window.GH_DOMAIN_COMMANDS.dispatch({state},'banking','trade-instrument',{kind,company,amount,counterparty:supplierFor(company==='group'?'all':company,'all')?.legalName||'طرف تجاري مسجل'},{actor:'bank'}).result||null;}catch(error){console.warn(error);return null;}}
   function bankCashSweep(){try{return Number(window.GH_DOMAIN_COMMANDS.dispatch({state},'banking','cash-sweep',{}, {actor:'bank'}).result)||0;}catch(error){console.warn(error);return 0;}}
-  function postJournalEntry(company,description,lines,sourceRef=''){return window.GH_FINANCE_CORE.journal(state,company,description,lines,sourceRef);}
   function refreshTaxPayables(){return window.GH_FINANCE_CORE.reconcile(state);}
   function postInvoice(kind,amount,note,method='تحويل بنكي',taxable=true,status='مدفوعة',company='group',counterparty=''){return window.GH_FINANCE_CORE.invoice(state,{kind,amount,note,method,taxable,status,company,counterparty});}
 
@@ -848,12 +838,6 @@
     const result=await window.GH_MAP_PROVIDER.road(fromCoords,toCoords);
     if(!result.ok){diag('MAP_PROVIDER_DEGRADED',{status:result.status,reason:result.reason},'warning');return null;}
     return result.geometry;
-  }
-  function fallbackRoadGeometry(fromCoords,toCoords){
-    if(!Array.isArray(fromCoords)||!Array.isArray(toCoords))return null;
-    const route=greatCircle(fromCoords,toCoords,Math.max(3,Math.min(18,Math.ceil(haversine(fromCoords,toCoords)/90))));
-    const distanceKm=haversine(fromCoords,toCoords)*1.18,effectiveSpeedKmh=62;
-    return {route,distanceKm,durationSeconds:distanceKm/effectiveSpeedKmh*3600,fallback:true};
   }
   function applyRoadGeometry(routeId,geometry,saveCache=true){
     const tpl=routeTemplates[routeId];if(!tpl||!geometry?.route)return;
@@ -1971,14 +1955,6 @@
   }
 
   // ---- لوحة المجموعة: نظرة قابضة + بطاقات شركات بمؤشرات قطاعية حقيقية (أسلوب صورة المرجع) ----
-  function sectorStats(type){
-    const assets=state.assets.filter(a=>a.type===type);
-    const routesActive=new Set(assets.filter(a=>a.routeId).map(a=>a.routeId)).size;
-    const capacityTotal=assets.reduce((s,a)=>s+((a.specs&&a.specs.capacity)||0),0);
-    const avgCondition=assets.length?assets.reduce((s,a)=>s+a.condition,0)/assets.length:100;
-    return {fleetCount:assets.length, routesActive, capacityTotal, avgCondition, dailyProfit:state.sectorProfitToday[type]||0};
-  }
-
   function renderControl(){
     const card=(panel,code,title,copy)=>`<button class="command-btn" data-open="${panel}"><span>${code}</span><div><b>${title}</b><small>${copy}</small></div></button>`;
     const activeDeliveries=(state.realism?.procurement?.deliveries||[]).filter(d=>d.status!=='delivered').length;
@@ -2088,13 +2064,7 @@
   function routePairSignature(route){
     if(!route)return'';const path=Array.isArray(route.route)?route.route:[],first=path[0],last=path[path.length-1],a=routeCoordKey(first)||String(route.fromFacility||route.from||'').trim(),b=routeCoordKey(last)||String(route.toFacility||route.to||'').trim();return `${route.type||'x'}:${[a,b].sort().join('::')}`;
   }
-  function endpointPairSignature(type,a,b){const x=routeCoordKey(a?.coords)||String(a?.id||a?.name||''),y=routeCoordKey(b?.coords)||String(b?.id||b?.name||'');return `${type}:${[x,y].sort().join('::')}`;}
   function dedupeCustomRoutes(type=null){try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','dedupe',{type},{actor:'route-maintenance'}).result||{};for(const id of Object.keys(result.redirect||{}))delete routeTemplates[id];return Number(result.removed||0);}catch(error){console.warn('route dedupe rejected',error);return 0;}}
-  function roadRouteUsageSignature(sig){return state.assets.filter(a=>a.type==='road'&&a.routeId&&routePairSignature(routeTemplates[a.routeId])===sig).length;}
-  function ensureRoadPublicEndpoint(place){if(!place?.id)return null;const id=`ROAD-PUB-${place.id}`,endpoint={id,name:place.name||place.city||place.id,city:place.city||place.name||place.id,country:place.country||'',coords:place.coords,kind:'road-public',routeEndpoint:true,owned:false};try{window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','register-endpoint',{endpoint},{actor:'route-planner'});return endpoint;}catch(error){console.warn('road endpoint rejected',error);return null;}}
-  // نقاط انطلاق/وجهة المسار البري يجب أن تكون منشآت طريق فعلية (مستودع/مركز لوجستي) لا قواعد
-  // طيران أو موانئ تابعة لشركة مختلفة تمامًا — كانت هذه القائمة تخلط بينها فتظهر مثلاً قاعدة
-  // بحرية مملوكة لشركة الطيران كنقطة انطلاق لمسار شاحنات، وهذا مربك ولا معنى تشغيليًا له.
   function roadFacilityOptions(){
     return getDynamicFacilities().filter(f=>f.owned&&['depot','logistics'].includes(f.kind)&&companyOfFacility(f)==='road');
   }

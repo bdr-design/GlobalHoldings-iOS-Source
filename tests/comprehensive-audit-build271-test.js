@@ -33,3 +33,11 @@ const { execFileSync } = require('child_process');
 })();
 
 console.log('Comprehensive audit tool + depart-now button + dead reset cleanup BUILD271: PASS');
+
+// 4) بعد كل التنظيف الإضافي هذه الجولة (BUILD273): صفر دوال ميتة متبقية في app.js وadvanced-core.js.
+// هذا تأكيد صارم (assert) لا مجرد تقرير، حتى لا تتراكم دوال ميتة جديدة بصمت مستقبلًا.
+(function zeroOrphanedFunctions(){
+  const out = execFileSync('node', [path.join(__dirname, '..', 'scripts', 'comprehensive_audit.cjs')], { encoding: 'utf8' });
+  assert(out.includes('app.js: ') && /app\.js: \d+ functions scanned, 0 flagged/.test(out), 'app.js must have zero fully-unreferenced functions');
+  assert(/advanced-core\.js: \d+ functions scanned, 0 flagged/.test(out), 'advanced-core.js must have zero fully-unreferenced functions');
+})();

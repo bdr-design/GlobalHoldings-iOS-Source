@@ -127,4 +127,40 @@ for (const [label, src] of [['app.js', app], ['advanced-core.js', adv]]) {
   ok(`${label}: ${new Set(names).size} functions scanned, ${deadCount} flagged as fully unreferenced`);
 }
 
+// --- F) same sweep across every remaining *-core.js file (not just app.js/advanced-core.js) --
+report('F) functions defined in every other *-core.js file, never referenced again in that file');
+for (const f of coreFiles) {
+  const src = read(f);
+  const names = [...src.matchAll(/function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)].map(m => m[1]);
+  let deadCount = 0;
+  for (const name of new Set(names)) {
+    const count = (src.match(new RegExp(`\\b${name}\\b`, 'g')) || []).length;
+    if (count <= 1) { flag(`${f}: function "${name}" is defined but never referenced again in this file (may be exported for other files - verify before removing)`); deadCount++; }
+  }
+  if (deadCount) ok(`${f}: ${new Set(names).size} functions scanned, ${deadCount} flagged`);
+}
+
+// --- G) duplicate numeric/constant definitions across core files (capacity-style drift) ------
+report('G) same named constant defined independently in more than one file (possible silent drift)');
+const constDefs = {};
+for (const f of allWebAppFiles) {
+  const src = read(f);
+  for (const m of src.matchAll(/const\s+([A-Z][A-Z0-9_]{2,})\s*=\s*(?:Object\.freeze\()?\{/g)) {
+    (constDefs[m[1]] ||= []).push(f);
+  }
+}
+for (const [name, files] of Object.entries(constDefs)) {
+  const uniqueFiles = [...new Set(files)];
+  if (uniqueFiles.length > 1) flag(`constant "${name}" is independently defined as an object literal in more than one file: ${uniqueFiles.join(', ')} - verify they cannot silently disagree`);
+}
+ok(`${Object.keys(constDefs).length} UPPER_CASE object constants scanned across ${allWebAppFiles.length} files`);
+
+// --- H) self-referential / templated example text sanity check -------------------------------
+report('H) hardcoded example references inside per-entity template strings (self-reference risk)');
+for (const f of allWebAppFiles) {
+  const src = read(f);
+  for (const m of src.matchAll(/\(بما في ذلك ([^)]+)\)/g)) flag(`${f}: hardcoded "(including ${m[1]})" example inside what may be a per-entity template - verify it cannot describe itself (this exact pattern caused the BUILD272 Riyadh bug)`);
+}
+ok('scanned for the same self-referential template pattern that caused the BUILD272 bug');
+
 console.log(`\n=== SUMMARY: ${issues} item(s) flagged for human review (not all are bugs - see notes above) ===`);
