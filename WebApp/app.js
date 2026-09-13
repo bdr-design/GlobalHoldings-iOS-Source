@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 276;
+  const RUNTIME_BUILD = 277;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -1191,7 +1191,7 @@
     const idle=state.assets.filter(a=>a.phase==='idle').length;
     const turn=state.assets.filter(a=>a.phase==='turnaround').length;
     const routed=operationalRoutes('road').filter(r=>r.routingSource).length;
-    $('mapStatus').textContent=`${moving} متحرك · ${turn} في محطة · ${idle} متوقف · ${state.assets.length+mobility.vehicles} أصل · ${routed} مسار بري فعلي`;
+    const ownedFacilities=getDynamicFacilities().filter(f=>f?.owned).length;$('mapStatus').textContent=`${moving} متحرك · ${turn} في محطة · ${idle} متوقف · ${state.assets.length} أصل · ${mobility.vehicles} سيارة Mobility · ${ownedFacilities} منشأة مملوكة · ${routed} مسار بري`;
   }
 
   function updateMarkerPositions(force=false){
@@ -1949,8 +1949,8 @@
     const pendingDeliveryValue=pendingDeliveries.reduce((n,d)=>n+(Number(d.asset?.purchasePrice)||0),0);
     return `<div class="workspace-intro operations-intro"><span>OPERATIONS DOMAIN · 2.6</span><b>من الطلب إلى الحركة الفعلية: شبكة → منشأة → أصل → جاهزية → مسار → عقد → تنفيذ. HR والمال والحوكمة تبقى مجالات مستقلة.</b></div>
       <div class="metric-row"><div><span>الأصول</span><b>${state.assets.length}</b></div><div><span>طلبات شراء قيد التسليم</span><b>${pendingDeliveries.length}</b></div><div><span>قيمة الطلبات المعلّقة</span><b>${fmtMoney(pendingDeliveryValue)}</b></div></div>
-      <div class="section-heading"><h3>الشبكة والبنية التحتية</h3><p>حدد أين تعمل المجموعة قبل إضافة القدرة.</p></div><div class="command-grid grouped workspace-card-grid">${card('network','WORLD','الدليل العالمي',`${fmtNumber(WORLD.meta.airportCount)} مطار · ${fmtNumber(WORLD.meta.portCount)} ميناء`)}${card('expansion','HUB','القواعد والمراكز','افتتاح · سعة · إدارة · جاهزية')}${card('globalRoute','NET','الشبكة الجوية والبحرية','وجهات · مدى · تشغيل عالمي')}${card('routes','ROAD','الشبكة البرية','طرق · نقاط تسليم · هامش')}</div>
-      <div class="section-heading"><h3>القدرة والأصول</h3><p>الشراء يدوي بالكامل: اختر الأصل والكمية والقاعدة ثم راقب التسليم. AI يقترح فقط.</p></div><div class="command-grid grouped workspace-card-grid">${card('procurement','BUY','الشراء اليدوي','اختيار أصل · كمية · قاعدة · تسليم')}${card('assets','FLT','إدارة الأساطيل','ملكية · حالة · صيانة · تعيين · بيع')}</div>
+      <div class="section-heading"><h3>الشبكة والبنية التحتية</h3><p>حدد أين تعمل المجموعة قبل إضافة القدرة.</p></div><div class="command-grid grouped workspace-card-grid">${card('expansion','HUB','القواعد والمراكز','افتتاح · سعة · إدارة · جاهزية')}${card('globalRoute','NET','الشبكة الجوية والبحرية','وجهات · مدى · تشغيل عالمي')}${card('routes','ROAD','الشبكة البرية','طرق · نقاط تسليم · هامش')}</div>
+      <div class="section-heading"><h3>القدرة والأصول</h3><p>الشراء يدوي بالكامل: اختر الأصل والكمية والقاعدة ثم راقب التسليم. AI يقترح فقط.</p></div><div class="command-grid grouped workspace-card-grid">${card('assetMarket','BUY','شراء الأصول','اختر الأصل والكمية والقاعدة وطريقة التملك مباشرة')}${card('assets','FLT','إدارة الأساطيل','ملكية · حالة · صيانة · تعيين · بيع')}</div>
       <div class="section-heading"><h3>التجارة والتنفيذ</h3><p>حول القدرة المتاحة إلى التزام تجاري وتشغيل قابل للقياس.</p></div><div class="command-grid grouped workspace-card-grid">${card('contracts','COM','العقود والعملاء','مناقصات · SLA · تنفيذ · فوترة')}</div>
       <article class="list-item domain-crosslink"><div><b>تحتاج موظفين أو طواقم؟</b><small>إدارة HR مستقلة عن التشغيل حتى لا يصبح التوظيف أثرًا جانبيًا لشراء أصل.</small></div><button class="secondary-btn" data-open="peopleHub">فتح HR والأفراد</button></article>`;
   }
@@ -2280,7 +2280,12 @@
   function tradeStock(sym,qty){try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'market','trade-stock',{sym,qty},{actor:'market-ui'}).result;pushAlert(`${qty>0?'شراء':'بيع'} ${fmtNumber(Math.abs(qty))} سهم من ${sym} بقيمة ${fmtMoney(result.value)}.`);save();updateKpis();openDrawer('market');return true;}catch(error){notice(`تعذر تنفيذ الصفقة: ${error.message}`);return false;}}
   function openCompany(type){
     const company=companies.find(c=>c.id===type),cost={air:25000000,sea:30000000,road:12000000,power:55000000,bank:75000000,mobility:120000000}[type];if(!company||!cost){pushAlert('تعذر تأسيس هذه الشركة؛ القطاع غير معروف.');return;}if(state.openedCompanies.includes(type)){pushAlert(`${company.name} مؤسَّسة بالفعل.`);openDrawer('companies','subs');return;}const stamp=nextId('COMPANY').split('-').pop(),short=(state.profile.shortName||'GH').toUpperCase();
-    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','open-company',{type,capital:cost,legalName:company.name,owner:state.profile.name,authorizedSignatory:state.profile.founder,logoStyle:type,taxId:`${short}-${type.toUpperCase()}-${stamp}`,commercialRegistration:`CR-${simDate().getUTCFullYear()}-${stamp}`,businessLicense:`LIC-${type.toUpperCase()}-${stamp}`,formationContract:`INC-${type.toUpperCase()}-${stamp}`,invoices:[{id:`INV-${type.toUpperCase()}-0001`,status:'تأسيس',amount:cost,issuedAt:state.simSeconds,note:'قيد رأس المال المدفوع عند التأسيس'}]},{actor:'corporate-ui'});pushAlert(`تأسست ${company.name} بمنظومة شركة مستقلة وحساب مالي موثق.`);save();updateKpis();openDrawer('companies','subs');}catch(error){pushAlert(`لم تُفتح ${company.name}: ${error.message}`);}
+    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','open-company',{type,capital:cost,legalName:company.name,owner:state.profile.name,authorizedSignatory:state.profile.founder,logoStyle:type,taxId:`${short}-${type.toUpperCase()}-${stamp}`,commercialRegistration:`CR-${simDate().getUTCFullYear()}-${stamp}`,businessLicense:`LIC-${type.toUpperCase()}-${stamp}`,formationContract:`INC-${type.toUpperCase()}-${stamp}`,invoices:[{id:`INV-${type.toUpperCase()}-0001`,status:'تأسيس',amount:cost,issuedAt:state.simSeconds,note:'قيد رأس المال المدفوع عند التأسيس'}]},{actor:'corporate-ui'});pushAlert(`تأسست ${company.name} بمنظومة شركة مستقلة وحساب مالي موثق.`);
+      // حضور فوري على الخريطة لحظة التأسيس: الرياض هي مركز GH Mobility الافتراضي الضمني ولا تمر
+      // بمسار "فتح مركز عاصمة"، فكانت الشركة تبقى بلا أي أثر مرئي حتى يجد اللاعب زر الإطلاق
+      // المدفون في تبويب فرعي. أنشئ منشأة المركز الآن وانقل الخريطة إليها مباشرة.
+      if(type==='mobility'&&!state.customHubs.some(f=>f.id==='MOB-CENTER-RUH')){const ruhMeta=window.GH_MOBILITY_CORE?.centerMeta?.(state,'RUH');if(ruhMeta){try{window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility:{id:'MOB-CENTER-RUH',company:'mobility',kind:'mobility-center',owned:true,capitalOnly:true,capitalId:'RUH',icon:'●',name:'مركز GH Mobility · الرياض',city:ruhMeta.city,country:ruhMeta.country,coords:[...ruhMeta.coords],bays:480,dailyCost:9800,cost:0,capacity:'تشغيل حضري محلي · الأسطول التأسيسي',manager:'مدير مركز التنقل الحضري',detail:'المركز التأسيسي الضمني لشبكة GH Mobility في الرياض.'},bucket:'customHubs',groupValueAdd:0},{actor:'mobility-facility'});renderMap();panMapTo(ruhMeta.coords,11);}catch(error){nonCritical('mobility-ruh-facility',error);}}}
+      save();updateKpis();openDrawer('companies','subs');}catch(error){pushAlert(`لم تُفتح ${company.name}: ${error.message}`);}
   }
   // ضمان وصول زر التأسيس حتى داخل اللوحات التي يعيد GH Advanced رسمها على الهاتف.
   document.addEventListener('click',event=>{

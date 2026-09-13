@@ -84,8 +84,8 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   }
 
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-assets.png'});
-  await landscape.page.click('#drawerClose');await openHubChild(landscape.page,'control','procurement');
-  if(!await landscape.page.locator('[data-open="assetMarket"]').count()||await landscape.page.locator('#assetRequestQty').count()||await landscape.page.locator('[data-gh-action="asset-portfolio-build"]').count())issues.push('landscape: manual asset purchase UI is not exclusive');
+  await landscape.page.click('#drawerClose');await openHubChild(landscape.page,'control','assetMarket');
+  if(!await landscape.page.locator('.manual-buy-asset').count()||await landscape.page.locator('#assetRequestQty').count()||await landscape.page.locator('[data-gh-action="asset-portfolio-build"]').count())issues.push('landscape: manual asset purchase UI is not exclusive');
   await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-ai-assets.png'});
   await landscape.page.click('#drawerClose');await clickVisible(landscape.page,'[data-panel="companies"]');await landscape.page.click('[data-companytab="subs"]');
   if(!await landscape.page.locator('.open-company[data-type="mobility"]').count())issues.push('landscape: GH Mobility company card missing');

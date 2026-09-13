@@ -429,6 +429,18 @@
       <article class="list-item"><div class="list-item-head"><div><h3>خطابات التفويض الرسمية</h3><p>نسخة مرئية كاملة مثل الشيكات والفواتير، وتحمل هوية الشركة صاحبة القرار.</p></div><span class="tag">${letters.length}</span></div><div class="authority-doc-grid">${letters.length?letters.map(letterPaper).join(''):'<p class="section-mini">لم تصدر خطابات تفويض بعد.</p>'}</div></article></div>`;
   }
 
+  // زر "الخطوة التالية" الوحيد لكل شركة مؤسَّسة: يوصل مباشرة لأول إجراء تشغيلي حقيقي (فتح أول قاعدة،
+  // إطلاق الأسطول...) بدل إجبار اللاعب على الغوص: الشركات ← إدارة ← منشآت ← الدليل ← فتح قاعدة.
+  function nextStepButton(id,s){
+    const has=(kind)=>(s.globalBases||[]).concat(s.customHubs||[]).some(f=>f.owned&&f.kind===kind);
+    if(id==='air')return has('airport-base')?`<button class="primary-btn" data-open="companyFacilities" data-arg="air">✈ القواعد الجوية</button>`:`<button class="primary-btn" data-open="companyFacilities" data-arg="air">✈ افتح أول قاعدة جوية</button>`;
+    if(id==='sea')return has('port-base')?`<button class="primary-btn" data-open="companyFacilities" data-arg="sea">⚓ الموانئ</button>`:`<button class="primary-btn" data-open="companyFacilities" data-arg="sea">⚓ افتح أول ميناء</button>`;
+    if(id==='road')return `<button class="primary-btn" data-open="companyFacilities" data-arg="road">🚚 ${has('logistics')?'المراكز اللوجستية':'أضف أول مركز لوجستي'}</button>`;
+    if(id==='power')return `<button class="primary-btn" data-open="energy">⚡ مركز الطاقة</button>`;
+    if(id==='bank')return `<button class="primary-btn" data-open="bank">🏦 البنك</button>`;
+    if(id==='mobility')return s.mobility?.status==='active'?`<button class="primary-btn" data-open="companyManage" data-arg="mobility">🚗 تشغيل الأسطول</button>`:`<button class="primary-btn" data-gh-action="mobility-launch">🚗 إطلاق أسطول الرياض الآن</button>`;
+    return '';
+  }
   function renderCompanies(arg,ctx) {
     const tab=arg||'holding',s=ctx.state,totalPeople=s.hired.length+s.crew.reduce((n,c)=>n+c.count,0)+(s.mobility?.drivers||[]).length;
     const tabbar=tabs([['holding','الشركة القابضة'],['subs','الشركات التابعة']],tab,'data-companytab');
@@ -439,7 +451,7 @@
     return `${tabbar}<div class="company-visual-grid">${sectors.map(([id,name,copy,cost])=>{
       const assets=id==='mobility'?(s.mobility?.vehicles||[]):s.assets.filter(a=>a.type===id),profit=s.sectorProfitToday[id]||0,opened=s.openedCompanies.includes(id),record=s.companyRegistry?.[id];
       const shortfall=Math.max(0,cost-s.cash);
-      return `<article class="company-visual-card ${opened?'':'company-pending'}"><img src="${findPhoto(id)}" alt="${name}" loading="lazy" data-gh-image><div class="company-visual-body"><span>${opened?id.toUpperCase():'قيد التأسيس'}</span><h3>${name}</h3><p>${opened?`${copy} · ${record?.taxId||'ملف قانوني قيد المزامنة'}`:`${copy} · لا توجد أصول أو قاعدة أو طاقم قبل التأسيس.`}</p>${opened?`${metrics([['الأصول',assets.length],['صافي اليوم',ctx.fmtMoney(profit),profit>=0?'positive':'negative'],['الميزانية',ctx.fmtMoney(record?.budget||0)]])}<button class="secondary-btn" data-open="companyManage" data-arg="${id}">إدارة الشركة</button>`:`${metrics([['رأس المال',ctx.fmtMoney(cost)],['سيولة القابضة',ctx.fmtMoney(s.cash)],['الحالة',shortfall?`ينقص ${ctx.fmtMoney(shortfall)}`:'جاهزة للتأسيس']])}<button class="primary-btn open-company" data-type="${id}">فتح الشركة · ${ctx.fmtMoney(cost)}</button>`}</div></article>`;
+      return `<article class="company-visual-card ${opened?'':'company-pending'}"><img src="${findPhoto(id)}" alt="${name}" loading="lazy" data-gh-image><div class="company-visual-body"><span>${opened?id.toUpperCase():'قيد التأسيس'}</span><h3>${name}</h3><p>${opened?`${copy} · ${record?.taxId||'ملف قانوني قيد المزامنة'}`:`${copy} · لا توجد أصول أو قاعدة أو طاقم قبل التأسيس.`}</p>${opened?`${metrics([['الأصول',assets.length],['صافي اليوم',ctx.fmtMoney(profit),profit>=0?'positive':'negative'],['الميزانية',ctx.fmtMoney(record?.budget||0)]])}<div class="action-row">${nextStepButton(id,s)}<button class="secondary-btn" data-open="companyManage" data-arg="${id}">إدارة الشركة</button></div>`:`${metrics([['رأس المال',ctx.fmtMoney(cost)],['سيولة القابضة',ctx.fmtMoney(s.cash)],['الحالة',shortfall?`ينقص ${ctx.fmtMoney(shortfall)}`:'جاهزة للتأسيس']])}<button class="primary-btn open-company" data-type="${id}">فتح الشركة · ${ctx.fmtMoney(cost)}</button>`}</div></article>`;
     }).join('')}</div>`;
   }
 
@@ -706,12 +718,10 @@
       const sig=aiRequestSignature(request),submitted=domainCommand(ctx,'ai','submit',{...request,signature:sig,id:deterministicId(s,'AIR-EXP'),study:{score:Math.round(Number(request.score)||0),criteria:'التغطية · السعة · الجدوى · التركز · التكلفة'}},'ai-review');ctx.pushAlert(`رفع AI دراسة توسع ${submitted?.id||''} لـ ${normalized==='group'?'المجموعة':ctx.typeName(normalized)} إلى مركز التفويض.`);refresh(ctx,'aiApprovals');return;
     }
     if(id==='ai-company-expand'){btn.dataset.company=btn.dataset.company||'';btn.dataset.ghAction='ai-company-base-review';return handleAction(btn,ctx);}
-    if(id==='ai-company-procure-plan'){ctx.pushAlert('تم حذف خطط الشراء الآلية. اختر الأصل بنفسك من السوق اليدوي.');refresh(ctx,'procurement');return;}
     if(id==='ai-company-route-review'){
       const company=btn.dataset.company;if(!['air','sea','road'].includes(company)){ctx.pushAlert('اقتراح المسارات متاح لشركات النقل فقط.');refresh(ctx,'intelligence');return;}
       ctx.suggestRoutesOnly?.(company);return;
     }
-    if(id==='procurement-pay-transfer'||id==='procurement-pay-cheque'||id==='procurement-retry-delivery'){ctx.pushAlert('حُذفت أوامر الطلب القديمة. افتح سوق الأصول للشراء اليدوي.');refresh(ctx,'procurement');return;}
     if(id==='treasury-hedge'){try{domainCommand(ctx,'governance','treasury-hedge',{},'treasury');ctx.pushAlert('رفعت الخزينة نسبة التحوط عبر Governance Core.');refresh(ctx,'treasury');}catch(error){notify(ctx,`تعذر التحوط: ${error.message}`);}return;}
     if(id==='treasury-buffer'){try{domainCommand(ctx,'finance','transfer-reserve',{company:'group',amount:10000000,toReserve:true,note:'تحويل داخلي إلى احتياطي السيولة'},'treasury');ctx.pushAlert('تم تحويل $10M داخليًا للاحتياطي دون تغيير السيولة الموحدة أو إنشاء مصروف ضريبي.');}catch(error){notify(ctx,`تعذر تحويل الاحتياطي: ${error.message}`);}refresh(ctx,'treasury');return;}
     if(id==='treasury-stress'){const r=domainCommand(ctx,'governance','treasury-stress',{},'treasury');ctx.pushAlert(`اكتمل اختبار ضغط الخزينة بخسارة تقديرية ${ctx.fmtMoney(r.loss)}.`);refresh(ctx,'treasury');return;}
@@ -823,7 +833,6 @@
     rootNode.querySelectorAll('[data-company-manage-tab]').forEach(btn=>btn.addEventListener('click',()=>ctx.openDrawer('companyManage',{type:ctx.currentArg?.type||ctx.currentArg,tab:btn.dataset.companyManageTab})));
     rootNode.querySelectorAll('[data-ai-prompt]').forEach(btn=>btn.addEventListener('click',()=>{const q=btn.dataset.aiPrompt,answer=aiAnswer(q,ctx);domainCommand(ctx,'ai','message',{messages:[{role:'user',text:q},{role:'assistant',text:answer.text,sources:answer.sources}]},'ai-ui');ctx.save();ctx.openDrawer('intelligence');}));
     rootNode.querySelectorAll('[data-news-filter]').forEach(btn=>btn.addEventListener('click',()=>ctx.openDrawer('news',{filter:btn.dataset.newsFilter})));
-    const reqCompany=rootNode.querySelector('#assetRequestCompany'),reqTab=rootNode.querySelector('#assetRequestTab');const syncRequestDraft=()=>{const p=ctx.state.advanced?.procurement;if(!p)return;p.requestCenter=p.requestCenter||{};if(reqCompany)p.requestCenter.selectedCompany=reqCompany.value;if(reqTab)p.requestCenter.selectedTab=reqTab.value;ctx.openDrawer('procurement');};reqCompany?.addEventListener('change',syncRequestDraft);reqTab?.addEventListener('change',syncRequestDraft);
     const input=rootNode.querySelector('#updateFileInput');if(input)input.addEventListener('change',()=>importUpdate(input.files?.[0],ctx));
     rootNode.querySelectorAll('img').forEach(img=>{
       if(img.dataset.ghImageBound)return;img.dataset.ghImageBound='1';
