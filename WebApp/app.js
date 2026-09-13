@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 268;
+  const RUNTIME_BUILD = 269;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -2092,8 +2092,11 @@
   function dedupeCustomRoutes(type=null){try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','dedupe',{type},{actor:'route-maintenance'}).result||{};for(const id of Object.keys(result.redirect||{}))delete routeTemplates[id];return Number(result.removed||0);}catch(error){console.warn('route dedupe rejected',error);return 0;}}
   function roadRouteUsageSignature(sig){return state.assets.filter(a=>a.type==='road'&&a.routeId&&routePairSignature(routeTemplates[a.routeId])===sig).length;}
   function ensureRoadPublicEndpoint(place){if(!place?.id)return null;const id=`ROAD-PUB-${place.id}`,endpoint={id,name:place.name||place.city||place.id,city:place.city||place.name||place.id,country:place.country||'',coords:place.coords,kind:'road-public',routeEndpoint:true,owned:false};try{window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','register-endpoint',{endpoint},{actor:'route-planner'});return endpoint;}catch(error){console.warn('road endpoint rejected',error);return null;}}
+  // نقاط انطلاق/وجهة المسار البري يجب أن تكون منشآت طريق فعلية (مستودع/مركز لوجستي) لا قواعد
+  // طيران أو موانئ تابعة لشركة مختلفة تمامًا — كانت هذه القائمة تخلط بينها فتظهر مثلاً قاعدة
+  // بحرية مملوكة لشركة الطيران كنقطة انطلاق لمسار شاحنات، وهذا مربك ولا معنى تشغيليًا له.
   function roadFacilityOptions(){
-    return getDynamicFacilities().filter(f=>f.owned&&['depot','logistics','port-base','airport-base'].includes(f.kind));
+    return getDynamicFacilities().filter(f=>f.owned&&['depot','logistics'].includes(f.kind)&&companyOfFacility(f)==='road');
   }
   function renderRouteCenter(){
     dedupeCustomRoutes();
@@ -2416,6 +2419,15 @@
     const assetSupplier=supplierFor(type,'assets');if(!assetSupplier&&!alreadyPaid){if(!silent)notice('تعذر تنفيذ الشراء: لا يوجد مورد أصول مؤهل.');return null;}
     const totalPrice=Number(item.price)*qty,upfront=mode==='cash'?totalPrice:mode==='finance'?totalPrice*(item.downPayment||.2):Number(item.leaseMonthly||0)*3*qty;
     if(!Number.isFinite(totalPrice)||totalPrice<=0||!Number.isFinite(upfront)||upfront<0){if(!silent)notice('تعذر تنفيذ الشراء بسبب بيانات سعر غير صالحة.');return null;}
+    // سد عجز الشركة التابعة تلقائيًا من الشركة القابضة قبل الشراء (نفس منطق تمويل عقود الإنشاء)،
+    // حتى لا يفشل الشراء اليدوي بصمت والقابضة تملك سيولة ضخمة غير مستخدمة لمجرد أن الشركة
+    // التابعة استنفدت رصيدها المخصص (مثلًا بعد دفع تكلفة فتح قاعدة).
+    if(!canCompanySpend(type,upfront,'capex')&&type!=='group'){
+      const have=companyOperatingBalance(type),gap=Math.max(0,upfront-have),groupHave=companyOperatingBalance('group');
+      if(gap>0&&groupHave>=gap&&transferBetweenCompanies('group',type,gap,`تمويل شراء أصول يدوي · ${item.name} × ${qty}`)){
+        pushAlert(`حُوِّل ${fmtMoney(gap)} من الشركة القابضة إلى ${typeName(type)} لتغطية شراء ${item.name}.`);
+      }
+    }
     const realism=window.GH_REALISM?.migrate(state),leadBase=Number(realism?.procurement?.leadTimes?.[type])||(type==='air'?120:type==='sea'?210:21),documentLeadDays=tab==='used'?Math.max(5,Math.round(leadBase*.12)):mode==='lease'?Math.max(7,Math.round(leadBase*.18)):leadBase,baseWindow=type==='air'?90:type==='sea'?150:60,leadSeconds=tab==='used'?Math.max(120,Math.round(baseWindow*.4)):mode==='lease'?Math.max(180,Math.round(baseWindow*.55)):baseWindow;
     try{
       const tx=window.GH_TRANSACTION_CORE,out=(tx.isActive()?tx.join:tx.execute)(state,{label:'asset-purchase',apply:()=>{

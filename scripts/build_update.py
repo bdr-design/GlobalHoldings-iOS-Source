@@ -33,7 +33,7 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-internal-2.9.1-build268-runtime-build-badge','name':'Global Holdings 2.9.1 — Runtime Build Verification Badge','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD268: أضاف مؤشر تشخيص حقيقي لأكبر سؤال مفتوح هذه الجلسة — هل الجهاز يشغّل فعلاً آخر WebApp مرفوع أم نسخة قديمة محفوظة محليًا لم تُستبدل؟ رقم BUILD الآن مضمّن داخل app.js نفسه ويظهر في شريط اللعبة العلوي طوال الوقت، وأيضًا في شاشة الإقلاع الأصلية (Swift) قبل الدخول للعبة مع مقارنة صريحة بين BUILD المثبت فعليًا في مجلد WebApp النشط وBUILD المرفق داخل الـIPA — أي تعارض بينهما يظهر كتحذير واضح على أول شاشة مباشرة بدل الاعتماد على التخمين. Save Schema يبقى 2.0.0.',
+    manifest={'id':'gh-internal-2.9.1-build269-real-bugs-from-user-recording','name':'Global Holdings 2.9.1 — Real Bugs Fixed From User Screen Recording','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD269: تحليل تسجيل شاشة حقيقي من اللاعب كشف 4 مشاكل مؤكدة بالدليل: (1) الشراء اليدوي (حتى النقدي) كان يفشل صامتًا لأن الشركة التابعة تُفرَّغ بعد فتح قاعدة بينما القابضة تملك سيولة ضخمة غير مستخدمة — الآن يموَّل العجز تلقائيًا من القابضة عند الشراء تمامًا كما يحدث عند فتح قاعدة (BUILD267)؛ (2) صفحة الشراء اليدوي كانت تعرض عنوانًا متبقيًا من نظام AI الميت المحذوف في BUILD260 رغم أن محتواها صحيح فعليًا، مما يعطي انطباعًا مضللًا بعودة ذلك النظام؛ (3) قائمة نقاط انطلاق المسار البري كانت تخلط قواعد طيران/موانئ تابعة لشركات أخرى ضمن خيارات مسار الشاحنات؛ (4) تراكم حتى 40 مقترح AI معلّق خلال دقيقة لعب واحدة بلا سقف عملي ولا وسيلة تصفية سريعة — خُفِّض السقف لكل شركة من 10 إلى 3 وأُضيف زر رفض جماعي فوري. Save Schema يبقى 2.0.0.',
     'fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
@@ -44,6 +44,6 @@ def main():
     for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
     for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD268_RUNTIME_BUILD_BADGE.{ext}').write_text(payload,encoding='utf-8')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD269_REAL_BUGS_FROM_USER_RECORDING.{ext}').write_text(payload,encoding='utf-8')
     print(f'Built 2.9.1 Build258 HR manual hiring / dispatch integrity snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()
