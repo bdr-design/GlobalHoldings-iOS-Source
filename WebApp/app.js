@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 269;
+  const RUNTIME_BUILD = 270;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -1955,7 +1955,7 @@
     setTimeout(()=>{ if(map)map.invalidateSize(); },260);
   }
   function closeDrawer(){ $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); $('backdrop').classList.add('hidden'); setActiveNav('map'); setTimeout(()=>{if(map)map.invalidateSize();},260); }
-  const ADVANCED_OWNED_PANELS=new Set(['realism','companies','leadershipHub','workspaceHub','peopleHub','actionCenter','governanceHub','systemHub','more','intelligence','aiApprovals','programs','facilityManage','companyManage','treasury','audit','legal','procurement','cyber','safety','energy','bank','governance','insurance','research','esg','career','news','labor','ma','settings','updates','diagnostics','controlPlane']);
+  const ADVANCED_OWNED_PANELS=new Set(['realism','companies','leadershipHub','workspaceHub','peopleHub','actionCenter','governanceHub','systemHub','intelligence','aiApprovals','programs','facilityManage','companyManage','treasury','audit','legal','procurement','cyber','safety','energy','bank','governance','insurance','research','esg','career','news','labor','ma','settings','updates','diagnostics','controlPlane']);
   function renderPanel(panel,arg){
     const advanced=window.GH_ADVANCED?.render(panel,arg,advancedContext());
     if(advanced!==null&&advanced!==undefined)return advanced;
@@ -1965,7 +1965,7 @@
     if(panel==='control')return renderControl(); if(panel==='market')return renderMarket();
     if(panel==='contracts')return renderContracts(); if(panel==='assets'||panel==='assetMarket')return renderAssetMarket(arg);
     if(panel==='expansion')return renderExpansion(); if(panel==='companyFacilities')return renderCompanyFacilities(typeof arg==='object'?arg.type:arg); if(panel==='finance')return renderFinance(); if(panel==='invoices')return renderInvoices(arg);
-    if(panel==='competitors')return renderCompetitors(); if(panel==='assetManage')return renderAssetManage(arg); if(panel==='assignRoute')return renderAssignRoute(arg); if(panel==='ports')return renderPorts();
+    if(panel==='assetManage')return renderAssetManage(arg); if(panel==='assignRoute')return renderAssignRoute(arg); if(panel==='ports')return renderPorts();
     if(panel==='network')return renderWorldNetwork(); if(panel==='routes')return renderRouteCenter(); if(panel==='globalRoute')return renderGlobalRoute(arg);
     return '<div class="empty">القسم غير متاح.</div>';
   }
@@ -2128,52 +2128,6 @@
   }
 
   async function createRoadRouteFromForm(){const fromId=$('roadFrom')?.value,toId=$('roadTo')?.value;if(!fromId||!toId||fromId===toId){notice('اختر نقطتي تشغيل مختلفتين.');return;}const from=routeFacility(fromId),to=routeFacility(toId);if(!from||!to)return;const button=document.querySelector('.build-road-route');if(button){button.disabled=true;button.textContent='جاري حساب الطريق…';}const geometry=await requestRoadGeometry(from.coords,to.coords);if(!geometry){notice('لم يجد محرك الطرق اتصالًا بريًا صالحًا بين النقطتين. اختر نقطتين متصلتين بالطرق.');openDrawer('routes');return;}const id=nextId('ROAD-CUSTOM'),durationHours=Math.max(.25,geometry.durationSeconds/3600),fromName=roadLocationName(from),toName=roadLocationName(to),route=prepareRoute({id,type:'road',name:`${fromName} → ${toName}`,from:fromName,to:toName,fromFacility:from.id,toFacility:to.id,route:geometry.route,effectiveSpeedKmh:clamp(geometry.distanceKm/durationHours,42,82),dwellHours:2.5,routingSource:'OSRM · شبكة طرق فعلية'});try{window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','create',{route:clone(route)},{actor:'route-planner'});window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','cache-geometry',{id,route:route.route,distanceKm:route.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'route-planner'});routeTemplates[id]=route;pushAlert(`أُنشئ مسار بري فعلي من ${route.from} إلى ${route.to} بطول ${fmtNumber(route.distanceKm)} كم.`);save();renderMap();openDrawer('routes');}catch(error){notice(`تعذر إنشاء المسار: ${error.message}`);}}
-  function activateAutomaticRoute(asset,route){
-    asset=state.assets.find(x=>x.id===asset.id)||asset;
-    if(asset.phase==='moving'&&asset.routeId)return {ok:true,reused:true};
-    const tx=window.GH_TRANSACTION_CORE;
-    try{const result=tx.execute(state,{label:`activate-route:${asset.id}`,apply:()=>{if(!state.customRoutes.some(r=>r.id===route.id))window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','create',{route:clone(route)},{actor:'ai-route'});if(asset.routeId!==route.id||asset.phase!=='turnaround')window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','assign-route',{id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',route},{actor:'ai-route'});window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id:asset.id,route,load:loadLabel(asset)},{actor:'ai-route'});normalizeAsset(asset);delete asset.activationError;asset.activatedAt=state.simSeconds||0;return true;}});routeTemplates[route.id]=route;return {ok:result.value===true,reused:asset.routeId===route.id};}
-    catch(error){const live=state.assets.find(x=>x.id===asset.id)||asset;live.activationError=String(error.message||error);live.activationAttempts=(Number(live.activationAttempts)||0)+1;console.warn('automatic route activation rejected',live.id,error);return {ok:false,error:live.activationError};}
-  }
-  async function createAutomaticRoutes(assetIds=null,options={}){
-    dedupeCustomRoutes();
-    const wanted=Array.isArray(assetIds)?new Set(assetIds):null;
-    const idle=state.assets.filter(a=>a.phase!=='moving'&&['air','sea','road'].includes(a.type)&&(!wanted||wanted.has(a.id)));let created=0,skipped=0,lastRoadRequest=0;const failures=[];
-    const routeUsage=new Map();state.assets.forEach(a=>{const r=routeTemplates[a.routeId];if(r)routeUsage.set(routePairSignature(r),(routeUsage.get(routePairSignature(r))||0)+1);});
-    for(let assetIndex=0;assetIndex<idle.length;assetIndex++){
-      const asset=idle[assetIndex],origin=routeOriginForAsset(asset);if(!origin){asset.activationError='missing-owned-origin';failures.push({id:asset.id,reason:asset.activationError});skipped++;continue;}
-      const assigned=asset.routeId&&(routeTemplates[asset.routeId]||state.customRoutes.find(r=>r.id===asset.routeId));if(assigned){const activation=activateAutomaticRoute(asset,assigned);if(activation.ok){created++;continue;}const live=state.assets.find(x=>x.id===asset.id);if(live){live.routeId=null;live.phase='idle';}}
-      if(asset.type==='road'){
-        const owned=roadFacilityOptions().filter(f=>f.id!==origin.id);
-        const publicCandidates=(LOCAL_PLACE_AREAS||[]).filter(p=>Array.isArray(p.coords)&&haversine(origin.coords,p.coords)>18&&haversine(origin.coords,p.coords)<1250).map(p=>ensureRoadPublicEndpoint(p));
-        const candidates=[...owned,...publicCandidates].filter((f,i,list)=>list.findIndex(x=>x.id===f.id)===i).map(f=>{const sig=endpointPairSignature('road',origin,f),distance=haversine(origin.coords,f.coords),usage=routeUsage.get(sig)||0;return{f,sig,distance,usage,score:usage*1e7+Math.abs(distance-420)*900+(f.owned?-450000:0)};}).sort((a,b)=>a.score-b.score);
-        let selected=null;
-        for(const candidate of candidates.slice(0,Math.min(8,candidates.length))){if(!routeUsage.has(candidate.sig)||candidate.usage===Math.min(...candidates.map(x=>x.usage))){selected=candidate;break;}}
-        selected=selected||candidates[0];if(!selected){skipped++;continue;}
-        const existing=operationalRoutes('road').find(r=>routePairSignature(r)===selected.sig);
-        if(existing){const activation=activateAutomaticRoute(asset,existing);if(activation.ok){routeUsage.set(selected.sig,(routeUsage.get(selected.sig)||0)+1);created++;}else{failures.push({id:asset.id,reason:activation.error});skipped++;}continue;}
-        let geometry=null;if(options.deterministic)geometry=fallbackRoadGeometry(origin.coords,selected.f.coords);else{const wait=Math.max(0,450-(Date.now()-lastRoadRequest));if(wait)await new Promise(resolve=>setTimeout(resolve,wait));lastRoadRequest=Date.now();geometry=await requestRoadGeometry(origin.coords,selected.f.coords)||fallbackRoadGeometry(origin.coords,selected.f.coords);}if(!geometry){skipped++;continue;}
-        const route=prepareRoute({id:nextId('ROAD-AUTO'),type:'road',name:`${roadLocationName(origin)} → ${roadLocationName(selected.f)}`,from:roadLocationName(origin),to:roadLocationName(selected.f),fromFacility:origin.id,toFacility:selected.f.id,route:geometry.route,effectiveSpeedKmh:clamp(geometry.distanceKm/Math.max(.25,geometry.durationSeconds/3600),42,82),dwellHours:2.5,routingSource:geometry.fallback?'GH AI Network · مسار حتمي احتياطي':'GH AI Network · OSRM · تنويع ربحي'});
-        const eco=computeTripEconomics(asset,route);route.aiScore=Math.round((eco.margin||0)+(eco.margin/Math.max(1,eco.revenue))*250000-(selected.usage*150000));route.aiMargin=eco.margin;route.aiMarginPct=eco.margin/Math.max(1,eco.revenue);
-        if(!geometry.fallback)window.GH_DOMAIN_COMMANDS.dispatch({state},'routes','cache-geometry',{id:route.id,route:route.route,distanceKm:route.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'ai-route'});{const activation=activateAutomaticRoute(asset,route);if(activation.ok){routeUsage.set(selected.sig,(routeUsage.get(selected.sig)||0)+1);created++;}else{failures.push({id:asset.id,reason:activation.error});skipped++;}}continue;
-      }
-      const kind=asset.type==='air'?'airport':'port',range=assetRangeKm(asset),rawWorld=kind==='airport'?WORLD.airports:WORLD.ports,step=Math.max(1,Math.floor(rawWorld.length/220));
-      const globalCandidates=rawWorld.filter((_,i)=>i%step===0).map(row=>kind==='airport'?airportEntity(row):portEntity(row)).filter(entity=>entity?.name).map(entity=>({...entity,id:entity.key}));
-      const candidates=[...facilities.filter(f=>f.kind===kind),...globalCandidates].filter((f,i,list)=>f.id!==origin.id&&list.findIndex(x=>x.id===f.id)===i).map(f=>{const distance=haversine(origin.coords,f.coords),sig=endpointPairSignature(asset.type,origin,f),usage=routeUsage.get(sig)||0;return{...f,distance,sig,usage};}).filter(f=>!range||f.distance<=range*.88).sort((a,b)=>a.usage-b.usage||Math.abs(a.distance-range*.52)-Math.abs(b.distance-range*.52));
-      const target=candidates[0];if(!target){asset.activationError='no-compatible-destination';failures.push({id:asset.id,reason:asset.activationError});skipped++;continue;}const existing=Object.values(routeTemplates).find(r=>r.type===asset.type&&routePairSignature(r)===target.sig);if(existing){const activation=activateAutomaticRoute(asset,existing);if(activation.ok){routeUsage.set(target.sig,target.usage+1);created++;}else{failures.push({id:asset.id,reason:activation.error});skipped++;}continue;}
-      const endpoint=ensurePublicRouteEndpoint({...target,key:`auto:${target.id}`}),route=buildPublicRoute(asset,origin,endpoint);if(!route||!routeFitsAsset(asset,route)){asset.activationError='route-outside-asset-envelope';failures.push({id:asset.id,reason:asset.activationError});skipped++;continue;}route.id=nextId(`${asset.type.toUpperCase()}-AUTO`);route.name=`GH AI · ${route.name}`;const eco=computeTripEconomics(asset,route);route.aiScore=Math.round((eco.margin||0)+(eco.margin/Math.max(1,eco.revenue))*250000-target.usage*200000);route.aiMargin=eco.margin;route.aiMarginPct=eco.margin/Math.max(1,eco.revenue);{const activation=activateAutomaticRoute(asset,route);if(activation.ok){routeUsage.set(target.sig,target.usage+1);created++;}else{failures.push({id:asset.id,reason:activation.error});skipped++;}}
-    }
-    dedupeCustomRoutes();save();renderMap();if(!options.silent){pushAlert(created?`GH AI شغّل ${created} أصلًا على شبكة متنوعة${failures.length?`، وبقي ${failures.length} في إعادة المحاولة`:''}.`:`لم يُنشأ مسار تلقائي. راجع القواعد والمدى واتصال الطرق.`);openDrawer('routes');}return {expected:idle.length,activated:created,skipped,failures,moving:wanted?state.assets.filter(a=>wanted.has(a.id)&&a.phase==='moving').length:state.assets.filter(a=>a.phase==='moving').length};
-  }
-
-
-  function renderCompetitors(){
-    const rivals=competitors.map(c=>`<article class="list-item"><div class="list-item-head"><div><h3>${c.name}</h3><p>${c.sector} · ${c.hq}</p></div><span class="tag">حصة ${c.marketShare}</span></div><div class="metric-row"><div><span>الإيرادات</span><b>${fmtMoney(c.revenue)}</b></div><div><span>EBITDA</span><b>${fmtMoney(c.ebitda)}</b></div><div><span>جودة التشغيل</span><b>${c.quality||80}/100</b></div></div><p>${c.strategy} · فرصة التكامل: ${c.synergy||'تشغيلية'}.</p><div class="action-row"><button class="secondary-btn diligence" data-id="${c.id}">ملف استحواذ</button></div></article>`).join('');
-    const partners=strategicPartners.map(p=>`<article class="list-item"><div class="list-item-head"><div><h3>${p.name}</h3><p>${p.service}</p></div><span class="tag positive">${p.rating}/100</span></div><p>القطاع: ${p.sector==='all'?'متعدد القطاعات':typeName(p.sector)} · شروط: ${p.terms}</p></article>`).join('');
-    return `<div class="section-mini">المنافسون وأهداف الاستحواذ</div><div class="list">${rivals}</div><div class="section-mini">شبكة الموردين وشركاء الصيانة والتوريد</div><div class="list">${partners}</div>`;
-  }
-
-
   function companyLogoMarkup(type,size='normal'){
     const record=type==='group'?state.profile:(state.companyRegistry?.[type]||{}),logo=record.logo||null,style=record.logoStyle||type||state.profile.logoStyle||'teal',abbr=type==='group'?(state.profile.shortName||'GH'):({air:'AIR',sea:'SEA',road:'LOG',power:'NRG',bank:'BNK',mobility:'MOVE'}[type]||'CO');
     return `<div class="company-logo-badge ${size==='small'?'small':''}" data-style="${esc(style)}">${logo?`<img src="${esc(logo)}" alt="">`:`<span>${esc(abbr)}</span>`}</div>`;
