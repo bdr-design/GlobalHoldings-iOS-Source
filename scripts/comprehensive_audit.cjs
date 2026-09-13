@@ -163,4 +163,27 @@ for (const f of allWebAppFiles) {
 }
 ok('scanned for the same self-referential template pattern that caused the BUILD272 bug');
 
+// --- I) duplicate-value display detector (the "قيد الوصول / توريدات جارية" pattern) -----------
+report('I) two differently-named variables computed from the byte-identical expression in the same function (duplicate-stat display risk)');
+for (const [label, src] of [['app.js', app], ['advanced-core.js', adv]]) {
+  // نفس دالة استخراج حدود الدوال المستخدمة في القسم E، لتحليل كل دالة على حدة بدل الملف كله دفعة
+  // واحدة (متغيران بنفس الاسم في دالتين مختلفتين أمر طبيعي ولا يستحق التنبيه).
+  const funcStarts = [...src.matchAll(/function\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)\s*\{/g)].map(m => m.index);
+  funcStarts.push(src.length);
+  let flaggedHere = 0;
+  for (let i = 0; i < funcStarts.length - 1; i++) {
+    const body = src.slice(funcStarts[i], Math.min(funcStarts[i + 1], funcStarts[i] + 6000));
+    const seen = new Map();
+    for (const m of body.matchAll(/const\s+(\w+)\s*=\s*(\([^;]{20,240}?\)(?:\.[a-zA-Z]+(?:\([^;]{0,80}?\))?)*)\s*;/g)) {
+      const [, varName, expr] = m;
+      if (seen.has(expr) && seen.get(expr) !== varName) {
+        flag(`${label}: "${seen.get(expr)}" and "${varName}" are computed from the exact same expression in the same function - if both are displayed, they will always show the identical number under different labels (this exact pattern caused the BUILD274 asset-requests bug)`);
+        flaggedHere++;
+      }
+      seen.set(expr, varName);
+    }
+  }
+  ok(`${label}: scanned ${funcStarts.length - 1} function bodies, ${flaggedHere} duplicate-expression pair(s) flagged`);
+}
+
 console.log(`\n=== SUMMARY: ${issues} item(s) flagged for human review (not all are bugs - see notes above) ===`);

@@ -41,3 +41,23 @@ console.log('Comprehensive audit tool + depart-now button + dead reset cleanup B
   assert(out.includes('app.js: ') && /app\.js: \d+ functions scanned, 0 flagged/.test(out), 'app.js must have zero fully-unreferenced functions');
   assert(/advanced-core\.js: \d+ functions scanned, 0 flagged/.test(out), 'advanced-core.js must have zero fully-unreferenced functions');
 })();
+
+// 5) قسم I (كاشف الإحصاء المكرر، أُضيف في BUILD275 بعد خلل "قيد الوصول/توريدات جارية" الحقيقي في
+// BUILD274) يجب أن يعمل فعليًا لا أن يمر صامتًا فقط لأن الكود الحالي نظيف. تحقق مباشر: نمرّر له
+// نفس الخلل الأصلي حرفيًا في كود وهمي منفصل ونتأكد أنه يُكتشف - لا نكتفي بأن الفحص الحقيقي رجع صفرًا.
+(function duplicateStatDetectorActuallyWorks(){
+  const buggyCode = "\n  function renderControl(){\n    const activeDeliveries=(state.realism?.procurement?.deliveries||[]).filter(d=>d.status!=='delivered').length;\n    const openAssetRequests=(state.realism?.procurement?.deliveries||[]).filter(d=>d.status!=='delivered').length;\n    return activeDeliveries+openAssetRequests;\n  }\n";
+  const funcStarts = [...buggyCode.matchAll(/function\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)\s*\{/g)].map(m => m.index);
+  funcStarts.push(buggyCode.length);
+  let caught = false;
+  for (let i = 0; i < funcStarts.length - 1; i++) {
+    const body = buggyCode.slice(funcStarts[i], Math.min(funcStarts[i + 1], funcStarts[i] + 6000));
+    const seen = new Map();
+    for (const m of body.matchAll(/const\s+(\w+)\s*=\s*(\([^;]{20,240}?\)(?:\.[a-zA-Z]+(?:\([^;]{0,80}?\))?)*)\s*;/g)) {
+      const [, varName, expr] = m;
+      if (seen.has(expr) && seen.get(expr) !== varName) caught = true;
+      seen.set(expr, varName);
+    }
+  }
+  assert(caught, 'the duplicate-stat detector must actually catch the exact BUILD274 bug pattern when reintroduced, not just report zero on already-clean code');
+})();
