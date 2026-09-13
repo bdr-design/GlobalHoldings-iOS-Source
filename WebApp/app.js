@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 273;
+  const RUNTIME_BUILD = 274;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -686,7 +686,6 @@
   const spend = (amount,note='مصروف تشغيلي',method='تحويل بنكي',taxable=true) => spendCompany('group',amount,note,method,taxable);
 
   // ---- الطاقم: رواتب ومعنويات فعلية ----
-  function crewByRole(id){ return state.crew.find(c=>c.id===id); }
   function crewAvgSalary(role){ return (role.salaryMin+role.salaryMax)/2; }
   function crewSectorPayroll(sector){ return state.crew.filter(c=>c.sector===sector).reduce((s,c)=>s+c.count*crewAvgSalary(c),0); }
   function crewSectorMorale(sector){ const list=state.crew.filter(c=>c.sector===sector); if(!list.length)return 100; return list.reduce((s,c)=>s+c.morale,0)/list.length; }
@@ -704,18 +703,7 @@
     const asset=state.assets.find(a=>a.id===assetId);if(!asset)return[];
     return Object.entries(routeTemplates).filter(([,r])=>r&&r.type===asset.type&&routeFitsAsset(asset,r)&&( !asset.baseFacility||asset.baseFacility===r.fromFacility||asset.baseFacility===r.toFacility)).map(([routeId,r])=>{const eco=computeTripEconomics(asset,r),margin=Number(eco.margin)||0,revenue=Math.max(1,Number(eco.revenue)||1),marginPct=margin/revenue,conditionPenalty=Math.max(0,85-(Number(asset.condition)||100))*1500,riskPenalty=(Number(r.maxLegKm)||routeLongestLeg(r.route)||0)*2,score=margin+marginPct*250000-conditionPenalty-riskPenalty;return{routeId,from:r.from,to:r.to,margin,revenue,marginPct,score,duration:Number(r.tripSeconds)||0,maxLegKm:Number(r.maxLegKm)||routeLongestLeg(r.route)||0};}).sort((a,b)=>b.score-a.score);
   }
-  function adjustCrew(id,pct){
-    const c=crewByRole(id); if(!c){pushAlert('تعذر تعديل الرواتب؛ فئة الطاقم غير موجودة.');return;}
-    c.salaryMin=Math.round(c.salaryMin*(1+pct)); c.salaryMax=Math.round(c.salaryMax*(1+pct));
-    const moraleDelta=pct>0?Math.min(3,Math.max(.1,pct*50)):Math.max(-5,pct*100);
-    c.morale=clamp(c.morale+moraleDelta,0,100);
-    pushAlert(`${pct>0?'رفع':'خفض'} راتب فئة "${c.name}" بنسبة ${Math.abs(pct*100).toFixed(0)}%. المعنويات الآن ${Math.round(c.morale)}%.`);
-    save(); openDrawer('labor','crew');
-  }
-
   let map, currentTile, layers = {}, routeLayers = [], ownMarkers = new Map(), facilityMarkers = new Map(), competitorMarkers = new Map(), worldMarkers = new Map();
-  // ينقل عرض الخريطة فعليًا لمكان جديد (مثل مركز عاصمة Mobility تم فتحه للتو)، حتى لا يبدو
-  // نشاطًا جديدًا "مختفيًا" لمجرد أن إطار العرض الحالي متمركز على منطقة أخرى بعيدة جغرافيًا.
   function panMapTo(coords, zoom=6){if(map&&Array.isArray(coords)&&coords.length===2&&Number.isFinite(coords[0])&&Number.isFinite(coords[1]))map.setView(coords, Math.max(map.getZoom()||0, zoom));}
   let selectedAssetId = null, selectedWorldKey = null, placingHub = false, placementMode = 'hub', roadDraftStart = null, placementDraft = null, placementPreviewMarker = null, worldRenderTimer = null, activeDrawerPanel = null, activeDrawerArg = null;
   let hubPlacementGesture={timer:null,start:null,triggered:false,ignoreClickUntil:0};
@@ -1846,12 +1834,12 @@
   };
 
   const panelRoot = panel => window.GH_ADVANCED?.root(panel) || ({
-    leadershipHub:'leadership',intelligence:'leadership',aiApprovals:'leadership',programs:'leadership',realism:'leadership',ma:'leadership',research:'leadership',esg:'leadership',career:'leadership',news:'leadership',competitors:'leadership',
+    leadershipHub:'leadership',intelligence:'leadership',aiApprovals:'leadership',programs:'leadership',realism:'leadership',ma:'leadership',research:'leadership',esg:'leadership',career:'leadership',news:'leadership',
     companies:'companies',companyManage:'companies',energy:'companies',
     control:'control',network:'control',routes:'control',globalRoute:'control',companyFacilities:'companies',contracts:'control',labor:'control',expansion:'control',ports:'control',procurement:'control',assets:'control',assetManage:'control',assignRoute:'control',facilityManage:'control',
     market:'finance',finance:'finance',invoices:'finance',treasury:'finance',bank:'finance',
     governanceHub:'governance',governance:'governance',audit:'governance',legal:'governance',insurance:'governance',cyber:'governance',safety:'governance',
-    systemHub:'system',settings:'system',updates:'system',diagnostics:'system',controlPlane:'system',more:'system'
+    systemHub:'system',settings:'system',updates:'system',diagnostics:'system',controlPlane:'system'
   })[panel] || 'map';
   function setActiveNav(key){
     document.querySelectorAll('.side-nav button').forEach(b=>b.classList.toggle('active',(b.dataset.nav||'')===key));
@@ -1957,10 +1945,10 @@
   // ---- لوحة المجموعة: نظرة قابضة + بطاقات شركات بمؤشرات قطاعية حقيقية (أسلوب صورة المرجع) ----
   function renderControl(){
     const card=(panel,code,title,copy)=>`<button class="command-btn" data-open="${panel}"><span>${code}</span><div><b>${title}</b><small>${copy}</small></div></button>`;
-    const activeDeliveries=(state.realism?.procurement?.deliveries||[]).filter(d=>d.status!=='delivered').length;
-    const openAssetRequests=(state.realism?.procurement?.deliveries||[]).filter(d=>d.status!=='delivered').length;
+    const pendingDeliveries=(state.realism?.procurement?.deliveries||[]).filter(d=>d.status!=='delivered');
+    const pendingDeliveryValue=pendingDeliveries.reduce((n,d)=>n+(Number(d.asset?.purchasePrice)||0),0);
     return `<div class="workspace-intro operations-intro"><span>OPERATIONS DOMAIN · 2.6</span><b>من الطلب إلى الحركة الفعلية: شبكة → منشأة → أصل → جاهزية → مسار → عقد → تنفيذ. HR والمال والحوكمة تبقى مجالات مستقلة.</b></div>
-      <div class="metric-row"><div><span>الأصول</span><b>${state.assets.length}</b></div><div><span>قيد الوصول</span><b>${openAssetRequests}</b></div><div><span>توريدات جارية</span><b>${activeDeliveries}</b></div></div>
+      <div class="metric-row"><div><span>الأصول</span><b>${state.assets.length}</b></div><div><span>طلبات شراء قيد التسليم</span><b>${pendingDeliveries.length}</b></div><div><span>قيمة الطلبات المعلّقة</span><b>${fmtMoney(pendingDeliveryValue)}</b></div></div>
       <div class="section-heading"><h3>الشبكة والبنية التحتية</h3><p>حدد أين تعمل المجموعة قبل إضافة القدرة.</p></div><div class="command-grid grouped workspace-card-grid">${card('network','WORLD','الدليل العالمي',`${fmtNumber(WORLD.meta.airportCount)} مطار · ${fmtNumber(WORLD.meta.portCount)} ميناء`)}${card('expansion','HUB','القواعد والمراكز','افتتاح · سعة · إدارة · جاهزية')}${card('globalRoute','NET','الشبكة الجوية والبحرية','وجهات · مدى · تشغيل عالمي')}${card('routes','ROAD','الشبكة البرية','طرق · نقاط تسليم · هامش')}</div>
       <div class="section-heading"><h3>القدرة والأصول</h3><p>الشراء يدوي بالكامل: اختر الأصل والكمية والقاعدة ثم راقب التسليم. AI يقترح فقط.</p></div><div class="command-grid grouped workspace-card-grid">${card('procurement','BUY','الشراء اليدوي','اختيار أصل · كمية · قاعدة · تسليم')}${card('assets','FLT','إدارة الأساطيل','ملكية · حالة · صيانة · تعيين · بيع')}</div>
       <div class="section-heading"><h3>التجارة والتنفيذ</h3><p>حول القدرة المتاحة إلى التزام تجاري وتشغيل قابل للقياس.</p></div><div class="command-grid grouped workspace-card-grid">${card('contracts','COM','العقود والعملاء','مناقصات · SLA · تنفيذ · فوترة')}</div>
@@ -2115,7 +2103,7 @@
         <article class="finance-transfer-panel-v202"><div class="finance-subhead-v202"><b>تحويل مباشر</b><small>بين كيانين داخل المجموعة</small></div><div class="company-transfer-form finance-direct-form-v202"><label>من<select id="companyTransferFrom">${opened.map(t=>`<option value="${t}">${esc(companyFinanceName(t))}</option>`).join('')}</select></label><label>إلى<select id="companyTransferTo">${opened.slice().reverse().map(t=>`<option value="${t}">${esc(companyFinanceName(t))}</option>`).join('')}</select></label><label class="wide">المبلغ<input id="companyTransferAmount" type="number" min="1" step="1000" value="5000000" inputmode="decimal"></label></div><button class="primary-btn company-transfer-submit">تنفيذ التحويل</button></article>
         <article class="finance-transfer-panel-v202 bulk"><div class="finance-subhead-v202"><div><b>توزيع جماعي من القابضة</b><small>عملية ذرية واحدة لجميع الشركات</small></div><span id="bulkTransferTotal" class="tag">$0</span></div>${subs.length?`<div class="bulk-transfer-toolbar"><label>مبلغ التوزيع<input id="bulkTransferPool" type="number" min="0" step="1000" value="${Math.min(25000000,Math.max(0,Math.floor(groupBalance*.1)))}"></label><button class="secondary-btn bulk-transfer-equal">بالتساوي</button><button class="secondary-btn bulk-transfer-needs">حسب الاحتياج</button></div><div class="bulk-transfer-list">${bulkRows}</div><button class="primary-btn bulk-transfer-submit">تنفيذ جميع التحويلات</button>`:'<div class="empty">افتح شركة تابعة أولًا لاستخدام التوزيع الجماعي.</div>'}</article>
       </section>
-      <section class="finance-section-v202"><div class="finance-section-head-v202"><div><h3>تمويل القابضة</h3><p>الدين ورأس المال منفصلان عن التحويلات التشغيلية.</p></div></div><div class="finance-funding-actions"><button class="primary-btn add-credit">خط ائتمان +$50M</button><button class="secondary-btn issue-bond">سندات 5 سنوات +$100M</button><button class="secondary-btn repay-debt">سداد $25M</button></div></section>${renderAccountingStatement()}${window.GH_REALISM?window.GH_REALISM.financeHTML(state):''}</div>`;
+      <section class="finance-section-v202"><div class="finance-section-head-v202"><div><h3>تمويل القابضة</h3><p>الدين ورأس المال منفصلان عن التحويلات التشغيلية.</p></div></div><div class="finance-funding-actions"><button class="primary-btn add-credit">خط ائتمان +$50M</button><button class="secondary-btn issue-bond">سندات 5 سنوات +$100M</button><button class="secondary-btn repay-debt">سداد $25M</button>${state.ipo.listed?`<button class="secondary-btn" disabled data-disabled-reason="المجموعة مدرجة بالفعل بالرمز ${esc(state.ipo.ticker||'')}.">مُدرجة · ${esc(state.ipo.ticker||'')}</button>`:`<button class="secondary-btn launch-ipo" ${state.groupValue<1000000000?'disabled data-disabled-reason="قيمة المجموعة أقل من الحد الأدنى للطرح العام ($1B)."':''}>طرح عام أولي (IPO) · ~${fmtMoney(state.groupValue*.18)}</button>`}</div></section>${renderAccountingStatement()}${window.GH_REALISM?window.GH_REALISM.financeHTML(state):''}</div>`;
   }
   function renderAccountingStatement(){const f=state.finance,revenue=f.invoices.filter(x=>x.kind==='دخل').reduce((s,x)=>s+x.amount,0),expense=f.invoices.filter(x=>x.kind==='مصروف').reduce((s,x)=>s+x.amount,0),assets=state.cash+state.assets.reduce((s,a)=>s+(a.purchasePrice||0)*.7,0),liabilities=state.debt+f.payables.reduce((s,x)=>s+x.total,0);return `<article class="list-item"><h3>الملخص المحاسبي التشغيلي</h3><div class="metric-row"><div><span>الإيرادات المثبتة</span><b class="positive">${fmtMoney(revenue)}</b></div><div><span>المصروفات المثبتة</span><b>${fmtMoney(expense)}</b></div><div><span>صافي المستندات</span><b class="${revenue-expense>=0?'positive':'negative'}">${fmtMoney(revenue-expense)}</b></div></div><div class="metric-row two"><div><span>الأصول المقدرة</span><b>${fmtMoney(assets)}</b></div><div><span>الالتزامات</span><b>${fmtMoney(liabilities)}</b></div></div></article>`;}
   function truncateText(str,n){str=String(str??'');return str.length>n?str.slice(0,n-1)+'…':str;}
@@ -2205,8 +2193,7 @@
     document.querySelectorAll('.issue-bond').forEach(b=>b.addEventListener('click',()=>{try{window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','raise-debt',{company:'group',amount:100000000,note:'إصدار سندات لخمس سنوات',liabilityAccount:'سندات مستحقة الدفع',lender:'حملة السندات'},{actor:'finance-ui'});pushAlert(`أصدرت المجموعة سندات لخمس سنوات بقيمة $100M وفق التصنيف ${state.profile.creditRating}.`);save();updateKpis();openDrawer('finance');}catch(error){notice(`تعذر إصدار السندات: ${error.message}`);}}));
     document.querySelectorAll('.launch-ipo').forEach(b=>b.addEventListener('click',()=>{if(state.ipo.listed||state.groupValue<1000000000)return;try{const ticker=(state.profile.shortName||'GH').toUpperCase(),proceeds=state.groupValue*.18;window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','raise-equity',{company:'group',amount:proceeds,note:'متحصلات الطرح العام الأولي',equityAccount:'رأس مال وعلاوة إصدار',source:'مستثمرو الطرح العام'},{actor:'finance-ui'});window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','set-ipo',{listed:true,ticker},{actor:'finance-ui'});window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','adjust-group-value',{delta:state.groupValue*.12},{actor:'finance-ui'});pushAlert(`اكتمل الطرح العام للمجموعة بالرمز ${ticker} وجمعت ${fmtMoney(proceeds)}.`);save();updateKpis();openDrawer('finance');}catch(error){notice(`تعذر الطرح: ${error.message}`);}}));
     document.querySelectorAll('.repay-debt').forEach(b=>b.addEventListener('click',()=>{const groupDebt=Number(companyBook('group').debt)||0,amount=Math.min(25000000,groupDebt);if(amount<=0){pushAlert('لا يوجد دين على الشركة القابضة للسداد.');return;}try{const r=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','repay-debt',{company:'group',amount,note:'سداد أصل دين'},{actor:'finance-ui'}).result;pushAlert(`تم سداد ${fmtMoney(r.amount)} من دين الشركة القابضة.`);save();updateKpis();openDrawer('finance');}catch(error){notice(`تعذر سداد الدين: ${error.message}`);}}));
-    document.querySelectorAll('.treasury-transfer').forEach(b=>b.addEventListener('click',treasuryTransfer));
-    document.querySelectorAll('.treasury-statement').forEach(b=>b.addEventListener('click',treasuryStatement));
+    
     document.querySelectorAll('.collect-receivable').forEach(b=>b.addEventListener('click',()=>collectReceivable(b.dataset.number)));
     document.querySelectorAll('.settle-payable').forEach(b=>b.addEventListener('click',()=>settlePayable(b.dataset.number)));
     document.querySelectorAll('.pay-taxes').forEach(b=>b.addEventListener('click',()=>payTaxes(b.dataset.company||'group')));
@@ -2224,13 +2211,11 @@
     document.querySelectorAll('.bulk-transfer-equal').forEach(b=>b.addEventListener('click',()=>{const pool=Math.max(0,Number($('bulkTransferPool')?.value)||0);if(!bulkInputs.length)return;const each=Math.floor(pool/bulkInputs.length/1000)*1000;let used=0;bulkInputs.forEach((i,idx)=>{const val=idx===bulkInputs.length-1?Math.max(0,pool-used):each;i.value=Math.round(val);used+=val;});refreshBulkTotal();}));
     document.querySelectorAll('.bulk-transfer-needs').forEach(b=>b.addEventListener('click',()=>{const pool=Math.max(0,Number($('bulkTransferPool')?.value)||0);if(!bulkInputs.length)return;const rows=bulkInputs.map(i=>{const t=i.dataset.company,bud=companyBudget(t),remaining=companyBudgetRemaining(t),cash=companyOperatingBalance(t),operatingFloor=5000000+(state.assets||[]).filter(a=>a.type===t).length*350000,need=Math.max(250000,operatingFloor-cash)+(Number.isFinite(remaining)?Math.max(0,remaining)*.18:0);return {i,need};});const totalNeed=rows.reduce((n,x)=>n+x.need,0)||rows.length;let used=0;rows.forEach((x,idx)=>{const val=idx===rows.length-1?Math.max(0,pool-used):Math.floor(pool*x.need/totalNeed/1000)*1000;x.i.value=Math.round(val);used+=val;});refreshBulkTotal();}));
     document.querySelectorAll('.bulk-transfer-submit').forEach(b=>b.addEventListener('click',()=>{const rows=bulkInputs.map(i=>({company:i.dataset.company,amount:Number(i.value)||0})).filter(x=>x.amount>0),result=bulkTransferFromGroup(rows);if(!result.ok){notice(result.reason||'تعذر تنفيذ التوزيع الجماعي.');return;}pushAlert(`تم توزيع ${fmtMoney(result.total)} من القابضة على ${result.count} شركة · ${result.batchId}.`);save();updateKpis();openDrawer('finance');}));
-    document.querySelectorAll('.issue-cheque').forEach(b=>b.addEventListener('click',()=>{const company=b.dataset.company||'group';if(!canCompanySpend(company,1000000)){notice(`رصيد حساب ${companyFinanceName(company)} غير كافٍ لإصدار الشيك.`);return;}issueCheque(1000000,'سداد موردين دوري',supplierFor('all','parts')?.legalName||supplierFor('all','parts')?.name||'SecureParts Consortium AG',company);openDrawer('invoices',{company,tab:'cheques'});}));
+    
     document.querySelectorAll('.sign-contract').forEach(b=>b.addEventListener('click',()=>signContract(b.dataset.id)));
     document.querySelectorAll('[data-companytab]').forEach(b=>b.addEventListener('click',()=>openDrawer('companies',b.dataset.companytab)));
     document.querySelectorAll('[data-labortab]').forEach(b=>b.addEventListener('click',()=>openDrawer('labor',b.dataset.labortab)));
-    document.querySelectorAll('.crew-raise').forEach(b=>b.addEventListener('click',()=>adjustCrew(b.dataset.id,.06)));
-    document.querySelectorAll('.crew-cut').forEach(b=>b.addEventListener('click',()=>adjustCrew(b.dataset.id,-.03)));
-    document.querySelectorAll('.manage-sector').forEach(b=>b.addEventListener('click',()=>openDrawer(b.dataset.type==='power'?'energy':b.dataset.type==='bank'?'bank':'assets',b.dataset.type)));
+    
     document.querySelectorAll('.open-company').forEach(b=>b.addEventListener('click',()=>openCompany(b.dataset.type)));
     document.querySelectorAll('[data-markettype]').forEach(b=>b.addEventListener('click',()=>{marketFilterType=b.dataset.markettype;marketSegment='all';marketCompare=[];renderAssetMarketInto();}));
     document.querySelectorAll('[data-markettab]').forEach(b=>b.addEventListener('click',()=>{marketFilterTab=b.dataset.markettab;marketSegment='all';marketCompare=[];renderAssetMarketInto();}));
@@ -2246,7 +2231,7 @@
     document.querySelectorAll('.board-defer').forEach(b=>b.addEventListener('click',()=>setBoardDecision('deferred')));
     document.querySelectorAll('.buy-insurance').forEach(b=>b.addEventListener('click',()=>buyInsurance(b.dataset.sector)));
     document.querySelectorAll('.fund-research').forEach(b=>b.addEventListener('click',()=>fundResearch(b.dataset.project)));
-    document.querySelectorAll('.esg-invest').forEach(b=>b.addEventListener('click',investESG));
+    
     document.querySelectorAll('.company-name-save').forEach(btn=>btn.addEventListener('click',()=>{const type=btn.dataset.company,input=document.querySelector(`.company-name-input[data-company=\"${type}\"]`),name=String(input?.value||'').trim();if(!type||name.length<2){notice('أدخل اسمًا صالحًا للشركة.');return;}const oldName=companyFinanceName(type);try{window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','rename-company',{type,legalName:name},{actor:'identity'});pushAlert(`تم تغيير اسم ${oldName} إلى ${name}. جميع المستندات والقيود تعرض الاسم الجديد تلقائيًا.`);save();updateKpis();type==='group'?openDrawer('companies','holding'):openDrawer('companyManage',{type,tab:'overview'});}catch(error){notice(`تعذر تغيير الاسم: ${error.message}`);}}));
     document.querySelectorAll('.company-logo-upload input').forEach(input=>input.addEventListener('change',async()=>{const type=input.dataset.company;if(!type||!input.files?.[0])return;try{const data=await compressLogoFile(input.files[0]);window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','set-logo',{type,logo:data},{actor:'identity'});pushAlert(`تم تحديث شعار ${companyFinanceName(type)}؛ جميع المستندات التاريخية ستعرض الهوية الجديدة تلقائيًا.`);save();type==='group'?openDrawer('companies','holding'):openDrawer('companyManage',{type,tab:'overview'});}catch(error){notice(error.message||'تعذر معالجة الشعار.');}}));
     document.querySelectorAll('.company-logo-clear').forEach(btn=>btn.addEventListener('click',()=>{const type=btn.dataset.company;try{window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','set-logo',{type,logo:null},{actor:'identity'});save();type==='group'?openDrawer('companies','holding'):openDrawer('companyManage',{type,tab:'overview'});}catch(error){notice(`تعذر إزالة الشعار: ${error.message}`);}}));
@@ -2280,11 +2265,6 @@
     return runBusinessOperation('fundResearch',()=>{const cost=25000000;if(!Object.prototype.hasOwnProperty.call(state.research,project)){pushAlert('مشروع البحث غير معروف.');return;}if(state.research[project]>=100){pushAlert('اكتمل هذا المشروع بالفعل بنسبة 100%.');openDrawer('research');return;}try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'governance','research-fund',{project,cost,progress:25},{actor:'research'}).result;const meta=state.advanced?.researchPrograms?.[project];if(result.progress>=100&&meta)window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','adjust-group-value',{delta:Number(meta.spent||0)*.35},{actor:'research'});pushAlert(result.progress>=100?`اكتمل مشروع ${project} ودخل التشغيل. الأثر سيظهر داخل تكاليف التشغيل والمحاكاة بدل زيادة رقمية منفصلة.`:`تم تمويل مرحلة البحث. تقدم المشروع ${result.progress}% وإنفاقه المتراكم ${fmtMoney(meta?.spent||cost)}.`);save();updateKpis();openDrawer('research');}catch(error){notice(`تعذر تمويل البحث: ${error.message}`);}
     });
   }
-  function investESG(){
-    return runBusinessOperation('investESG',()=>{const cost=10000000;try{window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','spend',{company:'group',amount:cost,note:'برنامج ESG مؤسسي',method:'تحويل بنكي',line:'other'},{actor:'esg'});window.GH_DOMAIN_COMMANDS.dispatch({state},'governance','esg-invest',{environment:4,social:2,governance:1},{actor:'esg'});pushAlert('تم تنفيذ برنامج ESG جديد وتحسنت السمعة المؤسسية.');save();updateKpis();openDrawer('esg');}catch(error){notice(`تعذر تنفيذ برنامج ESG: ${error.message}`);}
-    });
-  }
-
   function inspectContract(id){const c=contracts.find(x=>x.id===id);if(!c){pushAlert('تعذر فتح تفاصيل هذه المناقصة؛ قد تكون تغيّرت. أعد فتح قسم العقود.');return;}notice(`${c.name}\n\nقيمة العقد: ${fmtMoney(c.value)}\nالتكلفة المتوقعة: ${fmtMoney(c.cost)}\nهامش كامل: ${fmtMoney(c.value-c.cost)}\nSLA: ${c.sla}\nالقدرة المطلوبة: ${c.capacity}\nالغرامات: ${c.penalty}`);}
   function hasContractCapacity(contract){
     if(contract.sector==='power') return facilities.some(f=>f.kind==='power'&&f.owned);
@@ -2307,20 +2287,6 @@
     const button=event.target.closest?.('.open-company');if(!button)return;
     event.preventDefault();event.stopPropagation();openCompany(button.dataset.type);
   },true);
-  function treasuryTransfer(event){const requested=Number(event?.currentTarget?.dataset.amount)||10000000,returnToCurrent=event?.currentTarget?.dataset.direction==='return';try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','transfer-reserve',{company:'group',amount:requested,direction:returnToCurrent?'to-operating':'to-reserve'},{actor:'treasury'}).result;pushAlert(`تم تحويل ${fmtMoney(result.amount||requested)} ${returnToCurrent?'من الاحتياطي إلى الحساب الجاري':'من الحساب الجاري إلى الاحتياطي'}.`);save();updateKpis();openDrawer('finance');}catch(error){notice(`تعذر تحويل الاحتياطي: ${error.message}`);}}
-  function renderTreasuryStatementContent(){
-    const f=state.finance,accounts=state.treasury.accounts,ledger=state.treasury.ledger.slice(0,30);
-    const cheques=f.cheques||[],cIssued=cheques.filter(c=>c.status==='صادر'),cSettled=cheques.filter(c=>c.status==='مصروف'),cBounced=cheques.filter(c=>c.status==='مرتجع');
-    const ar=f.receivables||[],ap=f.payables||[],arTotal=ar.reduce((s,x)=>s+x.total,0),apTotal=ap.reduce((s,x)=>s+x.total,0);
-    const revenue=f.invoices.filter(x=>x.kind==='دخل').reduce((s,x)=>s+x.amount,0),expense=f.invoices.filter(x=>x.kind==='مصروف').reduce((s,x)=>s+x.amount,0);
-    return `<article class="list-item"><div class="list-item-head"><div><h3>أرصدة الحسابات</h3><p>لقطة لحظية لكل حساب داخل خزينة المجموعة.</p></div><span class="tag positive">${fmtMoney(accounts.reduce((s,a)=>s+a.balance,0))}</span></div>${accounts.map(a=>`<div class="department-row"><span>${esc(a.name)}<small>${a.id}</small></span><div class="progress-bar"><span style="width:${Math.min(100,a.balance/Math.max(1,state.cash)*100)}%"></span></div><b>${fmtMoney(a.balance)}</b></div>`).join('')}</article>
-    <article class="list-item"><h3>الملخص المالي</h3><div class="metric-row"><div><span>إيرادات موثقة</span><b class="positive">${fmtMoney(revenue)}</b></div><div><span>مصروفات موثقة</span><b>${fmtMoney(expense)}</b></div><div><span>صافي الدخل</span><b class="${revenue-expense>=0?'positive':'negative'}">${fmtMoney(revenue-expense)}</b></div></div><div class="metric-row two"><div><span>ذمم عملاء مستحقة</span><b>${fmtMoney(arTotal)}</b></div><div><span>ذمم موردين مستحقة</span><b>${fmtMoney(apTotal)}</b></div></div></article>
-    <article class="list-item"><div class="list-item-head"><div><h3>حالة الشيكات</h3><p>صادر بانتظار الاستحقاق، مصروف من الحساب الجاري، أو مرتجع لعدم كفاية الرصيد.</p></div><span class="tag">${cheques.length} شيك</span></div><div class="metric-row"><div><span>صادرة</span><b>${cIssued.length}</b></div><div><span>مصروفة</span><b class="positive">${cSettled.length}</b></div><div><span>مرتجعة</span><b class="${cBounced.length?'negative':''}">${cBounced.length}</b></div></div>${cheques.length?`<div class="doc-art-grid">${cheques.slice(0,20).map(c=>chequeArt(c)).join('')}</div>`:'<p>لا توجد شيكات مُصدرة بعد.</p>'}</article>
-    <article class="list-item"><h3>آخر قيود الخزينة</h3>${ledger.length?ledger.map(x=>`<div class="department-row"><span>${esc(x.note)}<small>${esc(x.from)} ← ${esc(x.to)}</small></span><div class="progress-bar"><span style="width:100%"></span></div><b>${fmtMoney(x.amount)}</b></div>`).join(''):'<p>لا توجد قيود مسجلة بعد.</p>'}</article>`;
-  }
-  function treasuryStatement(){
-    openDrawerContent('كشف الحساب','كشف حساب المجموعة',renderTreasuryStatementContent());
-  }
   function collectReceivable(number){try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','collect-receivable',{number},{actor:'finance-ui'}).result;pushAlert(`تم تحصيل ${fmtMoney(result.amount)} إلى حساب ${companyFinanceName(result.company)}.`);save();updateKpis();openDrawer('invoices',{company:result.company,tab:'receivables'});}catch(error){pushAlert('هذه الذمة محصّلة بالفعل أو لم تعد موجودة.');openDrawer('invoices');}}
   function settlePayable(number){try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','settle-payable',{number},{actor:'finance-ui'}).result;pushAlert(`تم سداد ${fmtMoney(result.amount)} من حساب ${companyFinanceName(result.company)}.`);save();updateKpis();openDrawer('invoices',{company:result.company,tab:'receivables'});}catch(error){notice(`تعذر سداد الذمة: ${error.message}`);}}
   function payTaxes(company='group'){company=COMPANY_FINANCE_TYPES.includes(company)?company:'group';try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','pay-taxes',{company},{actor:'finance-ui'}).result;if(!result.amount){pushAlert(`لا توجد فترة ضريبية مستحقة على ${companyFinanceName(company)}.`);return;}pushAlert(`تم سداد ضريبة ${companyFinanceName(company)} بقيمة ${fmtMoney(result.amount)} عن ${result.count} فترة.`);save();openDrawer('finance');}catch(error){notice(`تعذر سداد الضريبة: ${error.message}`);}}
