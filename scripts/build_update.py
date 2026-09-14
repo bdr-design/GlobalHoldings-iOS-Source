@@ -33,7 +33,7 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-internal-2.9.1-build280-dead-ai-route-path','name':'Global Holdings 2.9.1 — Dead AI Route Path Removed','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD280: أزال مسارًا ثانيًا ميتًا لاقتراحات المسارات - كانت دورة AI الساعية تدفع طلب مسار (kind=route) إلى صندوق الاعتمادات بينما دالة الترحيل تحذف هذا النوع عند كل عرض، فلا يراه اللاعب أبدًا ويُهدر عمل كل ساعة محاكاة ويرفع شارة الطلبات المعلّقة لحظيًا؛ الاقتراحات الحقيقية تصل عبر مركز المسارات (routeSuggestions) وحده. حُذفت الدالة ومساعدتها الحصرية وحارس غير قابل للوصول في لوحة الاعتمادات. صفر دوال يتيمة، 111/111. Save Schema يبقى 2.0.0.',
+    manifest={'id':'gh-internal-2.9.1-build281-one-ops-pattern','name':'Global Holdings 2.9.1 — One Operations Pattern For Every Company','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD281: نمط تشغيل واحد لكل الشركات. كانت Mobility تعرض محركها داخل تبويب التشغيل في صفحتها، بينما الطاقة والبنك يعرضان نموذجًا عامًا هناك ومحركهما الحقيقي في لوحتين منفصلتين (energy, bank). الآن محرك الطاقة ومحرك البنك يظهران داخل تبويب التشغيل في صفحة كل شركة بنفس النمط، وزر الخطوة التالية على بطاقة الشركة يفتح ذلك التبويب مباشرة (data-arg=\"type:operations\" - دعم جديد لفتح تبويب محدد من زر بسيط). اللوحتان المنفصلتان تبقيان تعملان لأي رابط قديم. لا فقدان لأي إجراء. Save Schema يبقى 2.0.0.',
     'fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
@@ -44,6 +44,6 @@ def main():
     for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
     for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD280_DEAD_AI_ROUTE_PATH.{ext}').write_text(payload,encoding='utf-8')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD281_ONE_OPS_PATTERN.{ext}').write_text(payload,encoding='utf-8')
     print(f'Built 2.9.1 Build258 HR manual hiring / dispatch integrity snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()

@@ -46,6 +46,17 @@ assert(window.document.querySelector('.open-global-base'),'that one tap must lan
 const status=window.document.getElementById('mapStatus')?.textContent||'';
 assert(/سيارة Mobility/.test(status)&&/منشأة مملوكة/.test(status),'the map status bar must explicitly report Mobility vehicles and owned facilities');
 
+// 5) BUILD281: الطاقة والبنك تتبعان نفس نمط Mobility - محرك الشركة داخل تبويب التشغيل في صفحتها،
+// وزر الخطوة التالية يفتح ذلك التبويب مباشرة (data-arg="power:operations") بدل لوحة منفصلة.
+click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
+click('.open-company[data-type="power"]'); click('[data-companytab="subs"]');
+const powerNext=[...window.document.querySelectorAll('[data-open="companyManage"]')].find(b=>b.dataset.arg==='power:operations');
+assert(powerNext,'power card must route straight to its operations tab');
+powerNext.dispatchEvent(new window.Event('click',{bubbles:true}));
+assert(window.document.getElementById('drawerBody').innerHTML.includes('company-company-engine'),'power operations tab must embed the energy engine, same pattern as Mobility');
+click('[data-company-manage-tab="finance"]');
+assert.strictEqual(uncaught.length,0,'switching tabs from a string "type:tab" arg must not break');
+
 assert.strictEqual(uncaught.length,0,uncaught.join(' | '));
 console.log('One-tap company onboarding (found Mobility -> on map instantly; one-tap next-step per company) BUILD277: PASS');
 process.exit(0);
