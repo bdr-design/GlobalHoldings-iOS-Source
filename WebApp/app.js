@@ -609,8 +609,11 @@
     if(hardResetInProgress||window.GH_PERSISTENCE.isLocked())return false;
     const previousRevision=Math.max(0,Math.floor(Number(state.saveRevision)||0));
     try{
+      const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(x=>x.severity==='critical').map(x=>String(x.id||x.code||x.title)));
       pruneRouteCache();reconcileConsolidatedCash();state.saveRevision=previousRevision+1;
-      const integrity=window.GH_INTEGRITY_CORE.check(state);if(integrity?.critical?.length)throw new Error(`Critical integrity failed: ${integrity.critical.map(x=>x.code||x.title).join(',')}`);
+      const integrity=window.GH_INTEGRITY_CORE.check(state);
+      const introducedByThisSave=(integrity?.critical||(integrity?.issues||[]).filter(x=>x.severity==='critical')).filter(x=>!priorCriticalIds.has(String(x.id||x.code||x.title)));
+      if(introducedByThisSave.length)throw new Error(`Critical integrity failed: ${introducedByThisSave.map(x=>x.code||x.title).join(',')}`);
       const out=window.GH_PERSISTENCE.commitState(state,{storageKey,appVersion:APP_VERSION});
       if(!out.ok)throw new Error(out.reason);
       diag('SAVE_OK',{bytes:out.utf8Bytes,saveRevision:state.saveRevision});return true;
