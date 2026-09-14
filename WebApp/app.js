@@ -2293,7 +2293,17 @@
       // حضور فوري على الخريطة لحظة التأسيس: الرياض هي مركز GH Mobility الافتراضي الضمني ولا تمر
       // بمسار "فتح مركز عاصمة"، فكانت الشركة تبقى بلا أي أثر مرئي حتى يجد اللاعب زر الإطلاق
       // المدفون في تبويب فرعي. أنشئ منشأة المركز الآن وانقل الخريطة إليها مباشرة.
-      if(type==='mobility'&&!state.customHubs.some(f=>f.id==='MOB-CENTER-RUH')){const ruhMeta=window.GH_MOBILITY_CORE?.centerMeta?.(state,'RUH');if(ruhMeta){try{window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility:{id:'MOB-CENTER-RUH',company:'mobility',kind:'mobility-center',owned:true,capitalOnly:true,capitalId:'RUH',icon:'●',name:'مركز GH Mobility · الرياض',city:ruhMeta.city,country:ruhMeta.country,coords:[...ruhMeta.coords],bays:480,dailyCost:9800,cost:0,capacity:'تشغيل حضري محلي · الأسطول التأسيسي',manager:'مدير مركز التنقل الحضري',detail:'المركز التأسيسي الضمني لشبكة GH Mobility في الرياض.'},bucket:'customHubs',groupValueAdd:0},{actor:'mobility-facility'});renderMap();panMapTo(ruhMeta.coords,11);}catch(error){nonCritical('mobility-ruh-facility',error);}}}
+      if(type==='mobility'&&!state.customHubs.some(f=>f.id==='MOB-CENTER-RUH')){const ruhMeta=window.GH_MOBILITY_CORE?.centerMeta?.(state,'RUH');if(ruhMeta){try{
+        // المركز التأسيسي كان يُنشأ بـ cost:0 وgroupValueAdd:0 - أصل حقيقي (480 موقفًا، تكلفة تشغيل
+        // يومية $9,800) بلا أي معاملة مالية أو فاتورة، خلافًا لكل نقاط إنشاء المنشآت الأخرى في
+        // المستودع. الآن يمر بنفس مسار عقد الإنشاء الحقيقي المستخدم لمراكز موبيليتي الأخرى
+        // (120 موقفًا بعرض أساس $4.5M)؛ الرياض بسعة 4 أضعاف فعرض أساس مناظر 4×.
+        const build=awardConstruction('mobility','mobility-center','مركز GH Mobility · الرياض',18000000);
+        if(build&&!build.insufficient){
+          window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility:{id:'MOB-CENTER-RUH',company:'mobility',kind:'mobility-center',owned:true,capitalOnly:true,capitalId:'RUH',icon:'●',name:'مركز GH Mobility · الرياض',city:ruhMeta.city,country:ruhMeta.country,coords:[...ruhMeta.coords],bays:480,dailyCost:9800,cost:build.amount,contractor:build.contractor,constructionContractId:build.id,capacity:'تشغيل حضري محلي · الأسطول التأسيسي',manager:'مدير مركز التنقل الحضري',detail:'المركز التأسيسي الضمني لشبكة GH Mobility في الرياض.'},bucket:'customHubs',groupValueAdd:build.amount*.72},{actor:'mobility-facility'});
+          renderMap();panMapTo(ruhMeta.coords,11);
+        }else nonCritical('mobility-ruh-facility',new Error('insufficient-funds-for-ruh-center'));
+      }catch(error){nonCritical('mobility-ruh-facility',error);}}}
       save();updateKpis();openDrawer('companies','subs');}catch(error){pushAlert(`لم تُفتح ${company.name}: ${error.message}`);}
   }
   // ضمان وصول زر التأسيس حتى داخل اللوحات التي يعيد GH Advanced رسمها على الهاتف.

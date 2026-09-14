@@ -48,10 +48,11 @@ assert(S.openedCompanies.includes('air') && S.openedCompanies.includes('mobility
 //    ($25M) أقل من عرض المناقصة (~$44M) ولا يوجد سد تلقائي للعجز من القابضة.
 click('[data-companytab="subs"]'); click('[data-open="companyManage"][data-arg="air"]'); click('[data-open="companyFacilities"][data-arg="air"]');
 assert(window.document.querySelector('.open-global-base'), 'a real "open base" button must be rendered');
+const contractsBefore = (S.constructionContracts || []).length;
 const groupBefore = window.GH_FINANCE_CORE.book(S, 'group').accounts[0].balance;
 click('.open-global-base');
 assert.strictEqual(S.globalBases.length, 1, 'clicking the real open-base button must actually create the base');
-assert.strictEqual((S.constructionContracts || []).length, 1, 'a construction contract must be recorded');
+assert.strictEqual((S.constructionContracts || []).length, contractsBefore + 1, 'exactly one new construction contract must be recorded for this base');
 assert(window.GH_FINANCE_CORE.book(S, 'group').accounts[0].balance < groupBefore, 'the holding must have funded the subsidiary shortfall automatically');
 assert.strictEqual(window.document.getElementById('drawerTitle').textContent, 'إدارة المنشأة', 'UI must navigate to the new facility');
 
