@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 277;
+  const RUNTIME_BUILD = 278;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -2255,7 +2255,13 @@
     });
   }
   function issueBankLoans(){
-    return runBusinessOperation('issueBankLoans',()=>{const amount=50000000,rb=state.realism?.banking||{},currentRwa=Math.max(1,Number(rb.rwa)||Number(state.bank.loans)||1),currentCet1=Number(rb.cet1)||Number(state.bank.capitalRatio)||16.4,capital=currentRwa*currentCet1/100,projectedRwa=currentRwa+amount*.72,projectedCet1=capital/projectedRwa*100,projectedLdr=(Number(state.bank.loans||0)+amount)/Math.max(1,Number(state.bank.deposits)||1)*100;if(projectedCet1<13){notice(`رفض التمويل: CET1 المتوقع ${projectedCet1.toFixed(1)}% أقل من الحد الداخلي 13%. عزز رأس مال البنك أولًا.`);return;}if(projectedLdr>95){notice(`رفض التمويل: القروض/الودائع سترتفع إلى ${projectedLdr.toFixed(0)}%. عزز الودائع أو التمويل المستقر أولًا.`);return;}try{window.GH_DOMAIN_COMMANDS.dispatch({state},'banking','fund-loan-portfolio',{amount},{actor:'bank-credit'});window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','adjust-group-value',{delta:amount*.92},{actor:'bank-credit'});pushAlert(`اعتمد بنك المجموعة محفظة ${fmtMoney(amount)} بعد اختبار رأس المال والسيولة. CET1 المتوقع ${projectedCet1.toFixed(1)}%.`);save();updateKpis();openDrawer('bank');}catch(error){notice(`رفض تمويل المحفظة: ${error.message}`);}
+    return runBusinessOperation('issueBankLoans',()=>{const amount=50000000,rb=state.realism?.banking||{},loans=Number(state.bank.loans)||0,deposits=Number(state.bank.deposits)||0;
+    if(!state.openedCompanies.includes('bank')){notice('أسّس بنك المجموعة أولًا قبل توسعة محفظة القروض.');return;}
+    // الخلل السابق: رأس المال كان يُشتق عكسيًا من RWA (capital = RWA × CET1)، وفي لعبة جديدة RWA=0
+    // فيصبح رأس المال ≈ 0 ويُرفض أي قرض مهما كان البنك ممولًا. رأس مال البنك هو حقوق ملكيته الفعلية
+    // (رأس المال المدفوع + الأرباح المحتجزة) في حسابه الجاري، والـRWA يُحسب من محفظة القروض الفعلية.
+    const currentRwa=Math.max(0,Number(rb.rwa)||loans*.72),currentCet1=Number(rb.cet1)||Number(state.bank.capitalRatio)||16.4,equity=Math.max(companyOperatingBalance('bank'),currentRwa*currentCet1/100),projectedRwa=currentRwa+amount*.72,projectedCet1=equity/Math.max(1,projectedRwa)*100,projectedLdr=deposits>0?(loans+amount)/deposits*100:null;
+    if(projectedCet1<13){notice(`رفض التمويل: CET1 المتوقع ${projectedCet1.toFixed(1)}% أقل من الحد الداخلي 13%. عزز رأس مال البنك أولًا (حقوق الملكية الحالية ${fmtMoney(equity)}).`);return;}if(projectedLdr!=null&&projectedLdr>95){notice(`رفض التمويل: القروض/الودائع سترتفع إلى ${projectedLdr.toFixed(0)}%. عزز الودائع أو التمويل المستقر أولًا.`);return;}try{window.GH_DOMAIN_COMMANDS.dispatch({state},'banking','fund-loan-portfolio',{amount},{actor:'bank-credit'});window.GH_DOMAIN_COMMANDS.dispatch({state},'corporate','adjust-group-value',{delta:amount*.92},{actor:'bank-credit'});pushAlert(`اعتمد بنك المجموعة محفظة ${fmtMoney(amount)} بعد اختبار رأس المال والسيولة. CET1 المتوقع ${projectedCet1.toFixed(1)}%.`);save();updateKpis();openDrawer('bank');}catch(error){notice(`رفض تمويل المحفظة: ${error.message}`);}
     });
   }
   function setBoardDecision(status){try{const res=window.GH_DOMAIN_COMMANDS.dispatch({state},'governance','board-decision',{status},{actor:'board'}).result;pushAlert(status==='approved'?(res.highRisks?`اعتمد المجلس البرنامج اعتمادًا مشروطًا مع ${res.highRisks} مخاطر مرتفعة يجب متابعتها.`:'اعتمد مجلس الإدارة برنامج التوسع الاستراتيجي دون تحفظات مرتفعة.'):`أحال مجلس الإدارة برنامج التوسع إلى مراجعة المخاطر${res.highRisks?` بسبب ${res.highRisks} حالة مرتفعة`:''}.`);save();openDrawer('governance');}catch(error){notice(`تعذر تسجيل قرار المجلس: ${error.message}`);}}

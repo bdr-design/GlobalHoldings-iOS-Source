@@ -31,3 +31,9 @@ assert(app.includes("تمويل شراء أصول يدوي"), 'buyAsset must aut
 // متبقٍ من التنظيف السابق يعطي انطباعًا مربكًا بأن نظام AI القديم عاد.
 assert(!adv.includes("procurement:['التشغيل والأصول','منظومة الأصول الذكية']"), 'the procurement page title must not still show the name of the AI system removed in BUILD260');
 assert(adv.includes("procurement:['التشغيل والأصول','الشراء اليدوي للأصول']"), 'the procurement page title must accurately reflect its current manual-purchase content');
+
+// 5) BUILD278: حساب قروض البنك كان يشتق رأس المال عكسيًا من RWA (صفر في لعبة جديدة) فيرفض أي قرض.
+// الآن رأس المال = حقوق ملكية البنك الفعلية، والزر مربوط ومُتحقق منه.
+assert(app.includes("equity=Math.max(companyOperatingBalance('bank'),currentRwa*currentCet1/100)"), 'bank loan capital must be based on the bank\u2019s real equity, not back-derived from a zero RWA');
+assert(app.includes("projectedLdr=deposits>0?(loans+amount)/deposits*100:null"), 'LDR test must be skipped (not divide-by-1) when the bank has no deposit book yet');
+assert(adv.includes('class="secondary-btn bank-loan"'), 'the bank-loan button must exist now that the calculation is correct');
