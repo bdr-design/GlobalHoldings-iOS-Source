@@ -693,6 +693,17 @@
   function crewSectorPayroll(sector){ return state.crew.filter(c=>c.sector===sector).reduce((s,c)=>s+c.count*crewAvgSalary(c),0); }
   function crewSectorMorale(sector){ const list=state.crew.filter(c=>c.sector===sector); if(!list.length)return 100; return list.reduce((s,c)=>s+c.morale,0)/list.length; }
   function crewCostPerHour(sector){ return crewSectorPayroll(sector)/24; }
+  // متوسط الأجر لكل فرد طاقم في الساعة، مستقل عن حجم الأسطول الكلي - على عكس crewCostPerHour أعلاه
+  // (التي تقسم إجمالي رواتب القطاع بأكمله على 24 ساعة، فتكبر تكلفة كل رحلة فردية كلما توسّع الأسطول
+  // ككل، حتى لو طاقم تلك الرحلة تحديدًا لم يتغيّر). تُستخدم في computeTripEconomics فقط؛ لا تمس
+  // crewSectorPayroll نفسها، فهي مصدر تسوية الرواتب اليومية الفعلي في processFinancialDay وتستخدم
+  // بحق إجمالي القطاع هناك.
+  function crewAvgHourlyRate(sector){
+    const list=state.crew.filter(c=>c.sector===sector),headcount=list.reduce((s,c)=>s+(Number(c.count)||0),0);
+    if(headcount<=0)return 0;
+    return crewSectorPayroll(sector)/headcount/24;
+  }
+  const SECTOR_DEFAULT_CREW={air:2,sea:9,road:1};
   // ---- HR 2.5: مصدر واحد فقط للاحتياج والتوظيف والعقود ----
   function hrContext(){return {candidates,getDynamicFacilities};}
   function requiredCrewForFleet(sector,assetCount=state.assets.filter(a=>a.type===sector).length){return window.GH_HR_CORE?.requiredCrewForFleet?.(state,sector,assetCount)||{};}
@@ -810,7 +821,8 @@
     }
     const moraleFactor = clamp(crewSectorMorale(asset.type)/100, .7, 1.05);
     revenue *= moraleFactor;
-    const crewCost = crewCostPerHour(asset.type) * hours;
+    const crewNeeded=Number.isFinite(Number(specs.crew))&&Number(specs.crew)>0?Number(specs.crew):(SECTOR_DEFAULT_CREW[asset.type]||1);
+    const crewCost = crewAvgHourlyRate(asset.type) * crewNeeded * hours;
     const maintReserve = revenue * MAINT_RESERVE_RATE;
     const margin = revenue - fuelCost - crewCost - maintReserve;
     const economics={revenue, fuelCost, crewCost, maintReserve, margin, cashContribution:revenue-fuelCost-maintReserve, hours,distanceKm};
