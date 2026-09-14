@@ -35,9 +35,13 @@
   function domainDepthChecks(state,issues){
     const r=state.realism||{},ops=r.operations||{},bank=r.banking||{},energy=r.energy||{};
     const num=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
-    if(num(bank.cet1,99)<4.5)issues.push(issue('BANK_CET1_REGULATORY_MIN','critical','CET1 دون الحد الأساسي','CET1 الداخلي أقل من 4.5% من RWA.','bank',{cet1:bank.cet1,minimum:4.5}));
-    if(num(bank.lcr,999)<100)issues.push(issue('BANK_LCR_BELOW_100','critical','LCR دون 100%','السيولة عالية الجودة لا تغطي صافي التدفقات المضغوطة وفق المؤشر الداخلي.','bank',{lcr:bank.lcr}));
-    if(num(bank.nsfr,999)<100)issues.push(issue('BANK_NSFR_BELOW_100','critical','NSFR دون 100%','التمويل المستقر المتاح أقل من التمويل المستقر المطلوب وفق المؤشر الداخلي.','bank',{nsfr:bank.nsfr}));
+    // A ratio is NOT APPLICABLE when the bank has no balance sheet. null/undefined must fall back to
+    // the healthy default instead of coercing to 0, which used to raise a critical breach on day 1.
+    const ratio=(v,d)=>v===null||v===undefined?d:(Number.isFinite(Number(v))?Number(v):d);
+    const bankDormant=bank.dormant===true;
+    if(!bankDormant&&ratio(bank.cet1,99)<4.5)issues.push(issue('BANK_CET1_REGULATORY_MIN','critical','CET1 دون الحد الأساسي','CET1 الداخلي أقل من 4.5% من RWA.','bank',{cet1:bank.cet1,minimum:4.5}));
+    if(!bankDormant&&ratio(bank.lcr,999)<100)issues.push(issue('BANK_LCR_BELOW_100','critical','LCR دون 100%','السيولة عالية الجودة لا تغطي صافي التدفقات المضغوطة وفق المؤشر الداخلي.','bank',{lcr:bank.lcr}));
+    if(!bankDormant&&ratio(bank.nsfr,999)<100)issues.push(issue('BANK_NSFR_BELOW_100','critical','NSFR دون 100%','التمويل المستقر المتاح أقل من التمويل المستقر المطلوب وفق المؤشر الداخلي.','bank',{nsfr:bank.nsfr}));
     if(num(bank.provisionCoverage,100)<60&&num(bank.npl,0)>3)issues.push(issue('BANK_PROVISION_COVERAGE_LOW','warning','تغطية المخصصات ضعيفة','ارتفاع NPL مع تغطية مخصصات منخفضة يحتاج مراجعة ائتمانية.','bank',{npl:bank.npl,coverage:bank.provisionCoverage}));
     const av=r.aviation||ops.aviation||{};if(num(av.dispatchReliability,100)<94)issues.push(issue('AIR_DISPATCH_RELIABILITY_LOW','warning','اعتمادية التشغيل الجوي منخفضة',`Dispatch Reliability ${num(av.dispatchReliability).toFixed(1)}%.`,'aviation',{dispatchReliability:av.dispatchReliability}));
     if(num(av.maintenanceReserveCoverage,100)<70)issues.push(issue('AIR_MRO_RESERVE_LOW','warning','احتياطي صيانة الطيران منخفض',`التغطية ${num(av.maintenanceReserveCoverage).toFixed(0)}%.`,'aviation',{coverage:av.maintenanceReserveCoverage}));

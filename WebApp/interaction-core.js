@@ -27,7 +27,7 @@
     try{
       const cp=globalThis.GH_CONTROL_PLANE;let value;
       if(meta.state&&cp?.executeAsync){
-        const out=await cp.executeAsync(meta.state,{name:`UI:${info.action||'interaction'}`,domain:'ui',actor:'player',metadata:{label:info.label,panel:info.panel}},async()=>handler(),{verify:()=>{const check=globalThis.GH_INTEGRITY_CORE?.check?.(meta.state);const critical=(check?.issues||[]).filter(x=>x.severity==='critical');return critical.length?{ok:false,reason:`Critical integrity after UI action: ${critical.map(x=>x.id).slice(0,4).join(',')}`}:{ok:true};}});
+        const out=await cp.executeAsync(meta.state,{name:`UI:${info.action||'interaction'}`,domain:'ui',actor:'player',metadata:{label:info.label,panel:info.panel}},async()=>handler(),{verify:()=>{const check=globalThis.GH_INTEGRITY_CORE?.check?.(meta.state);const critical=(check?.issues||[]).filter(x=>x.severity==='critical');const priorIds=new Set(((beforeIntegrity?.issues)||[]).filter(x=>x.severity==='critical').map(x=>String(x.id)));const introduced=critical.filter(x=>!priorIds.has(String(x.id)));return introduced.length?{ok:false,reason:`Critical integrity after UI action: ${introduced.map(x=>x.id).slice(0,4).join(',')}`}:{ok:true};}});
         value=out?.value;
       }else value=await handler();
       const integrity=globalThis.GH_WORKFLOW?.postCheck?.(meta.state,{action:info.action,panel:info.panel,beforeIssues:beforeIntegrity?.issues||[]});record('BUTTON_ACTION_OK',{...info,integrity:integrity?.status||'unavailable'},'info',meta.state);feedback(btn,integrity?.ok===false?'تم التنفيذ مع ملاحظة سلامة؛ راجع HLT.':'تم تنفيذ الإجراء.',integrity?.ok===false?'warning':'success');return {ok:true,value,integrity};
