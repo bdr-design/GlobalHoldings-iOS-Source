@@ -32,36 +32,75 @@
 
   <section id="founderFlow" class="founder-flow hidden" aria-label="تأسيس المجموعة">
     <div class="founder-visual">
-      <div class="founder-orbit"><span>GH</span></div>
+      <div class="founder-mark"><span>GH</span></div>
       <p class="overline">GLOBAL HOLDINGS · 2026</p>
       <h1>ابنِ مجموعة عالمية<br>من قرارك الأول</h1>
       <p>أسّس الهوية، اختر المقر والقطاع الأول، ثم ابدأ إدارة الأصول والعقود والتوسع من خريطة عالمية واحدة.</p>
-      <div class="founder-facts"><span>5 قطاعات</span><span>سوق عالمي</span><span>محاكاة مستمرة</span></div>
+      <ul class="founder-checklist">
+        <li><span>سجل تجاري وملف ضريبي</span></li>
+        <li><span>حساب خزينة موثّق</span></li>
+        <li><span>سياسة تفويض وملف موردين</span></li>
+        <li><span>سجل قرارات التأسيس</span></li>
+      </ul>
+      <p class="founder-note">لا تُنشأ أصول أو قواعد تشغيلية تلقائيًا — القرار الأول والأخير لك.</p>
     </div>
     <form id="founderForm" class="founder-form">
-      <div class="step-label">ملف التأسيس المؤسسي · الهوية والحوكمة والمال</div>
-      <h2>تأسيس المجموعة قانونيًا وتشغيليًا</h2>
+      <div class="founder-form-head">
+        <div class="step-label">ملف التأسيس المؤسسي</div>
+        <h2>تأسيس المجموعة قانونيًا وتشغيليًا</h2>
+      </div>
+
       <div class="founder-branding-card">
         <div id="founderLogoPreview" class="founder-logo-preview" data-style="teal"><span>GH</span></div>
-        <div class="founder-logo-tools"><b>هوية وشعار المجموعة</b><small>اختر قالبًا أو ارفع صورة من الاستديو. تُضغط الصورة محليًا لحماية ملف الحفظ.</small><div class="logo-preset-row"><button type="button" class="logo-preset active" data-logo-style="teal">زمردي</button><button type="button" class="logo-preset" data-logo-style="navy">كحلي</button><button type="button" class="logo-preset" data-logo-style="gold">ذهبي</button><button type="button" class="logo-preset" data-logo-style="mono">أحادي</button></div><label class="logo-upload-btn">رفع من الاستديو<input id="founderLogoUpload" type="file" accept="image/*" hidden></label><button id="founderLogoClear" type="button" class="text-button compact">إزالة الصورة</button></div>
+        <div class="founder-logo-tools">
+          <b>هوية وشعار المجموعة</b>
+          <small>اختر قالبًا أو ارفع صورة من الاستديو. تُضغط الصورة محليًا لحماية ملف الحفظ.</small>
+          <div class="logo-preset-row">
+            <button type="button" class="logo-preset active" data-logo-style="teal">زمردي</button>
+            <button type="button" class="logo-preset" data-logo-style="navy">كحلي</button>
+            <button type="button" class="logo-preset" data-logo-style="gold">ذهبي</button>
+            <button type="button" class="logo-preset" data-logo-style="mono">أحادي</button>
+          </div>
+          <div class="founder-logo-actions">
+            <label class="logo-upload-btn">رفع من الاستديو<input id="founderLogoUpload" type="file" accept="image/*" hidden></label>
+            <button id="founderLogoClear" type="button" class="text-button compact">إزالة الصورة</button>
+          </div>
+        </div>
       </div>
-      <div class="form-grid">
-        <label class="wide">اسم المجموعة<input id="founderName" required maxlength="42" value="المجموعة العالمية القابضة"></label>
-        <label>الاختصار<input id="founderShort" required maxlength="4" value="GH" dir="ltr"></label>
-        <label>اسم المؤسس<input id="founderOwner" required maxlength="32" value="المؤسس"></label>
-        <label>الدولة<select id="founderCountry"><option>السعودية</option><option>الإمارات</option><option>سنغافورة</option><option>المملكة المتحدة</option><option>الولايات المتحدة</option></select></label>
-        <label>المقر<select id="founderCity"><option>الرياض</option><option>دبي</option><option>سنغافورة</option><option>لندن</option><option>نيويورك</option></select></label>
-        <label>القطاع الأول<select id="founderSector"><option value="air">الطيران</option><option value="sea">الشحن البحري</option><option value="road">الخدمات اللوجستية</option><option value="power">الطاقة</option><option value="bank">الاستثمار والتمويل</option></select></label>
-        <label>نمط البداية<select id="founderMode"><option value="balanced">شركة ناشئة · متوازن</option><option value="realistic">رائد أعمال · واقعي</option><option value="investor">مستثمر عالمي</option><option value="sandbox">إمبراطورية مفتوحة</option></select></label>
-        <label>الشكل القانوني<select id="founderLegalForm"><option>شركة قابضة مساهمة مقفلة</option><option>شركة مساهمة</option><option>شركة ذات مسؤولية محدودة</option><option>مجموعة استثمارية خاصة</option></select></label>
-        <label>العملة الوظيفية<select id="founderCurrency"><option value="USD">USD · الدولار الأمريكي</option><option value="SAR">SAR · الريال السعودي</option><option value="AED">AED · الدرهم الإماراتي</option><option value="EUR">EUR · اليورو</option></select></label>
-        <label>السنة المالية<select id="founderFiscal"><option value="calendar">يناير — ديسمبر</option><option value="apr">أبريل — مارس</option><option value="jul">يوليو — يونيو</option></select></label>
-        <label>شهية المخاطر<select id="founderRisk"><option value="conservative">محافظة</option><option value="balanced" selected>متوازنة</option><option value="growth">نمو مرتفع</option></select></label>
-        <label>سياسة المشتريات<select id="founderProcurement"><option value="competitive">منافسة ومناقصات</option><option value="framework">اتفاقيات إطارية</option><option value="hybrid">هجين حسب القيمة</option></select></label>
-        <label>صلاحية التوقيع<select id="founderAuthority"><option value="board">المجلس للصفقات الكبرى</option><option value="founder">المؤسس حتى حد التفويض</option><option value="dual">توقيع مزدوج</option></select></label>
-        <label class="wide">اسم قانوني إنجليزي<input id="founderEnglishName" maxlength="60" value="Global Holdings Group"></label>
-      </div>
-      <div class="founder-readiness"><b>ملف التأسيس</b><small>سينشئ النظام سجلًا تجاريًا، ملفًا ضريبيًا، حساب خزينة، سياسة تفويض، ملف موردين، وسجل قرارات تأسيس. لا يتم إنشاء أصول أو قواعد تلقائيًا.</small></div><div class="form-summary"><span>التصنيف <b>BBB</b></span><span>حوكمة <b>أساسية</b></span><span>السنة <b>2026</b></span></div>
+
+      <fieldset class="founder-group">
+        <legend>الهوية</legend>
+        <div class="form-grid">
+          <label class="wide">اسم المجموعة<input id="founderName" required maxlength="42" value="المجموعة العالمية القابضة"></label>
+          <label>الاختصار<input id="founderShort" required maxlength="4" value="GH" dir="ltr"></label>
+          <label>اسم المؤسس<input id="founderOwner" required maxlength="32" value="المؤسس"></label>
+          <label class="wide">اسم قانوني إنجليزي<input id="founderEnglishName" maxlength="60" value="Global Holdings Group"></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="founder-group">
+        <legend>الموقع والحوكمة</legend>
+        <div class="form-grid">
+          <label>الدولة<select id="founderCountry"><option>السعودية</option><option>الإمارات</option><option>سنغافورة</option><option>المملكة المتحدة</option><option>الولايات المتحدة</option></select></label>
+          <label>المقر<select id="founderCity"><option>الرياض</option><option>دبي</option><option>سنغافورة</option><option>لندن</option><option>نيويورك</option></select></label>
+          <label>الشكل القانوني<select id="founderLegalForm"><option>شركة قابضة مساهمة مقفلة</option><option>شركة مساهمة</option><option>شركة ذات مسؤولية محدودة</option><option>مجموعة استثمارية خاصة</option></select></label>
+          <label>صلاحية التوقيع<select id="founderAuthority"><option value="board">المجلس للصفقات الكبرى</option><option value="founder">المؤسس حتى حد التفويض</option><option value="dual">توقيع مزدوج</option></select></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="founder-group">
+        <legend>القطاع والسياسة المالية</legend>
+        <div class="form-grid">
+          <label>القطاع الأول<select id="founderSector"><option value="air">الطيران</option><option value="sea">الشحن البحري</option><option value="road">الخدمات اللوجستية</option><option value="power">الطاقة</option><option value="bank">الاستثمار والتمويل</option></select></label>
+          <label>نمط البداية<select id="founderMode"><option value="balanced">شركة ناشئة · متوازن</option><option value="realistic">رائد أعمال · واقعي</option><option value="investor">مستثمر عالمي</option><option value="sandbox">إمبراطورية مفتوحة</option></select></label>
+          <label>العملة الوظيفية<select id="founderCurrency"><option value="USD">USD · الدولار الأمريكي</option><option value="SAR">SAR · الريال السعودي</option><option value="AED">AED · الدرهم الإماراتي</option><option value="EUR">EUR · اليورو</option></select></label>
+          <label>السنة المالية<select id="founderFiscal"><option value="calendar">يناير — ديسمبر</option><option value="apr">أبريل — مارس</option><option value="jul">يوليو — يونيو</option></select></label>
+          <label>شهية المخاطر<select id="founderRisk"><option value="conservative">محافظة</option><option value="balanced" selected>متوازنة</option><option value="growth">نمو مرتفع</option></select></label>
+          <label>سياسة المشتريات<select id="founderProcurement"><option value="competitive">منافسة ومناقصات</option><option value="framework">اتفاقيات إطارية</option><option value="hybrid">هجين حسب القيمة</option></select></label>
+        </div>
+      </fieldset>
+
+      <div class="form-summary"><span>التصنيف <b>BBB</b></span><span>حوكمة <b>أساسية</b></span><span>السنة <b>2026</b></span></div>
       <p id="founderError" role="alert" hidden></p>
       <button class="founder-submit" type="submit">تأسيس المجموعة وفتح مركز القيادة</button>
       <button id="skipFounder" class="text-button" type="button">بدء سريع بملف نظيف</button>
