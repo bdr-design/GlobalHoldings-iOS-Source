@@ -33,7 +33,7 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-internal-2.9.1-build278-bank-loan-fix-legacy-save','name':'Global Holdings 2.9.1 — Bank Loan Fix & Legacy Save Compatibility','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD278: أصلح الخلل الحسابي في توسعة محفظة قروض البنك من الجذر - كان رأس المال يُشتق عكسيًا من RWA (صفر في أي لعبة جديدة) فيُرفض أي قرض مهما كان البنك ممولًا؛ الآن رأس المال = حقوق ملكية البنك الفعلية، واختبار القروض/الودائع يُتجاوز بدل القسمة على 1 حين لا توجد ودائع بعد. الزر مربوط ومُتحقق منه فعليًا (75 مليون حقوق ملكية ← قرض 50 مليون يمر). نُفِّذت أخيرًا مهمة توافق الحفظات القديمة الموعودة منذ بداية الجلسة: حفظة بشكل ما قبل BUILD255 (Mobility أحادية المركز v2، طلبات AI شراء قديمة، تسليمات بـ dueDay فقط، بلا سجل توظيف أو سجل أوامر) تُحمَّل وتُرحَّل كاملًا وتحاكي وترسم وتفتح كل الأقسام بلا خطأ - اختبار دائم. Save Schema يبقى 2.0.0.',
+    manifest={'id':'gh-internal-2.9.1-build279-section-consolidation','name':'Global Holdings 2.9.1 — Section Consolidation','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD279: تقليص الأقسام بناءً على قياس فعلي لعدد الإجراءات الحقيقية في كل قسم (لا رأيًا). مركز الحوكمة: 6 بطاقات ← 3 بدمج التدقيق والقانون والسلامة والأمن السيبراني (إجراء واحد لكلٍّ) في صفحة امتثال واحدة تعرض الأقسام الأربعة متتالية بكل إجراءاتها، مع بقاء روابطها القديمة تعمل. مركز القيادة: 6 ← 4 بطاقات: غرفة الأحداث (بلا أي إجراء) طُويت داخل مركز القرار اليومي حيث تُتخذ القرارات فعلًا، وأزيل تكرار نضج المجموعة (يبقى في مركز الأفراد باسم القدرات والنضج). لا فقدان لأي وظيفة أو إجراء. مسح الأقسام الشامل يغطي الآن 46 قسمًا بلا خطأ. Save Schema يبقى 2.0.0.',
     'fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
@@ -44,6 +44,6 @@ def main():
     for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
     for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD278_BANK_LOAN_LEGACY_SAVE.{ext}').write_text(payload,encoding='utf-8')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD279_SECTION_CONSOLIDATION.{ext}').write_text(payload,encoding='utf-8')
     print(f'Built 2.9.1 Build258 HR manual hiring / dispatch integrity snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()

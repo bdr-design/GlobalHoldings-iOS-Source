@@ -25,7 +25,7 @@ for (const type of ['air','sea','road','power','bank']) {
 }
 click('[data-companytab="subs"]'); click('.open-company[data-type="mobility"]');
 
-const panels = ['actionCenter','aiApprovals','audit','bank','career','companies','controlPlane','cyber','diagnostics','energy','esg','governance','governanceHub','insurance','intelligence','labor','leadershipHub','legal','ma','news','peopleHub','procurement','programs','realism','research','safety','settings','systemHub','treasury','updates',
+const panels = ['actionCenter','aiApprovals','audit','bank','career','companies','compliance','controlPlane','cyber','diagnostics','energy','esg','governance','governanceHub','insurance','intelligence','labor','leadershipHub','legal','ma','news','peopleHub','procurement','programs','realism','research','safety','settings','systemHub','treasury','updates',
   'control','network','routes','market','finance','assets','invoices','expansion','ports'];
 const withArg = { companyManage:['air','sea','road','power','bank','mobility'] };
 
@@ -66,7 +66,7 @@ for (const [panel, r] of Object.entries(results)) {
     console.log(`FLAGGED ${panel}:`, r.flags.concat(r.errors).join(' | '));
   }
 }
-assert.strictEqual(Object.keys(results).length, 45, 'this sweep must actually visit all 45 known panel instances (39 base panels + 6 companyManage types) - if this number changes, a panel was added/removed and this test must be updated to match, not silently skip coverage');
+assert.strictEqual(Object.keys(results).length, 46, 'this sweep must actually visit all 46 known panel instances (40 base panels + 6 companyManage types) - if this number changes, a panel was added/removed and this test must be updated to match, not silently skip coverage');
 assert.strictEqual(totalFlags, 0, `${totalFlags} panel(s) showed NaN, undefined, a suspiciously-empty render, or a runtime error - see output above`);
 for (const [panel, r] of Object.entries(results)) {
   assert(r.title && r.title !== 'لوحة', `panel "${panel}" has no real title configured anywhere (falls back to the generic default) - add one to panelMeta/meta()`);
