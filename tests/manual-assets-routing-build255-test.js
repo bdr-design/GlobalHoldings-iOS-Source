@@ -14,5 +14,5 @@ assert(advanced.includes('renderManualProcurement')&&app.includes("panel==='asse
 assert(mobility.includes('FLEET_BASELINE=480')&&mobility.includes('recordFleetPurchase')&&mobility.includes('urbanPath'),'Mobility has a large urban fleet and financial purchase path');
 assert(mobility.includes('GH_HR_CORE')&&mobility.includes('employmentContracts'),'Mobility drivers are linked to HR contracts');
 assert(procurement.includes('manual=Boolean(p.manual)')&&procurement.includes("startsWith('MANUAL-')"),'procurement accepts only explicit manual purchase authority');
-assert(advanced.includes("['overview','القيادة'],['operations','التشغيل'],['assets','الأصول'],['people','الأفراد']")&&advanced.includes("['finance','المالية'],['risk','المخاطر'],['ai','AI الشركة']"),'all companies expose assets and people tabs');
+assert(advanced.includes("['overview','القيادة'],['operations','التشغيل'],['assets','الأصول'],['people','الأفراد'],['finance','المالية'],['risk','المخاطر']")&&advanced.includes("tabDefs.push(['ai','AI الشركة'])"),'all companies expose assets and people tabs, and the AI tab definition still exists (conditionally, per BUILD282)');
 console.log('BUILD255 manual assets/routing firewall: PASS');
