@@ -2567,10 +2567,12 @@
     catch(error){ state.lastPanel=null;state.lastPanelArg=null;diag('RESTORE_LAST_PANEL_FAILED',{message:String(error?.message||error)},'warning'); }
   }
 
+  let lastMapRenderAt=0;
   function loop(now){
     if(hardResetInProgress||window.GH_PERSISTENCE.isLocked()){simulationEngine.reset(now,'lifecycle-lock');requestAnimationFrame(loop);return;}
     if(processOneRecoveryBoundary()){simulationEngine.reset(now,'boundary-recovery');requestAnimationFrame(loop);return;}
     simulationEngine.frame(now);
+    if(map&&now-lastMapRenderAt>=1000){lastMapRenderAt=now;renderMap();}
     requestAnimationFrame(loop);
   }
   simulationEngine.reset(performance.now());
