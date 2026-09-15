@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.1', IDEMPOTENCY_LIMIT=512, IDEMPOTENCY_TTL=7*86400;
+  const VERSION='3.0.0', IDEMPOTENCY_LIMIT=512, IDEMPOTENCY_TTL=7*86400;
   const owners=new Map();
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const now=s=>Number(s?.simSeconds)||0;
@@ -51,6 +51,11 @@
         const r=ensureRuntime(state),cached=key?r.idempotency[scopedKey]:null;
         if(cached){if(cached.fingerprint!==fingerprint)throw new Error('Idempotency payload conflict');return clone(cached.result);}
         id=`DOM-${String(++r.commandSequence).padStart(9,'0')}`;
+        // Snapshot the critical issues that already existed. The gate below must only reject faults
+        // this command actually introduced: a critical inherited from earlier state would otherwise
+        // reject every command in the game forever, with no way for the player to recover.
+        const criticalIds=x=>new Set((((x?.critical)||((x?.issues)||[]).filter(v=>v.severity==='critical'))||[]).map(v=>String(v.id||v.code||v.title)));
+        const preExistingCritical=criticalIds(globalThis.GH_INTEGRITY_CORE?.check?.(state));
         const valid=owner.validate?owner.validate(ctx,name,payload):true;
         if(valid===false||valid?.ok===false)throw new Error(valid?.reason||'validation-rejected');
         const result=owner.execute(ctx,name,clone(payload),{id,domain,startedAt,actor:options.actor||'ui',authority:options.authority||null});
@@ -64,7 +69,9 @@
         tx.afterCommit(()=>{
           const integrity=globalThis.GH_INTEGRITY_CORE?.check?.(state);
           const critical=integrity?.critical||((integrity?.issues||[]).filter(x=>x.severity==='critical'));
-          if(critical?.length)throw new Error(`Integrity critical after ${domain}:${name}: ${critical.map(x=>x.id||x.code||x.title).join(', ')}`);
+          const introduced=(critical||[]).filter(x=>!preExistingCritical.has(String(x.id||x.code||x.title)));
+          if(introduced.length)throw new Error(`Integrity critical after ${domain}:${name}: ${introduced.map(x=>x.id||x.code||x.title).join(', ')}`);
+          if(critical?.length)globalThis.GH_CONTROL_PLANE?.incident?.(state,{fingerprint:`integrity:pre-existing:${critical.map(x=>x.id||x.code||x.title).sort().join(',')}`,code:'INTEGRITY_CRITICAL_PRE_EXISTING',severity:'critical',domain:'integrity',title:'أعطال حرجة قائمة قبل هذا الأمر',detail:critical.map(x=>x.id||x.code||x.title).join(', '),evidence:{commandId:id,domain,name}});
         },{critical:true,key:'domain-integrity'});
         return wrapped;
       };

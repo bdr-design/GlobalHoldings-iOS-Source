@@ -1,10 +1,11 @@
 const fs=require('fs'),assert=require('assert');
 const version=fs.readFileSync('VERSION','utf8').trim(),project=fs.readFileSync('project.yml','utf8'),app=fs.readFileSync('WebApp/app.js','utf8'),builder=fs.readFileSync('scripts/build_update.py','utf8');
-assert.strictEqual(version,'2.9.1');
-assert(project.includes('MARKETING_VERSION: "2.9.1"')&&project.includes('CURRENT_PROJECT_VERSION: "'+fs.readFileSync('BUILD','utf8').trim()+'"'));
-assert(project.includes('CFBundleShortVersionString: "2.9.1"')&&project.includes('CFBundleVersion: "'+fs.readFileSync('BUILD','utf8').trim()+'"'));
-assert(app.includes("const APP_VERSION = '2.9.1'"));
+assert.strictEqual(version,'3.0.0');
+assert(project.includes('MARKETING_VERSION: "3.0.0"')&&project.includes('CURRENT_PROJECT_VERSION: "'+fs.readFileSync('BUILD','utf8').trim()+'"'));
+assert(project.includes('CFBundleShortVersionString: "3.0.0"')&&project.includes('CFBundleVersion: "'+fs.readFileSync('BUILD','utf8').trim()+'"'));
+assert(app.includes("const APP_VERSION = '3.0.0'"));
 assert(app.includes("const SAVE_SCHEMA_VERSION = '2.0.0'"));
-assert(builder.includes("VERSION='2.9.1'")&&builder.includes('GlobalHoldings_Internal_Update_V291_BUILD254_ROOT_OPERATIONAL_RECOVERY'));
+assert(builder.includes("VERSION=(ROOT/'VERSION').read_text")&&builder.includes("BUILD=int((ROOT/'BUILD').read_text"),'update builder must read release identity from the canonical root files');
+assert(builder.includes('GlobalHoldings_Internal_Update_V{version_tag}_BUILD{BUILD}_'),'update builder output name must carry the canonical version and BUILD dynamically');
 assert(builder.includes("'packageType':'full-web'")&&builder.includes("'installMode':'clean-snapshot-v1'"));
 console.log('Build243 release contract: PASS');

@@ -1,4 +1,18 @@
-# Global Holdings 2.9.1 — BUILD254
+# Global Holdings 3.0.0 - BUILD300
+
+## مرشح الإصدار النظيف
+
+- توحيد الإصدار والبناء في WebApp وNative والحزمة والوثائق.
+- إصلاح حاجز التحديث من 2.9.1 إلى 3.0.0 مع بقاء منع إعادة التثبيت والتخفيض.
+- إصلاح قص اسم المجموعة على iPhone العمودي.
+- إزالة fallback الصامت من اختبار فتح GH Mobility.
+- Save Schema يبقى 2.0.0، والتحديث Full Web Clean Snapshot موقّع فقط.
+
+راجع `BUILD300_RELEASE_CANDIDATE_AR.md` لبوابات الاعتماد.
+
+---
+
+# Global Holdings 2.9.1 — BUILD254 (سجل تاريخي)
 
 ## استعادة التشغيل المتكامل
 

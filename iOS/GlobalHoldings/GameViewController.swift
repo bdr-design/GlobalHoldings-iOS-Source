@@ -98,7 +98,12 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         subtitle.numberOfLines = 3
 
         let version = UILabel()
-        version.text = "محتوى اللعبة: \(GlobalGameStorage.shared.currentVersion)"
+        let storage = GlobalGameStorage.shared
+        let installedNote = storage.installedBuild > 0 && storage.installedBuild != storage.bundledBuild
+            ? " ⚠︎ مثبّت فعليًا BUILD\(storage.installedBuild) (لم تُستبدل بعد بـ BUILD\(storage.bundledBuild))"
+            : ""
+        version.text = "محتوى اللعبة: \(storage.currentVersion) · BUILD\(storage.bundledBuild)\(installedNote)"
+        version.numberOfLines = 2
         version.textColor = UIColor(red: 0.15, green: 0.84, blue: 0.74, alpha: 1)
         version.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         version.textAlignment = .center

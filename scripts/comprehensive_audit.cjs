@@ -1,0 +1,189 @@
+#!/usr/bin/env node
+'use strict';
+/**
+ * أداة تدقيق شاملة (Comprehensive Audit) — تجمع كل طريقة اكتشاف حقيقية استُخدمت طوال هذه
+ * الجلسة في أداة واحدة قابلة لإعادة التشغيل عند أي إصدار قادم، بدل تكرار نفس البحث يدويًا:
+ *
+ *  A) كل استدعاء أمر نطاق (dispatch/execute) مقابل الأوامر الحقيقية المعرّفة في كل نواة.
+ *  B) كل معرّف زر (data-gh-action) مقابل معالجاته الفعلية في handleAction.
+ *  C) كل مستمع نقر بنمط CSS (querySelectorAll('.class')) مقابل وجود عنصر HTML مطابق فعليًا.
+ *  D) كل هدف تنقّل (data-open/data-panel) مقابل الموجّهين الفعليين في app.js وadvanced-core.js.
+ *  E) كل دالة معرّفة بصيغة "function name(" في app.js/advanced-core.js لا يستدعيها أي مكان
+ *     آخر في الملفين (اكتشاف ميت جديد قبل أن يتراكم كـ"فوضى").
+ *
+ * الاستخدام: node scripts/comprehensive_audit.cjs
+ * يطبع تقريرًا؛ لا يعدّل أي ملف؛ خروجه 0 دائمًا (أداة استكشاف لا حارس CI صارم).
+ */
+const fs = require('fs');
+const path = require('path');
+const ROOT = path.join(__dirname, '..');
+const WEBAPP = path.join(ROOT, 'WebApp');
+
+const read = f => fs.readFileSync(path.join(WEBAPP, f), 'utf8');
+const app = read('app.js');
+const adv = read('advanced-core.js');
+const coreFiles = fs.readdirSync(WEBAPP).filter(f => f.endsWith('-core.js'));
+const allWebAppFiles = fs.readdirSync(WEBAPP).filter(f => f.endsWith('.js'));
+
+let issues = 0;
+const report = (title) => console.log(`\n=== ${title} ===`);
+const flag = (msg) => { issues++; console.log('  !!', msg); };
+const ok = (msg) => console.log('  ok:', msg);
+
+// --- A) domain command cross-reference -------------------------------------------------
+report('A) domain command call sites vs real per-domain commands');
+const domainFile = {};
+for (const f of coreFiles) {
+  const c = read(f);
+  const m = c.match(/GH_DOMAIN_COMMANDS\?\.register\?\.\('([a-zA-Z0-9_-]+)'/);
+  if (m) domainFile[m[1]] = f;
+}
+const domainCmds = {};
+for (const [domain, f] of Object.entries(domainFile)) {
+  const c = read(f);
+  const cmds = new Set([...c.matchAll(/cmd==='([a-zA-Z0-9_-]+)'/g)].map(x => x[1]));
+  for (const m of c.matchAll(/case\s*'([a-zA-Z0-9_-]+)'\s*:/g)) cmds.add(m[1]);
+  domainCmds[domain] = cmds;
+}
+const coreVarToDomain = {
+  GH_HR_CORE: 'hr', GH_AI_EXECUTIVE_CORE: 'ai', GH_CONTRACTS_CORE: 'contracts', GH_MARKET_CORE: 'market',
+  GH_CORPORATE_CORE: 'corporate', GH_BANKING_CORE: 'banking', GH_FACILITY_CORE: 'facilities', GH_GOVERNANCE_CORE: 'governance',
+  GH_ROUTE_CORE: 'routes', GH_OPERATIONS_CORE: 'operations', GH_PROCUREMENT_CORE: 'procurement', GH_STRATEGY_CORE: 'strategy',
+  GH_FLEET_CORE: 'fleet', GH_FINANCE_CORE: 'finance',
+};
+const dispatchPattern = /(?:dispatch|execute)\??\.?\(\s*\{[^{}]*\}\s*,\s*'([a-zA-Z0-9_-]+)'\s*,\s*'([a-zA-Z0-9_-]+)'/g;
+const execPattern = new RegExp(`(${Object.keys(coreVarToDomain).join('|')})\\??\\.execute\\??\\.?\\(\\s*\\{[^{}]*\\}\\s*,\\s*'([a-zA-Z0-9_-]+)'`, 'g');
+let totalCalls = 0;
+for (const f of allWebAppFiles) {
+  const c = read(f);
+  for (const m of c.matchAll(dispatchPattern)) {
+    totalCalls++;
+    const [, domain, cmd] = m;
+    if (domainCmds[domain] && !domainCmds[domain].has(cmd)) flag(`${f}: dispatch to unknown command ${domain}/${cmd}`);
+  }
+  for (const m of c.matchAll(execPattern)) {
+    totalCalls++;
+    const domain = coreVarToDomain[m[1]], cmd = m[2];
+    if (domainCmds[domain] && !domainCmds[domain].has(cmd)) flag(`${f}: ${m[1]}.execute unknown command ${cmd}`);
+  }
+}
+ok(`${totalCalls} domain-command call sites checked across ${allWebAppFiles.length} files`);
+
+// --- B) data-gh-action ids vs handleAction -----------------------------------------------
+report('B) data-gh-action button ids vs their handlers');
+const actionIds = new Set();
+for (const f of [app, adv]) {
+  for (const m of f.matchAll(/action\('([a-zA-Z0-9_-]+)'/g)) actionIds.add(m[1]);
+  for (const m of f.matchAll(/data-gh-action="([a-zA-Z0-9_-]+)"/g)) actionIds.add(m[1]);
+}
+const indexHtmlContent = fs.readFileSync(path.join(WEBAPP, 'index.html'), 'utf8');
+const combined = app + adv + indexHtmlContent;
+let unhandled = 0;
+for (const id of actionIds) {
+  const direct = combined.includes(`id==='${id}'`) || combined.includes(`'${id}':[`) || new RegExp(`startsWith\\('${id.split('-')[0]}-`).test(combined);
+  if (!direct) { flag(`action id with no direct handler match: ${id} (verify manually - may be handled by a prefix/table dispatch)`); unhandled++; }
+}
+ok(`${actionIds.size} action ids scanned, ${unhandled} flagged for manual check`);
+
+// --- C) CSS-class-bound listeners vs actual elements --------------------------------------
+report('C) querySelectorAll(\'.class\') listeners vs matching HTML');
+const classListeners = [...app.matchAll(/querySelectorAll\('\.([a-zA-Z0-9-]+)'\)/g)].map(m => m[1]);
+const uniqueClasses = [...new Set(classListeners)];
+let deadListeners = 0;
+for (const cls of uniqueClasses) {
+  const hasElement = new RegExp(`class=\\\\?"[^"]*\\b${cls}\\b`).test(combined) || new RegExp(`className[^;]*['"\`][^'"\`]*\\b${cls}\\b`).test(combined);
+  if (!hasElement) { flag(`listener bound to .${cls} but no matching HTML element found in either file (dead binding, or class built dynamically)`); deadListeners++; }
+}
+ok(`${uniqueClasses.length} CSS-class listeners scanned, ${deadListeners} flagged for manual check`);
+
+// --- D) navigation targets vs routers ------------------------------------------------------
+report('D) data-open/data-panel targets vs both routers');
+const routed = new Set();
+for (const m of app.matchAll(/panel==='([a-zA-Z]+)'/g)) routed.add(m[1]);
+const advMapMatch = adv.match(/function render\(panel,arg,ctx\)\{[\s\S]*?return map\[panel\]/);
+if (advMapMatch) for (const m of advMapMatch[0].matchAll(/([a-zA-Z]+):\(\)=>/g)) routed.add(m[1]);
+const referenced = new Set();
+for (const f of [app, adv]) {
+  for (const m of f.matchAll(/data-open="([a-zA-Z]+)"/g)) referenced.add(m[1]);
+  for (const m of f.matchAll(/data-panel="([a-zA-Z]+)"/g)) referenced.add(m[1]);
+}
+const indexHtml = fs.readFileSync(path.join(WEBAPP, 'index.html'), 'utf8');
+for (const m of indexHtml.matchAll(/data-panel="([a-zA-Z]+)"/g)) referenced.add(m[1]);
+const brokenLinks = [...referenced].filter(p => !routed.has(p));
+const orphanPanels = [...routed].filter(p => !referenced.has(p) && !new RegExp(`'${p}'`).test(combined.replace(/panel==='[a-zA-Z]+'/g, '').replace(new RegExp(`${p}:\\(\\)=>`), '')));
+if (brokenLinks.length) brokenLinks.forEach(p => flag(`button references panel "${p}" with no route handler`));
+else ok('zero broken navigation links');
+console.log(`  note: ${orphanPanels.length} panel(s) present in a router with no *literal* string reference found elsewhere (${orphanPanels.join(', ') || 'none'}) - verify manually, dynamic ${'${panel}'} card arrays cause false positives here`);
+
+// --- E) function-name reachability (new dead-code detector) --------------------------------
+report('E) functions defined in app.js/advanced-core.js never referenced again');
+for (const [label, src] of [['app.js', app], ['advanced-core.js', adv]]) {
+  const names = [...src.matchAll(/function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)].map(m => m[1]);
+  let deadCount = 0;
+  for (const name of new Set(names)) {
+    const count = (src.match(new RegExp(`\\b${name}\\b`, 'g')) || []).length;
+    if (count <= 1) { flag(`${label}: function "${name}" is defined but never referenced again anywhere in the same file`); deadCount++; }
+  }
+  ok(`${label}: ${new Set(names).size} functions scanned, ${deadCount} flagged as fully unreferenced`);
+}
+
+// --- F) same sweep across every remaining *-core.js file (not just app.js/advanced-core.js) --
+report('F) functions defined in every other *-core.js file, never referenced again in that file');
+for (const f of coreFiles) {
+  const src = read(f);
+  const names = [...src.matchAll(/function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)].map(m => m[1]);
+  let deadCount = 0;
+  for (const name of new Set(names)) {
+    const count = (src.match(new RegExp(`\\b${name}\\b`, 'g')) || []).length;
+    if (count <= 1) { flag(`${f}: function "${name}" is defined but never referenced again in this file (may be exported for other files - verify before removing)`); deadCount++; }
+  }
+  if (deadCount) ok(`${f}: ${new Set(names).size} functions scanned, ${deadCount} flagged`);
+}
+
+// --- G) duplicate numeric/constant definitions across core files (capacity-style drift) ------
+report('G) same named constant defined independently in more than one file (possible silent drift)');
+const constDefs = {};
+for (const f of allWebAppFiles) {
+  const src = read(f);
+  for (const m of src.matchAll(/const\s+([A-Z][A-Z0-9_]{2,})\s*=\s*(?:Object\.freeze\()?\{/g)) {
+    (constDefs[m[1]] ||= []).push(f);
+  }
+}
+for (const [name, files] of Object.entries(constDefs)) {
+  const uniqueFiles = [...new Set(files)];
+  if (uniqueFiles.length > 1) flag(`constant "${name}" is independently defined as an object literal in more than one file: ${uniqueFiles.join(', ')} - verify they cannot silently disagree`);
+}
+ok(`${Object.keys(constDefs).length} UPPER_CASE object constants scanned across ${allWebAppFiles.length} files`);
+
+// --- H) self-referential / templated example text sanity check -------------------------------
+report('H) hardcoded example references inside per-entity template strings (self-reference risk)');
+for (const f of allWebAppFiles) {
+  const src = read(f);
+  for (const m of src.matchAll(/\(بما في ذلك ([^)]+)\)/g)) flag(`${f}: hardcoded "(including ${m[1]})" example inside what may be a per-entity template - verify it cannot describe itself (this exact pattern caused the BUILD272 Riyadh bug)`);
+}
+ok('scanned for the same self-referential template pattern that caused the BUILD272 bug');
+
+// --- I) duplicate-value display detector (the "قيد الوصول / توريدات جارية" pattern) -----------
+report('I) two differently-named variables computed from the byte-identical expression in the same function (duplicate-stat display risk)');
+for (const [label, src] of [['app.js', app], ['advanced-core.js', adv]]) {
+  // نفس دالة استخراج حدود الدوال المستخدمة في القسم E، لتحليل كل دالة على حدة بدل الملف كله دفعة
+  // واحدة (متغيران بنفس الاسم في دالتين مختلفتين أمر طبيعي ولا يستحق التنبيه).
+  const funcStarts = [...src.matchAll(/function\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)\s*\{/g)].map(m => m.index);
+  funcStarts.push(src.length);
+  let flaggedHere = 0;
+  for (let i = 0; i < funcStarts.length - 1; i++) {
+    const body = src.slice(funcStarts[i], Math.min(funcStarts[i + 1], funcStarts[i] + 6000));
+    const seen = new Map();
+    for (const m of body.matchAll(/const\s+(\w+)\s*=\s*(\([^;]{20,240}?\)(?:\.[a-zA-Z]+(?:\([^;]{0,80}?\))?)*)\s*;/g)) {
+      const [, varName, expr] = m;
+      if (seen.has(expr) && seen.get(expr) !== varName) {
+        flag(`${label}: "${seen.get(expr)}" and "${varName}" are computed from the exact same expression in the same function - if both are displayed, they will always show the identical number under different labels (this exact pattern caused the BUILD274 asset-requests bug)`);
+        flaggedHere++;
+      }
+      seen.set(expr, varName);
+    }
+  }
+  ok(`${label}: scanned ${funcStarts.length - 1} function bodies, ${flaggedHere} duplicate-expression pair(s) flagged`);
+}
+
+console.log(`\n=== SUMMARY: ${issues} item(s) flagged for human review (not all are bugs - see notes above) ===`);

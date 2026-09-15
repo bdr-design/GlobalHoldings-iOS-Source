@@ -7,7 +7,7 @@ const localScripts = [
   'world-data.js','catalog.js','realism-core.js','persistence-core.js','workflow-core.js',
   'department-core.js','interaction-core.js','ui-quality-core.js','hr-core.js','economics-core.js','advanced-core.js',
   'event-ledger-core.js','dependency-core.js','policy-core.js','lifecycle-core.js',
-  'demand-closure-core.js','integrity-core.js','request-core.js','save-schema.js',
+  'demand-closure-core.js','integrity-core.js','save-schema.js',
   'determinism-core.js','diagnostics-core.js','transaction-core.js','migration-core.js','game-lifecycle-core.js','domain-command-core.js',
   'finance-core.js','procurement-core.js','banking-core.js','market-core.js','strategy-core.js',
   'facility-core.js','fleet-core.js','route-core.js','governance-core.js','corporate-core.js',

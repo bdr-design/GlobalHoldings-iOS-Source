@@ -1,0 +1,28 @@
+'use strict';
+const assert=require('assert'),fs=require('fs');
+const {scenario}=require('./helpers/business-scenario');
+const {s,state,ctx,command,load}=scenario();
+load('mobility-core');
+command('corporate','open-company',{type:'mobility',capital:120000000,legalName:'GH Mobility'});
+const before=s.GH_FINANCE_CORE.operating(state,'mobility');
+const launch=s.GH_MOBILITY_CORE.launch(ctx);
+assert.strictEqual(launch.vehicles,480,'large Mobility baseline must be present');
+assert(s.GH_MOBILITY_CORE.CLASSES.every(x=>Array.isArray(x.models)&&x.models.length>=3),'fleet must use real model names');
+assert(s.GH_MOBILITY_CORE.CAPITALS.length>=15&&s.GH_MOBILITY_CORE.CAPITALS.some(x=>x.city==='واشنطن العاصمة'),'capital registry must be worldwide and capital-only');
+const models=new Set(state.mobility.vehicles.map(x=>x.model));
+assert(models.has('Tesla Model 3')&&models.has('Mercedes-Benz E-Class')&&models.has('Toyota Sienna'),'real vehicle models must be recorded as owned assets');
+const from=state.mobility.zones[0],to=state.mobility.zones[1],pathA=s.GH_MOBILITY_CORE.urbanPath(from,to),pathB=s.GH_MOBILITY_CORE.urbanPath(from,to);
+assert.deepStrictEqual(pathA,pathB,'urban geometry must be deterministic');assert(pathA.length>=5,'urban geometry must contain fixed waypoints');
+state.simSeconds=7200;s.GH_MOBILITY_CORE.onSimulationTime(ctx,7200);
+const snap=s.GH_MOBILITY_CORE.snapshot(state),after=s.GH_FINANCE_CORE.operating(state,'mobility'),capex=state.finance.invoices.find(x=>x.company==='mobility'&&x.kind==='مصروف')?.amount||0;
+assert(snap.completed>0&&snap.grossBookings>0,'completed trips must produce revenue');assert(after>before-capex,'current account must retain net Mobility proceeds after CAPEX');
+const revenue=state.finance.invoices.find(x=>x.company==='mobility'&&x.kind==='دخل'&&x.simulation===true);
+assert(revenue&&revenue.status==='محصلة','Mobility revenue must be a settled invoice');
+assert(state.companyFinance.mobility.ledger.some(x=>x.kind==='simulation-revenue'&&x.amount===revenue.amount),'Mobility revenue must be in the company ledger');
+const active=s.GH_MOBILITY_CORE.liveVehicles(state,120).find(x=>x.phase==='moving');
+if(active){assert.deepStrictEqual(active.coords,s.GH_MOBILITY_CORE.routePosition(active.route,active.progress),'vehicle coordinates must be on the registered route');assert(active.routeLocked===true);}
+const app=fs.readFileSync('WebApp/app.js','utf8'),css=fs.readFileSync('WebApp/styles.css','utf8'),advanced=fs.readFileSync('WebApp/advanced-core.js','utf8');
+assert(app.includes('L.circleMarker')&&app.includes("fillColor:'#000000'")&&app.includes('mobility-open-capital-center'),'Mobility map and capital actions must be explicit');
+assert(css.includes('.mobility-point')&&css.includes('.mobility-dot-glyph')&&!app.includes('MOBILITY_CAR_SVG'),'Mobility point must have a lightweight black style');
+assert(advanced.includes("id:'mobility'")&&advanced.includes('GH_MOBILITY_CORE?.snapshot')&&advanced.includes("kind==='mobility-center'"),'Mobility must be represented in the AI/company registry');
+console.log('BUILD256 Mobility route/finance/capital firewall: PASS');

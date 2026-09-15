@@ -8,7 +8,7 @@ const {scenario}=require('./helpers/business-scenario');
 {
   const {s,state,ctx,command,load}=scenario();load('integrity-core');load('mobility-core');
   const types=['sea','road','power','bank','mobility'];
-  for(const type of types)command('corporate','open-company',{type,capital:18000000,legalName:`Test ${type}`});
+  for(const type of types)command('corporate','open-company',{type,capital:type==='mobility'?120000000:18000000,legalName:`Test ${type}`});
   for(const type of types)assert(state.openedCompanies.includes(type),`${type} must stay founded`);
 
   const books=Object.values(state.companyFinance||{});

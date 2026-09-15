@@ -1,5 +1,5 @@
 (()=>{'use strict';
-  const VERSION='2.9.1';
+  const VERSION='3.0.0';
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   function load(options={}){
     const {defaultState,storageKey,legacyStorageKeys=[],resetMarkerKey,saveSchema}=options;

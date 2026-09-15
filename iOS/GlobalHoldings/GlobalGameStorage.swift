@@ -100,11 +100,17 @@ final class GlobalGameStorage {
     var hasPreviousVersion: Bool { fileManager.fileExists(atPath: previousWebURL.path) }
 
     var bundledVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.9.1"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "3.0.0"
     }
 
     var bundledBuild: Int {
         Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0") ?? 0
+    }
+
+    // القيمة الفعلية المثبتة داخل مجلد WebApp النشط الآن على الجهاز، لا رقم الـIPA نفسه.
+    // اختلافها عن bundledBuild دليل مباشر أن الترقية الأصلية لم تستبدل النسخة القديمة المحفوظة.
+    var installedBuild: Int {
+        UserDefaults.standard.integer(forKey: installedBundledBuildKey)
     }
 
     func isSupportedUpdate(_ url: URL) -> Bool {

@@ -66,7 +66,6 @@
     "policy-core.js",
     "procurement-core.js",
     "realism-core.js",
-    "request-core.js",
     "route-core.js",
     "runtime-required.json",
     "save-schema.js",
