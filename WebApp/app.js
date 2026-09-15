@@ -1319,7 +1319,7 @@
         remaining=Math.max(0,remaining-dwell);
         const hr=window.GH_HR_CORE;
         if(!hr?.snapshot||hr.snapshot(state,hrContext(),asset.type).crewMissing>0){if(!asset.crewBlocked)effects.alerts.push(`${asset.name}: أوقفت المغادرة حتى استكمال الطاقم المطلوب.`);asset.crewBlocked=true;remaining=0;break;}
-        window.GH_FLEET_CORE.departDraft(asset,tpl,{crewReady:true,load:loadLabel(asset)});
+        window.GH_FLEET_CORE.departDraft(asset,routeMatchingFacility(asset.routeId,asset.baseFacility),{crewReady:true,load:loadLabel(asset)});
         continue;
       }
       const duration=Number(asset.tripSeconds||tpl.tripSeconds);
@@ -2375,7 +2375,21 @@
     return runBusinessOperation('openBranch',()=>{const site=expansionSites.find(x=>x.id===id);if(!site){pushAlert('تعذر فتح هذا المقر؛ الموقع غير متاح.');return false;}if(state.branches.includes(id)){pushAlert(`${site.name} مفتوح بالفعل.`);return false;}const build=awardConstruction('group','hq',site.name,site.price);if(!build||build.insufficient){if(!opts.silent)notice('رصيد القابضة لا يغطي أفضل عرض إنشاء للمقر.');return false;}try{window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','open-regional-hq',{id,groupValueAdd:build.amount*.7},{actor:'facility-expansion'});ensureFacilityWorkforce('group','فتح مقر إقليمي');pushAlert(`أرسى إنشاء ${site.name} على ${build.contractor}.`);save();updateKpis();renderMap();if(!opts.silent)openFacility(id);return true;}catch(error){notice(`تعذر فتح المقر: ${error.message}`);return false;}
     });
   }
-  function assignRoute(assetId,routeId,opts={}){const a=state.assets.find(x=>x.id===assetId),r=routeTemplates[routeId];if(!a||!r||a.type!==r.type){notice('تعذر تعيين هذا المسار؛ الأصل أو المسار غير متطابقين.');return false;}if(a.phase==='moving'){notice('لا يمكن تغيير المسار أثناء الحركة.');return false;}if(!routeFitsAsset(a,r)){notice('المسار يتجاوز مدى الأصل أو قيود التشغيل.');return false;}if(a.baseFacility&&a.baseFacility!==r.fromFacility&&a.baseFacility!==r.toFacility){notice('الأصل ليس موجودًا في إحدى نقطتي هذا المسار.');return false;}try{window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','assign-route',{id:assetId,routeId,baseFacility:a.baseFacility,phase:'turnaround',route:r},{actor:'operations'});normalizeAsset(a);pushAlert(`${a.name} أصبح جاهزًا على مسار ${a.from} → ${a.to}.`);save();renderMap();if(!opts.silent)openDrawer('assetManage',assetId);return true;}catch(error){notice(`تعذر تعيين المسار: ${error.message}`);return false;}}
+  function sameUnderlyingFacility(baseFacilityId,routeFacilityId){
+    if(!baseFacilityId||!routeFacilityId)return false;
+    if(baseFacilityId===routeFacilityId)return true;
+    const a=findFacility(baseFacilityId),b=findFacility(routeFacilityId);
+    if(!a||!b)return false;
+    return Boolean((a.iata&&a.iata===b.iata)||(a.icao&&a.icao===b.icao)||(a.code&&a.code===b.code));
+  }
+  function routeMatchingFacility(routeId,baseFacility){
+    const r=routeTemplates[routeId];if(!r||!baseFacility||baseFacility===r.fromFacility||baseFacility===r.toFacility)return r;
+    if(sameUnderlyingFacility(baseFacility,r.fromFacility))return {...r,fromFacility:baseFacility};
+    if(sameUnderlyingFacility(baseFacility,r.toFacility))return {...r,toFacility:baseFacility};
+    return r;
+  }
+  function routeForDeparture(asset){ return routeMatchingFacility(asset.routeId,asset.baseFacility); }
+  function assignRoute(assetId,routeId,opts={}){const a=state.assets.find(x=>x.id===assetId),r=routeTemplates[routeId];if(!a||!r||a.type!==r.type){notice('تعذر تعيين هذا المسار؛ الأصل أو المسار غير متطابقين.');return false;}if(a.phase==='moving'){notice('لا يمكن تغيير المسار أثناء الحركة.');return false;}if(!routeFitsAsset(a,r)){notice('المسار يتجاوز مدى الأصل أو قيود التشغيل.');return false;}if(a.baseFacility&&!sameUnderlyingFacility(a.baseFacility,r.fromFacility)&&!sameUnderlyingFacility(a.baseFacility,r.toFacility)){notice('الأصل ليس موجودًا في إحدى نقطتي هذا المسار.');return false;}try{window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','assign-route',{id:assetId,routeId,baseFacility:a.baseFacility,phase:'turnaround',route:routeMatchingFacility(routeId,a.baseFacility)},{actor:'operations'});normalizeAsset(a);pushAlert(`${a.name} أصبح جاهزًا على مسار ${a.from} → ${a.to}.`);save();renderMap();if(!opts.silent)openDrawer('assetManage',assetId);return true;}catch(error){notice(`تعذر تعيين المسار: ${error.message}`);return false;}}
   function serviceAsset(id){
     return runBusinessOperation('serviceAsset',()=>{const a=state.assets.find(x=>x.id===id);if(!a){notice('الأصل غير موجود.');return false;}if(a.phase==='moving'){notice('لا يمكن صيانة الأصل أثناء الحركة.');return false;}const cost=a.type==='air'?78000:a.type==='sea'?145000:2800,supplier=a.type==='air'?'Global MRO Aviation':a.type==='sea'?'Oceanic Technical Services':'RoadFleet Maintenance';try{window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','spend',{company:a.type,amount:cost,note:`فاتورة صيانة ${a.name} · ${supplier}`,method:'تحويل بنكي',line:'maintenance'},{actor:'maintenance'});window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','service',{id,conditionGain:6},{actor:'maintenance'});pushAlert(`اعتمدت صيانة ${a.name} لدى ${supplier}.`);save();updateKpis();openDrawer('assetManage',id);return true;}catch(error){notice(`تعذر الصيانة: ${error.message}`);return false;}
     });
@@ -2402,7 +2416,7 @@
       const block=departureBlockReason(a);
       if(block){blockedDetails.push({id:a.id,name:a.name,type:a.type,code:block.code,text:block.text});continue;}
       try{
-        const ok=window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id:a.id,route:routeTemplates[a.routeId],load:loadLabel(a)},{actor:'dispatch'}).result;
+        const ok=window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id:a.id,route:routeForDeparture(a),load:loadLabel(a)},{actor:'dispatch'}).result;
         if(ok){normalizeAsset(a);departed++;}
         else blockedDetails.push({id:a.id,name:a.name,type:a.type,code:'dispatch-rejected',text:'رفض النظام أمر المغادرة دون سبب مُعاد.'});
       }catch(error){blockedDetails.push({id:a.id,name:a.name,type:a.type,code:'dispatch-error',text:error.message});}
@@ -2420,7 +2434,7 @@
     if(a.routeId&&sameRoute>1){departRouteAssets(a.routeId,a.type);openDrawer('assetManage',id);return;}
     const block=departureBlockReason(a);
     if(block){pushAlert(`أوقف ${a.name}: ${block.text}`);save();openDrawer('assetManage',id);return;}
-    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id,route:routeTemplates[a.routeId],load:loadLabel(a)},{actor:'dispatch'});normalizeAsset(a);pushAlert(`${a.name} غادر فورًا بأمر مباشر.`);save();renderMap();openDrawer('assetManage',id);}catch(error){notice(`تعذر تنفيذ المغادرة: ${error.message}`);}
+    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','depart',{id,route:routeForDeparture(a),load:loadLabel(a)},{actor:'dispatch'});normalizeAsset(a);pushAlert(`${a.name} غادر فورًا بأمر مباشر.`);save();renderMap();openDrawer('assetManage',id);}catch(error){notice(`تعذر تنفيذ المغادرة: ${error.message}`);}
   }
   function saleEstimate(a){const item=catalogItem(a.type,a.catalogId);return a.ownership==='lease'?-(Number(a.monthlyLease)||0)*2:(Number(item?.price)||1000000)*.72*(Number(a.condition||100)/100);}
   function finalizeAssetSale(id,automatic=false){const a=state.assets.find(x=>x.id===id);if(!a||a.phase==='moving')return false;try{if(a.ownership==='lease'){const fee=Math.max(0,(Number(a.monthlyLease)||0)*2);if(!automatic&&!ask(`إنهاء عقد تأجير ${a.name}؟ رسوم الإنهاء ${fmtMoney(fee)}.`))return false;window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','return-lease',{id,fee},{actor:'fleet-disposal'});pushAlert(`أعيد ${a.name} من مركز التشغيل وأنهي عقد التأجير مقابل ${fmtMoney(fee)}.`);}else{const proceeds=Math.max(0,saleEstimate(a));if(!automatic&&!ask(`بيع ${a.name} مقابل قيمة تقديرية ${fmtMoney(proceeds)}؟`))return false;window.GH_DOMAIN_COMMANDS.dispatch({state},'fleet','sell',{id,proceeds,buyer:'مشتري أصل معتمد'},{actor:'fleet-disposal'});pushAlert(`تم بيع ${a.name} من مركز التشغيل مقابل ${fmtMoney(proceeds)}.`);}save();updateKpis();if(selectedAssetId===id){selectedAssetId=null;$('assetCard').classList.add('hidden');}renderMap();return true;}catch(error){notice(`تعذر إغلاق عملية الأصل: ${error.message}`);return false;}}
