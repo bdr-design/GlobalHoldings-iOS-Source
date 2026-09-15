@@ -24,6 +24,7 @@ targets:
       path: iOS/GlobalHoldings/Info.plist
       properties:
         CFBundleDisplayName: "Global Holdings"
+        CFBundleIconName: "AppIcon"
         CFBundleShortVersionString: "2.9.1"
         CFBundleVersion: "281"
         LSRequiresIPhoneOS: true
