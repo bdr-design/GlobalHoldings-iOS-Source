@@ -471,7 +471,7 @@
   ];
 
   const defaultState = {
-    saveVersion:SAVE_SCHEMA_VERSION,saveRevision:0,onboardingComplete:false,lastPanel:null,lastPanelArg:null,
+    saveVersion:SAVE_SCHEMA_VERSION,saveRevision:0,onboardingComplete:false,lastPanel:null,lastPanelArg:null,mapLayer:'dark',
     profile:{name:'المجموعة العالمية القابضة',shortName:'GH',founder:'المؤسس',englishName:'Global Holdings Group',country:'السعودية',city:'الرياض',firstSector:'air',mode:'balanced',legalForm:'شركة قابضة مساهمة مقفلة',currency:'USD',fiscalYear:'calendar',riskAppetite:'balanced',procurementPolicy:'competitive',signingAuthority:'board',reputation:12,creditRating:'BBB',logo:null,logoStyle:'teal'},
     cash:250000000,debt:84000000,groupValue:412000000,todayProfit:0,
     sectorProfitToday:{air:0,sea:0,road:0,power:0,bank:0,mobility:0},
@@ -892,6 +892,7 @@
 
   function setMapLayer(name){
     if(!map)return;const layer=layers[name]||layers.dark;if(currentTile)map.removeLayer(currentTile);currentTile=layer.addTo(map);
+    state.mapLayer=layers[name]?name:'dark';
     const stage=document.querySelector('.map-stage');stage.classList.remove('map-dark','map-light','map-standard','map-satellite');stage.classList.add(`map-${name}`);
     document.querySelectorAll('#layerMenu button').forEach(b=>b.classList.toggle('active',b.dataset.layer===name));
   }
@@ -908,7 +909,7 @@
     layers.light = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',osmOptions);
     layers.dark = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',osmOptions);
     layers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'});
-    setMapLayer('dark');
+    setMapLayer(layers[state.mapLayer]?state.mapLayer:'dark');
     const setInteractionState=active=>{mapInteractionActive=!!active; if(!active) updateMarkerPositions(true);};
     map.on('movestart zoomstart dragstart',()=>setInteractionState(true));
     map.on('moveend dragend',()=>{setInteractionState(false);clearTimeout(worldRenderTimer);worldRenderTimer=setTimeout(renderWorldInfrastructureMarkers,140);});
