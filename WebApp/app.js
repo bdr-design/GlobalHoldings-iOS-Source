@@ -468,7 +468,7 @@
   ];
 
   const defaultState = {
-    saveVersion:SAVE_SCHEMA_VERSION,saveRevision:0,onboardingComplete:false,
+    saveVersion:SAVE_SCHEMA_VERSION,saveRevision:0,onboardingComplete:false,lastPanel:null,lastPanelArg:null,
     profile:{name:'المجموعة العالمية القابضة',shortName:'GH',founder:'المؤسس',englishName:'Global Holdings Group',country:'السعودية',city:'الرياض',firstSector:'air',mode:'balanced',legalForm:'شركة قابضة مساهمة مقفلة',currency:'USD',fiscalYear:'calendar',riskAppetite:'balanced',procurementPolicy:'competitive',signingAuthority:'board',reputation:12,creditRating:'BBB',logo:null,logoStyle:'teal'},
     cash:250000000,debt:84000000,groupValue:412000000,todayProfit:0,
     sectorProfitToday:{air:0,sea:0,road:0,power:0,bank:0,mobility:0},
@@ -1924,7 +1924,8 @@
     const previousPanel=activeDrawerPanel,previousScroll=$('drawerBody').scrollTop;
     if(previousPanel)drawerScrollMemory[previousPanel]=previousScroll;
     activeDrawerPanel=panel;activeDrawerArg=arg;
-    const [eyebrow,title]=window.GH_ADVANCED?.meta(panel)||panelMeta[panel]||['الإدارة','لوحة'];
+    state.lastPanel=panel;state.lastPanelArg=arg??null;
+    const [eyebrow,title]=window.GH_ADVANCED?.meta(panel,arg)||panelMeta[panel]||['الإدارة','لوحة'];
     $('drawerEyebrow').textContent=eyebrow; $('drawerTitle').textContent=title; $('drawerBody').innerHTML=renderPanel(panel,arg); bindDrawerActions();
     $('drawerBody').scrollTop=previousPanel===panel?previousScroll:(drawerScrollMemory[panel]||0);
     if(drawerUsesBackdrop()) $('backdrop').classList.remove('hidden'); else $('backdrop').classList.add('hidden');
@@ -1941,7 +1942,7 @@
     $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden','false'); closeMapPopovers(); setActiveNav('map');
     setTimeout(()=>{ if(map)map.invalidateSize(); },260);
   }
-  function closeDrawer(){ $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); $('backdrop').classList.add('hidden'); setActiveNav('map'); setTimeout(()=>{if(map)map.invalidateSize();},260); }
+  function closeDrawer(){ $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); $('backdrop').classList.add('hidden'); setActiveNav('map'); state.lastPanel=null;state.lastPanelArg=null; setTimeout(()=>{if(map)map.invalidateSize();},260); }
   const ADVANCED_OWNED_PANELS=new Set(['realism','companies','leadershipHub','workspaceHub','peopleHub','actionCenter','governanceHub','systemHub','intelligence','aiApprovals','programs','facilityManage','companyManage','treasury','audit','legal','procurement','cyber','safety','energy','bank','governance','insurance','research','esg','career','news','labor','ma','settings','updates','diagnostics','controlPlane']);
   function renderPanel(panel,arg){
     const advanced=window.GH_ADVANCED?.render(panel,arg,advancedContext());
@@ -2544,6 +2545,10 @@
   updateKpis();setSpeed(state.speed);$('competitorToggle').checked=!!state.showCompetitors;
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.toggle('active',b.dataset.filter===state.activeFilter));
   initMap();
+  if(state.onboardingComplete&&state.lastPanel){
+    try{ openDrawer(state.lastPanel,state.lastPanelArg??undefined); }
+    catch(error){ state.lastPanel=null;state.lastPanelArg=null;diag('RESTORE_LAST_PANEL_FAILED',{message:String(error?.message||error)},'warning'); }
+  }
 
   function loop(now){
     if(hardResetInProgress||window.GH_PERSISTENCE.isLocked()){simulationEngine.reset(now,'lifecycle-lock');requestAnimationFrame(loop);return;}

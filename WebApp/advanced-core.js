@@ -65,11 +65,21 @@
     return state;
   };
 
-  const meta = panel => ({
+  const COMPANY_TAB_LABELS={overview:'القيادة',operations:'التشغيل',assets:'الأصول',people:'الأفراد',finance:'المالية',risk:'المخاطر',ai:'AI الشركة'};
+  const COMPANY_DISPLAY_NAMES={air:'الشركة العالمية للطيران',sea:'الشركة العالمية للشحن البحري',road:'اللوجستيات العالمية',power:'شركة الطاقة العالمية',bank:'بنك المجموعة',mobility:'GH Mobility للتنقل الذكي'};
+  const meta = (panel,arg) => {
+    if(panel==='companyManage'){
+      const parsed=typeof arg==='string'&&arg.includes(':')?{type:arg.split(':')[0],tab:arg.split(':')[1]}:arg;
+      const type=typeof parsed==='object'?parsed?.type:parsed,tab=(typeof parsed==='object'&&parsed?.tab)||'overview';
+      const companyName=COMPANY_DISPLAY_NAMES[type]||'الشركة';
+      return ['المجموعة والشركات',`${COMPANY_TAB_LABELS[tab]||'مركز إدارة الشركة'} · ${companyName}`];
+    }
+    return ({
     leadershipHub:['القيادة التنفيذية','مركز القيادة والقرار'],workspaceHub:['النظام والسلامة','الصحة والصيانة'],peopleHub:['الموارد البشرية','الطواقم والتنظيم'],actionCenter:['القيادة التنفيذية','مركز المهام والقرارات'],intelligence:['القيادة التنفيذية','GH Intelligence'],aiApprovals:['القيادة التنفيذية','طلبات وتفويضات AI'],programs:['القيادة التنفيذية','محفظة التنفيذ'],facilityManage:['التشغيل والأصول','إدارة المنشأة'],companyManage:['المجموعة والشركات','مركز إدارة الشركة'],treasury:['المالية والخزينة','السيولة والتمويل'],
     audit:['الحوكمة والمخاطر','التدقيق الداخلي'],compliance:['الحوكمة والمخاطر','الامتثال والمخاطر التشغيلية'],legal:['الحوكمة والمخاطر','القانون والامتثال'],procurement:['التشغيل والأصول','الشراء اليدوي للأصول'],
     governanceHub:['الحوكمة والمخاطر','مركز الرقابة والامتثال'],systemHub:['النظام والسلامة','الصحة والصيانة'],cyber:['الحوكمة والمخاطر','الأمن السيبراني'],safety:['الحوكمة والمخاطر','السلامة والأمن'],updates:['النظام والسلامة','مركز التحديثات'],diagnostics:['النظام والسلامة','مركز التشخيص الشامل'],controlPlane:['النظام والسلامة','مركز التحكم والسلامة المركزي']
   })[panel] || null;
+  };
   const root = panel => ['leadershipHub','actionCenter','intelligence','aiApprovals','programs','news','realism','ma','research','esg','career'].includes(panel) ? 'leadership' : ['peopleHub','labor'].includes(panel) ? 'people' : ['governanceHub','governance','audit','legal','insurance','cyber','safety','compliance'].includes(panel) ? 'governance' : ['systemHub','workspaceHub','diagnostics','controlPlane','updates','settings'].includes(panel) ? 'system' : ['treasury','bank'].includes(panel) ? 'finance' : panel==='procurement' ? 'control' : panel==='facilityManage'?'control':panel==='companyManage'?'companies':null;
 
   const photoFor = kind => photos[kind] || photos.hq;
@@ -112,15 +122,15 @@
     const parsed=typeof arg==='string'&&arg.includes(':')?{type:arg.split(':')[0],tab:arg.split(':')[1]}:arg;
     const type=typeof parsed==='object'?parsed.type:parsed,m=companyModel(ctx.state,type);
     let active=(typeof parsed==='object'&&parsed.tab)||'overview';
-    const names={air:'الشركة العالمية للطيران',sea:'الشركة العالمية للشحن البحري',road:'اللوجستيات العالمية',power:'شركة الطاقة العالمية',bank:'بنك المجموعة',mobility:'GH Mobility للتنقل الذكي'};
+    const names=COMPANY_DISPLAY_NAMES;
     const assets=type==='mobility'?(ctx.state.mobility?.vehicles||[]):ctx.state.assets.filter(a=>a.type===type),profit=ctx.state.sectorProfitToday[type]||0,condition=assets.length?Math.round(assets.reduce((n,a)=>n+(Number(a.condition)||100),0)/assets.length):100,record=ctx.state.companyRegistry?.[type]||{},liquidity=ctx.companyOperatingBalance?.(type)||0,account=ctx.state.companyFinance?.[type]?.accounts?.[0];
     const assetCount=type==='power'?((Number(ctx.state.energy?.gasMW)>0?1:0)+(Number(ctx.state.energy?.solarMW)>0?1:0)+(Number(ctx.state.energy?.windMW)>0?1:0)+(Number(ctx.state.energy?.storageMWh)>0?1:0)):type==='bank'?Number(ctx.state.bank?.branches||0):assets.length;
     const contracts=(ctx.state.advanced?.labor?.employmentContracts||[]).filter(c=>c.company===type&&c.status==='ساري'),people=type==='mobility'?(ctx.state.mobility?.drivers||[]).length:contracts.reduce((n,c)=>n+(Number(c.count)||1),0);
     // تبويب AI يعرض توصية تحليلية + فعل حقيقي فقط للشبكات (جوي/بحري/بري)، ورابطًا لموبيليتي.
     // الطاقة والبنك ليس لهما أي محتوى مقابل هنا - كان التبويب يظهر فارغًا تمامًا (لا فعل ولا تنقّل).
     const aiTabHasContent=!['power','bank'].includes(type);
-    const tabDefs=[['overview','القيادة'],['operations','التشغيل'],['assets','الأصول'],['people','الأفراد'],['finance','المالية'],['risk','المخاطر']];
-    if(aiTabHasContent)tabDefs.push(['ai','AI الشركة']);
+    const tabDefs=Object.entries(COMPANY_TAB_LABELS).filter(([id])=>id!=='ai').map(([id,label])=>[id,label]);
+    if(aiTabHasContent)tabDefs.push(['ai',COMPANY_TAB_LABELS.ai]);
     if(active==='ai'&&!aiTabHasContent)active='overview';
     const bar=tabs(tabDefs,active,'data-company-manage-tab');let body='';
     const facilitiesButton=`<button class="secondary-btn" data-open="companyFacilities" data-arg="${type}">قواعد ومراكز الشركة</button>`;
