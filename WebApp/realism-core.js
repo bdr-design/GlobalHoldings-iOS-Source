@@ -202,6 +202,11 @@
       const company=state.companyRegistry?.[snap.type]?.legalName||names[snap.type]||snap.company||'شركة تشغيلية';
       const delivered=globalThis.GH_DOMAIN_COMMANDS?.dispatch?.({state},'fleet','record-delivery',{deliveryId:d.id,asset:{...snap,company},baseId:base.id,phase:'idle',deliveredDay:day,deliveredAtSeconds:now},{actor:'delivery-engine'});
       if(!delivered?.ok)throw new Error(`delivery-owner-rejected:${d.id}`);
+      // توظيف تلقائي فور الاستلام الفعلي - لا وظائف يدوية معلّقة. يستخدم نفس نسب CREW_STANDARDS
+      // ونفس آلية الرواتب والعقود المستخدمة أصلًا للتوظيف اليدوي (executeHiring مباشرة)، فقط بلا
+      // ضغطة من اللاعب. عطل هنا لا يُسقط التسليم نفسه - الأصل يصل دائمًا، وأسوأ حال يحتاج تعزيزًا يدويًا لاحقًا.
+      try{ globalThis.GH_HR_CORE?.executeHiring?.(state,{},snap.type,`توظيف تلقائي عند استلام ${snap.name}`,'crew'); }
+      catch(hireError){ console.warn('auto-crew-on-delivery failed',hireError); }
       globalThis.GH_DOMAIN_COMMANDS?.dispatch?.({state},'corporate','adjust-group-value',{delta:snap.ownership==='lease'?(Number(snap.purchasePrice)||0)*.08:(Number(snap.purchasePrice)||0)*.86},{actor:'delivery-engine'});
       d.status='delivered';d.deliveredDay=day;d.deliveredAtSeconds=now;
       globalThis.GH_DOMAIN_COMMANDS?.dispatch?.({state},'operations','record-alert',{text:`تم استلام ${snap.name} فعليًا في ${base.name||d.destination||'القاعدة'} ووضعه داخل المركز التشغيلي المحدد. الأصل جاهز للتجهيز والتشغيل.`,type:'delivery'},{actor:'delivery-engine'});
