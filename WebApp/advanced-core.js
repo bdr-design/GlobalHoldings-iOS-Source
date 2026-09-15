@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '2.9.1';
+  const VERSION = '3.0.0';
   const SAVE_SCHEMA_VERSION = '2.0.0';
   const UPDATE_FORMAT = 'global-holdings-update';
   const photos = {
@@ -29,7 +29,7 @@
     economy:{electricityPriceMWh:72,gasCostMWh:39,carbonPriceTon:52,depositRate:.032,loanYield:.075,baseRate:.046,freightIndex:100},
     insurance:{claims:[],annualPremium:0},
     board:{meetings:[],committees:{audit:82,risk:76,remuneration:71,investment:79}},
-    content:{visualPack:'GH Visual Library 2.0',catalogVersion:'2026.09',scenarioVersion:'2.9.0'},
+    content:{visualPack:'GH Visual Library 2.0',catalogVersion:'2026.09',scenarioVersion:'3.0.0'},
     updateHistory:[],
     settings:{reducedData:false,compactKpis:true,aiBrief:true},
     saveSlots:[null,null,null]

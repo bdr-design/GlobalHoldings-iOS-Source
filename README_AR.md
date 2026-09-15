@@ -1,3 +1,15 @@
+# Global Holdings 3.0.0 - BUILD300
+
+- Native/Web Runtime: `3.0.0`
+- Build: `300`
+- Save Schema: `2.0.0`
+- Update mode: `full-web / clean-snapshot-v1`
+- Release gate: signed hashes, atomic state commit, boot confirmation and Native-owned rollback.
+
+راجع `BUILD300_RELEASE_CANDIDATE_AR.md` قبل إنشاء IPA أو حزمة تحديث موقعة.
+
+---
+
 # Global Holdings 2.4.0 — Build 244 Guardian Signal Refinement
 
 - Native Build: `244`

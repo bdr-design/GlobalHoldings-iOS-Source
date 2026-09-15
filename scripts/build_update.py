@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Build the Global Holdings clean full-web snapshot from repository source."""
 from __future__ import annotations
-import base64, hashlib, json
+import base64, hashlib, json, os
 from update_signing import sign_manifest
 from datetime import datetime, timezone
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-WEB=ROOT/'WebApp'; UPDATES=ROOT/'updates'; VERSION='2.9.1'
+WEB=ROOT/'WebApp'; UPDATES=Path(os.environ.get('GH_UPDATE_OUTPUT_DIR',ROOT/'updates'))
+VERSION=(ROOT/'VERSION').read_text(encoding='utf-8').strip()
+BUILD=int((ROOT/'BUILD').read_text(encoding='utf-8').strip())
+MIN_GAME_VERSION='2.9.1'
 ALLOWED={'.html','.js','.css','.webp','.png','.jpg','.jpeg','.json','.txt'}
 OPERATIONS=[
   {'type':'content-config','value':{
@@ -33,7 +36,7 @@ def main():
     for source in sorted(p for p in WEB.rglob('*') if p.is_file() and p.suffix.lower() in ALLOWED):
         data=source.read_bytes(); total+=len(data)
         files.append({'path':source.relative_to(ROOT).as_posix(),'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'base64':base64.b64encode(data).decode('ascii')})
-    manifest={'id':'gh-internal-2.9.1-build281-one-ops-pattern','name':'Global Holdings 2.9.1 — One Operations Pattern For Every Company','version':VERSION,'minGameVersion':'2.9.0','packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':'BUILD281: نمط تشغيل واحد لكل الشركات. كانت Mobility تعرض محركها داخل تبويب التشغيل في صفحتها، بينما الطاقة والبنك يعرضان نموذجًا عامًا هناك ومحركهما الحقيقي في لوحتين منفصلتين (energy, bank). الآن محرك الطاقة ومحرك البنك يظهران داخل تبويب التشغيل في صفحة كل شركة بنفس النمط، وزر الخطوة التالية على بطاقة الشركة يفتح ذلك التبويب مباشرة (data-arg=\"type:operations\" - دعم جديد لفتح تبويب محدد من زر بسيط). اللوحتان المنفصلتان تبقيان تعملان لأي رابط قديم. لا فقدان لأي إجراء. Save Schema يبقى 2.0.0.',
+    manifest={'id':f'gh-internal-{VERSION}-build{BUILD}-clean-release','name':f'Global Holdings {VERSION} - BUILD{BUILD} Clean Release','version':VERSION,'minGameVersion':MIN_GAME_VERSION,'packageType':'full-web','installMode':'clean-snapshot-v1','channel':'stable','signaturePayloadVersion':2,'createdAt':datetime.now(timezone.utc).isoformat(),'releaseNotes':f'BUILD{BUILD}: إصدار 3.0.0 موحد. يصلح احتواء اسم المجموعة على iPhone، ويمنع نجاح اختبار GH Mobility عبر مسار بديل صامت، ويوحد هوية التطبيق وNative والحزمة والوثائق. الحزمة Full Web Clean Snapshot موقعة، وSave Schema يبقى 2.0.0.',
     'fileCount':len(files),'unpackedBytes':total,'operationsSha256':hashlib.sha256(compact(OPERATIONS)).hexdigest()}
     index=[[f['path'],f['sha256'],f['size']] for f in files]
     manifest['filesIndexSha256']=hashlib.sha256(swift_json_compact(index)).hexdigest()
@@ -41,9 +44,10 @@ def main():
     package={'format':'global-holdings-update','manifest':manifest,'operationsJSON':compact(OPERATIONS).decode('utf-8'),'files':files,'version':VERSION,'id':manifest['id'],'name':manifest['name'],'operationsSha256':manifest['operationsSha256']}
     payload=json.dumps(package,ensure_ascii=False,separators=(',',':'))
     UPDATES.mkdir(exist_ok=True)
-    for old in UPDATES.glob('GlobalHoldings_Update_V*.ghupdate'): old.unlink()
-    for old in UPDATES.glob('GlobalHoldings_Update_V*.saneiupdate'): old.unlink()
+    for pattern in ('*.ghupdate','*.saneiupdate'):
+        for old in UPDATES.glob(pattern): old.unlink()
+    version_tag=VERSION.replace('.','')
     for ext in ('saneiupdate','ghupdate'):
-        (UPDATES/f'GlobalHoldings_Internal_Update_V291_BUILD281_ONE_OPS_PATTERN.{ext}').write_text(payload,encoding='utf-8')
-    print(f'Built 2.9.1 Build258 HR manual hiring / dispatch integrity snapshot: {len(files)} files, {total:,} unpacked bytes')
+        (UPDATES/f'GlobalHoldings_Internal_Update_V{version_tag}_BUILD{BUILD}_CLEAN_RELEASE.{ext}').write_text(payload,encoding='utf-8')
+    print(f'Built {VERSION} BUILD{BUILD} clean signed snapshot: {len(files)} files, {total:,} unpacked bytes')
 if __name__=='__main__': main()

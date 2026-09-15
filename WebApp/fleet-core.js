@@ -1,4 +1,4 @@
-(()=>{'use strict';const VERSION='2.9.1';
+(()=>{'use strict';const VERSION='3.0.0';
 function normalizeAsset(asset,context={}){
     const tpl = context.route;
     if(tpl){

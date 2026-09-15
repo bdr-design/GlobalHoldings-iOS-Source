@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.1',FLEET_BASELINE=480;
+  const VERSION='3.0.0',FLEET_BASELINE=480;
   const ZONES=Object.freeze([
     {id:'KAFD',name:'مركز الملك عبدالله المالي',coords:[24.767,46.643],weight:1.25},{id:'OLAYA',name:'العليا',coords:[24.711,46.674],weight:1.18},
     {id:'AIRPORT',name:'مطار الملك خالد',coords:[24.958,46.702],weight:1.12},{id:'DIRIYAH',name:'الدرعية',coords:[24.735,46.575],weight:.92},

@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.1';
+  const VERSION='3.0.0';
   const COMPANY_TYPES=['group','air','sea','road','power','bank','mobility'];
   const issue=(id,severity,title,detail,domain='business',evidence={})=>({id,severity,title,detail,domain,evidence});
   const finite=v=>Number.isFinite(Number(v));

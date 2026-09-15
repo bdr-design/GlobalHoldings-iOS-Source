@@ -334,7 +334,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke
 @media (max-width:760px) and (orientation:portrait){
   :root{--gh-side-w:0px}
   .topbar{direction:ltr!important;left:max(8px,env(safe-area-inset-left))!important;right:max(8px,env(safe-area-inset-right))!important;top:max(5px,env(safe-area-inset-top))!important;height:94px!important;grid-template-areas:"brand actions" "kpis kpis"!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-rows:43px 39px!important;padding:5px 8px!important;gap:4px!important}
-  .topbar .brand{grid-area:brand!important;direction:rtl!important;justify-self:end!important}.topbar .brand-copy{display:block!important}.topbar .brand-copy strong{font-size:12px!important}.topbar .brand-copy small{display:none!important}
+  .topbar .brand{grid-area:brand!important;direction:rtl!important;justify-self:stretch!important;width:100%!important;max-width:100%!important;overflow:hidden!important;box-sizing:border-box!important}.topbar .brand-copy{display:block!important;flex:1 1 auto!important;width:0!important;overflow:hidden!important}.topbar .brand-copy strong{font-size:12px!important;max-width:100%!important}.topbar .brand-copy small{display:none!important}
   .topbar .top-actions{grid-area:actions!important;width:auto!important;min-width:0!important;display:flex!important;gap:5px!important}.topbar .top-actions .icon-btn{width:38px!important;height:38px!important}
   .topbar .top-kpis{grid-area:kpis!important;height:38px!important;max-width:none!important;overflow-x:auto!important}.topbar .top-kpis>div{min-width:70px!important}
   .game-frame{grid-template-columns:1fr!important}.side-nav{display:none!important}

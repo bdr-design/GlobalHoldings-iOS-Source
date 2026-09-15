@@ -1,4 +1,4 @@
-(()=>{'use strict';const VERSION='2.9.1',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
+(()=>{'use strict';const VERSION='3.0.0',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
 function ensure(s){s.bank=s.bank||{};s.bank.corporateClients=s.bank.corporateClients&&typeof s.bank.corporateClients==='object'?s.bank.corporateClients:{};for(const k of ['riskReviews','lettersOfCredit','guarantees','cashSweeps'])s.bank[k]=Array.isArray(s.bank[k])?s.bank[k]:[];for(const t of ['group','air','sea','road','power'])if(!s.bank.corporateClients[t])s.bank.corporateClients[t]={company:t,creditLimit:5000000,drawn:0,depositBalance:0,lastReview:0,rating:'BBB'};return s.bank;}
 // Prudential aggregates are DERIVED from the primitive balance sheet.
 // Before this, deposits/loans grew (open-branch, cash-sweep, issue-loans, draw-facility) while hqla

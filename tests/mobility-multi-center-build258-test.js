@@ -43,7 +43,7 @@ const {scenario} = require('./helpers/business-scenario.js');
   s.command('corporate','open-company',{type:'mobility',capital:500000000,legalName:'Test Mobility'});
 
   state.mobility = {
-    schema:'gh-mobility-v2',version:'2.9.1',status:'active',launchedAt:1000,lastDemandAt:5000,
+    schema:'gh-mobility-v2',version:'3.0.0',status:'active',launchedAt:1000,lastDemandAt:5000,
     vehicles:[{id:'MOB-V-0000001',assetClass:'eco-ev',name:'legacy',status:'available',zoneId:'KAFD',battery:80,condition:95,totalTrips:3,totalKm:120}],
     drivers:[{id:'DRV-0000001',name:'legacy driver',status:'online',zoneId:'KAFD',totalTrips:3,earnings:500}],
     rideRequests:[],activeTrips:[],tripArchive:[{id:'TRIP-1',fare:50}],

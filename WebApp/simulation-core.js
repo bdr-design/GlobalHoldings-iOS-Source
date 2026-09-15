@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
 
-  const VERSION='2.9.1';
+  const VERSION='3.0.0';
   const DEFAULTS=Object.freeze({
     allowedSpeeds:Object.freeze([0,1,2,4]),
     fallbackSpeed:1,
