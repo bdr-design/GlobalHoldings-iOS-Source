@@ -33,6 +33,14 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        gameViewController?.persistStateForBackground(application)
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {
+        gameViewController?.persistStateForBackground(application)
+    }
+
     private func openUpdate(_ url: URL) {
         gameViewController?.importUpdate(from: url)
     }

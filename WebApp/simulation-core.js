@@ -15,6 +15,7 @@
     renderEveryFastMs:450,
     persistEveryNormalMs:12000,
     persistEveryFastMs:30000,
+    minRealSliceSeconds:0,
     maintenanceEveryHours:6,
     longTaskWarnMs:28,
     hardTaskMs:120,
@@ -30,6 +31,7 @@
     if(!cfg.allowedSpeeds.length)cfg.allowedSpeeds=Array.from(DEFAULTS.allowedSpeeds);
     const positive=['quantumRealSeconds','maxRealDelta','maxBacklogNormal','maxBacklogFast','frameBudgetMs','chunkItems','renderEveryNormalMs','renderEveryFastMs','persistEveryNormalMs','persistEveryFastMs','maintenanceEveryHours','longTaskWarnMs','hardTaskMs','hardTaskLimit','conflictLimit'];
     for(const key of positive){const n=Number(cfg[key]);cfg[key]=Number.isFinite(n)&&n>0?n:DEFAULTS[key];}
+    const minRealSliceSeconds=Number(cfg.minRealSliceSeconds);cfg.minRealSliceSeconds=Number.isFinite(minRealSliceSeconds)?Math.max(0,Math.min(1,minRealSliceSeconds)):0;
     cfg.chunkItems=Math.max(1,Math.floor(cfg.chunkItems));
     cfg.hardTaskLimit=Math.max(1,Math.floor(cfg.hardTaskLimit));
     cfg.conflictLimit=Math.max(1,Math.floor(cfg.conflictLimit));
@@ -84,6 +86,10 @@
 
     function startJob(speed){
       if(job||backlog<=1e-9)return false;
+      // The app can opt into a small real-time batching window. This prevents a
+      // full atomic fleet transaction on every 60/120 Hz display frame while
+      // retaining exact hour/day boundaries and the same simulated elapsed time.
+      if(cfg.minRealSliceSeconds>0){const minimumSlice=alignBoundaryTarget(Math.min(quantum(speed),Math.max(1e-6,speed*cfg.minRealSliceSeconds)));if(backlog+1e-9<minimumSlice)return false;}
       const slice=alignBoundaryTarget(Math.min(backlog,quantum(speed)));
       if(!Number.isFinite(slice)||slice<=0)return false;
       jobSlice=slice;jobStart=simNow();jobSpeed=speed;jobBoundary=boundaryFor(jobStart+slice);

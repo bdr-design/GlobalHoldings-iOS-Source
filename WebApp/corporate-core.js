@@ -2,7 +2,7 @@
 const VERSION='3.0.0',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
 const COMPANY_TYPES=['air','sea','road','power','bank','mobility'];
 function ensure(s){s.companyRegistry=s.companyRegistry&&typeof s.companyRegistry==='object'?s.companyRegistry:{};s.openedCompanies=Array.isArray(s.openedCompanies)?s.openedCompanies:[];s.unlockedSectors=Array.isArray(s.unlockedSectors)?s.unlockedSectors:[];s.stakes=s.stakes&&typeof s.stakes==='object'?s.stakes:{};s.maDeals=s.maDeals&&typeof s.maDeals==='object'?s.maDeals:{};s.advanced=s.advanced||{};s.advanced.companies=s.advanced.companies&&typeof s.advanced.companies==='object'?s.advanced.companies:{};return s;}
-function model(s,type){ensure(s);return s.advanced.companies[type]||(s.advanced.companies[type]={budget:25000000,serviceLevel:86,riskLimit:72,automation:48,growthTarget:8,capitalPlan:0,customerScore:82,lastDecision:0,upgradeCooldowns:{},history:[]});}
+function model(s,type){ensure(s);const m=s.advanced.companies[type]||(s.advanced.companies[type]={serviceLevel:0,riskLimit:100,automation:0,lastDecision:0,upgradeCooldowns:{},history:[]});for(const legacy of ['budget','growthTarget','capitalPlan','customerScore'])delete m[legacy];m.serviceLevel=Math.max(0,Math.min(100,Number(m.serviceLevel)||0));m.automation=Math.max(0,Math.min(100,Number(m.automation)||0));m.riskLimit=Math.max(0,Math.min(100,Number.isFinite(Number(m.riskLimit))?Number(m.riskLimit):100));m.upgradeCooldowns=m.upgradeCooldowns&&typeof m.upgradeCooldowns==='object'?m.upgradeCooldowns:{};m.history=Array.isArray(m.history)?m.history:[];return m;}
 function validate(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);if(cmd==='open-company'&&!COMPANY_TYPES.includes(p.type))return {ok:false,reason:'invalid-company'};if(['decision','rename-company'].includes(cmd)&&!s.companyRegistry[p.type])return {ok:false,reason:'company-not-found'};return true;}
 function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);
  if(cmd==='found-group'){
@@ -38,12 +38,10 @@ function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);
  if(cmd==='set-reputation'){s.profile=s.profile||{};s.profile.reputation=Math.max(0,Math.min(100,Number(p.value)||0));return s.profile.reputation;}
  if(cmd==='set-ipo'){s.ipo={listed:!!p.listed,ticker:String(p.ticker||'GH').toUpperCase()};return s.ipo;}
  if(cmd==='decision'){
-   const type=p.type,m=model(s,type),id=p.action,cost=num(p.cost),F=globalThis.GH_FINANCE_CORE;if(cost)F.execute({state:s},'spend',{company:type,amount:cost,note:`قرار ${id} · ${s.companyRegistry[type]?.legalName||type}`,method:'تحويل بنكي',line:id==='company-capex'?'capex':'other'});
-   if(id==='company-budget'){F.execute({state:s},'transfer',{from:'group',to:type,amount:num(p.amount||5000000),note:`تمويل تشغيلي إلى ${s.companyRegistry[type]?.legalName||type}`});m.budget+=num(p.amount||5000000);}
-   if(id==='company-service'){m.serviceLevel=Math.min(100,m.serviceLevel+5);m.customerScore=Math.min(100,m.customerScore+4);}
+   const type=p.type,m=model(s,type),id=p.action,allowed=new Set(['company-service','company-automation','company-risk']);if(!allowed.has(id))throw new Error('obsolete-or-unknown-company-decision');const cost=num(p.cost),F=globalThis.GH_FINANCE_CORE;if(cost)F.execute({state:s},'spend',{company:type,amount:cost,note:`قرار ${id} · ${s.companyRegistry[type]?.legalName||type}`,method:'تحويل بنكي',line:'other'});
+   if(id==='company-service')m.serviceLevel=Math.min(100,m.serviceLevel+5);
    if(id==='company-automation')m.automation=Math.min(100,m.automation+8);
    if(['company-service','company-automation'].includes(id))m.upgradeCooldowns[id]=now(s);
-   if(id==='company-capex'){m.capitalPlan+=num(p.capitalPlanAdd||10000000);m.budget+=num(p.budgetAdd||2500000);s.groupValue=num(s.groupValue)+num(p.groupValueAdd||5500000);}
    if(id==='company-risk')m.riskLimit=Math.max(35,m.riskLimit-5);
    m.lastDecision=now(s);m.history.unshift({at:now(s),action:id});m.history=m.history.slice(0,50);return m;
  }

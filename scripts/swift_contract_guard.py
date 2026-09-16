@@ -43,7 +43,7 @@ if not order('stage: "PREPARED"','writeUpdateJournal(journal)','pinRollbackCheck
 if 'clean-snapshot-v1' not in apply and 'clean-snapshot-v1' not in storage: errors.append('native clean-snapshot contract missing')
 if 'restoreRollbackCheckpoint(expectedRuntimeVersion: journal.oldVersion)' not in storage: errors.append('journal rollback does not prefer pinned runtime/save checkpoint')
 if 'journal.stage == "COMMITTED"' not in storage or 'finishCommittedJournalHousekeeping(journal)' not in storage: errors.append('COMMITTED crash housekeeping contract missing')
-if 'updateStateCommittedVersion' not in gvc or 'updateBootConfirmedVersion' not in gvc or 'tryFinalizeNativeUpdate' not in gvc: errors.append('two-gate update finalization missing')
+if 'updateStateCommittedIdentity' not in gvc or 'updateBootConfirmedIdentity' not in gvc or 'tryFinalizeNativeUpdate' not in gvc: errors.append('version/build two-gate update finalization missing')
 if re.search(r'\.finally\s*\([\s\S]{0,220}success\s*:\s*true',gvc): errors.append('success:true is emitted from finally')
 if 'saveRevision' not in vault or 'nativeRevision>currentRevision' not in vault: errors.append('monotonic save revision stale-write guard missing')
 

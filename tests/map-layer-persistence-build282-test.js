@@ -48,11 +48,11 @@ function bootFresh(preseed) {
 
 const storageKey = 'global-holdings-world-v2.0.0';
 
-// ---- 1) لعبة جديدة تبدأ بالطبقة الافتراضية الحالية (لا تغيير في السلوك المعروف) ----
+// ---- 1) لعبة جديدة تبدأ بقياسي بدل فرض الطبقة الليلية ----
 {
   const { window: w, click: c } = bootFresh();
   c('#skipFounder');
-  assert.strictEqual(w.__GH_STATE__.mapLayer, 'dark', 'a brand-new game must still default to the dark/night layer');
+  assert.strictEqual(w.__GH_STATE__.mapLayer, 'standard', 'a brand-new game must default to the standard layer, not force night mode');
 }
 
 // ---- 2) دورة كاملة حقيقية: اختيار طبقة → حفظ حقيقي → إقلاع نافذة جديدة تمامًا → استعادة صحيحة ----
@@ -90,8 +90,8 @@ const storageKey = 'global-holdings-world-v2.0.0';
 
   const third = bootFresh(win => win.localStorage.setItem(storageKey, corruptedRaw));
   assert.strictEqual(third.uncaught.length, 0, `an invalid saved mapLayer must not crash boot: ${third.uncaught.join(' | ')}`);
-  assert.strictEqual(third.window.__GH_STATE__.mapLayer, 'dark',
-    'an unrecognized saved layer name must fall back to dark, not stay as garbage or blank the map');
+  assert.strictEqual(third.window.__GH_STATE__.mapLayer, 'standard',
+    'an unrecognized saved layer name must fall back to standard, not stay as garbage or force night mode');
 }
 
 console.log('map-layer-persistence-build282-test: ok');

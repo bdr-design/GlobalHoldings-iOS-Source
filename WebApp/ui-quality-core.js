@@ -13,13 +13,7 @@
   }
   function task(id,title,domain,priority='normal',panel=null,reason=''){return {id,title,domain,priority,panel,reason};}
   function collectTasks(state){
-    const out=[],proc=state?.advanced?.procurement||{},diag=state?.diagnostics||{},now=Number(state?.simSeconds)||0;
-    (proc.assetRequests||[]).forEach(r=>{
-      const blockers=Array.isArray(r.blockers)?r.blockers:[];
-      const priority=blockers.length?'high':r.status==='awaiting_authorization'?'high':'normal';
-      out.push(task(`AR:${r.id}`,`${r.id} · ${r.title||'طلب أصل'}`,'التشغيل',priority,'procurement',blockers.join(' · ')||r.nextAction||''));
-    });
-    (proc.assetPortfolioPlans||[]).filter(p=>p?.status==='awaiting_authorization').forEach(p=>out.push(task(`AIP:${p.id}`,`${p.title||'محفظة أصول ذكية'} · اعتماد واحد`,'التشغيل والأصول','high','procurement',`AI جهز ${p.summary?.assetCount||0} أصل مع الطواقم والمسارات.`)));
+    const out=[],diag=state?.diagnostics||{},now=Number(state?.simSeconds)||0;
     (state?.realism?.procurement?.deliveries||[]).filter(d=>d?.status!=='delivered'&&Number(d?.dueSimSeconds||Infinity)<now).forEach(d=>out.push(task(`DEL:${d.id}`,`تسليم متأخر · ${d.asset?.model||d.catalogId||d.id}`,'التشغيل','critical','procurement',d.destination||'')));
     const activeIssues=diag.activeIssues&&typeof diag.activeIssues==='object'?Object.values(diag.activeIssues):[];
     activeIssues.forEach(i=>out.push(task(`DIAG:${i.id||i.type}`,i.message||i.title||i.id||'مشكلة نظام','النظام',i.severity==='critical'?'critical':'high','diagnostics',i.detail||'')));

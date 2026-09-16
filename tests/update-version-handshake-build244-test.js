@@ -13,6 +13,7 @@ assert.strictEqual(version,'3.0.0','canonical release version mismatch');
 assert(newer(version,'2.9.1'),'release must be a semantic upgrade from the installed 2.9.1 baseline');
 assert(builder.includes("VERSION=(ROOT/'VERSION').read_text"),'signed package must target the canonical root version');
 assert(builder.includes("MIN_GAME_VERSION='2.9.1'"),'signed package must declare the supported installed baseline');
-assert(native.includes('compareVersion(version, currentVersion) != .orderedDescending'),'native anti-reinstall/downgrade gate must remain enabled');
+assert(native.includes('versionOrder == .orderedAscending')&&native.includes('targetBuild <= installedBuild'),'native tuple anti-reinstall/downgrade gate must remain enabled');
+assert.strictEqual((native.match(/القناة المستقرة تقبل full-web \/ clean-snapshot-v1 فقط/g)||[]).length,1,'native package contract gate must not be duplicated');
 assert(native.includes('operationsJSON هو المصدر الوحيد للتنفيذ'),'canonical operations-only gate must remain enabled');
 console.log('BUILD300 3.0.0 update/runtime handshake PASS');

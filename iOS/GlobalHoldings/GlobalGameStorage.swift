@@ -9,6 +9,7 @@ final class GlobalGameStorage {
 
     struct AppliedUpdate {
         let version: String
+        let build: Int
         let manifest: [String: Any]
         let operations: [[String: Any]]
         let replacedWebFiles: Bool
@@ -17,6 +18,7 @@ final class GlobalGameStorage {
             [
                 "format": GlobalGameStorage.updateFormat,
                 "manifest": manifest,
+                "build": build,
                 "operations": operations,
                 "replacedWebFiles": replacedWebFiles
             ]
@@ -33,6 +35,7 @@ final class GlobalGameStorage {
     private struct ParsedUpdate {
         let manifest: [String: Any]
         let version: String
+        let build: Int
         let operations: [[String: Any]]
         let files: [UpdateFile]
         let deletedPaths: [String]
@@ -42,6 +45,8 @@ final class GlobalGameStorage {
         let updateId: String
         let oldVersion: String
         let newVersion: String
+        let oldBuild: Int?
+        let newBuild: Int?
         let oldSaveGeneration: Int
         var newSaveGeneration: Int?
         var stage: String
@@ -64,6 +69,7 @@ final class GlobalGameStorage {
     private let folderName = "GlobalHoldingsRuntime"
     private let currentVersionKey = "GlobalHoldingsContentVersion"
     private let previousVersionKey = "GlobalHoldingsPreviousContentVersion"
+    private let previousBuildKey = "GlobalHoldingsPreviousContentBuild"
     private let pendingBootVersionKey = "GlobalHoldingsPendingContentBootVersion"
     private let pendingBootPreviousVersionKey = "GlobalHoldingsPendingContentBootPreviousVersion"
     private let pendingBootStartedAtKey = "GlobalHoldingsPendingContentBootStartedAt"
@@ -235,10 +241,13 @@ final class GlobalGameStorage {
         }
 
         let oldVersion = currentVersion
+        let oldBuild = installedBuild
         let journal = UpdateJournal(
             updateId: (update.manifest["id"] as? String) ?? UUID().uuidString,
             oldVersion: oldVersion,
             newVersion: update.version,
+            oldBuild: oldBuild,
+            newBuild: update.build,
             oldSaveGeneration: preUpdateSaveGeneration,
             newSaveGeneration: nil,
             stage: "PREPARED",
@@ -278,8 +287,10 @@ final class GlobalGameStorage {
         if hasCurrentRuntime && fileManager.fileExists(atPath: webURL.path) {
             try fileManager.moveItem(at: webURL, to: previousWebURL)
             UserDefaults.standard.set(oldVersion, forKey: previousVersionKey)
+            UserDefaults.standard.set(oldBuild, forKey: previousBuildKey)
         } else {
             UserDefaults.standard.removeObject(forKey: previousVersionKey)
+            UserDefaults.standard.removeObject(forKey: previousBuildKey)
         }
         do {
             try fileManager.moveItem(at: stagingWebURL, to: webURL)
@@ -290,18 +301,21 @@ final class GlobalGameStorage {
         }
 
         UserDefaults.standard.set(update.version, forKey: currentVersionKey)
+        UserDefaults.standard.set(update.build, forKey: installedBundledBuildKey)
         UserDefaults.standard.set(preUpdateSaveGeneration, forKey: previousSaveGenerationKey)
         UserDefaults.standard.set(update.version, forKey: pendingBootVersionKey)
         UserDefaults.standard.set(oldVersion, forKey: pendingBootPreviousVersionKey)
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: pendingBootStartedAtKey)
-        return AppliedUpdate(version: update.version, manifest: update.manifest, operations: update.operations, replacedWebFiles: true)
+        return AppliedUpdate(version: update.version, build: update.build, manifest: update.manifest, operations: update.operations, replacedWebFiles: true)
     }
 
     private func readUpdateJournal() -> UpdateJournal? {
         guard let data = try? Data(contentsOf: updateJournalURL),
               let journal = try? JSONDecoder().decode(UpdateJournal.self, from: data),
               !journal.updateId.isEmpty, !journal.oldVersion.isEmpty, !journal.newVersion.isEmpty,
-              journal.oldSaveGeneration >= 0, !journal.stage.isEmpty else { return nil }
+              journal.oldSaveGeneration >= 0, !journal.stage.isEmpty,
+              journal.oldBuild.map({ $0 >= 0 }) ?? true,
+              journal.newBuild.map({ $0 >= 0 }) ?? true else { return nil }
         return journal
     }
 
@@ -311,7 +325,8 @@ final class GlobalGameStorage {
         try data.write(to: updateJournalURL, options: .atomic)
         guard let verified = readUpdateJournal(), verified.updateId == journal.updateId,
               verified.stage == journal.stage, verified.oldVersion == journal.oldVersion,
-              verified.newVersion == journal.newVersion else {
+              verified.newVersion == journal.newVersion,
+              verified.oldBuild == journal.oldBuild, verified.newBuild == journal.newBuild else {
             throw UpdateError.message("فشل تثبيت Update Journal على التخزين.")
         }
     }
@@ -326,11 +341,14 @@ final class GlobalGameStorage {
 
     private func clearUpdateJournal() { try? fileManager.removeItem(at: updateJournalURL) }
 
-    func markUpdateStateCommitted(version: String, saveGeneration: Int) throws {
+    func markUpdateStateCommitted(version: String, build: Int, saveGeneration: Int) throws {
         updateLock.lock(); defer { updateLock.unlock() }
         guard saveGeneration > 0 else { throw UpdateError.message("Save Generation الناتجة غير صالحة.") }
-        guard currentVersion == version else { throw UpdateError.message("Runtime version تغيّر قبل تثبيت حالة التحديث.") }
+        guard currentVersion == version, installedBuild == build else {
+            throw UpdateError.message("Runtime version/build تغيّر قبل تثبيت حالة التحديث.")
+        }
         guard let journal = readUpdateJournal(), journal.newVersion == version,
+              journal.newBuild == build,
               ["RUNTIME_SWAPPED", "OPERATIONS_APPLYING"].contains(journal.stage) else {
             throw UpdateError.message("Update Journal ليس في حالة تسمح بتثبيت State.")
         }
@@ -341,13 +359,16 @@ final class GlobalGameStorage {
     }
 
     @discardableResult
-    func confirmCurrentUpdateBoot(version: String) throws -> Bool {
+    func confirmCurrentUpdateBoot(version: String, build: Int? = nil) throws -> Bool {
         updateLock.lock(); defer { updateLock.unlock() }
         guard UserDefaults.standard.string(forKey: pendingBootVersionKey) == version,
               currentVersion == version else { return false }
         try validateStagedWebApp(at: webURL)
         guard let journal = readUpdateJournal(), journal.newVersion == version, journal.stage == "STATE_COMMITTED" else {
             throw UpdateError.message("رفض Boot Confirm: حالة التحديث لم تُحفظ ذريًا بعد.")
+        }
+        if let expectedBuild = journal.newBuild, let build, expectedBuild != build {
+            throw UpdateError.message("رفض Boot Confirm: Build المشغّل لا يطابق Build التحديث.")
         }
         if !journal.updateId.hasPrefix("BUNDLED-") {
             guard let generation = journal.newSaveGeneration, generation > 0,
@@ -362,9 +383,12 @@ final class GlobalGameStorage {
         if journal.oldSaveGeneration > 0, !GlobalSaveVault.shared.hasRollbackCheckpoint(for: journal.oldVersion) {
             throw UpdateError.message("رفض Boot Confirm: Rollback Checkpoint للنسخة السابقة مفقودة.")
         }
-        if journal.updateId.hasPrefix("BUNDLED-") {
+        if let newBuild = journal.newBuild {
+            UserDefaults.standard.set(newBuild, forKey: installedBundledBuildKey)
+        } else if journal.updateId.hasPrefix("BUNDLED-") {
             UserDefaults.standard.set(bundledBuild, forKey: installedBundledBuildKey)
         }
+        if let oldBuild = journal.oldBuild { UserDefaults.standard.set(oldBuild, forKey: previousBuildKey) }
         try advanceUpdateJournal(stage: "COMMITTED")
         clearPendingBootMarker()
         clearUpdateJournal()
@@ -410,6 +434,14 @@ final class GlobalGameStorage {
         guard journal.stage == "COMMITTED" else { return }
         UserDefaults.standard.set(journal.newVersion, forKey: currentVersionKey)
         UserDefaults.standard.set(journal.oldVersion, forKey: previousVersionKey)
+        if let newBuild = journal.newBuild {
+            UserDefaults.standard.set(newBuild, forKey: installedBundledBuildKey)
+        } else if journal.updateId.hasPrefix("BUNDLED-") {
+            UserDefaults.standard.set(bundledBuild, forKey: installedBundledBuildKey)
+        }
+        if let oldBuild = journal.oldBuild {
+            UserDefaults.standard.set(oldBuild, forKey: previousBuildKey)
+        }
         if let generation = journal.newSaveGeneration, generation > 0 {
             guard GlobalSaveVault.shared.snapshot(generation: generation) != nil else {
                 throw UpdateError.message("COMMITTED journal references a missing final Save Generation.")
@@ -418,9 +450,6 @@ final class GlobalGameStorage {
         }
         if journal.oldSaveGeneration > 0 {
             UserDefaults.standard.set(journal.oldSaveGeneration, forKey: previousSaveGenerationKey)
-        }
-        if journal.updateId.hasPrefix("BUNDLED-") {
-            UserDefaults.standard.set(bundledBuild, forKey: installedBundledBuildKey)
         }
         clearPendingBootMarker()
         clearUpdateJournal()
@@ -435,6 +464,12 @@ final class GlobalGameStorage {
             try? fileManager.removeItem(at: webURL)
             try fileManager.moveItem(at: previousWebURL, to: webURL)
             UserDefaults.standard.set(prior, forKey: currentVersionKey)
+            if let priorBuild = (UserDefaults.standard.object(forKey: previousBuildKey) as? NSNumber)?.intValue {
+                UserDefaults.standard.set(priorBuild, forKey: installedBundledBuildKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: installedBundledBuildKey)
+            }
+            UserDefaults.standard.removeObject(forKey: previousBuildKey)
             let oldSave = UserDefaults.standard.integer(forKey: previousSaveGenerationKey)
             if oldSave > 0, GlobalSaveVault.shared.snapshot(generation: oldSave) != nil {
                 let promoted = try GlobalSaveVault.shared.restoreGeneration(oldSave, runtimeVersion: prior)
@@ -458,7 +493,15 @@ final class GlobalGameStorage {
                 try fileManager.copyItem(at: bundled, to: webURL)
             }
             UserDefaults.standard.set(journal.oldVersion, forKey: currentVersionKey)
+            if let oldBuild = journal.oldBuild {
+                UserDefaults.standard.set(oldBuild, forKey: installedBundledBuildKey)
+            } else if let previousBuild = (UserDefaults.standard.object(forKey: previousBuildKey) as? NSNumber)?.intValue {
+                UserDefaults.standard.set(previousBuild, forKey: installedBundledBuildKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: installedBundledBuildKey)
+            }
             UserDefaults.standard.removeObject(forKey: previousVersionKey)
+            UserDefaults.standard.removeObject(forKey: previousBuildKey)
             UserDefaults.standard.removeObject(forKey: previousSaveGenerationKey)
         }
         // PREPARED/STAGED are pre-mutation stages: leave Current/Previous exactly
@@ -500,6 +543,8 @@ final class GlobalGameStorage {
 
         let current = currentVersion
         let target = previousVersion ?? "النسخة السابقة"
+        let currentBuild = installedBuild
+        let targetBuild = (UserDefaults.standard.object(forKey: previousBuildKey) as? NSNumber)?.intValue ?? 0
         let currentSaveGeneration = UserDefaults.standard.integer(forKey: currentSaveGenerationKey)
         guard currentSaveGeneration > 0, GlobalSaveVault.shared.snapshot(generation: currentSaveGeneration) != nil else {
             throw UpdateError.message("رفض الاسترجاع: الحالة الحالية لا تملك Save Generation موثقة يمكن الرجوع إليها عند فشل الاسترجاع.")
@@ -512,6 +557,8 @@ final class GlobalGameStorage {
             updateId: "RESTORE-\(target)-\(UUID().uuidString)",
             oldVersion: current,
             newVersion: target,
+            oldBuild: currentBuild,
+            newBuild: targetBuild,
             oldSaveGeneration: currentSaveGeneration,
             newSaveGeneration: nil,
             stage: "PREPARED",
@@ -551,6 +598,8 @@ final class GlobalGameStorage {
             try writeUpdateJournal(journal)
             UserDefaults.standard.set(target, forKey: currentVersionKey)
             UserDefaults.standard.set(current, forKey: previousVersionKey)
+            UserDefaults.standard.set(targetBuild, forKey: installedBundledBuildKey)
+            UserDefaults.standard.set(currentBuild, forKey: previousBuildKey)
             UserDefaults.standard.set(currentSaveGeneration, forKey: previousSaveGenerationKey)
             UserDefaults.standard.set(target, forKey: pendingBootVersionKey)
             UserDefaults.standard.set(current, forKey: pendingBootPreviousVersionKey)
@@ -601,7 +650,11 @@ final class GlobalGameStorage {
             if let prior = UserDefaults.standard.string(forKey: previousVersionKey) {
                 UserDefaults.standard.set(prior, forKey: currentVersionKey)
             }
+            if let priorBuild = (UserDefaults.standard.object(forKey: previousBuildKey) as? NSNumber)?.intValue {
+                UserDefaults.standard.set(priorBuild, forKey: installedBundledBuildKey)
+            }
             UserDefaults.standard.removeObject(forKey: previousVersionKey)
+            UserDefaults.standard.removeObject(forKey: previousBuildKey)
         }
 
         guard let bundled = Bundle.main.resourceURL?.appendingPathComponent("WebApp", isDirectory: true),
@@ -651,10 +704,13 @@ final class GlobalGameStorage {
 
     private func installBundledBaseline(from bundled: URL, replacingVersion: String) throws {
         let oldSaveGeneration = GlobalSaveVault.shared.currentGeneration()
+        let oldBuild = installedBuild
         var journal = UpdateJournal(
             updateId: "BUNDLED-\(bundledVersion)-\(UUID().uuidString)",
             oldVersion: replacingVersion,
             newVersion: bundledVersion,
+            oldBuild: oldBuild,
+            newBuild: bundledBuild,
             oldSaveGeneration: oldSaveGeneration,
             newSaveGeneration: nil,
             stage: "PREPARED",
@@ -683,6 +739,7 @@ final class GlobalGameStorage {
         if fileManager.fileExists(atPath: webURL.path) {
             try fileManager.moveItem(at: webURL, to: previousWebURL)
             UserDefaults.standard.set(replacingVersion, forKey: previousVersionKey)
+            UserDefaults.standard.set(oldBuild, forKey: previousBuildKey)
         }
         do {
             try fileManager.moveItem(at: stagingWebURL, to: webURL)
@@ -691,12 +748,16 @@ final class GlobalGameStorage {
             if fileManager.fileExists(atPath: previousWebURL.path) {
                 try? fileManager.moveItem(at: previousWebURL, to: webURL)
                 UserDefaults.standard.set(replacingVersion, forKey: currentVersionKey)
+                UserDefaults.standard.set(oldBuild, forKey: installedBundledBuildKey)
             }
+            UserDefaults.standard.removeObject(forKey: previousVersionKey)
+            UserDefaults.standard.removeObject(forKey: previousBuildKey)
             clearUpdateJournal()
             throw error
         }
         try advanceUpdateJournal(stage: "RUNTIME_SWAPPED")
         UserDefaults.standard.set(bundledVersion, forKey: currentVersionKey)
+        UserDefaults.standard.set(bundledBuild, forKey: installedBundledBuildKey)
         UserDefaults.standard.set(replacingVersion, forKey: pendingBootPreviousVersionKey)
         UserDefaults.standard.set(bundledVersion, forKey: pendingBootVersionKey)
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: pendingBootStartedAtKey)
@@ -806,11 +867,6 @@ final class GlobalGameStorage {
         }
 
         try verifyManifestSignature(manifest)
-        guard (manifest["packageType"] as? String) == "full-web",
-              (manifest["installMode"] as? String) == "clean-snapshot-v1" else {
-            throw UpdateError.message("Overlay القديمة مرفوضة؛ Native يقبل full-web / clean-snapshot-v1 فقط.")
-        }
-
         // Stable release channel accepts one exact package contract. The values
         // are signed and are also enforced here so a differently typed, but
         // otherwise validly signed, package cannot enter the clean installer.
@@ -823,8 +879,22 @@ final class GlobalGameStorage {
         if let minimum, !minimum.isEmpty, compareVersion(minimum, bundledVersion) == .orderedDescending {
             throw UpdateError.message("تحتاج هذه الحزمة إلى إصدار تطبيق \(minimum) أو أحدث.")
         }
-        if compareVersion(version, currentVersion) != .orderedDescending {
-            throw UpdateError.message("تم رفض التحديث: الإصدار الهدف يجب أن يكون أحدث من الإصدار الحالي. استخدم آلية الاسترجاع الأصلية للرجوع إلى نسخة سابقة.")
+        let payloadVersion = integer(manifest["signaturePayloadVersion"]) ?? 0
+        let targetBuild: Int
+        if payloadVersion >= 3 {
+            guard let signedBuild = integer(manifest["build"]), signedBuild > 0 else {
+                throw UpdateError.message("رقم Build الموقّع مفقود أو غير صالح.")
+            }
+            targetBuild = signedBuild
+        } else {
+            // v2 remains accepted only for a semantic-version upgrade. It never
+            // receives same-version/build ordering because Build was not signed.
+            targetBuild = 0
+        }
+        let versionOrder = compareVersion(version, currentVersion)
+        if versionOrder == .orderedAscending ||
+            (versionOrder == .orderedSame && (payloadVersion < 3 || targetBuild <= installedBuild)) {
+            throw UpdateError.message("تم رفض Downgrade/إعادة التثبيت: الهدف \(version) Build \(targetBuild) ليس أحدث من \(currentVersion) Build \(installedBuild).")
         }
 
         if let declaredCount = integer(manifest["fileCount"]), declaredCount != rawFiles.count {
@@ -895,6 +965,7 @@ final class GlobalGameStorage {
         return ParsedUpdate(
             manifest: manifest,
             version: version,
+            build: targetBuild,
             operations: operations,
             files: files,
             deletedPaths: Array(deleted)
@@ -1027,8 +1098,8 @@ final class GlobalGameStorage {
             throw UpdateError.message("حقول التوقيع في manifest غير مكتملة.")
         }
         let payloadVersion = integer(manifest["signaturePayloadVersion"]) ?? 0
-        guard payloadVersion == 2 else {
-            throw UpdateError.message("قناة التحديث المستقرة تقبل توقيع Clean Snapshot v2 فقط.")
+        guard payloadVersion == 2 || payloadVersion == 3 else {
+            throw UpdateError.message("قناة التحديث المستقرة تقبل توقيع Clean Snapshot v2/v3 فقط.")
         }
         let payload: String
         if payloadVersion == 2 {
@@ -1039,6 +1110,17 @@ final class GlobalGameStorage {
             }
             payload = [
                 "gh-update-signature-v2", id, version, minimum, packageType, installMode,
+                String(fileCount), String(unpackedBytes), filesIndex.lowercased(), operationsHash.lowercased()
+            ].joined(separator: "\n")
+        } else if payloadVersion == 3 {
+            guard let build = integer(manifest["build"]), build > 0,
+                  let minimum = manifest["minGameVersion"] as? String,
+                  let packageType = manifest["packageType"] as? String,
+                  let installMode = manifest["installMode"] as? String else {
+                throw UpdateError.message("حقول توقيع Clean Snapshot v3 غير مكتملة.")
+            }
+            payload = [
+                "gh-update-signature-v3", id, version, String(build), minimum, packageType, installMode,
                 String(fileCount), String(unpackedBytes), filesIndex.lowercased(), operationsHash.lowercased()
             ].joined(separator: "\n")
         } else {

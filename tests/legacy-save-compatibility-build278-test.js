@@ -55,8 +55,8 @@ const S = b.S;
 assert.strictEqual(S.mobility.schema, 'gh-mobility-v3', 'single-center v2 Mobility must be migrated to v3');
 assert(Array.isArray(S.mobility.capitalCenters) && S.mobility.kpisByCenter && S.mobility.lastDemandAtByCenter, 'v3 multi-center fields must be created');
 assert(S.mobility.vehicles.every(v => v.centerId === 'RUH'), 'legacy vehicles without centerId must be assigned to Riyadh');
-assert.strictEqual(S.advanced.procurement.assetRequests.length, 0, 'legacy AI asset-request queue must be cleared'); // strictEqual on length: deepStrictEqual fails across jsdom/node realms on prototype identity
-assert.strictEqual(S.advanced.procurement.assetPortfolioPlans.length, 0, 'legacy AI portfolio plans must be cleared');
+assert(!Object.prototype.hasOwnProperty.call(S.advanced.procurement,'assetRequests'), 'legacy AI asset-request queue must be deleted');
+assert(!Object.prototype.hasOwnProperty.call(S.advanced.procurement,'assetPortfolioPlans'), 'legacy AI portfolio plans must be deleted');
 assert(S.realism.procurement.deliveries.every(d => Number.isFinite(d.dueAtSeconds)), 'legacy dueDay-only deliveries must gain dueAtSeconds');
 
 // 4) المحاكاة تعمل على الحفظة المرحّلة، والمركبات تُرسم، ولوحة Mobility لا تكسر
@@ -66,7 +66,7 @@ assert(b.calls.vehicles > 0, 'migrated legacy Mobility fleet must render on the 
 
 // 5) طلب AI قديم من نوع procurement (شراء أصول عبر AI - مبدأ ملغى): الترحيل يحذفه عمدًا لا يبقيه،
 // لأن الشراء يدوي بالكامل الآن، ولوحة الاعتمادات تُفتح فوق الحفظة القديمة بلا خطأ.
-assert(!S.advanced.ai.requests.some(r => r.kind === 'procurement'), 'legacy AI procurement requests must be purged by migration (manual-only purchasing)');
+assert(!Object.prototype.hasOwnProperty.call(S.advanced.ai,'requests'), 'legacy AI procurement requests must be deleted by migration (manual-only purchasing)');
 b.click('[data-panel="workspaceHub"]'); b.click('[data-open="aiApprovals"]');
 assert.strictEqual(b.uncaught.length, 0, `approvals panel must open clean on a legacy save: ${b.uncaught.join(' | ')}`);
 

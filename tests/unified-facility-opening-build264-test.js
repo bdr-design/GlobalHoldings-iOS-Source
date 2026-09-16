@@ -10,8 +10,8 @@ assert(!/kind:'logistics'[^}]*capacity:240/.test(app), 'the old duplicate flat-s
 assert(!app.includes('startBasePlacement'), 'the dead/broken map-click global-base placement system must be fully removed');
 assert(!app.includes('place-global-base'), 'no leftover listener for the removed global-base placement button');
 
-// 3) تأكيد التوحيد: تأكيد الموقع الآن يستخدم نفس مسار المناقصة المعتمد (openLogisticsHubAI) فقط
-assert(app.includes('function confirmPlacement(){') && app.includes('const opened=openLogisticsHubAI(coords);'), 'confirmPlacement must delegate to the single tender-based openLogisticsHubAI path, not a separate duplicate');
+// 3) تأكيد التوحيد: تأكيد الموقع الآن يستخدم نفس مسار المناقصة المعتمد (openLogisticsHub) فقط
+assert(app.includes('function confirmPlacement(){') && app.includes('const opened=openLogisticsHub(coords);'), 'confirmPlacement must delegate to the single tender-based openLogisticsHub path, not a separate duplicate');
 
 // 4) لا وجود لمستمع أزرار ميت لا يقابله أي عنصر HTML فعلي
 assert(!app.includes("querySelectorAll('.open-global-route')"), 'dead unused .open-global-route listener must be removed');

@@ -143,6 +143,10 @@ for (const f of coreFiles) {
 // --- G) duplicate numeric/constant definitions across core files (capacity-style drift) ------
 report('G) same named constant defined independently in more than one file (possible silent drift)');
 const constDefs = {};
+// API is the intentionally module-local export envelope used by every isolated
+// core; matching that generic identifier across files is not shared state or a
+// duplicated business contract.
+const moduleLocalNames = new Set(['API']);
 for (const f of allWebAppFiles) {
   const src = read(f);
   for (const m of src.matchAll(/const\s+([A-Z][A-Z0-9_]{2,})\s*=\s*(?:Object\.freeze\()?\{/g)) {
@@ -151,7 +155,7 @@ for (const f of allWebAppFiles) {
 }
 for (const [name, files] of Object.entries(constDefs)) {
   const uniqueFiles = [...new Set(files)];
-  if (uniqueFiles.length > 1) flag(`constant "${name}" is independently defined as an object literal in more than one file: ${uniqueFiles.join(', ')} - verify they cannot silently disagree`);
+  if (uniqueFiles.length > 1 && !moduleLocalNames.has(name)) flag(`constant "${name}" is independently defined as an object literal in more than one file: ${uniqueFiles.join(', ')} - verify they cannot silently disagree`);
 }
 ok(`${Object.keys(constDefs).length} UPPER_CASE object constants scanned across ${allWebAppFiles.length} files`);
 

@@ -1,6 +1,6 @@
 const fs=require('fs'),path=require('path'),assert=require('assert');
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
-const app=read('WebApp/app.js'),finance=read('WebApp/finance-core.js'),adv=read('WebApp/advanced-core.js'),closure=read('WebApp/demand-closure-core.js'),schema=require(path.join(root,'WebApp/save-schema.js'));
+const app=read('WebApp/app.js'),finance=read('WebApp/finance-core.js'),adv=read('WebApp/advanced-core.js'),closure=read('WebApp/delivery-monitor-core.js'),schema=require(path.join(root,'WebApp/save-schema.js'));
 const fn=(name,next)=>{const a=app.indexOf(`function ${name}`),b=next?app.indexOf(`function ${next}`,a+1):-1;assert(a>=0,`missing ${name}`);return app.slice(a,b>a?b:Math.min(app.length,a+9000));};
 
 // Liability settlement belongs to Finance Core; UI delegates through domain commands.

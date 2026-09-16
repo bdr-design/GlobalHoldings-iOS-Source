@@ -39,7 +39,7 @@
     "contracts-core.js",
     "control-plane-core.js",
     "corporate-core.js",
-    "demand-closure-core.js",
+    "delivery-monitor-core.js",
     "department-core.js",
     "dependency-core.js",
     "determinism-core.js",

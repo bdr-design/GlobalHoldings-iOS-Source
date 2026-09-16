@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
   const VERSION='3.0.0', SLOT_FORMAT='global-holdings-save-slot-v2', EXPORT_FORMAT='global-holdings-save';
-  const LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,ackTimeoutMs:10000,pending:16});
+  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,ackTimeoutMs:10000,pending:16});
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const clock=()=>globalThis.performance?.now?.()??Date.now();
@@ -14,11 +14,11 @@
   function bytes(text){if(globalThis.TextEncoder)return new TextEncoder().encode(text).byteLength;let n=0;for(const c of text){const p=c.codePointAt(0);n+=p<128?1:p<2048?2:p<65536?3:4;}return n;}
   function inspectJSON(json,key='',options={}){
     if(typeof json!=='string')throw new Error('serialization-failed');
-    const utf8Bytes=bytes(json),storageBytes=json.length*2,hard=Math.min(LIMITS.hardBytes,options.hardBytes||LIMITS.hardBytes);
+    const utf8Bytes=bytes(json),storageBytes=json.length*2,hard=Math.min(PERSISTENCE_LIMITS.hardBytes,options.hardBytes||PERSISTENCE_LIMITS.hardBytes);
     let totalStorageBytes=storageBytes+String(key).length*2;
     for(let i=0;i<(localStorage.length||0);i++){const k=localStorage.key(i);if(k!==key)totalStorageBytes+=(String(k).length+(localStorage.getItem(k)||'').length)*2;}
-    const warning=utf8Bytes>=Math.min(LIMITS.softBytes,options.softBytes||LIMITS.softBytes)||storageBytes>=LIMITS.softBytes;
-    if(utf8Bytes>hard||storageBytes>hard||totalStorageBytes>LIMITS.storageBytes){const e=new Error('save-size-hard-limit');e.measurement={utf8Bytes,storageBytes,totalStorageBytes};throw e;}
+    const warning=utf8Bytes>=Math.min(PERSISTENCE_LIMITS.softBytes,options.softBytes||PERSISTENCE_LIMITS.softBytes)||storageBytes>=PERSISTENCE_LIMITS.softBytes;
+    if(utf8Bytes>hard||storageBytes>hard||totalStorageBytes>PERSISTENCE_LIMITS.storageBytes){const e=new Error('save-size-hard-limit');e.measurement={utf8Bytes,storageBytes,totalStorageBytes};throw e;}
     return {utf8Bytes,storageBytes,totalStorageBytes,warning};
   }
   function restoreRaw(key,raw){if(raw===null)localStorage.removeItem(key);else localStorage.setItem(key,raw);if(localStorage.getItem(key)!==raw)throw new Error('save-rollback-verification');}
@@ -50,12 +50,12 @@
   }
   function requestNative(action,json,options={}){
     const bridge=bridgeFor(action);if(!bridge)return Promise.resolve({ok:true,native:false});
-    if(pending.size>=LIMITS.pending)return Promise.reject(new Error('native-save-backpressure'));
+    if(pending.size>=PERSISTENCE_LIMITS.pending)return Promise.reject(new Error('native-save-backpressure'));
     const hash=globalThis.GH_CONTROL_PLANE?.sha256;if(!hash)return Promise.reject(new Error('save-hash-owner-unavailable'));
     const state=JSON.parse(json);assertState(state);
     const envelope={action,requestId:`${action}-${Date.now()}-${++sequence}`,saveJSON:json,saveHash:hash(json),saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:'2.0.0',appVersion:options.appVersion||VERSION};
     return new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>{pending.delete(envelope.requestId);const e=new Error('native-save-ack-timeout');e.code='ACK_TIMEOUT';reject(e);},options.timeoutMs||LIMITS.ackTimeoutMs);
+      const timer=setTimeout(()=>{pending.delete(envelope.requestId);const e=new Error('native-save-ack-timeout');e.code='ACK_TIMEOUT';reject(e);},options.timeoutMs||PERSISTENCE_LIMITS.ackTimeoutMs);
       pending.set(envelope.requestId,{resolve,reject,timer,envelope});
       try{bridge.postMessage(envelope);}catch(e){clearTimeout(timer);pending.delete(envelope.requestId);reject(e);}
     });
@@ -64,7 +64,7 @@
   globalThis.addEventListener?.('gh-native-reset-ack',e=>receiveAck(e.detail));
   function commitState(state,{storageKey='global-holdings-world-v2.0.0',appVersion=VERSION,...options}={}){
     if(locked)return {ok:false,reason:'lifecycle-locked'};
-    if(bridgeFor('commitSave')&&mirrorCount>=LIMITS.pending)return {ok:false,reason:'native-save-backpressure'};
+    if(bridgeFor('commitSave')&&mirrorCount>=PERSISTENCE_LIMITS.pending)return {ok:false,reason:'native-save-backpressure'};
     const out=writeState(storageKey,state,options);if(!out.ok)return out;
     if(bridgeFor('commitSave')){
       mirrorCount++;
@@ -117,6 +117,6 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:'2.0.0',saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,writeJSON,writeState,commitState,requestNative,receiveAck,drain,replaceState,isLocked:()=>locked,telemetry:()=>({generation,pending:pending.size,mirrorCount,samples:clone(samples)})});
+  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,writeJSON,writeState,commitState,requestNative,receiveAck,drain,replaceState,isLocked:()=>locked,telemetry:()=>({generation,pending:pending.size,mirrorCount,samples:clone(samples)})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

@@ -9,19 +9,18 @@ if(cmd==='run-tender'){const bids=(Array.isArray(p.bids)?p.bids:[]).filter(x=>x&
 if(cmd==='purchase-assets'){
  const type=String(p.type||''),qty=Number(p.qty??1),item=(ctx.assetCatalog||globalThis.GH_ASSET_CATALOG)?.[p.type]?.[p.tab||'new']?.find(i=>i.id===p.item?.id),base=[...(s.globalBases||[]),...(s.customHubs||[])].find(f=>f.id===p.base?.id),supplier=p.supplier,mode=String(p.mode||'cash');
  if(!Number.isInteger(qty)||qty<1||qty>50||!['cash','finance','lease'].includes(mode)||!['air','sea','road'].includes(type)||!item?.id||!base?.id||base.owned!==true||base.company!==type||!(type==='air'?['airport-base']:type==='sea'?['port-base']:['depot','logistics']).includes(base.kind))throw new Error('invalid-asset-purchase');
- const request=s.advanced?.procurement?.assetRequests?.find(r=>r.id===p.requestRef),manual=Boolean(p.manual)||String(p.requestRef||'').startsWith('MANUAL-');
- if(!manual&&(!request||request.baseId!==base.id||request.company!==type||request.catalogId!==item.id||Number(request.qty)!==qty||!request.authority?.id||!['ordering','authorized'].includes(request.status)))throw new Error('purchase-request-contract');
- if(!p.prepaid&&(!supplier?.name&&!supplier?.legalName))throw new Error('asset-supplier-required');
+ const manual=Boolean(p.manual)||String(p.requestRef||'').startsWith('MANUAL-');
+ if(!manual)throw new Error('manual-asset-purchase-required');
+ if(!supplier?.name&&!supplier?.legalName)throw new Error('asset-supplier-required');
  const realism=globalThis.GH_REALISM?.migrate?.(s);const deliveries=realism?.procurement?.deliveries;if(!Array.isArray(deliveries))throw new Error('delivery-store-unavailable');
  const modeled=Number(s.advanced?.facilities?.[base.id]?.capacity),fallback=['airport','airport-base'].includes(base.kind)?24:['port','port-base'].includes(base.kind)?18:['depot','logistics'].includes(base.kind)?Number(base.bays||42):12,capacity=Number.isFinite(modeled)&&modeled>0?modeled:fallback;
  const pending=deliveries.filter(d=>d.status==='pending'&&d.baseId===base.id).length,current=(s.assets||[]).filter(a=>a.baseFacility===base.id).length+pending;if(current+qty>capacity)throw new Error(`delivery-capacity:${Math.max(0,capacity-current)}/${capacity}`);
  const total=num(item.price)*qty,upfront=num(p.upfront);if(total<=0)throw new Error('invalid-asset-price');
  const expected=mode==='cash'?total:mode==='finance'?total*Number(item.downPayment||.2):num(item.leaseMonthly)*3*qty;
  if(Math.abs(expected-upfront)>.01)throw new Error('purchase-upfront-mismatch');
- let payment;
- if(p.prepaid){const r=s.advanced?.procurement?.assetRequests?.find(x=>x.id===p.requestRef),ch=s.finance?.cheques?.find(c=>c.id===r?.payment?.chequeId);if(!ch||ch.status!=='مصروف'||ch.company!==type||Number(ch.amount)<expected)throw new Error('prepayment-evidence-required');payment={kind:'cheque',ref:ch.id,company:type,amount:ch.amount};}
- if(!p.prepaid&&upfront>0){const paid=execute({state:s},'supplier-payment',{company:type,amount:upfront,supplier,note:`${mode==='lease'?'دفعة إيجار':'شراء'} ${qty} × ${item.name}`,method:p.paymentMethod||'شيك مصدق',budgetLine:'capex'});if(!paid?.reference||paid.invoice?.status!=='مدفوعة')throw new Error('supplier-payment-contract-invalid');payment={kind:'invoice',ref:paid.reference,company:type,amount:upfront};}
- if(!payment)throw new Error('payment-required');
+ const fundingGap=(s.infiniteMoney||s.godMoney)?0:Math.max(0,expected-(Number(F.operating?.(s,type))||0)),policy=globalThis.GH_POLICY_CORE?.procurement?.({item,base,qty,freeCapacity:capacity-current,fundingGap});
+ if(!policy?.approved)throw new Error(`manual-purchase-policy:${(policy?.blocked||[]).map(row=>row.id).join(',')||'unavailable'}`);
+ const paid=execute({state:s},'supplier-payment',{company:type,amount:upfront,supplier,note:`${mode==='lease'?'دفعة إيجار':'شراء'} ${qty} × ${item.name}`,method:p.paymentMethod||'شيك مصدق',budgetLine:'capex'});if(!paid?.reference||paid.invoice?.status!=='مدفوعة')throw new Error('supplier-payment-contract-invalid');const payment={kind:'invoice',ref:paid.reference,company:type,amount:upfront};
  if(mode==='finance'){const book=F.book(s,type),residual=Math.max(0,total-upfront);F.execute({state:s},'set-debt',{company:type,amount:num(book.debt)+residual});}
  if(!globalThis.GH_CORPORATE_CORE?.execute)throw new Error('corporate-owner-unavailable');globalThis.GH_CORPORATE_CORE.execute({state:s},'unlock-sector',{type});
  const rnd=globalThis.GH_DETERMINISM;if(!rnd?.nextId)throw new Error('determinism-core-unavailable');const nowSeconds=now(s),day=Math.floor(nowSeconds/86400),created=[];

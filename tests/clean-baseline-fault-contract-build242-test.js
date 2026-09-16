@@ -1,6 +1,6 @@
 const fs=require('fs'),path=require('path'),assert=require('assert');
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
-const app=read('WebApp/app.js'),adv=read('WebApp/advanced-core.js'),closure=read('WebApp/demand-closure-core.js'),game=read('WebApp/game-lifecycle-core.js');
+const app=read('WebApp/app.js'),adv=read('WebApp/advanced-core.js'),closure=read('WebApp/delivery-monitor-core.js'),game=read('WebApp/game-lifecycle-core.js');
 const storage=read('iOS/GlobalHoldings/GlobalGameStorage.swift'),vault=read('iOS/GlobalHoldings/GlobalSaveVault.swift'),gvc=read('iOS/GlobalHoldings/GameViewController.swift');
 const schema=require(path.join(root,'WebApp/save-schema.js'));
 

@@ -32,6 +32,20 @@ def signature_payload(manifest:dict)->bytes:
             str(manifest.get('filesIndexSha256','')),
             str(manifest.get('operationsSha256','')),
         ]
+    elif version==3:
+        fields=[
+            'gh-update-signature-v3',
+            str(manifest.get('id','')),
+            str(manifest.get('version','')),
+            str(manifest.get('build','')),
+            str(manifest.get('minGameVersion','')),
+            str(manifest.get('packageType','')),
+            str(manifest.get('installMode','')),
+            str(manifest.get('fileCount','')),
+            str(manifest.get('unpackedBytes','')),
+            str(manifest.get('filesIndexSha256','')),
+            str(manifest.get('operationsSha256','')),
+        ]
     else:
         raise RuntimeError(f'Unsupported signature payload version: {version}')
     return ('\n'.join(fields)).encode('utf-8')
@@ -55,7 +69,7 @@ def _load_private_key_bytes()->bytes:
 def sign_manifest(manifest:dict)->dict:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     private=Ed25519PrivateKey.from_private_bytes(_load_private_key_bytes())
-    manifest.setdefault('signaturePayloadVersion',2)
+    manifest.setdefault('signaturePayloadVersion',3)
     signature=private.sign(signature_payload(manifest))
     manifest['signatureAlgorithm']=ALGORITHM
     manifest['signatureKeyId']=KEY_ID

@@ -22,12 +22,8 @@
   }
   function ensure(state){state.assets=Array.isArray(state.assets)?state.assets:[];return state.assets;}
   function find(state,id){return ensure(state).find(asset=>asset.id===id)||null;}
-  function crewRole(state,id){
-    const saved=(state.crew||[]).find(role=>role.id===id),fallback=ROLE_DEFAULTS[id]||{name:id,dailyRate:0};
-    const dailyRate=saved?((Number(saved.salaryMin)||0)+(Number(saved.salaryMax)||0))/2:fallback.dailyRate;
-    return {id,name:saved?.name||fallback.name,dailyRate:Math.max(0,dailyRate)};
-  }
-  function staffingPlan(asset,state={}){
+  function crewRole(id){const fixed=ROLE_DEFAULTS[id]||{name:id,dailyRate:0};return {id,name:fixed.name,dailyRate:fixed.dailyRate};}
+  function staffingPlan(asset){
     let counts={};
     if(asset?.type==='air'){
       counts={pilots:4,cabin:6,aeng:2};
@@ -39,7 +35,7 @@
       throw new Error('asset-staffing-type-unsupported');
     }
     const roles=Object.entries(counts).filter(([,count])=>count>0).map(([id,count])=>{
-      const role=crewRole(state,id);
+      const role=crewRole(id);
       return {...role,count,monthlyPayroll:role.dailyRate*30*count};
     });
     const total=roles.reduce((sum,role)=>sum+role.count,0);
@@ -136,15 +132,15 @@
   }
   function validate(ctx,cmd,p={}){
     const state=ctx.state||ctx,asset=p.id?find(state,p.id):null;
-    if(['service','assign-route','depart','request-sale','finalize-sale','return-lease','sell'].includes(cmd)&&!asset)return {ok:false,reason:'asset-not-found'};
+    if(['service','assign-route','depart','request-sale','finalize-sale','return-lease','sell','dispose'].includes(cmd)&&!asset)return {ok:false,reason:'asset-not-found'};
     if(cmd==='service'&&asset.phase==='moving')return {ok:false,reason:'asset-moving'};
     return true;
   }
   function execute(ctx,cmd,p={}){
     const state=ctx.state||ctx,asset=p.id?find(state,p.id):null;
     if(cmd==='service'){
-      if(Number(p.cost)>0){const finance=globalThis.GH_FINANCE_CORE;if(!finance?.execute)throw new Error('finance-core-missing');finance.execute({state},'spend',{company:asset.type,amount:Number(p.cost),note:p.note||`صيانة ${asset.name}`,line:'maintenance'});}
-      asset.fuel=100;asset.condition=Math.min(100,(Number(asset.condition)||0)+Math.max(1,Number(p.conditionGain)||6));asset.lastMaintenanceAt=Number(state.simSeconds)||0;return asset;
+      const cost=Math.max(0,Number(p.cost)||0);if(cost>0){const finance=globalThis.GH_FINANCE_CORE;if(!finance?.execute)throw new Error('finance-core-missing');finance.execute({state},'spend',{company:asset.type,amount:cost,note:p.note||`صيانة ${asset.name}`,method:p.method||'تحويل صيانة',line:'maintenance',taxable:p.taxable!==false,counterparty:p.supplier||'شبكة الصيانة المعتمدة'});}
+      asset.fuel=100;asset.condition=100;asset.lastMaintenanceAt=Number(state.simSeconds)||0;asset.lastMaintenanceCost=cost;asset.lastMaintenanceSupplier=p.supplier||'شبكة الصيانة المعتمدة';return asset;
     }
     if(cmd==='assign-route'){
       if(!p.route||p.route.id!==p.routeId||p.route.type!==asset.type||asset.phase==='moving'||(p.phase!=null&&p.phase!=='turnaround')||(p.baseFacility!=null&&p.baseFacility!==asset.baseFacility)||![p.route.fromFacility,p.route.toFacility].includes(asset.baseFacility))throw new Error('route-assignment-contract');
@@ -171,6 +167,13 @@
       globalThis.GH_FINANCE_CORE.execute({state},'credit',{company:asset.type,amount:proceeds,note:`بيع أصل ${asset.name}`,method:'تحويل مشتري',taxable:false,counterparty:p.buyer||'مشتري أصل'});
       const idx=state.assets.findIndex(row=>row.id===asset.id);if(idx<0)throw new Error('asset-not-found');state.assets.splice(idx,1);releaseStaffing(state,asset,'بيع الأصل');
       const corporate=globalThis.GH_CORPORATE_CORE;if(!corporate?.execute)throw new Error('corporate-core-missing');corporate.execute({state},'adjust-group-value',{delta:-proceeds*.18});return {asset,proceeds};
+    }
+    if(cmd==='dispose'){
+      if(asset.phase==='moving'||(asset.phase==='turnaround'&&p.atOwnedCenter===false&&asset.routeId)){
+        asset.salePending=true;asset.saleRequestedAt=Number(state.simSeconds)||0;asset.saleReturnMode='owned-center';asset.saleStatus=asset.phase==='moving'?'finish-current-trip':'returning';if(asset.phase!=='moving')asset.dwellRemaining=0;return {status:'scheduled',asset,proceeds:0,fee:0};
+      }
+      if(asset.ownership==='lease'){const out=execute(ctx,'return-lease',{id:asset.id,fee:Math.max(0,Number(p.fee)||0)});return {status:'returned',asset:out.asset,fee:out.fee,proceeds:0};}
+      const out=execute(ctx,'sell',{id:asset.id,proceeds:p.proceeds,buyer:p.buyer});return {status:'sold',asset:out.asset,proceeds:out.proceeds,fee:0};
     }
     if(cmd==='remap-routes'){for(const row of state.assets||[])if(p.redirect?.[row.routeId])row.routeId=p.redirect[row.routeId];return {remapped:true};}
     if(cmd==='record-delivery'){
