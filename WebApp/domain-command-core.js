@@ -1,10 +1,11 @@
 (()=>{
   'use strict';
-  const VERSION='2.9.1', IDEMPOTENCY_LIMIT=512, IDEMPOTENCY_TTL=7*86400;
+  const VERSION='3.0.0', IDEMPOTENCY_LIMIT=512, IDEMPOTENCY_TTL=7*86400;
   const owners=new Map();
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const now=s=>Number(s?.simSeconds)||0;
   const stable=v=>Array.isArray(v)?`[${v.map(stable).join(',')}]`:v&&typeof v==='object'?`{${Object.keys(v).sort().map(k=>`${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`:JSON.stringify(v);
+  const isManualActor=actor=>!(/^(simulation(?:-|$)|finance-scheduler$|payroll-scheduler$|financial-close$|delivery-engine$|project-commissioning$|banking-read-model$|GH Intelligence$|system(?:-|$)|migration(?:-|$))/i.test(String(actor||'ui')));
   function prune(r,at){
     for(const [key,row] of Object.entries(r.idempotency))if(!row||!Number.isFinite(row.at)||at-row.at>IDEMPOTENCY_TTL||row.at>at||!row.fingerprint)delete r.idempotency[key];
     const keys=Object.keys(r.idempotency).sort((a,b)=>r.idempotency[a].at-r.idempotency[b].at);
@@ -51,20 +52,27 @@
         const r=ensureRuntime(state),cached=key?r.idempotency[scopedKey]:null;
         if(cached){if(cached.fingerprint!==fingerprint)throw new Error('Idempotency payload conflict');return clone(cached.result);}
         id=`DOM-${String(++r.commandSequence).padStart(9,'0')}`;
+        // Snapshot the critical issues that already existed. The gate below must only reject faults
+        // this command actually introduced: a critical inherited from earlier state would otherwise
+        // reject every command in the game forever, with no way for the player to recover.
+        const criticalIds=x=>new Set((((x?.critical)||((x?.issues)||[]).filter(v=>v.severity==='critical'))||[]).map(v=>String(v.id||v.code||v.title)));
+        const preExistingCritical=criticalIds(globalThis.GH_INTEGRITY_CORE?.check?.(state));
         const valid=owner.validate?owner.validate(ctx,name,payload):true;
         if(valid===false||valid?.ok===false)throw new Error(valid?.reason||'validation-rejected');
         const result=owner.execute(ctx,name,clone(payload),{id,domain,startedAt,actor:options.actor||'ui',authority:options.authority||null});
         if(result?.then)throw new Error('Domain result must be synchronous');
         validateContract(domain,name,result,payload);if(owner.validateResult){const resultCheck=owner.validateResult(name,result,payload);if(resultCheck===false||resultCheck?.ok===false)throw new Error('Domain result contract violated: '+domain+':'+name);}
         const wrapped={ok:true,commandId:id,result:result===undefined?null:result};
-        record(state,{id,domain,name,status:'committed',at:startedAt,completedAt:now(state),actor:options.actor||'ui'});
+        const actor=options.actor||'ui';record(state,{id,domain,name,status:'committed',at:startedAt,completedAt:now(state),actor,manual:isManualActor(actor),approvalStatus:isManualActor(actor)?'approved_executed':'system_executed'});
         if(key){r.idempotency[scopedKey]={at:startedAt,fingerprint,result:clone(wrapped)};prune(r,startedAt);}
         globalThis.GH_EVENT_LEDGER?.record?.(state,{type:'DOMAIN_COMMAND_COMMITTED',domain,commandId:id,name,at:now(state),actor:options.actor||'ui'});
         globalThis.GH_CONTROL_PLANE?.evidence?.(state,'DOMAIN_COMMAND_COMMITTED',{commandId:id,domain,name});
         tx.afterCommit(()=>{
           const integrity=globalThis.GH_INTEGRITY_CORE?.check?.(state);
           const critical=integrity?.critical||((integrity?.issues||[]).filter(x=>x.severity==='critical'));
-          if(critical?.length)throw new Error(`Integrity critical after ${domain}:${name}: ${critical.map(x=>x.id||x.code||x.title).join(', ')}`);
+          const introduced=(critical||[]).filter(x=>!preExistingCritical.has(String(x.id||x.code||x.title)));
+          if(introduced.length)throw new Error(`Integrity critical after ${domain}:${name}: ${introduced.map(x=>x.id||x.code||x.title).join(', ')}`);
+          if(critical?.length)globalThis.GH_CONTROL_PLANE?.incident?.(state,{fingerprint:`integrity:pre-existing:${critical.map(x=>x.id||x.code||x.title).sort().join(',')}`,code:'INTEGRITY_CRITICAL_PRE_EXISTING',severity:'critical',domain:'integrity',title:'أعطال حرجة قائمة قبل هذا الأمر',detail:critical.map(x=>x.id||x.code||x.title).join(', '),evidence:{commandId:id,domain,name}});
         },{critical:true,key:'domain-integrity'});
         return wrapped;
       };
@@ -72,13 +80,13 @@
       return out.value;
     }catch(error){
       if(!tx.isActive()){
-        record(state,{id,domain,name,status:'rolled_back',at:startedAt,error:String(error?.message||error)});
+        const actor=options.actor||'ui';record(state,{id,domain,name,status:'rolled_back',at:startedAt,actor,manual:isManualActor(actor),approvalStatus:'cancelled_rolled_back',error:String(error?.message||error)});
         globalThis.GH_CONTROL_PLANE?.incident?.(state,{fingerprint:`domain:${domain}:${name}:${String(error?.message||error)}`,code:'DOMAIN_COMMAND_FAILED',severity:'critical',domain,title:`فشل أمر ${domain}`,detail:String(error?.message||error),evidence:{commandId:id,name}});
       }
       throw error;
     }
   }
   function health(state){const r=ensureRuntime(state);return {schema:r.schema,registered:[...owners.keys()].sort(),commands:r.commands.length,failed:r.commands.filter(x=>x.status==='rolled_back').length};}
-  const API=Object.freeze({VERSION,IDEMPOTENCY_LIMIT,IDEMPOTENCY_TTL,register,dispatch,validateContract,ensureRuntime,health,owners:()=>[...owners.keys()]});
+  const API=Object.freeze({VERSION,IDEMPOTENCY_LIMIT,IDEMPOTENCY_TTL,register,dispatch,validateContract,ensureRuntime,health,isManualActor,owners:()=>[...owners.keys()]});
   globalThis.GH_DOMAIN_COMMANDS=API;if(globalThis.window&&window!==globalThis)window.GH_DOMAIN_COMMANDS=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

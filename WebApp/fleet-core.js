@@ -1,55 +1,200 @@
-(()=>{'use strict';const VERSION='2.9.1';
-function normalizeAsset(asset,context={}){
-    const tpl = context.route;
-    if(tpl){
-      asset.distanceKm = tpl.distanceKm;
-      asset.tripSeconds = tpl.tripSeconds;
-      asset.effectiveSpeedKmh = tpl.effectiveSpeedKmh;
-      asset.dwellHours = tpl.dwellHours;
-      asset.from = asset.reverse ? tpl.to : tpl.from;
-      asset.to = asset.reverse ? tpl.from : tpl.to;
-    }
-    if(!asset.phase)asset.phase = asset.routeId ? 'moving' : 'idle';
-    if(typeof asset.progress !== 'number')asset.progress = 0;
-    if(typeof asset.fuel !== 'number')asset.fuel = 100;
-    if(typeof asset.condition !== 'number')asset.condition = 100;
-    if(!asset.specs){ const item=context.catalogItem; if(item)asset.specs=JSON.parse(JSON.stringify(item.specs)); }
-    if(tpl && asset.specs){
-      const rated = asset.type==='air' ? (asset.specs.speedKmh||tpl.effectiveSpeedKmh)*.9
-        : asset.type==='sea' ? (asset.specs.speedKn||tpl.effectiveSpeedKmh/1.852)*1.852*.88
-        : (asset.specs.speedKmh||tpl.effectiveSpeedKmh)*.76;
-      asset.effectiveSpeedKmh=Math.max(20,Math.min(rated,tpl.effectiveSpeedKmh*1.08));
-      asset.tripSeconds=asset.distanceKm/asset.effectiveSpeedKmh*3600;
-    }
+(()=>{
+  'use strict';
+  const VERSION='3.0.0';
+  const ROLE_DEFAULTS=Object.freeze({
+    pilots:{name:'الطيارون',dailyRate:300},
+    cabin:{name:'طاقم الضيافة',dailyRate:375},
+    aeng:{name:'مهندسو الطيران',dailyRate:375},
+    captains:{name:'قباطنة السفن',dailyRate:320},
+    sailors:{name:'بحارة وملاحون',dailyRate:200},
+    seng:{name:'مهندسو السفن',dailyRate:290},
+    drivers:{name:'سائقو الشاحنات',dailyRate:150},
+    mech:{name:'فنيو الصيانة',dailyRate:170}
+  });
 
-return asset;
-}
-function departDraft(asset,route,{crewReady,load}={}){
- if(asset.phase!=='turnaround')throw new Error('asset-not-ready-to-depart');
- if(!route||route.id!==asset.routeId||route.type!==asset.type||![route.fromFacility,route.toFacility].includes(asset.baseFacility))throw new Error('route-departure-contract');
- if(crewReady!==true)throw new Error('crew-not-ready');
- asset.reverse=asset.baseFacility===route.toFacility;asset.phase='moving';asset.progress=0;asset.dwellRemaining=0;asset.fuel=100;asset.crewBlocked=false;
- asset.from=asset.reverse?route.to:route.from;asset.to=asset.reverse?route.from:route.to;if(load!=null)asset.load=load;return asset;
-}
-function ensure(s){s.assets=Array.isArray(s.assets)?s.assets:[];return s.assets;}
-function find(s,id){return ensure(s).find(a=>a.id===id)||null;}
-function validate(ctx,cmd,p){const s=ctx.state||ctx,a=p.id?find(s,p.id):null;if(['service','assign-route','depart','request-sale','finalize-sale','return-lease','sell'].includes(cmd)&&!a)return {ok:false,reason:'asset-not-found'};if(cmd==='service'&&a.phase==='moving')return {ok:false,reason:'asset-moving'};return true;}
-function execute(ctx,cmd,p){const s=ctx.state||ctx,a=p.id?find(s,p.id):null;if(cmd==='service'){if(Number(p.cost)>0){const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)throw new Error('finance-core-missing');F.execute({state:s},'spend',{company:a.type,amount:Number(p.cost),note:p.note||`صيانة ${a.name}`,line:'maintenance'});}a.fuel=100;a.condition=Math.min(100,(Number(a.condition)||0)+Math.max(1,Number(p.conditionGain)||6));a.lastMaintenanceAt=Number(s.simSeconds)||0;return a;}
-if(cmd==='assign-route'){if(!p.route||p.route.id!==p.routeId||p.route.type!==a.type||a.phase==='moving'||(p.phase!=null&&p.phase!=='turnaround')||(p.baseFacility!=null&&p.baseFacility!==a.baseFacility)||![p.route.fromFacility,p.route.toFacility].includes(a.baseFacility))throw new Error('route-assignment-contract');a.routeId=p.routeId||null;a.baseFacility=p.baseFacility??a.baseFacility;a.phase=p.phase||'turnaround';a.progress=0;a.dwellRemaining=0;if(p.route){const reverse=a.baseFacility===p.route.toFacility;a.reverse=reverse;a.from=reverse?p.route.to:p.route.from;a.to=reverse?p.route.from:p.route.to;}return a;}
-if(cmd==='depart'){const hr=globalThis.GH_HR_CORE;return departDraft(a,p.route,{crewReady:!!hr?.snapshot&&hr.snapshot(s,ctx,a.type).crewMissing===0,load:p.load});}
-if(cmd==='request-sale'){a.salePending=true;a.saleRequestedAt=Number(s.simSeconds)||0;a.saleReturnMode=p.returnMode||'owned-center';a.saleStatus=a.phase==='moving'?'finish-current-trip':'returning';if(a.phase!=='moving'&&p.clearRoute){a.routeId=null;a.phase=p.phase||'idle';a.progress=0;a.dwellRemaining=0;}else if(a.phase!=='moving'&&p.departSoon)a.dwellRemaining=0;return a;}
-if(cmd==='finalize-sale'){if(a.phase==='moving')throw new Error('asset-moving');const idx=s.assets.findIndex(x=>x.id===a.id);if(idx<0)return false;s.assets.splice(idx,1);return a;}
-if(cmd==='return-lease'){if(a.phase==='moving')throw new Error('asset-moving');const fee=Math.max(0,Number(p.fee)||0);if(fee&&!globalThis.GH_FINANCE_CORE?.execute)throw new Error('finance-core-missing');if(fee)globalThis.GH_FINANCE_CORE.execute({state:s},'spend',{company:a.type,amount:fee,note:`رسوم إنهاء تأجير ${a.name}`,method:'تحويل بنكي',taxable:false,line:'capex'});s.leasedAssets=Array.isArray(s.leasedAssets)?s.leasedAssets:[];s.leasedAssets=s.leasedAssets.filter(x=>x!==a.id);const idx=s.assets.findIndex(x=>x.id===a.id);if(idx<0)throw new Error('asset-not-found');s.assets.splice(idx,1);return {asset:a,fee};}
-if(cmd==='sell'){if(a.phase==='moving')throw new Error('asset-moving');const proceeds=Math.max(0,Number(p.proceeds)||0);if(proceeds<=0)throw new Error('invalid-sale-proceeds');if(!globalThis.GH_FINANCE_CORE?.execute)throw new Error('finance-core-missing');globalThis.GH_FINANCE_CORE.execute({state:s},'credit',{company:a.type,amount:proceeds,note:`بيع أصل ${a.name}`,method:'تحويل مشتري',taxable:false,counterparty:p.buyer||'مشتري أصل'});const idx=s.assets.findIndex(x=>x.id===a.id);if(idx<0)throw new Error('asset-not-found');s.assets.splice(idx,1);const C=globalThis.GH_CORPORATE_CORE;if(!C?.execute)throw new Error('corporate-core-missing');C.execute({state:s},'adjust-group-value',{delta:-proceeds*.18});return {asset:a,proceeds};}
-if(cmd==='remap-routes'){for(const a of s.assets||[])if(p.redirect?.[a.routeId])a.routeId=p.redirect[a.routeId];return {remapped:true};}
-if(cmd==='record-delivery'){
- if(!p.asset||!p.baseId||!p.deliveryId)throw new Error('delivery-contract');
- const d=s.realism?.procurement?.deliveries?.find(x=>x.id===p.deliveryId),base=[...(s.globalBases||[]),...(s.customHubs||[])].find(f=>f.id===p.baseId);
- if(!d||d.status!=='pending'||d.asset?.id!==p.asset.id||d.baseId!==p.baseId||!base?.owned||base.company!==p.asset.type)throw new Error('delivery-destination-contract');
- const pay=d.payment,doc=pay?.kind==='invoice'?s.finance?.invoices?.find(x=>x.number===pay.ref):s.finance?.cheques?.find(x=>x.id===pay?.ref);
- if(!doc||!['مدفوعة','مسددة','مصروف'].includes(doc.status)||doc.company!==p.asset.type||Number(doc.amount)<Number(pay.amount))throw new Error('delivery-payment-unverified');
- const cap=Number(s.advanced?.facilities?.[p.baseId]?.capacity)||(['airport-base'].includes(base.kind)?24:base.kind==='port-base'?18:Number(base.bays)||42);
- if((s.assets||[]).filter(x=>x.baseFacility===p.baseId).length>=cap)throw new Error('delivery-base-full');
-const asset={...p.asset,deliveryOrderId:p.deliveryId,requestRef:d.requestRef,paymentRef:pay.ref,baseFacility:p.baseId,phase:p.phase||'idle',routeId:null,progress:0,fuel:100,deliveryStatus:'delivered',deliveredDay:p.deliveredDay,deliveredAtSeconds:p.deliveredAtSeconds};if(s.assets.some(x=>x.id===asset.id))throw new Error('duplicate-asset-id');s.assets.push(asset);if(asset.ownership==='lease'){s.leasedAssets=Array.isArray(s.leasedAssets)?s.leasedAssets:[];if(!s.leasedAssets.includes(asset.id))s.leasedAssets.push(asset.id);}return asset;}
-throw new Error(`Unknown fleet command: ${cmd}`);}
-const API={VERSION,normalizeAsset,departDraft,ensure,find,validate,execute};globalThis.GH_FLEET_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('fleet',API);if(globalThis.window&&window!==globalThis)window.GH_FLEET_CORE=API;})();
+  const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
+  const simDay=state=>Math.floor((Number(state?.simSeconds)||0)/86400);
+  function nextId(state,prefix){
+    state.sequences=state.sequences&&typeof state.sequences==='object'?state.sequences:{};
+    const key=`fleetCore_${prefix}`;
+    state.sequences[key]=(Number(state.sequences[key])||0)+1;
+    return `${prefix}-${String(state.sequences[key]).padStart(7,'0')}`;
+  }
+  function ensure(state){state.assets=Array.isArray(state.assets)?state.assets:[];return state.assets;}
+  function find(state,id){return ensure(state).find(asset=>asset.id===id)||null;}
+  function crewRole(id){const fixed=ROLE_DEFAULTS[id]||{name:id,dailyRate:0};return {id,name:fixed.name,dailyRate:fixed.dailyRate};}
+  function staffingPlan(asset){
+    let counts={};
+    if(asset?.type==='air'){
+      counts={pilots:4,cabin:6,aeng:2};
+    }else if(asset?.type==='sea'){
+      counts={captains:2,sailors:14,seng:4};
+    }else if(asset?.type==='road'){
+      counts={drivers:2,mech:1};
+    }else{
+      throw new Error('asset-staffing-type-unsupported');
+    }
+    const roles=Object.entries(counts).filter(([,count])=>count>0).map(([id,count])=>{
+      const role=crewRole(id);
+      return {...role,count,monthlyPayroll:role.dailyRate*30*count};
+    });
+    const total=roles.reduce((sum,role)=>sum+role.count,0);
+    const monthlyPayroll=roles.reduce((sum,role)=>sum+role.monthlyPayroll,0);
+    if(!total||!Number.isFinite(monthlyPayroll))throw new Error('asset-staffing-plan-invalid');
+    return {mode:'automatic-fixed',ready:true,roles,total,monthlyPayroll};
+  }
+  function laborLedger(state){
+    state.advanced=state.advanced||{};
+    const labor=state.advanced.labor=state.advanced.labor&&typeof state.advanced.labor==='object'?state.advanced.labor:{};
+    labor.employmentContracts=Array.isArray(labor.employmentContracts)?labor.employmentContracts:[];
+    labor.hiringLog=Array.isArray(labor.hiringLog)?labor.hiringLog:[];
+    return labor;
+  }
+  function synchronizeCrew(state){
+    state.crew=Array.isArray(state.crew)?state.crew:[];
+    for(const id of Object.keys(ROLE_DEFAULTS)){
+      let saved=state.crew.find(role=>role.id===id);
+      if(!saved){const fallback=ROLE_DEFAULTS[id];saved={id,sector:['pilots','cabin','aeng'].includes(id)?'air':['captains','sailors','seng'].includes(id)?'sea':'road',name:fallback.name,count:0,salaryMin:fallback.dailyRate,salaryMax:fallback.dailyRate,morale:90};state.crew.push(saved);}
+      saved.count=0;
+    }
+    for(const asset of ensure(state)){
+      if(asset.staffing?.mode!=='automatic-fixed'||asset.staffing.ready!==true)continue;
+      for(const role of asset.staffing.roles||[]){const saved=state.crew.find(row=>row.id===role.id);if(saved)saved.count=(Number(saved.count)||0)+(Number(role.count)||0);}
+    }
+    return state.crew;
+  }
+  function provisionStaffing(state,asset,base){
+    if(asset.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true){synchronizeCrew(state);return asset.staffing;}
+    const plan=staffingPlan(asset,state),labor=laborLedger(state),contractId=nextId(state,'EMP-AUTO');
+    const center=base?.name||asset.baseLocation||asset.baseFacility||'المركز التشغيلي';
+    const contract={
+      id:contractId,company:asset.type,assetId:asset.id,name:`طاقم ثابت · ${asset.name}`,
+      role:'طاقم تشغيلي مرتبط بالأصل',count:plan.total,center,salary:plan.monthlyPayroll,
+      startDay:simDay(state),termMonths:1200,status:'ساري',source:'توظيف آلي ثابت عند شراء الأصل',
+      automaticAssetStaffing:true,permanent:true,roles:clone(plan.roles)
+    };
+    labor.employmentContracts.unshift(contract);
+    labor.hiringLog.unshift({id:nextId(state,'HR-AUTO'),at:Number(state.simSeconds)||0,company:asset.type,source:'توظيف أصل آلي ثابت',assetId:asset.id,total:plan.total,monthlyPayroll:plan.monthlyPayroll,coverageBefore:100,coverageAfter:100});
+    labor.hiringLog=labor.hiringLog.slice(0,200);
+    asset.staffing={...plan,contractId,provisionedAt:Number(state.simSeconds)||0,center};
+    asset.crewBlocked=false;
+    synchronizeCrew(state);
+    return asset.staffing;
+  }
+  function releaseStaffing(state,asset,reason){
+    const contract=laborLedger(state).employmentContracts.find(row=>row.id===asset?.staffing?.contractId);
+    if(contract&&contract.status==='ساري'){contract.status='منتهي';contract.endedDay=simDay(state);contract.endReason=reason||'خروج الأصل من الملكية';}
+    if(asset?.staffing){asset.staffing.ready=false;asset.staffing.releasedAt=Number(state.simSeconds)||0;}
+    synchronizeCrew(state);
+  }
+  function reconcileStaffing(state,facilityResolver){
+    let provisioned=0;
+    for(const asset of ensure(state)){
+      if(!['air','sea','road'].includes(asset.type))continue;
+      if(asset.deliveryStatus==='pending'||asset.phase==='delivery')continue;
+      if(asset.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true)continue;
+      const base=typeof facilityResolver==='function'?facilityResolver(asset.baseFacility):null;
+      provisionStaffing(state,asset,base);provisioned++;
+    }
+    synchronizeCrew(state);
+    return provisioned;
+  }
+  function monthlyPayroll(state,company='all'){
+    return ensure(state).filter(asset=>asset.staffing?.ready===true&&(company==='all'||asset.type===company)).reduce((sum,asset)=>sum+(Number(asset.staffing.monthlyPayroll)||0),0);
+  }
+  function headcount(state,company='all'){
+    return ensure(state).filter(asset=>asset.staffing?.ready===true&&(company==='all'||asset.type===company)).reduce((sum,asset)=>sum+(Number(asset.staffing.total)||0),0);
+  }
+
+  function normalizeAsset(asset,context={}){
+    const tpl=context.route;
+    if(tpl){
+      asset.distanceKm=tpl.distanceKm;asset.tripSeconds=tpl.tripSeconds;asset.effectiveSpeedKmh=tpl.effectiveSpeedKmh;asset.dwellHours=tpl.dwellHours;
+      asset.from=asset.reverse?tpl.to:tpl.from;asset.to=asset.reverse?tpl.from:tpl.to;
+    }
+    if(!asset.phase)asset.phase=asset.routeId?'moving':'idle';
+    if(typeof asset.progress!=='number')asset.progress=0;
+    if(typeof asset.fuel!=='number')asset.fuel=100;
+    if(typeof asset.condition!=='number')asset.condition=100;
+    if(!asset.specs){const item=context.catalogItem;if(item)asset.specs=clone(item.specs);}
+    if(tpl&&asset.specs){
+      const rated=asset.type==='air'?(asset.specs.speedKmh||tpl.effectiveSpeedKmh)*.9:asset.type==='sea'?(asset.specs.speedKn||tpl.effectiveSpeedKmh/1.852)*1.852*.88:(asset.specs.speedKmh||tpl.effectiveSpeedKmh)*.76;
+      asset.effectiveSpeedKmh=Math.max(20,Math.min(rated,tpl.effectiveSpeedKmh*1.08));asset.tripSeconds=asset.distanceKm/asset.effectiveSpeedKmh*3600;
+    }
+    return asset;
+  }
+  function departDraft(asset,route,{crewReady,load}={}){
+    if(asset.phase!=='turnaround')throw new Error('asset-not-ready-to-depart');
+    if(!route||route.id!==asset.routeId||route.type!==asset.type||![route.fromFacility,route.toFacility].includes(asset.baseFacility))throw new Error('route-departure-contract');
+    if(crewReady!==true||asset.staffing?.ready!==true)throw new Error('asset-fixed-crew-not-ready');
+    asset.reverse=asset.baseFacility===route.toFacility;asset.phase='moving';asset.progress=0;asset.dwellRemaining=0;asset.fuel=100;asset.crewBlocked=false;
+    asset.from=asset.reverse?route.to:route.from;asset.to=asset.reverse?route.from:route.to;if(load!=null)asset.load=load;return asset;
+  }
+  function validate(ctx,cmd,p={}){
+    const state=ctx.state||ctx,asset=p.id?find(state,p.id):null;
+    if(['service','assign-route','depart','request-sale','finalize-sale','return-lease','sell','dispose'].includes(cmd)&&!asset)return {ok:false,reason:'asset-not-found'};
+    if(cmd==='service'&&asset.phase==='moving')return {ok:false,reason:'asset-moving'};
+    return true;
+  }
+  function execute(ctx,cmd,p={}){
+    const state=ctx.state||ctx,asset=p.id?find(state,p.id):null;
+    if(cmd==='service'){
+      const cost=Math.max(0,Number(p.cost)||0);if(cost>0){const finance=globalThis.GH_FINANCE_CORE;if(!finance?.execute)throw new Error('finance-core-missing');finance.execute({state},'spend',{company:asset.type,amount:cost,note:p.note||`صيانة ${asset.name}`,method:p.method||'تحويل صيانة',line:'maintenance',taxable:p.taxable!==false,counterparty:p.supplier||'شبكة الصيانة المعتمدة'});}
+      asset.fuel=100;asset.condition=100;asset.lastMaintenanceAt=Number(state.simSeconds)||0;asset.lastMaintenanceCost=cost;asset.lastMaintenanceSupplier=p.supplier||'شبكة الصيانة المعتمدة';return asset;
+    }
+    if(cmd==='assign-route'){
+      if(!p.route||p.route.id!==p.routeId||p.route.type!==asset.type||asset.phase==='moving'||(p.phase!=null&&p.phase!=='turnaround')||(p.baseFacility!=null&&p.baseFacility!==asset.baseFacility)||![p.route.fromFacility,p.route.toFacility].includes(asset.baseFacility))throw new Error('route-assignment-contract');
+      asset.routeId=p.routeId||null;asset.baseFacility=p.baseFacility??asset.baseFacility;asset.phase=p.phase||'turnaround';asset.progress=0;asset.dwellRemaining=0;
+      const reverse=asset.baseFacility===p.route.toFacility;asset.reverse=reverse;asset.from=reverse?p.route.to:p.route.from;asset.to=reverse?p.route.from:p.route.to;return asset;
+    }
+    if(cmd==='depart')return departDraft(asset,p.route,{crewReady:asset.staffing?.ready===true,load:p.load});
+    if(cmd==='request-sale'){
+      asset.salePending=true;asset.saleRequestedAt=Number(state.simSeconds)||0;asset.saleReturnMode=p.returnMode||'owned-center';asset.saleStatus=asset.phase==='moving'?'finish-current-trip':'returning';
+      if(asset.phase!=='moving'&&p.clearRoute){asset.routeId=null;asset.phase=p.phase||'idle';asset.progress=0;asset.dwellRemaining=0;}else if(asset.phase!=='moving'&&p.departSoon)asset.dwellRemaining=0;
+      return asset;
+    }
+    if(cmd==='finalize-sale'){
+      if(asset.phase==='moving')throw new Error('asset-moving');const idx=state.assets.findIndex(row=>row.id===asset.id);if(idx<0)return false;state.assets.splice(idx,1);releaseStaffing(state,asset,'بيع الأصل');return asset;
+    }
+    if(cmd==='return-lease'){
+      if(asset.phase==='moving')throw new Error('asset-moving');const fee=Math.max(0,Number(p.fee)||0);if(fee&&!globalThis.GH_FINANCE_CORE?.execute)throw new Error('finance-core-missing');
+      if(fee)globalThis.GH_FINANCE_CORE.execute({state},'spend',{company:asset.type,amount:fee,note:`رسوم إنهاء تأجير ${asset.name}`,method:'تحويل بنكي',taxable:false,line:'capex'});
+      state.leasedAssets=Array.isArray(state.leasedAssets)?state.leasedAssets:[];state.leasedAssets=state.leasedAssets.filter(id=>id!==asset.id);
+      const idx=state.assets.findIndex(row=>row.id===asset.id);if(idx<0)throw new Error('asset-not-found');state.assets.splice(idx,1);releaseStaffing(state,asset,'إعادة أصل مؤجر');return {asset,fee};
+    }
+    if(cmd==='sell'){
+      if(asset.phase==='moving')throw new Error('asset-moving');const proceeds=Math.max(0,Number(p.proceeds)||0);if(proceeds<=0)throw new Error('invalid-sale-proceeds');if(!globalThis.GH_FINANCE_CORE?.execute)throw new Error('finance-core-missing');
+      globalThis.GH_FINANCE_CORE.execute({state},'credit',{company:asset.type,amount:proceeds,note:`بيع أصل ${asset.name}`,method:'تحويل مشتري',taxable:false,counterparty:p.buyer||'مشتري أصل'});
+      const idx=state.assets.findIndex(row=>row.id===asset.id);if(idx<0)throw new Error('asset-not-found');state.assets.splice(idx,1);releaseStaffing(state,asset,'بيع الأصل');
+      const corporate=globalThis.GH_CORPORATE_CORE;if(!corporate?.execute)throw new Error('corporate-core-missing');corporate.execute({state},'adjust-group-value',{delta:-proceeds*.18});return {asset,proceeds};
+    }
+    if(cmd==='dispose'){
+      if(asset.phase==='moving'||(asset.phase==='turnaround'&&p.atOwnedCenter===false&&asset.routeId)){
+        asset.salePending=true;asset.saleRequestedAt=Number(state.simSeconds)||0;asset.saleReturnMode='owned-center';asset.saleStatus=asset.phase==='moving'?'finish-current-trip':'returning';if(asset.phase!=='moving')asset.dwellRemaining=0;return {status:'scheduled',asset,proceeds:0,fee:0};
+      }
+      if(asset.ownership==='lease'){const out=execute(ctx,'return-lease',{id:asset.id,fee:Math.max(0,Number(p.fee)||0)});return {status:'returned',asset:out.asset,fee:out.fee,proceeds:0};}
+      const out=execute(ctx,'sell',{id:asset.id,proceeds:p.proceeds,buyer:p.buyer});return {status:'sold',asset:out.asset,proceeds:out.proceeds,fee:0};
+    }
+    if(cmd==='remap-routes'){for(const row of state.assets||[])if(p.redirect?.[row.routeId])row.routeId=p.redirect[row.routeId];return {remapped:true};}
+    if(cmd==='record-delivery'){
+      if(!p.asset||!p.baseId||!p.deliveryId)throw new Error('delivery-contract');
+      const delivery=state.realism?.procurement?.deliveries?.find(row=>row.id===p.deliveryId);
+      const base=[...(state.globalBases||[]),...(state.customHubs||[])].find(facility=>facility.id===p.baseId);
+      if(!delivery||delivery.status!=='pending'||delivery.asset?.id!==p.asset.id||delivery.baseId!==p.baseId||!base?.owned||base.company!==p.asset.type)throw new Error('delivery-destination-contract');
+      const payment=delivery.payment,document=payment?.kind==='invoice'?state.finance?.invoices?.find(row=>row.number===payment.ref):state.finance?.cheques?.find(row=>row.id===payment?.ref);
+      if(!document||!['مدفوعة','مسددة','مصروف'].includes(document.status)||document.company!==p.asset.type||Number(document.amount)<Number(payment.amount))throw new Error('delivery-payment-unverified');
+      const capacity=Number(state.advanced?.facilities?.[p.baseId]?.capacity)||(base.kind==='airport-base'?24:base.kind==='port-base'?18:Number(base.bays)||42);
+      if((state.assets||[]).filter(row=>row.baseFacility===p.baseId).length>=capacity)throw new Error('delivery-base-full');
+      const delivered={...p.asset,deliveryOrderId:p.deliveryId,requestRef:delivery.requestRef,paymentRef:payment.ref,baseFacility:p.baseId,phase:p.phase||'idle',routeId:null,progress:0,fuel:100,deliveryStatus:'delivered',deliveredDay:p.deliveredDay,deliveredAtSeconds:p.deliveredAtSeconds};
+      if(state.assets.some(row=>row.id===delivered.id))throw new Error('duplicate-asset-id');
+      state.assets.push(delivered);
+      provisionStaffing(state,delivered,base);
+      if(delivered.ownership==='lease'){state.leasedAssets=Array.isArray(state.leasedAssets)?state.leasedAssets:[];if(!state.leasedAssets.includes(delivered.id))state.leasedAssets.push(delivered.id);}
+      return delivered;
+    }
+    if(cmd==='reconcile-staffing')return reconcileStaffing(state,p.facilityResolver);
+    throw new Error(`Unknown fleet command: ${cmd}`);
+  }
+  const API={VERSION,ROLE_DEFAULTS,normalizeAsset,departDraft,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,monthlyPayroll,headcount};
+  globalThis.GH_FLEET_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('fleet',API);if(globalThis.window&&window!==globalThis)window.GH_FLEET_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+})();

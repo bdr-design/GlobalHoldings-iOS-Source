@@ -13,12 +13,15 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
     private var pendingIncomingUpdateURL: URL?
     private var pendingSaveJSON: String?
     private var pendingNativeUpdate: GlobalGameStorage.AppliedUpdate?
-    private var updateStateCommittedVersion: String?
+    private var updateStateCommittedIdentity: String?
     private var updateStateSaveGeneration: Int?
-    private var updateBootConfirmedVersion: String?
-    private var operationsApplyingVersion: String?
+    private var updateBootConfirmedIdentity: String?
+    private var operationsApplyingIdentity: String?
     private var preUpdateSaveGeneration: Int = 0
     private var recoveredWebProcess = false
+    private var backgroundSaveTask: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundSaveInFlight = false
+    private var backgroundSaveToken: UInt = 0
 
     override func loadView() {
         let configuration = WKWebViewConfiguration()
@@ -69,6 +72,40 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         }
     }
 
+    /// Gives the existing browser -> Native persistence pipeline enough time to
+    /// flush its newest revision when iOS backgrounds the app. The JavaScript
+    /// side waits for the authenticated Native Save Vault acknowledgement before
+    /// this finite task is ended; expiration always releases the task as well.
+    func persistStateForBackground(_ application: UIApplication) {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in self?.persistStateForBackground(application) }
+            return
+        }
+        guard !backgroundSaveInFlight, isViewLoaded, webView?.url != nil else { return }
+        backgroundSaveInFlight = true
+        backgroundSaveToken &+= 1
+        let token = backgroundSaveToken
+        backgroundSaveTask = application.beginBackgroundTask(withName: "GlobalHoldings.Save") { [weak self] in
+            DispatchQueue.main.async { self?.finishBackgroundSaveTask(application, token: token) }
+        }
+        webView.callAsyncJavaScript(
+            "return await window.GH_RUNTIME?.persistForBackground?.();",
+            arguments: [:],
+            in: nil,
+            in: .page
+        ) { [weak self] _ in
+            DispatchQueue.main.async { self?.finishBackgroundSaveTask(application, token: token) }
+        }
+    }
+
+    private func finishBackgroundSaveTask(_ application: UIApplication, token: UInt) {
+        guard backgroundSaveInFlight, token == backgroundSaveToken else { return }
+        backgroundSaveInFlight = false
+        let task = backgroundSaveTask
+        backgroundSaveTask = .invalid
+        if task != .invalid { application.endBackgroundTask(task) }
+    }
+
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
         coordinator.animate(alongsideTransition: nil) { [weak self] _ in
@@ -98,7 +135,12 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         subtitle.numberOfLines = 3
 
         let version = UILabel()
-        version.text = "محتوى اللعبة: \(GlobalGameStorage.shared.currentVersion)"
+        let storage = GlobalGameStorage.shared
+        let installedNote = storage.installedBuild > 0 && storage.installedBuild != storage.bundledBuild
+            ? " ⚠︎ مثبّت فعليًا BUILD\(storage.installedBuild) (لم تُستبدل بعد بـ BUILD\(storage.bundledBuild))"
+            : ""
+        version.text = "محتوى اللعبة: \(storage.currentVersion) · BUILD\(storage.bundledBuild)\(installedNote)"
+        version.numberOfLines = 2
         version.textColor = UIColor(red: 0.15, green: 0.84, blue: 0.74, alpha: 1)
         version.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         version.textAlignment = .center
@@ -278,10 +320,19 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
 
     private func preparePendingUpdate(_ update: GlobalGameStorage.AppliedUpdate) {
         pendingNativeUpdate = update
-        updateStateCommittedVersion = nil
+        updateStateCommittedIdentity = nil
         updateStateSaveGeneration = nil
-        updateBootConfirmedVersion = nil
-        operationsApplyingVersion = nil
+        updateBootConfirmedIdentity = nil
+        operationsApplyingIdentity = nil
+    }
+
+    private func updateIdentity(version: String, build: Int) -> String { "\(version)#\(build)" }
+
+    private func payloadInteger(_ value: Any?) -> Int? {
+        if let number = value as? NSNumber { return number.intValue }
+        if let value = value as? Int { return value }
+        if let value = value as? String { return Int(value) }
+        return nil
     }
 
     @objc private func confirmRestorePreviousVersion() {
@@ -379,9 +430,11 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
             }
         case "commitUpdateState":
             guard let version = payload["version"] as? String,
+                  let build = payloadInteger(payload["build"]), build >= 0,
                   let save = payload["saveJSON"] as? String,
-                  pendingNativeUpdate?.version == version else {
-                reportToWeb(success: false, message: "رفض Native اعتماد حالة تحديث غير مطابقة للإصدار المعلق.")
+                  pendingNativeUpdate?.version == version,
+                  pendingNativeUpdate?.build == build else {
+                reportToWeb(success: false, message: "رفض Native اعتماد حالة تحديث غير مطابقة للإصدار/Build المعلق.")
                 return
             }
             GlobalSaveVault.shared.commitAsync(save, runtimeVersion: version) { [weak self] result in
@@ -389,12 +442,12 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                 switch result {
                 case .success(let generation):
                     do {
-                        try GlobalGameStorage.shared.markUpdateStateCommitted(version: version, saveGeneration: generation)
-                        self.updateStateCommittedVersion = version
+                        try GlobalGameStorage.shared.markUpdateStateCommitted(version: version, build: build, saveGeneration: generation)
+                        self.updateStateCommittedIdentity = self.updateIdentity(version: version, build: build)
                         self.updateStateSaveGeneration = generation
-                        self.operationsApplyingVersion = nil
+                        self.operationsApplyingIdentity = nil
                         self.reportUpdateLifecycle(phase: "STATE_COMMITTED", version: version, message: "Save generation \(generation)")
-                        self.tryFinalizeNativeUpdate(version: version)
+                        self.tryFinalizeNativeUpdate(version: version, build: build)
                     } catch {
                         self.reportToWeb(success: false, message: error.localizedDescription)
                         self.rollbackFailedUpdate(reason: "update-journal-state-commit-failed")
@@ -405,6 +458,9 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                 }
             }
         case "updateOperationsFailed":
+            guard let pending = pendingNativeUpdate,
+                  payload["version"] as? String == pending.version,
+                  payloadInteger(payload["build"]) == pending.build else { return }
             rollbackFailedUpdate(reason: payload["message"] as? String ?? "operations-failed")
         case "rollbackWebPack":
             rollbackFailedUpdate(reason: payload["reason"] as? String ?? "web-requested-rollback")
@@ -412,7 +468,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
             openUpdatePicker()
         case "confirmUpdateBoot":
             guard let version = payload["version"] as? String else { return }
-            confirmNativeUpdateBoot(version: version)
+            confirmNativeUpdateBoot(version: version, build: payloadInteger(payload["build"]))
         case "resetGameSave":
             guard let cleanSave = payload["saveJSON"] as? String, validSaveEnvelope(payload, json: cleanSave) else {
                 reportSaveAck(payload: payload, success: false, generation: nil, message: "Invalid reset envelope.")
@@ -434,11 +490,18 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         }
     }
 
-    private func confirmNativeUpdateBoot(version: String) {
-        if pendingNativeUpdate?.version == version {
-            updateBootConfirmedVersion = version
+    private func confirmNativeUpdateBoot(version: String, build: Int?) {
+        if let pending = pendingNativeUpdate, pending.version == version {
+            // Legacy v2 packages signed semantic version but not Build. Their
+            // native identity is therefore Build 0; v3 requires an exact match.
+            guard pending.build == 0 || build == pending.build else {
+                rollbackFailedUpdate(reason: "boot-confirm-build-mismatch")
+                return
+            }
+            let identity = updateIdentity(version: version, build: pending.build)
+            updateBootConfirmedIdentity = identity
             reportUpdateLifecycle(phase: "BOOT_CONFIRMED", version: version)
-            tryFinalizeNativeUpdate(version: version)
+            tryFinalizeNativeUpdate(version: version, build: pending.build)
             return
         }
         // Bundled IPA baseline promotion has no .saneiupdate operations object,
@@ -446,7 +509,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         // bootstrap confirmation before the runtime swap becomes final.
         DispatchQueue.global(qos: .utility).async { [weak self] in
             do {
-                let confirmed = try GlobalGameStorage.shared.confirmCurrentUpdateBoot(version: version)
+                let confirmed = try GlobalGameStorage.shared.confirmCurrentUpdateBoot(version: version, build: build)
                 if confirmed { DispatchQueue.main.async { self?.reportUpdateLifecycle(phase: "BOOT_CONFIRMED", version: version) } }
             } catch {
                 DispatchQueue.main.async { self?.rollbackFailedUpdate(reason: "bundled-baseline-boot-confirm-failed") }
@@ -454,27 +517,28 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         }
     }
 
-    private func tryFinalizeNativeUpdate(version: String) {
-        guard updateStateCommittedVersion == version,
-              updateBootConfirmedVersion == version,
+    private func tryFinalizeNativeUpdate(version: String, build: Int) {
+        let identity = updateIdentity(version: version, build: build)
+        guard updateStateCommittedIdentity == identity,
+              updateBootConfirmedIdentity == identity,
               updateStateSaveGeneration != nil else { return }
-        finalizeNativeUpdate(version: version)
+        finalizeNativeUpdate(version: version, build: build)
     }
 
-    private func finalizeNativeUpdate(version: String) {
+    private func finalizeNativeUpdate(version: String, build: Int) {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             do {
-                let confirmed = try GlobalGameStorage.shared.confirmCurrentUpdateBoot(version: version)
+                let confirmed = try GlobalGameStorage.shared.confirmCurrentUpdateBoot(version: version, build: build)
                 DispatchQueue.main.async {
                     guard confirmed, let self else { return }
                     self.pendingNativeUpdate = nil
                     self.pendingSaveJSON = nil
-                    self.updateStateCommittedVersion = nil
+                    self.updateStateCommittedIdentity = nil
                     self.updateStateSaveGeneration = nil
-                    self.updateBootConfirmedVersion = nil
-                    self.operationsApplyingVersion = nil
+                    self.updateBootConfirmedIdentity = nil
+                    self.operationsApplyingIdentity = nil
                     self.reportUpdateLifecycle(phase: "FINALIZED", version: version)
-                    self.reportToWeb(success: true, message: "تم تثبيت الإصدار \(version) واعتماد العمليات والحفظ الدائم بنجاح.")
+                    self.reportToWeb(success: true, message: "تم تثبيت الإصدار \(version) Build \(build) واعتماد العمليات والحفظ الدائم بنجاح.")
                 }
             } catch {
                 DispatchQueue.main.async { [weak self] in
@@ -515,7 +579,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                     // Apply update operations only from the newly staged runtime,
                     // not from the page that requested its own replacement.
                     self?.preparePendingUpdate(update)
-                    self?.loadGame(cacheBuster: update.version)
+                    self?.loadGame(cacheBuster: "\(update.version)-build\(update.build)-\(UUID().uuidString)")
                 }
             } catch {
                 DispatchQueue.main.async { [weak self] in
@@ -566,8 +630,9 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
 
     private func applyPendingNativeOperationsIfNeeded() {
         guard let update = pendingNativeUpdate else { return }
-        guard operationsApplyingVersion != update.version, updateStateCommittedVersion != update.version else { return }
-        operationsApplyingVersion = update.version
+        let identity = updateIdentity(version: update.version, build: update.build)
+        guard operationsApplyingIdentity != identity, updateStateCommittedIdentity != identity else { return }
+        operationsApplyingIdentity = identity
         reportUpdateLifecycle(phase: "OPERATIONS_STARTED", version: update.version)
         guard JSONSerialization.isValidJSONObject(update.webPayload),
               let data = try? JSONSerialization.data(withJSONObject: update.webPayload),
@@ -577,6 +642,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
             return
         }
         let version = update.version.replacingOccurrences(of: "'", with: "\\'")
+        let build = update.build
         let script = """
         (()=>{
           const b=Uint8Array.from(atob('\(encoded)'),c=>c.charCodeAt(0));
@@ -586,15 +652,15 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
             if(integrity&&integrity.status==='critical') throw new Error('Critical integrity failure after update operations: '+JSON.stringify(integrity.counts||{}));
             const save=localStorage.getItem('global-holdings-world-v2.0.0');
             if(!save) throw new Error('Durable update save payload missing');
-            window.webkit?.messageHandlers?.updateBridge?.postMessage({action:'commitUpdateState',version:'\(version)',saveJSON:save});
+            window.webkit?.messageHandlers?.updateBridge?.postMessage({action:'commitUpdateState',version:'\(version)',build:\(build),saveJSON:save});
           }).catch(error=>{
-            window.webkit?.messageHandlers?.updateBridge?.postMessage({action:'updateOperationsFailed',version:'\(version)',message:String(error?.message||error)});
+            window.webkit?.messageHandlers?.updateBridge?.postMessage({action:'updateOperationsFailed',version:'\(version)',build:\(build),message:String(error?.message||error)});
           });
         })();
         """
         webView.evaluateJavaScript(script) { [weak self] _, error in
             if let error {
-                self?.operationsApplyingVersion = nil
+                self?.operationsApplyingIdentity = nil
                 self?.rollbackFailedUpdate(reason: "native-operation-launch-failed: \(error.localizedDescription)")
             }
         }
@@ -605,10 +671,10 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         do {
             let restoredVersion = try GlobalGameStorage.shared.rollbackPendingUpdate(reason: reason)
             pendingNativeUpdate = nil
-            updateStateCommittedVersion = nil
+            updateStateCommittedIdentity = nil
             updateStateSaveGeneration = nil
-            updateBootConfirmedVersion = nil
-            operationsApplyingVersion = nil
+            updateBootConfirmedIdentity = nil
+            operationsApplyingIdentity = nil
             pendingSaveJSON = nil
             reportUpdateLifecycle(phase: "ROLLED_BACK", version: restoredVersion, message: reason)
             reportToWeb(success: false, message: "تم إلغاء التحديث واستعادة النسخة السابقة بسبب فشل وقائي: \(reason)")

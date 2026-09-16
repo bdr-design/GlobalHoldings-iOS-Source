@@ -14,6 +14,7 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
     await installMapFixture(page);
     await context.tracing.start({screenshots:true,snapshots:true});
     page.on('pageerror', error => issues.push(`${name}: ${error.message}`));
+    page.on('dialog', dialog => dialog.accept());
     page.on('console', message => {
       if (message.type() === 'error' && !expectedNetworkError(message)) {
         issues.push(`${name}: console ${message.text()}`);
@@ -21,8 +22,12 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
     });
 
     await page.goto(server.baseURL, {waitUntil: 'domcontentloaded'});
-    await page.locator('#skipFounder').waitFor({state: 'visible', timeout: 10000});
-    await page.click('#skipFounder');
+    // Use the funded sandbox profile so the QA suite can exercise every
+    // subsidiary (including the deliberately large GH Mobility launch) without
+    // turning on God Mode or depending on a persisted browser profile.
+    await page.locator('#founderMode').waitFor({state: 'visible', timeout: 10000});
+    await page.selectOption('#founderMode', 'sandbox');
+    await page.locator('#founderForm button[type="submit"]').click();
     await page.waitForTimeout(800);
     return {context, page};
   }
@@ -71,27 +76,50 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-world.png'});
   await landscape.page.click('#drawerClose');
 
-  // Build250 workspace contract: Operations owns the fleet/asset workspace.
+  // BUILD301: the owned-assets register contains owned objects only. The
+  // purchase catalog is a single separate entry point rather than a duplicate
+  // catalog embedded in the register.
   await openHubChild(landscape.page, 'control', 'assets');
-
-  if (await landscape.page.locator('.asset-market-card').count() < 10) {
-    issues.push('landscape: expanded asset market did not render');
-  }
+  if(await landscape.page.locator('.owned-asset-row').count()!==0||!await landscape.page.locator('[data-open="assetMarket"]').count())issues.push('landscape: owned-assets register is not zero-state/single-entry');
 
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-assets.png'});
-  await landscape.page.click('#drawerClose');await openHubChild(landscape.page,'control','procurement');
-  if(!await landscape.page.locator('[data-gh-action="asset-portfolio-build"]').count()||await landscape.page.locator('#assetRequestQty').count())issues.push('landscape: AI portfolio replacement UI is not exclusive');
+  await landscape.page.click('#drawerClose');await openHubChild(landscape.page,'control','assetMarket');
+  if(await landscape.page.locator('.asset-market-card').count()<10||!await landscape.page.locator('.manual-buy-asset').count()||await landscape.page.locator('#assetRequestQty').count()||await landscape.page.locator('[data-gh-action="asset-portfolio-build"]').count())issues.push('landscape: manual asset purchase UI is not exclusive');
   await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-ai-assets.png'});
   await landscape.page.click('#drawerClose');await clickVisible(landscape.page,'[data-panel="companies"]');await landscape.page.click('[data-companytab="subs"]');
   if(!await landscape.page.locator('.open-company[data-type="mobility"]').count())issues.push('landscape: GH Mobility company card missing');
-  else{await landscape.page.click('.open-company[data-type="mobility"]');await landscape.page.click('[data-open="companyManage"][data-arg="mobility"]');await landscape.page.click('[data-company-manage-tab="operations"]');if(!await landscape.page.locator('[data-gh-action="mobility-launch"]').count())issues.push('landscape: GH Mobility launch control missing');else{await landscape.page.click('[data-gh-action="mobility-launch"]');const mobility=await landscape.page.evaluate(()=>GH_MOBILITY_CORE.snapshot(__GH_STATE__));if(mobility.status!=='active'||mobility.vehicles!==80||mobility.drivers<108)issues.push(`landscape: GH Mobility launch incomplete ${JSON.stringify(mobility)}`);}}
+  else{
+    await landscape.page.click('.open-company[data-type="mobility"]');await landscape.page.waitForTimeout(300);
+    const opened=await landscape.page.evaluate(()=>__GH_STATE__.openedCompanies.includes('mobility'));
+    if(!opened)issues.push('landscape: GH Mobility company did not open through its visible UI control');
+    else{
+      // A new company must remain physically empty until the player buys its
+      // center and vehicle through their visible, singular UI flows.
+      const zero=await landscape.page.evaluate(()=>({snapshot:GH_MOBILITY_CORE.snapshot(__GH_STATE__),centers:__GH_STATE__.customHubs.filter(x=>x.company==='mobility'&&x.owned).length}));
+      if(zero.snapshot.vehicles!==0||zero.snapshot.drivers!==0||zero.centers!==0)issues.push(`landscape: Mobility did not start at zero ${JSON.stringify(zero)}`);
+      await clickVisible(landscape.page,'[data-panel="companies"]');await landscape.page.click('[data-companytab="subs"]');
+      await landscape.page.click('[data-open="companyManage"][data-arg="mobility"]');
+      await landscape.page.click('[data-open="companyFacilities"][data-arg="mobility"]');
+      await clickVisible(landscape.page,'.mobility-open-capital-center');
+      await landscape.page.evaluate(()=>GH_FINANCE_CORE.execute({state:__GH_STATE__},'transfer',{from:'group',to:'mobility',amount:10000000,note:'Browser QA funding'}));
+      await clickVisible(landscape.page,'[data-panel="companies"]');await landscape.page.click('[data-companytab="subs"]');
+      await landscape.page.click('[data-open="companyManage"][data-arg="mobility"]');await landscape.page.click('[data-company-manage-tab="assets"]');
+      await landscape.page.click('[data-open="assetMarket"][data-arg="mobility"]');await clickVisible(landscape.page,'.manual-buy-mobility');
+      const mobility=await landscape.page.evaluate(()=>GH_MOBILITY_CORE.snapshot(__GH_STATE__));
+      if(mobility.status!=='active'||mobility.vehicles!==1||mobility.drivers!==1||mobility.monthlyPayroll!==6000)issues.push(`landscape: purchased Mobility asset/staffing incomplete ${JSON.stringify(mobility)}`);
+    }
+  }
+  await landscape.page.click('#drawerClose');await landscape.page.evaluate(()=>document.querySelector('.filter-btn[data-filter="mobility"]')?.click());
+  await landscape.page.waitForTimeout(120);
   const mobilityEvidence=await landscape.page.evaluate(()=>({snapshot:GH_MOBILITY_CORE.snapshot(__GH_STATE__),live:GH_MOBILITY_CORE.liveVehicles(__GH_STATE__).filter(x=>x.phase==='moving').length,mapMarkers:document.querySelectorAll('.asset-marker.mobility').length}));
-  if(mobilityEvidence.snapshot.status==='active'&&(!mobilityEvidence.live||!mobilityEvidence.mapMarkers))issues.push(`landscape: GH Mobility is not connected to live map ${JSON.stringify(mobilityEvidence)}`);
+  if(mobilityEvidence.snapshot.status==='active'&&!mobilityEvidence.mapMarkers)issues.push(`landscape: GH Mobility is not connected to live map ${JSON.stringify(mobilityEvidence)}`);
   await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-mobility.png'});
   await landscape.context.tracing.stop({path:'tests/screenshots/navigation-landscape-trace.zip'});await landscape.context.close();
 
   const portrait = await openAt('portrait', {width: 390, height: 844});
   await portrait.page.screenshot({path: 'tests/screenshots/iphone-portrait-map.png'});
+  const portraitBrandGeometry=await portrait.page.evaluate(()=>{const topbar=document.querySelector('.topbar').getBoundingClientRect(),brand=document.querySelector('.topbar .brand').getBoundingClientRect(),name=document.querySelector('#groupName').getBoundingClientRect();return{viewport:window.innerWidth,topbar:{left:topbar.left,right:topbar.right},brand:{left:brand.left,right:brand.right},name:{left:name.left,right:name.right}};});
+  if(portraitBrandGeometry.brand.left<portraitBrandGeometry.topbar.left-.5||portraitBrandGeometry.brand.right>portraitBrandGeometry.topbar.right+.5||portraitBrandGeometry.name.left<portraitBrandGeometry.topbar.left-.5||portraitBrandGeometry.name.right>portraitBrandGeometry.topbar.right+.5)issues.push(`portrait: group brand escapes topbar ${JSON.stringify(portraitBrandGeometry)}`);
 
   // Build250 workspace contract: GH Intelligence is owned by Leadership.
   await openHubChild(portrait.page, 'leadershipHub', 'intelligence');

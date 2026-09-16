@@ -1,5 +1,5 @@
 (()=>{'use strict';
-  const VERSION='2.9.1';
+  const VERSION='3.0.0';
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   function load(options={}){
     const {defaultState,storageKey,legacyStorageKeys=[],resetMarkerKey,saveSchema}=options;
@@ -79,7 +79,7 @@
   if(!Array.isArray(state.constructionContracts))state.constructionContracts=[];if(!Array.isArray(state.commercialTenders))state.commercialTenders=[];if(!Array.isArray(state.supplierTransactions))state.supplierTransactions=[];
   if (!state.contractRegistry || typeof state.contractRegistry!=='object' || Array.isArray(state.contractRegistry)) state.contractRegistry={};
   if (!state.finance || !Array.isArray(state.finance.invoices)) state.finance=clone(defaultState.finance);
-  ['payables','receivables','cheques','periods'].forEach(k=>{if(!Array.isArray(state.finance[k]))state.finance[k]=[];});
+  ['payables','receivables','cheques','periods','payrollReports'].forEach(k=>{if(!Array.isArray(state.finance[k]))state.finance[k]=[];});
   if(!state.finance.paymentSequence)state.finance.paymentSequence=1;
     return state;
   }

@@ -26,7 +26,7 @@
       electric:!!extra.electric,hydrogen:!!extra.hydrogen,energyKWhPer100km:extra.energyKWhPer100km||0,
       refrigerated:!!extra.refrigerated,autonomous:!!extra.autonomous,tanker:!!extra.tanker,container:!!extra.container,
       axles:extra.axles||5,drivetrain:extra.drivetrain||'ديزل Euro VI',maintenancePerKm:extra.maintenancePerKm||.18,
-      co2Band:extra.co2Band||'C',safety:extra.safety||92,reliability:extra.reliability||97.2}
+      co2Band:extra.co2Band||'C',safety:extra.safety||92,reliability:extra.reliability||97.2,yieldMultiplier:extra.yieldMultiplier||1}
   });
 
   const airNew = [

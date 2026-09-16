@@ -1,3 +1,15 @@
+# Global Holdings 3.0.0 - BUILD302
+
+- Native/Web Runtime: `3.0.0`
+- Build: `302`
+- Save Schema: `2.0.0`
+- Update mode: `full-web / clean-snapshot-v1`
+- Release gate: signed hashes, atomic state commit, boot confirmation and Native-owned rollback.
+
+BUILD302 يقوي خريطة الأسطول، يقفل مسارات Mobility، يخفف حمل الأساطيل الكبيرة، يصلح البيع والصيانة والدخل، ويوحّد طاقم الأصول الآلي ومسارات الإدارة وAI الاستشاري. يبقى أساس BUILD301 وتوافق الحفظ دون تغيير.
+
+---
+
 # Global Holdings 2.4.0 — Build 244 Guardian Signal Refinement
 
 - Native Build: `244`
