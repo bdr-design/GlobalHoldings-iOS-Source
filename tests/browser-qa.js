@@ -60,6 +60,12 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   }
 
   const landscape = await openAt('landscape', {width: 844, height: 390});
+  const offlineMapEvidence=await landscape.page.evaluate(()=>({
+    offline:document.querySelector('.map-stage')?.classList.contains('map-tiles-offline')||false,
+    localTileFallbacks:[...document.querySelectorAll('.leaflet-tile-pane img')].map(img=>img.getAttribute('src')||'').filter(src=>/assets\/images\//.test(src)),
+    fallbackBoundTiles:document.querySelectorAll('.leaflet-tile-pane img[data-gh-image-bound]').length
+  }));
+  if(!offlineMapEvidence.offline||offlineMapEvidence.localTileFallbacks.length||offlineMapEvidence.fallbackBoundTiles)issues.push(`landscape: offline basemap recovery is unsafe ${JSON.stringify(offlineMapEvidence)}`);
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-map.png'});
   const railGeometry=await landscape.page.evaluate(()=>{const rail=document.querySelector('.side-nav'),buttons=[...rail.querySelectorAll('button')],viewport=window.innerHeight;return{client:rail.clientHeight,scroll:rail.scrollHeight,buttons:buttons.map(b=>{const r=b.getBoundingClientRect();return{top:r.top,bottom:r.bottom,visible:getComputedStyle(b).display!=='none'&&r.height>0&&r.top>=0&&r.bottom<=viewport};})};});
   if(railGeometry.buttons.length!==8||railGeometry.buttons.some(x=>!x.visible)||railGeometry.scroll>railGeometry.client+1)issues.push(`landscape: sidebar options overflow ${JSON.stringify(railGeometry)}`);
@@ -111,8 +117,9 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   }
   await landscape.page.click('#drawerClose');await landscape.page.evaluate(()=>document.querySelector('.filter-btn[data-filter="mobility"]')?.click());
   await landscape.page.waitForTimeout(120);
-  const mobilityEvidence=await landscape.page.evaluate(()=>({snapshot:GH_MOBILITY_CORE.snapshot(__GH_STATE__),live:GH_MOBILITY_CORE.liveVehicles(__GH_STATE__).filter(x=>x.phase==='moving').length,mapMarkers:document.querySelectorAll('.asset-marker.mobility').length}));
+  const mobilityEvidence=await landscape.page.evaluate(()=>{const marker=document.querySelector('.asset-marker.mobility'),dot=marker?.querySelector('.mobility-street-dot'),markerRect=marker?.getBoundingClientRect(),dotRect=dot?.getBoundingClientRect();return{snapshot:GH_MOBILITY_CORE.snapshot(__GH_STATE__),live:GH_MOBILITY_CORE.liveVehicles(__GH_STATE__).filter(x=>x.phase==='moving').length,mapMarkers:document.querySelectorAll('.asset-marker.mobility').length,markerSize:markerRect?{width:markerRect.width,height:markerRect.height}:null,dotSize:dotRect?{width:dotRect.width,height:dotRect.height}:null};});
   if(mobilityEvidence.snapshot.status==='active'&&!mobilityEvidence.mapMarkers)issues.push(`landscape: GH Mobility is not connected to live map ${JSON.stringify(mobilityEvidence)}`);
+  if(mobilityEvidence.mapMarkers&&(!mobilityEvidence.markerSize||mobilityEvidence.markerSize.width<40||mobilityEvidence.markerSize.height<40||!mobilityEvidence.dotSize||mobilityEvidence.dotSize.width<12||mobilityEvidence.dotSize.height<12))issues.push(`landscape: GH Mobility marker is not visibly/touchably usable ${JSON.stringify(mobilityEvidence)}`);
   await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-mobility.png'});
   await landscape.context.tracing.stop({path:'tests/screenshots/navigation-landscape-trace.zip'});await landscape.context.close();
 
@@ -148,7 +155,7 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
 
   const brokenImages = await portrait.page.evaluate(() =>
     [...document.images]
-      .filter(img => img.complete && img.naturalWidth === 0)
+      .filter(img => !img.classList.contains('leaflet-tile') && img.complete && img.naturalWidth === 0)
       .map(img => img.src)
   );
 

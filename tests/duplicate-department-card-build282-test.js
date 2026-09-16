@@ -68,12 +68,14 @@ for (const type of ['air', 'sea', 'road']) {
   click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
   click('[data-open="companyManage"][data-arg="bank"]'); click('[data-company-manage-tab="operations"]');
   click('[data-open="bank"]');
+  click('[data-bank-tab="risk"]');
   assert.strictEqual(sel('[data-gh-action="bank-stress"]').length, 1, 'the unified bank center must retain its stress-test action exactly once');
 }
 {
   click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
   click('[data-open="companyManage"][data-arg="power"]'); click('[data-company-manage-tab="operations"]');
   click('[data-open="energy"]');
+  click('[data-energy-tab="projects"]');
   assert.strictEqual(sel('.energy-build').length, 4, 'the unified energy center must retain the four project choices exactly once');
 }
 

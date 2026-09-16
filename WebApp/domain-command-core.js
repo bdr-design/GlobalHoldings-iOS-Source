@@ -30,7 +30,9 @@
     const key=domain+':'+name,object=value&&typeof value==='object'&&!Array.isArray(value);
     const fail=()=>{throw new Error('Domain result contract violated: '+key);};
     if(key==='finance:settle-cheque'&&(!object||typeof value.settled!=='boolean'||!['settled','bounced'].includes(value.status)||typeof value.reason!=='string'||!value.id))fail();
+    if(key==='finance:pay-by-cheque'&&(!object||!value.cheque?.id||value.cheque.status!=='مصروف'||value.invoice?.status!=='مسددة'||value.reference!==value.cheque.id))fail();
     if(key==='finance:transfer'&&(!object||value.transferred!==true||value.amount!==Number(payload.amount)||value.from!==payload.from||value.to!==payload.to))fail();
+    if(key==='finance:settle-intercompany-interest'&&(!object||value.settled!==true||value.to!=='bank'||value.from!==(payload.from||payload.company)||!Number.isFinite(Number(value.cashPostedRevenue))))fail();
     if(key==='procurement:purchase-assets'&&(!object||value.count!==Number(payload.qty)||value.baseId!==payload.base?.id||!Array.isArray(value.deliveryOrderIds)||!Array.isArray(value.assetIds)||value.deliveryOrderIds.length!==value.count||value.assetIds.length!==value.count||new Set(value.deliveryOrderIds).size!==value.count||new Set(value.assetIds).size!==value.count))fail();
     if(key==='hr:hire'&&(!object||value.ok!==true||value.missingAfter!==0||!Number.isInteger(value.total)))fail();
     if(key==='facilities:hire'&&(!object||value.ok!==true||!Number.isFinite(value.staff)))fail();

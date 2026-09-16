@@ -111,7 +111,7 @@
     <header class="topbar">
       <button class="brand" id="brandBtn" type="button" aria-label="العودة للخريطة">
         <span id="brandMark" class="brand-mark">GH</span>
-        <span class="brand-copy"><strong id="groupName">المجموعة العالمية القابضة</strong><small id="simDate">01 يناير 2026 · 00:00</small><small id="runtimeBuildBadge" style="opacity:.55;font-size:.68em;display:block">BUILD —</small></span>
+        <span class="brand-copy"><strong id="groupName">المجموعة العالمية القابضة</strong><small id="runtimeBuildBadge" style="opacity:.55;font-size:.68em;display:block">BUILD —</small></span>
       </button>
       <section class="top-kpis" aria-label="مؤشرات المجموعة">
         <div><span>السيولة</span><strong id="cashKpi">$250.0M</strong></div>
@@ -140,6 +140,7 @@
       <main class="map-stage">
         <div id="map" aria-label="الخريطة العالمية الموحدة"></div>
         <div class="map-heading"><span class="live-dot"></span><div><small>مركز القيادة العالمي</small><strong>الحركة التشغيلية المباشرة</strong></div></div>
+        <div id="simClockChip" class="sim-clock-chip" aria-live="polite"><small>التاريخ التشغيلي</small><strong id="simDate">01 يناير 2026 · 00:00</strong><span id="simDay">اليوم 1</span></div>
 
         <div class="map-actions" aria-label="أدوات الخريطة">
           <button id="worldDirectoryBtn" class="map-fab map-fab-primary" aria-label="الدليل العالمي للشبكة والتوسع"><span class="fab-code">GLO</span><span>الدليل العالمي</span></button>
@@ -167,8 +168,8 @@
         </div>
 
         <div class="speed-dock">
-          <button id="speedToggle" class="speed-fab" aria-label="سرعة المحاكاة"><span class="pulse-ring"></span><b id="speedLabel">×1</b><small>سرعة المحاكاة</small></button>
-          <div id="speedMenu" class="speed-menu hidden"><button data-speed="0">إيقاف مؤقت</button><button data-speed="1" class="active">×1</button><button data-speed="2">×2</button><button data-speed="4">×4</button></div>
+          <button id="speedToggle" class="speed-fab" aria-label="سرعة المحاكاة"><span class="pulse-ring"></span><b id="speedLabel">عادي · 30×</b><small>سرعة المحاكاة</small></button>
+          <div id="speedMenu" class="speed-menu hidden"><button data-speed="0">متوقف</button><button data-speed="1" class="active">عادي · 30×</button><button data-speed="2">سريع · 120×</button><button data-speed="4">فائق · 600×</button></div>
         </div>
 
         <div id="mapStatus" class="map-status">تحميل الحركة العالمية…</div>

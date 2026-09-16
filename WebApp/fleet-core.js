@@ -139,8 +139,8 @@
   function execute(ctx,cmd,p={}){
     const state=ctx.state||ctx,asset=p.id?find(state,p.id):null;
     if(cmd==='service'){
-      const cost=Math.max(0,Number(p.cost)||0);if(cost>0){const finance=globalThis.GH_FINANCE_CORE;if(!finance?.execute)throw new Error('finance-core-missing');finance.execute({state},'spend',{company:asset.type,amount:cost,note:p.note||`صيانة ${asset.name}`,method:p.method||'تحويل صيانة',line:'maintenance',taxable:p.taxable!==false,counterparty:p.supplier||'شبكة الصيانة المعتمدة'});}
-      asset.fuel=100;asset.condition=100;asset.lastMaintenanceAt=Number(state.simSeconds)||0;asset.lastMaintenanceCost=cost;asset.lastMaintenanceSupplier=p.supplier||'شبكة الصيانة المعتمدة';return asset;
+      const cost=Math.max(0,Number(p.cost)||0),supplier=p.supplier||'شبكة الصيانة المعتمدة';let payment=null;if(cost>0){const finance=globalThis.GH_FINANCE_CORE;if(!finance?.execute)throw new Error('finance-core-missing');payment=finance.execute({state},'pay-by-cheque',{company:asset.type,amount:cost,note:p.note||`صيانة ${asset.name}`,beneficiary:supplier,line:'maintenance',taxable:p.taxable!==false,requestRef:`MAINT-${asset.id}-${Math.floor(Number(state.simSeconds)||0)}`});if(!payment?.cheque?.id||payment.cheque.status!=='مصروف')throw new Error('maintenance-cheque-not-cleared');}
+      asset.fuel=100;asset.condition=100;asset.lastMaintenanceAt=Number(state.simSeconds)||0;asset.lastMaintenanceCost=cost;asset.lastMaintenanceSupplier=supplier;asset.lastMaintenanceCheque=payment?.cheque?.id||null;asset.lastMaintenanceInvoice=payment?.invoice?.number||null;return asset;
     }
     if(cmd==='assign-route'){
       if(!p.route||p.route.id!==p.routeId||p.route.type!==asset.type||asset.phase==='moving'||(p.phase!=null&&p.phase!=='turnaround')||(p.baseFacility!=null&&p.baseFacility!==asset.baseFacility)||![p.route.fromFacility,p.route.toFacility].includes(asset.baseFacility))throw new Error('route-assignment-contract');
