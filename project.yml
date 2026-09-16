@@ -18,8 +18,8 @@ targets:
       - path: iOS/GlobalHoldings
         excludes:
           - Assets.xcassets
-    resources:
       - path: iOS/GlobalHoldings/Assets.xcassets
+        buildPhase: resources
     info:
       path: iOS/GlobalHoldings/Info.plist
       properties:
@@ -29,8 +29,6 @@ targets:
         CFBundleVersion: "302"
         LSRequiresIPhoneOS: true
         UIRequiresFullScreen: true
-        UIDeviceFamily:
-          - 1
         UILaunchStoryboardName: LaunchScreen
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: true
@@ -58,6 +56,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.globalholdings
         PRODUCT_NAME: GlobalHoldings
+        TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon"
     scheme:
