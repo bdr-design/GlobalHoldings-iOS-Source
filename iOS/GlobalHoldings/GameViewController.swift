@@ -92,7 +92,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
             "return await window.GH_RUNTIME?.persistForBackground?.();",
             arguments: [:],
             in: nil,
-            contentWorld: .page
+            in: .page
         ) { [weak self] _ in
             DispatchQueue.main.async { self?.finishBackgroundSaveTask(application, token: token) }
         }

@@ -9,5 +9,7 @@ assert(controller.includes('beginBackgroundTask(withName: "GlobalHoldings.Save")
 assert(controller.includes('application.endBackgroundTask(task)'),'iOS background task is not ended');
 assert(controller.includes('token == backgroundSaveToken'),'late completion can end a newer background task');
 assert(controller.includes('callAsyncJavaScript')&&controller.includes('persistForBackground'),'native does not await the browser save pipeline');
+assert(/in:\s*nil,\s*in:\s*\.page\s*\)\s*\{/.test(controller),'WKWebView callback overload must use the SDK callback labels');
+assert(!controller.includes('contentWorld: .page'),'async-only WKWebView label was mixed with a callback closure');
 assert(app.includes('persistForBackground:async()=>')&&app.includes('await window.GH_PERSISTENCE.drain()'),'browser background save does not await Native Save Vault acknowledgement');
 console.log('Native background save lifecycle Build302: PASS');
