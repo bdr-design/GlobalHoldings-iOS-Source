@@ -1,4 +1,4 @@
-# Global Holdings 3.0.0 - BUILD300
+# Global Holdings 3.0.0 - BUILD301
 
 ## مرشح الإصدار النظيف
 
@@ -8,7 +8,7 @@
 - إزالة fallback الصامت من اختبار فتح GH Mobility.
 - Save Schema يبقى 2.0.0، والتحديث Full Web Clean Snapshot موقّع فقط.
 
-راجع `BUILD300_RELEASE_CANDIDATE_AR.md` لبوابات الاعتماد.
+راجع `BUILD301_SYSTEM_CONSOLIDATION_AR.md` لبوابات الاعتماد.
 
 ---
 

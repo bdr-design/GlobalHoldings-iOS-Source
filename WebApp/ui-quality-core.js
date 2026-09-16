@@ -13,8 +13,7 @@
   }
   function task(id,title,domain,priority='normal',panel=null,reason=''){return {id,title,domain,priority,panel,reason};}
   function collectTasks(state){
-    const out=[],ai=state?.advanced?.ai||{},proc=state?.advanced?.procurement||{},diag=state?.diagnostics||{},now=Number(state?.simSeconds)||0;
-    (ai.requests||[]).filter(r=>r?.status==='بانتظار التفويض').forEach(r=>out.push(task(`AI:${r.id}`,r.title||'طلب قرار AI','القيادة',r.priority==='critical'?'critical':'high','aiApprovals',r.reason||'')));
+    const out=[],proc=state?.advanced?.procurement||{},diag=state?.diagnostics||{},now=Number(state?.simSeconds)||0;
     (proc.assetRequests||[]).forEach(r=>{
       const blockers=Array.isArray(r.blockers)?r.blockers:[];
       const priority=blockers.length?'high':r.status==='awaiting_authorization'?'high':'normal';

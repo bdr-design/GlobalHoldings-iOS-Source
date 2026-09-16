@@ -12,7 +12,7 @@ const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
 const builder=fs.readFileSync(path.join(root,'scripts','build_update.py'),'utf8');
 
 assert.strictEqual(version,'3.0.0');
-assert.strictEqual(build,'300');
+assert.strictEqual(build,'301');
 assert.strictEqual(pkg.version,`${version}-build${build}`);
 assert(project.includes(`MARKETING_VERSION: "${version}"`));
 assert(project.includes(`CURRENT_PROJECT_VERSION: "${build}"`));
@@ -29,4 +29,4 @@ for(const name of fs.readdirSync(path.join(root,'WebApp')).filter(name=>name.end
   assert(source.includes(`VERSION='${version}'`)||source.includes(`VERSION = '${version}'`)||source.includes(`APP_VERSION='${version}'`),`${name} does not expose the canonical runtime version`);
 }
 
-console.log('BUILD300 release identity and Save Schema 2.0.0: PASS');
+console.log(`BUILD${build} release identity and Save Schema 2.0.0: PASS`);

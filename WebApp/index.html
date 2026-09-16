@@ -120,7 +120,7 @@
         <div><span>صافي اليوم</span><strong id="profitKpi">+$0</strong></div>
       </section>
       <div class="top-actions">
-        <button id="aiRequestsBtn" class="icon-btn" aria-label="مركز القرارات والاعتمادات" title="مركز القرارات والاعتمادات"><svg><use href="#i-target"></use></svg><b id="aiRequestCount">0</b></button><button id="alertsBtn" class="icon-btn" aria-label="التنبيهات"><svg><use href="#i-bell"></use></svg><b id="alertCount">0</b></button>
+        <button id="aiRequestsBtn" class="icon-btn" aria-label="سجل الاعتمادات المنفذة" title="سجل الاعتمادات المنفذة"><svg><use href="#i-target"></use></svg><b id="aiRequestCount">✓</b></button><button id="alertsBtn" class="icon-btn" aria-label="التنبيهات"><svg><use href="#i-bell"></use></svg><b id="alertCount">0</b></button>
         <button id="healthBtn" class="icon-btn health-shortcut" aria-label="صحة النظام" title="صحة النظام"><span>HLT</span></button><button id="settingsBtn" class="icon-btn" aria-label="الإعدادات"><svg><use href="#i-settings"></use></svg></button>
       </div>
     </header>
@@ -128,10 +128,10 @@
     <div class="game-frame">
       <nav class="side-nav domain-rail" aria-label="مساحات العمل الرئيسية">
         <button id="mapNavBtn" class="active" data-nav="map"><svg><use href="#i-world"></use></svg><span>الخريطة</span><small>العالم</small></button>
-        <button data-panel="leadershipHub" data-nav="leadership"><svg><use href="#i-target"></use></svg><span>القيادة</span><small>القرار وAI</small></button>
+        <button data-panel="leadershipHub" data-nav="leadership"><svg><use href="#i-target"></use></svg><span>القيادة</span><small>القرار والسجل</small></button>
         <button data-panel="companies" data-nav="companies"><svg><use href="#i-company"></use></svg><span>الشركات</span><small>المجموعة</small></button>
         <button data-panel="control" data-nav="control"><svg><use href="#i-ops"></use></svg><span>التشغيل</span><small>الأصول والمسارات</small></button>
-        <button data-panel="peopleHub" data-nav="people"><svg><use href="#i-company"></use></svg><span>الموارد</span><small>الطواقم والتنظيم</small></button>
+        <button data-panel="peopleHub" data-nav="people"><svg><use href="#i-company"></use></svg><span>الموارد</span><small>وظائف المنشآت</small></button>
         <button data-panel="finance" data-nav="finance"><svg><use href="#i-market"></use></svg><span>المالية</span><small>الخزينة والحسابات</small></button>
         <button data-panel="governanceHub" data-nav="governance"><svg><use href="#i-more"></use></svg><span>الحوكمة</span><small>المخاطر والامتثال</small></button>
         <button data-panel="systemHub" data-nav="system"><svg><use href="#i-settings"></use></svg><span>النظام</span><small>السلامة والصيانة</small></button>
@@ -215,7 +215,6 @@
   <script src="realism-core.js"></script>
   <script src="persistence-core.js"></script>
   <script src="workflow-core.js"></script>
-  <script src="department-core.js"></script>
   <script src="interaction-core.js"></script>
   <script src="ui-quality-core.js"></script>
   <script src="economics-core.js"></script>
@@ -233,6 +232,7 @@
   <script src="migration-core.js"></script>
   <script src="game-lifecycle-core.js"></script>
   <script src="domain-command-core.js"></script>
+  <script src="department-core.js"></script>
   <script src="finance-core.js"></script>
   <script src="hr-core.js"></script>
 <script src="procurement-core.js"></script>

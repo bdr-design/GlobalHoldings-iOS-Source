@@ -4,7 +4,7 @@
   const CREW_STANDARDS=Object.freeze({
     air:{pilots:4,cabin:6,aeng:2},
     sea:{captains:2,sailors:14,seng:4},
-    road:{drivers:2,mech:.25}
+    road:{drivers:2,mech:1}
   });
   const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,'mobility-center':18,power:32,bank:16,acquired:28});
   const EXECUTIVE_RULES=Object.freeze({
@@ -33,7 +33,12 @@
   function companyOfFacility(f){if(f?.company)return f.company;if(f?.kind==='airport-base')return'air';if(f?.kind==='port-base')return'sea';if(['depot','logistics'].includes(f?.kind))return'road';if(f?.kind==='mobility-center')return'mobility';if(f?.kind==='power')return'power';if(f?.kind==='bank')return'bank';return'group';}
   function facilityNeed(f){const base=FACILITY_STANDARDS[f?.kind]||12,cap=Number(f?.bays||f?.capacityMW||0),scale=f?.kind==='power'?Math.ceil(cap/250)*4:['depot','logistics'].includes(f?.kind)?Math.ceil(cap/20)*3:f?.kind==='mobility-center'?Math.ceil(cap/40)*2:0;return Math.max(base,base+scale);}
   function requiredCrewForFleet(state,sector,assetCount=null){
-    const count=assetCount==null?(state.assets||[]).filter(a=>a.type===sector).length:Math.max(0,Number(assetCount)||0),standard=CREW_STANDARDS[sector]||{},out={};
+    const assets=(state.assets||[]).filter(a=>a.type===sector&&a.staffing?.ready===true),out={};
+    if(assetCount==null&&assets.length){
+      for(const asset of assets)for(const role of asset.staffing.roles||[])out[role.id]=(Number(out[role.id])||0)+(Number(role.count)||0);
+      return out;
+    }
+    const count=assetCount==null?assets.length:Math.max(0,Number(assetCount)||0),standard=CREW_STANDARDS[sector]||{};
     for(const [roleId,ratio] of Object.entries(standard))out[roleId]=Math.ceil(count*ratio);
     return out;
   }
@@ -60,18 +65,17 @@
   function executeHiring(state,ctx={},company='all',source='تفويض HR رسمي',scope='all'){
     const before=snapshot(state,ctx,company),hr=ensure(state),allow=k=>scope==='all'||scope===k;
     if(!['all','crew','facility','executive'].includes(scope))throw new Error('hr-scope-invalid');
-    if(allow('crew')&&before.crew.some(g=>g.missing>0&&!(state.crew||[]).some(c=>c.id===g.roleId)))throw new Error('hr-crew-role-unavailable');
+    if(scope==='crew')throw new Error('asset-crew-is-automatic');
     const result={crew:[],facilities:[],executives:[],total:0,coverageBefore:before.coverage,coverageAfter:before.coverage,scope};
-    if(allow('crew'))for(const gap of before.crew.filter(x=>x.missing>0)){const role=(state.crew||[]).find(c=>c.id===gap.roleId);if(!role)continue;role.count=(Number(role.count)||0)+gap.missing;contract(state,{company:gap.company,name:`${gap.missing} × ${gap.name}`,role:gap.name,count:gap.missing,salary:gap.dailyRate*30,source});result.crew.push({...gap,count:gap.missing});result.total+=gap.missing;}
     state.advanced.facilities=state.advanced.facilities||{};if(allow('facility'))for(const gap of before.facilities.filter(x=>x.missing>0&&(!ctx.facilityId||x.facilityId===ctx.facilityId))){const m=state.advanced.facilities[gap.facilityId]||(state.advanced.facilities[gap.facilityId]={staff:0,departments:{operations:75,finance:70,hr:70,commercial:70,maintenance:75,security:75}});m.staff=(Number(m.staff)||0)+gap.missing;contract(state,{company:gap.company,name:`${gap.missing} × فريق ${gap.name}`,role:'تشغيل منشأة',count:gap.missing,center:gap.name,salary:5200,source});result.facilities.push({...gap,count:gap.missing});result.total+=gap.missing;}
     state.hired=Array.isArray(state.hired)?state.hired:[];if(allow('executive'))for(const gap of before.executives.filter(x=>x.missing>0)){const c=(ctx.candidates||[]).find(x=>x.id===gap.candidateId);if(!c||state.hired.includes(c.id))continue;state.hired.push(c.id);contract(state,{company:gap.company,candidateId:c.id,name:c.name,role:c.role,count:1,salary:c.salary,source});result.executives.push(c);result.total++;}
-    const after=snapshot(state,ctx,company);result.coverageAfter=after.coverage;result.ok=true;result.status='completed';result.missingAfter=after.gaps.filter(g=>allow(g.kind)&&(!ctx.facilityId||g.kind!=='facility'||g.facilityId===ctx.facilityId)).reduce((n,g)=>n+g.missing,0);if(result.missingAfter)throw new Error('hr-hiring-incomplete');hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company,source,total:result.total,coverageBefore:before.coverage,coverageAfter:after.coverage});hr.hiringLog=hr.hiringLog.slice(0,200);return result;
+    const after=snapshot(state,ctx,company);result.coverageAfter=after.coverage;result.ok=true;result.status='completed';result.missingAfter=after.gaps.filter(g=>g.kind!=='crew'&&allow(g.kind)&&(!ctx.facilityId||g.kind!=='facility'||g.facilityId===ctx.facilityId)).reduce((n,g)=>n+g.missing,0);if(result.missingAfter)throw new Error('hr-hiring-incomplete');hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company,source,total:result.total,coverageBefore:before.coverage,coverageAfter:after.coverage});hr.hiringLog=hr.hiringLog.slice(0,200);return result;
   }
   function createRequisition(state,ctx={},company='all',source='manual'){
     const hr=ensure(state),need=snapshot(state,ctx,company);if(!need.total)return null;const existing=hr.requisitions.find(r=>r.status==='open'&&r.company===company);if(existing){existing.need=clone(need);existing.updatedAt=Number(state.simSeconds)||0;return existing;}
     const r={id:nextId(state,'HR-REQ'),company,status:'open',source,createdAt:Number(state.simSeconds)||0,need:clone(need),title:company==='all'?`سد كامل العجز الوظيفي · ${need.total}`:`سد عجز ${company} · ${need.total}`,approvalRequestId:null};hr.requisitions.unshift(r);return r;
   }
-  function tickDay(state,processedDay=null){const hr=ensure(state),d=processedDay==null?day(state):Math.floor(Number(processedDay)||0);let expired=0;for(const c of hr.employmentContracts){const end=Number(c.startDay||0)+Math.max(1,Number(c.termMonths||24))*30;if(c.status==='ساري'&&d>=end){c.status='منتهي';c.endedDay=d;expired++;}}return {day:d,expired};}
+  function tickDay(state,processedDay=null){const hr=ensure(state),d=processedDay==null?day(state):Math.floor(Number(processedDay)||0);let expired=0;for(const c of hr.employmentContracts){if(c.permanent||c.automaticAssetStaffing)continue;const end=Number(c.startDay||0)+Math.max(1,Number(c.termMonths||24))*30;if(c.status==='ساري'&&d>=end){c.status='منتهي';c.endedDay=d;expired++;}}return {day:d,expired};}
   function health(state,ctx={}){const s=snapshot(state,ctx,'all'),hr=ensure(state);return {coverage:s.coverage,missing:s.total,crewMissing:s.crewMissing,facilityMissing:s.facilityMissing,executiveMissing:s.executiveMissing,openRequisitions:hr.requisitions.filter(r=>r.status==='open').length,contracts:hr.employmentContracts.filter(c=>c.status==='ساري').length};}
   function execute(ctx,cmd,p={}){const state=ctx.state||ctx;if(cmd==='tick-day')return tickDay(state,p.day);if(cmd==='hire')return executeHiring(state,ctx,p.company||'all',p.source||'HR Domain Command',p.scope||'all');if(cmd==='hire-executive'){const hr=ensure(state),id=String(p.candidateId||''),c=(ctx.candidates||p.candidates||[]).find(x=>x.id===id);if(!c)throw new Error('candidate-not-found');state.hired=Array.isArray(state.hired)?state.hired:[];if(state.hired.includes(id))throw new Error('candidate-already-hired');state.hired.push(id);const row=contract(state,{company:p.company||'group',candidateId:id,name:c.name,role:c.role,count:1,center:p.center||'المقر الرئيسي',salary:c.salary,source:p.source||'HR executive recruitment'});hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company:p.company||'group',source:p.source||'HR executive recruitment',total:1,candidateId:id});hr.hiringLog=hr.hiringLog.slice(0,200);return {candidate:c,contract:row};}if(cmd==='requisition')return createRequisition(state,ctx,p.company||'all',p.source||'domain');throw new Error(`Unknown HR command: ${cmd}`);}
   const API={VERSION,ensure,snapshot,health,createRequisition,executeHiring,requiredCrewForFleet,facilityNeed,companyOfFacility,tickDay,execute};

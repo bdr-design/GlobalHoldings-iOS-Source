@@ -5,6 +5,7 @@
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const now=s=>Number(s?.simSeconds)||0;
   const stable=v=>Array.isArray(v)?`[${v.map(stable).join(',')}]`:v&&typeof v==='object'?`{${Object.keys(v).sort().map(k=>`${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`:JSON.stringify(v);
+  const isManualActor=actor=>!(/^(simulation(?:-|$)|finance-scheduler$|payroll-scheduler$|financial-close$|delivery-engine$|project-commissioning$|banking-read-model$|GH Intelligence$|system(?:-|$)|migration(?:-|$))/i.test(String(actor||'ui')));
   function prune(r,at){
     for(const [key,row] of Object.entries(r.idempotency))if(!row||!Number.isFinite(row.at)||at-row.at>IDEMPOTENCY_TTL||row.at>at||!row.fingerprint)delete r.idempotency[key];
     const keys=Object.keys(r.idempotency).sort((a,b)=>r.idempotency[a].at-r.idempotency[b].at);
@@ -62,7 +63,7 @@
         if(result?.then)throw new Error('Domain result must be synchronous');
         validateContract(domain,name,result,payload);if(owner.validateResult){const resultCheck=owner.validateResult(name,result,payload);if(resultCheck===false||resultCheck?.ok===false)throw new Error('Domain result contract violated: '+domain+':'+name);}
         const wrapped={ok:true,commandId:id,result:result===undefined?null:result};
-        record(state,{id,domain,name,status:'committed',at:startedAt,completedAt:now(state),actor:options.actor||'ui'});
+        const actor=options.actor||'ui';record(state,{id,domain,name,status:'committed',at:startedAt,completedAt:now(state),actor,manual:isManualActor(actor),approvalStatus:isManualActor(actor)?'approved_executed':'system_executed'});
         if(key){r.idempotency[scopedKey]={at:startedAt,fingerprint,result:clone(wrapped)};prune(r,startedAt);}
         globalThis.GH_EVENT_LEDGER?.record?.(state,{type:'DOMAIN_COMMAND_COMMITTED',domain,commandId:id,name,at:now(state),actor:options.actor||'ui'});
         globalThis.GH_CONTROL_PLANE?.evidence?.(state,'DOMAIN_COMMAND_COMMITTED',{commandId:id,domain,name});
@@ -79,13 +80,13 @@
       return out.value;
     }catch(error){
       if(!tx.isActive()){
-        record(state,{id,domain,name,status:'rolled_back',at:startedAt,error:String(error?.message||error)});
+        const actor=options.actor||'ui';record(state,{id,domain,name,status:'rolled_back',at:startedAt,actor,manual:isManualActor(actor),approvalStatus:'cancelled_rolled_back',error:String(error?.message||error)});
         globalThis.GH_CONTROL_PLANE?.incident?.(state,{fingerprint:`domain:${domain}:${name}:${String(error?.message||error)}`,code:'DOMAIN_COMMAND_FAILED',severity:'critical',domain,title:`فشل أمر ${domain}`,detail:String(error?.message||error),evidence:{commandId:id,name}});
       }
       throw error;
     }
   }
   function health(state){const r=ensureRuntime(state);return {schema:r.schema,registered:[...owners.keys()].sort(),commands:r.commands.length,failed:r.commands.filter(x=>x.status==='rolled_back').length};}
-  const API=Object.freeze({VERSION,IDEMPOTENCY_LIMIT,IDEMPOTENCY_TTL,register,dispatch,validateContract,ensureRuntime,health,owners:()=>[...owners.keys()]});
+  const API=Object.freeze({VERSION,IDEMPOTENCY_LIMIT,IDEMPOTENCY_TTL,register,dispatch,validateContract,ensureRuntime,health,isManualActor,owners:()=>[...owners.keys()]});
   globalThis.GH_DOMAIN_COMMANDS=API;if(globalThis.window&&window!==globalThis)window.GH_DOMAIN_COMMANDS=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
