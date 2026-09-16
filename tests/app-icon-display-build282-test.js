@@ -1,13 +1,8 @@
 'use strict';
 // BUILD282: يمنع رجوع أيقونة تطبيق لا تظهر رغم نجاح البناء.
 //
-// المشكلة: مجموعة الأيقونات AppIcon.appiconset موجودة وصحيحة (1024×1024، RGB بلا قناة شفافية -
-// المطلوب تمامًا)، وASSETCATALOG_COMPILER_APPICON_NAME في project.yml يشير لها بشكل صحيح فتُصرَّف
-// ضمن حزمة التطبيق بنجاح. لكن Info.plist المُولَّد (عبر بلوك info/properties في XcodeGen) كان يفتقد
-// CFBundleIconName - المفتاح المطلوب من iOS 11 فصاعدًا ليعرف نظام التشغيل وقت التشغيل أي أيقونة
-// يعرضها فعليًا (الشاشة الرئيسية، الإعدادات، Spotlight). غياب هذا المفتاح لا يُفشل البناء إطلاقًا -
-// المُصرِّف لا يتحقق من هذا الربط - فتظهر المشكلة فقط على جهاز حقيقي بعد التثبيت: أيقونة فارغة أو
-// افتراضية رغم بناء ناجح 20/20 خطوة.
+// المشكلة كانت ذات مستويين لا يكشفهما نجاح التجميع وحده: يجب ربط Assets.xcassets بمرحلة الموارد
+// الفعلية كي ينتج Assets.car، ويجب أن يحمل Info.plist اسم AppIcon نفسه ليعرضه iOS على الشاشة الرئيسية.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -28,6 +23,8 @@ assert.notStrictEqual(colorType, 4, 'the app icon must NOT have an alpha channel
 // ---- 2) الأصل الجرافيكي مربوط فعليًا عبر المصرِّف ----
 assert.ok(projectYml.includes('ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon"'),
   'the asset catalog compiler must be told which icon set to use');
+assert.ok(/- path:\s*iOS\/GlobalHoldings\/Assets\.xcassets\s+buildPhase:\s*resources/.test(projectYml),
+  'Assets.xcassets must be attached to the Xcode target resource phase so the IPA contains Assets.car');
 
 // ---- 3) Info.plist المُولَّد يحمل المفتاح الذي يجعل iOS يعرض الأيقونة فعليًا وقت التشغيل ----
 assert.ok(projectYml.includes('CFBundleIconName: "AppIcon"'),
@@ -38,6 +35,15 @@ const compilerName = projectYml.match(/ASSETCATALOG_COMPILER_APPICON_NAME:\s*"([
 const iconName = projectYml.match(/CFBundleIconName:\s*"([^"]+)"/)?.[1];
 assert.strictEqual(compilerName, iconName,
   `ASSETCATALOG_COMPILER_APPICON_NAME ("${compilerName}") and CFBundleIconName ("${iconName}") must reference the exact same icon set name`);
+
+// ---- 4) ناتج التطبيق مقيد فعليًا بالـiPhone وتتحقق البوابة من كامل المصفوفة ومن Assets.car ----
+assert.ok(/PRODUCT_NAME:\s*GlobalHoldings[\s\S]*?TARGETED_DEVICE_FAMILY:\s*"1"/.test(projectYml),
+  'TARGETED_DEVICE_FAMILY must be overridden on the application target, not only at project level');
+const workflow = fs.readFileSync(path.join(__dirname, '..', '.github/workflows/build-unsigned-ipa.yml'), 'utf8');
+assert.ok(workflow.includes("plist.get('UIDeviceFamily') != [1]"),
+  'CI must reject any IPA that also advertises iPad support');
+assert.ok(workflow.includes("app / 'Assets.car'")&&workflow.includes('missing the compiled AppIcon asset catalog'),
+  'CI must reject an IPA that names AppIcon but omits the compiled Assets.car payload');
 
 console.log('app-icon-display-build282-test: ok');
 process.exit(0);

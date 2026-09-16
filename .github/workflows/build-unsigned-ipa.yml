@@ -421,18 +421,25 @@ jobs:
           VERSION_VALUE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
           BUILD_VALUE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")"
           BUNDLE_VALUE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
-          FAMILY_VALUE="$(/usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily:0' "$PLIST")"
 
           [[ "$VERSION_VALUE" == "$EXPECTED_VERSION" ]] || { echo "::error::CFBundleShortVersionString=$VERSION_VALUE expected $EXPECTED_VERSION"; exit 1; }
           [[ "$BUILD_VALUE" == "$EXPECTED_BUILD" ]] || { echo "::error::CFBundleVersion=$BUILD_VALUE expected $EXPECTED_BUILD"; exit 1; }
           [[ "$BUNDLE_VALUE" == 'com.example.globalholdings' ]] || { echo "::error::Unexpected bundle identifier: $BUNDLE_VALUE"; exit 1; }
-          [[ "$FAMILY_VALUE" == '1' ]] || { echo "::error::Build is not iPhone-only: UIDeviceFamily[0]=$FAMILY_VALUE"; exit 1; }
 
           python3 - <<'PY'
-          import hashlib, os
+          import hashlib, os, plistlib
           from pathlib import Path
+          app = Path(os.environ['APP_PATH'])
+          plist = plistlib.loads((app / 'Info.plist').read_bytes())
+          if plist.get('UIDeviceFamily') != [1]:
+              raise SystemExit(f"Built application is not iPhone-only: UIDeviceFamily={plist.get('UIDeviceFamily')!r}")
+          if plist.get('CFBundleIconName') != 'AppIcon':
+              raise SystemExit(f"Built application has the wrong icon name: {plist.get('CFBundleIconName')!r}")
+          assets = app / 'Assets.car'
+          if not assets.is_file() or assets.stat().st_size <= 0:
+              raise SystemExit('Built application is missing the compiled AppIcon asset catalog (Assets.car)')
           src = Path(os.environ['PROJECT_DIR']) / 'WebApp'
-          dst = Path(os.environ['APP_PATH']) / 'WebApp'
+          dst = app / 'WebApp'
           if not dst.is_dir(): raise SystemExit('Built application is missing WebApp directory')
           def files(root): return {p.relative_to(root).as_posix(): p for p in root.rglob('*') if p.is_file()}
           a, b = files(src), files(dst)
@@ -444,6 +451,7 @@ jobs:
               ha = hashlib.sha256(a[rel].read_bytes()).digest()
               hb = hashlib.sha256(b[rel].read_bytes()).digest()
               if ha != hb: raise SystemExit(f'Built WebApp content mismatch: {rel}')
+          print('Native package contract: PASS (iPhone-only + compiled AppIcon)')
           print(f'Built WebApp exact-copy verification: PASS ({len(a)} files)')
           PY
 
