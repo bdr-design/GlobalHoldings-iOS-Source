@@ -43,13 +43,13 @@ async function rejects(value,options,pattern){
 }
 
 (async()=>{
-  await context.GH_ADVANCED.validateUpdatePack(pack('3.0.0',303),{currentBuild:302});
-  await rejects(pack('3.0.0',302),{currentBuild:302},/Downgrade|إعادة التثبيت/);
-  await rejects(pack('3.0.0',301),{currentBuild:302},/Downgrade|إعادة التثبيت/);
-  await rejects(pack('3.0.0',999,2),{currentBuild:302},/Downgrade|إعادة التثبيت/);
-  await context.GH_ADVANCED.validateUpdatePack(pack('3.1.0',0,2),{currentBuild:302});
-  await context.GH_ADVANCED.validateUpdatePack(pack('3.0.0',302),{currentBuild:302,postInstall:true});
-  await rejects(pack('3.0.0',303),{currentBuild:302,postInstall:true},/لا تطابق Runtime/);
+  await context.GH_ADVANCED.validateUpdatePack(pack('3.0.0',304),{currentBuild:303});
+  await rejects(pack('3.0.0',303),{currentBuild:303},/Downgrade|إعادة التثبيت/);
+  await rejects(pack('3.0.0',302),{currentBuild:303},/Downgrade|إعادة التثبيت/);
+  await rejects(pack('3.0.0',999,2),{currentBuild:303},/Downgrade|إعادة التثبيت/);
+  await context.GH_ADVANCED.validateUpdatePack(pack('3.1.0',0,2),{currentBuild:303});
+  await context.GH_ADVANCED.validateUpdatePack(pack('3.0.0',303),{currentBuild:303,postInstall:true});
+  await rejects(pack('3.0.0',304),{currentBuild:303,postInstall:true},/لا تطابق Runtime/);
 
   const swift=fs.readFileSync('iOS/GlobalHoldings/GlobalGameStorage.swift','utf8');
   const controller=fs.readFileSync('iOS/GlobalHoldings/GameViewController.swift','utf8');
@@ -58,5 +58,5 @@ async function rejects(value,options,pattern){
   assert(swift.includes('oldBuild: Int?')&&swift.includes('newBuild: Int?')&&swift.includes('targetBuild <= installedBuild'));
   assert(controller.includes("build:\\(build),saveJSON:save")&&controller.includes('updateStateCommittedIdentity'));
   assert(signer.includes("'gh-update-signature-v3'")&&signer.includes("str(manifest.get('build',''))"));
-  console.log('Update semantic-version/build tuple Build302: PASS');
+  console.log('Update semantic-version/build tuple Build303: PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

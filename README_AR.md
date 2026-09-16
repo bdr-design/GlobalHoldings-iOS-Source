@@ -1,12 +1,12 @@
-# Global Holdings 3.0.0 - BUILD302
+# Global Holdings 3.0.0 - BUILD303
 
 - Native/Web Runtime: `3.0.0`
-- Build: `302`
+- Build: `303`
 - Save Schema: `2.0.0`
 - Update mode: `full-web / clean-snapshot-v1`
 - Release gate: signed hashes, atomic state commit, boot confirmation and Native-owned rollback.
 
-BUILD302 يقوي خريطة الأسطول، يقفل مسارات Mobility، يخفف حمل الأساطيل الكبيرة، يصلح البيع والصيانة والدخل، ويوحّد طاقم الأصول الآلي ومسارات الإدارة وAI الاستشاري. يبقى أساس BUILD301 وتوافق الحفظ دون تغيير.
+BUILD303 يربط سيارات Mobility بمسارات شوارع متحققة ويعرضها كنقط سوداء صغيرة، ويضيف تشغيلًا عالميًا فعليًا للطاقة والبنك، ويصلح الرواتب والشيكات وسيولة الاحتياطي، ويضيف قائمة شهرية واضحة للدخل والمصروف والعجز. يبقى Save Schema `2.0.0` متوافقًا دون تغيير.
 
 ---
 

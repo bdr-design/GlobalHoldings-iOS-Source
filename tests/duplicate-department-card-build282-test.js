@@ -1,16 +1,7 @@
 'use strict';
-// BUILD282: يمنع رجوع بطاقة القسم المكررة في تبويب عمليات power/bank.
-//
-// الجذر: قالب تبويب operations في companyView() يعرض departmentLifeCard(type,ctx) مرة واحدة
-// صراحة، ثم - لـpower وbank تحديدًا - يستدعي renderEnergy(ctx)/renderBank(ctx) اللتان تعرضان
-// نفس departmentLifeCard(type,ctx) داخليًا مرة أخرى في نهاية جسمهما. النتيجة: بطاقة "دورة القسم"
-// بزريها "تشغيل دورة القسم" و"رفع التقرير للإدارة" تظهر مرتين متتاليتين على نفس الصفحة، لنفس
-// dept، بلا أي فرق بين النسختين - أعطل من زر mobility-buy-fleet المكرر لأنه تكرار محتوى كامل
-// لا زر واحد.
-//
-// الإصلاح: تخطي الاستدعاء الصريح فقط لـpower/bank (يستقبلانها داخليًا أصلًا)، مع إبقائه لـ
-// air/sea/road كما هو. renderBank/renderEnergy أنفسهما لم يُمسّا - القسم المستقل bank/energy
-// (الذي يستدعيهما مباشرة بلا استدعاء خارجي سابق) يبقى يعرض البطاقة مرة واحدة كما كان.
+// BUILD282/303: يمنع رجوع بطاقة القسم أو مركز التشغيل المكرر في power/bank.
+// تبويب عمليات الشركة يعرض رابطًا واحدًا إلى المالك التشغيلي الموحد، بينما تبقى دورة القسم
+// للأقسام التي لا تملك مركزًا مستقلًا. هذا الحارس يفحص الهيكل النهائي بدل فرض الواجهة القديمة.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -52,14 +43,16 @@ moneyInput.value = '500000000000';
 click('#addMoneyBtn');
 for (const f of sel('.open-company')) f.dispatchEvent(new window.Event('click', { bubbles: true }));
 
-// ---- power/bank: البطاقة تظهر مرة واحدة فقط في تبويب عمليات كل منهما ----
+// ---- power/bank: لا نسخة تشغيل مضمّنة؛ رابط واحد فقط إلى المركز الموحد ----
 for (const type of ['power', 'bank']) {
   click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
   click(`[data-open="companyManage"][data-arg="${type}"]`); click('[data-company-manage-tab="operations"]');
   const reviewCount = sel('[data-gh-action="department-review"]').length;
   const escalateCount = sel('[data-gh-action="department-escalate"]').length;
-  assert.strictEqual(reviewCount, 1, `${type} operations tab must show department-review exactly once, found ${reviewCount}`);
-  assert.strictEqual(escalateCount, 1, `${type} operations tab must show department-escalate exactly once, found ${escalateCount}`);
+  const unifiedCount = sel(`[data-open="${type === 'power' ? 'energy' : 'bank'}"]`).length;
+  assert.strictEqual(reviewCount, 0, `${type} operations tab must not embed a second department-review, found ${reviewCount}`);
+  assert.strictEqual(escalateCount, 0, `${type} operations tab must not embed a second department-escalate, found ${escalateCount}`);
+  assert.strictEqual(unifiedCount, 1, `${type} operations tab must show one unified-center link, found ${unifiedCount}`);
 }
 
 // ---- air/sea/road: لم يتأثروا، ما زالوا يعرضون البطاقة مرة واحدة كما قبل الإصلاح ----
@@ -70,17 +63,18 @@ for (const type of ['air', 'sea', 'road']) {
   assert.strictEqual(reviewCount, 1, `${type} operations tab must still show department-review exactly once (untouched path), found ${reviewCount}`);
 }
 
-// ---- التحقق أن المحتوى الحقيقي لـrenderEnergy/renderBank لم يُفقد بالخطأ ----
+// ---- التحقق أن المركزين الموحدين ما زالا يعرضان المحتوى التشغيلي الحقيقي ----
 {
   click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
   click('[data-open="companyManage"][data-arg="bank"]'); click('[data-company-manage-tab="operations"]');
-  assert.ok(sel('[data-gh-action="bank-stress"]').length > 0, 'renderBank real content (bank-stress action) must still render');
+  click('[data-open="bank"]');
+  assert.strictEqual(sel('[data-gh-action="bank-stress"]').length, 1, 'the unified bank center must retain its stress-test action exactly once');
 }
 {
   click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
   click('[data-open="companyManage"][data-arg="power"]'); click('[data-company-manage-tab="operations"]');
-  assert.ok((window.document.getElementById('drawerBody')?.textContent || '').length > 100,
-    'renderEnergy content must still render for power');
+  click('[data-open="energy"]');
+  assert.strictEqual(sel('.energy-build').length, 4, 'the unified energy center must retain the four project choices exactly once');
 }
 
 assert.strictEqual(uncaught.length, 0, `no uncaught errors expected: ${uncaught.join(' | ')}`);

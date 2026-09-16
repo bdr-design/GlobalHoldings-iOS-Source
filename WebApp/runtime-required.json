@@ -46,6 +46,7 @@
     "diagnostics-core.js",
     "domain-command-core.js",
     "economics-core.js",
+    "energy-core.js",
     "event-ledger-core.js",
     "facility-core.js",
     "finance-core.js",

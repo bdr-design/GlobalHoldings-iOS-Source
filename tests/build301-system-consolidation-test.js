@@ -115,7 +115,7 @@ assert(state.domainRuntime.commands.filter(row=>row.manual).every(row=>['approve
 
 // Payroll has a dedicated day-27 document path and creates auditable transfers/accruals.
 const appSource=fs.readFileSync(path.join(WEBAPP,'app.js'),'utf8');
-assert(appSource.includes('simulationDayOfMonth===27'));
+assert(appSource.includes('payrollMeta.dayOfMonth>=27'),'payroll scheduler must catch the first simulation close on or after calendar day 27');
 assert(appSource.includes("'record-payroll-report'"));
 const reportId='PAYROLL-BUILD301-TEST';
 const accrued=window.GH_FINANCE_CORE.execute({state},'accrue-payroll',{company:'air',amount:12000,number:'PAY-AIR-BUILD301',reportId});
