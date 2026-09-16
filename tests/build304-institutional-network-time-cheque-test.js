@@ -112,9 +112,10 @@ assert(app.includes('movingFleetClusters'));
 assert(app.includes('movingAssetGroups'));
 assert(app.includes('facilityRenderGroups'));
 assert(!app.includes("}).slice(0,mapRenderBudget(zoom,'facilities')).forEach(f=>"),'owned facilities are still blindly truncated');
-assert(app.includes('function cancelPlacement('));
-assert(app.includes('id="changeMapPlacement"')&&app.includes('id="cancelMapPlacement"'));
-assert(app.includes("cancelPlacement('تم إلغاء وضع الإنشاء.')"));
+assert(app.includes('function cancelRoadRoutePlacement('));
+assert(app.includes('id="cancelMapPlacement"'));
+assert(!app.includes('id="changeMapPlacement"')&&!app.includes('confirmMapPlacement'));
+assert(app.includes("cancelRoadRoutePlacement('تم إلغاء وضع رسم المسار.')"));
 
 // Bases/centres have one discoverable owner, while bank/energy depth is separated
 // into focused institutional workspaces rather than one overlong legacy page.
