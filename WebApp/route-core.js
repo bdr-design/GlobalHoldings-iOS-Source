@@ -22,6 +22,20 @@
     return 6371*2*Math.asin(Math.min(1,Math.sqrt(h)));
   }
   function routeLength(points){let total=0;for(let i=1;i<points.length;i++)total+=haversine(points[i-1],points[i]);return total;}
+  // Read-only rendering geometry. Canonical routes and simulated trip times stay unchanged.
+  function splitAtDateline(points){
+    if(!Array.isArray(points)||points.length<2||points.some(point=>!validPoint(point)))return [];
+    const segments=[],copy=point=>[point[0],point[1]];let current=[copy(points[0])];
+    for(let i=1;i<points.length;i++){
+      const a=points[i-1],b=points[i],delta=((b[1]-a[1]+540)%360)-180;
+      if(Math.abs(b[1]-a[1])>180){
+        const boundary=delta===0?a[1]:(delta>0?180:-180),t=delta?(boundary-a[1])/delta:0,latitude=a[0]+(b[0]-a[0])*t;
+        current.push([latitude,boundary]);segments.push(current);current=[[latitude,-boundary]];
+      }
+      current.push(copy(b));
+    }
+    segments.push(current);return segments;
+  }
   function validateRoute(route,{requireCompany=true}={}){
     const errors=[];
     if(!object(route))return {ok:false,errors:['route-not-object']};
@@ -154,6 +168,6 @@
     if(command==='cache-geometry')return cacheGeometry(state,payload);
     throw new Error(`Unknown route command: ${command}`);
   }
-  const API=Object.freeze({VERSION,ROUTE_TYPES,LIMITS,NEAR_DUPLICATE,ensure,validPoint,validateRoute,canonicalRoute,signature,sample,corridorMetrics,conflict,execute});
+  const API=Object.freeze({VERSION,ROUTE_TYPES,LIMITS,NEAR_DUPLICATE,ensure,validPoint,splitAtDateline,validateRoute,canonicalRoute,signature,sample,corridorMetrics,conflict,execute});
   globalThis.GH_ROUTE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('routes',API);if(globalThis.window&&window!==globalThis)window.GH_ROUTE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

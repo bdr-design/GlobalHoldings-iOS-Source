@@ -64,6 +64,10 @@ final class GlobalGameStorage {
     static let updateFormat = "global-holdings-update"
     private static let updateSignatureKeyId = "gh-primary-2026"
     private static let updatePublicKeyBase64 = "evYy4hozGTbgYxWOYn+WKGc9rgK8iPSxnvsxwkhRVLo="
+    private static let trustedUpdateKeys = [
+        updateSignatureKeyId: updatePublicKeyBase64,
+        "gh-primary-2026-build310": "dvnhw1V/4vPHKlWf/NRtm45x5GWfChL+CiRxT9q21fI="
+    ]
 
     private let fileManager = FileManager.default
     private let folderName = "GlobalHoldingsRuntime"
@@ -1083,10 +1087,11 @@ final class GlobalGameStorage {
 
     private func verifyManifestSignature(_ manifest: [String: Any]) throws {
         guard let algorithm = manifest["signatureAlgorithm"] as? String, algorithm.lowercased() == "ed25519",
-              let keyId = manifest["signatureKeyId"] as? String, keyId == Self.updateSignatureKeyId,
+              let keyId = manifest["signatureKeyId"] as? String,
+              let trustedKey = Self.trustedUpdateKeys[keyId],
               let signatureText = manifest["signature"] as? String,
               let signature = Data(base64Encoded: signatureText), signature.count == 64,
-              let publicKeyData = Data(base64Encoded: Self.updatePublicKeyBase64), publicKeyData.count == 32 else {
+              let publicKeyData = Data(base64Encoded: trustedKey), publicKeyData.count == 32 else {
             throw UpdateError.message("حزمة التحديث غير موقعة بمفتاح Global Holdings الموثوق.")
         }
         guard let id = manifest["id"] as? String,
