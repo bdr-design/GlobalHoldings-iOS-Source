@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='3.0.0',LIMIT=1200;
+  const VERSION='3.0.0',LIMIT=240;
   function ensure(state){
     state.businessLedger=state.businessLedger&&typeof state.businessLedger==='object'?state.businessLedger:{};
     const l=state.businessLedger;
@@ -22,7 +22,6 @@
       detail:input.detail&&typeof input.detail==='object'?input.detail:{value:input.detail??null}
     };
     l.events.unshift(event);if(l.events.length>LIMIT)l.events.length=LIMIT;
-    if(!event.detail?.controlEventId){try{globalThis.GH_CONTROL_PLANE?.ingestDomainEvent?.(state,event);}catch(_error){}}
     return event;
   }
   function forEntity(state,entityType,entityId,limit=80){return ensure(state).events.filter(e=>e.entityType===entityType&&e.entityId===String(entityId)).slice(0,limit);}

@@ -1,10 +1,7 @@
+const {foundGame}=require('./helpers/found-game');
+(async()=>{
 'use strict';
-// BUILD282: يحمي شاشة تأسيس المجموعة المُعاد تصميمها من انكسار مستقبلي.
-//
-// السياق: أُعيدت هيكلة #founderFlow بصريًا (تجميع الحقول الخمسة عشر في 3 مجموعات مسمّاة بدل
-// شبكة مسطّحة واحدة، استبدال الشارات الزخرفية بقائمة "ماذا يحدث عند التأسيس" الحقيقية)، مع إبقاء
-// كل معرّف عنصر يقرأه app.js كما هو حرفيًا - صفر تعديل على app.js نفسه. هذا الاختبار يثبّت
-// العقد: كل معرّف مطلوب موجود، والتدفق الحقيقي (تأسيس + تخطٍّ + شعار) يعمل من البداية للنهاية.
+// Original founding regression, updated for explicit review and durable signing.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -39,19 +36,16 @@ const S = () => window.__GH_STATE__;
 const D = window.document;
 
 // ---- 1) العقد الكامل: كل معرّف يقرأه finishFounder()/updateFounderLogoPreview() موجود ----
-const REQUIRED_IDS = ['founderFlow', 'founderForm', 'founderLogoPreview', 'founderLogoUpload', 'founderLogoClear',
-  'founderName', 'founderShort', 'founderOwner', 'founderCountry', 'founderCity', 'founderSector', 'founderMode',
-  'founderLegalForm', 'founderCurrency', 'founderFiscal', 'founderRisk', 'founderProcurement', 'founderAuthority',
-  'founderEnglishName', 'founderError', 'skipFounder'];
+const REQUIRED_IDS = ['founderFlow','founderForm','founderLogoPreview','founderLogoUpload','founderLogoClear','founderName','founderShort','founderOwner','founderLocation','founderMode','founderEnglishName','founderError','founderReview','founderSubmit','founderBack'];
 for (const id of REQUIRED_IDS) {
   assert.ok(D.getElementById(id), `required element #${id} must exist for app.js to wire correctly`);
 }
-assert.strictEqual([...D.querySelectorAll('.logo-preset')].length, 4, 'exactly 4 logo preset buttons expected');
-assert.strictEqual([...D.querySelectorAll('.founder-group')].length, 3, 'fields must be grouped into exactly 3 named sections');
+assert.strictEqual([...D.querySelectorAll('.inc-logo-option')].length, 4, 'exactly 4 logo preset buttons expected');
+assert.strictEqual([...D.querySelectorAll('.incorporation-fields')].length, 2, 'fields must have only identity and capital sections');
 
 // ---- 2) التأسيس الحقيقي عبر submit يعمل من البداية للنهاية بكل القيم ----
 assert.strictEqual(S().onboardingComplete, false, 'onboarding must start incomplete');
-D.getElementById('founderForm').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await foundGame(window);
 assert.strictEqual(S().onboardingComplete, true, 'submitting the real form must complete onboarding');
 assert.strictEqual(S().profile.name, 'المجموعة العالمية القابضة', 'group name must flow through to profile');
 assert.strictEqual(S().profile.founder, 'المؤسس', 'founder name must flow through to profile');
@@ -60,3 +54,5 @@ assert.ok(D.getElementById('founderFlow').classList.contains('hidden'), 'the fou
 assert.strictEqual(uncaught.length, 0, `no uncaught errors expected: ${uncaught.join(' | ')}`);
 console.log('founder-screen-redesign-build282-test: ok');
 process.exit(0);
+
+})().catch(error=>{console.error(error);process.exitCode=1;});
