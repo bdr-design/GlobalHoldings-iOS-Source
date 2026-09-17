@@ -10,7 +10,8 @@ assert(tx.includes('Nested state transactions are forbidden')&&tx.includes('rest
 assert(sim.includes("governor:'GREEN'")&&sim.includes("governor==='RED'"));
 assert(sim.includes('Object.freeze([0,1,2,4])'),'multiplier speed set missing');
 assert(!app.includes('1 دقيقة/ث')&&!app.includes('1 ساعة/ث'),'legacy wall-rate speed labels returned');
-assert(app.includes('const SAFE_SPEED_VALUES=[0,1,2,4]'),'app speed values do not match core');
+assert(app.includes('const SAFE_SPEED_VALUES=[0,1,2,3,4,5]'),'app must expose five running levels plus pause');
+assert(app.includes('SIMULATION_RATE_BY_LEVEL=Object.freeze({0:0,1:30,2:120,3:300,4:600,5:60})'),'persisted 30/120/600 levels must retain their exact rates');
 assert(swift.includes('webViewWebContentProcessDidTerminate')&&swift.includes('saveBridge')&&swift.includes('bootstrapJavaScript(force: true, pause: true)'));
 assert(vault.includes('save-A')===false); // slot names are generated, not hard-coded single authority
 assert(vault.includes('Envelope')&&vault.includes('.atomic')&&vault.includes('currentGeneration'));

@@ -17,12 +17,12 @@ function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);
   if(!id||a<=0||target<=0)throw new Error('invalid-acquisition');
   const current=Number(s.stakes[id])||0;if(target<=current)throw new Error('stake-not-increased');
   const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)throw new Error('finance-core-missing');
-  F.execute({state:s},'spend',{company:'group',amount:a,note:`استحواذ ${target}% · ${p.name||id}`,method:'تحويل استحواذ',taxable:false,line:'capex'});
+  const payment=F.execute({state:s},'pay-by-cheque',{company:'group',amount:a,note:`استحواذ ${target}% · ${p.name||id}`,beneficiary:p.name||id,taxable:false,line:'capex'});
   s.stakes[id]=target;const deal=s.maDeals[id]||(s.maDeals[id]={stage:'screening',dd:null,offer:null,integration:0});
   deal.offer={at:now(s),target,cost:a,premium:Number(p.premium)||1};deal.stage=target>=51?'integration':'investment';
   if(target>=51){s.ownedCompanies=Array.isArray(s.ownedCompanies)?s.ownedCompanies:[];if(!s.ownedCompanies.includes(id))s.ownedCompanies.push(id);deal.integration=Math.max(20,Number(deal.integration)||0);}
   s.groupValue=num(s.groupValue)+a*.72+num(p.synergy)*2;
-  return {id,name:p.name||id,stake:target,amount:a,acquiredAt:now(s),status:target>=51?'سيطرة':'استثمار'};
+  return {id,name:p.name||id,stake:target,amount:a,acquiredAt:now(s),status:target>=51?'سيطرة':'استثمار',paymentRef:payment.cheque.id,invoiceRef:payment.invoice.number};
  }
  if(cmd==='open-company'){
   const type=p.type;if(s.openedCompanies.includes(type))return s.companyRegistry[type];const capital=num(p.capital);if(capital<=0)throw new Error('invalid-capital');

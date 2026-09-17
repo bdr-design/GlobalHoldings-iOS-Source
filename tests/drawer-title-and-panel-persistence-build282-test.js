@@ -1,3 +1,5 @@
+const {foundGame}=require('./helpers/found-game');
+(async()=>{
 'use strict';
 // BUILD282: يمنع رجوع فقدان آخر شاشة يفتحها المستخدم، ويحمي عنوان الدرج التابع للتبويب النشط.
 //
@@ -57,8 +59,8 @@ const storageKey = 'global-holdings-world-v2.0.0';
 {
   const first = bootFresh();
   const { window: w1, click: c1 } = first;
-  c1('#skipFounder');
-  assert.strictEqual(w1.__GH_STATE__.onboardingComplete, true, 'skipFounder must complete onboarding');
+  await foundGame(w1);
+  assert.strictEqual(w1.__GH_STATE__.onboardingComplete, true, 'signed contract must complete onboarding');
   c1('[data-panel="workspaceHub"]'); c1('[data-open="companies"]'); c1('[data-companytab="subs"]');
   const moneyInput = w1.document.getElementById('addMoneyInput');
   moneyInput.value = '500000000000';
@@ -89,7 +91,7 @@ const storageKey = 'global-holdings-world-v2.0.0';
 {
   const first = bootFresh();
   const { window: w1, click: c1 } = first;
-  c1('#skipFounder');
+  await foundGame(w1);
   c1('[data-panel="leadershipHub"]');
   assert.strictEqual(w1.__GH_STATE__.lastPanel, 'leadershipHub', 'opening a panel must record it');
   w1.document.getElementById('drawer').querySelector('.drawer-close, [aria-label="إغلاق"], button')?.click();
@@ -103,7 +105,7 @@ const storageKey = 'global-holdings-world-v2.0.0';
 // ---- 3) عنوان الدرج يتبع كل تبويب من السبعة، لكل الشركات الست ----
 {
   const { window: w, click: c } = bootFresh();
-  c('#skipFounder');
+  await foundGame(w);
   c('[data-panel="workspaceHub"]'); c('[data-open="companies"]'); c('[data-companytab="subs"]');
   const inp = w.document.getElementById('addMoneyInput'); inp.value = '500000000000'; c('#addMoneyBtn');
   for (const f of [...w.document.querySelectorAll('.open-company')]) f.dispatchEvent(new w.Event('click', { bubbles: true }));
@@ -127,3 +129,5 @@ const storageKey = 'global-holdings-world-v2.0.0';
 
 console.log('drawer-title-and-panel-persistence-build282-test: ok');
 process.exit(0);
+
+})().catch(error=>{console.error(error);process.exitCode=1;});
