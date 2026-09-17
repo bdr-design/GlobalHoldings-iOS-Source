@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='3.0.0',LIMIT=240,ALLOWED_SPEEDS=[0,1,2,4];
+  const VERSION='3.0.0',LIMIT=240,ALLOWED_SPEEDS=[0,1,2,3,4,5];
   let installed=false,lastLongTaskAt=0,eventSeq=0;
   function ensure(state){
     state.diagnostics=state.diagnostics&&typeof state.diagnostics==='object'?state.diagnostics:{};
@@ -51,7 +51,7 @@
     const add=(id,severity,title,detail,domain,evidence)=>issues.push(issue(id,severity,title,detail,domain,evidence));
     const simSeconds=Number(state.simSeconds);
     if(!Number.isFinite(simSeconds)||simSeconds<0)add('SIM_TIME_INVALID','critical','زمن المحاكاة غير صالح','simSeconds يجب أن يكون رقمًا محدودًا وغير سالب.','simulation',{simSeconds:state.simSeconds});
-    if(!ALLOWED_SPEEDS.includes(Number(state.speed)))add('SIM_SPEED_INVALID','critical','سرعة غير معتمدة','السرعة الحالية ليست ضمن Pause/×1/×2/×4.','simulation',{speed:state.speed});
+    if(!ALLOWED_SPEEDS.includes(Number(state.speed)))add('SIM_SPEED_INVALID','critical','سرعة غير معتمدة','السرعة الحالية ليست ضمن الإيقاف أو مستويات التشغيل الخمسة المعتمدة.','simulation',{speed:state.speed});
     const sim=extra.simulation||{};
     if(sim.fatalError)add('SIM_FATAL_STATE','critical','المحرك في حالة خطأ قاتل',String(sim.fatalError),'simulation',sim);
     if(Number(sim.backlogSeconds)>60)add('SIM_BACKLOG_HIGH','warning','تراكم محاكاة مرتفع','يوجد backlog مرتفع وقد يؤدي إلى تباطؤ أو خفض سرعة تلقائي.','simulation',{backlogSeconds:sim.backlogSeconds});

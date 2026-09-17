@@ -1,6 +1,6 @@
 const {harness,minimal}=require('./core-harness');
 function scenario(){
- const h=harness(['transaction-core','domain-command-core','save-schema','determinism-core','event-ledger-core','dependency-core','policy-core','lifecycle-core','delivery-monitor-core','catalog','realism-core','finance-core','hr-core','corporate-core','procurement-core','facility-core','fleet-core','ai-executive-core','operations-core','route-core','game-lifecycle-core','market-core']);
+ const h=harness(['transaction-core','domain-command-core','save-schema','determinism-core','event-ledger-core','dependency-core','policy-core','lifecycle-core','delivery-monitor-core','catalog','realism-core','finance-core','hr-core','corporate-core','procurement-core','facility-core','fleet-core','ai-executive-core','operations-core','route-core','game-lifecycle-core','market-core','mobility-core']);
  const {s}=h,d={...minimal(),profile:{name:'Test Group'},bank:{},operations:{},crew:['pilots','cabin','aeng','captains','sailors','seng','drivers','mech'].map(id=>({id,count:0,name:id,salaryMin:10,salaryMax:20})),branches:[],hired:[],unlockedSectors:[],ownedCompanies:[]};
  const state=s.GH_GAME_LIFECYCLE.pristine(d,1);
  s.GH_GAME_LIFECYCLE.foundGroup(state,{mode:'sandbox',name:'Contract Group',country:'SA',city:'Riyadh'},d,{nextId:()=> 'FOUND-1',simYear:()=>2026});

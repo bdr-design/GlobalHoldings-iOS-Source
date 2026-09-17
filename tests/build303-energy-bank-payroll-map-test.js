@@ -3,7 +3,7 @@ const assert=require('assert');
 const fs=require('fs');
 const {harness,minimal}=require('./helpers/core-harness');
 
-const {s}=harness(['transaction-core','domain-command-core','finance-core','energy-core','banking-core','economics-core']);
+const {s}=harness(['transaction-core','domain-command-core','finance-core','energy-core','facility-core','banking-core','mobility-core','economics-core']);
 const state={
   ...minimal(),
   profile:{name:'Build 303 Group',founder:'المؤسس',hq:'الرياض، المملكة العربية السعودية'},
@@ -14,7 +14,7 @@ const state={
   advanced:{economy:{electricityPriceMWh:92,gasCostMWh:39,carbonPriceTon:45,depositRate:.03,loanYield:.075},labor:{employmentContracts:[],hiringLog:[]}},
   customHubs:[],globalBases:[],assets:[]
 };
-const F=s.GH_FINANCE_CORE,E=s.GH_ENERGY_CORE,B=s.GH_BANKING_CORE,X=s.GH_ECONOMICS_CORE;
+const F=s.GH_FINANCE_CORE,E=s.GH_ENERGY_CORE,B=s.GH_BANKING_CORE,FC=s.GH_FACILITY_CORE,X=s.GH_ECONOMICS_CORE;
 F.ensure(state);
 for(const [company,balance] of [['group',500_000_000],['power',500_000_000],['bank',500_000_000]])F.book(state,company).accounts[0].balance=balance;
 F.reconcile(state);
@@ -38,7 +38,9 @@ const energyDay=E.tickDay(state,{day:1}),energyRows=state.energy.dailyHistory.le
 // The bank also begins at zero. A real international branch acquires customers
 // and deposits deterministically; deposits remain a liability rather than fee income.
 let bank=B.ensure(state);assert.strictEqual(bank.branches,0);assert.strictEqual(bank.deposits,0);assert.strictEqual(bank.loans,0);
-const branch=B.execute({state},'open-branch',{branchId:'BR-DXB',facilityId:'BANK-DXB',capitalId:'DXB',city:'دبي',country:'الإمارات'});
+const bankCapital=s.GH_MOBILITY_CORE.capitalMeta('AUH'),bankSite={key:'site:bank:AUH',kind:'company-site',company:'bank',...bankCapital};
+FC.execute({state},'create',{facility:{id:'BANK-AUH',sourceKey:bankSite.key,company:'bank',kind:'bank',owned:true,...bankCapital}});
+const branch=B.execute({state},'open-branch',{branchId:'BR-AUH',facilityId:'BANK-AUH',site:bankSite});
 assert.strictEqual(branch.retailCustomers,0);assert.strictEqual(branch.deposits,0);assert(branch.services.includes('تمويل أفراد')&&branch.services.includes('تمويل شركات'));
 const bankCashBeforeDeposits=F.operating(state,'bank');
 for(let day=1;day<=20;day++){state.simSeconds=day*86400;B.execute({state},'tick-day',{day});}
@@ -47,7 +49,7 @@ bank=B.ensure(state);assert(bank.retailCustomers>0&&bank.businessCustomers>0);as
 // Retail and corporate products are explicit. Loan origination creates a loan
 // asset, retains only the origination fee and observes the liquidity/LDR guards.
 for(const product of ['consumer','mortgage','sme','corporate','project','green'])assert(B.PRODUCTS[product],`missing banking product ${product}`);
-const bankCashBeforeLoan=F.operating(state,'bank'),loan=B.execute({state},'originate-loan',{product:'consumer',branchId:'BR-DXB',amount:2_000_000,borrowers:12});
+const bankCashBeforeLoan=F.operating(state,'bank'),loan=B.execute({state},'originate-loan',{product:'consumer',branchId:'BR-AUH',amount:2_000_000,borrowers:12});
 assert.strictEqual(loan.principal,2_000_000);assert.strictEqual(bank.loans,2_000_000);assert.strictEqual(F.operating(state,'bank'),bankCashBeforeLoan-(loan.principal-loan.originationFee));assert.strictEqual(bank.branchNetwork[0].loans,2_000_000);
 const journal=state.finance.journalEntries.find(row=>row.sourceRef===loan.id);assert(journal);assert.strictEqual(journal.lines.reduce((sum,row)=>sum+row.debit,0),journal.lines.reduce((sum,row)=>sum+row.credit,0),'loan origination journal must balance');
 const outstandingBefore=loan.outstanding;state.simSeconds=21*86400;B.execute({state},'tick-day',{day:21});const liveLoan=bank.loanPortfolios.find(row=>row.id===loan.id);assert(liveLoan.outstanding<outstandingBefore);const bankEconomics=X.sectorEconomics(state);assert(bankEconomics.detail.interestIncome>0);assert(bankEconomics.detail.feeIncome>0);
@@ -71,8 +73,8 @@ const cheque=F.execute({state},'issue-cheque',{company:'group',amount:12_345_678
 // UI/source contracts: Mobility is a tiny black dot; real street geometry is
 // cached with bounded exponential retry; approvals remain a paper review log.
 const app=fs.readFileSync('WebApp/app.js','utf8'),css=fs.readFileSync('WebApp/styles.css','utf8'),advanced=fs.readFileSync('WebApp/advanced-core.js','utf8');
-assert(app.includes("if(kind==='mobility')return `<span class=\"mobility-street-dot"));assert(app.includes('iconSize:[10,10],iconAnchor:[5,5]'));assert(app.includes('pendingStreetRoutes?.(state,8)'));assert(app.includes('Math.min(120000,2500*(2**Math.min(5,attempts-1)))'));
-assert(css.includes('.mobility-street-dot{display:block;width:6px;height:6px'));assert(css.includes('background:#050505'));
+assert(app.includes("if(kind==='mobility')return `<span class=\"mobility-street-dot"));assert(app.includes('iconSize:[44,44],iconAnchor:[22,22]'));assert(app.includes('pendingStreetRoutes?.(state,8)'));assert(app.includes('Math.min(120000,2500*(2**Math.min(5,attempts-1)))'));
+assert(css.includes('.mobility-street-dot{display:block;width:14px;height:14px'));assert(css.includes('background:#071015'));
 assert(advanced.includes('approval-log-paper'));assert(app.includes('cheque-instrument'));assert(css.includes('.financial-paper.authority-inspired.cheque-instrument')&&css.includes('aspect-ratio:2.12/1')&&css.includes('.drawer:has(.cheque-grid-wide)'));assert(app.includes("panel==='monthlyFinance'"));
 assert(!advanced.includes('function renderEnergy(ctx)')&&!advanced.includes('function renderBank(ctx)'),'legacy duplicate energy/bank renderers survived BUILD303');assert(advanced.includes('فتح المركز التشغيلي الموحد'));assert(advanced.includes('بدل تشغيل واجهة طاقة قديمة')&&advanced.includes('بدل تشغيل واجهة بنك قديمة'));
 assert(!app.includes("querySelectorAll('.bank-loan')"),'the removed fixed-size legacy bank-loan control must not retain a dead event binding');assert(!app.includes('function issueBankLoans()'),'the superseded fixed $50M loan path must be removed instead of accumulated beside Banking Core');

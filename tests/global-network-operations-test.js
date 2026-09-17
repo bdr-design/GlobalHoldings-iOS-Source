@@ -7,7 +7,7 @@ const requiredApp=[
   'LOCAL_PLACE_AREAS',
   "area:'حي النسيم'",
   'logisticsCenterName',
-  'bindHubPlacementGestures',
+  'bindRoadRoutePlacementGestures',
   "'touchstart'",
   "'contextmenu'",
   "'long-press'",
@@ -35,8 +35,8 @@ const requiredCss=[
 const missingCss=requiredCss.filter(token=>!css.includes(token));
 if(missingCss.length)throw new Error(`Global network visual contract is incomplete: ${missingCss.join(', ')}`);
 
-if(!/handleMapPlacement\(event,'tap'\)/.test(app)||!/handleMapPlacement\(event,'long-press'\)/.test(app)){
-  throw new Error('Map placement does not preserve both tap fallback and mobile long-press placement.');
+if(!/handleRoadRoutePlacement\(event,'tap'\)/.test(app)||!/handleRoadRoutePlacement\(event,'long-press'\)/.test(app)){
+  throw new Error('Road-route placement does not preserve both tap fallback and mobile long-press selection.');
 }
 if(!/فتح القاعدة اختياري/.test(app)||!/لا يلزم امتلاك قاعدة أو مركز فيه/.test(app)){
   throw new Error('Public airport/port route policy is not visible to the player.');
