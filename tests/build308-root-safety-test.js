@@ -37,7 +37,7 @@ const asset=(id,type='air',baseFacility='BASE-AIR')=>({id,type,name:id,baseFacil
   });
 
   await test('every delivered asset receives the preserved fixed crew exactly once',()=>{
-    const {s}=harness(['route-core','fleet-core']),F=s.GH_FLEET_CORE;
+    const {s}=harness(['route-core','facility-core','fleet-core']),F=s.GH_FLEET_CORE;
     const state={simSeconds:0,assets:[],crew:[],advanced:{labor:{}},sequences:{},globalBases:[{id:'BASE-AIR',name:'Air Base',owned:true,company:'air',kind:'airport-base'}],customHubs:[],realism:{procurement:{deliveries:[]}},finance:{invoices:[],cheques:[]}};
     for(let i=1;i<=2;i++){
       const delivered=asset(`AIR-${i}`),deliveryId=`D-${i}`,invoice=`INV-${i}`;
@@ -104,7 +104,7 @@ const asset=(id,type='air',baseFacility='BASE-AIR')=>({id,type,name:id,baseFacil
     const read=file=>fs.readFileSync(path.join(ROOT,file),'utf8'),app=read('WebApp/app.js'),html=read('WebApp/index.html'),runtime=read('WebApp/runtime-required.json'),advanced=read('WebApp/advanced-core.js'),catalog=read('WebApp/catalog.js');
     assert(app.includes('مغادرة جماعية لمسارات مختلفة'));assert(app.includes("async function dispatchInternationalNetwork(type)"));assert(app.includes("async function dispatchExistingDistinctNetwork(type)"));assert(app.includes("runDurableStateCommand(`bulk-distinct-departure:${type}`"));
     assert(!app.includes('function renderAssignRoute'));assert(!advanced.includes('renderIntelligence'));assert(!html.includes('unpkg.com/leaflet'));assert(html.includes('vendor/leaflet/leaflet.js'));assert(runtime.includes('vendor/leaflet/leaflet.js'));
-    assert(!runtime.includes('ai-executive-core.js'));assert(!fs.existsSync(path.join(ROOT,'WebApp','ai-executive-core.js')));assert(app.includes('MAX_FRAME_MS:50'));assert(app.includes('maxPixelsPerSecond:36'));assert(app.includes("draft.simulationFault={code:'ASSET_SIMULATION_ISOLATED'"));
+    assert(!runtime.includes('ai-executive-core.js'));assert(!fs.existsSync(path.join(ROOT,'WebApp','ai-executive-core.js')));assert(app.includes('MAX_FRAME_MS:50'));assert(app.includes('maxPixelsPerSecond:8'));assert(app.includes("draft.simulationFault={code:'ASSET_SIMULATION_ISOLATED'"));
     assert(!catalog.toLowerCase().includes('autonomous'));assert(!runtime.includes('truck-autonomous'));assert(!fs.existsSync(path.join(ROOT,'WebApp','assets','images','truck-autonomous.webp')));
     assert(app.includes("GLOBAL_HALT_IDS=Object.freeze(['CONTROL_JOURNAL_CHAIN_BREAK'"));assert(app.includes("if(asset.staffing?.mode!=='automatic-fixed'||asset.staffing.ready!==true)"));
   });

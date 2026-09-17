@@ -1,3 +1,4 @@
+const {foundGame}=require('./helpers/found-game');
 'use strict';
 const assert=require('assert');
 const fs=require('fs');
@@ -23,7 +24,7 @@ const openCompany=type=>{click('[data-panel="workspaceHub"]');click('[data-open=
 const manageCompany=(type,tab)=>{click('[data-panel="workspaceHub"]');click('[data-open="companies"]');click('[data-companytab="subs"]');click(`[data-open="companyManage"][data-arg="${type}"]`);if(tab)click(`[data-company-manage-tab="${tab}"]`);};
 
 (async()=>{
-click('#skipFounder');
+await foundGame(window);
 click('#speedMenu button[data-speed="0"]');
 click('[data-panel="workspaceHub"]');click('[data-open="companies"]');click('[data-companytab="subs"]');
 D.getElementById('addMoneyInput').value='900000000000';click('#addMoneyBtn');
@@ -37,7 +38,7 @@ const newAirModel=window.GH_CORPORATE_CORE.model(state,'air');assert.strictEqual
 manageCompany('air');assert(!D.querySelector('[data-gh-action="company-budget"]'),'company page duplicated the central finance transfer path');click('[data-company-manage-tab="finance"]');assert(!D.querySelector('[data-gh-action="company-capex"]'),'company page kept the fake CAPEX path instead of real asset/facility purchase');
 
 // Buy a real base and a real aircraft. Delivery, fixed staffing and payroll are atomic and immediate.
-manageCompany('air');click('[data-open="companyFacilities"][data-arg="air"]');click('.open-global-base');
+manageCompany('air');click('[data-open="companyFacilities"][data-arg="air"]');click('.open-facility-directory[data-kind="air"]');D.getElementById('worldCountry').value='SA';D.getElementById('worldCountry').dispatchEvent(new window.Event('change',{bubbles:true}));D.getElementById('worldCity').value='SA:riyadh';D.getElementById('worldCity').dispatchEvent(new window.Event('change',{bubbles:true}));click('.open-directory-site[data-key="air:OERK"]');
 const airBase=state.globalBases.find(base=>base.company==='air'&&base.owned);assert(airBase,'air base purchase failed');
 window.GH_FINANCE_CORE.execute({state},'transfer',{from:'group',to:'air',amount:600000000,note:'Build 301 test funding'});
 manageCompany('air','assets');click('[data-open="assetMarket"][data-arg="air"]');
@@ -71,7 +72,7 @@ assert(markerCalls.some(call=>String(call.opts?.icon?.options?.className||'').in
 openCompany('mobility');
 assert.strictEqual(window.GH_MOBILITY_CORE.snapshot(state).vehicles,0);
 assert.strictEqual(state.customHubs.filter(base=>base.company==='mobility'&&base.owned).length,0);
-manageCompany('mobility');click('[data-open="companyFacilities"][data-arg="mobility"]');click('.mobility-open-capital-center');
+manageCompany('mobility');click('[data-open="companyFacilities"][data-arg="mobility"]');click('.open-facility-directory[data-kind="mobility"]');D.getElementById('worldCountry').value='SA';D.getElementById('worldCountry').dispatchEvent(new window.Event('change',{bubbles:true}));click('.open-directory-site[data-key="site:mobility:RUH"]');
 const mobilityCenter=state.customHubs.find(base=>base.company==='mobility'&&base.owned);assert(mobilityCenter,'Mobility center purchase failed');
 window.GH_FINANCE_CORE.execute({state},'transfer',{from:'group',to:'mobility',amount:100000000,note:'Build 301 Mobility funding'});
 manageCompany('mobility','assets');click('[data-open="assetMarket"][data-arg="mobility"]');click('.manual-buy-mobility');
@@ -99,10 +100,11 @@ click('[data-panel="control"]');click('[data-open="routes"]');click('[data-route
 assert.strictEqual(aircraft.phase,'moving');
 assert(aircraft.routeId&&state.routeEndpoints&&Object.keys(state.routeEndpoints).length>0,'international route was not created');
 
-// The rebuilt global directory covers all six companies with a compact two-metric hero.
+// The unified global directory covers all six companies with explicit location filters.
 click('#worldDirectoryBtn');
 assert.strictEqual(D.querySelectorAll('.world-company-chip').length,6);
-assert.strictEqual(D.querySelectorAll('.world-directory .registry-hero .metric-row > div').length,2);
+assert.strictEqual(D.querySelectorAll('.world-directory .registry-hero .directory-scope').length,1);
+assert.strictEqual(D.querySelectorAll('#worldKind,#worldCountry,#worldCity,#worldSearch').length,4);
 for(const code of ['AIR','SEA','LOG','NRG','BNK','MOVE'])assert([...D.querySelectorAll('.world-company-chip b')].some(node=>node.textContent===code),`missing directory company ${code}`);
 
 // The retired autonomous subsystem has no runtime owner or persisted root.

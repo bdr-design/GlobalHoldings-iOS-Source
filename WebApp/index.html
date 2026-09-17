@@ -12,6 +12,7 @@
   <title>Global Holdings · Operations Command</title>
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="founding.css">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -30,112 +31,41 @@
     <symbol id="i-crown" viewBox="0 0 24 24"><path d="m3 7 5 4 4-7 4 7 5-4-2 11H5L3 7ZM5 21h14"/></symbol>
   </svg>
 
-  <section id="founderFlow" class="founder-flow hidden" aria-label="تأسيس المجموعة">
-    <aside class="founder-visual" aria-label="ملخص ملف التأسيس">
-      <header class="founder-dossier-head">
-        <div class="founder-mark"><span>GH</span></div>
-        <div><p class="overline">GLOBAL HOLDINGS · 2026</p><b>مكتب تأسيس المجموعات</b></div>
-      </header>
-      <div class="founder-dossier-copy">
-        <span class="founder-dossier-status">مسودة رسمية · جاهزة للتوقيع</span>
-        <h1>عقد تأسيس<br>مجموعة عالمية</h1>
-        <p>حدّد الهوية والموطن والسياسة المالية. تتحول هذه البنود مباشرة إلى ملف المجموعة دون إنشاء أصول أو قواعد تلقائيًا.</p>
-      </div>
-      <ol class="founder-checklist">
-        <li><b>01</b><span>الاسم والهوية التجارية</span></li>
-        <li><b>02</b><span>الموطن والحوكمة</span></li>
-        <li><b>03</b><span>النشاط والسياسة المالية</span></li>
-        <li><b>04</b><span>المراجعة والتوقيع</span></li>
-      </ol>
-      <div class="founder-dossier-meta">
-        <span>نوع المستند <b>عقد تأسيس</b></span>
-        <span>حالة السجل <b>جديد</b></span>
-        <span>نفاذ القرار <b>فوري</b></span>
-      </div>
-      <p class="founder-note">كل قيمة قابلة للتعديل الآن. بعد التوقيع يبدأ السجل التشغيلي النظيف من دون منح أصول مجانية.</p>
-    </aside>
-    <form id="founderForm" class="founder-form">
-      <article class="founder-contract-sheet">
-        <header class="founder-contract-head">
-          <div class="founder-contract-emblem" aria-hidden="true">GH</div>
-          <div class="founder-form-head">
-            <div class="step-label">وثيقة تأسيس مؤسسي</div>
-            <h2>عقد تأسيس المجموعة القابضة</h2>
-            <p>وثيقة داخلية معتمدة لبدء السجل القانوني والتشغيلي</p>
-          </div>
-          <dl class="founder-contract-id">
-            <div><dt>رقم العقد</dt><dd dir="ltr">GH-FND-2026-001</dd></div>
-            <div><dt>الإصدار</dt><dd>الأول</dd></div>
-            <div><dt>الحالة</dt><dd class="contract-draft">مسودة</dd></div>
-          </dl>
-        </header>
-
-        <p class="founder-contract-preamble">بناءً على رغبة المؤسس <strong id="founderContractFounder">المؤسس</strong>، اتُّفق على تأسيس <strong id="founderContractGroup">المجموعة العالمية القابضة</strong> واتخاذ <strong id="founderContractLocation">الرياض، السعودية</strong> موطنًا رئيسيًا لها، وفق المواد الآتية:</p>
-
-        <fieldset class="founder-group founder-contract-article" data-article="01">
-          <legend><span>المادة الأولى</span> الاسم والهوية التجارية</legend>
-          <div class="founder-branding-card">
-            <div id="founderLogoPreview" class="founder-logo-preview" data-style="teal"><span>GH</span></div>
-            <div class="founder-logo-tools">
-              <b>ختم وهوية المجموعة</b>
-              <small>اختر قالبًا أو ارفع صورة من الاستديو. تُضغط الصورة محليًا لحماية ملف الحفظ.</small>
-              <div class="logo-preset-row">
-                <button type="button" class="logo-preset active" data-logo-style="teal">زمردي</button>
-                <button type="button" class="logo-preset" data-logo-style="navy">كحلي</button>
-                <button type="button" class="logo-preset" data-logo-style="gold">ذهبي</button>
-                <button type="button" class="logo-preset" data-logo-style="mono">أحادي</button>
-              </div>
-              <div class="founder-logo-actions">
-                <label class="logo-upload-btn">رفع من الاستديو<input id="founderLogoUpload" type="file" accept="image/*" hidden></label>
-                <button id="founderLogoClear" type="button" class="text-button compact">إزالة الصورة</button>
-              </div>
+  <section id="founderFlow" class="incorporation-flow hidden" aria-labelledby="incorporationTitle">
+    <div class="incorporation-workspace">
+      <header class="incorporation-masthead"><span class="incorporation-wordmark">GH<span>GLOBAL HOLDINGS</span></span><span class="incorporation-edition">بداية جديدة <i></i></span></header>
+      <nav class="incorporation-progress" aria-label="مراحل التأسيس"><span id="founderDataStep" aria-current="step"><b>01</b> بيانات المجموعة</span><i></i><span id="founderReviewStep"><b>02</b> العقد والتوقيع</span></nav>
+      <form id="founderForm" class="incorporation-form" novalidate>
+        <div id="founderDataPane">
+          <header class="incorporation-intro"><p>مكتب تأسيس المجموعات</p><h1 id="incorporationTitle">مجموعة تحمل اسمك.</h1><span>بيانات قليلة، ثم عقد واضح لبداية أعمالك.</span></header>
+          <section class="incorporation-fields" aria-labelledby="incIdentityTitle">
+            <h2 id="incIdentityTitle"><span>01</span> الهوية والمقر</h2>
+            <div class="incorporation-grid">
+              <label class="incorporation-wide">اسم المجموعة<input id="founderName" required maxlength="42" value="المجموعة العالمية القابضة" autocomplete="organization"></label>
+              <label>اسم المؤسس<input id="founderOwner" required maxlength="32" value="المؤسس" autocomplete="name"></label>
+              <label>المقر الرئيسي<select id="founderLocation"><option value="RUH">الرياض · السعودية</option></select></label>
             </div>
-          </div>
-          <div class="form-grid">
-            <label class="wide">اسم المجموعة<input id="founderName" required maxlength="42" value="المجموعة العالمية القابضة"></label>
-            <label>الاختصار<input id="founderShort" required maxlength="4" value="GH" dir="ltr"></label>
-            <label>اسم المؤسس<input id="founderOwner" required maxlength="32" value="المؤسس"></label>
-            <label class="wide">اسم قانوني إنجليزي<input id="founderEnglishName" maxlength="60" value="Global Holdings Group"></label>
-          </div>
-        </fieldset>
-
-        <fieldset class="founder-group founder-contract-article" data-article="02">
-          <legend><span>المادة الثانية</span> الموطن والحوكمة</legend>
-          <div class="form-grid">
-            <label>الدولة<select id="founderCountry"><option>السعودية</option><option>الإمارات</option><option>سنغافورة</option><option>المملكة المتحدة</option><option>الولايات المتحدة</option></select></label>
-            <label>المقر<select id="founderCity"><option>الرياض</option><option>دبي</option><option>سنغافورة</option><option>لندن</option><option>نيويورك</option></select></label>
-            <label>الشكل القانوني<select id="founderLegalForm"><option>شركة قابضة مساهمة مقفلة</option><option>شركة مساهمة</option><option>شركة ذات مسؤولية محدودة</option><option>مجموعة استثمارية خاصة</option></select></label>
-            <label>صلاحية التوقيع<select id="founderAuthority"><option value="board">المجلس للصفقات الكبرى</option><option value="founder">المؤسس حتى حد التفويض</option><option value="dual">توقيع مزدوج</option></select></label>
-          </div>
-        </fieldset>
-
-        <fieldset class="founder-group founder-contract-article" data-article="03">
-          <legend><span>المادة الثالثة</span> النشاط والسياسة المالية</legend>
-          <div class="form-grid">
-            <label>القطاع الأول<select id="founderSector"><option value="air">الطيران</option><option value="sea">الشحن البحري</option><option value="road">الخدمات اللوجستية</option><option value="power">الطاقة</option><option value="bank">الاستثمار والتمويل</option></select></label>
-            <label>نمط البداية<select id="founderMode"><option value="balanced">شركة ناشئة · متوازن</option><option value="realistic">رائد أعمال · واقعي</option><option value="investor">مستثمر عالمي</option><option value="sandbox">إمبراطورية مفتوحة</option></select></label>
-            <label>العملة الوظيفية<select id="founderCurrency"><option value="USD">USD · الدولار الأمريكي</option><option value="SAR">SAR · الريال السعودي</option><option value="AED">AED · الدرهم الإماراتي</option><option value="EUR">EUR · اليورو</option></select></label>
-            <label>السنة المالية<select id="founderFiscal"><option value="calendar">يناير — ديسمبر</option><option value="apr">أبريل — مارس</option><option value="jul">يوليو — يونيو</option></select></label>
-            <label>شهية المخاطر<select id="founderRisk"><option value="conservative">محافظة</option><option value="balanced" selected>متوازنة</option><option value="growth">نمو مرتفع</option></select></label>
-            <label>سياسة المشتريات<select id="founderProcurement"><option value="competitive">منافسة ومناقصات</option><option value="framework">اتفاقيات إطارية</option><option value="hybrid">هجين حسب القيمة</option></select></label>
-          </div>
-        </fieldset>
-
-        <div class="founder-contract-review">
-          <div class="form-summary"><span>التصنيف الابتدائي <b>BBB</b></span><span>مستوى الحوكمة <b>أساسي</b></span><span>سنة التأسيس <b>2026</b></span></div>
-          <p>أقرّ بصحة البيانات أعلاه وأفوّض النظام بإنشاء السجل النظيف للمجموعة وفق الخيارات المحددة، من دون أصول أو قواعد تشغيلية تلقائية.</p>
-          <div class="founder-signatures">
-            <div><small>المؤسس والمفوّض</small><strong id="founderSignatureName">المؤسس</strong><span>توقيع إلكتروني عند الاعتماد</span></div>
-            <div><small>الكيان محل التأسيس</small><strong id="founderSignatureGroup">المجموعة العالمية القابضة</strong><span>ختم المجموعة</span></div>
-          </div>
+          </section>
+          <section class="incorporation-fields" aria-labelledby="incCapitalTitle">
+            <h2 id="incCapitalTitle"><span>02</span> رأس المال</h2>
+            <label class="incorporation-capital-label">الاستثمار الافتتاحي<select id="founderMode"><option value="balanced">50 مليون دولار</option><option value="investor">250 مليون دولار</option><option value="sandbox">مليار دولار</option></select></label>
+            <div class="incorporation-capital"><span>يودع في الحساب الجاري للقابضة</span><strong id="founderCapitalPreview" dir="ltr">$50,000,000</strong><small>رصيد محدد. قواعد التشغيل واحدة في جميع الخيارات.</small></div>
+          </section>
+          <details class="incorporation-customize"><summary><span>تخصيص الهوية</span><small>الشعار والاختصار · اختياري</small></summary>
+            <div class="incorporation-grid"><label>اختصار المجموعة<input id="founderShort" maxlength="4" value="GH" dir="auto" autocomplete="off"></label><label>الاسم الإنجليزي<input id="founderEnglishName" maxlength="60" placeholder="اختياري" dir="ltr" autocomplete="off"></label></div>
+            <div class="incorporation-brand"><div id="founderLogoPreview" class="incorporation-logo" data-style="teal"><span>GH</span></div><div class="incorporation-logo-tools"><div class="incorporation-palettes" aria-label="لون الشعار"><button type="button" class="inc-logo-option active" data-logo-style="teal" aria-label="زمردي" aria-pressed="true"><i></i>زمردي</button><button type="button" class="inc-logo-option" data-logo-style="navy" aria-label="كحلي" aria-pressed="false"><i></i>كحلي</button><button type="button" class="inc-logo-option" data-logo-style="gold" aria-label="ذهبي" aria-pressed="false"><i></i>ذهبي</button><button type="button" class="inc-logo-option" data-logo-style="mono" aria-label="رمادي" aria-pressed="false"><i></i>رمادي</button></div><div class="incorporation-upload"><label for="founderLogoUpload">رفع شعار<input id="founderLogoUpload" type="file" accept="image/png,image/jpeg,image/webp"></label><button id="founderLogoClear" type="button" hidden>إزالة الصورة</button></div><span id="founderLogoStatus" role="status"></span></div></div>
+          </details>
+          <footer class="incorporation-actions"><p>ستراجع العقد كاملًا قبل اعتماد التأسيس.</p><button id="founderReview" class="incorporation-primary" type="button">مراجعة عقد التأسيس <span aria-hidden="true">←</span></button></footer>
         </div>
-        <p id="founderError" role="alert" hidden></p>
-        <footer class="founder-contract-actions">
-          <button class="founder-submit" type="submit">اعتماد العقد وفتح مركز القيادة</button>
-          <button id="skipFounder" class="text-button" type="button">بدء سريع بملف نظيف</button>
-        </footer>
-      </article>
-    </form>
+        <div id="founderReviewPane" hidden>
+          <header class="incorporation-review-title"><div><p>الخطوة الأخيرة</p><h1 tabindex="-1" id="founderReviewTitle">راجع. وقّع. ابدأ.</h1></div><button id="founderBack" class="incorporation-back" type="button">تعديل البيانات</button></header>
+          <div id="founderContractPreview"></div>
+          <footer class="incorporation-actions incorporation-sign-action"><p>بالاعتماد، تسجَّل موافقتك على مواد العقد وتُحفظ نسخته في ملف المجموعة.</p><button id="founderSubmit" class="incorporation-primary" type="submit">توقيع العقد وتأسيس المجموعة</button></footer>
+        </div>
+        <p id="founderError" class="incorporation-error" role="alert" tabindex="-1" hidden></p>
+      </form>
+      <footer class="incorporation-footer"><span>من أول قرار، تبدأ الحكاية.</span><span dir="ltr">GLOBAL HOLDINGS</span></footer>
+    </div>
   </section>
 
   <div id="app" class="app-shell">
@@ -278,6 +208,7 @@
   <script src="route-core.js"></script>
 <script src="operations-core.js"></script>
   <script src="mobility-core.js"></script>
+  <script src="directory-core.js"></script>
   <script src="governance-core.js"></script>
   <script src="corporate-core.js"></script>
   <script src="control-plane-core.js"></script>

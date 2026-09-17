@@ -12,7 +12,7 @@ const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
 const builder=fs.readFileSync(path.join(root,'scripts','build_update.py'),'utf8');
 
 assert.strictEqual(version,'3.0.0');
-assert.strictEqual(build,'308');
+assert.strictEqual(build,'309');
 assert.strictEqual(pkg.version,`${version}-build${build}`);
 assert(project.includes(`MARKETING_VERSION: "${version}"`));
 assert(project.includes(`CURRENT_PROJECT_VERSION: "${build}"`));

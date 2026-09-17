@@ -1,3 +1,5 @@
+const {foundGame}=require('./helpers/found-game');
+(async()=>{
 'use strict';
 // BUILD282: يحفظ اختيار طبقة الخريطة (ليلي/قياسي/فاتح/أقمار صناعية) بدل رجوعه لـ"ليلي تشغيلي"
 // افتراضيًا عند كل إعادة فتح.
@@ -51,7 +53,7 @@ const storageKey = 'global-holdings-world-v2.0.0';
 // ---- 1) لعبة جديدة تبدأ بقياسي بدل فرض الطبقة الليلية ----
 {
   const { window: w, click: c } = bootFresh();
-  c('#skipFounder');
+  await foundGame(w);
   assert.strictEqual(w.__GH_STATE__.mapLayer, 'standard', 'a brand-new game must default to the standard layer, not force night mode');
 }
 
@@ -59,7 +61,7 @@ const storageKey = 'global-holdings-world-v2.0.0';
 {
   const first = bootFresh();
   const { window: w1, click: c1 } = first;
-  c1('#skipFounder');
+  await foundGame(w1);
   c1('#layerBtn');
   c1('[data-layer="satellite"]');
   assert.strictEqual(w1.__GH_STATE__.mapLayer, 'satellite', 'choosing satellite via the real UI must update state immediately');
@@ -81,7 +83,7 @@ const storageKey = 'global-holdings-world-v2.0.0';
 {
   const first3 = bootFresh();
   const { window: w3, click: c3 } = first3;
-  c3('#skipFounder');
+  await foundGame(w3);
   const commit3 = w3.GH_PERSISTENCE.commitState(w3.__GH_STATE__, { storageKey });
   assert.ok(commit3.ok, 'baseline commit must succeed');
   const corrupted = JSON.parse(w3.localStorage.getItem(storageKey));
@@ -96,3 +98,5 @@ const storageKey = 'global-holdings-world-v2.0.0';
 
 console.log('map-layer-persistence-build282-test: ok');
 process.exit(0);
+
+})().catch(error=>{console.error(error);process.exitCode=1;});

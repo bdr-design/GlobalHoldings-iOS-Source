@@ -1,3 +1,5 @@
+const {foundGame}=require('./helpers/found-game');
+(async()=>{
 'use strict';
 // BUILD282: يجعل المركبات تظهر فعليًا على الخريطة بلا حاجة لأي ضغطة من اللاعب.
 //
@@ -7,8 +9,8 @@
 // للعبة محاكاة) لن يرى أي تحديث بصري على الخريطة أبدًا - لا ظهور الأصل الجديد، ولا تحرّك أي مركبة
 // على مسارها - إلا لو صادف وضغط أحد الإجراءات الـ22 لسبب آخر تمامًا.
 //
-// الإصلاح: renderMap() دورية مقيّدة بثانية واحدة داخل حلقة الإطارات loop()، بدون أي إجراء مطلوب
-// من اللاعب. مقيّدة (لا كل إطار) لتفادي كلفة مسح وإعادة رسم كل العلامات 60 مرة/ثانية.
+// الإصلاح الحالي: renderMap() دورية مقيّدة بأربع ثوان داخل حلقة الإطارات loop()، بدون أي إجراء مطلوب
+// من اللاعب. العلامات المتحركة تُحدّث بإيقاع الإطار، بينما إعادة بناء الطبقات الثقيلة أبطأ عمدًا.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -52,7 +54,7 @@ const S = () => window.__GH_STATE__;
 const D = window.document;
 const click = sel => { const el = D.querySelector(sel); if (el) el.dispatchEvent(new window.Event('click', { bubbles: true })); return !!el; };
 
-click('#skipFounder');
+await foundGame(window);
 click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
 const moneyInput = D.getElementById('addMoneyInput'); moneyInput.value = '500000000000'; click('#addMoneyBtn');
 for (const f of [...D.querySelectorAll('.open-company')]) f.dispatchEvent(new window.Event('click', { bubbles: true }));
@@ -61,7 +63,10 @@ const st = S();
 click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
 click('[data-open="companyManage"][data-arg="air"]'); click('[data-company-manage-tab="assets"]');
 click('[data-open="companyFacilities"][data-arg="air"]');
-click('.open-global-base');
+click('.open-facility-directory[data-kind="air"]');
+D.getElementById('worldCountry').value='SA';D.getElementById('worldCountry').dispatchEvent(new window.Event('change',{bubbles:true}));
+D.getElementById('worldCity').value='SA:riyadh';D.getElementById('worldCity').dispatchEvent(new window.Event('change',{bubbles:true}));
+click('.open-directory-site[data-key="air:OERK"]');
 const base = st.globalBases[0];
 
 window.GH_FINANCE_CORE.execute({ state: st }, 'transfer', { from: 'group', to: 'air', amount: 500000000, note: 'test' });
@@ -78,7 +83,7 @@ assert.strictEqual(asset.phase, 'idle', 'freshly delivered, no route assigned ye
 
 // ---- بلا أي ضغطة من اللاعب: تقدُّم زمن حقيقي فقط عبر حلقة الإطارات ----
 calls.markers.length = 0;
-window.__pump(1200, 1); // إطار واحد يتجاوز عتبة الثانية الواحدة، بلا أي تفاعل واجهة
+window.__pump(4200, 1); // إطار واحد يتجاوز عتبة إعادة بناء الطبقات، بلا أي تفاعل واجهة
 const assetMarkers = calls.markers.filter(m => /asset-marker/.test(m.cls));
 assert.ok(assetMarkers.length >= 1,
   'the delivered aircraft must appear as a real marker after the periodic re-render, with zero clicks');
@@ -88,10 +93,12 @@ assert.deepStrictEqual(assetMarkers[0].coords, base.coords,
 // ---- التقييد فعّال فعليًا: لا إعادة رسم كاملة عند كل إطار متتالٍ فورًا ----
 const countAfterFirstRender = calls.markers.length;
 calls.markers.length = 0;
-window.__pump(50, 1); // إطار تالٍ بعد 50ms فقط - أقل بكثير من عتبة الألف مللي ثانية
+window.__pump(50, 1); // إطار تالٍ بعد 50ms فقط - أقل بكثير من عتبة الأربع ثوان
 assert.strictEqual(calls.markers.length, 0,
-  'a frame arriving well under the 1-second throttle must not trigger a full marker redraw');
+  'a frame arriving well under the 4-second throttle must not trigger a full marker redraw');
 
 assert.strictEqual(uncaught.length, 0, `no uncaught errors expected: ${uncaught.join(' | ')}`);
 console.log(`periodic-map-render-build282-test: ok (${countAfterFirstRender} markers on the throttled render)`);
 process.exit(0);
+
+})().catch(error=>{console.error(error);process.exitCode=1;});

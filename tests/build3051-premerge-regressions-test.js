@@ -94,12 +94,12 @@ function fundedBankState(){
   dom.window.close();
 }
 
-// The visible dot may stay compact, but the iPhone interaction target must be
+// The visible sedan stays compact, while the iPhone interaction target must be
 // large enough and the offline map state must be explicit.
 {
   const app=fs.readFileSync('WebApp/app.js','utf8'),css=fs.readFileSync('WebApp/styles.css','utf8');
   assert(app.includes('iconSize:[44,44],iconAnchor:[22,22]'),'Mobility marker does not expose a 44-point hit target');
-  assert(/\.mobility-street-dot\{[^}]*width:14px;height:14px/.test(css),'Mobility street dot remains visually sub-pixel on iPhone');
+  assert(/\.vehicle-pin\.mobility \.vehicle-sprite\{[^}]*width:12px[^}]*height:24px/.test(css),'Mobility sedan remains visually compact on iPhone');
   assert(app.includes("layer.on('tileerror'")&&app.includes('map-tiles-offline'),'tile failures do not produce an explicit offline map state');
   assert(css.includes('.map-stage.map-tiles-offline'),'offline map has no deliberate visual treatment');
 }

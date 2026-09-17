@@ -104,19 +104,19 @@ function balancedJournals(s){return s.finance.journalEntries.every(row=>{const d
   assert(app.includes("openWorldDirectory('power',{energyKind:b.dataset.kind||'solar'})"),'energy projects must enter through the shared directory');
   assert(advanced.includes("ctx.openWorldDirectory?.('bank')")&&!advanced.includes('bank-branch'),'bank branches must expose one directory path without a duplicate legacy control');
   assert(app.includes('open-facility-directory')&&app.includes("data-kind=\"road\""),'logistics centers must expose the shared directory action');
-  assert(app.includes("if(entity.company==='road')result=openLogisticsHub(entity.key)")&&app.includes("else if(entity.company==='power')result=buildEnergy(entity.energyKind||worldDirectoryIntent.energyKind||'solar',entity.key)")&&app.includes("else if(entity.company==='bank')result=openBankBranch(entity.key)"),'directory execution must route each facility family through a canonical key');
+  assert(app.includes("if(company==='road')result=openLogisticsHub(entity.key,opts)")&&app.includes("else if(company==='power')result=buildEnergy(entity.energyKind||'solar',entity.key,opts)")&&app.includes("else if(company==='bank')result=openBankBranch(entity.key,opts)"),'directory execution must route each facility family through a canonical key');
   assert(app.includes("site=canonicalDirectorySite(site,'road')")&&app.includes("site=canonicalDirectorySite(site,'power')")&&app.includes("site=canonicalDirectorySite(site,'bank')"),'facility UI commands must reconstruct sites from the canonical directory');
   assert(facilitySource.includes('verifyDirectorySite')&&facilitySource.includes('directory-site-coordinates-invalid'),'the facility owner must independently reject forged directory data');
   assert(!app.includes('startHubPlacement')&&!app.includes('place-logistics')&&!app.includes('confirmMapPlacement'),'the superseded free-map logistics opening path must be removed');
-  for(const id of ['founderFlow','founderForm','founderName','founderOwner','founderCountry','founderCity','founderSector','founderMode','founderLogoPreview','skipFounder'])assert(index.includes(`id="${id}"`),`founding binding #${id} must remain intact`);
-  assert.strictEqual((index.match(/class="founder-group founder-contract-article"/g)||[]).length,3,'the founding contract must retain exactly three bound articles');
-  assert.strictEqual((index.match(/<button[^>]+class="logo-preset(?: active)?"/g)||[]).length,4,'the four logo presets must remain intact');
+  for(const id of ['founderFlow','founderForm','founderName','founderOwner','founderLocation','founderMode','founderLogoPreview','founderReview','founderSubmit'])assert(index.includes(`id="${id}"`),`founding binding #${id} must remain intact`);
+  assert.strictEqual((index.match(/class="incorporation-fields"/g)||[]).length,2,'founding data must have two compact sections');
+  assert.strictEqual((index.match(/<button[^>]+class="inc-logo-option(?: active)?"/g)||[]).length,4,'the four logo presets must remain intact');
   const build306Css=styles.slice(styles.indexOf('BUILD306'));
   assert(build306Css.includes('grid-template-rows:repeat(8,minmax(0,1fr))'),'all eight sidebar domains must share the available height');
   assert(build306Css.includes('min-height:44px'),'landscape sidebar controls must retain a reliable touch target');
   assert(!/\.side-nav\{[^}]*padding(?:-top)?:\s*(?:66|67|82)px/.test(styles),'the old top-offset sidebar geometry must not remain underneath BUILD306');
   assert(!styles.includes('grid-template-columns:minmax(320px,1fr) minmax(430px,620px)'),'the superseded founder layout must not remain underneath the contract layout');
-  assert(build306Css.includes('.founder-contract-sheet'),'the founder UI must use the contract-sheet layout');
+  assert(read('WebApp/founding.css').includes('.formation-paper'),'the contract must have a dedicated stylesheet');
   assert(save.includes("SAVE_SCHEMA_VERSION='2.0.0'"),'BUILD306 must not change Save Schema 2.0.0');
 })();
 

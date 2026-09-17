@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 308;
+  const RUNTIME_BUILD = 309;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -679,7 +679,7 @@
   function bankIssueTradeInstrument(kind,company,amount=5000000){try{return window.GH_DOMAIN_COMMANDS.dispatch({state},'banking','trade-instrument',{kind,company,amount,counterparty:supplierFor(company==='group'?'all':company,'all')?.legalName||'طرف تجاري مسجل'},{actor:'bank'}).result||null;}catch(error){console.warn(error);return null;}}
   function bankCashSweep(){try{return Number(window.GH_DOMAIN_COMMANDS.dispatch({state},'banking','cash-sweep',{}, {actor:'bank'}).result)||0;}catch(error){console.warn(error);return 0;}}
   function refreshTaxPayables(){return window.GH_FINANCE_CORE.reconcile(state);}
-  function postInvoice(kind,amount,note,method='تحويل بنكي',taxable=true,status='مدفوعة',company='group',counterparty=''){return window.GH_FINANCE_CORE.invoice(state,{kind,amount,note,method,taxable,status,company,counterparty});}
+  function postInvoice(kind,amount,note,method='تحويل بنكي',taxable=true,status='مدفوعة',company='group',counterparty='',details={}){return window.GH_FINANCE_CORE.invoice(state,{kind,amount,note,method,taxable,status,company,counterparty,...details});}
 
   function postAccruedExpense(company,amount,note,method='قيد مستحق',dueDay=null,number=null,expenseAccount='مصروف تشغيلي'){
     company=COMPANY_FINANCE_TYPES.includes(company)?company:'group';amount=Math.max(0,Number(amount)||0);if(amount<=0)return null;
@@ -687,7 +687,7 @@
     try{return window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','accrue-expense',{company,amount,note,method,dueDay,number,expenseAccount},{actor:'finance-service'}).result||null;}catch(error){console.warn('accrual rejected',error);return null;}
   }
 
-  function issueCheque(amount,note,beneficiary='',company='group',details={}){const out=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','issue-cheque',{amount,note,beneficiary,company,...details},{actor:'finance-ui'});if(!out.result){pushAlert('تعذر إصدار الشيك: تحقق من المستفيد والميزانية.');return null;}pushAlert(`صدر الشيك ${out.result.id} من حساب ${companyFinanceName(company)} لصالح ${beneficiary}.`);save();return out.result.id;}
+  function issueCheque(amount,note,beneficiary='',company='group',details={}){try{const before=companyOperatingBalance(company),out=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','pay-by-cheque',{amount,note,beneficiary,company,...details},{actor:'finance-ui'}),payment=out.result,after=companyOperatingBalance(company);if(!payment?.cheque?.id||payment.cheque.status!=='مصروف'||Math.abs((before-after)-Number(amount))>.01)throw new Error('cheque-current-account-posting-mismatch');pushAlert(`صدر وصُرف الشيك ${payment.cheque.id} من الحساب الجاري لـ${companyFinanceName(company)} لصالح ${beneficiary}.`);save();return payment.cheque.id;}catch(error){notice(`لم يُصرف الشيك ولم يتغير الحساب الجاري: ${String(error.message||error)}`);return null;}}
   function settleCheque(cheque){return window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','settle-cheque',{id:cheque?.id},{actor:'finance-scheduler'}).result;}
   function spendCompany(company,amount,note='مصروف تشغيلي',method='تحويل بنكي',taxable=true){if(!validMoney(Number(amount)))return false;const out=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','spend',{company,amount,note,method:method==='نقدي'?'تحويل بنكي':method,taxable},{actor:'domain-service'});return !!out.result;}
   const spend = (amount,note='مصروف تشغيلي',method='تحويل بنكي',taxable=true) => spendCompany('group',amount,note,method,taxable);
@@ -735,7 +735,7 @@
     sea: '<svg viewBox="0 0 24 24"><path d="M12 2 L14 9 L14 15 L20 15 L17 21 L7 21 L4 15 L10 15 L10 9 Z"/></svg>',
     road:'<svg viewBox="0 0 24 24"><path d="M3 8 H13 L17 12 H19 V16 H3 Z"/><circle cx="6" cy="17" r="1.7"/><circle cx="16" cy="17" r="1.7"/></svg>'
   };
-  const VEHICLE_MARKER_PHOTOS={air:'assets/images/map-aircraft-topdown.png',sea:'assets/images/map-container-ship-topdown.png',road:'assets/images/map-truck-topdown.png'};
+  const VEHICLE_MARKER_PHOTOS={air:'assets/images/map-aircraft-topdown.png',sea:'assets/images/map-container-ship-topdown.png',road:'assets/images/map-truck-topdown.png',mobility:'assets/images/map-mobility-sedan-topdown.webp'};
   function markerKind(type){return type==='air'?'air':type==='sea'?'sea':type==='mobility'?'mobility':'road';}
   // صورنا العلوية كلها موجّهة إلى أعلى؛ لا تضف انحرافًا خاصًا للشاحنة.
   // الانحراف السابق (-90) كان يجعل الشاحنات تسير بالعرض على الطرق.
@@ -743,8 +743,7 @@
   function assetMarkerPhoto(asset){return VEHICLE_MARKER_PHOTOS[markerKind(asset.type)];}
   function vehicleVisualHtml(type,bearing,photo,moving=true,competitor=false){
     const kind=markerKind(type),heading=markerHeading(kind,bearing),className=`vehicle-pin ${kind}${moving?' is-live':''}${competitor?' competitor':''}`;
-    if(kind==='mobility')return `<span class="mobility-street-dot${moving?' is-live':''}" aria-hidden="true"></span>`;
-    const glyph=kind==='mobility'?'<span class="mobility-car-glyph" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 12.5 10 7h12l3 5.5 3 1.5v9h-3v2.5h-4V23H11v2.5H7V23H4v-9l3-1.5Zm3.2-2-1.6 3h14.8l-1.6-3H10.2ZM9 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm14 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg></span>':`<img src="${photo||VEHICLE_MARKER_PHOTOS[kind]}" alt="" draggable="false">`;
+    const glyph=`<img src="${photo||VEHICLE_MARKER_PHOTOS[kind]}" alt="" draggable="false" decoding="async">`;
     return `<div class="${className}"><span class="vehicle-trail"></span><span class="vehicle-sprite" style="transform:rotate(${heading.toFixed(1)}deg)">${glyph}</span><span class="vehicle-beacon"></span></div>`;
   }
   function vehicleMarkerHtml(asset){return vehicleVisualHtml(asset.type,assetBearing(asset),assetMarkerPhoto(asset),asset.phase==='moving');}
@@ -1080,10 +1079,10 @@
   }
 
   function mapRenderBudget(zoom,kind='standard'){
-    if(kind==='mobility')return zoom<4?18:zoom<6?32:zoom<9?48:72;
-    if(kind==='routes')return zoom<4?12:zoom<6?24:zoom<9?40:64;
-    if(kind==='facilities')return zoom<4?36:zoom<6?64:zoom<9?96:140;
-    return zoom<4?24:zoom<6?42:zoom<9?72:110;
+    if(kind==='mobility')return zoom<4?10:zoom<6?18:zoom<9?26:36;
+    if(kind==='routes')return zoom<4?8:zoom<6?16:zoom<9?24:36;
+    if(kind==='facilities')return zoom<4?24:zoom<6?40:zoom<9?60:84;
+    return zoom<4?16:zoom<6?28:zoom<9?44:64;
   }
   function fleetClusterHtml(type,count,label=''){
     const key=markerKind(type),symbol=key==='mobility'?'M':key==='air'?'AIR':key==='sea'?'SEA':'LOG';
@@ -1162,7 +1161,7 @@
     if(filter==='all'||filter==='mobility'){
       const mobilityLimit=mapRenderBudget(zoom,'mobility'),mobilityVehicles=state.mobility?.vehicles||[],activeMobilityIds=new Set((state.mobility?.activeTrips||[]).map(trip=>trip.vehicleId)),availableByCenter=new Map();
       for(const vehicle of mobilityVehicles)if(!activeMobilityIds.has(vehicle.id)){const centerId=vehicle.centerId||'RUH',ids=availableByCenter.get(centerId)||[];ids.push(vehicle.id);availableByCenter.set(centerId,ids);}
-      // Keep small fleets individually visible with a compact street dot and an
+      // Keep small fleets individually visible with a compact sedan sprite and an
       // iPhone-sized interaction target. Larger parked fleets stay
       // aggregated at their center so buying hundreds of cars cannot flood the map.
       const individualAvailableIds=[];
@@ -1172,7 +1171,7 @@
       for(const vehicle of mobilityRows){
         const pos=interpolateRoute(vehicle.route,vehicle.progress),moving=vehicle.phase==='moving',heading=routeBearing(vehicle.route,vehicle.progress);
         if(selectedMobilityId===vehicle.id&&moving){const selectedLine=L.polyline(vehicle.route,{color:'#24d7bf',weight:3,opacity:.88,lineCap:'round',smoothFactor:1.2,interactive:false}).addTo(map);routeLayers.push(selectedLine);}
-        const icon=L.divIcon({className:`asset-marker mobility mobility-dot-marker${moving?' is-moving':''}${selectedMobilityId===vehicle.id?' is-selected':''}`,html:vehicleVisualHtml('mobility',heading,null,moving),iconSize:[44,44],iconAnchor:[22,22]});
+        const icon=L.divIcon({className:`asset-marker mobility mobility-car-marker${moving?' is-moving':''}${selectedMobilityId===vehicle.id?' is-selected':''}`,html:vehicleVisualHtml('mobility',heading,null,moving),iconSize:[44,44],iconAnchor:[22,22]});
         const marker=L.marker(markerDisplayStart(`own:mobility:${vehicle.id}`,pos),{icon,zIndexOffset:selectedMobilityId===vehicle.id?750:680,title:`${vehicle.name} · ${moving?'متحركة':'متاحة'}`,keyboard:true,riseOnHover:true}).addTo(map);
         marker.bindTooltip(`${esc(vehicle.name)} · ${moving?(vehicle.routeVerified?'على شبكة الشوارع':'بانتظار تثبيت مسار الشارع'):'متاحة في المركز'}`,{direction:'top',permanent:false,opacity:.88});
         marker.on('click',()=>{selectedMobilityId=vehicle.id;openDrawer('mobilityAsset',vehicle.id);});ownMarkers.set(`mobility:${vehicle.id}`,marker);renderedMobilityIds.add(vehicle.id);
@@ -1236,7 +1235,7 @@
   function markerPoint(value){if(Array.isArray(value)&&value.length===2&&value.every(Number.isFinite))return [Number(value[0]),Number(value[1])];if(value&&Number.isFinite(Number(value.lat))&&Number.isFinite(Number(value.lng)))return [Number(value.lat),Number(value.lng)];return null;}
   function shortestLongitudeDelta(from,to){return ((Number(to)-Number(from)+540)%360)-180;}
   function interpolateMarkerPoint(from,to,t){const lat=from[0]+(to[0]-from[0])*t,lng=from[1]+shortestLongitudeDelta(from[1],to[1])*t;return [lat,((lng+540)%360)-180];}
-  function markerMotionProfile(rate){if(rate>=600)return {maxPixelsPerSecond:36};if(rate>=300)return {maxPixelsPerSecond:34};if(rate>=120)return {maxPixelsPerSecond:32};if(rate>=60)return {maxPixelsPerSecond:30};if(rate>0)return {maxPixelsPerSecond:28};return {maxPixelsPerSecond:0};}
+  function markerMotionProfile(rate){if(rate>=600)return {maxPixelsPerSecond:8};if(rate>=300)return {maxPixelsPerSecond:9};if(rate>=120)return {maxPixelsPerSecond:10};if(rate>=60)return {maxPixelsPerSecond:11};if(rate>0)return {maxPixelsPerSecond:12};return {maxPixelsPerSecond:0};}
   function boundedStepRatio(distancePixels,maxPixels){const distance=Math.max(0,Number(distancePixels)||0),limit=Math.max(0,Number(maxPixels)||0);return distance<=limit||distance===0?1:limit/distance;}
   function markerScreenDistance(from,to){try{if(!map?.latLngToContainerPoint)return 0;const adjusted=[to[0],from[1]+shortestLongitudeDelta(from[1],to[1])],a=map.latLngToContainerPoint(from),b=map.latLngToContainerPoint(adjusted);return Number.isFinite(a?.x)&&Number.isFinite(a?.y)&&Number.isFinite(b?.x)&&Number.isFinite(b?.y)?Math.hypot(b.x-a.x,b.y-a.y):0;}catch(error){nonCritical('map-marker-screen-distance',error);return 0;}}
   function closestRouteProgress(route,point){if(!Array.isArray(route)||route.length<2||!markerPoint(point))return null;let best=0,bestDistance=Infinity;for(let i=0;i<=64;i++){const progress=i/64,distance=haversine(interpolateRoute(route,progress),point);if(distance<bestDistance){bestDistance=distance;best=progress;}}return best;}
@@ -1250,9 +1249,8 @@
     if(!row){row={key,marker,current,target:clean,lastAt:now,route:null,routeKey:null,visualProgress:null,targetProgress:null,needsResync:false};markerMotionStates.set(key,row);}
     row.marker=marker;row.target=clean;
     const route=Array.isArray(motion.route)&&motion.route.length>=2?motion.route:null,routeKey=route?String(motion.routeKey||key):null,targetProgress=Number.isFinite(Number(motion.progress))?clamp(Number(motion.progress),0,1):null;
-    if(row.routeKey&&routeKey&&row.routeKey!==routeKey)row.needsResync=true;
-    row.route=route;row.routeKey=routeKey;row.targetProgress=targetProgress;
-    if(route&&row.visualProgress===null)row.visualProgress=closestRouteProgress(route,row.current);
+    const routeChanged=Boolean(row.routeKey&&routeKey&&row.routeKey!==routeKey);row.route=route;row.routeKey=routeKey;row.targetProgress=targetProgress;
+    if(route&&(row.visualProgress===null||routeChanged))row.visualProgress=closestRouteProgress(route,row.current);
     const latGap=Math.abs(clean[0]-row.current[0]),lngGap=Math.abs(shortestLongitudeDelta(row.current[1],clean[1]));if(latGap>45||lngGap>120)row.needsResync=true;
     if(force&&visualResyncRequested)row.needsResync=true;
   }
@@ -1274,12 +1272,12 @@
       let next=routeStep?.point;
       if(routeStep)row.visualProgress=routeStep.progress;
       else{const distance=markerScreenDistance(row.current,row.target),ratio=boundedStepRatio(distance,maxPixels);next=interpolateMarkerPoint(row.current,row.target,ratio);}
-      if(next){row.marker.setLatLng(next);row.current=next;}
+      if(next){if(routeStep&&key.startsWith('own:mobility:')&&(next[0]!==row.current[0]||next[1]!==row.current[1]))refreshVehicleMarker(row.marker,'mobility',bearingBetween(row.current,next),true);row.marker.setLatLng(next);row.current=next;}
     }catch(error){markerMotionStates.delete(key);nonCritical('map-marker-motion',error);}}
     visualResyncRequested=false;
   }
   window.GH_VISUAL_MOTION=Object.freeze({MAX_FRAME_MS:50,profile:markerMotionProfile,boundedStepRatio});
-  function mapStructureSignature(){if(!map)return'';const zoom=Math.floor(Number(map.getZoom?.())||0),assetRows=(state.assets||[]).map(a=>`${a.id}:${a.type}:${a.phase}:${a.baseFacility||''}:${a.routeId||''}`).join('|'),mobilityRows=(state.mobility?.vehicles||[]).map(v=>`${v.id}:${v.status}:${v.centerId||''}`).join('|'),facilityRows=getDynamicFacilities().filter(f=>f?.owned).map(f=>`${f.id}:${f.kind}:${f.company||''}:${f.commissioned===false?0:1}`).join('|');return `${state.activeFilter||'all'};${state.showCompetitors?1:0};${zoom};${selectedAssetId||''};${selectedMobilityId||''};${selectedFacilityId||''};${assetRows};${mobilityRows};${facilityRows}`;}
+  function mapStructureSignature(){if(!map)return'';const zoom=Math.floor(Number(map.getZoom?.())||0),assetRows=(state.assets||[]).map(a=>`${a.id}:${a.type}:${a.phase==='moving'?'M':'S'}:${a.baseFacility||''}:${a.routeId||''}`).join('|'),mobilityRows=(state.mobility?.vehicles||[]).map(v=>`${v.id}:${v.status==='moving'?'M':'S'}:${v.centerId||''}`).join('|'),facilityRows=getDynamicFacilities().filter(f=>f?.owned).map(f=>`${f.id}:${f.kind}:${f.company||''}:${f.commissioned===false?0:1}`).join('|');return `${state.activeFilter||'all'};${state.showCompetitors?1:0};${zoom};${selectedAssetId||''};${selectedMobilityId||''};${selectedFacilityId||''};${assetRows};${mobilityRows};${facilityRows}`;}
 
   function updateMarkerPositions(force=false){
     if(!map)return;
@@ -1295,7 +1293,7 @@
     // is presentation-only and never writes progress, simSeconds, finance or saves.
     for(const id of renderedAssetIds){const a=assetIndex.get(id),m=ownMarkers.get(id);if(a&&m){const route=a.phase==='moving'?currentAssetRoute(a):null;setMapMarkerTarget(`own:${id}`,m,assetPosition(a),now,force,{route,routeKey:route?`${a.routeId}:${a.reverse?1:0}`:null,progress:route?a.progress:null});refreshVehicleMarker(m,a.type,assetBearing(a),a.phase==='moving');}}
     for(const [key,cluster] of movingFleetClusters){const assets=cluster.assetIds.map(id=>assetIndex.get(id)).filter(Boolean),point=averageMapPoint(assets,assetPosition);if(point)setMapMarkerTarget(`own:${key}`,cluster.marker,point,now,force);}
-    const liveIds=[...renderedMobilityIds];for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,Math.max(1,liveIds.length),{onlyIds:liveIds})||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){setMapMarkerTarget(`own:mobility:${vehicle.id}`,m,interpolateRoute(vehicle.route,vehicle.progress),now,force,{route:vehicle.phase==='moving'?vehicle.route:null,routeKey:vehicle.phase==='moving'?`${vehicle.id}:${vehicle.routeKey||vehicle.route?.length||0}`:null,progress:vehicle.phase==='moving'?vehicle.progress:null});refreshVehicleMarker(m,'mobility',routeBearing(vehicle.route,vehicle.progress),vehicle.phase==='moving');}}
+    const liveIds=[...renderedMobilityIds];for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,Math.max(1,liveIds.length),{onlyIds:liveIds})||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){const motionKey=`own:mobility:${vehicle.id}`;setMapMarkerTarget(motionKey,m,interpolateRoute(vehicle.route,vehicle.progress),now,force,{route:vehicle.phase==='moving'?vehicle.route:null,routeKey:vehicle.phase==='moving'?`${vehicle.id}:${vehicle.routeKey||vehicle.route?.length||0}`:null,progress:vehicle.phase==='moving'?vehicle.progress:null});const visualProgress=markerMotionStates.get(motionKey)?.visualProgress??vehicle.progress;refreshVehicleMarker(m,'mobility',routeBearing(vehicle.route,visualProgress),vehicle.phase==='moving');}}
     const mobilityClusterIndex=new Map((window.GH_MOBILITY_CORE?.movingClusters?.(state,liveIds)||[]).map(cluster=>[cluster.centerId,cluster]));for(const [key,cluster] of movingMobilityClusters){const live=mobilityClusterIndex.get(cluster.centerId);if(live?.coords)setMapMarkerTarget(`own:${key}`,cluster.marker,live.coords,now,force);}
     competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){setMapMarkerTarget(`competitor:${a.id}`,m,interpolateRoute(a.route,a.progress),now,force,{route:a.route,routeKey:`${a.id}:${a.route?.length||0}`,progress:a.progress});refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
     if(previousMarkerFrameAt===0&&force)animateMapMarkerPositions(now);
@@ -1478,7 +1476,7 @@
       // not three financial documents per individual trip. Trip cash stays in a
       // persisted clearing bucket during the day, then reaches each company's
       // current account exactly once at this atomic day boundary.
-      for(const type of ['air','sea','road','mobility']){const count=Math.max(0,Number(tripCount[type])||0),revenue=Math.max(0,Number(tripRevenue[type])||0),fuel=Math.max(0,Number(tripFuel[type])||0),maint=Math.max(0,Number(tripMaintenance[type])||0),taxable=type!=='mobility';if(revenue>0)postInvoice('دخل',revenue,`تسوية رحلات يومية ${typeName(type)} · ${count} رحلة`,'تسوية تشغيل يومية',taxable,'مدفوعة',type,'مركز تسوية العملاء');if(fuel>0)postInvoice('مصروف',fuel,`تكلفة تشغيل رحلات يومية ${typeName(type)} · ${count} رحلة`,'تسوية مورد تشغيل يومية',taxable,'مدفوعة',type,type==='mobility'?'السائقون ومزودو التشغيل':'موردو الوقود المعتمدون');if(maint>0)postInvoice('مصروف',maint,`مخصص صيانة رحلات يومية ${typeName(type)} · ${count} رحلة`,'مخصص صيانة يومي',false,'مدفوعة',type,'مراكز الصيانة المعتمدة');const amount=Number(tripCash[type])||0;if(Math.abs(amount)>=.005){const settlement=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','settle-daily-cash',{company:type,amount,day:state.lastFinancialDay,reference:`DAY-CASH-${type}-${state.lastFinancialDay}`,note:`تحويل صافي تشغيل اليوم ${state.lastFinancialDay} إلى الحساب الجاري · ${typeName(type)}`},{actor:'financial-close'}).result;if(settlement?.shortfall>0)pushAlert(`رحّلت تسوية نقدية غير مغطاة بقيمة ${fmtMoney(settlement.shortfall)} في ${typeName(type)} إلى إقفال اليوم التالي دون إسقاطها.`);}}
+      for(const type of ['air','sea','road','mobility']){const count=Math.max(0,Number(tripCount[type])||0),revenue=Math.max(0,Number(tripRevenue[type])||0),fuel=Math.max(0,Number(tripFuel[type])||0),maint=Math.max(0,Number(tripMaintenance[type])||0),taxable=type!=='mobility',clearing='مركز التسوية التشغيلية اليومية';if(revenue>0)postInvoice('دخل',revenue,`تسوية رحلات يومية ${typeName(type)} · ${count} رحلة`,'تسوية تشغيل يومية',taxable,'مدفوعة',type,'مركز تسوية العملاء',{settlementAccount:clearing});if(fuel>0)postInvoice('مصروف',fuel,`تكلفة تشغيل رحلات يومية ${typeName(type)} · ${count} رحلة`,'تسوية مورد تشغيل يومية',taxable,'مدفوعة',type,type==='mobility'?'السائقون ومزودو التشغيل':'موردو الوقود المعتمدون',{settlementAccount:clearing});if(maint>0)postInvoice('مصروف',maint,`مخصص صيانة رحلات يومية ${typeName(type)} · ${count} رحلة`,'مخصص صيانة يومي',false,'مدفوعة',type,'مراكز الصيانة المعتمدة',{settlementAccount:clearing});const amount=Number(tripCash[type])||0;if(Math.abs(amount)>=.005){const before=companyOperatingBalance(type),settlement=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','settle-daily-cash',{company:type,amount,day:state.lastFinancialDay,reference:`DAY-CASH-${type}-${state.lastFinancialDay}`,note:`تحويل صافي تشغيل اليوم ${state.lastFinancialDay} إلى الحساب الجاري · ${typeName(type)}`},{actor:'financial-close'}).result,after=companyOperatingBalance(type);if(Math.abs((after-before)-Number(settlement?.amount||0))>.01)throw new Error(`daily-profit-current-account-mismatch:${type}`);if(settlement?.shortfall>0)pushAlert(`رحّلت تسوية نقدية غير مغطاة بقيمة ${fmtMoney(settlement.shortfall)} في ${typeName(type)} إلى إقفال اليوم التالي دون إسقاطها.`);}}
       const sectorContractRevenue={air:0,sea:0,road:0,power:0,bank:0,mobility:0},sectorContractCost={air:0,sea:0,road:0,power:0,bank:0,mobility:0};
       const contractTerms={};for(const id of (state.acceptedContracts||[])){const c=contracts.find(x=>x.id===id);if(!c)continue;contractTerms[id]=Math.max(1,Number(c.termMonths)||1)*30;sectorContractRevenue[c.sector]=(sectorContractRevenue[c.sector]||0)+c.value/(c.termMonths*30);sectorContractCost[c.sector]=(sectorContractCost[c.sector]||0)+c.cost/(c.termMonths*30);}const expiredContracts=window.GH_DOMAIN_COMMANDS.dispatch({state},'contracts','tick-day',{day:state.lastFinancialDay,terms:contractTerms},{actor:'simulation'}).result?.expired||[];for(const id of expiredContracts){const c=contracts.find(x=>x.id===id);if(c)pushAlert(`اكتمل عقد ${c.name} وانتهت مدته التشغيلية بعد ${c.termMonths} شهرًا.`);}
       // Bank and energy daily owners must close first. The accounting read model
@@ -1727,7 +1725,7 @@
 
   if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core compatibility check failed before app.js');
   if(!window.GH_SIMULATION_CORE?.create)throw new Error('Simulation Core failed to load before app.js');
-  let lastRealtimeHealthMs=0;
+  let lastRealtimeHealthMs=0,lastUiRefreshMs=0;
   const REALTIME_HEALTH_MS=10000;
   const GLOBAL_HALT_IDS=Object.freeze(['CONTROL_JOURNAL_CHAIN_BREAK','CONTROL_JOURNAL_HASH_MISMATCH','CONTROL_JOURNAL_HEAD_MISMATCH','SAVE_SCHEMA_INTEGRITY','TIME_MONOTONICITY','TRANSACTION_ROLLBACK_FAILED','NATIVE_SAVE_RECOVERY_FAILED']);
   function requiresGlobalHalt(...reports){
@@ -1749,8 +1747,8 @@
     setSimTime:value=>{state.simSeconds=value;},
     createSliceJob:createSimulationSliceJob,
     onMaintenance:hour=>{diag('SIM_MAINTENANCE',{hour});window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'SIMULATION_MAINTENANCE',domain:'simulation',actor:'simulation-core',correlationId:`SIM-HOUR-${hour}`,detail:{hour}});compactSimulationState(false);const health=window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()});const central=window.GH_CONTROL_PLANE?.check?.(state);if(requiresGlobalHalt(health,central)){state.speed=0;pushAlert('أُوقفت المحاكاة لأن خللًا في سلامة الحفظ أو سجل الأوامر قد يهدد الحالة كاملة. مشكلات القطاعات الأخرى تبقى معزولة داخل قطاعها.');}},
-    onRender:({speed,jobActive})=>{
-      updateMarkerPositions();updateKpis();updateMapStatus();if(selectedAssetId&&!$('assetCard').classList.contains('hidden'))refreshAssetCard(selectedAssetId);state.simulationKernel={...(state.simulationKernel||{}),...simulationEngine.snapshot(),coreVersion:window.GH_SIMULATION_CORE.VERSION,transactionVersion:window.GH_TRANSACTION_CORE.VERSION};
+    onRender:({now,speed,jobActive})=>{
+      if(now-lastUiRefreshMs>=500){lastUiRefreshMs=now;updateKpis();updateMapStatus();if(selectedAssetId&&!$('assetCard').classList.contains('hidden'))refreshAssetCard(selectedAssetId);}state.simulationKernel={...(state.simulationKernel||{}),...simulationEngine.snapshot(),coreVersion:window.GH_SIMULATION_CORE.VERSION,transactionVersion:window.GH_TRANSACTION_CORE.VERSION};
       // Diagnostics may use wall-clock cadence for UI health only. No business decision
       // is executed from this render callback.
       if(!jobActive&&!document.hidden&&!hardResetInProgress){
@@ -1853,8 +1851,12 @@
   function depotOperationalCard(f){return `<article class="list-item"><h3>مركز النقل البري</h3><p>المقر الإداري منفصل عن الـDepot. هنا تتم إدارة السائقين، المواقف، الصيانة، الوقود وتحضير الرحلات البرية.</p><div class="metric-row"><div><span>مواقف الشاحنات</span><b>${f.bays||'—'}</b></div><div><span>الصيانة</span><b>متاحة</b></div><div><span>السائقون</span><b>سوق عمل</b></div></div></article>`;}
   function globalBaseOperationalCard(f){return `<article class="list-item"><h3>ملف القاعدة العالمية</h3><div class="metric-row"><div><span>رمز المنشأة</span><b>${f.code||f.iata||'—'}</b></div><div><span>تشغيل يومي</span><b>${fmtMoney(f.dailyCost||0)}</b></div><div><span>الاستثمار</span><b>${fmtMoney(f.cost||0)}</b></div></div><p>يمكن اختيار هذه القاعدة عند شراء أصل جديد، كما تظهر كنقطة انطلاق/وصول عند إنشاء شبكة تشغيل متوافقة.</p></article>`;}
 
-  let worldQuery='',worldKind='all',worldDirectoryIntent={},worldSearchTimer=null,globalRouteQuery='',globalRouteSearchTimer=null;
-  function openWorldDirectory(kind='all',intent={}){worldKind=COMPANY_TYPES.includes(kind)?kind:'all';worldDirectoryIntent=kind==='power'&&intent?.energyKind?{energyKind:intent.energyKind}:{};worldQuery='';openDrawer('network');}
+  let worldQuery='',worldKind='all',worldCountry='',worldCity='',worldPage=0,worldDirectoryIntent={},worldSearchTimer=null,globalRouteQuery='',directoryIndex=null,drawerSearchRevision=0;
+  function cancelDrawerSearch(){if(worldSearchTimer!==null)clearTimeout(worldSearchTimer);worldSearchTimer=null;drawerSearchRevision++;}
+  function scheduleDrawerSearch(panel,apply,delay=180){cancelDrawerSearch();const revision=drawerSearchRevision;worldSearchTimer=setTimeout(()=>{worldSearchTimer=null;if(revision===drawerSearchRevision&&activeDrawerPanel===panel&&$('drawer').getAttribute('aria-hidden')==='false')apply();},delay);}
+  function setDirectoryCompany(kind,intent={}){cancelDrawerSearch();worldKind=COMPANY_TYPES.includes(kind)?kind:'all';worldCountry='';worldCity='';worldPage=0;worldQuery='';worldDirectoryIntent=worldKind==='power'?{energyKind:ENERGY_PROJECTS[intent.energyKind]?intent.energyKind:'solar'}:{};}
+  function openWorldDirectory(kind='all',intent={}){setDirectoryCompany(kind,intent);openDrawer('network');$('drawerBody').scrollTop=0;}
+  function facilityDirectoryIndex(){if(!directoryIndex)directoryIndex=window.GH_DIRECTORY_CORE.create({airports:WORLD.airports,ports:WORLD.ports,capitals:window.GH_MOBILITY_CORE.CAPITALS});return directoryIndex;}
   const featuredAirportCodes=['OERK','OMDB','EGLL','WSSS','KJFK','KLAX','EDDF','LFPG','RJTT','VHHH','YSSY','SBGR','FAOR','VIDP','ZBAA','CYYZ','HECA','LTFM'];
   const featuredPortCodes=['SAJED','SGSIN','NLRTM','USNYC','CNSHA','CNSZX','DEHAM','BEANR','AEJEA','KRPUS','MYPKG','BRSSZ','ESVLC','GBFXT','JPTYO'];
   const DIRECTORY_SITE_META=Object.freeze({
@@ -1864,63 +1866,45 @@
     mobility:{icon:'🚘',label:'مركز تنقل حضري',facilityKind:'mobility-center',cost:4500000,dailyCost:9800,capacity:'120 سيارة · عاصمة فقط'}
   });
   const ENERGY_PROJECTS=Object.freeze({solar:{cost:82000000,key:'solarMW',amount:100,name:'محطة شمسية 100MW',leadDays:120},wind:{cost:145000000,key:'windMW',amount:120,name:'مزرعة رياح 120MW',leadDays:180},storage:{cost:64000000,key:'storageMWh',amount:500,name:'بطاريات تخزين 500MWh',leadDays:75},gas:{cost:210000000,key:'gasMW',amount:220,name:'محطة غاز مرنة 220MW',leadDays:240}});
-  function directorySiteEntity(capital,company,options={}){const meta=DIRECTORY_SITE_META[company];if(!capital||!meta)return null;const energyKind=company==='power'&&ENERGY_PROJECTS[options.energyKind||worldDirectoryIntent.energyKind]?options.energyKind||worldDirectoryIntent.energyKind:null,energy=energyKind?ENERGY_PROJECTS[energyKind]:null;return {key:`site:${company}:${capital.id}`,kind:'company-site',company,capitalId:capital.id,icon:meta.icon,code:capital.id,name:`${energy?.name||meta.label} · ${capital.city}`,city:capital.city,country:capital.country,coords:[...capital.coords],cost:energy?.cost||meta.cost,dailyCost:meta.dailyCost,capacity:energy?`${energy.amount} ${energy.key==='storageMWh'?'MWh':'MW'} · إنشاء ثم تشغيل تجاري`:meta.capacity,facilityKind:meta.facilityKind,energyKind:energyKind||undefined};}
+  function directorySiteEntity(capital,company,options={}){const meta=DIRECTORY_SITE_META[company];if(!capital||!meta)return null;const energyKind=company==='power'&&ENERGY_PROJECTS[options.energyKind||worldDirectoryIntent.energyKind||'solar']?options.energyKind||worldDirectoryIntent.energyKind||'solar':null,energy=energyKind?ENERGY_PROJECTS[energyKind]:null;return {key:`site:${company}:${capital.id}`,kind:'company-site',company,capitalId:capital.id,icon:meta.icon,code:capital.id,name:`${energy?.name||meta.label} · ${capital.city}`,city:capital.city,country:capital.country,coords:[...capital.coords],cost:energy?.cost||meta.cost,dailyCost:meta.dailyCost,capacity:energy?`${energy.amount} ${energy.key==='storageMWh'?'MWh':'MW'} · إنشاء ثم تشغيل تجاري`:meta.capacity,facilityKind:meta.facilityKind,energyKind:energyKind||undefined};}
   function canonicalDirectorySite(input,expectedCompany){
     const key=typeof input==='string'?input:String(input?.key||input?.sourceKey||'');
     const entity=worldEntityByKey(key);
     if(!entity||entity.kind!=='company-site'||entity.company!==expectedCompany)return null;
     try{window.GH_FACILITY_CORE.verifyDirectorySite(entity,expectedCompany);return entity;}catch(error){nonCritical('directory-site-validation',error);return null;}
   }
-  function directorySiteOwned(entity){return getDynamicFacilities().find(f=>f?.owned&&(f.sourceKey===entity.key||(f.company===entity.company&&f.capitalId===entity.capitalId&&f.kind===entity.facilityKind)));}
-  function worldSearchResults(){
-    const q=normalizeSearch(worldQuery),results=[],filter=['all','air','sea','road','power','bank','mobility'].includes(worldKind)?worldKind:'all',capitals=window.GH_MOBILITY_CORE?.CAPITALS||[],siteCompanies=['road','power','bank','mobility'];
-    const wants=company=>filter==='all'||filter===company;
-    if(!q){
-      if(wants('air'))featuredAirportCodes.slice(0,filter==='air'?24:5).forEach(code=>{const row=airportIndex.get(code);if(row)results.push(airportEntity(row));});
-      if(wants('sea'))featuredPortCodes.slice(0,filter==='sea'?24:5).forEach(code=>{const row=WORLD.ports.find(x=>x[0]===code);if(row)results.push(portEntity(row));});
-      for(const company of siteCompanies.filter(wants))for(const capital of capitals.slice(0,filter==='all'?2:24)){const entity=directorySiteEntity(capital,company);if(entity)results.push(entity);}
-      return results.slice(0,48);
-    }
-    if(wants('air')){
-      let found=0;for(const row of WORLD.airports){const text=normalizeSearch(`${row[0]} ${row[1]} ${row[2]} ${row[3]} ${row[4]} ${row[5]}`);if(text.includes(q)){results.push(airportEntity(row));found++;}if(found>=24)break;}
-    }
-    if(wants('sea')){
-      let found=0;for(const row of WORLD.ports){const text=normalizeSearch(`${row[0]} ${row[1]} ${row[2]}`);if(text.includes(q)){results.push(portEntity(row));found++;}if(found>=24)break;}
-    }
-    for(const company of siteCompanies.filter(wants)){let found=0;for(const capital of capitals){if(normalizeSearch(`${capital.id} ${capital.city} ${capital.country} ${DIRECTORY_SITE_META[company].label}`).includes(q)){results.push(directorySiteEntity(capital,company));found++;}if(found>=24)break;}}
-    return results.sort((a,b)=>(Number(b.commercial||b.terminal)-Number(a.commercial||a.terminal))||a.name.localeCompare(b.name)).slice(0,72);
-  }
+  function directorySiteOwned(entity){return getDynamicFacilities().find(f=>f?.owned&&f.company===entity.company&&(f.sourceKey===entity.key||(f.company===entity.company&&f.capitalId===entity.capitalId&&f.kind===entity.facilityKind)));}
+  function worldSearchResults(){return facilityDirectoryIndex().search({company:worldKind,country:worldCountry,city:worldCity,text:worldQuery,page:worldPage,pageSize:24});}
   function globalBaseFor(key){return state.globalBases.find(base=>base.sourceKey===key);}
   const companyOfFacility=f=>window.GH_HR_CORE.companyOfFacility(f);
-  function worldResultCard(entity){
-    if(entity.kind==='company-site'){
-      const company=entity.company,opened=directorySiteOwned(entity),companyOpen=state.openedCompanies.includes(company),owned=getDynamicFacilities().filter(f=>f?.owned&&companyOfFacility(f)===company),nearest=owned.filter(f=>Array.isArray(f.coords)).map(f=>({f,d:haversine(f.coords,entity.coords)})).sort((a,b)=>a.d-b.d)[0];
-      const status=opened?'منشأة مملوكة':companyOpen?(nearest?`أقرب منشأة ${fmtNumber(nearest.d)} كم`:'جاهز للشراء'):`أسس ${typeName(company)} أولًا`;
-      return `<article class="list-item world-result world-site-result"><div class="list-item-head"><div><h3>${entity.icon} ${esc(entity.name)}</h3><p>${esc(entity.city)} · ${esc(entity.country)} · ${esc(typeName(company))}</p></div><span class="tag ${opened?'positive':''}">${opened?'مفتوحة':esc(entity.code)}</span></div><div class="metric-row"><div><span>تكلفة الإنشاء</span><b>${fmtMoney(entity.cost)}</b></div><div><span>تشغيل يومي</span><b>${fmtMoney(entity.dailyCost)}</b></div><div><span>القدرة</span><b>${esc(entity.capacity)}</b></div></div><div class="world-readiness"><span>حالة الشركة</span><b>${esc(status)}</b><small dir="ltr">${entity.coords[0].toFixed(3)}, ${entity.coords[1].toFixed(3)}</small></div><p>لا تمنح هذه النقطة أصلًا أو قدرةً تلقائية. تبدأ المنشأة من الشراء اليدوي، ثم تظهر في سجل الشركة والخريطة والحساب المالي نفسه.</p><div class="action-row"><button class="secondary-btn world-focus" data-key="${esc(entity.key)}">عرض على الخريطة</button>${opened?`<button class="primary-btn" data-open="facilityManage" data-arg="${esc(opened.id)}">إدارة المنشأة</button>`:`<button class="primary-btn open-directory-site" data-key="${esc(entity.key)}" ${companyOpen?'':'disabled'}>شراء وفتح ${esc(DIRECTORY_SITE_META[company].label)}</button>`}<button class="secondary-btn" data-open="assets" data-arg="${esc(company)}">أصول الشركة</button></div></article>`;
-    }
-    const opened=globalBaseFor(entity.key),cost=facilityPrice(entity),daily=facilityDailyCost(entity),company=entity.kind==='airport'?'air':'sea';
-    const owned=getDynamicFacilities().filter(f=>f.owned&&companyOfFacility(f)===company&&Array.isArray(f.coords));
-    const nearest=owned.map(f=>({f,d:haversine(f.coords,entity.coords)})).sort((a,b)=>a.d-b.d)[0];
-    const linked=state.assets.filter(a=>a.type===company&&a.routeId).filter(a=>{const r=routeTemplates[a.routeId];return r&&(r.toFacility===opened?.id||r.fromFacility===opened?.id||r.to===entity.city||r.from===entity.city);}).length;
-    const readiness=state.openedCompanies.includes(company)?(nearest?`أقرب قاعدة ${fmtNumber(nearest.d)} كم`:'الشركة مفتوحة بلا قاعدة قريبة'):`${typeName(company)} غير مفتوحة`;
-    const detail=entity.kind==='airport'
-      ? `${entity.iata?`${entity.iata} · `:''}${entity.icao} · ارتفاع ${fmtNumber(entity.elevationFt)} قدم`
-      : `${entity.code} · ${entity.terminal?'محطة خطوط بحرية':'ميناء/مرسى مسجل'}`;
-    return `<article class="list-item world-result"><div class="list-item-head"><div><h3>${entity.icon} ${esc(entity.name)}</h3><p>${esc(entity.city)} · ${esc(entity.country)} · ${esc(detail)}</p></div><span class="tag ${opened?'positive':''}">${opened?'قاعدة مفتوحة':entity.kind==='airport'?'مطار عام':'ميناء عام'}</span></div>
-      <div class="metric-row"><div><span>فتح القاعدة</span><b>${fmtMoney(cost)}</b></div><div><span>تشغيل يومي</span><b>${fmtMoney(daily)}</b></div><div><span>ارتباطات تشغيلية</span><b>${linked}</b></div></div>
-      <div class="world-readiness"><span>جاهزية الشبكة</span><b>${esc(readiness)}</b><small dir="ltr">${entity.coords[0].toFixed(3)}, ${entity.coords[1].toFixed(3)}</small></div>
-      <p>يمكن تشغيل خط ${entity.kind==='airport'?'جوي':'بحري'} إليه مباشرة؛ فتح القاعدة شراء مستقل ولا ينشئ أصلًا تلقائيًا.</p>
-      <div class="action-row"><button class="secondary-btn world-focus" data-key="${esc(entity.key)}">عرض على الخريطة</button>${opened?`<button class="primary-btn" data-open="facilityManage" data-arg="${esc(opened.id)}">إدارة القاعدة</button>`:`<button class="primary-btn open-directory-site" data-key="${esc(entity.key)}" ${state.openedCompanies.includes(company)?'':'disabled'}>شراء وفتح القاعدة</button>`}<button class="secondary-btn" data-open="routes">المسارات</button></div></article>`;
+  function directoryOffer(entity){
+    const company=entity.kind==='company-site'?entity.company:entity.kind==='airport'?'air':'sea',kind=entity.facilityKind||(company==='air'?'airport-base':'port-base');
+    const cost=entity.kind==='company-site'?entity.cost:facilityPrice(entity),daily=entity.kind==='company-site'?entity.dailyCost:facilityDailyCost(entity);
+    return {company,kind,daily,quote:constructionBid(company,kind,cost,entity.name).winner?.quote||0};
+  }
+  function worldResultCard(row){
+    const entity=worldEntityByKey(row.key);if(!entity)return '';
+    const {company,kind,daily,quote}=directoryOffer(entity),opened=entity.kind==='company-site'?directorySiteOwned(entity):globalBaseFor(entity.key),companyOpen=state.openedCompanies.includes(company);
+    const account=state.companyFinance?.[company]?.accounts?.[0],gap=Math.max(0,quote-(Number(account?.balance)||0)),capacity=entity.capacity||(company==='air'?'300 طائرة':'120 سفينة');
+    const status=opened?'منشأة مملوكة':companyOpen?'متاح للفتح':`أسس ${typeName(company)} أولًا`;
+    return `<article class="list-item world-result" data-company="${company}" data-key="${esc(entity.key)}"><div class="list-item-head"><div><h3>${entity.icon} ${esc(entity.name)}</h3><p>${esc(row.country)} · ${esc(row.city)} · ${esc(entity.code)}</p></div><span class="tag ${opened?'positive':''}">${esc(facilityKind(kind))}</span></div>
+      <div class="directory-scope"><b>${esc(companyFinanceName(company))}</b><span>${esc(typeName(company))} · ${esc(status)}</span></div>
+      <div class="metric-row"><div><span>${opened?'قيمة الإنشاء المسجلة':'قيمة عقد الإنشاء'}</span><b>${fmtNumber(opened?.cost??quote)} USD</b></div><div><span>${company==='power'?'تشغيل يومي بعد الإنجاز':'تشغيل يومي'}</span><b>${fmtMoney(daily)}</b></div><div><span>القدرة</span><b>${esc(capacity)}</b></div></div>
+      <p class="directory-payment">الحساب الجاري: ${esc(companyFinanceName(company))} · <bdi>${esc(account?.id||'غير متاح')}</bdi>${!opened&&companyOpen&&gap>0?`<br>تمويل مطلوب من القابضة: ${fmtNumber(gap)} USD، ثم يُخصم العقد من حساب الشركة.`:''}</p>
+      <div class="action-row">${opened?`<button class="primary-btn" data-open="facilityManage" data-arg="${esc(opened.id)}">إدارة المنشأة</button>`:`<button class="primary-btn open-directory-site" data-key="${esc(entity.key)}" data-company="${company}" data-energy-kind="${entity.energyKind||''}" data-quote="${quote}" ${companyOpen&&quote>0?'':'disabled'}>فتح المنشأة</button>`}<button class="secondary-btn world-focus" data-key="${esc(entity.key)}">عرض الموقع</button><button class="secondary-btn" data-open="companyFacilities" data-arg="${company}">منشآت الشركة</button></div></article>`;
   }
   function renderWorldNetwork(){
-    const results=worldSearchResults();
-    const openedFacilities=getDynamicFacilities().filter(f=>f?.owned&&COMPANY_TYPES.includes(companyOfFacility(f))).length,publicEndpoints=Object.values(state.routeEndpoints||{}).filter(x=>x?.routeEndpoint).length,companyChips=[['air','AIR','الطيران'],['sea','SEA','البحري'],['road','LOG','اللوجستيات'],['power','NRG','الطاقة'],['bank','BNK','البنك'],['mobility','MOVE','التنقل']];
-    return `<div class="list world-directory"><article class="list-item registry-hero"><div class="list-item-head"><div><h3>الدليل العالمي للشبكة والتوسع</h3><p>سجل واحد ومتزن للشركات الست عبر ${fmtNumber(WORLD.meta.airportCount)} مطارًا و${fmtNumber(WORLD.meta.portCount)} ميناءً، إضافة إلى مواقع العواصم للطاقة والبنك واللوجستيات والتنقل. كل توسع شراء يدوي مستقل ويبدأ بلا أصول مجانية.</p><p>المطارات والموانئ نقاط تشغيل عامة: فتح القاعدة اختياري، ولا يلزم امتلاك قاعدة أو مركز في الوجهة لإنشاء مسار دولي.</p></div><span class="tag positive">GLOBAL · 6</span></div><div class="metric-row two"><div><span>منشآت وقواعد مملوكة</span><b>${fmtNumber(openedFacilities)}</b></div><div><span>نقاط تشغيل عامة</span><b>${fmtNumber(publicEndpoints)}</b></div></div></article>
-      <div class="world-search"><input id="worldSearch" value="${esc(worldQuery)}" placeholder="ابحث بالمدينة، الدولة، IATA، ICAO أو UN/LOCODE" autocomplete="off"><select id="worldKind"><option value="all" ${worldKind==='all'?'selected':''}>كل الشركات</option>${companyChips.map(([id,,label])=>`<option value="${id}" ${worldKind===id?'selected':''}>${label}</option>`).join('')}</select></div>
-      <div class="world-company-strip">${companyChips.map(([id,code,label])=>{const facilities=getDynamicFacilities().filter(f=>f?.owned&&companyOfFacility(f)===id).length;return `<button class="world-company-chip ${worldKind===id?'active':''}" data-world-company="${id}"><b>${code}</b><span>${label}</span><small>${state.openedCompanies.includes(id)?`${facilities} منشأة مملوكة`:'الشركة غير مؤسسة'}</small></button>`;}).join('')}</div>
-      <div class="section-mini">${worldQuery?`${results.length} نتيجة مطابقة عبر ${worldKind==='all'?'كل الشركات':typeName(worldKind)}`:'مواقع عالمية بارزة — اختر شركة أو ابحث في السجل. التكلفة والقدرة وحالة التملك ظاهرة قبل التنفيذ.'}</div><div class="world-results-grid">${results.map(worldResultCard).join('')||'<div class="empty">لا توجد نتيجة مطابقة. جرّب اسم المدينة أو الدولة أو الرمز الدولي.</div>'}</div></div>`;
+    const result=worldSearchResults(),companyChips=[['air','AIR','الطيران'],['sea','SEA','البحري'],['road','LOG','اللوجستيات'],['power','NRG','الطاقة'],['bank','BNK','البنك'],['mobility','MOVE','التنقل']];
+    const options=(rows,selected)=>rows.map(row=>`<option value="${esc(row.id)}" ${row.id===selected?'selected':''}>${esc(row.label)} (${fmtNumber(row.count)})</option>`).join('');
+    const scope=worldKind==='all'?'كل الشركات':companyFinanceName(worldKind),coverage=worldKind==='air'?'المطارات المسجلة':worldKind==='sea'?'الموانئ المسجلة':worldKind==='all'?'المطارات والموانئ والعواصم حسب نشاط الشركة':'العواصم المعتمدة';
+    return `<div class="list world-directory" data-company="${worldKind}"><article class="list-item registry-hero"><h3>فتح القواعد والمراكز</h3><p>اختر الشركة، ثم الدولة والمدينة والموقع. كل منشأة مرتبطة بشركتها وحسابها الجاري.</p><div class="directory-scope"><b>${esc(scope)}</b><span>المواقع المتاحة: ${coverage}</span></div></article>
+      <div class="world-company-strip">${companyChips.map(([id,code,label])=>`<button class="world-company-chip ${worldKind===id?'active':''}" data-world-company="${id}" aria-pressed="${worldKind===id}"><b>${code}</b><span>${label}</span><small>${state.openedCompanies.includes(id)?'شركة مؤسسة':'الشركة غير مؤسسة'}</small></button>`).join('')}</div>
+      <div class="directory-filters"><label>الشركة<select id="worldKind"><option value="all" ${worldKind==='all'?'selected':''}>كل الشركات</option>${companyChips.map(([id,,label])=>`<option value="${id}" ${worldKind===id?'selected':''}>${label}</option>`).join('')}</select></label><label>الدولة<select id="worldCountry"><option value="">كل الدول</option>${options(result.countries,worldCountry)}</select></label><label>المدينة<select id="worldCity" ${worldCountry?'':'disabled'}><option value="">${worldCountry?'كل المدن':'اختر الدولة أولًا'}</option>${worldCountry?options(result.cities,worldCity):''}</select></label>${worldKind==='power'?`<label>نوع المشروع<select id="worldEnergyKind">${Object.entries(ENERGY_PROJECTS).map(([id,item])=>`<option value="${id}" ${worldDirectoryIntent.energyKind===id?'selected':''}>${esc(item.name)}</option>`).join('')}</select></label>`:''}<label class="directory-search-label">بحث في المواقع<input id="worldSearch" value="${esc(worldQuery)}" placeholder="اسم المدينة أو الدولة أو رمز الموقع" autocomplete="off"></label></div>
+      <div class="directory-pagination"><button class="secondary-btn" data-world-page="${result.page-1}" ${result.page===0?'disabled':''}>السابق</button><span>${fmtNumber(result.total)} موقع · صفحة ${result.pages?result.page+1:0} / ${result.pages}</span><button class="secondary-btn" data-world-page="${result.page+1}" ${result.page+1>=result.pages?'disabled':''}>التالي</button></div>
+      <div class="world-results-grid">${result.rows.map(worldResultCard).join('')||'<div class="empty">لا توجد مواقع مطابقة لهذه الخيارات. غيّر الدولة أو المدينة أو البحث.</div>'}</div></div>`;
   }
   function renderWorldNetworkInto(restoreFocus=false){
+    if(activeDrawerPanel!=='network'||$('drawer').getAttribute('aria-hidden')==='true')return;
     $('drawerBody').innerHTML=renderWorldNetwork();bindDrawerActions();
     if(restoreFocus){const input=$('worldSearch');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);}
   }
@@ -1930,20 +1914,21 @@
     document.querySelectorAll('.filter-btn').forEach(b=>b.classList.toggle('active',b.dataset.filter===state.activeFilter));map.setView(entity.coords,entity.kind==='airport'?8:9);renderMap();closeDrawer();
   }
   function showWorldEntity(key){
-    const entity=worldEntityByKey(key);if(!entity)return;const opened=globalBaseFor(key),cost=facilityPrice(entity),daily=facilityDailyCost(entity);selectedWorldKey=key;
-    const company=entity.kind==='airport'?'air':'sea';openDrawerContent('الدليل العالمي',entity.name,`<article class="list-item"><div class="list-item-head"><div><h3>${entity.icon} ${esc(entity.name)}</h3><p>${esc(entity.city)} · ${esc(entity.country)} · ${esc(entity.code)}</p></div><span class="tag ${opened?'positive':''}">${opened?'تابع للمجموعة':'منشأة عامة'}</span></div><p>${entity.kind==='airport'?'يمكن تشغيل خط جوي عام إلى هذا المطار دون شراء قاعدة فيه.':'يمكن تشغيل خط بحري عام إلى هذا الميناء دون شراء قاعدة فيه.'}</p><div class="metric-row"><div><span>فتح القاعدة</span><b>${fmtMoney(cost)}</b></div><div><span>تكلفة يومية</span><b>${fmtMoney(daily)}</b></div><div><span>النوع</span><b>${entity.kind==='airport'?'مطار':'ميناء'}</b></div></div><div class="metric-row two"><div><span>خط العرض</span><b>${entity.coords[0].toFixed(5)}</b></div><div><span>خط الطول</span><b>${entity.coords[1].toFixed(5)}</b></div></div><div class="action-row"><button class="secondary-btn world-focus" data-key="${esc(key)}">تركيز الخريطة</button><button class="primary-btn" data-open="routes">إدارة المسارات</button><button class="secondary-btn" data-open="companyFacilities" data-arg="${company}">${opened?'إدارة قاعدة الشركة':'إدارة قواعد الشركة'}</button></div></article>`);
+    const entity=worldEntityByKey(key);if(!entity)return;selectedWorldKey=key;
+    const {company,daily,quote}=directoryOffer(entity),country=facilityDirectoryIndex().countryMetadata(entity.countryCode||entity.country).label;
+    openDrawerContent('الدليل العالمي',entity.name,`<article class="list-item"><h3>${entity.icon} ${esc(entity.name)}</h3><p>${esc(entity.city)} · ${esc(country)} · ${esc(entity.code)}</p><div class="directory-scope"><b>${esc(companyFinanceName(company))}</b><span>${esc(typeName(company))}</span></div><div class="metric-row two"><div><span>قيمة عقد الإنشاء</span><b>${fmtNumber(quote)} USD</b></div><div><span>تشغيل يومي</span><b>${fmtMoney(daily)}</b></div></div><div class="action-row"><button class="primary-btn open-facility-directory" data-kind="${company}">فتح دليل الشركة</button><button class="secondary-btn" data-open="companyFacilities" data-arg="${company}">منشآت الشركة</button><button class="secondary-btn world-focus" data-key="${esc(key)}">عرض الموقع</button></div></article>`);
   }
   function openGlobalBase(key,opts={}){
     return runBusinessOperation('openGlobalBase',()=>{
-    const entity=worldEntityByKey(key);if(!entity){pushAlert('تعذر فتح القاعدة: الموقع غير معروف أو تغيّرت بياناته.');return false;}if(globalBaseFor(key)){pushAlert(`القاعدة في ${entity.name} مفتوحة بالفعل.`);return false;}const baseCost=facilityPrice(entity),dailyCost=facilityDailyCost(entity),company=entity.kind==='airport'?'air':'sea',facilityKind=entity.kind==='airport'?'airport-base':'port-base',build=awardConstruction(company,facilityKind,`قاعدة ${entity.name}`,baseCost);if(!build||build.insufficient){if(!opts.silent)notice(build?.insufficient?`تعذر فتح قاعدة ${entity.name}: عرض البناء ${fmtMoney(build.quote)} بينما رصيد ${typeName(company)} ${fmtMoney(build.have)} ورصيد القابضة ${fmtMoney(build.groupHave)}. موّل الشركة أو القابضة أولًا.`:`تعذر فتح قاعدة ${entity.name}: لا يوجد عرض بناء صالح.`);return false;}const safeCode=String(entity.code||nextId('BASE')).replace(/[^a-z0-9]/gi,'-'),id=`BASE-${entity.kind==='airport'?'AIR':'SEA'}-${safeCode}-${state.globalBases.length+1}`,facility={id,sourceKey:key,company,kind:facilityKind,owned:true,icon:entity.icon,photo:entity.kind==='airport'?PHOTOS.facility_airport:PHOTOS.facility_port,name:`قاعدة ${entity.name}`,city:entity.city,country:entity.country,coords:entity.coords,code:entity.code,iata:entity.iata,icao:entity.icao,elevationFt:entity.elevationFt,terminal:entity.terminal,cost:build.amount,dailyCost,capacity:entity.kind==='airport'?'تشغيل جوي وشحن':'تشغيل بحري ولوجستي',contractor:build.contractor,constructionContractId:build.id,detail:`قاعدة عالمية افتتحتها المجموعة في ${entity.name}.`};
-    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'globalBases',groupValueAdd:build.amount*.76},{actor:'expansion'});ensureFacilityWorkforce(company,'فتح قاعدة جديدة');pushAlert(`افتتحت ${facility.name} بعقد ${build.id}، وربطت وجهة التسليم والـHR بالقاعدة نفسها.`);save();updateKpis();renderMap();panMapTo(entity.coords,6);if(!opts.silent)openFacility(id);return true;}catch(error){notice(`ألغي فتح القاعدة بالكامل: ${error.message}`);return false;}
+    const entity=worldEntityByKey(key);if(!entity||!['airport','port'].includes(entity.kind)||!state.openedCompanies.includes(entity.kind==='airport'?'air':'sea')){pushAlert('تعذر فتح القاعدة: الموقع غير معروف أو تغيّرت بياناته.');return false;}if(globalBaseFor(key)){pushAlert(`القاعدة في ${entity.name} مفتوحة بالفعل.`);return false;}const baseCost=facilityPrice(entity),dailyCost=facilityDailyCost(entity),company=entity.kind==='airport'?'air':'sea',facilityKind=entity.kind==='airport'?'airport-base':'port-base',build=awardConstruction(company,facilityKind,`قاعدة ${entity.name}`,baseCost);if(!build||build.insufficient){if(!opts.silent)notice(build?.insufficient?`تعذر فتح قاعدة ${entity.name}: عرض البناء ${fmtMoney(build.quote)} بينما رصيد ${typeName(company)} ${fmtMoney(build.have)} ورصيد القابضة ${fmtMoney(build.groupHave)}. موّل الشركة أو القابضة أولًا.`:`تعذر فتح قاعدة ${entity.name}: لا يوجد عرض بناء صالح.`);return false;}const safeCode=String(entity.code||nextId('BASE')).replace(/[^a-z0-9]/gi,'-'),id=`BASE-${entity.kind==='airport'?'AIR':'SEA'}-${safeCode}-${state.globalBases.length+1}`,facility={id,sourceKey:key,company,kind:facilityKind,owned:true,deliveryCapacity:entity.kind==='airport'?300:120,icon:entity.icon,photo:entity.kind==='airport'?PHOTOS.facility_airport:PHOTOS.facility_port,name:`قاعدة ${entity.name}`,city:entity.city,country:entity.country,coords:entity.coords,code:entity.code,iata:entity.iata,icao:entity.icao,elevationFt:entity.elevationFt,terminal:entity.terminal,cost:build.amount,dailyCost,capacity:entity.kind==='airport'?'300 طائرة · تشغيل جوي وشحن':'120 سفينة · تشغيل بحري ولوجستي',contractor:build.contractor,constructionContractId:build.id,detail:`قاعدة عالمية افتتحتها المجموعة في ${entity.name}.`};
+    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'globalBases',groupValueAdd:build.amount*.76},{actor:'expansion'});ensureFacilityWorkforce(company,'فتح قاعدة جديدة');pushAlert(`افتتحت ${facility.name} بعقد ${build.id}، وربطت وجهة التسليم والـHR بالقاعدة نفسها.`);save();window.GH_TRANSACTION_CORE.afterCommit(()=>{updateKpis();renderMap();panMapTo(entity.coords,6);if(!opts.silent)openFacility(id);});return true;}catch(error){notice(`ألغي فتح القاعدة بالكامل: ${error.message}`);return false;}
 
     });
   }
   function openLogisticsHub(site,opts={}){
     return runBusinessOperation('openLogisticsHub',()=>{
-    site=canonicalDirectorySite(site,'road');if(!state.openedCompanies.includes('road')){notice('أسس شركة الخدمات اللوجستية أولًا.');return false;}if(!site){notice('اختر موقع المركز من الدليل العالمي.');return false;}const existing=directorySiteOwned(site);if(existing){if(!opts.silent)openFacility(existing.id);return false;}const coords=[...site.coords],place={city:site.city,country:site.country,label:site.city},baseCost=8500000,dailyCost=12500,name=logisticsCenterName(place),build=awardConstruction('road','logistics',name,baseCost);if(!build||build.insufficient){pushAlert('لم يُفتح المركز اللوجستي؛ التمويل المتاح لا يغطي أفضل عرض بناء.');return false;}const id=nextId('HUB'),facility={id,sourceKey:site.key,capitalId:site.capitalId,company:'road',kind:'logistics',owned:true,icon:'🚚',photo:PHOTOS.facility_logistics,name,city:place.city,country:place.country,coords,bays:42,dailyCost,cost:build.amount,contractor:build.contractor,constructionContractId:build.id,detail:'مركز لوجستي أنشئ عبر المشتريات المعتمدة.',capacity:'140 شاحنة',manager:'مدير المركز اللوجستي',tasks:[{id:nextId('TASK'),title:'تجهيز أرصفة التحميل وتعيين فريق التشغيل الأول',status:'قيد التنفيذ',createdAt:state.simSeconds||0}]};
-    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.72},{actor:'expansion'});ensureFacilityWorkforce('road','فتح مركز لوجستي');pushAlert(`افتتح ${name} وربط بـHR والتشغيل.`);save();updateKpis();renderMap();panMapTo(coords,6);if(!opts.silent)openFacility(id);return true;}catch(error){notice(`ألغي فتح المركز بالكامل: ${error.message}`);return false;}
+    site=canonicalDirectorySite(site,'road');if(!state.openedCompanies.includes('road')){notice('أسس شركة الخدمات اللوجستية أولًا.');return false;}if(!site){notice('اختر موقع المركز من الدليل العالمي.');return false;}const existing=directorySiteOwned(site);if(existing){if(!opts.silent)openFacility(existing.id);return false;}const coords=[...site.coords],place={city:site.city,country:site.country,label:site.city},baseCost=8500000,dailyCost=12500,name=logisticsCenterName(place),build=awardConstruction('road','logistics',name,baseCost);if(!build||build.insufficient){pushAlert('لم يُفتح المركز اللوجستي؛ التمويل المتاح لا يغطي أفضل عرض بناء.');return false;}const id=nextId('HUB'),facility={id,sourceKey:site.key,capitalId:site.capitalId,company:'road',kind:'logistics',owned:true,deliveryCapacity:140,icon:'🚚',photo:PHOTOS.facility_logistics,name,city:place.city,country:place.country,coords,bays:42,dailyCost,cost:build.amount,contractor:build.contractor,constructionContractId:build.id,detail:'مركز لوجستي أنشئ عبر المشتريات المعتمدة.',capacity:'140 شاحنة',manager:'مدير المركز اللوجستي',tasks:[{id:nextId('TASK'),title:'تجهيز أرصفة التحميل وتعيين فريق التشغيل الأول',status:'قيد التنفيذ',createdAt:state.simSeconds||0}]};
+    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.72},{actor:'expansion'});ensureFacilityWorkforce('road','فتح مركز لوجستي');pushAlert(`افتتح ${name} وربط بـHR والتشغيل.`);save();window.GH_TRANSACTION_CORE.afterCommit(()=>{updateKpis();renderMap();panMapTo(coords,6);if(!opts.silent)openFacility(id);});return true;}catch(error){notice(`ألغي فتح المركز بالكامل: ${error.message}`);return false;}
 
     });
   }
@@ -1957,38 +1942,33 @@
       if(existing){if(!opts.silent)openFacility(existing.id);return false;}
       const build=awardConstruction('mobility','mobility-center',`مركز GH Mobility · ${capital.city}`,4500000);
       if(!build||build.insufficient){if(!opts.silent)notice('رصيد حساب GH Mobility لا يغطي أفضل عرض إنشاء للمركز.');return false;}
-      const id=`MOB-CENTER-${capital.id}`,facility={id,sourceKey:site.key,company:'mobility',kind:'mobility-center',owned:true,capitalOnly:true,capitalId:site.capitalId,icon:'🚘',photo:PHOTOS.facility_logistics,name:`مركز GH Mobility · ${site.city}`,city:site.city,country:site.country,coords:[...site.coords],bays:120,dailyCost:9800,cost:build.amount,capacity:'تشغيل حضري محلي · 120 سيارة',manager:'مدير مركز التنقل الحضري',contractor:build.contractor,constructionContractId:build.id,detail:`مركز تشغيلي في عاصمة ${site.country}. لا يُسمح بإنشائه خارج العواصم المعتمدة.`,tasks:[{id:nextId('TASK'),title:'تجهيز المركز لاستقبال السيارات المشتراة',status:'قيد التنفيذ',createdAt:state.simSeconds||0}]};
+      const id=`MOB-CENTER-${capital.id}`,facility={id,sourceKey:site.key,company:'mobility',kind:'mobility-center',owned:true,capitalOnly:true,capitalId:site.capitalId,deliveryCapacity:120,icon:'🚘',photo:PHOTOS.facility_logistics,name:`مركز GH Mobility · ${site.city}`,city:site.city,country:site.country,coords:[...site.coords],bays:120,dailyCost:9800,cost:build.amount,capacity:'تشغيل حضري محلي · 120 سيارة',manager:'مدير مركز التنقل الحضري',contractor:build.contractor,constructionContractId:build.id,detail:`مركز تشغيلي في عاصمة ${site.country}. لا يُسمح بإنشائه خارج العواصم المعتمدة.`,tasks:[{id:nextId('TASK'),title:'تجهيز المركز لاستقبال السيارات المشتراة',status:'قيد التنفيذ',createdAt:state.simSeconds||0}]};
       try{
         window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.72},{actor:'mobility-facility'});
         window.GH_MOBILITY_CORE?.ensure?.(state);state.mobility.capitalCenters.unshift({id:facility.id,capitalId:capital.id,city:capital.city,country:capital.country,coords:[...capital.coords],facilityId:facility.id,openedAt:state.simSeconds||0});
-        ensureFacilityWorkforce('mobility',`فتح مركز عاصمة ${capital.city}`);pushAlert(`افتتح ${facility.name} في العاصمة وربط بالحساب الجاري والموارد البشرية.`);save();updateKpis();renderMap();panMapTo(capital.coords,6);if(!opts.silent)openDrawer('companyFacilities',{type:'mobility'});return true;
+        ensureFacilityWorkforce('mobility',`فتح مركز عاصمة ${capital.city}`);pushAlert(`افتتح ${facility.name} في العاصمة وربط بالحساب الجاري والموارد البشرية.`);save();window.GH_TRANSACTION_CORE.afterCommit(()=>{updateKpis();renderMap();panMapTo(capital.coords,6);if(!opts.silent)openDrawer('companyFacilities',{type:'mobility'});});return true;
       }catch(error){notice(`ألغي فتح مركز العاصمة بالكامل: ${error.message}`);return false;}
     });
   }
-  function openDirectorySite(key){
+  function openDirectorySite(key,selection={}){
     const entity=worldEntityByKey(key);if(!entity){notice('تعذر قراءة موقع الدليل العالمي.');return false;}
-    if(entity.kind!=='company-site')return openGlobalBase(key);
-    if(!state.openedCompanies.includes(entity.company)){notice(`أسس ${typeName(entity.company)} أولًا قبل شراء المنشأة.`);return false;}
-    const opened=directorySiteOwned(entity);if(opened){openFacility(opened.id);return false;}
-    let result=false;if(entity.company==='road')result=openLogisticsHub(entity.key);
-    else if(entity.company==='mobility')result=openMobilityCapitalCenter(entity.capitalId);
-    else if(entity.company==='power')result=buildEnergy(entity.energyKind||worldDirectoryIntent.energyKind||'solar',entity.key);
-    else if(entity.company==='bank')result=openBankBranch(entity.key);
-    if(result)worldDirectoryIntent={};return result;
+    const offer=directoryOffer(entity),company=offer.company;
+    if(!COMPANY_TYPES.includes(company)||(selection.company&&selection.company!==company)||(worldKind!=='all'&&worldKind!==company)){notice('تغير نطاق الشركة؛ اختر الموقع مجددًا من دليلها.');return false;}
+    if(!state.openedCompanies.includes(company)){notice(`أسس ${typeName(company)} أولًا قبل شراء المنشأة.`);return false;}
+    if((selection.quote!==undefined&&Number(selection.quote)!==offer.quote)||(company==='power'&&selection.energyKind!==undefined&&selection.energyKind!==entity.energyKind)){notice('تغير عرض الإنشاء؛ راجع السعر ونوع المشروع مجددًا.');renderWorldNetworkInto();return false;}
+    const opened=entity.kind==='company-site'?directorySiteOwned(entity):globalBaseFor(key);if(opened){renderWorldNetworkInto();return false;}
+    const opts={silent:true};let result=false;
+    if(entity.kind!=='company-site')result=openGlobalBase(key,opts);
+    else if(company==='road')result=openLogisticsHub(entity.key,opts);
+    else if(company==='mobility')result=openMobilityCapitalCenter(entity.capitalId,opts);
+    else if(company==='power')result=buildEnergy(entity.energyKind||'solar',entity.key,opts);
+    else if(company==='bank')result=openBankBranch(entity.key,opts);
+    if(result)renderWorldNetworkInto();return result;
   }
   function renderCompanyFacilities(type){
-    const company=COMPANY_TYPES.includes(type)?type:'group',owned=getDynamicFacilities().filter(f=>f?.owned&&companyOfFacility(f)===company),name=typeName(company),metricBox=items=>`<div class="metric-row">${items.map(x=>`<div><span>${x[0]}</span><b>${x[1]}</b></div>`).join('')}</div>`;
-    if(company==='mobility'){
-      const centers=new Map(owned.filter(f=>f.kind==='mobility-center').map(f=>[f.capitalId,f]));
-      const capitalRows=(window.GH_MOBILITY_CORE?.CAPITALS||[]).map(cap=>{const center=centers.get(cap.id);return `<article class="facility-compact-row"><div><b>${esc(cap.city)}</b><small>${esc(cap.country)} · عاصمة معتمدة · ${center?esc(center.id):'غير مفتوحة'}</small></div>${center?`<button class="secondary-btn" data-open="facilityManage" data-arg="${esc(center.id)}">إدارة المركز</button>`:`<button class="primary-btn mobility-open-capital-center" data-capital="${esc(cap.id)}">فتح المركز</button>`}</article>`;}).join('');
-      return `<div class="list"><article class="list-item registry-hero"><div class="list-item-head"><div><h3>قواعد ومراكز GH Mobility</h3><p>سجل مستقل للشركة الجديدة. المراكز تُفتح في العواصم فقط، وتبقى مشتريات السيارات والمسارات خارج هذا القسم.</p></div><span class="tag positive">CAPITALS ONLY</span></div>${metricBox([['المراكز المفتوحة',centers.size],['العواصم المتاحة',(window.GH_MOBILITY_CORE?.CAPITALS||[]).length],['سيارات الشركة',window.GH_MOBILITY_CORE?.snapshot?.(state)?.vehicles||0]])}</article><div class="section-mini">اختر عاصمة لفتح مركز تشغيل حضري</div>${capitalRows||'<div class="empty">سجل العواصم غير متاح.</div>'}</div>`;
-    }
-    const rows=owned.map(f=>`<article class="facility-compact-row"><div><b>${esc(f.name||facilityKind(f.kind))}</b><small>${esc(f.city||'—')} · ${esc(f.country||'—')} · ${esc(facilityKind(f.kind))}</small></div><button class="secondary-btn" data-open="facilityManage" data-arg="${esc(f.id)}">إدارة</button></article>`).join('');
-    const action=['air','sea','road','power','bank'].includes(company)?`<button class="primary-btn open-facility-directory" data-kind="${company}">اختيار موقع من الدليل العالمي</button>`:'';
-    const worldCodes=company==='air'?featuredAirportCodes:company==='sea'?featuredPortCodes:[];
-    const worldRows=worldCodes.slice(0,12).map(code=>{const row=company==='air'?airportIndex.get(code):WORLD.ports.find(x=>x[0]===code);if(!row)return '';const entity=company==='air'?airportEntity(row):portEntity(row),open=globalBaseFor(entity.key);return `<article class="facility-compact-row facility-global-option"><div><b>${esc(entity.name)}</b><small>${esc(entity.city)} · ${esc(entity.country)} · ${esc(entity.code)} · ${open?'قاعدة مفتوحة':'منشأة عامة'}</small></div>${open?`<button class="secondary-btn" data-open="facilityManage" data-arg="${esc(open.id)}">إدارة</button>`:`<button class="secondary-btn open-global-base" data-key="${esc(entity.key)}">فتح قاعدة</button>`}</article>`;}).join('');
-    const worldSection=['air','sea'].includes(company)?`<div class="section-mini">مواقع عالمية مرشحة لقاعدة ${company==='air'?'جوية':'بحرية'} — الإنشاء هنا فقط</div>${worldRows||'<div class="empty">تعذر تحميل سجل الوجهات.</div>'}`:'';
-    return `<div class="list"><article class="list-item registry-hero"><div class="list-item-head"><div><h3>قواعد ومراكز ${esc(name)}</h3><p>عرض مختصر لمنشآت هذه الشركة فقط. الإنشاء والميزانية والموظفون مرتبطون بحسابها ولا تختلط بأقسام الشركات الأخرى.</p></div><span class="tag positive">SEPARATE REGISTER</span></div>${metricBox([['المنشآت المملوكة',owned.length],['التشغيل اليومي',fmtMoney(owned.reduce((n,f)=>n+(Number(f.dailyCost)||0),0))],['القطاع',esc(name)]])}<div class="action-row">${action}</div></article>${rows||'<div class="empty">لا توجد قواعد أو مراكز مملوكة بعد.</div>'}${worldSection}</div>`;
+    const company=COMPANY_TYPES.includes(type)?type:'group',owned=getDynamicFacilities().filter(f=>f?.owned&&companyOfFacility(f)===company),stats=facilityDirectoryIndex().stats.companies[company];
+    const rows=owned.map(f=>`<article class="facility-compact-row" data-company="${company}"><div><b>${esc(f.name||facilityKind(f.kind))}</b><small>${esc(f.city||'—')} · ${esc(f.country||'—')} · ${esc(facilityKind(f.kind))}</small></div><button class="secondary-btn" data-open="facilityManage" data-arg="${esc(f.id)}">إدارة المنشأة</button></article>`).join('');
+    return `<div class="list company-facilities" data-company="${company}"><article class="list-item registry-hero"><h3>قواعد ومراكز ${esc(companyFinanceName(company))}</h3><div class="directory-scope"><b>${esc(typeName(company))}</b><span>الحساب الجاري: <bdi>${esc(state.companyFinance?.[company]?.accounts?.[0]?.id||'غير متاح')}</bdi></span></div><div class="metric-row"><div><span>المنشآت المملوكة</span><b>${owned.length}</b></div><div><span>مواقع الدليل</span><b>${fmtNumber(stats?.sites||0)}</b></div><div><span>دول ومناطق متاحة</span><b>${stats?.countries||0}</b></div></div>${stats?`<p>${['air','sea'].includes(company)?'مواقع من سجل المطارات والموانئ الخاص بالقطاع.':'مواقع في العواصم المعتمدة.'} راجع الدولة والمدينة والعقد قبل الفتح.</p><div class="action-row"><button class="primary-btn open-facility-directory" data-kind="${company}">فتح منشأة جديدة</button></div>`:''}</article><div class="section-mini">المنشآت المملوكة لهذه الشركة</div>${rows||'<div class="empty">لا توجد قواعد أو مراكز مملوكة بعد.</div>'}</div>`;
   }
   function globalRouteResults(type){
     const kind=type==='air'?'airport':'port',query=normalizeSearch(globalRouteQuery),results=[];
@@ -2037,11 +2017,11 @@
   }
 
   const panelMeta={
-    leadershipHub:['القيادة التنفيذية','مركز القيادة والقرار'],executionLog:['القيادة التنفيذية','سجل التنفيذ'],actionCenter:['القيادة التنفيذية','مركز المهام'],companies:['المجموعة والشركات','الشركات التابعة'],control:['التشغيل والأصول','مركز التشغيل والشبكة'],governanceHub:['الحوكمة والمخاطر','مركز الرقابة والامتثال'],systemHub:['النظام والسلامة','الصحة والصيانة'],network:['التشغيل والأصول','الدليل العالمي'],routes:['التشغيل والأصول','مركز المسارات المستقل'],globalRoute:['التشغيل والأصول','مسار عالمي مباشر'],companyFacilities:['التشغيل والأصول','قواعد ومراكز الشركة'],market:['المالية والخزينة','الأسواق والمحفظة'],contracts:['التشغيل والأصول','العقود والعملاء'],ma:['القيادة التنفيذية','الاستحواذات والاستثمارات'],labor:['الموارد البشرية','وظائف المنشآت والتنظيم'],assets:['التشغيل والأصول','الأصول المملوكة'],assetMarket:['التشغيل والأصول','متجر الأصول'],assetManage:['التشغيل والأصول','إدارة الأصل'],mobilityAsset:['التشغيل والأصول','إدارة سيارة Mobility'],expansion:['التشغيل والأصول','الشبكة والمنشآت'],finance:['المالية والخزينة','المركز المالي'],monthlyFinance:['المالية والخزينة','الدخل والمصروفات الشهرية'],invoices:['المالية والخزينة','المستندات والذمم'],news:['القيادة التنفيذية','غرفة الأحداث'],settings:['النظام والسلامة','الحفظ والإعدادات'],diagnostics:['النظام والسلامة','مركز التشخيص'],energy:['المجموعة والشركات','مركز إنتاج الطاقة'],bank:['المالية والخزينة','بنك المجموعة'],governance:['الحوكمة والمخاطر','مجلس الإدارة'],insurance:['الحوكمة والمخاطر','التأمين وإدارة المخاطر'],research:['القيادة التنفيذية','البحث والتطوير'],esg:['القيادة التنفيذية','الاستدامة'],career:['القيادة التنفيذية','نضج المجموعة'],realism:['القيادة التنفيذية','واقعية الاقتصاد'],ports:['التشغيل والأصول','شبكة الموانئ']
+    formationContract:['المجموعة القابضة','عقد التأسيس'],leadershipHub:['القيادة التنفيذية','مركز القيادة والقرار'],executionLog:['القيادة التنفيذية','سجل التنفيذ'],actionCenter:['القيادة التنفيذية','مركز المهام'],companies:['المجموعة والشركات','الشركات التابعة'],control:['التشغيل والأصول','مركز التشغيل والشبكة'],governanceHub:['الحوكمة والمخاطر','مركز الرقابة والامتثال'],systemHub:['النظام والسلامة','الصحة والصيانة'],network:['التشغيل والأصول','الدليل العالمي'],routes:['التشغيل والأصول','مركز المسارات المستقل'],globalRoute:['التشغيل والأصول','مسار عالمي مباشر'],companyFacilities:['التشغيل والأصول','قواعد ومراكز الشركة'],market:['المالية والخزينة','الأسواق والمحفظة'],contracts:['التشغيل والأصول','العقود والعملاء'],ma:['القيادة التنفيذية','الاستحواذات والاستثمارات'],labor:['الموارد البشرية','وظائف المنشآت والتنظيم'],assets:['التشغيل والأصول','الأصول المملوكة'],assetMarket:['التشغيل والأصول','متجر الأصول'],assetManage:['التشغيل والأصول','إدارة الأصل'],mobilityAsset:['التشغيل والأصول','إدارة سيارة Mobility'],expansion:['التشغيل والأصول','الشبكة والمنشآت'],finance:['المالية والخزينة','المركز المالي'],monthlyFinance:['المالية والخزينة','الدخل والمصروفات الشهرية'],invoices:['المالية والخزينة','المستندات والذمم'],news:['القيادة التنفيذية','غرفة الأحداث'],settings:['النظام والسلامة','الحفظ والإعدادات'],diagnostics:['النظام والسلامة','مركز التشخيص'],energy:['المجموعة والشركات','مركز إنتاج الطاقة'],bank:['المالية والخزينة','بنك المجموعة'],governance:['الحوكمة والمخاطر','مجلس الإدارة'],insurance:['الحوكمة والمخاطر','التأمين وإدارة المخاطر'],research:['القيادة التنفيذية','البحث والتطوير'],esg:['القيادة التنفيذية','الاستدامة'],career:['القيادة التنفيذية','نضج المجموعة'],realism:['القيادة التنفيذية','واقعية الاقتصاد'],ports:['التشغيل والأصول','شبكة الموانئ']
   };
 
   const panelRoot = panel => window.GH_ADVANCED?.root(panel) || ({
-    leadershipHub:'leadership',executionLog:'leadership',realism:'leadership',ma:'leadership',research:'leadership',esg:'leadership',career:'leadership',news:'leadership',
+    formationContract:'companies',leadershipHub:'leadership',executionLog:'leadership',realism:'leadership',ma:'leadership',research:'leadership',esg:'leadership',career:'leadership',news:'leadership',
     companies:'companies',companyManage:'companies',energy:'companies',
     control:'control',network:'control',routes:'control',globalRoute:'control',companyFacilities:'companies',contracts:'control',labor:'control',expansion:'control',ports:'control',procurement:'control',assets:'control',assetMarket:'control',assetManage:'control',mobilityAsset:'control',facilityManage:'control',
     market:'finance',finance:'finance',monthlyFinance:'finance',invoices:'finance',treasury:'finance',bank:'finance',
@@ -2118,19 +2098,21 @@
 
   const drawerScrollMemory={};
   function openDrawer(panel, arg){
-    const previousPanel=activeDrawerPanel,previousScroll=$('drawerBody').scrollTop;
+    cancelDrawerSearch();
+    const previousPanel=activeDrawerPanel,previousScroll=$('drawerBody').scrollTop,previousArg=activeDrawerArg;
     if(previousPanel)drawerScrollMemory[previousPanel]=previousScroll;
     activeDrawerPanel=panel;activeDrawerArg=arg;
     state.lastPanel=panel;state.lastPanelArg=arg??null;
     const [eyebrow,title]=window.GH_ADVANCED?.meta(panel,arg)||panelMeta[panel]||['الإدارة','لوحة'];
     $('drawerEyebrow').textContent=eyebrow; $('drawerTitle').textContent=title; $('drawerBody').innerHTML=renderPanel(panel,arg); bindDrawerActions();
-    $('drawerBody').scrollTop=previousPanel===panel?previousScroll:(drawerScrollMemory[panel]||0);
+    $('drawerBody').scrollTop=previousPanel===panel&&JSON.stringify(previousArg)===JSON.stringify(arg)?previousScroll:['companyFacilities','network'].includes(panel)?0:(drawerScrollMemory[panel]||0);
     if(drawerUsesBackdrop()) $('backdrop').classList.remove('hidden'); else $('backdrop').classList.add('hidden');
     $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden','false'); setActiveNav(panelRoot(panel));
     closeMapPopovers(); $('assetCard').classList.add('hidden');
     setTimeout(()=>{ if(map)map.invalidateSize(); },260);
   }
   function openDrawerContent(eyebrow,title,html){
+    cancelDrawerSearch();
     if(activeDrawerPanel)drawerScrollMemory[activeDrawerPanel]=$('drawerBody').scrollTop;
     activeDrawerPanel='content';activeDrawerArg=null;
     $('drawerEyebrow').textContent=eyebrow; $('drawerTitle').textContent=title; $('drawerBody').innerHTML=`<div class="list">${html}</div>`; bindDrawerActions();
@@ -2139,7 +2121,7 @@
     $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden','false'); closeMapPopovers(); setActiveNav('map');
     setTimeout(()=>{ if(map)map.invalidateSize(); },260);
   }
-  function closeDrawer(){ $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); $('backdrop').classList.add('hidden'); setActiveNav('map'); state.lastPanel=null;state.lastPanelArg=null; setTimeout(()=>{if(map)map.invalidateSize();},260); }
+  function closeDrawer(){ cancelDrawerSearch(); $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); $('backdrop').classList.add('hidden'); setActiveNav('map'); state.lastPanel=null;state.lastPanelArg=null; setTimeout(()=>{if(map)map.invalidateSize();},260); }
   const ADVANCED_OWNED_PANELS=new Set(['realism','companies','leadershipHub','workspaceHub','peopleHub','actionCenter','governanceHub','systemHub','executionLog','facilityManage','companyManage','treasury','audit','legal','procurement','cyber','safety','energy','bank','governance','insurance','research','esg','career','news','labor','ma','settings','updates','diagnostics','controlPlane']);
   function renderPanel(panel,arg){
     const advanced=window.GH_ADVANCED?.render(panel,arg,advancedContext());
@@ -2149,7 +2131,7 @@
     if(ADVANCED_OWNED_PANELS.has(panel))return '<div class="empty">تعذر تحميل مكوّن الإدارة لهذا القسم. أعد فتح اللعبة بدل تشغيل واجهة قديمة احتياطية.</div>';
     if(panel==='control')return renderControl(); if(panel==='market')return renderMarket();
     if(panel==='contracts')return renderContracts(); if(panel==='assets')return renderOwnedAssets(arg); if(panel==='assetMarket')return renderAssetMarket(arg);
-    if(panel==='expansion')return renderExpansion(arg); if(panel==='companyFacilities')return renderCompanyFacilities(typeof arg==='object'?arg.type:arg); if(panel==='finance')return renderFinance(); if(panel==='monthlyFinance')return renderMonthlyFinance(); if(panel==='invoices')return renderInvoices(arg);
+    if(panel==='formationContract')return renderFormationContract(); if(panel==='expansion')return renderExpansion(arg); if(panel==='companyFacilities')return renderCompanyFacilities(typeof arg==='object'?arg.type:arg); if(panel==='finance')return renderFinance(); if(panel==='monthlyFinance')return renderMonthlyFinance(); if(panel==='invoices')return renderInvoices(arg);
     if(panel==='assetManage')return renderAssetManage(arg); if(panel==='mobilityAsset')return renderMobilityAsset(arg); if(panel==='ports')return renderPorts();
     if(panel==='network')return renderWorldNetwork(); if(panel==='routes')return renderRouteCenter(arg); if(panel==='globalRoute')return renderGlobalRoute(arg);
     return '<div class="empty">القسم غير متاح.</div>';
@@ -2211,6 +2193,12 @@
   function compatibleBases(type){
     return getDynamicFacilities().filter(f=>f.owned && (type==='air'?['airport-base'].includes(f.kind)&&f.company==='air':type==='sea'?['port-base'].includes(f.kind)&&f.company==='sea':['depot','logistics'].includes(f.kind)&&f.company==='road'));
   }
+  function facilityFreeAssetCapacity(base){return window.GH_FACILITY_CORE?.availableAssetCapacity?.(state,base)||0;}
+  function allocateAssetPurchase(type,qty,preferredBaseId){
+    const bases=compatibleBases(type).filter(base=>facilityFreeAssetCapacity(base)>0).sort((a,b)=>Number(b.id===preferredBaseId)-Number(a.id===preferredBaseId)||facilityFreeAssetCapacity(b)-facilityFreeAssetCapacity(a)||String(a.id).localeCompare(String(b.id))),allocations=[];
+    let remaining=Math.max(0,Math.floor(Number(qty)||0));for(const base of bases){const count=Math.min(remaining,facilityFreeAssetCapacity(base));if(count>0)allocations.push({base,qty:count});remaining-=count;if(remaining===0)break;}
+    if(remaining>0)throw new Error(`سعة القواعد المتاحة لا تكفي: المتاح ${qty-remaining} من ${qty}. افتح قاعدة إضافية أو وسّع السعة.`);return allocations;
+  }
   function assetComparePanel(items){
     if(!marketCompare.length)return '';
     const selected=marketCompare.map(id=>items.find(x=>x.id===id)||catalogItem(marketFilterType,id)).filter(Boolean);
@@ -2234,7 +2222,7 @@
     const list = items.map(a=>`<article class="list-item sector-${activeType} asset-market-card"><div class="asset-thumb"><img src="${a.photo}" alt="${esc(a.name)}" loading="lazy"><span class="thumb-tag">${activeTab==='new'?'جديد':`مستعمل ${a.condition}%`}</span></div><div class="list-item-head"><div><h3>${a.icon} ${esc(a.name)}</h3><p>${esc(a.segment)} · ${esc(a.description)}</p></div><span class="tag">★ ${a.rating}</span></div><div class="spec-grid">${specRow(a)}</div>
       <div class="ownership-grid"><div><span>التسليم</span><b>${a.delivery}</b></div><div><span>الضمان</span><b>${a.warranty}</b></div><div><span>قيمة بعد 5 سنوات</span><b>${a.residual5y}%</b></div><div><span>الانبعاثات</span><b>${a.specs.co2Band}</b></div></div>
       <div class="asset-price">${a.priceOriginal?`<s>${fmtMoney(a.priceOriginal)}</s> `:''}<b>${fmtMoney(a.price)}</b><small>تأجير ${fmtMoney(a.leaseMonthly)}/شهر · دفعة تمويل ${Math.round(a.downPayment*100)}%</small></div>
-      <div class="asset-request-routing"><div><span>شراء يدوي مباشر</span><b>أنت تختار الأصل والعدد والقاعدة وطريقة التملك</b><small>${hasDeliveryBase?'التسليم فوري، والطاقم الثابت والراتب يُنشآن آليًا داخل معاملة الشراء نفسها.':'افتح منشأة تسليم متوافقة أولًا؛ لن يسمح النظام بشراء أصل بلا وجهة وصول صحيحة.'}</small></div>${hasDeliveryBase?`<div class="route-builder manual-asset-purchase"><label>قاعدة التسليم<select class="manual-asset-base">${bases.map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('')}</select></label><label>العدد<input class="manual-asset-qty" type="number" min="1" max="50" value="1"></label><label>التملك<select class="manual-asset-mode"><option value="cash">شراء نقدي</option><option value="finance">تمويل</option><option value="lease">تأجير تشغيلي</option></select></label></div>`:''}<div class="action-row"><button class="primary-btn manual-buy-asset" data-type="${activeType}" data-tab="${activeTab}" data-id="${a.id}" ${hasDeliveryBase?'':'disabled'}>شراء وتسليم الآن</button><button class="secondary-btn compare-asset ${marketCompare.includes(a.id)?'active':''}" data-id="${a.id}">${marketCompare.includes(a.id)?'إزالة من المقارنة':'قارن'}</button></div></div></article>`).join('');
+      <div class="asset-request-routing"><div><span>شراء يدوي مباشر</span><b>أنت تختار الأصل والعدد والقاعدة وطريقة التملك</b><small>${hasDeliveryBase?'يبدأ التوزيع من القاعدة المختارة ثم يكمل تلقائيًا على قواعد الشركة عند شراء كمية كبيرة، داخل معاملة واحدة.':'افتح منشأة تسليم متوافقة أولًا؛ لن يسمح النظام بشراء أصل بلا وجهة وصول صحيحة.'}</small></div>${hasDeliveryBase?`<div class="route-builder manual-asset-purchase"><label>قاعدة التسليم الأولى<select class="manual-asset-base">${bases.map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)} · متاح ${fmtNumber(facilityFreeAssetCapacity(f))}/${fmtNumber(window.GH_FACILITY_CORE.assetCapacity(f))}</option>`).join('')}</select></label><label>العدد<input class="manual-asset-qty" type="number" min="1" max="${window.GH_PROCUREMENT_CORE?.MAX_ASSET_PURCHASE_QUANTITY||1000}" value="1"></label><label>التملك<select class="manual-asset-mode"><option value="cash">شراء نقدي</option><option value="finance">تمويل</option><option value="lease">تأجير تشغيلي</option></select></label></div>`:''}<div class="action-row"><button class="primary-btn manual-buy-asset" data-type="${activeType}" data-tab="${activeTab}" data-id="${a.id}" ${hasDeliveryBase?'':'disabled'}>شراء وتسليم الآن</button><button class="secondary-btn compare-asset ${marketCompare.includes(a.id)?'active':''}" data-id="${a.id}">${marketCompare.includes(a.id)?'إزالة من المقارنة':'قارن'}</button></div></div></article>`).join('');
     const ownedCount=state.assets.filter(a=>a.type===activeType).length,pendingSale=state.assets.filter(a=>a.type===activeType&&a.salePending).length;
     const fleetSale=`<article class="list-item fleet-sale-bar"><div><b>إدارة أصول ${typeName(activeType)}</b><small>${ownedCount} أصل مملوك · ${pendingSale} أمر بيع قيد العودة</small></div><button class="danger-soft sell-all-assets" data-type="${activeType}" ${ownedCount?'':'disabled'}>بيع جميع أصول القطاع</button></article>`;
     return `${typeTabs}${condTabs}${filterBar}${fleetSale}<div class="section-mini">الشراء والتسليم والطاقم الثابت تتم فورًا وبشكل ذري. يبقى اختيار المسار والمغادرة بيدك.</div>${assetComparePanel(source)}${list||'<div class="empty">لا توجد أصول متاحة بهذا الفلتر.</div>'}`;
@@ -2286,7 +2274,7 @@
     const sectors=[['all','الكل'],['group','القابضة'],['air','الجوي'],['sea','البحري'],['road','اللوجستيات'],['mobility','Mobility'],['power','الطاقة'],['bank','البنك']];
     const tabs=sectors.map(([id,label])=>`<button class="tab-btn ${facilitySectorFilter===id&&!focusIds.size?'active':''}" data-facilitysector="${id}">${label}<small>${id==='all'?allOwned.length:allOwned.filter(row=>companyOfFacility(row)===id).length}</small></button>`).join('');
     const cards=rows.sort((a,b)=>String(companyOfFacility(a)).localeCompare(String(companyOfFacility(b)))||String(a.name).localeCompare(String(b.name))).map(f=>`<article class="list-item facility-register-row ${selectedFacilityId===f.id?'selected-register-row':''}"><div class="list-item-head"><div><h3>${f.icon||'🏢'} ${esc(f.name)}</h3><p>${esc(typeName(companyOfFacility(f)))} · ${esc(f.city||'—')} · ${esc(f.country||'—')} · ${esc(facilityKind(f.kind))}</p></div><span class="tag ${f.commissioned===false?'':'positive'}">${f.commissioned===false?'قيد الإنشاء':'تشغيل'}</span></div><div class="metric-row"><div><span>التكلفة اليومية</span><b>${fmtMoney(f.dailyCost||0)}</b></div><div><span>الأصول المرتبطة</span><b>${state.assets.filter(asset=>asset.baseFacility===f.id).length}</b></div><div><span>المعرّف</span><b>${esc(f.id)}</b></div></div><div class="action-row"><button class="primary-btn" data-open="facilityManage" data-arg="${esc(f.id)}">إدارة المنشأة</button><button class="secondary-btn" data-focus-facility="${esc(f.id)}">عرض على الخريطة</button></div></article>`).join('');
-    const directoryActions=`<div class="action-row facility-create-actions"><button class="secondary-btn open-facility-directory" data-kind="air">قاعدة جوية</button><button class="secondary-btn open-facility-directory" data-kind="sea">قاعدة بحرية</button><button class="secondary-btn open-facility-directory" data-kind="road">مركز لوجستي</button><button class="secondary-btn" data-open="companyFacilities" data-arg="mobility">مركز Mobility</button><button class="secondary-btn open-facility-directory" data-kind="power">محطة طاقة</button><button class="secondary-btn open-facility-directory" data-kind="bank">فرع بنك</button></div>`;
+    const directoryActions=`<div class="action-row facility-create-actions"><button class="secondary-btn open-facility-directory" data-kind="air">قاعدة جوية</button><button class="secondary-btn open-facility-directory" data-kind="sea">قاعدة بحرية</button><button class="secondary-btn open-facility-directory" data-kind="road">مركز لوجستي</button><button class="secondary-btn open-facility-directory" data-kind="mobility">مركز Mobility</button><button class="secondary-btn open-facility-directory" data-kind="power">محطة طاقة</button><button class="secondary-btn open-facility-directory" data-kind="bank">فرع بنك</button></div>`;
     const hqSection=focusIds.size||!['all','group'].includes(facilitySectorFilter)?'':`<div class="section-mini">مقار إقليمية متاحة — لا تنشئ أصولًا تلقائيًا</div>${expansionSites.map(site=>{const owned=state.branches.includes(site.id);return `<article class="facility-compact-row"><div><b>${site.icon} ${esc(site.name)}</b><small>${esc(site.city)} · ${esc(site.country)} · ${fmtMoney(site.dailyCost)}/يوم</small></div>${owned?`<button class="secondary-btn" data-focus-facility="${esc(site.id)}">على الخريطة</button>`:`<button class="primary-btn open-branch" data-id="${esc(site.id)}">فتح ${fmtMoney(site.price)}</button>`}</article>`;}).join('')}`;
     return `<div class="list"><article class="list-item registry-hero"><div class="list-item-head"><div><h3>الشبكة والمنشآت</h3><p>سجل واحد واضح لكل مقر وقاعدة ومركز وفرع. الإنشاء والإدارة والعرض على الخريطة من هنا دون خيارات مدفونة.</p></div><span class="tag positive">${focusIds.size?'مجموعة خريطة':'UNIFIED REGISTER'}</span></div><div class="metric-row"><div><span>منشآت مملوكة</span><b>${fmtNumber(allOwned.length)}</b></div><div><span>المعروض</span><b>${fmtNumber(rows.length)}</b></div><div><span>تكلفة يومية</span><b>${fmtMoney(daily)}</b></div><div><span>أصول مرتبطة</span><b>${fmtNumber(assets)}</b></div></div><div class="tabs small facility-sector-tabs">${tabs}</div>${directoryActions}</article>${cards||'<div class="empty">لا توجد منشآت مملوكة في هذا القطاع. استخدم أزرار الفتح أعلاه؛ لا تُنشأ أصول تلقائيًا.</div>'}${hqSection}</div>`;
   }
@@ -2451,25 +2439,24 @@
     document.querySelectorAll('.sell-stock').forEach(b=>b.addEventListener('click',()=>tradeStock(b.dataset.id,-1000)));
     document.querySelectorAll('.compare-asset').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.id;if(marketCompare.includes(id))marketCompare=marketCompare.filter(x=>x!==id);else if(marketCompare.length<3)marketCompare.push(id);else{notice('يمكن مقارنة ثلاثة أصول كحد أقصى.');return;}renderAssetMarketInto();}));
     document.querySelectorAll('.open-branch').forEach(b=>b.addEventListener('click',()=>openBranch(b.dataset.id)));
-    document.querySelectorAll('.open-global-base').forEach(b=>b.addEventListener('click',()=>openGlobalBase(b.dataset.key)));
-    document.querySelectorAll('.open-directory-site').forEach(b=>b.addEventListener('click',()=>openDirectorySite(b.dataset.key)));
+    document.querySelectorAll('.open-directory-site').forEach(b=>b.addEventListener('click',()=>{if(!b.isConnected||b.dataset.busy||activeDrawerPanel!=='network')return;b.dataset.busy='1';b.disabled=true;const result=openDirectorySite(b.dataset.key,{company:b.dataset.company,energyKind:b.dataset.energyKind,quote:b.dataset.quote});if(!result&&b.isConnected){delete b.dataset.busy;b.disabled=false;}}));
     document.querySelectorAll('.open-facility-directory').forEach(b=>b.addEventListener('click',()=>openWorldDirectory(b.dataset.kind||'all')));
     document.querySelectorAll('[data-facilitysector]').forEach(b=>b.addEventListener('click',()=>openDrawer('expansion',{sector:b.dataset.facilitysector||'all'})));
     document.querySelectorAll('[data-focus-facility]').forEach(b=>b.addEventListener('click',()=>focusFacility(b.dataset.focusFacility)));
-    document.querySelectorAll('[data-world-company]').forEach(b=>b.addEventListener('click',()=>{worldKind=b.dataset.worldCompany||'all';renderWorldNetworkInto();}));
+    document.querySelectorAll('[data-world-company]').forEach(b=>b.addEventListener('click',()=>{setDirectoryCompany(b.dataset.worldCompany);renderWorldNetworkInto();$('drawerBody').scrollTop=0;}));
+    document.querySelectorAll('[data-world-page]').forEach(b=>b.addEventListener('click',()=>{cancelDrawerSearch();worldPage=Math.max(0,Number(b.dataset.worldPage)||0);renderWorldNetworkInto();$('drawerBody').scrollTop=0;}));
     document.querySelectorAll('.open-global-route-selected').forEach(b=>b.addEventListener('click',()=>{const assetId=$('manualGlobalAsset')?.value;if(!assetId){notice('اختر أصلًا متاحًا أولًا.');return;}globalRouteQuery='';openDrawer('globalRoute',{assetId});}));
-    document.querySelectorAll('.mobility-open-capital-center').forEach(b=>b.addEventListener('click',()=>openMobilityCapitalCenter(b.dataset.capital)));
     document.querySelectorAll('.world-focus').forEach(b=>b.addEventListener('click',()=>focusWorldEntity(b.dataset.key)));
     document.querySelectorAll('.build-road-route').forEach(b=>b.addEventListener('click',createRoadRouteFromForm));
     document.querySelectorAll('[data-routetype]').forEach(b=>b.addEventListener('click',()=>{const next=b.dataset.routetype||'all';if(next!==routeFilterType)routeQuery='';routeFilterType=next;openDrawer('routes',routeFilterType);}));
-    const routeSearch=document.getElementById('routeSearch');if(routeSearch)routeSearch.addEventListener('input',e=>{routeQuery=e.target.value;clearTimeout(worldSearchTimer);worldSearchTimer=setTimeout(()=>renderRouteCenterInto(true),160);});
+    const routeSearch=document.getElementById('routeSearch');if(routeSearch)routeSearch.addEventListener('input',e=>{routeQuery=e.target.value;scheduleDrawerSearch('routes',()=>renderRouteCenterInto(true),160);});
     document.querySelectorAll('.dispatch-international-network').forEach(b=>b.addEventListener('click',async()=>{if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;const ok=await dispatchInternationalNetwork(b.dataset.type||null);if(!ok&&b.isConnected){delete b.dataset.busy;b.disabled=false;}}));
     document.querySelectorAll('.dispatch-existing-network').forEach(b=>b.addEventListener('click',async()=>{if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;const ok=await dispatchExistingDistinctNetwork(b.dataset.type||null);if(!ok&&b.isConnected){delete b.dataset.busy;b.disabled=false;}}));
     document.querySelectorAll('.depart-all-assets').forEach(b=>b.addEventListener('click',async()=>{if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;const type=b.dataset.type||null,ok=await departRouteAssets(null,type);if(ok)openDrawer('routes',type||'all');else if(b.isConnected){delete b.dataset.busy;b.disabled=false;}}));
     document.querySelectorAll('.manual-buy-asset').forEach(b=>b.addEventListener('click',()=>manualPurchaseFromCard(b)));
     document.querySelectorAll('.manual-buy-mobility').forEach(b=>b.addEventListener('click',()=>manualMobilityPurchaseFromCard(b)));
     document.querySelectorAll('[data-ownedtype]').forEach(b=>b.addEventListener('click',()=>{ownedFilterStatus='all';ownedQuery='';openDrawer('assets',b.dataset.ownedtype);}));
-    const ownedSearch=document.getElementById('ownedAssetSearch');if(ownedSearch)ownedSearch.addEventListener('input',e=>{ownedQuery=e.target.value;clearTimeout(worldSearchTimer);worldSearchTimer=setTimeout(()=>renderOwnedAssetsInto(true),160);});
+    const ownedSearch=document.getElementById('ownedAssetSearch');if(ownedSearch)ownedSearch.addEventListener('input',e=>{ownedQuery=e.target.value;scheduleDrawerSearch('assets',()=>renderOwnedAssetsInto(true),160);});
     const ownedStatus=document.getElementById('ownedAssetStatus');if(ownedStatus)ownedStatus.addEventListener('change',e=>{ownedFilterStatus=e.target.value;renderOwnedAssetsInto();});
     document.querySelectorAll('.focus-owned-asset').forEach(b=>b.addEventListener('click',()=>focusOwnedAsset(b.dataset.id)));
     document.querySelectorAll('.focus-mobility-asset').forEach(b=>b.addEventListener('click',()=>focusMobilityAsset(b.dataset.id)));
@@ -2513,11 +2500,14 @@
     document.querySelectorAll('.open-company').forEach(b=>b.addEventListener('click',()=>openCompany(b.dataset.type)));
     document.querySelectorAll('[data-markettype]').forEach(b=>b.addEventListener('click',()=>{marketFilterType=b.dataset.markettype;marketSegment='all';marketCompare=[];renderAssetMarketInto();}));
     document.querySelectorAll('[data-markettab]').forEach(b=>b.addEventListener('click',()=>{marketFilterTab=b.dataset.markettab;marketSegment='all';marketCompare=[];renderAssetMarketInto();}));
-    const assetSearch=$('assetSearch');if(assetSearch)assetSearch.addEventListener('input',e=>{marketQuery=e.target.value;clearTimeout(worldSearchTimer);worldSearchTimer=setTimeout(()=>renderAssetMarketInto(true),180);});
+    const assetSearch=$('assetSearch');if(assetSearch)assetSearch.addEventListener('input',e=>{marketQuery=e.target.value;scheduleDrawerSearch('assetMarket',()=>renderAssetMarketInto(true));});
     const assetSegment=$('assetSegment');if(assetSegment)assetSegment.addEventListener('change',e=>{marketSegment=e.target.value;renderAssetMarketInto();});
-    const worldSearch=$('worldSearch');if(worldSearch)worldSearch.addEventListener('input',e=>{worldQuery=e.target.value;clearTimeout(worldSearchTimer);worldSearchTimer=setTimeout(()=>renderWorldNetworkInto(true),180);});
-    const worldKindSelect=$('worldKind');if(worldKindSelect)worldKindSelect.addEventListener('change',e=>{worldKind=e.target.value;renderWorldNetworkInto();});
-    const globalRouteSearch=$('globalRouteSearch');if(globalRouteSearch)globalRouteSearch.addEventListener('input',e=>{globalRouteQuery=e.target.value;clearTimeout(globalRouteSearchTimer);globalRouteSearchTimer=setTimeout(()=>renderGlobalRouteInto(activeDrawerArg?.assetId,true),180);});
+    const worldSearch=$('worldSearch');if(worldSearch)worldSearch.addEventListener('input',e=>{worldQuery=e.target.value;worldPage=0;scheduleDrawerSearch('network',()=>renderWorldNetworkInto(true));});
+    const worldKindSelect=$('worldKind');if(worldKindSelect)worldKindSelect.addEventListener('change',e=>{setDirectoryCompany(e.target.value);renderWorldNetworkInto();$('drawerBody').scrollTop=0;});
+    const worldCountrySelect=$('worldCountry');if(worldCountrySelect)worldCountrySelect.addEventListener('change',e=>{cancelDrawerSearch();worldCountry=e.target.value;worldCity='';worldPage=0;worldQuery='';renderWorldNetworkInto();});
+    const worldCitySelect=$('worldCity');if(worldCitySelect)worldCitySelect.addEventListener('change',e=>{cancelDrawerSearch();worldCity=e.target.value;worldPage=0;worldQuery='';renderWorldNetworkInto();});
+    const energyKindSelect=$('worldEnergyKind');if(energyKindSelect)energyKindSelect.addEventListener('change',e=>{cancelDrawerSearch();worldDirectoryIntent={energyKind:ENERGY_PROJECTS[e.target.value]?e.target.value:'solar'};renderWorldNetworkInto();});
+    const globalRouteSearch=$('globalRouteSearch');if(globalRouteSearch)globalRouteSearch.addEventListener('input',e=>{globalRouteQuery=e.target.value;const assetId=activeDrawerArg?.assetId;scheduleDrawerSearch('globalRoute',()=>renderGlobalRouteInto(assetId,true));});
     document.querySelectorAll('.energy-build').forEach(b=>b.addEventListener('click',()=>openWorldDirectory('power',{energyKind:b.dataset.kind||'solar'})));
     document.querySelectorAll('.board-approve').forEach(b=>b.addEventListener('click',()=>setBoardDecision('approved')));
     document.querySelectorAll('.board-defer').forEach(b=>b.addEventListener('click',()=>setBoardDecision('deferred')));
@@ -2546,12 +2536,12 @@
   function buildEnergy(kind,site,opts={}){
     return runBusinessOperation('buildEnergy',()=>{
     site=canonicalDirectorySite(site,'power');if(!state.openedCompanies.includes('power')){notice('أسس شركة الطاقة أولًا.');return false;}const p=ENERGY_PROJECTS[kind];if(!p)return false;if(!site){notice('اختر موقع مشروع الطاقة من الدليل العالمي.');return false;}const existing=directorySiteOwned(site);if(existing){if(!opts.silent)openFacility(existing.id);return false;}const siteName=`${p.name} · ${site.city}`,build=awardConstruction('power','power',siteName,p.cost);if(!build||build.insufficient){if(!opts.silent)notice('رصيد شركة الطاقة لا يغطي عرض EPC الأفضل.');return false;}
-    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'procurement','configure-construction',{id:build.id,capacityKey:p.key,capacityAmount:p.amount,energyKind:kind,commissioned:false,leadDays:p.leadDays},{actor:'energy-development'});const facility={id:nextId('POWER-SITE'),sourceKey:site.key,capitalId:site.capitalId,company:'power',kind:'power',energyKind:kind,capacityKey:p.key,capacityAmount:p.amount,projectLeadDays:p.leadDays,owned:true,icon:'⚡',photo:PHOTOS.facility_power,name:siteName,city:site.city,country:site.country,coords:[...site.coords],cost:build.amount,dailyCost:0,plannedDailyCost:site.dailyCost||38000,capacity:`قيد الإنشاء · ${p.amount} ${p.key==='storageMWh'?'MWh':'MW'}`,commissioned:false,status:'قيد الإنشاء',contractor:build.contractor,constructionContractId:build.id,detail:'لا تدخل القدرة التشغيلية أو الإيراد قبل اكتمال الاختبارات والتشغيل التجاري.'};window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.38},{actor:'energy-development'});ensureFacilityWorkforce('power','تجهيز فريق مشروع ومحطة طاقة');window.GH_ENERGY_CORE?.ensure?.(state);pushAlert(`أرسى عقد ${siteName} على ${build.contractor} بمدة ${p.leadDays} يوم محاكاة، وربط فريق المحطة آليًا بمسير الرواتب. لا يبدأ الدخل قبل التشغيل التجاري.`);save();updateKpis();renderMap();if(!opts.silent)openDrawer('energy');return true;}catch(error){notice(`تعذر اعتماد مشروع الطاقة: ${error.message}`);return false;}
+    try{window.GH_DOMAIN_COMMANDS.dispatch({state},'procurement','configure-construction',{id:build.id,capacityKey:p.key,capacityAmount:p.amount,energyKind:kind,commissioned:false,leadDays:p.leadDays},{actor:'energy-development'});const facility={id:nextId('POWER-SITE'),sourceKey:site.key,capitalId:site.capitalId,company:'power',kind:'power',energyKind:kind,capacityKey:p.key,capacityAmount:p.amount,projectLeadDays:p.leadDays,owned:true,icon:'⚡',photo:PHOTOS.facility_power,name:siteName,city:site.city,country:site.country,coords:[...site.coords],cost:build.amount,dailyCost:0,plannedDailyCost:site.dailyCost||38000,capacity:`قيد الإنشاء · ${p.amount} ${p.key==='storageMWh'?'MWh':'MW'}`,commissioned:false,status:'قيد الإنشاء',contractor:build.contractor,constructionContractId:build.id,detail:'لا تدخل القدرة التشغيلية أو الإيراد قبل اكتمال الاختبارات والتشغيل التجاري.'};window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.38},{actor:'energy-development'});ensureFacilityWorkforce('power','تجهيز فريق مشروع ومحطة طاقة');window.GH_ENERGY_CORE?.ensure?.(state);pushAlert(`أرسى عقد ${siteName} على ${build.contractor} بمدة ${p.leadDays} يوم محاكاة، وربط فريق المحطة آليًا بمسير الرواتب. لا يبدأ الدخل قبل التشغيل التجاري.`);save();window.GH_TRANSACTION_CORE.afterCommit(()=>{updateKpis();renderMap();if(!opts.silent)openDrawer('energy');});return true;}catch(error){notice(`تعذر اعتماد مشروع الطاقة: ${error.message}`);return false;}
 
     });
   }
   function openBankBranch(site,opts={}){
-    return runBusinessOperation('openBankBranch',()=>{site=canonicalDirectorySite(site,'bank');if(!state.openedCompanies.includes('bank')){notice('أسس بنك المجموعة أولًا.');return false;}if(!site){notice('اختر موقع الفرع من الدليل العالمي.');return false;}const existing=directorySiteOwned(site);if(existing){if(!opts.silent)openFacility(existing.id);return false;}const baseCost=15000000,branchNumber=Number(state.bank?.branches||0)+1,siteName=`فرع بنك المجموعة · ${site.city} #${branchNumber}`,build=awardConstruction('bank','bank',siteName,baseCost);if(!build||build.insufficient){if(!opts.silent)notice('رصيد حساب البنك لا يغطي تجهيز الفرع.');return false;}try{const facilityId=nextId('BANK-BRANCH'),facility={id:facilityId,sourceKey:site.key,capitalId:site.capitalId,company:'bank',kind:'bank',owned:true,icon:'🏦',photo:PHOTOS.facility_bank,name:siteName,city:site.city,country:site.country,coords:[...site.coords],cost:build.amount,dailyCost:site.dailyCost||18500,capacity:'فرع مصرفي عالمي · حسابات وتحويلات وبطاقات وتمويل',contractor:build.contractor,constructionContractId:build.id,detail:'فرع تشغيلي يبدأ من صفر ثم يجذب عملاء وودائع في الإقفال اليومي، ويمكنه إنشاء محافظ تمويل يدوية.'};window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.7},{actor:'bank-expansion'});const branch=window.GH_DOMAIN_COMMANDS.dispatch({state},'banking','open-branch',{branchId:`BR-${facilityId}`,facilityId,site,servicesActive:true},{actor:'bank-expansion'}).result;ensureFacilityWorkforce('bank','فتح فرع بنكي');pushAlert(`افتتح ${siteName} وشُغلت خدماته المصرفية العالمية. يبدأ العملاء والودائع من صفر ويتغيرون مع الأيام الفعلية.`);save();updateKpis();renderMap();if(!opts.silent)openDrawer('bank');return branch;}catch(error){notice(`تعذر افتتاح الفرع: ${error.message}`);return false;}
+    return runBusinessOperation('openBankBranch',()=>{site=canonicalDirectorySite(site,'bank');if(!state.openedCompanies.includes('bank')){notice('أسس بنك المجموعة أولًا.');return false;}if(!site){notice('اختر موقع الفرع من الدليل العالمي.');return false;}const existing=directorySiteOwned(site);if(existing){if(!opts.silent)openFacility(existing.id);return false;}const baseCost=15000000,branchNumber=Number(state.bank?.branches||0)+1,siteName=`فرع بنك المجموعة · ${site.city} #${branchNumber}`,build=awardConstruction('bank','bank',siteName,baseCost);if(!build||build.insufficient){if(!opts.silent)notice('رصيد حساب البنك لا يغطي تجهيز الفرع.');return false;}try{const facilityId=nextId('BANK-BRANCH'),facility={id:facilityId,sourceKey:site.key,capitalId:site.capitalId,company:'bank',kind:'bank',owned:true,icon:'🏦',photo:PHOTOS.facility_bank,name:siteName,city:site.city,country:site.country,coords:[...site.coords],cost:build.amount,dailyCost:site.dailyCost||18500,capacity:'فرع مصرفي عالمي · حسابات وتحويلات وبطاقات وتمويل',contractor:build.contractor,constructionContractId:build.id,detail:'فرع تشغيلي يبدأ من صفر ثم يجذب عملاء وودائع في الإقفال اليومي، ويمكنه إنشاء محافظ تمويل يدوية.'};window.GH_DOMAIN_COMMANDS.dispatch({state},'facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.7},{actor:'bank-expansion'});const branch=window.GH_DOMAIN_COMMANDS.dispatch({state},'banking','open-branch',{branchId:`BR-${facilityId}`,facilityId,site,servicesActive:true},{actor:'bank-expansion'}).result;ensureFacilityWorkforce('bank','فتح فرع بنكي');pushAlert(`افتتح ${siteName} وشُغلت خدماته المصرفية العالمية. يبدأ العملاء والودائع من صفر ويتغيرون مع الأيام الفعلية.`);save();window.GH_TRANSACTION_CORE.afterCommit(()=>{updateKpis();renderMap();if(!opts.silent)openDrawer('bank');});return branch;}catch(error){notice(`تعذر افتتاح الفرع: ${error.message}`);return false;}
     });
   }
   function setBoardDecision(status){try{const res=window.GH_DOMAIN_COMMANDS.dispatch({state},'governance','board-decision',{status},{actor:'board'}).result;pushAlert(status==='approved'?(res.highRisks?`اعتمد المجلس البرنامج اعتمادًا مشروطًا مع ${res.highRisks} مخاطر مرتفعة يجب متابعتها.`:'اعتمد مجلس الإدارة برنامج التوسع الاستراتيجي دون تحفظات مرتفعة.'):`أحال مجلس الإدارة برنامج التوسع إلى مراجعة المخاطر${res.highRisks?` بسبب ${res.highRisks} حالة مرتفعة`:''}.`);save();openDrawer('governance');}catch(error){notice(`تعذر تسجيل قرار المجلس: ${error.message}`);}}
@@ -2609,13 +2599,14 @@
   function serviceMobilityAsset(id){return runBusinessOperation('serviceMobilityAsset',()=>{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'mobility','service-vehicle',{id},{actor:'mobility-service'}).result;if(!result)throw new Error('سيارة غير موجودة');pushAlert(`اكتملت صيانة وشحن ${result.name} وأصبحت الحالة والبطارية 100%.`);save();window.GH_TRANSACTION_CORE.afterCommit(()=>{updateKpis();renderMap();openDrawer('mobilityAsset',id);});return true;});}
   function sellMobilityAsset(id){const vehicle=window.GH_MOBILITY_CORE?.findVehicle?.(state,id);if(!vehicle)return false;if(!ask(`بيع ${vehicle.name}؟\nلن يتم البيع أثناء الرحلة.`,'high'))return false;return runBusinessOperation('sellMobilityAsset',()=>{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'mobility','sell-vehicle',{id},{actor:'mobility-sale'}).result;if(!result?.vehicle)throw new Error('لم يرجع محرك Mobility إثبات البيع');pushAlert(`تم بيع ${result.vehicle.name} بقيمة ${fmtMoney(result.proceeds)} وإنهاء وظيفة السائق المرتبطة بها.`);save();window.GH_TRANSACTION_CORE.afterCommit(()=>{if(selectedMobilityId===id)selectedMobilityId=null;updateKpis();renderMap();openDrawer('assets','mobility');});return true;});}
   function buyAsset(type,tab,id,mode='cash',qty=1,baseId=null,silent=false,requestRef=null){
-    const item=catalogItem(type,id);if(!item){if(!silent)notice('تعذر تنفيذ الشراء؛ هذا الأصل لم يعد متاحًا في الكتالوج.');return null;}qty=clamp(Math.floor(Number(qty)||1),1,50);baseId=baseId||item.base;
+    const item=catalogItem(type,id),maxQty=window.GH_PROCUREMENT_CORE?.MAX_ASSET_PURCHASE_QUANTITY||1000;if(!item){if(!silent)notice('تعذر تنفيذ الشراء؛ هذا الأصل لم يعد متاحًا في الكتالوج.');return null;}qty=clamp(Math.floor(Number(qty)||1),1,maxQty);baseId=baseId||item.base;
     const base=findFacility(baseId);if(!base){if(!silent)notice('تعذر تنفيذ الشراء: قاعدة التسليم غير موجودة.');return null;}
     const compatible=type==='air'?['airport','airport-base'].includes(base.kind):type==='sea'?['port','port-base'].includes(base.kind):['depot','logistics','airport-base','port-base'].includes(base.kind);
     if(!compatible){if(!silent)notice('قاعدة التسليم لا تدعم هذا النوع من الأصول.');return null;}
     const assetSupplier=supplierFor(type,'assets');if(!assetSupplier){if(!silent)notice('تعذر تنفيذ الشراء: لا يوجد مورد أصول مؤهل.');return null;}
     const totalPrice=Number(item.price)*qty,upfront=mode==='cash'?totalPrice:mode==='finance'?totalPrice*(item.downPayment||.2):Number(item.leaseMonthly||0)*3*qty;
     if(!Number.isFinite(totalPrice)||totalPrice<=0||!Number.isFinite(upfront)||upfront<0){if(!silent)notice('تعذر تنفيذ الشراء بسبب بيانات سعر غير صالحة.');return null;}
+    let allocations;try{allocations=allocateAssetPurchase(type,qty,base.id);}catch(error){if(!silent)notice(String(error.message||error));return null;}
     const fundingGap=type==='group'||canCompanySpend(type,upfront,'capex')?0:Math.max(0,upfront-companyOperatingBalance(type));
     const realism=window.GH_REALISM?.migrate(state),leadBase=Number(realism?.procurement?.leadTimes?.[type])||(type==='air'?120:type==='sea'?210:21),documentLeadDays=tab==='used'?Math.max(5,Math.round(leadBase*.12)):mode==='lease'?Math.max(7,Math.round(leadBase*.18)):leadBase;
     try{
@@ -2624,13 +2615,17 @@
         if(companyOperatingBalance('group')<fundingGap||!transferBetweenCompanies('group',type,fundingGap,`تمويل شراء أصول يدوي · ${item.name} × ${qty}`))throw new Error('تعذر تمويل الشركة التابعة داخل معاملة الشراء.');
         pushAlert(`حُوِّل ${fmtMoney(fundingGap)} من الشركة القابضة إلى ${typeName(type)} لتغطية شراء ${item.name}.`);
       }
-      const paymentMethod='شيك مصرفي';
-      const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'procurement','purchase-assets',{type,tab,item,mode,qty,base,supplier:assetSupplier,manual:true,requestRef,upfront,totalPrice,paymentMethod,documentLeadDays,leadSeconds:0,immediateDelivery:true,companyName:companyFinanceName(type)},{actor:'asset-purchase'}).result;
-      if(!result?.orderId||Number(result.count)!==qty)throw new Error('Procurement Core لم ينشئ عقد التسليم كاملًا.');
+      const paymentMethod='شيك مصرفي',results=[],allAssetIds=[],allDeliveryOrderIds=[];let allocatedPrice=0,allocatedUpfront=0;
+      for(const [index,allocation] of allocations.entries()){
+        const last=index===allocations.length-1,allocationPrice=last?totalPrice-allocatedPrice:Number(item.price)*allocation.qty,allocationUpfront=last?upfront-allocatedUpfront:upfront*(allocation.qty/qty),allocationRef=`${requestRef||nextId('MANUAL-ASSET')}-${index+1}`;
+        const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'procurement','purchase-assets',{type,tab,item,mode,qty:allocation.qty,base:allocation.base,supplier:assetSupplier,manual:true,requestRef:allocationRef,upfront:allocationUpfront,totalPrice:allocationPrice,paymentMethod,documentLeadDays,leadSeconds:0,immediateDelivery:true,companyName:companyFinanceName(type)},{actor:'asset-purchase',idempotencyKey:allocationRef}).result;
+        if(!result?.orderId||Number(result.count)!==allocation.qty)throw new Error('Procurement Core لم ينشئ عقد التسليم كاملًا.');results.push(result);allAssetIds.push(...result.assetIds);allDeliveryOrderIds.push(...result.deliveryOrderIds);allocatedPrice+=allocationPrice;allocatedUpfront+=allocationUpfront;
+      }
+      const result={orderId:results[0]?.orderId||null,count:allAssetIds.length,assetIds:allAssetIds,deliveryOrderIds:allDeliveryOrderIds,allocations:allocations.map(row=>({baseId:row.base.id,baseName:row.base.name,qty:row.qty}))};if(result.count!==qty)throw new Error('لم تكتمل كل توزيعات أمر الشراء.');
       window.GH_REALISM?.onSimulationTime?.(state,state.simSeconds);
       const deliveredIds=new Set((state.assets||[]).filter(asset=>result.assetIds.includes(asset.id)&&asset.deliveryStatus==='delivered'&&asset.staffing?.ready===true).map(asset=>asset.id));
       if(deliveredIds.size!==qty||result.deliveryOrderIds.some(orderId=>state.realism?.procurement?.deliveries?.find(row=>row.id===orderId)?.status!=='delivered'))throw new Error('تعذر إثبات التسليم والطاقم داخل معاملة الشراء.');
-      pushAlert(`تم شراء وتسليم ${qty} × ${item.name} فورًا إلى ${base.name}، وتكوين الطاقم الثابت والراتب تلقائيًا. مرجع المورد ${result.orderId}.`);
+      const distribution=result.allocations.map(row=>`${row.baseName}: ${row.qty}`).join(' · ');pushAlert(`تم شراء وتسليم ${qty} × ${item.name} وتوزيعها ذريًا (${distribution})، مع تكوين الطاقم الثابت والراتب تلقائيًا. مرجع المورد ${result.orderId}.`);
       save();tx.afterCommit(()=>{updateKpis();if(!silent)openDrawer('assetMarket',type);});return result.orderId;
       }});return out.value;
     }catch(error){
@@ -2763,7 +2758,7 @@
   document.querySelectorAll('[data-panel]').forEach(btn=>btn.addEventListener('click',()=>openDrawer(btn.dataset.panel)));
   $('mapNavBtn').addEventListener('click',openWorld);
   $('brandBtn').addEventListener('click',openWorld);
-  $('worldDirectoryBtn').addEventListener('click',()=>openDrawer('network'));
+  $('worldDirectoryBtn').addEventListener('click',()=>openWorldDirectory());
   document.querySelectorAll('[data-mobile-map]').forEach(btn=>btn.addEventListener('click',openWorld));
   $('alertsBtn').addEventListener('click',()=>openDrawer('news')); $('healthBtn')?.addEventListener('click',()=>openDrawer('diagnostics')); $('settingsBtn').addEventListener('click',()=>openDrawer('settings'));
   $('executionLogBtn')?.addEventListener('click',()=>openDrawer('executionLog'));
@@ -2813,47 +2808,81 @@
   $('clearDebtBtn').addEventListener('click',()=>{const d=state.debt;for(const t of COMPANY_FINANCE_TYPES)window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','set-debt',{company:t,amount:0},{actor:'founder-controls'});pushAlert(`[God Mode] تصفير ديون المجموعة ${fmtMoney(d)}.`);save();updateKpis();feedback(`تم تصفير ${fmtMoney(d)} من الديون.`);});
   syncGodEntityStatus();loadGodBudget();
 
-  let founderLogoData=null,founderLogoStyle='teal';
-  function updateFounderLogoPreview(){const box=$('founderLogoPreview');if(!box)return;box.dataset.style=founderLogoStyle;const short=($('founderShort')?.value||'GH').slice(0,4).toUpperCase();box.innerHTML=founderLogoData?`<img src="${esc(founderLogoData)}" alt="شعار المجموعة">`:`<span>${esc(short)}</span>`;document.querySelectorAll('.logo-preset').forEach(b=>b.classList.toggle('active',b.dataset.logoStyle===founderLogoStyle));}
-  function updateFounderContractPreview(){
-    const group=($('founderName')?.value||'').trim()||'اسم المجموعة';
-    const founder=($('founderOwner')?.value||'').trim()||'اسم المؤسس';
-    const city=$('founderCity')?.value||'المقر';
-    const country=$('founderCountry')?.value||'الدولة';
-    const values={founderContractGroup:group,founderSignatureGroup:group,founderContractFounder:founder,founderSignatureName:founder,founderContractLocation:`${city}، ${country}`};
-    for(const [id,value] of Object.entries(values)){const node=$(id);if(node)node.textContent=value;}
+  let founderLogoData=null,founderLogoStyle='teal',founderLogoRequest=0,founderLogoLoading=false,founderReviewedInput=null,founderSubmitting=false;
+  function founderInput(){return {name:$('founderName').value,founder:$('founderOwner').value,shortName:$('founderShort').value,englishName:$('founderEnglishName').value,locationId:$('founderLocation').value,mode:$('founderMode').value,logo:founderLogoData,logoStyle:founderLogoStyle};}
+  function founderFeedback(message=''){const box=$('founderError');box.textContent=message;box.hidden=!message;if(message)box.focus?.();}
+  function updateFounderLogoPreview(){
+    const box=$('founderLogoPreview');if(!box)return;box.dataset.style=founderLogoStyle;
+    const short=($('founderShort')?.value||'GH').slice(0,4).toUpperCase();
+    box.innerHTML=founderLogoData?`<img src="${esc(founderLogoData)}" alt="شعار المجموعة">`:`<span>${esc(short)}</span>`;
+    document.querySelectorAll('.inc-logo-option').forEach(button=>{const selected=button.dataset.logoStyle===founderLogoStyle&&!founderLogoData;button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));});
+    $('founderLogoClear').hidden=!founderLogoData;$('founderReview').disabled=founderLogoLoading||founderSubmitting;
+  }
+  function updateFounderCapitalPreview(){const value=window.GH_GAME_LIFECYCLE.FOUNDING_CAPITALS[$('founderMode').value];$('founderCapitalPreview').textContent=Number.isFinite(value)?`$${value.toLocaleString('en-US')}`:'—';founderReviewedInput=null;}
+  function formationDocumentMarkup(document){
+    const signed=document.status==='signed',articles=document.articles||window.GH_GAME_LIFECYCLE.FOUNDING_ARTICLES;
+    return `<article class="formation-paper${signed?' is-signed':''}" aria-label="عقد تأسيس المجموعة">
+      <header class="formation-header"><div><small dir="ltr">GLOBAL HOLDINGS / INCORPORATION</small><h2>عقد تأسيس المجموعة</h2><p>${esc(document.legalForm)}</p></div><div class="formation-monogram" data-compact="${String(document.shortName||'GH').length>2}" aria-hidden="true"><b>${esc(document.shortName||'GH')}</b></div></header>
+      <div class="formation-reference"><span class="formation-status">${signed?'عقد معتمد':'نسخة للمراجعة'}</span><span>${signed?`سنة التأسيس · ${esc(document.year)}`:'رقم العقد يصدر عند الاعتماد'}</span></div>
+      <dl class="formation-identity">
+        <div class="formation-company"><dt>اسم المجموعة</dt><dd>${esc(document.name)}${document.englishName?`<bdi>${esc(document.englishName)}</bdi>`:''}</dd></div>
+        <div class="formation-capital"><dt>رأس المال عند التأسيس</dt><dd>${Number(document.capital).toLocaleString('en-US')} <span class="formation-currency">USD</span></dd><dd class="formation-capital-note">${signed?'رأس المال المعتمد في العقد':'يودع كاملًا في الحساب الجاري للقابضة بعد الاعتماد'}</dd></div>
+        <div class="formation-detail"><dt>المؤسس والمالك</dt><dd>${esc(document.founder)}</dd></div><div class="formation-detail"><dt>المقر الرئيسي</dt><dd>${esc(document.city)} · ${esc(document.country)}</dd></div>
+      </dl>
+      <div class="formation-terms"><div class="formation-terms-title"><h3>بنود التأسيس</h3><span>${String(articles.length).padStart(2,'0')} مواد</span></div>
+        ${articles.map((article,index)=>`<section class="formation-article"><span class="formation-article-number" aria-hidden="true">${String(index+1).padStart(2,'0')}</span><div><h4>${esc(article.title)}</h4><p>${esc(article.text)}</p></div></section>`).join('')}
+      </div>
+      <div class="formation-signature"><div><small>المؤسس والمفوّض بالتوقيع</small><strong>${esc(document.founder)}</strong></div><span>${signed?'تم الاعتماد':'بانتظار التوقيع'}</span></div>
+      <footer class="formation-footer">${signed?`<span>رقم العقد · <bdi>${esc(document.id)}</bdi></span><span>الحساب الجاري · <bdi>${esc(document.accountId)}</bdi></span>`:'<span>نسخة العقد تحفظ في ملف المجموعة عند التأسيس.</span><span dir="ltr">GH / 01</span>'}</footer>
+    </article>`;
+  }
+  function renderFormationContract(){const document=state.companyRegistry?.group?.formationDocument;if(!document)return '<div class="empty">لا توجد نسخة تفصيلية للعقد في هذا الحفظ القديم.</div>';return `<div class="list">${formationDocumentMarkup(document)}<button class="secondary-btn" data-open="companies">العودة إلى المجموعة</button></div>`;}
+  function reviewFounder(){
+    if(founderSubmitting||founderLogoLoading)return false;
+    try{founderReviewedInput=window.GH_GAME_LIFECYCLE.prepareFounding(founderInput());}catch(error){founderFeedback(error.message);return false;}
+    founderFeedback();$('founderContractPreview').innerHTML=formationDocumentMarkup(founderReviewedInput);
+    $('founderForm').classList.add('is-reviewing');
+    $('founderDataPane').hidden=true;$('founderReviewPane').hidden=false;
+    $('founderDataStep').removeAttribute('aria-current');$('founderReviewStep').setAttribute('aria-current','step');
+    $('founderFlow').scrollTop=0;$('founderReviewTitle').focus?.();return true;
+  }
+  function editFounder(){
+    if(founderSubmitting)return;founderReviewedInput=null;
+    $('founderForm').classList.remove('is-reviewing');
+    $('founderReviewPane').hidden=true;$('founderDataPane').hidden=false;
+    $('founderReviewStep').removeAttribute('aria-current');$('founderDataStep').setAttribute('aria-current','step');
+    founderFeedback();$('founderFlow').scrollTop=0;$('founderName').focus?.();
   }
   function compressLogoFile(file){return new Promise((resolve,reject)=>{if(!file||!String(file.type).startsWith('image/')){reject(new Error('اختر صورة شعار صالحة.'));return;}if(file.size>8*1024*1024){reject(new Error('حجم الصورة كبير جدًا. الحد 8MB قبل الضغط.'));return;}const reader=new FileReader();reader.onerror=()=>reject(new Error('تعذر قراءة الصورة من الاستديو.'));reader.onload=()=>{const img=new Image();img.onerror=()=>reject(new Error('ملف الصورة غير قابل للقراءة.'));img.onload=()=>{const max=360,scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1)),w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale)),canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const c=canvas.getContext('2d');c.clearRect(0,0,w,h);c.drawImage(img,0,0,w,h);let data;try{data=canvas.toDataURL('image/webp',.76);if(!data.startsWith('data:image/webp'))data=canvas.toDataURL('image/jpeg',.78);}catch{data=canvas.toDataURL('image/jpeg',.78);}if(data.length>280000){reject(new Error('الشعار ما زال كبيرًا بعد الضغط. اختر صورة أبسط أو أقل تفاصيل.'));return;}resolve(data);};img.src=String(reader.result);};reader.readAsDataURL(file);});}
-  document.querySelectorAll('.logo-preset').forEach(btn=>btn.addEventListener('click',()=>{founderLogoStyle=btn.dataset.logoStyle||'teal';founderLogoData=null;updateFounderLogoPreview();}));
-  $('founderLogoUpload')?.addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{founderLogoData=await compressLogoFile(file);updateFounderLogoPreview();}catch(error){notice(error.message||'تعذر معالجة الشعار.');e.target.value='';}});
-  $('founderLogoClear')?.addEventListener('click',()=>{founderLogoData=null;updateFounderLogoPreview();});
+  document.querySelectorAll('.inc-logo-option').forEach(button=>button.addEventListener('click',()=>{founderLogoRequest++;founderLogoLoading=false;founderLogoStyle=button.dataset.logoStyle;founderLogoData=null;$('founderLogoUpload').value='';$('founderLogoStatus').textContent='';updateFounderLogoPreview();}));
+  $('founderLogoUpload')?.addEventListener('change',async event=>{
+    const file=event.target.files?.[0];if(!file)return;const request=++founderLogoRequest;founderLogoLoading=true;$('founderLogoStatus').textContent='جارٍ تجهيز الشعار…';updateFounderLogoPreview();
+    try{const logo=await compressLogoFile(file);if(request!==founderLogoRequest)return;founderLogoData=logo;$('founderLogoStatus').textContent='الشعار جاهز';founderFeedback();}
+    catch(error){if(request!==founderLogoRequest)return;founderFeedback(error.message||'تعذر تجهيز الشعار.');event.target.value='';$('founderLogoStatus').textContent='';}
+    finally{if(request===founderLogoRequest){founderLogoLoading=false;updateFounderLogoPreview();}}
+  });
+  $('founderLogoClear')?.addEventListener('click',()=>{founderLogoRequest++;founderLogoLoading=false;founderLogoData=null;$('founderLogoUpload').value='';$('founderLogoStatus').textContent='';updateFounderLogoPreview();});
   $('founderShort')?.addEventListener('input',updateFounderLogoPreview);
-  for(const id of ['founderName','founderOwner','founderCity','founderCountry']){
-    $(id)?.addEventListener('input',updateFounderContractPreview);
-    $(id)?.addEventListener('change',updateFounderContractPreview);
-  }
-  updateFounderLogoPreview();updateFounderContractPreview();
+  $('founderMode').addEventListener('change',updateFounderCapitalPreview);
+  $('founderLocation').innerHTML=window.GH_GAME_LIFECYCLE.FOUNDING_LOCATIONS.map(row=>`<option value="${row.id}">${esc(row.city)} · ${esc(row.country)}</option>`).join('');
+  $('founderLocation').value='RUH';
+  $('founderReview').addEventListener('click',reviewFounder);$('founderBack').addEventListener('click',editFounder);
+  updateFounderLogoPreview();updateFounderCapitalPreview();
 
-  function finishFounder(useDemo=false){
-    if(useDemo){
-      // Quick start is intentionally clean: no legacy demo fleet, subsidiaries, routes or owned operating facilities.
-      if($('founderName'))$('founderName').value=defaultState.profile.name;
-      if($('founderShort'))$('founderShort').value=defaultState.profile.shortName;
-      if($('founderOwner'))$('founderOwner').value=defaultState.profile.founder;
-      if($('founderEnglishName'))$('founderEnglishName').value=defaultState.profile.englishName;
-      if($('founderMode'))$('founderMode').value='balanced';
-      if($('founderSector'))$('founderSector').value='air';
-      return finishFounder(false);
-    }else{
-      const mode=$('founderMode').value,firstSector=$('founderSector').value;
-      try{window.GH_GAME_LIFECYCLE.foundGroup(state,{name:$('founderName').value.trim(),shortName:$('founderShort').value.trim(),founder:$('founderOwner').value.trim(),englishName:$('founderEnglishName')?.value.trim(),country:$('founderCountry').value,city:$('founderCity').value,firstSector,mode,legalForm:$('founderLegalForm')?.value,currency:$('founderCurrency')?.value,fiscalYear:$('founderFiscal')?.value,riskAppetite:$('founderRisk')?.value,procurementPolicy:$('founderProcurement')?.value,signingAuthority:$('founderAuthority')?.value,logo:founderLogoData||null,logoStyle:founderLogoStyle||'teal'},defaultState,{nextId,typeName,fmtMoney,simYear:()=>simDate().getUTCFullYear(),onCommit:()=>persistStateNow({throwOnError:true})});}catch(error){const feedback=$('founderError');feedback.hidden=false;feedback.textContent='تعذر حفظ التأسيس. بقيت الحالة السابقة محفوظة؛ حرر مساحة أو صدّر نسخة ثم أعد المحاولة.';diag('FOUNDING_FAILED',{reason:String(error.message)},'warning');return false;}
-
-    }
-    $('founderError').textContent='';$('founderError').hidden=true;const founder=$('founderFlow');founder?.classList.add('hidden');if(founder){founder.style.removeProperty('display');founder.style.removeProperty('visibility');founder.style.removeProperty('opacity');founder.style.removeProperty('pointer-events');founder.style.removeProperty('z-index');}const appShell=$('app');if(appShell){appShell.removeAttribute('aria-hidden');appShell.style.pointerEvents='';}updateKpis();renderMap();
+  async function finishFounder(){
+    if(founderSubmitting||state.onboardingComplete||founderLogoLoading)return false;
+    if(!founderReviewedInput){reviewFounder();return false;}
+    try{if(JSON.stringify(window.GH_GAME_LIFECYCLE.prepareFounding(founderInput()))!==JSON.stringify(founderReviewedInput)){editFounder();founderFeedback('تغيرت البيانات. راجع العقد مجددًا قبل التوقيع.');return false;}}catch(error){editFounder();founderFeedback(error.message);return false;}
+    founderSubmitting=true;founderFeedback();$('founderForm').setAttribute('aria-busy','true');
+    $('founderSubmit').disabled=true;$('founderBack').disabled=true;$('founderSubmit').textContent='جارٍ اعتماد العقد وحفظه…';
+    const result=await runDurableStateCommand('found-group',({state:draft})=>window.GH_GAME_LIFECYCLE.foundGroup(draft,founderReviewedInput,defaultState,{nextId:prefix=>window.GH_DETERMINISM.nextId(draft,prefix),simYear:()=>simDate().getUTCFullYear(),fmtMoney}),{silent:true});
+    founderSubmitting=false;$('founderForm').removeAttribute('aria-busy');$('founderSubmit').disabled=false;$('founderBack').disabled=false;$('founderSubmit').textContent='توقيع العقد وتأسيس المجموعة';
+    if(!result){founderFeedback('لم يُعتمد العقد ولم يُضف رأس المال. تعذر تأكيد الحفظ؛ أعد المحاولة بعد زوال السبب.');return false;}
+    $('founderFlow').classList.add('hidden');$('founderContractPreview').innerHTML='';$('app').removeAttribute('inert');$('app').removeAttribute('aria-hidden');$('app').style.pointerEvents='';
+    updateKpis();renderMap();return true;
   }
-  $('founderForm').addEventListener('submit',e=>{e.preventDefault();finishFounder(false);});
-  $('skipFounder').addEventListener('click',()=>finishFounder(true));
-  if(!state.onboardingComplete)$('founderFlow').classList.remove('hidden');
+  $('founderForm').addEventListener('submit',event=>{event.preventDefault();return finishFounder();});
+  if(!state.onboardingComplete){$('founderFlow').classList.remove('hidden');$('app').setAttribute('inert','');$('app').setAttribute('aria-hidden','true');}
 
   updateKpis();setSpeed(state.speed);$('competitorToggle').checked=!!state.showCompetitors;
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.toggle('active',b.dataset.filter===state.activeFilter));
@@ -2872,7 +2901,7 @@
     // It only reads committed state and never changes time, progress or finance.
     updateMarkerPositions();
     animateMapMarkerPositions(now);
-    if(map&&now-lastMapRenderAt>=1000){lastMapRenderAt=now;if(mapStructureSignature()!==lastMapStructureSignature)renderMap();}
+    if(map&&now-lastMapRenderAt>=4000){lastMapRenderAt=now;if(mapStructureSignature()!==lastMapStructureSignature)renderMap();}
     requestAnimationFrame(loop);
   }
   simulationEngine.reset(performance.now());

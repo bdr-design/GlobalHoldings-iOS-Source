@@ -3,6 +3,8 @@
   "saveSchemaVersion": "2.0.0",
   "files": [
     "advanced-core.js",
+    "founding.css",
+    "directory-core.js",
     "app.js",
     "assets/images/air-cargo.webp",
     "assets/images/air-executive.webp",
@@ -18,6 +20,7 @@
     "assets/images/facility-port-v2.webp",
     "assets/images/map-aircraft-topdown.png",
     "assets/images/map-container-ship-topdown.png",
+    "assets/images/map-mobility-sedan-topdown.webp",
     "assets/images/map-truck-topdown.png",
     "assets/images/ship-bulk.webp",
     "assets/images/ship-container.webp",

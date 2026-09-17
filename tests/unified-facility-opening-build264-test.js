@@ -12,7 +12,7 @@ assert(!app.includes('place-global-base'), 'no leftover listener for the removed
 
 // 3) تأكيد التوحيد: فتح المركز اللوجستي لا يملك مسار خريطة حرًا؛ الدليل العالمي هو المدخل الوحيد.
 assert(!app.includes('startHubPlacement')&&!app.includes('place-logistics')&&!app.includes('confirmMapPlacement'), 'the superseded free-map logistics opening path must be fully removed');
-assert(app.includes("if(entity.company==='road')result=openLogisticsHub(entity.key)"), 'the global directory must delegate logistics opening through its canonical directory key');
+assert(app.includes("if(company==='road')result=openLogisticsHub(entity.key,opts)"), 'the global directory must delegate logistics opening through its canonical directory key');
 
 // 4) لا وجود لمستمع أزرار ميت لا يقابله أي عنصر HTML فعلي
 assert(!app.includes("querySelectorAll('.open-global-route')"), 'dead unused .open-global-route listener must be removed');

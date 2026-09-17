@@ -70,11 +70,11 @@ state.simSeconds=31*86400;const statements=F.monthlyStatement(state,{months:12})
 // Issued cheques preserve all legally/materially relevant display data.
 const cheque=F.execute({state},'issue-cheque',{company:'group',amount:12_345_678,beneficiary:'مورد المعدات العالمي',note:'دفعة معدات',draweeBank:'Global Holdings Treasury Bank',issuePlace:'الرياض، المملكة العربية السعودية',paymentPlace:'المركز المالي الرئيسي',authorizedSignatory:'المؤسس'});for(const key of ['chequeNumber','drawer','draweeBank','accountId','currency','beneficiary','issuePlace','paymentPlace','authorizedSignatory','dueDay'])assert(cheque[key]!==undefined&&cheque[key]!=='' ,`cheque field missing: ${key}`);
 
-// UI/source contracts: Mobility is a tiny black dot; real street geometry is
+// UI/source contracts: Mobility is a compact white sedan; real street geometry is
 // cached with bounded exponential retry; approvals remain a paper review log.
 const app=fs.readFileSync('WebApp/app.js','utf8'),css=fs.readFileSync('WebApp/styles.css','utf8'),advanced=fs.readFileSync('WebApp/advanced-core.js','utf8');
-assert(app.includes("if(kind==='mobility')return `<span class=\"mobility-street-dot"));assert(app.includes('iconSize:[44,44],iconAnchor:[22,22]'));assert(app.includes('pendingStreetRoutes?.(state,8)'));assert(app.includes('Math.min(120000,2500*(2**Math.min(5,attempts-1)))'));
-assert(css.includes('.mobility-street-dot{display:block;width:14px;height:14px'));assert(css.includes('background:#071015'));
+assert(app.includes('assets/images/map-mobility-sedan-topdown.webp'));assert(!app.includes('mobility-street-dot'));assert(app.includes('iconSize:[44,44],iconAnchor:[22,22]'));assert(app.includes('pendingStreetRoutes?.(state,8)'));assert(app.includes('Math.min(120000,2500*(2**Math.min(5,attempts-1)))'));
+assert(/\.vehicle-pin\.mobility \.vehicle-sprite\{[^}]*width:12px[^}]*height:24px/.test(css));assert(!css.includes('.mobility-street-dot'));
 assert(advanced.includes('approval-log-paper'));assert(app.includes('cheque-instrument'));assert(css.includes('.financial-paper.authority-inspired.cheque-instrument')&&css.includes('aspect-ratio:2.12/1')&&css.includes('.drawer:has(.cheque-grid-wide)'));assert(app.includes("panel==='monthlyFinance'"));
 assert(!advanced.includes('function renderEnergy(ctx)')&&!advanced.includes('function renderBank(ctx)'),'legacy duplicate energy/bank renderers survived BUILD303');assert(advanced.includes('فتح المركز التشغيلي الموحد'));assert(advanced.includes('بدل تشغيل واجهة طاقة قديمة')&&advanced.includes('بدل تشغيل واجهة بنك قديمة'));
 assert(!app.includes("querySelectorAll('.bank-loan')"),'the removed fixed-size legacy bank-loan control must not retain a dead event binding');assert(!app.includes('function issueBankLoans()'),'the superseded fixed $50M loan path must be removed instead of accumulated beside Banking Core');

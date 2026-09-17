@@ -99,7 +99,7 @@ assert(app.includes("if(!openedCompanySet.has(type)){companyDaily[type]={tripRev
 assert(app.includes('YIELD_RATE.roadTonKm * (specs.yieldMultiplier||1)'));assert(catalog.includes("reliability:extra.reliability||97.2,yieldMultiplier:extra.yieldMultiplier||1"));
 assert(app.includes('basis=Number(a.purchasePrice)||Number(item?.price)||1000000'));
 assert(!hrSource.includes('CREW_STANDARDS')&&!hrSource.includes('requiredCrewForFleet'),'HR retained a second asset-crew demand owner');assert(!app.includes('crewSectorMorale'),'legacy HR morale still reduces fixed-crew trip income');
-assert(css.includes('.mobility-dot-marker{display:grid!important;place-items:center!important'));assert(css.includes('.mobility-street-dot{display:block;width:14px;height:14px'));assert(css.includes('width:auto!important;min-width:0!important')&&!css.includes('brand-copy{display:block!important;flex:1 1 auto!important;width:0!important'));assert(app.includes('const assetIndex=new Map((state.assets||[]).map'));assert(!app.includes('function suggestRoutesOnly'));
+assert(css.includes('.mobility-car-marker{display:grid!important;place-items:center!important'));assert(/\.vehicle-pin\.mobility \.vehicle-sprite\{[^}]*width:12px[^}]*height:24px/.test(css));assert(css.includes('width:auto!important;min-width:0!important')&&!css.includes('brand-copy{display:block!important;flex:1 1 auto!important;width:0!important'));assert(app.includes('const assetIndex=new Map((state.assets||[]).map'));assert(!app.includes('function suggestRoutesOnly'));
 
 // App-level batching limits expensive atomic fleet commits to two per real second.
 const simulation=require('../WebApp/simulation-core.js');let wall=0,simTime=0,slices=0;

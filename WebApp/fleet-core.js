@@ -197,7 +197,7 @@
       if(!delivery||delivery.status!=='pending'||delivery.asset?.id!==p.asset.id||delivery.baseId!==p.baseId||!base?.owned||base.company!==p.asset.type)throw new Error('delivery-destination-contract');
       const payment=delivery.payment,document=payment?.kind==='invoice'?state.finance?.invoices?.find(row=>row.number===payment.ref):state.finance?.cheques?.find(row=>row.id===payment?.ref);
       if(!document||!['مدفوعة','مسددة','مصروف'].includes(document.status)||document.company!==p.asset.type||Number(document.amount)<Number(payment.amount))throw new Error('delivery-payment-unverified');
-      const capacity=Number(state.advanced?.facilities?.[p.baseId]?.capacity)||(base.kind==='airport-base'?24:base.kind==='port-base'?18:Number(base.bays)||42);
+      const facilityOwner=globalThis.GH_FACILITY_CORE;if(!facilityOwner?.assetCapacity)throw new Error('facility-capacity-owner-missing');const capacity=facilityOwner.assetCapacity(base);
       if((state.assets||[]).filter(row=>row.baseFacility===p.baseId).length>=capacity)throw new Error('delivery-base-full');
       const delivered={...p.asset,deliveryOrderId:p.deliveryId,requestRef:delivery.requestRef,paymentRef:payment.ref,baseFacility:p.baseId,phase:p.phase||'idle',routeId:null,routeSignature:null,progress:0,fuel:100,deliveryStatus:'delivered',deliveredDay:p.deliveredDay,deliveredAtSeconds:p.deliveredAtSeconds};
       if(state.assets.some(row=>row.id===delivered.id))throw new Error('duplicate-asset-id');

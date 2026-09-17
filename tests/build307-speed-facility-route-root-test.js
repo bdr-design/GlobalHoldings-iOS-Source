@@ -13,7 +13,7 @@ assert(app.includes('allowedSpeeds:[0,30,60,120,300,600]'));
 for(const level of ['1','5','2','3','4'])assert(html.includes(`data-speed="${level}"`));
 const motion=app.slice(app.indexOf('function markerPoint'),app.indexOf('function simDate'));
 assert(!/state\.simSeconds\s*=|\.progress\s*=/.test(motion),'presentation smoothing must not mutate logical time or progress');
-assert(motion.includes('maxPixelsPerSecond:36')&&motion.includes('Math.min(50,elapsed)')&&motion.includes('boundedStepRatio(distance,maxPixels)'),'maximum simulation speed must be visually rate-limited independently of game time and frame stalls');
+assert(motion.includes('maxPixelsPerSecond:8')&&motion.includes('Math.min(50,elapsed)')&&motion.includes('boundedStepRatio(distance,maxPixels)'),'maximum simulation speed must be visually rate-limited independently of game time and frame stalls');
 assert(app.includes('markerMotionStates.clear();'),'a rebuilt map must not retain stale visual motion state');
 assert(app.includes('simulationEngine.frame(now);\n    // Presentation sampling is independent'));
 

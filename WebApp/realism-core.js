@@ -164,8 +164,7 @@
     return rows.filter(f=>type==='air'?(['airport','airport-base'].includes(f.kind)||f.company==='air'):type==='sea'?(['port','port-base'].includes(f.kind)||f.company==='sea'):(['depot','logistics'].includes(f.kind)||f.company==='road'));
   }
   function deliveryCapacity(state,facility){
-    const modeled=Number(state.advanced?.facilities?.[facility.id]?.capacity),fallback=['airport','airport-base'].includes(facility.kind)?24:['port','port-base'].includes(facility.kind)?18:['depot','logistics'].includes(facility.kind)?Number(facility.bays||42):12;
-    return Number.isFinite(modeled)&&modeled>0?modeled:Math.max(1,Number(fallback)||1);
+    const owner=globalThis.GH_FACILITY_CORE;if(!owner?.assetCapacity)throw new Error('facility-capacity-owner-missing');return owner.assetCapacity(facility);
   }
   function markDeliveryDelivered(state,delivery,day,at){const lifecycle=globalThis.GH_LIFECYCLE_CORE;if(lifecycle?.transition)lifecycle.transition(state,delivery,'deliveryOrder','delivered',{event:'ASSET_DELIVERED',domain:'operations',actor:'delivery-engine'});else delivery.status='delivered';delivery.deliveredDay=day;delivery.deliveredAtSeconds=at;}
   function deliveryBaseHasRoom(state,facility,deliveryId){
