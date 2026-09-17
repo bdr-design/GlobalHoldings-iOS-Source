@@ -26,8 +26,12 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
     // subsidiary (including the deliberately large GH Mobility launch) without
     // turning on God Mode or depending on a persisted browser profile.
     await page.locator('#founderMode').waitFor({state: 'visible', timeout: 10000});
+    await page.screenshot({path:`tests/screenshots/${name}-founder-contract.png`});
+    const founderGeometry=await page.evaluate(()=>{const flow=document.querySelector('#founderFlow'),sheet=document.querySelector('.founder-contract-sheet'),aside=document.querySelector('.founder-visual'),controls=[...flow.querySelectorAll('input:not([type="file"]),select,.founder-submit')];return{flow:{clientWidth:flow.clientWidth,scrollWidth:flow.scrollWidth},sheet:{clientWidth:sheet.clientWidth,scrollWidth:sheet.scrollWidth},aside:{left:aside.getBoundingClientRect().left,right:aside.getBoundingClientRect().right},controls:controls.map(node=>node.getBoundingClientRect().height),viewport:window.innerWidth};});
+    if(founderGeometry.flow.scrollWidth>founderGeometry.flow.clientWidth+1||founderGeometry.sheet.scrollWidth>founderGeometry.sheet.clientWidth+1||founderGeometry.aside.left<-.5||founderGeometry.aside.right>founderGeometry.viewport+.5||founderGeometry.controls.some(height=>height<44))issues.push(`${name}: founder contract geometry is unsafe ${JSON.stringify(founderGeometry)}`);
     await page.selectOption('#founderMode', 'sandbox');
     await page.locator('#founderForm button[type="submit"]').click();
+    await page.locator('#founderFlow').waitFor({state:'hidden',timeout:10000});
     await page.waitForTimeout(800);
     return {context, page};
   }
@@ -67,6 +71,8 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   }));
   if(!offlineMapEvidence.offline||offlineMapEvidence.localTileFallbacks.length||offlineMapEvidence.fallbackBoundTiles)issues.push(`landscape: offline basemap recovery is unsafe ${JSON.stringify(offlineMapEvidence)}`);
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-map.png'});
+  const speedLevels=await landscape.page.locator('#speedMenu button[data-speed]').evaluateAll(nodes=>nodes.map(node=>Number(node.dataset.speed)));
+  if(speedLevels.join(',')!=='0,1,5,2,3,4')issues.push(`landscape: five-speed control contract is incomplete ${JSON.stringify(speedLevels)}`);
   const railGeometry=await landscape.page.evaluate(()=>{const rail=document.querySelector('.side-nav'),buttons=[...rail.querySelectorAll('button')],viewport=window.innerHeight;return{client:rail.clientHeight,scroll:rail.scrollHeight,buttons:buttons.map(b=>{const r=b.getBoundingClientRect();return{top:r.top,bottom:r.bottom,visible:getComputedStyle(b).display!=='none'&&r.height>0&&r.top>=0&&r.bottom<=viewport};})};});
   if(railGeometry.buttons.length!==8||railGeometry.buttons.some(x=>!x.visible)||railGeometry.scroll>railGeometry.client+1)issues.push(`landscape: sidebar options overflow ${JSON.stringify(railGeometry)}`);
 
@@ -81,6 +87,19 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
 
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-world.png'});
   await landscape.page.click('#drawerClose');
+
+  // BUILD306: logistics, energy and banking must all use the same visible
+  // company-facility -> global-directory -> domain-command workflow.
+  for(const config of [{type:'road',funding:10000000,kind:'logistics'},{type:'power',funding:50000000,kind:'power'},{type:'bank',funding:10000000,kind:'bank'}]){
+    await clickVisible(landscape.page,'[data-panel="companies"]');await landscape.page.click('[data-companytab="subs"]');
+    const openButton=landscape.page.locator(`.open-company[data-type="${config.type}"]`);if(await openButton.count())await openButton.click();
+    if(config.funding)await landscape.page.evaluate(({type,funding})=>GH_FINANCE_CORE.execute({state:__GH_STATE__},'transfer',{from:'group',to:type,amount:funding,note:'BUILD306 browser facility funding'}),config);
+    await clickVisible(landscape.page,'[data-panel="companies"]');await landscape.page.click('[data-companytab="subs"]');await landscape.page.click(`[data-open="companyManage"][data-arg="${config.type}"]`);await landscape.page.click(`[data-open="companyFacilities"][data-arg="${config.type}"]`);
+    const directoryAction=landscape.page.locator(`.open-facility-directory[data-kind="${config.type}"]`);if(!await directoryAction.count()){issues.push(`landscape: ${config.type} company has no unified facility-directory action`);continue;}await directoryAction.click();
+    await landscape.page.fill('#worldSearch','RUH');await landscape.page.waitForTimeout(350);const site=landscape.page.locator(`.open-directory-site[data-key="site:${config.type}:RUH"]`);if(!await site.count()){issues.push(`landscape: ${config.type} directory did not expose the RUH site`);continue;}await site.click();await landscape.page.waitForTimeout(250);
+    const opened=await landscape.page.evaluate(({type,kind})=>__GH_STATE__.customHubs.some(row=>row.owned&&row.company===type&&row.kind===kind&&row.capitalId==='RUH'),config);if(!opened)issues.push(`landscape: ${config.type} facility did not open through the unified directory workflow`);
+    if(await landscape.page.locator('#drawerClose').isVisible())await landscape.page.click('#drawerClose');
+  }
 
   // BUILD301: the owned-assets register contains owned objects only. The
   // purchase catalog is a single separate entry point rather than a duplicate
@@ -120,6 +139,13 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   const mobilityEvidence=await landscape.page.evaluate(()=>{const marker=document.querySelector('.asset-marker.mobility'),dot=marker?.querySelector('.mobility-street-dot'),markerRect=marker?.getBoundingClientRect(),dotRect=dot?.getBoundingClientRect();return{snapshot:GH_MOBILITY_CORE.snapshot(__GH_STATE__),live:GH_MOBILITY_CORE.liveVehicles(__GH_STATE__).filter(x=>x.phase==='moving').length,mapMarkers:document.querySelectorAll('.asset-marker.mobility').length,markerSize:markerRect?{width:markerRect.width,height:markerRect.height}:null,dotSize:dotRect?{width:dotRect.width,height:dotRect.height}:null};});
   if(mobilityEvidence.snapshot.status==='active'&&!mobilityEvidence.mapMarkers)issues.push(`landscape: GH Mobility is not connected to live map ${JSON.stringify(mobilityEvidence)}`);
   if(mobilityEvidence.mapMarkers&&(!mobilityEvidence.markerSize||mobilityEvidence.markerSize.width<40||mobilityEvidence.markerSize.height<40||!mobilityEvidence.dotSize||mobilityEvidence.dotSize.width<12||mobilityEvidence.dotSize.height<12))issues.push(`landscape: GH Mobility marker is not visibly/touchably usable ${JSON.stringify(mobilityEvidence)}`);
+  if(mobilityEvidence.live>0){
+    await landscape.page.click('#speedToggle');await landscape.page.click('#speedMenu [data-speed="4"]');await landscape.page.click('#speedToggle');
+    const motionEvidence=await landscape.page.evaluate(async()=>{const points=[],simStart=__GH_STATE__.simSeconds,start=performance.now();while(performance.now()-start<900){await new Promise(resolve=>requestAnimationFrame(resolve));const marker=document.querySelector('.asset-marker.mobility.is-moving');if(!marker)break;const box=marker.getBoundingClientRect();points.push([box.left+box.width/2,box.top+box.height/2]);}const deltas=points.slice(1).map((point,index)=>Math.hypot(point[0]-points[index][0],point[1]-points[index][1])),active=deltas.filter(delta=>delta>.05),distance=deltas.reduce((sum,delta)=>sum+delta,0);return{frames:points.length,activeFrames:active.length,distance,maxJump:Math.max(0,...deltas),unique:new Set(points.map(point=>`${point[0].toFixed(2)}:${point[1].toFixed(2)}`)).size,simDelta:__GH_STATE__.simSeconds-simStart};});
+    await landscape.page.click('#speedToggle');await landscape.page.click('#speedMenu [data-speed="0"]');await landscape.page.click('#speedToggle');
+    if(motionEvidence.simDelta<=0)issues.push(`landscape: motion QA did not advance simulation ${JSON.stringify(motionEvidence)}`);
+    if(motionEvidence.distance>2&&(motionEvidence.unique<5||motionEvidence.activeFrames<4||motionEvidence.maxJump>Math.max(5,motionEvidence.distance*.72)))issues.push(`landscape: Mobility presentation motion still jumps between sparse targets ${JSON.stringify(motionEvidence)}`);
+  }
   await landscape.page.screenshot({path:'tests/screenshots/iphone-landscape-mobility.png'});
   await landscape.context.tracing.stop({path:'tests/screenshots/navigation-landscape-trace.zip'});await landscape.context.close();
 
@@ -128,18 +154,18 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   const portraitBrandGeometry=await portrait.page.evaluate(()=>{const topbar=document.querySelector('.topbar').getBoundingClientRect(),brand=document.querySelector('.topbar .brand').getBoundingClientRect(),name=document.querySelector('#groupName').getBoundingClientRect();return{viewport:window.innerWidth,topbar:{left:topbar.left,right:topbar.right},brand:{left:brand.left,right:brand.right},name:{left:name.left,right:name.right}};});
   if(portraitBrandGeometry.brand.left<portraitBrandGeometry.topbar.left-.5||portraitBrandGeometry.brand.right>portraitBrandGeometry.topbar.right+.5||portraitBrandGeometry.name.left<portraitBrandGeometry.topbar.left-.5||portraitBrandGeometry.name.right>portraitBrandGeometry.topbar.right+.5)issues.push(`portrait: group brand escapes topbar ${JSON.stringify(portraitBrandGeometry)}`);
 
-  // Build250 workspace contract: GH Intelligence is owned by Leadership.
-  await openHubChild(portrait.page, 'leadershipHub', 'intelligence');
-
-  await portrait.page.locator('#aiPrompt').waitFor({state: 'visible', timeout: 10000});
-  await portrait.page.fill('#aiPrompt', 'حلل السيولة والدين');
-  await portrait.page.click('[data-gh-action="ai-send"]');
-
-  if (await portrait.page.locator('.ai-message.assistant').count() < 2) {
-    issues.push('portrait: AI did not return an interactive analysis');
+  // BUILD308: Leadership exposes an auditable execution register only. There
+  // is no autonomous prompt, hidden queue, or second execution authority.
+  await openHubChild(portrait.page, 'leadershipHub', 'executionLog');
+  await portrait.page.locator('.execution-log-desk').waitFor({state: 'visible', timeout: 10000});
+  if (!await portrait.page.locator('.approval-log-paper').count()) {
+    issues.push('portrait: execution register is missing');
+  }
+  if (await portrait.page.locator('#aiPrompt,[data-gh-action="ai-send"],.ai-message').count()) {
+    issues.push('portrait: retired autonomous controls are still present');
   }
 
-  await portrait.page.screenshot({path: 'tests/screenshots/iphone-portrait-ai.png'});
+  await portrait.page.screenshot({path: 'tests/screenshots/iphone-portrait-execution.png'});
   await portrait.page.click('#drawerClose');
   await portrait.page.click('#worldDirectoryBtn');
   await portrait.page.waitForTimeout(250);

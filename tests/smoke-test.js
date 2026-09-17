@@ -11,12 +11,12 @@ const localScripts = [
   'determinism-core.js','diagnostics-core.js','transaction-core.js','migration-core.js','game-lifecycle-core.js','domain-command-core.js',
   'finance-core.js','procurement-core.js','banking-core.js','market-core.js','strategy-core.js',
   'facility-core.js','fleet-core.js','route-core.js','governance-core.js','corporate-core.js',
-  'ai-executive-core.js','operations-core.js','contracts-core.js','control-plane-core.js','simulation-core.js'
+  'operations-core.js','contracts-core.js','control-plane-core.js','simulation-core.js'
 ];
 const scriptSources = Object.fromEntries(localScripts.map(name => [name, fs.readFileSync(`WebApp/${name}`, 'utf8')]));
 
 const referencedIds = [...source.matchAll(/\$\('([^']+)'\)/g)].map(match => match[1]);
-const dynamicIds = new Set(['drawerGodBtn', 'moreGodBtn', 'worldSearch', 'worldKind', 'roadFrom', 'roadTo', 'assetSearch', 'assetSegment', 'globalRouteSearch','financeDocsCompany','chequeCompany','chequeAmount','chequeBeneficiary','chequeNote','chequeDraweeBank','chequeIssuePlace','invoiceCompany','invoiceKind','invoiceAmount','invoiceNote','invoiceCounterparty','companyTransferFrom','companyTransferTo','companyTransferAmount','bulkTransferTotal','bulkTransferPool']);
+const dynamicIds = new Set(['drawerGodBtn', 'moreGodBtn', 'nativeSaveReconcile', 'worldSearch', 'worldKind', 'roadFrom', 'roadTo', 'manualGlobalAsset', 'assetSearch', 'assetSegment', 'globalRouteSearch','financeDocsCompany','chequeCompany','chequeAmount','chequeBeneficiary','chequeNote','chequeDraweeBank','chequeIssuePlace','invoiceCompany','invoiceKind','invoiceAmount','invoiceNote','invoiceCounterparty','companyTransferFrom','companyTransferTo','companyTransferAmount','bulkTransferTotal','bulkTransferPool']);
 const missingIds = [...new Set(referencedIds)].filter(id => !dynamicIds.has(id) && !new RegExp(`id=["']${id}["']`).test(html));
 if (missingIds.length) throw new Error(`Missing DOM ids: ${missingIds.join(', ')}`);
 

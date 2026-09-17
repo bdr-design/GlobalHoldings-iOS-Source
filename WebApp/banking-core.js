@@ -41,11 +41,17 @@
     bank.alm={maturityLadder:{overnight:0,under30:0,under365:0,over365:0},interestRateGap:0,liquidityGap30d:0,weightedDepositRate:0,...bank.alm};
     bank.branchNetwork=bank.branchNetwork.map(row=>branchTemplate(state,row));
     for(const facility of bank.corporateFacilities){facility.originalAmount=num(facility.originalAmount||facility.amount);facility.outstanding=num(facility.outstanding);facility.principalArrears=num(facility.principalArrears);facility.interestArrears=num(facility.interestArrears);facility.termDays=Math.max(30,Math.floor(Number(facility.termDays)||365));facility.rate=clamp(facility.rate||.06,0,.30);facility.startDay=Math.max(0,Math.floor(Number(facility.startDay)||0));facility.lastProcessedDay=Math.max(facility.startDay,Math.floor(Number(facility.lastProcessedDay)||facility.startDay));facility.maturityDay=Math.max(facility.startDay+facility.termDays,Math.floor(Number(facility.maturityDay)||0));}
-    const facilities=(state.customHubs||[]).filter(row=>row?.owned===true&&row.company==='bank'&&row.kind==='bank');
-    for(const facility of facilities)if(!bank.branchNetwork.some(row=>row.facilityId===facility.id))bank.branchNetwork.push(branchTemplate(state,{branchId:`BR-${++bank.sequence}`,facilityId:facility.id,capitalId:facility.capitalId||null,city:facility.city,country:facility.country,openedAt:facility.openedAt,servicesActive:true}));
-    while(bank.branchNetwork.length<bank.branches)bank.branchNetwork.push(branchTemplate(state,{branchId:`BR-${++bank.sequence}`,city:'فرع محفوظ',country:'سجل قديم',openedAt:0,servicesActive:true}));
-    bank.branches=Math.max(bank.branches,bank.branchNetwork.length);
+    // Runtime reads never fabricate branches. Legacy reconstruction is isolated
+    // in migrateLegacyBranches() and is invoked once during save migration.
+    bank.branches=bank.branchNetwork.length;
     return bank;
+  }
+  function migrateLegacyBranches(state){
+    const legacyCount=Math.max(0,Math.floor(Number(state.bank?.branches)||0)),bank=ensure(state);let added=0;
+    const facilities=(state.customHubs||[]).filter(row=>row?.owned===true&&row.company==='bank'&&row.kind==='bank');
+    for(const facility of facilities)if(!bank.branchNetwork.some(row=>row.facilityId===facility.id)){bank.branchNetwork.push(branchTemplate(state,{branchId:`BR-${++bank.sequence}`,facilityId:facility.id,capitalId:facility.capitalId||null,city:facility.city,country:facility.country,openedAt:facility.openedAt,servicesActive:true,legacyMigrated:true}));added++;}
+    while(bank.branchNetwork.length<legacyCount){bank.branchNetwork.push(branchTemplate(state,{branchId:`BR-${++bank.sequence}`,city:'فرع محفوظ',country:'سجل قديم',openedAt:0,servicesActive:true,legacyMigrated:true}));added++;}
+    bank.branches=bank.branchNetwork.length;return {changed:added>0,added,branches:bank.branches};
   }
   function dormant(bank){return num(bank.branches)===0&&num(bank.deposits)===0&&num(bank.loans)===0&&num(bank.wholesaleFunding)===0;}
   function depositMix(bank){
@@ -73,8 +79,12 @@
     return bank.corporateClients;
   }
   function openBranch(state,p={}){
-    const bank=ensure(state),id=String(p.branchId||`BR-${++bank.sequence}`);if(bank.branchNetwork.some(row=>row.id===id||(p.facilityId&&row.facilityId===p.facilityId)))throw new Error('bank-branch-already-open');
-    const branch=branchTemplate(state,{...p,branchId:id});bank.branchNetwork.push(branch);bank.branches=bank.branchNetwork.length;state.unlockedSectors=Array.isArray(state.unlockedSectors)?state.unlockedSectors:[];if(!state.unlockedSectors.includes('bank'))state.unlockedSectors.push('bank');reconcilePrudential(state);return clone(branch);
+    if(!(state.openedCompanies||[]).includes('bank'))throw new Error('bank-company-not-open');
+    const facilityCore=globalThis.GH_FACILITY_CORE;if(!facilityCore?.verifyDirectorySite)throw new Error('facility-directory-owner-missing');
+    const site=facilityCore.verifyDirectorySite(p.site||p,'bank'),facility=(state.customHubs||[]).find(row=>row?.id===p.facilityId&&row.owned===true&&row.company==='bank'&&row.kind==='bank'&&row.sourceKey===site.key);
+    if(!facility)throw new Error('bank-branch-facility-required');
+    const bank=ensure(state),id=String(p.branchId||`BR-${++bank.sequence}`);if(bank.branchNetwork.some(row=>row.id===id||row.facilityId===facility.id))throw new Error('bank-branch-already-open');
+    const branch=branchTemplate(state,{...p,branchId:id,facilityId:facility.id,capitalId:site.capitalId,city:site.city,country:site.country});bank.branchNetwork.push(branch);bank.branches=bank.branchNetwork.length;state.unlockedSectors=Array.isArray(state.unlockedSectors)?state.unlockedSectors:[];if(!state.unlockedSectors.includes('bank'))state.unlockedSectors.push('bank');reconcilePrudential(state);return clone(branch);
   }
   function gradeFor(p,amount,product){if(RISK_GRADES[p.riskGrade])return p.riskGrade;const collateral=clamp(p.collateralCoverage||0,0,5),borrowers=Math.max(1,Number(p.borrowers)||1),size=amount/Math.max(1,product.minimum),score=72+collateral*9-Math.log10(Math.max(1,size))*5-Math.min(12,borrowers/20);return score>=88?'AA':score>=78?'A':score>=66?'BBB':score>=54?'BB':'B';}
   function originateLoan(state,p,F){
@@ -157,5 +167,5 @@
     if(cmd==='stress'){const withdrawalRate=clamp(p.withdrawalRate||.12,0,.60),nplShock=clamp(p.nplShock||2.5,0,25),rateShock=clamp(p.rateShock||.02,0,.15);state.advanced=state.advanced||{};state.advanced.bankStress={at:now(state),scenario:p.scenario||'صدمة مركبة',npl:Math.min(100,num(bank.npl)+nplShock),withdrawal:num(bank.deposits)*withdrawalRate,depositsAfter:num(bank.deposits)*(1-withdrawalRate),capitalRatio:Math.max(0,num(bank.cet1||bank.capitalRatio||16.4)-nplShock*1.24),rateShock,lcrAfter:clamp((num(bank.hqla)-num(bank.deposits)*withdrawalRate)/Math.max(1,num(bank.stressedOutflows))*100,0,500)};return state.advanced.bankStress;}
     throw new Error(`Unknown banking command: ${cmd}`);
   }
-  const API={VERSION,PRODUCTS,DEPOSIT_PRODUCTS,RISK_GRADES,ensure,execute,reconcilePrudential,dormant};globalThis.GH_BANKING_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('banking',API);if(globalThis.window&&window!==globalThis)window.GH_BANKING_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API={VERSION,PRODUCTS,DEPOSIT_PRODUCTS,RISK_GRADES,ensure,migrateLegacyBranches,execute,reconcilePrudential,dormant};globalThis.GH_BANKING_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('banking',API);if(globalThis.window&&window!==globalThis)window.GH_BANKING_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

@@ -37,7 +37,7 @@ window.matchMedia = window.matchMedia || (q => ({ matches: false, media: q, addL
   addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } }));
 const uncaught = [];
 window.addEventListener('error', e => uncaught.push(e.error?.message || e.message));
-for (const f of [...raw.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]).filter(s => !/^https?:/.test(s))) {
+for (const f of [...raw.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]).filter(s => !/^https?:/.test(s) && !s.startsWith('vendor/'))) {
   window.eval(fs.readFileSync(path.join(WEBAPP, f), 'utf8'));
 }
 const S = () => window.__GH_STATE__;

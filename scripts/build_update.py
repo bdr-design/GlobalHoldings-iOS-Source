@@ -16,7 +16,7 @@ OPERATIONS=[
     'visualPack':'GH Visual Library 2.0','catalogVersion':'2026.09.05-expanded','scenarioVersion':VERSION,
     'saveSchema':'2.0.0-idempotent-migration','architecture':'single-owner-cores-v2.2',
     'simulationClock':'simulation-core-2.2-single-time-owner','atomicTransactions':'transaction-core-2.2-all-or-nothing',
-    'boundaryTransactions':'day-hour-finance-market-ai-inside-slice-commit','conflictPolicy':'reject-entire-slice-no-partial-eligible-commit',
+    'boundaryTransactions':'day-hour-finance-market-inside-slice-commit','conflictPolicy':'reject-entire-slice-no-partial-eligible-commit',
     'lifecycleSafety':'visibility-cancel-persist-no-background-catchup','timeControls':'pause-x1-x2-x4',
     'assetDisposal':'return-to-owned-center-atomic-sale-v1','companyBudgets':'budget-actual-forecast-variance-v2',
     'assetRequestCenter':'manual-market-purchase-v2','aiAssetOrchestration':'advisor-only-zero-execution-v1','mobilityIntegration':'manual-purchase-live-map-route-timeout-clusters-v4','investorTransfers':'treasury-journal-idempotent-v2','financialPaper':'local-security-art-v1','navigationIA':'consolidated-command-and-owned-assets-v2','aiDemandClosure':'disabled-no-operational-handoff-v1','aiGovernance':'no-execution-authority-v1','aiProactiveReview':'disabled-v1',

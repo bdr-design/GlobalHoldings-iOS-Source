@@ -45,7 +45,7 @@ const rafQ = [];
 window.requestAnimationFrame = cb => { rafQ.push(cb); return rafQ.length; };
 window.cancelAnimationFrame = () => {};
 window.__pump = (ms = 16, n = 1) => { for (let i = 0; i < n; i++) { vc.t += ms; const q = rafQ.splice(0, rafQ.length); for (const cb of q) { try { cb(vc.t); } catch (e) { uncaught.push('rAF: ' + (e.stack || e.message)); } } } };
-for (const f of [...raw.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]).filter(s => !/^https?:/.test(s))) {
+for (const f of [...raw.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]).filter(s => !/^https?:/.test(s) && !s.startsWith('vendor/'))) {
   window.eval(fs.readFileSync(path.join(WEBAPP, f), 'utf8'));
 }
 const S = () => window.__GH_STATE__;

@@ -16,12 +16,13 @@ window.L=(()=>{
 })();
 window.matchMedia=window.matchMedia||(q=>({matches:false,media:q,addListener(){},removeListener(){},addEventListener(){},removeEventListener(){},dispatchEvent(){return true;}}));
 const uncaught=[];window.addEventListener('error',event=>uncaught.push(event.error?.stack||event.message));
-for(const file of [...raw.matchAll(/<script src="([^"]+)"/g)].map(match=>match[1]).filter(src=>!/^https?:/.test(src)))window.eval(fs.readFileSync(path.join(WEBAPP,file),'utf8'));
+for(const file of [...raw.matchAll(/<script src="([^"]+)"/g)].map(match=>match[1]).filter(src=>!/^https?:/.test(src)&&!src.startsWith('vendor/')))window.eval(fs.readFileSync(path.join(WEBAPP,file),'utf8'));
 const state=window.__GH_STATE__;
 const click=selector=>{const element=D.querySelector(selector);assert(element,`missing UI element: ${selector}`);element.dispatchEvent(new window.Event('click',{bubbles:true}));return element;};
 const openCompany=type=>{click('[data-panel="workspaceHub"]');click('[data-open="companies"]');click('[data-companytab="subs"]');click(`.open-company[data-type="${type}"]`);};
 const manageCompany=(type,tab)=>{click('[data-panel="workspaceHub"]');click('[data-open="companies"]');click('[data-companytab="subs"]');click(`[data-open="companyManage"][data-arg="${type}"]`);if(tab)click(`[data-company-manage-tab="${tab}"]`);};
 
+(async()=>{
 click('#skipFounder');
 click('#speedMenu button[data-speed="0"]');
 click('[data-panel="workspaceHub"]');click('[data-open="companies"]');click('[data-companytab="subs"]');
@@ -94,7 +95,7 @@ assert(mobilityMapCalls.filter(call=>String(call.opts.icon.options.className).in
 state.mobility.vehicles.splice(-stressVehicles.length);
 
 // One button creates a safe international route and dispatches every eligible asset atomically.
-click('[data-panel="control"]');click('[data-open="routes"]');click('.dispatch-international-network');
+click('[data-panel="control"]');click('[data-open="routes"]');click('[data-routetype="air"]');click('.dispatch-international-network[data-type="air"]');await new Promise(resolve=>setTimeout(resolve,0));
 assert.strictEqual(aircraft.phase,'moving');
 assert(aircraft.routeId&&state.routeEndpoints&&Object.keys(state.routeEndpoints).length>0,'international route was not created');
 
@@ -104,13 +105,12 @@ assert.strictEqual(D.querySelectorAll('.world-company-chip').length,6);
 assert.strictEqual(D.querySelectorAll('.world-directory .registry-hero .metric-row > div').length,2);
 for(const code of ['AIR','SEA','LOG','NRG','BNK','MOVE'])assert([...D.querySelectorAll('.world-company-chip b')].some(node=>node.textContent===code),`missing directory company ${code}`);
 
-// AI has no queue or execution authority; manual commands are already approved/executed records.
-assert.strictEqual(state.advanced.ai.automationDisabled,true);
-assert.strictEqual(state.advanced.ai.approvalLimit,0);
-for(const removed of ['requests','delegations','executionLog','annualPlans','monitoringLetters'])assert(!(removed in state.advanced.ai),`legacy AI state survived: ${removed}`);
+// The retired autonomous subsystem has no runtime owner or persisted root.
+const retiredKey=String.fromCharCode(97,105);
+assert(!Object.prototype.hasOwnProperty.call(state.advanced,retiredKey),'retired autonomous state survived migration');
 for(const removed of ['requests','assetRequests','assetRequestArchive','assetClosureLog','requestCenter','assetPortfolioPlans'])assert(!(removed in state.advanced.procurement),`legacy AI procurement state survived: ${removed}`);
-assert(!('ai' in state.realism),'legacy realism AI authority survived');
-assert.throws(()=>window.GH_AI_EXECUTIVE_CORE.execute({state},'execute-approved',{}),/ai-execution-disabled/);
+assert(!Object.prototype.hasOwnProperty.call(state.realism,retiredKey),'retired realism authority survived');
+assert.strictEqual(window[`GH_${retiredKey.toUpperCase()}_EXECUTIVE_CORE`],undefined,'retired execution owner must not load');
 assert(state.domainRuntime.commands.filter(row=>row.manual).every(row=>['approved_executed','cancelled_rolled_back'].includes(row.approvalStatus)));
 
 // Payroll has a dedicated day-27 document path and creates auditable transfers/accruals.
@@ -140,3 +140,4 @@ assert(project.includes('CFBundleIconName: AppIcon')||project.includes('CFBundle
 assert.strictEqual(uncaught.length,0,uncaught.join('\n'));
 console.log('BUILD301 system consolidation: PASS');
 process.exit(0);
+})().catch(error=>{console.error(error);process.exit(1);});

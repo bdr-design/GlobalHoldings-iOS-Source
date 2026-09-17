@@ -5,7 +5,7 @@
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const now=s=>Number(s?.simSeconds)||0;
   const stable=v=>Array.isArray(v)?`[${v.map(stable).join(',')}]`:v&&typeof v==='object'?`{${Object.keys(v).sort().map(k=>`${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`:JSON.stringify(v);
-  const isManualActor=actor=>!(/^(simulation(?:-|$)|finance-scheduler$|payroll-scheduler$|financial-close$|delivery-engine$|project-commissioning$|banking-read-model$|GH Intelligence$|system(?:-|$)|migration(?:-|$))/i.test(String(actor||'ui')));
+  const isManualActor=actor=>!(/^(simulation(?:-|$)|finance-scheduler$|payroll-scheduler$|financial-close$|delivery-engine$|project-commissioning$|banking-read-model$|system(?:-|$)|migration(?:-|$))/i.test(String(actor||'ui')));
   function prune(r,at){
     for(const [key,row] of Object.entries(r.idempotency))if(!row||!Number.isFinite(row.at)||at-row.at>IDEMPOTENCY_TTL||row.at>at||!row.fingerprint)delete r.idempotency[key];
     const keys=Object.keys(r.idempotency).sort((a,b)=>r.idempotency[a].at-r.idempotency[b].at);

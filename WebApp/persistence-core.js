@@ -6,7 +6,7 @@
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const clock=()=>globalThis.performance?.now?.()??Date.now();
   const pending=new Map(), samples=[];
-  let sequence=0,generation=0,locked=false,mirrorTail=Promise.resolve(),mirrorCount=0,mirrorError=null;
+  let sequence=0,generation=0,locked=false,durableLocked=false,recoveryRequired=false,mirrorTail=Promise.resolve(),mirrorCount=0,mirrorError=null;
   function telemetry(row){samples.push(row);if(samples.length>32)samples.shift();return row;}
   function status(detail){if(globalThis.dispatchEvent&&globalThis.CustomEvent)globalThis.dispatchEvent(new CustomEvent('gh-persistence-status',{detail}));}
   function validateState(state){return globalThis.GH_SAVE_SCHEMA?.validate?.(state)||{ok:false,errors:['save-schema-unavailable']};}
@@ -63,7 +63,8 @@
   globalThis.addEventListener?.('gh-native-save-ack',e=>receiveAck(e.detail));
   globalThis.addEventListener?.('gh-native-reset-ack',e=>receiveAck(e.detail));
   function commitState(state,{storageKey='global-holdings-world-v2.0.0',appVersion=VERSION,...options}={}){
-    if(locked)return {ok:false,reason:'lifecycle-locked'};
+    if(locked||durableLocked)return {ok:false,reason:'lifecycle-locked'};
+    if(recoveryRequired)return {ok:false,reason:'memory-recovery-required'};
     if(bridgeFor('commitSave')&&mirrorCount>=PERSISTENCE_LIMITS.pending)return {ok:false,reason:'native-save-backpressure'};
     const out=writeState(storageKey,state,options);if(!out.ok)return out;
     if(bridgeFor('commitSave')){
@@ -72,13 +73,32 @@
       mirrorTail=work.then(ack=>{mirrorError=null;return ack;},error=>{
         mirrorError=error;
         try{if(localStorage.getItem(storageKey)===out.json)restoreRaw(storageKey,out.previous);}catch(e){error.rollbackError=String(e.message||e);}
-        status({ok:false,reason:error.message,critical:!!error.rollbackError});return {ok:false,reason:error.message};
+        const uncertainNative=error.code==='ACK_TIMEOUT';recoveryRequired=true;status({ok:false,reason:error.message,critical:!!error.rollbackError,requiresMemoryRollback:!uncertainNative,requiresNativeReconciliation:uncertainNative,storageKey});return {ok:false,reason:error.message,uncertainNative};
       }).finally(()=>{mirrorCount--;});
       out.native=mirrorTail;
     }
     return out;
   }
   async function drain(){await mirrorTail;if(mirrorError)throw mirrorError;return {ok:true,generation};}
+  async function commitDurableState(state,{storageKey='global-holdings-world-v2.0.0',appVersion=VERSION,...options}={}){
+    if(locked||durableLocked)throw new Error('lifecycle-locked');if(recoveryRequired)throw new Error('memory-recovery-required');durableLocked=true;
+    let written=null;
+    try{
+      await drain();assertState(state);const json=JSON.stringify(state);written=writeJSON(storageKey,json,options);if(!written.ok)throw new Error(written.reason);
+      const ack=await requestNative('commitSave',json,{appVersion,...options});mirrorError=null;
+      telemetry({operation:'durable-commit',ok:true,utf8Bytes:written.utf8Bytes,native:ack.native===true,durationMs:0});
+      status({ok:true,validated:true,durable:true,native:ack.native===true,saveRevision:Number(state.saveRevision)||0});
+      return {...written,ack,durable:true};
+    }catch(error){
+      if(written?.ok)try{if(localStorage.getItem(storageKey)===written.json)restoreRaw(storageKey,written.previous);}catch(rollbackError){error.rollbackError=String(rollbackError.message||rollbackError);}
+      const uncertainNative=error.code==='ACK_TIMEOUT';if(error.rollbackError||uncertainNative){recoveryRequired=true;error.critical=true;}
+      status({ok:false,reason:String(error.message||error),critical:!!error.critical,durable:true,requiresNativeReconciliation:uncertainNative,storageKey});throw error;
+    }finally{durableLocked=false;}
+  }
+  function recoverBrowserState(storageKey='global-holdings-world-v2.0.0'){
+    try{const raw=localStorage.getItem(storageKey);if(!raw)return {ok:false,reason:'missing-durable-state'};const state=JSON.parse(raw);assertState(state);return {ok:true,state};}catch(error){return {ok:false,reason:String(error.message||error)};}
+  }
+  function acknowledgeRecovery(){recoveryRequired=false;mirrorError=null;return true;}
   async function replaceState(next,previous,{storageKey='global-holdings-world-v2.0.0',resetMarkerKey,appVersion=VERSION,timeoutMs,apply,cleanupKeys=[]}={}){
     if(locked)throw new Error('lifecycle-locked');locked=true;
     let nativeAttempted=false,oldRaw=null,oldMarker=null,browserTouched=false;
@@ -117,6 +137,6 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:'2.0.0',saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,writeJSON,writeState,commitState,requestNative,receiveAck,drain,replaceState,isLocked:()=>locked,telemetry:()=>({generation,pending:pending.size,mirrorCount,samples:clone(samples)})});
+  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,requestNative,receiveAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,mirrorCount,recoveryRequired,samples:clone(samples)})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

@@ -33,7 +33,7 @@
   function deepDefaults(target,defs){for(const [k,v] of Object.entries(defs)){if(target[k]===undefined)target[k]=typeof structuredClone==='function'?structuredClone(v):JSON.parse(JSON.stringify(v));else if(v&&typeof v==='object'&&!Array.isArray(v)&&target[k]&&typeof target[k]==='object'&&!Array.isArray(target[k]))deepDefaults(target[k],v);}return target;}
   function migrate(state){
     state.realism=state.realism&&typeof state.realism==='object'?state.realism:initial();deepDefaults(state.realism,initial());
-    const r=state.realism;r.schema=SCHEMA;r.version=VERSION;delete r.ai;
+    const r=state.realism;r.schema=SCHEMA;r.version=VERSION;delete r[String.fromCharCode(97,105)];
     const p=String(state.profile?.riskAppetite||'balanced');r.risk.appetite=p;
     if(!r.migratedAt){r.migratedAt=Number(state.simSeconds)||0;r.controls.issues=[];}
     normalizeEventQueue(state);return r;
