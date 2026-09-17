@@ -7,5 +7,6 @@ assert.strictEqual(packages.length,0,'Do not commit stale signed update packages
 const build=fs.readFileSync('scripts/build_update.py','utf8');
 assert(build.includes("'signaturePayloadVersion':3"),'release builder must emit Build-bound signature payload v3');
 assert(build.includes('sign_manifest(manifest)'),'release builder must require Ed25519 signing');
-assert(build.includes('pause-x1-x2-x4'),'release builder speed contract must match four controls');
+assert(build.includes('OPERATIONS=[]'),'content snapshot must not reset player settings, speeds or economic parameters');
+assert(!build.includes("'economy-config'")&&!build.includes("'timeControls'")&&!build.includes("'aiAssetOrchestration'"),'retired or state-changing operations must not return in a content update');
 console.log('Update package source/release guard: PASS (signed package intentionally regenerated only in release CI)');

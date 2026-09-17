@@ -24,5 +24,5 @@ for(const file of fs.readdirSync(path.join(root,'WebApp')).filter(n=>n.endsWith(
   }
  });
 }
-for(const domain of ['finance','procurement','fleet','facilities','hr','corporate','market','ai'])if(!registrations.has(domain))errors.push('Missing owner '+domain);
+for(const domain of ['finance','procurement','fleet','facilities','hr','corporate','market'])if(!registrations.has(domain))errors.push('Missing owner '+domain);
 if(errors.length){console.error(errors.join('\n'));process.exitCode=1;}else console.log('AST OWNERSHIP / NO DYNAMIC CODE GUARD: PASS ('+registrations.size+' domain owners)');

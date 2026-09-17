@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64, os
 from pathlib import Path
 
-KEY_ID='gh-primary-2026'
+KEY_ID='gh-primary-2026-build310'
 ALGORITHM='ed25519'
 
 
