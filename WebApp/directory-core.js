@@ -4,6 +4,11 @@
   const compareLabels=new Intl.Collator('ar').compare;
   const COMPANIES=Object.freeze(['air','sea','road','power','bank','mobility']);
   const SITE_COMPANIES=Object.freeze(['road','power','bank','mobility']);
+  // CLDR territory aliases are not independent countries. Some WebKit versions
+  // preserve these in Intl.Locale.region, so runtime canonicalization is unsafe.
+  // Source: unicode-org/cldr, common/supplemental/supplementalMetadata.xml.
+  // Null means the old territory split into several countries; do not guess one.
+  const REGION_ALIASES=Object.freeze({AN:null,BU:'MM',CS:null,CT:'KI',DD:'DE',DY:'BJ',FQ:null,FX:'FR',HV:'BF',JT:'UM',MI:'UM',NH:'VU',NQ:'AQ',NT:null,PC:null,PU:'UM',PZ:'PA',QU:'EU',RH:'ZW',SU:null,TP:'TL',UK:'GB',VD:'VN',WK:'UM',YD:'YE',YU:null,ZR:'CD'});
   const COUNTRY_ALIASES=Object.freeze({
     SA:['السعودية'],AE:['الإمارات'],PS:['فلسطين'],MV:['المالديف'],MM:['ميانمار','Myanmar'],TL:['تيمور الشرقية'],
     HU:['المجر'],BY:['بيلاروسيا'],DK:['الدنمارك'],CD:['الكونغو الديمقراطية','Democratic republic of the congo'],
@@ -32,10 +37,11 @@
     };
     for(let first=65;first<=90;first++)for(let second=65;second<=90;second++){
       const code=String.fromCharCode(first,second);
-      if(typeof Intl.Locale==='function'&&new Intl.Locale(`und-${code}`).region!==code)continue;
+      if(Object.prototype.hasOwnProperty.call(REGION_ALIASES,code))continue;
       const ar=arabic?.of(code),en=english?.of(code);
       if((ar&&ar!==code)||(en&&en!==code))add(code,ar||en||code,[en]);
     }
+    for(const [alias,code] of Object.entries(REGION_ALIASES))if(code&&byId.has(code))add(code,byId.get(code).label,[alias]);
     for(const [code,aliases] of Object.entries(COUNTRY_ALIASES))add(code,byId.get(code)?.label||aliases[0],aliases);
     const resolve=value=>{
       const native=String(value||'').trim(),known=byId.has(native)?native:byName.get(normalize(native));

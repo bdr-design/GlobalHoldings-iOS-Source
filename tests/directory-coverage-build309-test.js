@@ -30,6 +30,25 @@ assert.equal(index.countryMetadata('الإمارات').id,'AE');
 assert.equal(index.countryMetadata('المملكة المتحدة').id,'GB');
 assert.equal(index.countryMetadata('روسيا').id,'RU');
 assert.equal(index.countryMetadata('الكونغو الديمقراطية').id,'CD');
+assert.equal(index.countryMetadata('UK').id,'GB');
+assert.equal(index.countryMetadata('DD').id,'DE');
+assert(index.countryMetadata('AN').id.startsWith('native:'),'split historical territories must not be assigned to an arbitrary country');
+
+// Reproduce macOS WebKit returning UK unchanged from Intl.Locale.region. That
+// must never split British airports, ports and capitals between GB and UK.
+for(const Locale of [class {constructor(tag){this.region=tag.split('-').pop();}},undefined]){
+  const legacy={module:{exports:{}},Intl:{Collator:Intl.Collator,DisplayNames:Intl.DisplayNames,Locale}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../WebApp/directory-core.js'),'utf8'),legacy);
+  const alternate=legacy.module.exports.create({airports:world.airports,ports:world.ports,capitals});
+  const rawCountries=new Set([...world.airports.map(row=>row[5]),...world.ports.map(row=>row[2]),...capitals.map(row=>row.country)]);
+  for(const country of rawCountries)assert.equal(alternate.countryMetadata(country).id,index.countryMetadata(country).id,`platform-dependent country identity: ${country}`);
+  for(const company of directory.COMPANIES){
+    const countries=alternate.search({company}).countries;
+    assert.equal(JSON.stringify(countries),JSON.stringify(index.search({company}).countries),`${company}: browser country choices diverged`);
+    assert(countries.some(row=>row.id==='GB'),`${company}: Britain disappeared`);
+    assert(!countries.some(row=>row.id==='UK'),`${company}: duplicate British country option`);
+  }
+}
 
 // A paged browse must expose every city, with no leakage when changing companies/countries.
 for(const company of ['road','power','bank','mobility']){
