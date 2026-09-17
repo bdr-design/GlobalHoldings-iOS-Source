@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 310;
+  const RUNTIME_BUILD = 311;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -204,7 +204,7 @@
   }
   function prepareRoute(r){
     r.company=r.type;
-    r.distanceKm=routeDistance(r.route);
+    r.distanceKm=r.type==='road'&&Number(r.roadNetworkDistanceKm)>0?Number(r.roadNetworkDistanceKm):routeDistance(r.route);
     r.maxLegKm=Number(r.maxLegKm)||routeLongestLeg(r.route);
     r.tripSeconds=r.distanceKm/r.effectiveSpeedKmh*3600;
     return r;
@@ -839,7 +839,7 @@
 
   function routeFacility(id){return getDynamicFacilities().find(f=>f.id===id);}
   async function requestRoadGeometry(fromCoords,toCoords){
-    const result=await window.GH_MAP_PROVIDER.road(fromCoords,toCoords);
+    const result=await window.GH_MAP_PROVIDER.road(fromCoords,toCoords,{compactGeometry:true});
     if(!result.ok){diag('MAP_PROVIDER_DEGRADED',{status:result.status,reason:result.reason},'warning');return null;}
     return result.geometry;
   }
@@ -877,6 +877,7 @@
     Object.keys(state.routeCache||{}).forEach(id=>{if(routeTemplates[id]?.referenceOnly&&!activeIds.has(id))delete state.routeCache[id];});
     const roads=operationalRoutes('road');
     await Promise.all(roads.map(async tpl=>{
+      if(tpl.roadGeometryVersion===311&&tpl.roadNetworkDistanceKm>0)return; // Canonical verified road geometry is already saved; never re-request an active trip.
       const cached=state.routeCache[tpl.id];
       if(cached?.canonicalRouteId===tpl.id)return;
       if(isRouteCacheFresh(cached)&&cached.route){applyRoadGeometry(tpl.id,cached,false);return;}
@@ -1001,7 +1002,7 @@
   }
   function assetRangeKm(asset){return asset.type==='sea'?(asset.specs?.rangeNm||0)*1.852:(asset.specs?.rangeKm||0);}
   function routeFitsAsset(asset,route){
-    const range=assetRangeKm(asset),leg=route.maxLegKm||routeLongestLeg(route.route);
+    const range=assetRangeKm(asset),leg=asset.type==='road'?(route.roadNetworkDistanceKm||route.distanceKm||routeDistance(route.route)):(route.maxLegKm||routeLongestLeg(route.route));
     return !range||leg<=range*1.005;
   }
   function buildPublicRoute(asset,origin,destination,target=state,routeId=null){
@@ -1066,22 +1067,47 @@
       window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`مغادرة جماعية ذرّية: غادر ${created.length} أصلًا من ${typeName(type)} على ${created.length} مسارًا مختلفًا بلا تكرار.`,type:'dispatch'});return {departed:created.length,routeIds:created.map(route=>route.id)};
     },{afterCommit:()=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('routes',type);}});
   }
-  async function dispatchExistingDistinctNetwork(type){
+  let roadPlanning=null;
+  function roadPlanningMarkup(){return roadPlanning?`<p class="road-plan-status" role="status" aria-live="polite">${esc(roadPlanning.text)}</p><button class="secondary-btn cancel-road-plan">إلغاء حساب المسارات</button>`:'';}
+  function updateRoadPlanning(done,total){if(!roadPlanning)return;roadPlanning.text=`حساب المسارات ${done} / ${total} — لن تنطلق الشاحنات حتى اكتمال الدفعة`;document.querySelectorAll('.road-plan-status').forEach(node=>{node.textContent=roadPlanning.text;});}
+  function roadAssetFingerprint(asset){return JSON.stringify([asset.id,asset.type,asset.baseFacility,asset.routeId,asset.phase,asset.deliveryStatus,asset.salePending,asset.specs,asset.staffing]);}
+  async function dispatchExistingDistinctNetwork(type,assetId=null){
     if(type!=='road'){notice('هذا الأمر مخصص لشركة اللوجستيات.');return false;}
-    return runDurableStateCommand('bulk-distinct-departure:road',({state:draft,routes})=>{
-      const eligible=draft.assets.filter(asset=>asset.type==='road'&&asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.salePending).sort((a,b)=>String(a.id).localeCompare(String(b.id)));if(!eligible.length)throw new Error('لا توجد شاحنات متاحة للمغادرة');
-      const selected=[];
-      for(const asset of eligible){
-        let route=routes[asset.routeId];
-        const routeUsable=candidate=>candidate&&candidate.type==='road'&&candidate.company==='road'&&routeFitsAsset(asset,candidate)&&Boolean(asset.baseFacility)&&(sameUnderlyingFacilityFor(draft,asset.baseFacility,candidate.fromFacility)||sameUnderlyingFacilityFor(draft,asset.baseFacility,candidate.toFacility))&&!window.GH_FLEET_CORE.routeConflict(draft,asset.id,candidate.id,candidate)&&!selected.some(existing=>window.GH_ROUTE_CORE.signature(existing)===window.GH_ROUTE_CORE.signature(candidate)||window.GH_ROUTE_CORE.corridorMetrics(existing,candidate).duplicate);
-        if(!routeUsable(route))route=Object.values(routes).filter(candidate=>!draft.assets.some(other=>other.id!==asset.id&&other.routeId===candidate.id)&&routeUsable(candidate)).sort((a,b)=>String(a.id).localeCompare(String(b.id)))[0];
-        if(!route)throw new Error(`${asset.name}: لا يوجد مسار بري مستقل يبدأ من مركزه. أنشئ مسارًا إضافيًا بين مراكز الشركة`);
-        const matched=routeMatchingFacilityFor(draft,routes,route.id,asset.baseFacility);
-        window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','assign-route',{id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',route:matched},{actor:'bulk-distinct-dispatch'});window.GH_FLEET_CORE.normalizeAsset(asset,{route:matched,catalogItem:catalogItem(asset.type,asset.catalogId)});selected.push(route);
-      }
-      for(const asset of eligible){const block=departureBlockReasonFor(asset,draft,routes);if(block)throw new Error(`${asset.name}: ${block.text}`);const route=routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility),departed=window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','depart',{id:asset.id,route,load:loadLabel(asset)},{actor:'bulk-distinct-dispatch'}).result;if(!departed)throw new Error(`${asset.name}: رفض محرك الأسطول المغادرة`);window.GH_FLEET_CORE.normalizeAsset(asset,{route,catalogItem:catalogItem(asset.type,asset.catalogId)});}
-      window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`مغادرة جماعية ذرّية: غادرت ${eligible.length} شاحنة على ${selected.length} مسارًا بريًا مختلفًا غير مكرر.`,type:'dispatch'});return {departed:eligible.length,type};
-    },{afterCommit:()=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('routes','road');}});
+    if(roadPlanning){notice('حساب مسارات اللوجستيات جارٍ بالفعل.');return false;}
+    const eligible=state.assets.filter(asset=>asset.type==='road'&&(!assetId||asset.id===assetId)&&asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.salePending);
+    if(!eligible.length){notice('لا توجد شاحنات متاحة للمغادرة');return false;}
+    const snapshot=clone(state),runtime=routeRuntimeForState(snapshot),preview=eligible.map(asset=>clone(asset)),fingerprints=new Map(preview.map(asset=>[asset.id,roadAssetFingerprint(asset)])),controller=new AbortController();
+    roadPlanning={controller,text:'جاري تجهيز مسارات الشاحنات…'};
+    if(activeDrawerPanel==='routes')renderRouteCenterInto();
+    const timer=setTimeout(()=>controller.abort(),180000);
+    try{
+      const plan=await window.GH_ROAD_PLANNER.plan({assets:preview,routes:Object.values(runtime).filter(route=>!BASE_ROUTE_IDS.has(route.id)||operationalRouteIds('road').has(route.id)),routeCount:snapshot.customRoutes.length,seed:snapshot.determinism?.seed||1,signal:controller.signal,onProgress:updateRoadPlanning,
+        originFor:asset=>routeOriginForAsset(asset,snapshot,runtime),
+        usable:(asset,route)=>route.type==='road'&&route.company==='road'&&routeFitsAsset(asset,route)&&Boolean(asset.baseFacility)&&(sameUnderlyingFacilityFor(snapshot,asset.baseFacility,route.fromFacility)||sameUnderlyingFacilityFor(snapshot,asset.baseFacility,route.toFacility))&&!window.GH_FLEET_CORE.routeConflict(snapshot,asset.id,route.id,route)});
+      if(controller.signal.aborted)throw new Error('أُلغي حساب المسارات');
+      clearTimeout(timer);document.querySelectorAll('.cancel-road-plan').forEach(button=>{button.disabled=true;});
+      return await runDurableStateCommand('bulk-distinct-departure:road',({state:draft,routes})=>{
+        const current=draft.assets.filter(asset=>asset.type==='road'&&(!assetId||asset.id===assetId)&&asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.salePending);
+        if(draft.resetEpoch!==snapshot.resetEpoch||current.length!==preview.length||current.some(asset=>fingerprints.get(asset.id)!==roadAssetFingerprint(asset)))throw new Error('تغيرت الشاحنات أثناء حساب الطرق؛ أعد المحاولة');
+        for(const row of plan){
+          const asset=draft.assets.find(item=>item.id===row.assetId),origin=routeOriginForAsset(asset,draft,routes);
+          if(!origin||origin.id!==row.origin.id||origin.company!=='road'||origin.owned!==row.origin.owned||JSON.stringify(origin.coords)!==JSON.stringify(row.origin.coords))throw new Error('تغيرت نقطة انطلاق إحدى الشاحنات أثناء الحساب');
+          let route;
+          if(row.created){
+            const endpoint=routeFacilityFor(draft,row.endpoint.id)||window.GH_ROUTE_CORE.execute({state:draft},'register-endpoint',{endpoint:row.endpoint});
+            if(endpoint.company!=='road'||JSON.stringify(endpoint.coords)!==JSON.stringify(row.endpoint.coords))throw new Error('تعارض في وجهة التسليم');
+            route=prepareRoute({...row.route,id:window.GH_DETERMINISM.nextId(draft,'ROAD-AUTO')});
+            window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'routes','create',{route},{actor:'road-auto-dispatch'});routes[route.id]=route;
+          }else{route=routes[row.route.id];if(!route||JSON.stringify(route)!==JSON.stringify(runtime[row.route.id]))throw new Error('تغير أحد المسارات الموجودة أثناء الحساب');}
+          if(!routeFitsAsset(asset,route))throw new Error(`${asset.name}: الطريق يتجاوز مدى الشاحنة`);
+          const matched=routeMatchingFacilityFor(draft,routes,route.id,asset.baseFacility);
+          window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','assign-route',{id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',route:matched},{actor:'road-auto-dispatch'});window.GH_FLEET_CORE.normalizeAsset(asset,{route:matched,catalogItem:catalogItem(asset.type,asset.catalogId)});
+        }
+        for(const asset of current){const block=departureBlockReasonFor(asset,draft,routes);if(block)throw new Error(`${asset.name}: ${block.text}`);const route=routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility),departed=window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','depart',{id:asset.id,route,load:loadLabel(asset)},{actor:'road-auto-dispatch'}).result;if(!departed)throw new Error(`${asset.name}: رفض محرك الأسطول المغادرة`);window.GH_FLEET_CORE.normalizeAsset(asset,{route,catalogItem:catalogItem(asset.type,asset.catalogId)});}
+        window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`غادرت ${current.length} شاحنة على مسارات مستقلة؛ أُنشئ ${plan.filter(row=>row.created).length} مسارًا تلقائيًا.`,type:'dispatch'});return {departed:current.length,type};
+      },{afterCommit:()=>{lastDepartureBlocked=[];renderMap();updateKpis();}});
+    }catch(error){notice(String(error.message||error));return false;}
+    finally{clearTimeout(timer);roadPlanning=null;if(activeDrawerPanel==='routes')renderRouteCenterInto();}
   }
   function renderWorldInfrastructureMarkers(){
     if(!map)return;
@@ -2334,7 +2360,7 @@
     const points=roadFacilityOptions(),seen=new Set(),allRoutes=operationalRoutes().filter(r=>{const sig=routeGeometrySignature(r);if(seen.has(sig))return false;seen.add(sig);return true;}),mobility=window.GH_MOBILITY_CORE?.snapshot?.(state)||{vehicles:0,moving:0,activeTrips:0},tabs=[['all','الملخص'],['air','الجوي'],['sea','البحري'],['road','البري'],['mobility','Mobility']].map(([id,label])=>`<button class="tab-btn ${routeFilterType===id?'active':''}" data-routetype="${id}">${label}</button>`).join('');
     const sectorRows=type=>type==='mobility'?(state.mobility?.vehicles||[]):state.assets.filter(asset=>asset.type===type),sectorSummary=['air','sea','road','mobility'].map(type=>{const rows=sectorRows(type),assigned=type==='mobility'?rows.length:rows.filter(a=>a.routeId).length,moving=rows.filter(a=>a.phase==='moving'||a.status==='moving').length,ready=type==='mobility'?rows.filter(a=>a.status==='available').length:rows.filter(a=>a.routeId&&a.phase==='turnaround').length;return `<button class="command-btn sector-${type}" data-routetype="${type}"><span>${type==='air'?'AIR':type==='sea'?'SEA':type==='road'?'LOG':'MOVE'}</span><div><b>${typeName(type)}</b><small>${rows.length} أصل · ${assigned} مكلّف · ${moving} متحرك · ${ready} جاهز</small></div></button>`;}).join('');
     const selectedAssets=routeFilterType==='all'||routeFilterType==='mobility'?[]:state.assets.filter(asset=>asset.type===routeFilterType),routes=routeFilterType==='all'||routeFilterType==='mobility'?[]:allRoutes.filter(route=>route.type===routeFilterType),assigned=selectedAssets.filter(a=>a.routeId).length,idle=selectedAssets.filter(a=>!a.routeId).length,ready=selectedAssets.filter(a=>a.routeId&&a.phase==='turnaround').length,moving=selectedAssets.filter(a=>a.phase==='moving').length,internationalReady=selectedAssets.filter(a=>['air','sea'].includes(a.type)&&a.deliveryStatus!=='pending'&&a.phase!=='moving'&&!a.salePending).length;
-    const routeTypeLabel=type=>type==='air'?'الطائرات':type==='sea'?'السفن':'الشاحنات',idleRows=selectedAssets.filter(a=>!a.routeId).slice(0,60).map(a=>`<div class="spec-row"><span>${esc(a.icon||assetIcon(a.type))} ${esc(a.name)} · ${esc(findFacility(a.baseFacility)?.name||'دون مركز')}</span><span class="tag">اختره من بطاقة مسار أدناه</span></div>`).join('');
+    const routeTypeLabel=type=>type==='air'?'الطائرات':type==='sea'?'السفن':'الشاحنات',idleRows=selectedAssets.filter(a=>!a.routeId).slice(0,60).map(a=>`<div class="spec-row"><span>${esc(a.icon||assetIcon(a.type))} ${esc(a.name)} · ${esc(findFacility(a.baseFacility)?.name||'دون مركز')}</span><span class="tag">${a.type==='road'?'جاهزة لمسار تلقائي':'اختره من بطاقة مسار أدناه'}</span></div>`).join('');
     const routeAssets=new Map();for(const asset of selectedAssets){if(!asset.routeId)continue;const linked=routeAssets.get(asset.routeId)||[];linked.push(asset);routeAssets.set(asset.routeId,linked);}
     const routeNeedle=normalizeSearch(routeQuery),matchingRoutes=routes.filter(r=>!routeNeedle||normalizeSearch(`${r.name} ${r.from} ${r.to} ${r.routingSource||''}`).includes(routeNeedle)),displayRoutes=matchingRoutes.slice(0,80);
     const routeCards=displayRoutes.map(r=>{
@@ -2351,8 +2377,8 @@
     if(['air','sea','road'].includes(routeFilterType)){
       const international=['air','sea'].includes(routeFilterType),manualAssets=selectedAssets.filter(asset=>asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.salePending),bulkReady=manualAssets.length;
       const manualRoute=international&&manualAssets.length?`<div class="route-builder"><label>الأصل لمسار يدوي<select id="manualGlobalAsset">${manualAssets.map(asset=>`<option value="${esc(asset.id)}">${esc(asset.icon||assetIcon(asset.type))} ${esc(asset.name)}</option>`).join('')}</select></label></div><div class="action-row"><button class="secondary-btn open-global-route-selected">إنشاء مسار يدوي للأصل المحدد</button></div>`:'';
-      workspace=`<article class="list-item sector-${routeFilterType}"><div class="list-item-head"><div><h3>تشغيل ${typeName(routeFilterType)}</h3><p>المسارات والأصول والأوامر هنا خاصة بهذا القطاع فقط.</p></div><span class="tag positive">${selectedAssets.length} أصل</span></div><div class="metric-row"><div><span>بلا مسار</span><b>${idle}</b></div><div><span>مكلّفة</span><b>${assigned}</b></div><div><span>متحركة</span><b>${moving}</b></div><div><span>جاهزة</span><b>${ready}</b></div></div><div class="action-row">${international?`<button class="primary-btn dispatch-international-network" data-type="${routeFilterType}" ${internationalReady?'':'disabled'}>مغادرة جماعية لمسارات مختلفة (${internationalReady})</button><button class="secondary-btn depart-all-assets" data-type="${routeFilterType}" ${ready?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button>`:`<button class="primary-btn depart-all-assets" data-type="road" ${ready?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button><button class="secondary-btn dispatch-existing-network" data-type="road" ${bulkReady?'':'disabled'}>توزيع مسارات مستقلة لكل الشاحنات (${bulkReady})</button><p class="section-mini">التشغيل يرسل الشاحنات المعيّنة فقط. التوزيع يشمل الجميع ويلغى بالكامل إذا لم تكفِ المسارات الفريدة بين مراكز الشركة.</p>`}</div>${manualRoute}</article><article class="list-item"><div class="asset-filters"><input id="routeSearch" value="${esc(routeQuery)}" placeholder="بحث باسم المسار أو نقطة الانطلاق أو الوجهة"></div><p class="section-mini">${fmtNumber(matchingRoutes.length)} من ${fmtNumber(routes.length)} مسار${matchingRoutes.length>80?' · يعرض أول 80 فقط لحماية الأداء، استخدم البحث للوصول المباشر.':''}</p></article>${idleRows?`<article class="list-item"><h3>أصول تنتظر تعيين مسار</h3>${idleRows}</article>`:''}`;
-      if(routeFilterType==='road'){const options=points.map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('');workspace+=`<article class="list-item"><h3>إنشاء مسار بري يدوي</h3><p>المسار لا يُنشأ إلا باختيارك ويُقفل على شبكة الطريق المحسوبة.</p>${points.length?`<div class="route-builder"><label>نقطة الانطلاق<select id="roadFrom">${options}</select></label><label>الوجهة<select id="roadTo">${[...points].reverse().map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('')}</select></label></div><div class="action-row">${points.length>=2?'<button class="secondary-btn build-road-route">بين قاعدتين</button>':''}<button class="secondary-btn" data-open="companyFacilities" data-arg="road">إضافة مركز</button></div>`:'<div class="empty">افتح مركزًا لوجستيًا مملوكًا أولًا.</div>'}</article>`;}
+      workspace=`<article class="list-item sector-${routeFilterType}"><div class="list-item-head"><div><h3>تشغيل ${typeName(routeFilterType)}</h3><p>المسارات والأصول والأوامر هنا خاصة بهذا القطاع فقط.</p></div><span class="tag positive">${selectedAssets.length} أصل</span></div><div class="metric-row"><div><span>بلا مسار</span><b>${idle}</b></div><div><span>مكلّفة</span><b>${assigned}</b></div><div><span>متحركة</span><b>${moving}</b></div><div><span>جاهزة</span><b>${ready}</b></div></div><div class="action-row">${international?`<button class="primary-btn dispatch-international-network" data-type="${routeFilterType}" ${internationalReady?'':'disabled'}>مغادرة جماعية لمسارات مختلفة (${internationalReady})</button><button class="secondary-btn depart-all-assets" data-type="${routeFilterType}" ${ready?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button>`:`<button class="primary-btn dispatch-existing-network" data-type="road" ${bulkReady&&!roadPlanning?'':'disabled'}>تشغيل تلقائي بمسارات عشوائية (${bulkReady})</button><button class="secondary-btn depart-all-assets" data-type="road" ${ready&&!roadPlanning?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button><p class="section-mini">تولّد اللعبة المسارات الناقصة تلقائيًا على الطرق من موقع كل شاحنة إلى نقاط تسليم عامة، دون اشتراط مركز آخر. مسار مختلف لكل شاحنة، ثم مغادرة الدفعة كاملة.</p>${roadPlanningMarkup()}`}</div>${manualRoute}</article><article class="list-item"><div class="asset-filters"><input id="routeSearch" value="${esc(routeQuery)}" placeholder="بحث باسم المسار أو نقطة الانطلاق أو الوجهة"></div><p class="section-mini">${fmtNumber(matchingRoutes.length)} من ${fmtNumber(routes.length)} مسار${matchingRoutes.length>80?' · يعرض أول 80 فقط لحماية الأداء، استخدم البحث للوصول المباشر.':''}</p></article>${idleRows?`<article class="list-item"><h3>أصول تنتظر تعيين مسار</h3>${idleRows}</article>`:''}`;
+      if(routeFilterType==='road'){const options=points.map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('');workspace+=`<article class="list-item"><h3>إنشاء مسار بري يدوي</h3><p>اختياري لرحلة تحددها بنفسك بين مركزين. التشغيل التلقائي أعلاه ينشئ المسارات دون هذه الخطوة.</p>${points.length?`<div class="route-builder"><label>نقطة الانطلاق<select id="roadFrom">${options}</select></label><label>الوجهة<select id="roadTo">${[...points].reverse().map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('')}</select></label></div><div class="action-row">${points.length>=2?'<button class="secondary-btn build-road-route">بين قاعدتين</button>':''}<button class="secondary-btn" data-open="companyFacilities" data-arg="road">إضافة مركز</button></div>`:'<div class="empty">افتح مركزًا لوجستيًا مملوكًا أولًا.</div>'}</article>`;}
       workspace+=`<div class="section-mini">${matchingRoutes.length} مسار ${typeName(routeFilterType)} مطابق</div>${routeCards||'<div class="empty">لا توجد مسارات مطابقة. غيّر البحث أو أنشئ مسارًا جديدًا.</div>'}`;
     }
     if(routeFilterType==='mobility'){const centers=window.GH_MOBILITY_CORE?.centerClusters?.(state)||[];workspace=`<article class="list-item sector-mobility"><div class="list-item-head"><div><h3>مسارات Mobility على شبكة الشوارع</h3><p>كل رحلة تستخدم هندسة قيادة فعلية من مزود الطرق؛ تبقى السيارة عند نقطة الالتقاط إذا تعذر جلب المسار ولا تتحرك على خط صناعي.</p></div><span class="tag positive">${mobility.activeTrips||0} رحلة نشطة</span></div><div class="metric-row"><div><span>السيارات</span><b>${mobility.vehicles||0}</b></div><div><span>المتحركة</span><b>${mobility.moving||0}</b></div><div><span>المتاحة</span><b>${mobility.available||0}</b></div><div><span>الممر</span><b>Street v3</b></div></div><div class="action-row"><button class="primary-btn" data-open="assets" data-arg="mobility">إدارة سيارات Mobility</button><button class="secondary-btn" data-open="companyFacilities" data-arg="mobility">إدارة المراكز</button></div></article>${centers.map(center=>{const detail=window.GH_MOBILITY_CORE.centerSnapshot(state,center.centerId);return `<article class="list-item"><div class="list-item-head"><div><h3>${esc(center.city)}</h3><p>${esc(center.country||'')} · مركز حضري مستقل</p></div><span class="tag">${center.vehicles} سيارة</span></div><div class="metric-row"><div><span>متحركة</span><b>${detail.moving}</b></div><div><span>متاحة</span><b>${detail.available}</b></div><div><span>رحلات نشطة</span><b>${detail.activeTrips}</b></div><div><span>ربح فعلي</span><b class="positive">${fmtMoney(detail.platformRevenue)}</b></div></div></article>`;}).join('')||'<div class="empty">لا توجد مراكز أو سيارات Mobility مملوكة.</div>'}`;}
@@ -2363,13 +2389,15 @@
   async function createRoadRouteFromForm(){
     const fromId=$('roadFrom')?.value,toId=$('roadTo')?.value;if(!fromId||!toId||fromId===toId){notice('اختر مركزي تشغيل مختلفين تابعين لشركة اللوجستيات.');return false;}
     const from=routeFacility(fromId),to=routeFacility(toId);if(!from||!to||!from.owned||!to.owned||companyOfFacility(from)!=='road'||companyOfFacility(to)!=='road'){notice('رُفض المسار: نقطتا التشغيل يجب أن تكونا مملوكتين لشركة اللوجستيات وحدها.');return false;}
-    const button=document.querySelector('.build-road-route');if(button){button.disabled=true;button.textContent='جاري حساب الطريق…';}
-    const geometry=await requestRoadGeometry(from.coords,to.coords);if(!geometry){notice('لم يجد مزود الطرق اتصالًا بريًا صالحًا. لم يُنشأ أي سجل أو خط بديل.');openDrawer('routes','road');return false;}
-    return runDurableStateCommand('create-road-route',({state:draft})=>{
+    const button=document.querySelector('.build-road-route');if(button?.disabled)return false;const label=button?.textContent;if(button){button.disabled=true;button.textContent='جاري حساب الطريق…';}
+    try{
+    const geometry=await requestRoadGeometry(from.coords,to.coords);if(!geometry){notice('لم يجد مزود الطرق اتصالًا بريًا صالحًا. لم يُنشأ أي سجل أو خط بديل.');return false;}
+    return await runDurableStateCommand('create-road-route',({state:draft})=>{
       const draftFrom=routeFacilityFor(draft,fromId),draftTo=routeFacilityFor(draft,toId);if(!draftFrom||!draftTo||!draftFrom.owned||!draftTo.owned||companyOfFacility(draftFrom)!=='road'||companyOfFacility(draftTo)!=='road')throw new Error('تغيرت ملكية إحدى نقطتي التشغيل أثناء الحساب');
-      const id=window.GH_DETERMINISM.nextId(draft,'ROAD-CUSTOM'),durationHours=Math.max(.25,geometry.durationSeconds/3600),fromName=roadLocationName(draftFrom),toName=roadLocationName(draftTo),route=prepareRoute({id,type:'road',company:'road',name:`${fromName} → ${toName}`,from:fromName,to:toName,fromFacility:draftFrom.id,toFacility:draftTo.id,route:geometry.route,effectiveSpeedKmh:clamp(geometry.distanceKm/durationHours,42,82),dwellHours:2.5,routingSource:'OSRM · شبكة طرق فعلية'});
+      const id=window.GH_DETERMINISM.nextId(draft,'ROAD-CUSTOM'),durationHours=Math.max(.25,geometry.durationSeconds/3600),fromName=roadLocationName(draftFrom),toName=roadLocationName(draftTo),route=prepareRoute({id,type:'road',company:'road',name:`${fromName} → ${toName}`,from:fromName,to:toName,fromFacility:draftFrom.id,toFacility:draftTo.id,route:geometry.route,roadGeometryVersion:311,roadNetworkDistanceKm:geometry.distanceKm,maxLegKm:geometry.distanceKm,effectiveSpeedKmh:clamp(geometry.distanceKm/durationHours,42,82),dwellHours:2.5,routingSource:'OSRM · شبكة طرق فعلية'});
       window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'routes','create-with-cache',{route,distanceKm:route.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'route-planner'});window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`أُنشئ مسار بري فعلي من ${route.from} إلى ${route.to} بطول ${fmtNumber(route.distanceKm)} كم.`,type:'route'});return {routeId:id};
     },{afterCommit:()=>{renderMap();updateKpis();openDrawer('routes','road');}});
+    }catch(error){notice(`تعذر حساب الطريق: ${String(error.message||error)}`);return false;}finally{if(button?.isConnected){button.disabled=false;button.textContent=label;}}
   }
   function companyLogoMarkup(type,size='normal'){
     const record=type==='group'?state.profile:(state.companyRegistry?.[type]||{}),logo=record.logo||null,style=record.logoStyle||type||state.profile.logoStyle||'teal',abbr=type==='group'?(state.profile.shortName||'GH'):({air:'AIR',sea:'SEA',road:'LOG',power:'NRG',bank:'BNK',mobility:'MOVE'}[type]||'CO');
@@ -2446,7 +2474,7 @@
     ${eco?`<article class="list-item"><h3>تفصيل آخر دورة تشغيل</h3><div class="metric-row"><div><span>الإيراد</span><b class="positive">${fmtMoney(eco.revenue)}</b></div><div><span>الوقود</span><b class="negative">-${fmtMoney(eco.fuelCost)}</b></div><div><span>الراتب الثابت</span><b>${fmtMoney(eco.fixedMonthlyPayroll||a.staffing?.monthlyPayroll||0)}/شهر</b></div></div><div class="metric-row two" style="margin-top:6px"><div><span>احتياطي صيانة</span><b class="negative">-${fmtMoney(eco.maintReserve)}</b></div><div><span>هامش الرحلة قبل مسير 27</span><b class="${eco.margin>=0?'positive':'negative'}">${fmtMoney(eco.margin)}</b></div></div></article>`:''}
     <article class="list-item"><div class="list-item-head"><div><h3>الطاقم الثابت والراتب</h3><p>أُنشئ تلقائيًا مع التسليم، وهو جزء من الأصل ولا يحتاج إلى إجراء في HR.</p></div><span class="tag ${a.staffing?.ready?'positive':'negative'}">${a.staffing?.ready?'جاهز':'غير مكتمل'}</span></div><div class="metric-row"><div><span>إجمالي الطاقم</span><b>${fmtNumber(a.staffing?.total||0)}</b></div><div><span>الراتب الشهري</span><b>${fmtMoney(a.staffing?.monthlyPayroll||0)}</b></div><div><span>العقد</span><b>${esc(a.staffing?.contractId||'—')}</b></div></div>${(a.staffing?.roles||[]).map(role=>`<div class="spec-row"><span>${esc(role.name)}</span><b>${fmtNumber(role.count)} · ${fmtMoney(role.monthlyPayroll)}/شهر</b></div>`).join('')}</article>
     ${a.simulationFault?`<article class="list-item danger-zone"><h3>عزل وقائي لهذا الأصل فقط</h3><p class="warning">أوقف المحرك هذا الأصل بعد خلل محلي (${esc(a.simulationFault.code||'ASSET_SIMULATION_ISOLATED')}) كي تبقى بقية الشركات واللعبة عاملة. نفّذ الصيانة أو أعد تعيين مساره لإزالة العزل بعد الفحص.</p><small>${esc(a.simulationFault.detail||'لم تتوفر تفاصيل إضافية.')}</small></article>`:''}
-    <div class="action-row"><button class="primary-btn" data-open="routes" data-arg="${esc(a.type)}">${a.routeId?'فتح مسار الأصل':'اختيار مسار من مركز المسارات'}</button>${a.phase==='turnaround'&&a.routeId?`<button class="secondary-btn depart-now" data-id="${a.id}">غادر الآن</button>`:''}<button class="secondary-btn focus-owned-asset" data-id="${a.id}">عرض على الخريطة</button><button class="secondary-btn service-asset" data-id="${a.id}" ${a.phase==='moving'?'disabled':''}>صيانة وتعبئة</button><button class="danger-soft sell-asset" data-id="${a.id}" ${a.salePending?'disabled':''}>${a.salePending?'أمر البيع قيد العودة':'بيع الأصل'}</button></div>${a.salePending?'<p class="warning">أمر البيع نشط: سيكمل الأصل الرحلة الحالية فقط، ثم يتوقف في مركز/قاعدة الوصول ويباع تلقائيًا. لن يتم البيع أثناء الرحلة.</p>':a.phase==='moving'?'<p class="warning">الصيانة وتغيير المسار مقفلان أثناء الحركة. يمكنك إصدار أمر بيع وسيتم التنفيذ تلقائيًا بعد الوصول.</p>':''}</div>`;
+    <div class="action-row"><button class="primary-btn" data-open="routes" data-arg="${esc(a.type)}">${a.routeId?'فتح مسار الأصل':'اختيار مسار من مركز المسارات'}</button>${a.type==='road'&&!a.routeId&&a.phase!=='moving'&&!a.salePending?`<button class="secondary-btn depart-now" data-id="${a.id}">تشغيل بمسار تلقائي</button>`:''}${a.phase==='turnaround'&&a.routeId?`<button class="secondary-btn depart-now" data-id="${a.id}">غادر الآن</button>`:''}<button class="secondary-btn focus-owned-asset" data-id="${a.id}">عرض على الخريطة</button><button class="secondary-btn service-asset" data-id="${a.id}" ${a.phase==='moving'?'disabled':''}>صيانة وتعبئة</button><button class="danger-soft sell-asset" data-id="${a.id}" ${a.salePending?'disabled':''}>${a.salePending?'أمر البيع قيد العودة':'بيع الأصل'}</button></div>${a.salePending?'<p class="warning">أمر البيع نشط: سيكمل الأصل الرحلة الحالية فقط، ثم يتوقف في مركز/قاعدة الوصول ويباع تلقائيًا. لن يتم البيع أثناء الرحلة.</p>':a.phase==='moving'?'<p class="warning">الصيانة وتغيير المسار مقفلان أثناء الحركة. يمكنك إصدار أمر بيع وسيتم التنفيذ تلقائيًا بعد الوصول.</p>':''}</div>`;
   }
   function renderMobilityAsset(id){
     const vehicle=window.GH_MOBILITY_CORE?.findVehicle?.(state,id);if(!vehicle)return '<div class="empty">سيارة Mobility غير موجودة.</div>';
@@ -2477,6 +2505,7 @@
     document.querySelectorAll('[data-routetype]').forEach(b=>b.addEventListener('click',()=>{const next=b.dataset.routetype||'all';if(next!==routeFilterType)routeQuery='';routeFilterType=next;openDrawer('routes',routeFilterType);}));
     const routeSearch=document.getElementById('routeSearch');if(routeSearch)routeSearch.addEventListener('input',e=>{routeQuery=e.target.value;scheduleDrawerSearch('routes',()=>renderRouteCenterInto(true),160);});
     document.querySelectorAll('.dispatch-international-network').forEach(b=>b.addEventListener('click',async()=>{if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;const ok=await dispatchInternationalNetwork(b.dataset.type||null);if(!ok&&b.isConnected){delete b.dataset.busy;b.disabled=false;}}));
+    document.querySelectorAll('.cancel-road-plan').forEach(b=>b.addEventListener('click',()=>roadPlanning?.controller.abort()));
     document.querySelectorAll('.dispatch-existing-network').forEach(b=>b.addEventListener('click',async()=>{if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;const ok=await dispatchExistingDistinctNetwork(b.dataset.type||null);if(!ok&&b.isConnected){delete b.dataset.busy;b.disabled=false;}}));
     document.querySelectorAll('.depart-all-assets').forEach(b=>b.addEventListener('click',async()=>{if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;const type=b.dataset.type||null,ok=await departRouteAssets(null,type);if(ok)openDrawer('routes',type||'all');else if(b.isConnected){delete b.dataset.busy;b.disabled=false;}}));
     document.querySelectorAll('.manual-buy-asset').forEach(b=>b.addEventListener('click',()=>manualPurchaseFromCard(b)));
@@ -2731,6 +2760,7 @@
   }
   async function departNow(id){
     const asset=state.assets.find(row=>row.id===id);if(!asset){notice('تعذر تنفيذ المغادرة؛ الأصل غير موجود.');return false;}
+    if(asset.type==='road'&&!asset.routeId&&asset.phase!=='moving')return dispatchExistingDistinctNetwork('road',id);
     if(asset.phase!=='turnaround'){notice(`${asset.name} غادر بالفعل أو لم يصل بعد إلى محطة تشغيل.`);return false;}
     const ok=await departRouteAssets(asset.routeId,asset.type);if(ok)openDrawer('assetManage',id);return ok;
   }

@@ -44,7 +44,7 @@ test('corporate interest is one real debit and credit with a formal bank collect
  const p={from:'road',to:'bank',amount:100,reference:'INTEREST-1'};F.execute(state,'settle-intercompany-interest',p);F.execute(state,'settle-intercompany-interest',p);assert.strictEqual(F.operating(state,'road'),900);assert.strictEqual(F.operating(state,'bank'),bank+100);assert.strictEqual(state.finance.transfers.length,1);assert.strictEqual(state.finance.transfers[0].beneficiaryCompany,'bank');
 });
 test('assigned-only bulk departure remains distinct from all-truck allocation',()=>{
- assert(functions.get('departRouteAssets').includes('asset.type===type&&asset.routeId&&'));assert(app.includes('تشغيل المسارات المعيّنة فقط'));assert(app.includes('توزيع مسارات مستقلة لكل الشاحنات'));
+ assert(functions.get('departRouteAssets').includes('asset.type===type&&asset.routeId&&'));assert(app.includes('تشغيل المسارات المعيّنة فقط'));assert(app.includes('تشغيل تلقائي بمسارات عشوائية'));
  assert(functions.get('departRouteAssets').includes('runDurableStateCommand'));assert(functions.get('dispatchExistingDistinctNetwork').includes('throw new Error'));
  const css=fs.readFileSync(path.join(ROOT,'WebApp/styles.css'),'utf8');assert(css.includes('/* Corporate finance separation */'));assert(css.includes('min-height:44px'));
  const swift=fs.readFileSync(path.join(ROOT,'iOS/GlobalHoldings/GlobalGameStorage.swift'),'utf8');assert(swift.includes('Self.trustedUpdateKeys[keyId]'));assert(swift.includes('gh-primary-2026-build310'));assert(!swift.includes('GH_UPDATE_SIGNING_PRIVATE_KEY_B64='));

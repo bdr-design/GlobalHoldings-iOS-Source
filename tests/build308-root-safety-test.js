@@ -102,7 +102,7 @@ const asset=(id,type='air',baseFacility='BASE-AIR')=>({id,type,name:id,baseFacil
 
   await test('BUILD308 source contract keeps one route UI, bounded motion and local map runtime',()=>{
     const read=file=>fs.readFileSync(path.join(ROOT,file),'utf8'),app=read('WebApp/app.js'),html=read('WebApp/index.html'),runtime=read('WebApp/runtime-required.json'),advanced=read('WebApp/advanced-core.js'),catalog=read('WebApp/catalog.js');
-    assert(app.includes('مغادرة جماعية لمسارات مختلفة'));assert(app.includes("async function dispatchInternationalNetwork(type)"));assert(app.includes("async function dispatchExistingDistinctNetwork(type)"));assert(app.includes("runDurableStateCommand(`bulk-distinct-departure:${type}`"));
+    assert(app.includes('مغادرة جماعية لمسارات مختلفة'));assert(app.includes("async function dispatchInternationalNetwork(type)"));assert(app.includes("async function dispatchExistingDistinctNetwork(type,assetId=null)"));assert(app.includes("runDurableStateCommand(`bulk-distinct-departure:${type}`"));
     assert(!app.includes('function renderAssignRoute'));assert(!advanced.includes('renderIntelligence'));assert(!html.includes('unpkg.com/leaflet'));assert(html.includes('vendor/leaflet/leaflet.js'));assert(runtime.includes('vendor/leaflet/leaflet.js'));
     assert(!runtime.includes('ai-executive-core.js'));assert(!fs.existsSync(path.join(ROOT,'WebApp','ai-executive-core.js')));assert(app.includes('MAX_FRAME_MS:50'));assert(app.includes('maxPixelsPerSecond:8'));assert(app.includes("draft.simulationFault={code:'ASSET_SIMULATION_ISOLATED'"));
     assert(!catalog.toLowerCase().includes('autonomous'));assert(!runtime.includes('truck-autonomous'));assert(!fs.existsSync(path.join(ROOT,'WebApp','assets','images','truck-autonomous.webp')));
