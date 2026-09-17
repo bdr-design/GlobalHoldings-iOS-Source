@@ -3,7 +3,7 @@ const assert=require('assert');
 const fs=require('fs');
 const {harness,minimal}=require('./helpers/core-harness');
 
-const {s}=harness(['transaction-core','domain-command-core','finance-core','procurement-core','corporate-core','facility-core','governance-core','banking-core','energy-core']);
+const {s}=harness(['transaction-core','domain-command-core','finance-core','procurement-core','corporate-core','facility-core','governance-core','banking-core','energy-core','mobility-core']);
 const F=s.GH_FINANCE_CORE,P=s.GH_PROCUREMENT_CORE,C=s.GH_CORPORATE_CORE,FC=s.GH_FACILITY_CORE,G=s.GH_GOVERNANCE_CORE,B=s.GH_BANKING_CORE,E=s.GH_ENERGY_CORE;
 
 function fundedState(){
@@ -53,7 +53,9 @@ function fundedState(){
 // Institutional banking controls are explicit decisions, not decorative metrics.
 {
   const state=fundedState();
-  const branch=B.execute({state},'open-branch',{branchId:'BR-RUH',facilityId:'BANK-RUH',city:'الرياض',country:'السعودية'});
+  const capital=s.GH_MOBILITY_CORE.capitalMeta('RUH'),site={key:'site:bank:RUH',kind:'company-site',company:'bank',...capital};
+  FC.execute({state},'create',{facility:{id:'BANK-RUH',sourceKey:site.key,company:'bank',kind:'bank',owned:true,...capital}});
+  const branch=B.execute({state},'open-branch',{branchId:'BR-RUH',facilityId:'BANK-RUH',site});
   const pricing=B.execute({state},'set-deposit-pricing',{sight:.018,savings:.031,term:.046});
   assert.strictEqual(pricing.term,.046);
   const policy=B.execute({state},'set-risk-policy',{maxLdr:88,minLcr:115,minCet1:12.5,sectorConcentration:24});
@@ -90,19 +92,19 @@ function fundedState(){
 
 const app=fs.readFileSync('WebApp/app.js','utf8'),html=fs.readFileSync('WebApp/index.html','utf8'),css=fs.readFileSync('WebApp/styles.css','utf8'),advanced=fs.readFileSync('WebApp/advanced-core.js','utf8');
 
-// Four UI levels remain save-compatible, while their effective simulation rates
-// deliver one day in 48m / 12m / 2m24s. Business rules still read one clock only.
-assert(app.includes('const SAFE_SPEED_VALUES=[0,1,2,4]'));
-assert(app.includes('SIMULATION_RATE_BY_LEVEL=Object.freeze({0:0,1:30,2:120,4:600})'));
+// Five running levels are available, while persisted 1/2/4 retain the exact
+// 30/120/600 rates. Business rules still read one clock only.
+assert(app.includes('const SAFE_SPEED_VALUES=[0,1,2,3,4,5]'));
+assert(app.includes('SIMULATION_RATE_BY_LEVEL=Object.freeze({0:0,1:30,2:120,3:300,4:600,5:60})'));
 assert(app.includes('ed.powerDebtInterest'));
 assert(app.includes('getSpeed:()=>effectiveSimulationRate(state.speed)'));
-assert(app.includes('allowedSpeeds:[0,30,120,600]'));
-assert(html.includes('data-speed="0"')&&html.includes('data-speed="1"')&&html.includes('data-speed="2"')&&html.includes('data-speed="4"'));
+assert(app.includes('allowedSpeeds:[0,30,60,120,300,600]'));
+for(const level of ['0','1','2','3','4','5'])assert(html.includes(`data-speed="${level}"`));
 assert(html.includes('id="simClockChip"')&&html.includes('id="simDay"'),'date/day must be visible independently of hidden brand copy');
 assert(css.includes('.sim-clock-chip'));
 {
   const simulation=require('../WebApp/simulation-core.js');let wall=0,simTime=0;
-  const engine=simulation.create({getSpeed:()=>600,setSpeed:()=>{},getSimTime:()=>simTime,setSimTime:value=>{simTime=value;},createSliceJob:()=>({runChunk:()=>true,finish:()=>({committed:true}),cancel(){}})},{nowMs:()=>wall,minRealSliceSeconds:.5,allowedSpeeds:[0,30,120,600],fallbackSpeed:30,frameBudgetMs:1000});
+  const engine=simulation.create({getSpeed:()=>600,setSpeed:()=>{},getSimTime:()=>simTime,setSimTime:value=>{simTime=value;},createSliceJob:()=>({runChunk:()=>true,finish:()=>({committed:true}),cancel(){}})},{nowMs:()=>wall,minRealSliceSeconds:.5,allowedSpeeds:[0,30,60,120,300,600],fallbackSpeed:30,frameBudgetMs:1000});
   engine.reset(0,'build304-ultra-test');for(let frame=1;frame<=288;frame++){wall=frame*500;engine.frame(wall);}
   assert(Math.abs(simTime-86400)<1e-6,`ultra speed must advance exactly one simulation day in 144 seconds, got ${simTime}`);
 }

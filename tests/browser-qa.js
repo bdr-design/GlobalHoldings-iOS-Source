@@ -71,6 +71,8 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   }));
   if(!offlineMapEvidence.offline||offlineMapEvidence.localTileFallbacks.length||offlineMapEvidence.fallbackBoundTiles)issues.push(`landscape: offline basemap recovery is unsafe ${JSON.stringify(offlineMapEvidence)}`);
   await landscape.page.screenshot({path: 'tests/screenshots/iphone-landscape-map.png'});
+  const speedLevels=await landscape.page.locator('#speedMenu button[data-speed]').evaluateAll(nodes=>nodes.map(node=>Number(node.dataset.speed)));
+  if(speedLevels.join(',')!=='0,1,5,2,3,4')issues.push(`landscape: five-speed control contract is incomplete ${JSON.stringify(speedLevels)}`);
   const railGeometry=await landscape.page.evaluate(()=>{const rail=document.querySelector('.side-nav'),buttons=[...rail.querySelectorAll('button')],viewport=window.innerHeight;return{client:rail.clientHeight,scroll:rail.scrollHeight,buttons:buttons.map(b=>{const r=b.getBoundingClientRect();return{top:r.top,bottom:r.bottom,visible:getComputedStyle(b).display!=='none'&&r.height>0&&r.top>=0&&r.bottom<=viewport};})};});
   if(railGeometry.buttons.length!==8||railGeometry.buttons.some(x=>!x.visible)||railGeometry.scroll>railGeometry.client+1)issues.push(`landscape: sidebar options overflow ${JSON.stringify(railGeometry)}`);
 
@@ -138,7 +140,7 @@ const {installMapFixture,expectedNetworkError}=require('./helpers/browser-networ
   if(mobilityEvidence.snapshot.status==='active'&&!mobilityEvidence.mapMarkers)issues.push(`landscape: GH Mobility is not connected to live map ${JSON.stringify(mobilityEvidence)}`);
   if(mobilityEvidence.mapMarkers&&(!mobilityEvidence.markerSize||mobilityEvidence.markerSize.width<40||mobilityEvidence.markerSize.height<40||!mobilityEvidence.dotSize||mobilityEvidence.dotSize.width<12||mobilityEvidence.dotSize.height<12))issues.push(`landscape: GH Mobility marker is not visibly/touchably usable ${JSON.stringify(mobilityEvidence)}`);
   if(mobilityEvidence.live>0){
-    await landscape.page.click('#speedToggle');await landscape.page.click('#speedMenu [data-speed="600"]');await landscape.page.click('#speedToggle');
+    await landscape.page.click('#speedToggle');await landscape.page.click('#speedMenu [data-speed="4"]');await landscape.page.click('#speedToggle');
     const motionEvidence=await landscape.page.evaluate(async()=>{const points=[],simStart=__GH_STATE__.simSeconds,start=performance.now();while(performance.now()-start<900){await new Promise(resolve=>requestAnimationFrame(resolve));const marker=document.querySelector('.asset-marker.mobility.is-moving');if(!marker)break;const box=marker.getBoundingClientRect();points.push([box.left+box.width/2,box.top+box.height/2]);}const deltas=points.slice(1).map((point,index)=>Math.hypot(point[0]-points[index][0],point[1]-points[index][1])),active=deltas.filter(delta=>delta>.05),distance=deltas.reduce((sum,delta)=>sum+delta,0);return{frames:points.length,activeFrames:active.length,distance,maxJump:Math.max(0,...deltas),unique:new Set(points.map(point=>`${point[0].toFixed(2)}:${point[1].toFixed(2)}`)).size,simDelta:__GH_STATE__.simSeconds-simStart};});
     await landscape.page.click('#speedToggle');await landscape.page.click('#speedMenu [data-speed="0"]');await landscape.page.click('#speedToggle');
     if(motionEvidence.simDelta<=0)issues.push(`landscape: motion QA did not advance simulation ${JSON.stringify(motionEvidence)}`);

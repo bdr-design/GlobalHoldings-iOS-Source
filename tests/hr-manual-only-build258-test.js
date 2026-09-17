@@ -16,9 +16,10 @@ assert(!/hr-hire-all[\s\S]{0,400}'ai','submit'/.test(adv),'manual HR hiring must
 
 // 3) سلوكي: التوظيف اليدوي عبر أمر النطاق hr/hire ينفّذ فورًا دون طلب AI وسيط، ويسد العجز الحقيقي بالكامل.
 const {s,state,ctx,command}=scenario();
-command('facilities','create',{facility:{id:'B2',name:'Test hub 2',kind:'depot',company:'road',owned:true,coords:[24.6,46.7]},groupValueAdd:0});
-state.advanced.facilities.B2.capacity=10;
 command('corporate','open-company',{type:'road',capital:200000000,legalName:'Test Road'});
+const capital=s.GH_MOBILITY_CORE.capitalMeta('RUH');
+command('facilities','create',{facility:{id:'B2',name:'Test hub 2',sourceKey:'site:road:RUH',capitalId:'RUH',kind:'logistics',company:'road',owned:true,city:capital.city,country:capital.country,coords:capital.coords},groupValueAdd:0});
+state.advanced.facilities.B2.capacity=10;
 const before=s.GH_HR_CORE.snapshot(state,ctx,'road');
 assert(before.facilityMissing>0,'facility must show a real, deterministic staffing gap before hiring');
 const result=command('hr','hire',{company:'road',source:'manual test'});

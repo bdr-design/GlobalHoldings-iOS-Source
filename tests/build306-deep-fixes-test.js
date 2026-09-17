@@ -89,7 +89,7 @@ function balancedJournals(s){return s.finance.journalEntries.every(row=>{const d
 })();
 
 (function sourceContracts(){
-  const app=read('WebApp/app.js'),advanced=read('WebApp/advanced-core.js'),financeSource=read('WebApp/finance-core.js'),mobility=read('WebApp/mobility-core.js'),index=read('WebApp/index.html'),styles=read('WebApp/styles.css'),save=read('WebApp/save-schema.js');
+  const app=read('WebApp/app.js'),advanced=read('WebApp/advanced-core.js'),financeSource=read('WebApp/finance-core.js'),facilitySource=read('WebApp/facility-core.js'),mobility=read('WebApp/mobility-core.js'),index=read('WebApp/index.html'),styles=read('WebApp/styles.css'),save=read('WebApp/save-schema.js');
   const motion=app.slice(app.indexOf('function markerPoint'),app.indexOf('function updateMarkerPositions'));
   assert(motion.includes('requestAnimationFrame')===false,'marker tween helpers must be driven only by the existing main frame loop');
   assert(!/state\.simSeconds\s*=|\.progress\s*=/.test(motion),'presentation tween helpers must never own simulation time or logical progress');
@@ -103,8 +103,9 @@ function balancedJournals(s){return s.finance.journalEntries.every(row=>{const d
   assert(app.includes("openWorldDirectory('power',{energyKind:b.dataset.kind||'solar'})"),'energy projects must enter through the shared directory');
   assert(advanced.includes("ctx.openWorldDirectory?.('bank')")&&!advanced.includes('bank-branch'),'bank branches must expose one directory path without a duplicate legacy control');
   assert(app.includes('open-facility-directory')&&app.includes("data-kind=\"road\""),'logistics centers must expose the shared directory action');
-  assert(app.includes("if(entity.company==='road')result=openLogisticsHub(entity)")&&app.includes("else if(entity.company==='power')result=buildEnergy(entity.energyKind||worldDirectoryIntent.energyKind||'solar',entity)")&&app.includes("else if(entity.company==='bank')result=openBankBranch(entity)"),'directory execution must route each facility family through its existing safe business command');
-  assert(app.includes("site.kind!=='company-site'||site.company!=='road'")&&app.includes("site.kind!=='company-site'||site.company!=='power'")&&app.includes("site.kind!=='company-site'||site.company!=='bank'"),'facility commands must reject calls that do not carry a validated directory site');
+  assert(app.includes("if(entity.company==='road')result=openLogisticsHub(entity.key)")&&app.includes("else if(entity.company==='power')result=buildEnergy(entity.energyKind||worldDirectoryIntent.energyKind||'solar',entity.key)")&&app.includes("else if(entity.company==='bank')result=openBankBranch(entity.key)"),'directory execution must route each facility family through a canonical key');
+  assert(app.includes("site=canonicalDirectorySite(site,'road')")&&app.includes("site=canonicalDirectorySite(site,'power')")&&app.includes("site=canonicalDirectorySite(site,'bank')"),'facility UI commands must reconstruct sites from the canonical directory');
+  assert(facilitySource.includes('verifyDirectorySite')&&facilitySource.includes('directory-site-coordinates-invalid'),'the facility owner must independently reject forged directory data');
   assert(!app.includes('startHubPlacement')&&!app.includes('place-logistics')&&!app.includes('confirmMapPlacement'),'the superseded free-map logistics opening path must be removed');
   for(const id of ['founderFlow','founderForm','founderName','founderOwner','founderCountry','founderCity','founderSector','founderMode','founderLogoPreview','skipFounder'])assert(index.includes(`id="${id}"`),`founding binding #${id} must remain intact`);
   assert.strictEqual((index.match(/class="founder-group founder-contract-article"/g)||[]).length,3,'the founding contract must retain exactly three bound articles');

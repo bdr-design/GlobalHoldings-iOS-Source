@@ -3,7 +3,7 @@ const assert=require('assert');
 const fs=require('fs');
 const {harness,minimal}=require('./helpers/core-harness');
 
-const {s}=harness(['transaction-core','domain-command-core','finance-core','energy-core','banking-core','economics-core']);
+const {s}=harness(['transaction-core','domain-command-core','finance-core','energy-core','facility-core','banking-core','mobility-core','economics-core']);
 const state={
   ...minimal(),
   profile:{name:'Build 303 Group',founder:'المؤسس',hq:'الرياض، المملكة العربية السعودية'},
@@ -14,7 +14,7 @@ const state={
   advanced:{economy:{electricityPriceMWh:92,gasCostMWh:39,carbonPriceTon:45,depositRate:.03,loanYield:.075},labor:{employmentContracts:[],hiringLog:[]}},
   customHubs:[],globalBases:[],assets:[]
 };
-const F=s.GH_FINANCE_CORE,E=s.GH_ENERGY_CORE,B=s.GH_BANKING_CORE,X=s.GH_ECONOMICS_CORE;
+const F=s.GH_FINANCE_CORE,E=s.GH_ENERGY_CORE,B=s.GH_BANKING_CORE,FC=s.GH_FACILITY_CORE,X=s.GH_ECONOMICS_CORE;
 F.ensure(state);
 for(const [company,balance] of [['group',500_000_000],['power',500_000_000],['bank',500_000_000]])F.book(state,company).accounts[0].balance=balance;
 F.reconcile(state);
@@ -38,7 +38,9 @@ const energyDay=E.tickDay(state,{day:1}),energyRows=state.energy.dailyHistory.le
 // The bank also begins at zero. A real international branch acquires customers
 // and deposits deterministically; deposits remain a liability rather than fee income.
 let bank=B.ensure(state);assert.strictEqual(bank.branches,0);assert.strictEqual(bank.deposits,0);assert.strictEqual(bank.loans,0);
-const branch=B.execute({state},'open-branch',{branchId:'BR-DXB',facilityId:'BANK-DXB',capitalId:'DXB',city:'دبي',country:'الإمارات'});
+const bankCapital=s.GH_MOBILITY_CORE.capitalMeta('AUH'),bankSite={key:'site:bank:AUH',kind:'company-site',company:'bank',...bankCapital};
+FC.execute({state},'create',{facility:{id:'BANK-AUH',sourceKey:bankSite.key,company:'bank',kind:'bank',owned:true,...bankCapital}});
+const branch=B.execute({state},'open-branch',{branchId:'BR-AUH',facilityId:'BANK-AUH',site:bankSite});
 assert.strictEqual(branch.retailCustomers,0);assert.strictEqual(branch.deposits,0);assert(branch.services.includes('تمويل أفراد')&&branch.services.includes('تمويل شركات'));
 const bankCashBeforeDeposits=F.operating(state,'bank');
 for(let day=1;day<=20;day++){state.simSeconds=day*86400;B.execute({state},'tick-day',{day});}
@@ -47,7 +49,7 @@ bank=B.ensure(state);assert(bank.retailCustomers>0&&bank.businessCustomers>0);as
 // Retail and corporate products are explicit. Loan origination creates a loan
 // asset, retains only the origination fee and observes the liquidity/LDR guards.
 for(const product of ['consumer','mortgage','sme','corporate','project','green'])assert(B.PRODUCTS[product],`missing banking product ${product}`);
-const bankCashBeforeLoan=F.operating(state,'bank'),loan=B.execute({state},'originate-loan',{product:'consumer',branchId:'BR-DXB',amount:2_000_000,borrowers:12});
+const bankCashBeforeLoan=F.operating(state,'bank'),loan=B.execute({state},'originate-loan',{product:'consumer',branchId:'BR-AUH',amount:2_000_000,borrowers:12});
 assert.strictEqual(loan.principal,2_000_000);assert.strictEqual(bank.loans,2_000_000);assert.strictEqual(F.operating(state,'bank'),bankCashBeforeLoan-(loan.principal-loan.originationFee));assert.strictEqual(bank.branchNetwork[0].loans,2_000_000);
 const journal=state.finance.journalEntries.find(row=>row.sourceRef===loan.id);assert(journal);assert.strictEqual(journal.lines.reduce((sum,row)=>sum+row.debit,0),journal.lines.reduce((sum,row)=>sum+row.credit,0),'loan origination journal must balance');
 const outstandingBefore=loan.outstanding;state.simSeconds=21*86400;B.execute({state},'tick-day',{day:21});const liveLoan=bank.loanPortfolios.find(row=>row.id===loan.id);assert(liveLoan.outstanding<outstandingBefore);const bankEconomics=X.sectorEconomics(state);assert(bankEconomics.detail.interestIncome>0);assert(bankEconomics.detail.feeIncome>0);
