@@ -22,7 +22,7 @@
   // instead of filling one corridor to its safety ceiling.
   const AUTOMATIC_ROUTE_DENSITY=Object.freeze({
     sea:Object.freeze([{maxFleet:80,target:4},{maxFleet:180,target:6},{maxFleet:Infinity,target:10}]),
-    road:Object.freeze([{maxFleet:128,target:16},{maxFleet:512,target:32},{maxFleet:Infinity,target:48}])
+    road:Object.freeze([{maxFleet:128,target:8},{maxFleet:512,target:24},{maxFleet:Infinity,target:48}])
   });
 
   const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
