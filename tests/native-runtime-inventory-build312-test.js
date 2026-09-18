@@ -1,0 +1,11 @@
+'use strict';
+const fs=require('fs'),assert=require('assert');
+const s=fs.readFileSync('iOS/GlobalHoldings/GlobalGameStorage.swift','utf8');
+assert(!s.includes('entry.path.dropFirst(folder.path.count + 1)'),'raw path slicing cannot normalize iOS sandbox aliases');
+assert.strictEqual((s.match(/try runtimeFilePaths\(at: folder\)/g)||[]).length,2,'manifest and exact signed snapshot must use the same inventory');
+assert(s.includes('let root = folder.resolvingSymlinksInPath().standardizedFileURL'));
+assert(s.includes('values.isSymbolicLink == true'));
+assert(!s.slice(s.indexOf('private func runtimeFilePaths('),s.indexOf('/// Returns a safe relative path')).includes('skipsHiddenFiles'),'hidden orphan files cannot bypass the signed snapshot inventory');
+assert(s.includes('missing.isEmpty, unexpected.isEmpty'));
+assert(fs.readFileSync('.github/workflows/build-unsigned-ipa.yml','utf8').includes('python3 scripts/test_native_runtime_paths.py'));
+console.log('BUILD312 native inventory source contract: PASS; Foundation behavior executes on macOS CI');

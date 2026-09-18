@@ -18,7 +18,7 @@ const { execFileSync } = require('child_process');
 // كان جماعيًا فقط. أضيف الزر الآن بشرط أن يكون الأصل فعليًا في مرحلة turnaround وله مسار.
 (function departNowButtonWired(){
   const app = fs.readFileSync(path.join(__dirname, '..', 'WebApp', 'app.js'), 'utf8');
-  assert(app.includes("a.phase==='turnaround'&&a.routeId?`<button class=\"secondary-btn depart-now\""), 'the per-asset page must render a real depart-now button when the asset is actually ready');
+  assert(app.includes("a.phase==='turnaround'&&a.routeId&&!a.departureScheduled?`<button class=\"secondary-btn depart-now\""), 'the per-asset page must render a real depart-now button only when the asset is ready and not already scheduled');
   assert(app.includes("querySelectorAll('.depart-now')"), 'a handler for that button must already exist (it did, unreachable, since BUILD258)');
 })();
 

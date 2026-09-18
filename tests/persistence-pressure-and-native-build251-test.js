@@ -26,14 +26,26 @@ function ack(h,e,g,success=true){return h.p.receiveAck({requestId:e.requestId,ac
   const second=h.p.requestNative('commitSave',JSON.stringify(minimal()),{timeoutMs:20});assert(!ack(h,envelope,1));await assert.rejects(second,/timeout/);
  });
  await test('NACK does not count as a native commit',async()=>{const h=setup();h.s.webkit={messageHandlers:{saveBridge:{postMessage:e=>ack(h,e,1,false)}}};await assert.rejects(h.p.requestNative('commitSave',JSON.stringify(minimal())),/injected/);assert.strictEqual(h.p.telemetry().generation,0);});
- for(const mode of ['success','nack','timeout','quota','marker','compensation'])await test('atomic replacement '+mode,async()=>{
+ await test('browser-only replacement keeps strict quota rollback',async()=>{
+  const h=setup(),old=minimal(),next={...minimal(),saveRevision:2,resetEpoch:99,notes:'clean'};h.data.set('main',JSON.stringify(old));h.data.set('reset','0');
+  const set=h.storage.setItem.bind(h.storage);h.storage.setItem=(k,v)=>{if(k==='main'&&String(v).includes('clean'))throw new Error('QuotaExceededError');set(k,v);};
+  let error;try{await h.p.replaceState(next,old,{storageKey:'main',resetMarkerKey:'reset',apply:()=>{throw new Error('must-not-apply');}});}catch(e){error=e;}
+  assert(error);assert.strictEqual(h.data.get('main'),JSON.stringify(old));assert.strictEqual(h.data.get('reset'),'0');
+ });
+ for(const mode of ['success','nack','timeout','quota','marker','apply-failure','compensation'])await test('native authoritative replacement '+mode,async()=>{
   const h=setup(),old=minimal(),next={...minimal(),saveRevision:2,resetEpoch:99,notes:'clean'};h.data.set('main',JSON.stringify(old));h.data.set('reset','0');let calls=0,applied=false;
   h.s.webkit={messageHandlers:{updateBridge:{postMessage:e=>{calls++;if(mode==='timeout'&&calls===1)return;ack(h,e,calls,!(mode==='nack'&&calls===1)&&!(mode==='compensation'&&calls===2));}}}};
-  const set=h.storage.setItem.bind(h.storage);h.storage.setItem=(k,v)=>{if(['quota','compensation'].includes(mode)&&k==='main'&&String(v).includes('clean'))throw new Error('QuotaExceededError');if(mode==='marker'&&k==='reset'&&v==='99')throw new Error('marker-quota');set(k,v);};
-  const task=h.p.replaceState(next,old,{storageKey:'main',resetMarkerKey:'reset',timeoutMs:20,apply:()=>{applied=true;}});
+  const set=h.storage.setItem.bind(h.storage);h.storage.setItem=(k,v)=>{if(mode==='quota'&&k==='main'&&String(v).includes('clean'))throw new Error('QuotaExceededError');if(mode==='marker'&&k==='reset'&&v==='99')throw new Error('marker-quota');set(k,v);};
+  const task=h.p.replaceState(next,old,{storageKey:'main',resetMarkerKey:'reset',timeoutMs:20,apply:()=>{if(['apply-failure','compensation'].includes(mode))throw new Error('injected-apply-failure');applied=true;}});
   assert(h.p.isLocked());
-  if(mode==='success'){assert((await task).ok);assert(applied);assert.strictEqual(JSON.parse(h.data.get('main')).resetEpoch,99);assert.strictEqual(calls,1);}
-  else{let error;try{await task;}catch(e){error=e;}assert(error);assert(!applied);assert.strictEqual(h.data.get('main'),JSON.stringify(old));assert.strictEqual(h.data.get('reset'),'0');assert.strictEqual(calls,2);if(mode==='compensation')assert(error.critical);}
+  if(['success','quota','marker'].includes(mode)){
+    const out=await task;assert(out.ok);assert(applied);assert.strictEqual(calls,1);
+    if(mode==='success'){assert.strictEqual(JSON.parse(h.data.get('main')).resetEpoch,99);assert.strictEqual(h.data.get('reset'),'99');}
+    if(mode==='quota'){assert.strictEqual(h.data.get('main'),JSON.stringify(old));assert.strictEqual(h.data.get('reset'),'99');}
+    if(mode==='marker'){assert.strictEqual(JSON.parse(h.data.get('main')).resetEpoch,99);assert.strictEqual(h.data.get('reset'),'0');}
+  }else{
+    let error;try{await task;}catch(e){error=e;}assert(error);assert(!applied);assert.strictEqual(h.data.get('main'),JSON.stringify(old));assert.strictEqual(h.data.get('reset'),'0');assert.strictEqual(calls,2);if(mode==='compensation')assert(error.critical);
+  }
   assert(!h.p.isLocked());
  });
  await test('queued native save failure restores browser snapshot and fails drain',async()=>{const h=setup(),s=minimal(),old=JSON.stringify(s);h.data.set('main',old);s.notes='new';h.s.webkit={messageHandlers:{saveBridge:{postMessage:e=>ack(h,e,1,false)}}};const out=h.p.commitState(s,{storageKey:'main'});assert(out.ok);assert(!(await out.native).ok);assert.strictEqual(h.data.get('main'),old);await assert.rejects(h.p.drain());});

@@ -1,3 +1,5 @@
+const {foundGame}=require('./helpers/found-game');
+(async()=>{
 'use strict';
 // BUILD282: يمنع رجوع "القاعدة الجديدة لا تظهر على الخريطة" - السبب الجذري الفعلي.
 //
@@ -35,14 +37,14 @@ window.matchMedia = window.matchMedia || (q => ({ matches: false, media: q, addL
   addEventListener() {}, removeEventListener() {}, dispatchEvent() { return true; } }));
 const uncaught = [];
 window.addEventListener('error', e => uncaught.push(e.error?.message || e.message));
-for (const f of [...raw.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]).filter(s => !/^https?:/.test(s))) {
+for (const f of [...raw.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]).filter(s => !/^https?:/.test(s) && !s.startsWith('vendor/'))) {
   window.eval(fs.readFileSync(path.join(WEBAPP, f), 'utf8'));
 }
 const S = () => window.__GH_STATE__;
 const D = window.document;
 const click = sel => { const el = D.querySelector(sel); if (el) el.dispatchEvent(new window.Event('click', { bubbles: true })); return !!el; };
 
-click('#skipFounder');
+await foundGame(window);
 click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
 const moneyInput = D.getElementById('addMoneyInput');
 moneyInput.value = '500000000000';
@@ -53,8 +55,11 @@ for (const f of [...D.querySelectorAll('.open-company')]) f.dispatchEvent(new wi
 click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="subs"]');
 click('[data-open="companyManage"][data-arg="air"]'); click('[data-company-manage-tab="assets"]');
 click('[data-open="companyFacilities"][data-arg="air"]');
+click('.open-facility-directory[data-kind="air"]');
+D.getElementById('worldCountry').value='SA';D.getElementById('worldCountry').dispatchEvent(new window.Event('change',{bubbles:true}));
+D.getElementById('worldCity').value='SA:riyadh';D.getElementById('worldCity').dispatchEvent(new window.Event('change',{bubbles:true}));
 setViewCalls.length = 0;
-click('.open-global-base');
+click('.open-directory-site[data-key="air:OERK"]');
 const base = S().globalBases[0];
 assert.ok(base, 'a base must actually be opened');
 assert.strictEqual(setViewCalls.length, 1, `opening an air base must move the camera exactly once, got ${setViewCalls.length}`);
@@ -64,3 +69,5 @@ assert.deepStrictEqual(setViewCalls[0][0], base.coords,
 assert.strictEqual(uncaught.length, 0, `no uncaught errors expected: ${uncaught.join(' | ')}`);
 console.log('map-camera-follow-new-base-build282-test: ok');
 process.exit(0);
+
+})().catch(error=>{console.error(error);process.exitCode=1;});

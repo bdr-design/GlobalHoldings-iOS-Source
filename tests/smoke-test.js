@@ -1,3 +1,4 @@
+(async()=>{
 const fs = require('fs');
 const vm = require('vm');
 
@@ -8,15 +9,15 @@ const localScripts = [
   'department-core.js','interaction-core.js','ui-quality-core.js','hr-core.js','economics-core.js','advanced-core.js',
   'event-ledger-core.js','dependency-core.js','policy-core.js','lifecycle-core.js',
   'delivery-monitor-core.js','integrity-core.js','save-schema.js',
-  'determinism-core.js','diagnostics-core.js','transaction-core.js','migration-core.js','game-lifecycle-core.js','domain-command-core.js',
+  'determinism-core.js','diagnostics-core.js','transaction-core.js','migration-core.js','game-lifecycle-core.js','domain-command-core.js','business-world-core.js',
   'finance-core.js','procurement-core.js','banking-core.js','market-core.js','strategy-core.js',
   'facility-core.js','fleet-core.js','route-core.js','governance-core.js','corporate-core.js',
-  'ai-executive-core.js','operations-core.js','contracts-core.js','control-plane-core.js','simulation-core.js'
+  'operations-core.js','contracts-core.js','control-plane-core.js','simulation-core.js'
 ];
 const scriptSources = Object.fromEntries(localScripts.map(name => [name, fs.readFileSync(`WebApp/${name}`, 'utf8')]));
 
 const referencedIds = [...source.matchAll(/\$\('([^']+)'\)/g)].map(match => match[1]);
-const dynamicIds = new Set(['drawerGodBtn', 'moreGodBtn', 'worldSearch', 'worldKind', 'roadFrom', 'roadTo', 'assetSearch', 'assetSegment', 'globalRouteSearch','financeDocsCompany','chequeCompany','chequeAmount','chequeBeneficiary','chequeNote','chequeDraweeBank','chequeIssuePlace','invoiceCompany','invoiceKind','invoiceAmount','invoiceNote','invoiceCounterparty','companyTransferFrom','companyTransferTo','companyTransferAmount','bulkTransferTotal','bulkTransferPool']);
+const dynamicIds = new Set(['drawerGodBtn', 'moreGodBtn', 'nativeSaveReconcile', 'worldSearch', 'worldKind', 'worldCountry', 'worldCity', 'worldEnergyKind', 'roadFrom', 'roadTo', 'manualGlobalAsset', 'assetSearch', 'assetSegment', 'globalRouteSearch','financeDocsCompany','chequeCompany','chequeAmount','chequeBeneficiary','chequeNote','chequeDraweeBank','chequeIssuePlace','invoiceCompany','invoiceKind','invoiceAmount','invoiceNote','invoiceCounterparty','companyTransferFrom','companyTransferTo','companyTransferAmount','bulkTransferTotal','bulkTransferPool']);
 const missingIds = [...new Set(referencedIds)].filter(id => !dynamicIds.has(id) && !new RegExp(`id=["']${id}["']`).test(html));
 if (missingIds.length) throw new Error(`Missing DOM ids: ${missingIds.join(', ')}`);
 
@@ -42,7 +43,7 @@ class ElementMock {
     this.value = ''; this.checked = false; this.textContent = ''; this.innerHTML = ''; this.events = {};
   }
   addEventListener(name, handler) { (this.events[name] ||= []).push(handler); }
-  fire(name, event = {preventDefault() {}, stopPropagation() {}, target: this}) { (this.events[name] || []).forEach(handler => handler(event)); }
+  fire(name, event = {preventDefault() {}, stopPropagation() {}, target: this}) { return Promise.all((this.events[name] || []).map(handler => handler(event))); }
   setAttribute() {}
   removeAttribute() {}
   hasAttribute() { return false; }
@@ -58,7 +59,7 @@ const getElement = id => {
 };
 
 Object.entries({
-  founderMode: 'investor', founderSector: 'sea', founderName: 'مجموعة الاختبار', founderShort: 'TGH',
+  founderMode: 'investor', founderLocation: 'RUH', founderName: 'مجموعة الاختبار', founderShort: 'TGH',
   founderOwner: 'المؤسس', founderCountry: 'السعودية', founderCity: 'الرياض',
   addMoneyInput: '100000000', setMoneyInput: '1000000000'
 }).forEach(([id, value]) => { getElement(id).value = value; });
@@ -84,7 +85,8 @@ for (const name of localScripts) {
   vm.runInContext(scriptSources[name], context, {filename: `WebApp/${name}`});
 }
 vm.runInContext(source, context, {filename: 'WebApp/app.js'});
-getElement('founderForm').fire('submit');
+await getElement('founderReview').fire('click');
+await getElement('founderForm').fire('submit');
 getElement('alertsBtn').fire('click');
 getElement('drawerClose').fire('click');
 getElement('settingsBtn').fire('click');
@@ -94,9 +96,11 @@ if (save.saveVersion !== '2.0.0') throw new Error('Incorrect save version');
 if (!save.advanced || save.advanced.schema !== 2) throw new Error('Advanced institutional state was not migrated');
 if (!save.onboardingComplete) throw new Error('Founder flow was not completed');
 if (save.profile.name !== 'مجموعة الاختبار') throw new Error('Founder profile was not saved');
-if (save.profile.firstSector !== 'sea' || save.assets.length !== 0 || save.openedCompanies.length !== 0) throw new Error('Founder should begin without automatic companies or assets');
+if (save.profile.firstSector !== null || save.assets.length !== 0 || save.openedCompanies.length !== 0) throw new Error('Founder should begin without automatic companies or assets');
 if (context.window.GH_WORLD_DATA.meta.airportCount < 28000 || context.window.GH_WORLD_DATA.meta.portCount < 3900) throw new Error('World registry is incomplete');
 if (context.window.GH_ASSET_CATALOG.air.new.length < 15 || context.window.GH_ASSET_CATALOG.sea.new.length < 18 || context.window.GH_ASSET_CATALOG.road.new.length < 16) throw new Error('Expanded asset catalog is incomplete');
 if (/basemaps\.cartocdn\.com|API KEY REQUIRED/.test(source)) throw new Error('Keyed map layer remains in source');
 
 console.log('Global Holdings smoke test: PASS');
+
+})().catch(error=>{console.error(error);process.exitCode=1;});

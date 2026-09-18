@@ -18,7 +18,7 @@ const storageTokens=['ensureInitialized','Curve25519.Signing.PublicKey','isValid
 const missingStorage=storageTokens.filter(token=>!storage.includes(token));
 if(missingStorage.length)throw new Error(`Native storage is incomplete: ${missingStorage.join(', ')}`);
 
-const controllerTokens=['WKWebView(frame: .zero','saveBridge','webViewWebContentProcessDidTerminate','bootstrapJavaScript(force: true, pause: true)','WKURLSchemeHandler','UIDocumentPickerViewController','updateBridge','openNativeUpdatePicker','supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape','prefersStatusBarHidden','applyPendingNativeOperationsIfNeeded','retryRuntimeInitialization','GlobalGameSchemeHandler','diagnosticBridge','exportDiagnosticBundle','UIActivityViewController'];
+const controllerTokens=['WKWebView(frame: .zero','saveBridge','webViewWebContentProcessDidTerminate','refreshNativeBootstrapScript(force: true, pause: true)','bootstrapJavaScript(force: force, pause: pause)','WKURLSchemeHandler','UIDocumentPickerViewController','updateBridge','openNativeUpdatePicker','supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape','prefersStatusBarHidden','applyPendingNativeOperationsIfNeeded','retryRuntimeInitialization','GlobalGameSchemeHandler','diagnosticBridge','exportDiagnosticBundle','UIActivityViewController'];
 const missingController=controllerTokens.filter(token=>!controller.includes(token));
 if(missingController.length)throw new Error(`Native controller is incomplete: ${missingController.join(', ')}`);
 if(!appDelegate.includes('application(\n        _ app: UIApplication,\n        open url: URL'))throw new Error('AppDelegate does not receive update files from Files');
