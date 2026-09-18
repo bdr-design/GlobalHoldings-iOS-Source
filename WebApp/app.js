@@ -1120,7 +1120,8 @@
       const eligible=draft.assets.filter(asset=>asset.type==='sea'&&asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.departureScheduled&&!asset.salePending).sort((a,b)=>assetRangeKm(a)-assetRangeKm(b)||String(a.id).localeCompare(String(b.id)));
       if(!eligible.length)throw new Error('لا توجد سفن متاحة للمغادرة');
       const source=WORLD.ports.map(portEntity);if(!source.length)throw new Error('دليل الموانئ العالمي فارغ');
-      const fleet=window.GH_FLEET_CORE,capacity=fleet.routeCapacity('sea'),nonSeaRoutes=draft.customRoutes.filter(route=>route.type!=='sea').length,maxSeaRoutes=Math.max(Math.ceil(eligible.length/capacity),window.GH_ROUTE_CORE.LIMITS.routes-nonSeaRoutes),targetLoad=fleet.automaticRouteTargetLoad('sea',eligible.length,maxSeaRoutes),eligibleIds=new Set(eligible.map(asset=>asset.id)),loads=new Map(),waitingByOrigin=new Map(),assignments=[],previousRouteIds=new Set(eligible.map(asset=>asset.routeId).filter(Boolean)),createdRoutes=[],diversity=newRouteDiversityLedger(),diversityRoutes=new Set();
+      const fleet=window.GH_FLEET_CORE,capacity=fleet.routeCapacity('sea'),nonSeaRoutes=draft.customRoutes.filter(route=>route.type!=='sea').length,availableSeaRoutes=Math.max(0,window.GH_ROUTE_CORE.LIMITS.routes-nonSeaRoutes),minimumSeaRoutes=Math.ceil(eligible.length/capacity);if(availableSeaRoutes<minimumSeaRoutes)throw new Error('سعة سجل المسارات لا تكفي لتوزيع الأسطول البحري بأمان؛ احذف مسارات غير مستخدمة أولًا');
+      const targetLoad=fleet.automaticRouteTargetLoad('sea',eligible.length,availableSeaRoutes),eligibleIds=new Set(eligible.map(asset=>asset.id)),loads=new Map(),waitingByOrigin=new Map(),assignments=[],previousRouteIds=new Set(eligible.map(asset=>asset.routeId).filter(Boolean)),createdRoutes=[],diversity=newRouteDiversityLedger(),diversityRoutes=new Set();
       for(const asset of draft.assets)if(asset.type==='sea'&&asset.routeId&&!eligibleIds.has(asset.id))loads.set(asset.routeId,(loads.get(asset.routeId)||0)+1);
       const registeredSeaRoutes=()=>draft.customRoutes.filter(route=>route.type==='sea'&&routes[route.id]);
       for(const asset of eligible){
@@ -1188,7 +1189,8 @@
     if(activeDrawerPanel==='routes')renderRouteCenterInto();
     const timer=setTimeout(()=>controller.abort(),180000);
     try{
-      const roadHardCapacity=window.GH_FLEET_CORE.routeCapacity('road'),nonRoadRouteCount=snapshot.customRoutes.filter(route=>route.type!=='road').length,maxRoadRoutes=Math.max(Math.ceil(preview.length/roadHardCapacity),window.GH_ROUTE_CORE.LIMITS.routes-nonRoadRouteCount),targetRouteLoad=window.GH_FLEET_CORE.automaticRouteTargetLoad('road',preview.length,maxRoadRoutes);
+      const roadHardCapacity=window.GH_FLEET_CORE.routeCapacity('road'),nonRoadRouteCount=snapshot.customRoutes.filter(route=>route.type!=='road').length,availableRoadRoutes=Math.max(0,window.GH_ROUTE_CORE.LIMITS.routes-nonRoadRouteCount),minimumRoadRoutes=Math.ceil(preview.length/roadHardCapacity);if(availableRoadRoutes<minimumRoadRoutes)throw new Error('سعة سجل المسارات لا تكفي لتوزيع أسطول الشاحنات بأمان؛ احذف مسارات غير مستخدمة أولًا');
+      const targetRouteLoad=window.GH_FLEET_CORE.automaticRouteTargetLoad('road',preview.length,availableRoadRoutes);
       const plan=await window.GH_ROAD_PLANNER.plan({assets:preview,routes:Object.values(runtime).filter(route=>!BASE_ROUTE_IDS.has(route.id)||operationalRouteIds('road').has(route.id)),routeCount:snapshot.customRoutes.length,seed:snapshot.determinism?.seed||1,signal:controller.signal,onProgress:updateRoadPlanning,targetRouteLoad,
         originFor:asset=>routeOriginForAsset(asset,snapshot,runtime),
         routeCapacity:route=>window.GH_FLEET_CORE.routeCapacity(route),
