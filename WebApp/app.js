@@ -633,11 +633,12 @@
     const runtime=routeRuntimeForState(state);for(const id of Object.keys(routeTemplates))delete routeTemplates[id];Object.assign(routeTemplates,runtime);
     window.__GH_STATE__=state;
   }
-  let durableCommandInProgress=false;
+  let durableCommandInProgress=false,durableCommandSettlement=Promise.resolve({committed:false,saveRevision:Number(state.saveRevision)||0});
   async function runDurableStateCommand(name,apply,{afterCommit=null,silent=false}={}){
     if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){if(!silent)notice('الحفظ مشغول بعملية ذرية أخرى. لم يتغير أي أصل؛ أعد المحاولة بعد لحظات.');return false;}
     durableCommandInProgress=true;
-    let draft=null;
+    let draft=null,committed=false,settleDurableCommand=null;
+    durableCommandSettlement=new Promise(resolve=>{settleDurableCommand=resolve;});
     try{
       draft=clone(state);const runtime=routeRuntimeForState(draft),previousRevision=Math.max(0,Math.floor(Number(state.saveRevision)||0));
       window.__GH_DURABLE_COMMAND_CONTEXT__={name,liveState:state,draft};
@@ -649,12 +650,13 @@
       const introduced=critical.filter(row=>!priorCriticalIds.has(String(row.id||row.code||row.title)));
       if(introduced.length)throw new Error(`critical-integrity:${introduced.map(row=>row.code||row.id||row.title).join(',')}`);
       await window.GH_PERSISTENCE.commitDurableState(draft,{storageKey,appVersion:APP_VERSION});
-      replaceLiveState(draft);diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
+      replaceLiveState(draft);committed=true;diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
       if(afterCommit)await afterCommit(value);return value;
     }catch(error){diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason:String(error.message||error)},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${String(error.message||error)}`);return false;}
     finally{
       const context=window.__GH_DURABLE_COMMAND_CONTEXT__?.draft===draft?window.__GH_DURABLE_COMMAND_CONTEXT__:null;
       if(context)delete window.__GH_DURABLE_COMMAND_CONTEXT__;durableCommandInProgress=false;
+      settleDurableCommand?.({committed,saveRevision:Number(state.saveRevision)||0});
       if(context?.notices?.length)setTimeout(()=>{for(const row of context.notices)notice(row.text,row.kind);},0);
     }
   }
@@ -2289,9 +2291,21 @@
     businessIntegrity:()=>window.GH_INTEGRITY_CORE?.check?.(state),
     exportDiagnostics:()=>window.GH_DIAGNOSTICS.exportBundle(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()}),
     persistForBackground:async()=>{
+      const revisionAtRequest=Math.max(0,Math.floor(Number(state.saveRevision)||0));let waitedForDurable=false;
+      while(durableCommandInProgress){
+        const settlement=durableCommandSettlement;waitedForDurable=true;diag('BACKGROUND_SAVE_WAIT_DURABLE',{saveRevision:revisionAtRequest});
+        await settlement;
+      }
+      // If the foreground command advanced the revision, its Native ACK already
+      // established durability. Coalesce the background request instead of
+      // racing a second save against the same logical transition.
+      if(waitedForDurable&&Math.max(0,Math.floor(Number(state.saveRevision)||0))>revisionAtRequest){
+        await window.GH_PERSISTENCE.drain();diag('BACKGROUND_SAVE_COALESCED',{saveRevision:Number(state.saveRevision)||0});
+        return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,coalesced:true};
+      }
       if(!persistStateNow({throwOnError:true}))throw new Error('background-save-rejected');
-      await window.GH_PERSISTENCE.drain();
-      return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0};
+      await window.GH_PERSISTENCE.drain();diag('BACKGROUND_SAVE_OK',{saveRevision:Number(state.saveRevision)||0});
+      return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,coalesced:false};
     },
     applyNativeUpdate:async payload=>{
       if(!window.GH_ADVANCED?.applyNativeUpdate)return false;
