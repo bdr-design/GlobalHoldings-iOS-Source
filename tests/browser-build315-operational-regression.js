@@ -44,8 +44,22 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     // Large-ish maritime purchase must roll back atomically on save failure, release the button, then succeed on retry.
     await control('assetMarket');await page.click('[data-markettype="sea"]');
     const card=page.locator('.manual-buy-asset[data-type="sea"][data-id="N-S9"]').locator('xpath=ancestor::article[contains(@class,"asset-market-card")]');
-    await card.locator('.manual-asset-base').selectOption(base.id);await card.locator('.manual-asset-qty').fill('25');await card.locator('.manual-asset-mode').selectOption('cash');
-    const purchaseButton=card.locator('.manual-buy-asset'),beforePurchase=await state(),seaCashBefore=beforePurchase.companyFinance.sea.accounts[0].balance,manualRequestSequenceBefore=Number(beforePurchase.sequences?.['MANUAL-ASSET']||0);
+    await card.locator('.manual-asset-base').selectOption(base.id);await card.locator('.manual-asset-mode').selectOption('cash');
+    const purchaseButton=card.locator('.manual-buy-asset');
+
+    // A large purchase yields one paint for busy feedback. WebKit/iOS may suspend rAF;
+    // the button lifecycle must not depend on a frame callback ever arriving.
+    await card.locator('.manual-asset-qty').fill('64');
+    await page.evaluate(()=>{window.__GH_AUDIT_RAF=requestAnimationFrame;window.requestAnimationFrame=()=>1;});
+    await purchaseButton.click();await page.waitForTimeout(250);
+    assert.strictEqual(await purchaseButton.isEnabled(),true,'large-purchase button stayed disabled when requestAnimationFrame never fired');
+    assert.strictEqual(await purchaseButton.getAttribute('data-busy'),null,'large-purchase busy token leaked when requestAnimationFrame never fired');
+    current=await state();assert.strictEqual(current.assets.filter(a=>a.type==='sea').length,0,'rejected 64-ship probe must not create assets');
+    await page.evaluate(()=>{window.requestAnimationFrame=window.__GH_AUDIT_RAF;delete window.__GH_AUDIT_RAF;});
+    evidence.stalledFrameButtonReleased=true;
+
+    await card.locator('.manual-asset-qty').fill('25');
+    const beforePurchase=await state(),seaCashBefore=beforePurchase.companyFinance.sea.accounts[0].balance,manualRequestSequenceBefore=Number(beforePurchase.sequences?.['MANUAL-ASSET']||0);
     await failStorage();expectedFailure=true;await purchaseButton.click();await waitReleased(purchaseButton);expectedFailure=false;
     current=await state();assert.strictEqual(current.assets.filter(a=>a.type==='sea').length,0,'failed durable purchase must not create ships');assert.strictEqual(current.companyFinance.sea.accounts[0].balance,seaCashBefore,'failed durable purchase must not debit sea cash');assert.strictEqual(Number(current.sequences?.['MANUAL-ASSET']||0),manualRequestSequenceBefore,'failed purchase must roll back its MANUAL-ASSET request sequence; notification IDs are outside the business transaction');assert.strictEqual(await purchaseButton.isEnabled(),true,'purchase button must be retryable after persistence failure');
     await restoreStorage();await purchaseButton.click();await page.waitForFunction(()=>__GH_STATE__.assets.filter(a=>a.type==='sea').length===25,null,{timeout:60000});
