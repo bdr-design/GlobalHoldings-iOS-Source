@@ -24,7 +24,7 @@
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
   const resetMarkerKey = 'global-holdings-reset-epoch';
-  let hardResetInProgress=false;
+  let hardResetInProgress=false,hardResetSettlement=Promise.resolve({committed:false});
   let mapInteractionActive=false,lastMarkerFrameAt=0,lastHudRefreshAt=0,lastMapStructureSignature='',visualResyncRequested=false;
   const markerMotionStates=new Map();let markerVisualCarry=new Map();
   const legacyStorageKeys = ['global-holdings-world-v1.2.0','global-holdings-world-v1.1.0','global-holdings-premium-v1.0.0','global-holdings-clean-v0.1.2'];
@@ -2237,13 +2237,16 @@
   function drawerUsesBackdrop(){ return window.matchMedia('(max-width:760px) and (orientation:portrait)').matches; }
 
   async function hardResetGame(){
-    if(hardResetInProgress)return false;
+    if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked())return false;
     const previousState=clone(state);hardResetInProgress=true;state.speed=0;
+    let settleHardReset=null,resetDurabilityEstablished=false;
+    hardResetSettlement=new Promise(resolve=>{settleHardReset=resolve;});
     try{
       const cleanupKeys=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k?.startsWith('global-holdings-'))cleanupKeys.push(k);}
       await window.GH_GAME_LIFECYCLE.reset(state,defaultState,{storageKey,resetMarkerKey,appVersion:APP_VERSION,checkpoint:previousState,cleanupKeys,clearManualSlots:true,prepare:next=>{
         window.GH_ADVANCED.migrate(next);window.GH_REALISM.migrate(next);window.GH_EVENT_LEDGER.ensure(next);window.GH_DEPENDENCY_CORE.ensure(next);window.GH_DELIVERY_MONITOR.ensure(next);window.GH_FINANCE_CORE.ensure(next);window.GH_DIAGNOSTICS.ensure(next);window.GH_CONTROL_PLANE.bootstrap(next);next.advanced.saveSlots=[null,null,null];
       }});
+      resetDurabilityEstablished=true;
       selectedAssetId=null;
       Object.keys(routeTemplates).forEach(id=>{if(!BASE_ROUTE_IDS.has(id))delete routeTemplates[id];});
       closeDrawer();closeGod();closeMapPopovers();$('assetCard')?.classList.add('hidden');
@@ -2252,7 +2255,7 @@
       updateFounderLogoPreview();simulationEngine.reset(performance.now(),'new-group');updateKpis();renderMap();updateMapStatus();return true;
     }catch(error){
       if(error.requiresNativeReload){
-        state.speed=0;
+        resetDurabilityEstablished=true;state.speed=0;
         notice('تم اعتماد إعادة التعيين في الحفظ Native لكن تعذر تحديث الذاكرة؛ ستُعاد مزامنة اللعبة من الحفظ الدائم الآن.');
         location.reload();
         return false;
@@ -2260,7 +2263,10 @@
       window.GH_TRANSACTION_CORE.restoreObject(state,previousState);
       if(error.critical){state.speed=0;window.GH_CONTROL_PLANE.incident(state,{fingerprint:'RESET_COMPENSATION_FAILED',code:'RESET_COMPENSATION_FAILED',severity:'critical',domain:'save',title:'فشل استرداد الحفظ',detail:String(error.compensationError||error.rollbackError)});}
       notice(error.critical?'تعذر تأكيد استرداد الحفظ. أوقفت المحاكاة لحماية التقدم؛ صدّر تقرير الدعم.':'تعذر إكمال إعادة اللعبة؛ تم الاحتفاظ بالحالة السابقة.');return false;
-    }finally{hardResetInProgress=false;}
+    }finally{
+      hardResetInProgress=false;
+      settleHardReset?.({committed:resetDurabilityEstablished,resetEpoch:Number(state.resetEpoch)||0,saveRevision:Number(state.saveRevision)||0});
+    }
   }
 
   // Public fail-safe used only by the explicit New Group control.
@@ -2291,21 +2297,25 @@
     businessIntegrity:()=>window.GH_INTEGRITY_CORE?.check?.(state),
     exportDiagnostics:()=>window.GH_DIAGNOSTICS.exportBundle(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()}),
     persistForBackground:async()=>{
-      const revisionAtRequest=Math.max(0,Math.floor(Number(state.saveRevision)||0));let waitedForDurable=false;
-      while(durableCommandInProgress){
-        const settlement=durableCommandSettlement;waitedForDurable=true;diag('BACKGROUND_SAVE_WAIT_DURABLE',{saveRevision:revisionAtRequest});
-        await settlement;
+      const revisionAtRequest=Math.max(0,Math.floor(Number(state.saveRevision)||0)),resetEpochAtRequest=Number(state.resetEpoch)||0;
+      let waitedForLifecycle=false,durabilityEstablished=false;
+      while(durableCommandInProgress||hardResetInProgress){
+        const pending=[];
+        if(durableCommandInProgress)pending.push(durableCommandSettlement);
+        if(hardResetInProgress)pending.push(hardResetSettlement);
+        waitedForLifecycle=true;diag('BACKGROUND_SAVE_WAIT_LIFECYCLE',{saveRevision:revisionAtRequest,resetEpoch:resetEpochAtRequest,durableCommandInProgress,hardResetInProgress});
+        const settled=await Promise.all(pending);
+        if(settled.some(row=>row?.committed===true))durabilityEstablished=true;
       }
-      // If the foreground command advanced the revision, its Native ACK already
-      // established durability. Coalesce the background request instead of
-      // racing a second save against the same logical transition.
-      if(waitedForDurable&&Math.max(0,Math.floor(Number(state.saveRevision)||0))>revisionAtRequest){
-        await window.GH_PERSISTENCE.drain();diag('BACKGROUND_SAVE_COALESCED',{saveRevision:Number(state.saveRevision)||0});
-        return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,coalesced:true};
+      // A Native-acknowledged durable command or reset already established the
+      // newest logical state. Coalesce instead of racing a second revision.
+      if(waitedForLifecycle&&(durabilityEstablished||Math.max(0,Math.floor(Number(state.saveRevision)||0))>revisionAtRequest||(Number(state.resetEpoch)||0)!==resetEpochAtRequest)){
+        await window.GH_PERSISTENCE.drain();diag('BACKGROUND_SAVE_COALESCED',{saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0});
+        return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,resetEpoch:Number(state.resetEpoch)||0,coalesced:true};
       }
       if(!persistStateNow({throwOnError:true}))throw new Error('background-save-rejected');
-      await window.GH_PERSISTENCE.drain();diag('BACKGROUND_SAVE_OK',{saveRevision:Number(state.saveRevision)||0});
-      return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,coalesced:false};
+      await window.GH_PERSISTENCE.drain();diag('BACKGROUND_SAVE_OK',{saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0});
+      return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,resetEpoch:Number(state.resetEpoch)||0,coalesced:false};
     },
     applyNativeUpdate:async payload=>{
       if(!window.GH_ADVANCED?.applyNativeUpdate)return false;
