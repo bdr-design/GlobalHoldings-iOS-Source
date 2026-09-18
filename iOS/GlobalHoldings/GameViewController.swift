@@ -305,16 +305,17 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                 completion(result)
             }
         }
-        // If the runtime is loaded, capture the freshest browser state. Otherwise
-        // the latest verified native generation is the authoritative checkpoint.
+        // If the runtime is loaded, capture the freshest in-memory state directly.
+        // Native Save Vault remains the authoritative fallback when WebKit is unavailable.
         guard isViewLoaded, webView.url != nil else { commit(GlobalSaveVault.shared.currentSave()); return }
-        webView.evaluateJavaScript("localStorage.getItem('global-holdings-world-v2.0.0')") { value, error in
+        webView.evaluateJavaScript("JSON.stringify(window.__GH_STATE__||null)") { value, error in
             if let error {
                 if let native = GlobalSaveVault.shared.currentSave() { commit(native) }
                 else { completion(.failure(error)) }
                 return
             }
-            commit(value as? String ?? GlobalSaveVault.shared.currentSave())
+            let live = (value as? String).flatMap { $0 == "null" || $0.isEmpty ? nil : $0 }
+            commit(live ?? GlobalSaveVault.shared.currentSave())
         }
     }
 
@@ -350,7 +351,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
 
     private func restorePreviousVersion() {
         webView.stopLoading()
-        // Manual rollback must checkpoint the freshest browser state first so
+        // Manual rollback must checkpoint the freshest in-memory game state first so
         // toggling back later restores an exact Runtime + Save pair.
         captureVerifiedPreUpdateCheckpoint { [weak self] checkpoint in
             guard let self else { return }
@@ -614,17 +615,23 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
 
     @discardableResult
     private func restorePendingSaveIfNeeded() -> Bool {
-        guard let save = pendingSaveJSON, let data = save.data(using: .utf8) else { return false }
-        let encoded = data.base64EncodedString()
-        let script = "(()=>{const b=Uint8Array.from(atob('\(encoded)'),c=>c.charCodeAt(0));localStorage.setItem('global-holdings-world-v2.0.0',new TextDecoder().decode(b));setTimeout(()=>location.reload(),0);return true;})()"
-        webView.evaluateJavaScript(script) { [weak self] _, error in
-            guard let self else { return }
-            if let error {
-                self.rollbackFailedUpdate(reason: "restore-pending-save-failed: \(error.localizedDescription)")
-            } else {
-                self.pendingSaveJSON = nil
-            }
+        guard let save = pendingSaveJSON else { return false }
+        guard GlobalSaveVault.shared.currentSave() == save else {
+            pendingSaveJSON = nil
+            rollbackFailedUpdate(reason: "restore-pending-save-native-mismatch")
+            return true
         }
+        // Rebuild the document-start bootstrap from the newly committed native
+        // generation. Never round-trip the full world through localStorage.
+        pendingSaveJSON = nil
+        webView.configuration.userContentController.removeAllUserScripts()
+        let bootstrap = GlobalSaveVault.shared.bootstrapJavaScript(force: true)
+        if !bootstrap.isEmpty {
+            webView.configuration.userContentController.addUserScript(
+                WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            )
+        }
+        loadGame(cacheBuster: "native-restore-\(GlobalSaveVault.shared.currentGeneration())-\(UUID().uuidString)")
         return true
     }
 
@@ -650,8 +657,8 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
           Promise.resolve(window.GH_RUNTIME?.applyNativeUpdate?.(p)).then(()=>{
             const integrity=window.GH_RUNTIME?.businessIntegrity?.();
             if(integrity&&integrity.status==='critical') throw new Error('Critical integrity failure after update operations: '+JSON.stringify(integrity.counts||{}));
-            const save=localStorage.getItem('global-holdings-world-v2.0.0');
-            if(!save) throw new Error('Durable update save payload missing');
+            const save=JSON.stringify(window.__GH_STATE__||null);
+            if(!save||save==='null') throw new Error('Durable update state is unavailable');
             window.webkit?.messageHandlers?.updateBridge?.postMessage({action:'commitUpdateState',version:'\(version)',build:\(build),saveJSON:save});
           }).catch(error=>{
             window.webkit?.messageHandlers?.updateBridge?.postMessage({action:'updateOperationsFailed',version:'\(version)',build:\(build),message:String(error?.message||error)});
