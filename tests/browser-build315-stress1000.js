@@ -78,7 +78,6 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
   try{
     context=await createContext(null);
     page=await context.newPage();
-    await installMapFixture(page);
     roadCalls=await installRoadFixture(page);
     page.on('pageerror',e=>errors.push(e.message));
     page.on('console',m=>{if(m.type()==='error'&&!expectedNetworkError(m)&&!m.location().url.includes('router.project-osrm.org'))errors.push(m.text());});
@@ -166,7 +165,8 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
       assert(users.length>0&&users.length<=64,'shared road route capacity must never exceed 64');
       assert.strictEqual(new Set(users.map(a=>a.routeSlot)).size,users.length,'route slots must be unique inside each shared route');
     }
-    assert.strictEqual(roadCalls(),1,'1000-asset road planning should use one deterministic provider request, not N requests');
+    evidence.providerCalls=roadCalls();
+    assert.strictEqual(evidence.providerCalls,2,'16 shared-route groups with provider batch size 12 must use exactly two deterministic provider requests');
 
     const preSave=await state();
     const inspected=await page.evaluate(()=>GH_PERSISTENCE.inspectNativeJSON(JSON.stringify(__GH_STATE__)));
