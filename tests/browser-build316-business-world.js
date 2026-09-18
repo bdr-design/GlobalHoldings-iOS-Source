@@ -1,4 +1,5 @@
 'use strict';
+// CI synchronization marker: Build316 business-world verification.
 const assert=require('assert'),fs=require('fs');
 const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-server'),{installMapFixture,expectedNetworkError}=require('./helpers/browser-network');
 
