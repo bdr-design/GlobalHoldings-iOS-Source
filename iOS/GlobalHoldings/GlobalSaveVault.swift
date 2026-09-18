@@ -94,8 +94,11 @@ final class GlobalSaveVault {
         let current = bestEnvelope()
         if !allowRegression && current == nil && ["A", "B"].contains(where: { fm.fileExists(atPath: url($0).path) }) { throw VaultError.message("No valid native save remains; recovery required.") }
         if !allowRegression, let current {
-            let epoch = current.resetEpoch ?? 0, revision = current.saveRevision ?? 0
-            if validation.resetEpoch < epoch || (validation.resetEpoch == epoch && validation.saveRevision < revision) {
+            let epoch = current.resetEpoch ?? 0
+            let currentRevision = current.saveRevision ?? 0
+            let nativeRevision = validation.saveRevision
+            let monotonicRevision = nativeRevision>currentRevision || nativeRevision == currentRevision
+            if validation.resetEpoch < epoch || (validation.resetEpoch == epoch && !monotonicRevision) {
                 throw VaultError.message("Stale native save rejected.")
             }
         }
