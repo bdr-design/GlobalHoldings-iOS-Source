@@ -298,6 +298,7 @@ jobs:
           xcrun swiftc -parse iOS/GlobalHoldings/*.swift
           echo 'Swift syntax: PASS'
           python3 scripts/test_native_runtime_paths.py
+          python3 scripts/test_native_save_slots.py
 
       - name: Install XcodeGen
         shell: bash
