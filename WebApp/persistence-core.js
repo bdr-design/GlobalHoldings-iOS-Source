@@ -153,7 +153,7 @@
   function acknowledgeRecovery(){recoveryRequired=false;mirrorError=null;return true;}
   async function replaceState(next,previous,{storageKey='global-holdings-world-v2.0.0',resetMarkerKey,appVersion=VERSION,timeoutMs,apply,cleanupKeys=[],clearManualSlots=false}={}){
     if(locked)throw new Error('lifecycle-locked');locked=true;
-    let nativeAttempted=false,oldRaw=null,oldMarker=null,browserTouched=false;
+    let nativeAttempted=false,nativeCommitted=false,oldRaw=null,oldMarker=null,browserTouched=false;
     let oldJSON;
     try{
       await drain();assertState(next);assertState(previous);oldJSON=JSON.stringify(previous);
@@ -161,6 +161,7 @@
       // The current in-memory game is the compensating checkpoint. Native owns durability.
       nativeAttempted=nativeBridge;
       await requestNative('resetGameSave',json,{appVersion,timeoutMs,clearManualSlots});
+      nativeCommitted=nativeBridge;
       const out=writeJSON(storageKey,json);
       if(out.ok)browserTouched=true;
       else if(!nativeBridge){const writeError=new Error(out.reason);writeError.rollbackError=out.rollbackError;throw writeError;}
@@ -174,6 +175,15 @@
       mirrorError=null;return {ok:true,native:nativeAttempted,generation};
     }catch(error){
       try{if(browserTouched)restoreRaw(storageKey,oldRaw);if(resetMarkerKey&&browserTouched)restoreRaw(resetMarkerKey,oldMarker);}catch(e){error.rollbackError=String(e.message||e);}
+      // Once a New Game reset that clears manual slots has been ACKed by Native,
+      // the durable transaction is committed. Rolling only the main save back here
+      // would resurrect an old world without its manual slots. Reload from the
+      // freshly refreshed Native bootstrap instead of attempting a partial rollback.
+      if(nativeCommitted&&clearManualSlots){
+        recoveryRequired=true;error.critical=true;error.requiresNativeReload=true;
+        status({ok:false,critical:true,reason:'native-reset-committed-reload-required',requiresNativeReconciliation:true,storageKey});
+        throw error;
+      }
       if(nativeAttempted)try{await requestNative('resetGameSave',oldJSON,{appVersion,timeoutMs,clearManualSlots:false});}catch(e){error.compensationError=String(e.message||e);}
       if(error.rollbackError||error.compensationError){error.critical=true;globalThis.GH_CONTROL_PLANE?.incident?.(previous,{fingerprint:'RESET_COMPENSATION_FAILED',code:'RESET_COMPENSATION_FAILED',severity:'critical',domain:'save',title:'فشل استرداد الحفظ بعد عملية الاستبدال',detail:String(error.compensationError||error.rollbackError)});}
       throw error;
