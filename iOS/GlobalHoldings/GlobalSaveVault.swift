@@ -263,21 +263,17 @@ final class GlobalSaveVault {
         let nativeSim = String(format: "%.6f", envelope.simSeconds)
         let nativeRevision = envelope.saveRevision ?? 0
         let nativeReset = String(format: "%.0f", envelope.resetEpoch ?? 0)
+        let nativeGeneration = envelope.generation
         return compatibility + """
         (()=>{try{
-          const raw=new TextDecoder().decode(Uint8Array.from(atob('\(b64)'),c=>c.charCodeAt(0)));
-          const key='global-holdings-world-v2.0.0';
-          const existing=localStorage.getItem(key);
-          let shouldRestore=!existing;
-          if(existing){
-            try{
-              const current=JSON.parse(existing), currentSim=Number(current?.simSeconds), currentRevision=Number(current?.saveRevision||0), currentReset=Number(current?.resetEpoch||0), nativeReset=Number(\(nativeReset)), nativeRevision=Number(\(nativeRevision));
-              if(current?.saveVersion!=='2.0.0'){window.GH_NATIVE_RECOVERY_BLOCKED=true;return;}
-              const nativeAhead=nativeReset>currentReset || (nativeReset===currentReset && (nativeRevision>currentRevision || (nativeRevision===currentRevision && (!Number.isFinite(currentSim)||Number(\(nativeSim))>currentSim))));
-              shouldRestore=\(forceValue) || nativeAhead || existing!==raw;
-            }catch(_e){ shouldRestore=true; }
-          }
-          if(shouldRestore){let value=raw;if(\(pauseValue)){const parsed=JSON.parse(raw);parsed.speed=0;value=JSON.stringify(parsed);}localStorage.setItem(key,value);if(localStorage.getItem(key)!==value)throw new Error('native-bootstrap-readback');sessionStorage.setItem('gh-native-save-restored','1');}
+          let raw=new TextDecoder().decode(Uint8Array.from(atob('\(b64)'),c=>c.charCodeAt(0)));
+          if(\(pauseValue)){const parsed=JSON.parse(raw);parsed.speed=0;raw=JSON.stringify(parsed);}
+          // Native Save Vault is the authoritative iOS store. Keep the complete
+          // payload out of WebKit localStorage so large worlds are not constrained
+          // by the browser quota. Migration Core consumes this value once at boot.
+          window.__GH_NATIVE_SAVE_JSON__=raw;
+          window.__GH_NATIVE_SAVE_META__=Object.freeze({source:'native-save-vault',generation:\(nativeGeneration),saveRevision:\(nativeRevision),resetEpoch:Number(\(nativeReset)),simSeconds:Number(\(nativeSim)),forced:\(forceValue),paused:\(pauseValue)});
+          try{sessionStorage.setItem('gh-native-save-restored','1');}catch(_e){}
         }catch(e){window.GH_NATIVE_RECOVERY_BLOCKED=true;console.error('GH native save bootstrap failed',e);}})();
         """
     }
