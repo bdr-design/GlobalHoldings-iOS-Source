@@ -95,6 +95,43 @@
     synchronizeCrew(state);
     return asset.staffing;
   }
+  // Large deliveries must retain one staffing contract per asset, but they must
+  // not rescan the entire fleet after every single contract. This batch helper
+  // is deliberately internal to Fleet Core so procurement and UI never own
+  // staffing or asset creation.
+  function provisionStaffingBatch(state,rows){
+    const labor=laborLedger(state),contracts=[],hiring=[];
+    for(const row of rows){
+      const asset=row?.asset,base=row?.base;if(!asset)continue;
+      if(asset.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true)continue;
+      const plan=staffingPlan(asset,state),contractId=nextId(state,'EMP-AUTO'),center=base?.name||asset.baseLocation||asset.baseFacility||'المركز التشغيلي';
+      contracts.push({id:contractId,company:asset.type,assetId:asset.id,name:`طاقم ثابت · ${asset.name}`,role:'طاقم تشغيلي مرتبط بالأصل',count:plan.total,center,salary:plan.monthlyPayroll,startDay:simDay(state),termMonths:1200,status:'ساري',source:'توظيف آلي ثابت عند شراء الأصل',automaticAssetStaffing:true,permanent:true,roles:clone(plan.roles)});
+      hiring.push({id:nextId(state,'HR-AUTO'),at:Number(state.simSeconds)||0,company:asset.type,source:'توظيف أصل آلي ثابت',assetId:asset.id,total:plan.total,monthlyPayroll:plan.monthlyPayroll,coverageBefore:100,coverageAfter:100});
+      asset.staffing={...plan,contractId,provisionedAt:Number(state.simSeconds)||0,center};asset.crewBlocked=false;
+    }
+    if(contracts.length)labor.employmentContracts.unshift(...contracts.reverse());
+    if(hiring.length){labor.hiringLog.unshift(...hiring.reverse());labor.hiringLog=labor.hiringLog.slice(0,200);}
+    synchronizeCrew(state);return contracts.length;
+  }
+  function recordDeliveryBatch(state,rows){
+    if(!Array.isArray(rows)||!rows.length)throw new Error('delivery-batch-empty');
+    const deliveries=state.realism?.procurement?.deliveries;if(!Array.isArray(deliveries))throw new Error('delivery-store-unavailable');
+    const deliveryById=new Map(deliveries.map(row=>[row.id,row])),baseById=new Map([...(state.globalBases||[]),...(state.customHubs||[])].map(base=>[base.id,base])),invoiceByNumber=new Map((state.finance?.invoices||[]).map(row=>[row.number,row])),chequeById=new Map((state.finance?.cheques||[]).map(row=>[row.id,row])),assetIds=new Set((state.assets||[]).map(asset=>asset.id)),occupancy=new Map(),additions=new Map(),prepared=[];
+    for(const asset of state.assets||[])occupancy.set(asset.baseFacility,(occupancy.get(asset.baseFacility)||0)+1);
+    const requested=new Set();
+    for(const input of rows){
+      if(!input?.asset||!input.baseId||!input.deliveryId||requested.has(input.deliveryId))throw new Error('delivery-contract');requested.add(input.deliveryId);
+      const delivery=deliveryById.get(input.deliveryId),base=baseById.get(input.baseId),snap=input.asset,payment=delivery?.payment,document=payment?.kind==='invoice'?invoiceByNumber.get(payment.ref):chequeById.get(payment?.ref);
+      if(!delivery||delivery.status!=='pending'||delivery.asset?.id!==snap.id||delivery.baseId!==input.baseId||!base?.owned||base.company!==snap.type)throw new Error('delivery-destination-contract');
+      if(!document||!['مدفوعة','مسددة','مصروف'].includes(document.status)||document.company!==snap.type||Number(document.amount)<Number(payment.amount))throw new Error('delivery-payment-unverified');
+      if(assetIds.has(snap.id))throw new Error('duplicate-asset-id');assetIds.add(snap.id);additions.set(base.id,(additions.get(base.id)||0)+1);prepared.push({input,delivery,base,snap});
+    }
+    const facilityOwner=globalThis.GH_FACILITY_CORE;if(!facilityOwner?.assetCapacity)throw new Error('facility-capacity-owner-missing');
+    for(const [baseId,count] of additions){const base=baseById.get(baseId),capacity=facilityOwner.assetCapacity(base);if((occupancy.get(baseId)||0)+count>capacity)throw new Error('delivery-base-full');}
+    const deliveredRows=[],leased=new Set(Array.isArray(state.leasedAssets)?state.leasedAssets:[]);
+    for(const {input,delivery,base,snap} of prepared){const delivered={...snap,deliveryOrderId:input.deliveryId,requestRef:delivery.requestRef,paymentRef:delivery.payment.ref,baseFacility:input.baseId,phase:input.phase||'idle',routeId:null,routeSignature:null,progress:0,fuel:100,deliveryStatus:'delivered',deliveredDay:input.deliveredDay,deliveredAtSeconds:input.deliveredAtSeconds};state.assets.push(delivered);deliveredRows.push({asset:delivered,base});if(delivered.ownership==='lease')leased.add(delivered.id);}
+    state.leasedAssets=[...leased];provisionStaffingBatch(state,deliveredRows);return deliveredRows.map(row=>row.asset);
+  }
   function releaseStaffing(state,asset,reason){
     const contract=laborLedger(state).employmentContracts.find(row=>row.id===asset?.staffing?.contractId);
     if(contract&&contract.status==='ساري'){contract.status='منتهي';contract.endedDay=simDay(state);contract.endReason=reason||'خروج الأصل من الملكية';}
@@ -190,25 +227,11 @@
       if(asset.ownership==='lease'){const out=execute(ctx,'return-lease',{id:asset.id,fee:Math.max(0,Number(p.fee)||0)});return {status:'returned',asset:out.asset,fee:out.fee,proceeds:0};}
       const out=execute(ctx,'sell',{id:asset.id,proceeds:p.proceeds,buyer:p.buyer});return {status:'sold',asset:out.asset,proceeds:out.proceeds,fee:0};
     }
-    if(cmd==='record-delivery'){
-      if(!p.asset||!p.baseId||!p.deliveryId)throw new Error('delivery-contract');
-      const delivery=state.realism?.procurement?.deliveries?.find(row=>row.id===p.deliveryId);
-      const base=[...(state.globalBases||[]),...(state.customHubs||[])].find(facility=>facility.id===p.baseId);
-      if(!delivery||delivery.status!=='pending'||delivery.asset?.id!==p.asset.id||delivery.baseId!==p.baseId||!base?.owned||base.company!==p.asset.type)throw new Error('delivery-destination-contract');
-      const payment=delivery.payment,document=payment?.kind==='invoice'?state.finance?.invoices?.find(row=>row.number===payment.ref):state.finance?.cheques?.find(row=>row.id===payment?.ref);
-      if(!document||!['مدفوعة','مسددة','مصروف'].includes(document.status)||document.company!==p.asset.type||Number(document.amount)<Number(payment.amount))throw new Error('delivery-payment-unverified');
-      const facilityOwner=globalThis.GH_FACILITY_CORE;if(!facilityOwner?.assetCapacity)throw new Error('facility-capacity-owner-missing');const capacity=facilityOwner.assetCapacity(base);
-      if((state.assets||[]).filter(row=>row.baseFacility===p.baseId).length>=capacity)throw new Error('delivery-base-full');
-      const delivered={...p.asset,deliveryOrderId:p.deliveryId,requestRef:delivery.requestRef,paymentRef:payment.ref,baseFacility:p.baseId,phase:p.phase||'idle',routeId:null,routeSignature:null,progress:0,fuel:100,deliveryStatus:'delivered',deliveredDay:p.deliveredDay,deliveredAtSeconds:p.deliveredAtSeconds};
-      if(state.assets.some(row=>row.id===delivered.id))throw new Error('duplicate-asset-id');
-      state.assets.push(delivered);
-      provisionStaffing(state,delivered,base);
-      if(delivered.ownership==='lease'){state.leasedAssets=Array.isArray(state.leasedAssets)?state.leasedAssets:[];if(!state.leasedAssets.includes(delivered.id))state.leasedAssets.push(delivered.id);}
-      return delivered;
-    }
+    if(cmd==='record-delivery')return recordDeliveryBatch(state,[p])[0];
+    if(cmd==='record-delivery-batch')return recordDeliveryBatch(state,p.deliveries);
     if(cmd==='reconcile-staffing')return reconcileStaffing(state,p.facilityResolver);
     throw new Error(`Unknown fleet command: ${cmd}`);
   }
-  const API={VERSION,ROLE_DEFAULTS,normalizeAsset,departDraft,routeSignature,routeConflict,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,monthlyPayroll,headcount};
+  const API={VERSION,ROLE_DEFAULTS,normalizeAsset,departDraft,routeSignature,routeConflict,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,monthlyPayroll,headcount,recordDeliveryBatch};
   globalThis.GH_FLEET_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('fleet',API);if(globalThis.window&&window!==globalThis)window.GH_FLEET_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

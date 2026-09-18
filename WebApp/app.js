@@ -19,7 +19,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 312;
+  const RUNTIME_BUILD = 313;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
   const storageKey = `global-holdings-world-v${SAVE_SCHEMA_VERSION}`;
@@ -723,6 +723,33 @@
   state.assets.forEach(normalizeAsset);
 
   const maritimePresentationCache=new WeakMap();
+  // Map geometry is sampled far more often than simulation state. Keep its
+  // cumulative distance table outside saved game state so large fleets do not
+  // rebuild the same route geometry on every animation frame.
+  const presentationRouteMetricCache=new WeakMap(),reversedPresentationRouteCache=new WeakMap();
+  function reversePresentationRoute(points){
+    if(!Array.isArray(points))return points;
+    let reversed=reversedPresentationRouteCache.get(points);
+    if(!reversed){reversed=points.slice().reverse();reversedPresentationRouteCache.set(points,reversed);}
+    return reversed;
+  }
+  function presentationRouteMetrics(route){
+    if(!Array.isArray(route)||route.length<2)return null;
+    let metrics=presentationRouteMetricCache.get(route);if(metrics)return metrics;
+    const cumulative=new Float64Array(route.length);
+    for(let i=0;i<route.length-1;i++)cumulative[i+1]=cumulative[i]+haversine(route[i],route[i+1]);
+    metrics={cumulative,total:cumulative[cumulative.length-1]};presentationRouteMetricCache.set(route,metrics);return metrics;
+  }
+  function interpolatePresentationRoute(route,progress){
+    if(!route||route.length<2)return route?.[0]||[0,0];
+    const metrics=presentationRouteMetrics(route);if(!metrics||!Number.isFinite(metrics.total)||metrics.total<=0)return route[0];
+    const normalized=clamp(Number(progress),0,1);if(!Number.isFinite(normalized))return route[route.length-1];
+    const target=normalized*metrics.total;if(target>=metrics.total)return route[route.length-1];
+    let low=1,high=route.length-1;
+    while(low<high){const middle=(low+high)>>1;if(metrics.cumulative[middle]>=target)high=middle;else low=middle+1;}
+    const start=low-1,segment=metrics.cumulative[low]-metrics.cumulative[start],ratio=segment===0?0:(target-metrics.cumulative[start])/segment;
+    return [route[start][0]+(route[low][0]-route[start][0])*ratio,((route[start][1]+shortestLongitudeDelta(route[start][1],route[low][1])*ratio+540)%360)-180];
+  }
   function currentAssetRoute(asset){
     const tpl = routeTemplates[asset.routeId];
     if(!tpl)return null;
@@ -730,12 +757,12 @@
     // In-flight legacy voyages keep their committed duration/economics. Only
     // their presentation is corrected; idle geometry migrates at next load.
     if(asset.type==='sea'&&tpl.maritimeGeometryVersion!==310){let geometry=maritimePresentationCache.get(tpl);if(!geometry){geometry=buildMaritimeRoute(points[0],points[points.length-1]);if(geometry)maritimePresentationCache.set(tpl,geometry);}if(geometry)points=geometry.route;}
-    return asset.reverse ? [...points].reverse() : points;
+    return asset.reverse ? reversePresentationRoute(points) : points;
   }
   function assetPosition(asset){
     if(asset.routeId){
       const route = currentAssetRoute(asset);
-      return interpolateRoute(route, asset.phase === 'turnaround' ? 1 : asset.progress);
+      return interpolatePresentationRoute(route, asset.phase === 'turnaround' ? 1 : asset.progress);
     }
     const base = getDynamicFacilities().find(f=>f.id===asset.baseFacility);
     return Array.isArray(base?.coords)?base.coords:null;
@@ -744,7 +771,7 @@
   function routeBearing(route,progress){
     if(!route||route.length<2)return 0;
     const p=clamp(progress,0,1);
-    const a=interpolateRoute(route,clamp(p-0.01,0,1)), b=interpolateRoute(route,clamp(p+0.01,0,1));
+    const a=interpolatePresentationRoute(route,clamp(p-0.01,0,1)), b=interpolatePresentationRoute(route,clamp(p+0.01,0,1));
     if(a[0]===b[0]&&a[1]===b[1]) return 0;
     return bearingBetween(a,b);
   }
@@ -767,13 +794,13 @@
   function vehicleVisualHtml(type,bearing,photo,moving=true,competitor=false){
     const kind=markerKind(type),heading=markerHeading(kind,bearing),className=`vehicle-pin ${kind}${moving?' is-live':''}${competitor?' competitor':''}`;
     const glyph=`<img src="${photo||VEHICLE_MARKER_PHOTOS[kind]}" alt="" draggable="false" decoding="async">`;
-    return `<div class="${className}"><span class="vehicle-trail"></span><span class="vehicle-sprite" style="transform:rotate(${heading.toFixed(1)}deg)">${glyph}</span><span class="vehicle-beacon"></span></div>`;
+    return `<div class="${className}"><span class="vehicle-trail"></span><span class="vehicle-sprite"><span class="vehicle-heading" style="transform:rotate(${heading.toFixed(1)}deg)">${glyph}</span></span><span class="vehicle-beacon"></span></div>`;
   }
   function vehicleMarkerHtml(asset){return vehicleVisualHtml(asset.type,assetBearing(asset),assetMarkerPhoto(asset),asset.phase==='moving');}
   function competitorMarkerHtml(asset){return vehicleVisualHtml(asset.type,routeBearing(asset.route,asset.progress),VEHICLE_MARKER_PHOTOS[markerKind(asset.type)],true,true);}
   function refreshVehicleMarker(marker,type,bearing,moving){
     const element=marker?.getElement?.();if(!element)return;
-    const kind=markerKind(type),pin=element.querySelector('.vehicle-pin'),heading=element.querySelector('.vehicle-sprite');
+    const kind=markerKind(type),pin=element.querySelector('.vehicle-pin'),heading=element.querySelector('.vehicle-heading');
     if(pin)pin.classList.toggle('is-live',!!moving);
     if(heading)heading.style.transform=`rotate(${markerHeading(kind,bearing).toFixed(1)}deg)`;
   }
@@ -1218,7 +1245,7 @@
       if(selectedMobilityId&&!individualAvailableIds.includes(selectedMobilityId))individualAvailableIds.unshift(selectedMobilityId);
       const mobilityRows=window.GH_MOBILITY_CORE?.liveVehicles?.(state,mobilityLimit,{movingOnly:true,includeIds:individualAvailableIds})||[],renderedAvailableByCenter=new Map();
       for(const vehicle of mobilityRows){
-        const pos=interpolateRoute(vehicle.route,vehicle.progress),moving=vehicle.phase==='moving',heading=routeBearing(vehicle.route,vehicle.progress);
+        const pos=interpolatePresentationRoute(vehicle.route,vehicle.progress),moving=vehicle.phase==='moving',heading=routeBearing(vehicle.route,vehicle.progress);
         if(selectedMobilityId===vehicle.id&&moving){const selectedLine=L.polyline(vehicle.route,{color:'#24d7bf',weight:3,opacity:.88,lineCap:'round',smoothFactor:1.2,interactive:false}).addTo(map);routeLayers.push(selectedLine);}
         const icon=L.divIcon({className:`asset-marker mobility mobility-car-marker${moving?' is-moving':''}${selectedMobilityId===vehicle.id?' is-selected':''}`,html:vehicleVisualHtml('mobility',heading,null,moving),iconSize:[44,44],iconAnchor:[22,22]});
         const marker=L.marker(markerDisplayStart(`own:mobility:${vehicle.id}`,pos),{icon,zIndexOffset:selectedMobilityId===vehicle.id?750:680,title:`${vehicle.name} · ${moving?'متحركة':'متاحة'}`,keyboard:true,riseOnHover:true}).addTo(map);
@@ -1252,7 +1279,7 @@
       let shownAssets=0;
       competitorAssets.forEach(a=>{
         if(filter!=='all'&&filter!==a.type)return;
-        const pos=interpolateRoute(a.route,a.progress);
+        const pos=interpolatePresentationRoute(a.route,a.progress);
         if(!bounds.contains(pos) || shownAssets>=competitorLimit)return;
         const icon=L.divIcon({className:'competitor-marker',html:competitorMarkerHtml(a),iconSize:[46,46],iconAnchor:[23,23]});
         const marker=L.marker(markerDisplayStart(`competitor:${a.id}`,pos),{icon,zIndexOffset:300}).addTo(map).bindPopup(`<b>${a.name}</b><br>${a.company}<br><span style="color:#9fb0b5">منافس — حركة سوقية</span>`);
@@ -1287,28 +1314,67 @@
   function markerMotionProfile(rate){if(rate>=600)return {maxPixelsPerSecond:8};if(rate>=300)return {maxPixelsPerSecond:9};if(rate>=120)return {maxPixelsPerSecond:10};if(rate>=60)return {maxPixelsPerSecond:11};if(rate>0)return {maxPixelsPerSecond:12};return {maxPixelsPerSecond:0};}
   function boundedStepRatio(distancePixels,maxPixels){const distance=Math.max(0,Number(distancePixels)||0),limit=Math.max(0,Number(maxPixels)||0);return distance<=limit||distance===0?1:limit/distance;}
   function markerScreenDistance(from,to){try{if(!map?.latLngToContainerPoint)return 0;const adjusted=[to[0],from[1]+shortestLongitudeDelta(from[1],to[1])],a=map.latLngToContainerPoint(from),b=map.latLngToContainerPoint(adjusted);return Number.isFinite(a?.x)&&Number.isFinite(a?.y)&&Number.isFinite(b?.x)&&Number.isFinite(b?.y)?Math.hypot(b.x-a.x,b.y-a.y):0;}catch(error){nonCritical('map-marker-screen-distance',error);return 0;}}
-  function closestRouteProgress(route,point){if(!Array.isArray(route)||route.length<2||!markerPoint(point))return null;let best=0,bestDistance=Infinity;for(let i=0;i<=64;i++){const progress=i/64,distance=haversine(interpolateRoute(route,progress),point);if(distance<bestDistance){bestDistance=distance;best=progress;}}return best;}
-  function captureMarkerVisualPositions(){const carry=new Map(),capture=(prefix,markers)=>markers.forEach((marker,key)=>{const point=markerPoint(marker?.getLatLng?.());if(point)carry.set(`${prefix}${key}`,point);});capture('own:',ownMarkers);capture('competitor:',competitorMarkers);markerVisualCarry=carry;}
-  function markerDisplayStart(key,target){const clean=markerPoint(target);if(!clean)return target;const carry=markerVisualCarry.get(key);if(!carry)return clean;const latGap=Math.abs(clean[0]-carry[0]),lngGap=Math.abs(shortestLongitudeDelta(carry[1],clean[1]));return latGap<=45&&lngGap<=120?carry:clean;}
-  function fadeResyncMarker(row,now){const target=markerPoint(row.target);if(!target)return;try{row.marker.setOpacity?.(0);row.marker.setLatLng(target);row.current=target;row.visualProgress=Number.isFinite(row.targetProgress)?row.targetProgress:null;row.lastAt=now;row.needsResync=false;const reveal=()=>{try{row.marker.setOpacity?.(1);}catch(_error){}};if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>requestAnimationFrame(reveal));else reveal();}catch(error){nonCritical('map-marker-resync',error);}}
+  function closestRouteProgress(route,point){if(!Array.isArray(route)||route.length<2||!markerPoint(point))return null;let best=0,bestDistance=Infinity;for(let i=0;i<=64;i++){const progress=i/64,distance=haversine(interpolatePresentationRoute(route,progress),point);if(distance<bestDistance){bestDistance=distance;best=progress;}}return best;}
+  function samePresentationPoint(a,b){const from=markerPoint(a),to=markerPoint(b);return Boolean(from&&to&&haversine(from,to)<=.5);}
+  function routeBridgeSegment(route,routeKey,visualProgress,targetProgress=1){return {route,routeKey,visualProgress:clamp(Number(visualProgress)||0,0,1),targetProgress:clamp(Number(targetProgress)||0,0,1)};}
+  function queuePresentationBridge(row,route,routeKey,previousRoute,previousRouteKey,previousProgress){
+    if(!route||!previousRoute||!Number.isFinite(previousProgress))return false;
+    const segments=Array.isArray(row.routeBridge)?row.routeBridge:[];
+    if(segments.length>4)return false;
+    if(!segments.length){const start=clamp(previousProgress,0,1);if(start<.999999)segments.push(routeBridgeSegment(previousRoute,previousRouteKey,start,1));}
+    const tail=segments[segments.length-1],tailPoint=tail?interpolatePresentationRoute(tail.route,tail.targetProgress):interpolatePresentationRoute(previousRoute,1),routeStart=interpolatePresentationRoute(route,0);
+    if(!samePresentationPoint(tailPoint,routeStart)){
+      const returnRoute=reversePresentationRoute(route);
+      if(segments.length>=4||!samePresentationPoint(tailPoint,interpolatePresentationRoute(returnRoute,0))||!samePresentationPoint(interpolatePresentationRoute(returnRoute,1),routeStart))return false;
+      segments.push(routeBridgeSegment(returnRoute,`${routeKey}:return`,0,1));
+    }
+    row.routeBridge=segments;row.visualProgress=0;return true;
+  }
+  function captureMarkerVisualPositions(){
+    const carry=new Map(),capture=(prefix,markers)=>markers.forEach((marker,key)=>{
+      const point=markerPoint(marker?.getLatLng?.());if(!point)return;
+      const row=markerMotionStates.get(`${prefix}${key}`),bridge=row?.routeBridge?.[0],route=bridge?.route||row?.route||null,visualProgress=Number.isFinite(bridge?.visualProgress)?bridge.visualProgress:(Number.isFinite(row?.visualProgress)?row.visualProgress:null);
+      carry.set(`${prefix}${key}`,{point,route,routeKey:bridge?.routeKey||row?.routeKey||null,visualProgress});
+    });capture('own:',ownMarkers);capture('competitor:',competitorMarkers);markerVisualCarry=carry;
+  }
+  function markerDisplayStart(key,target){const clean=markerPoint(target);if(!clean)return target;const carry=markerVisualCarry.get(key),point=markerPoint(carry?.point||carry);if(!point)return clean;const latGap=Math.abs(clean[0]-point[0]),lngGap=Math.abs(shortestLongitudeDelta(point[1],clean[1]));return latGap<=45&&lngGap<=120?point:clean;}
+  function fadeResyncMarker(row,now){const target=markerPoint(row.target);if(!target)return;try{row.marker.setOpacity?.(0);row.marker.setLatLng(target);row.current=target;row.routeBridge=[];row.visualProgress=Number.isFinite(row.targetProgress)?row.targetProgress:null;row.lastAt=now;row.needsResync=false;const reveal=()=>{try{row.marker.setOpacity?.(1);}catch(_error){}};if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>requestAnimationFrame(reveal));else reveal();}catch(error){nonCritical('map-marker-resync',error);}}
   function requestVisualResync(){visualResyncRequested=true;for(const row of markerMotionStates.values())row.needsResync=true;}
   function setMapMarkerTarget(key,marker,target,now,force=false,motion={}){
     const clean=markerPoint(target);if(!marker||!clean)return;
     let row=markerMotionStates.get(key),current=markerPoint(marker.getLatLng?.())||clean;
-    if(!row){row={key,marker,current,target:clean,lastAt:now,route:null,routeKey:null,visualProgress:null,targetProgress:null,needsResync:false};markerMotionStates.set(key,row);}
-    row.marker=marker;row.target=clean;
+    if(!row){const carry=markerVisualCarry.get(key),carriedRoute=Array.isArray(carry?.route)?carry.route:null;row={key,marker,current,target:clean,lastAt:now,route:carriedRoute,routeKey:carriedRoute?carry.routeKey||null:null,visualProgress:Number.isFinite(carry?.visualProgress)?carry.visualProgress:null,targetProgress:null,routeBridge:[],needsResync:false};markerMotionStates.set(key,row);}
+    row.marker=marker;row.target=clean;if(motion.type)row.markerType=markerKind(motion.type);if(motion.moving!==undefined)row.markerMoving=!!motion.moving;
     const route=Array.isArray(motion.route)&&motion.route.length>=2?motion.route:null,routeKey=route?String(motion.routeKey||key):null,targetProgress=Number.isFinite(Number(motion.progress))?clamp(Number(motion.progress),0,1):null;
-    const routeChanged=Boolean(row.routeKey&&routeKey&&row.routeKey!==routeKey);row.route=route;row.routeKey=routeKey;row.targetProgress=targetProgress;
-    if(route&&(row.visualProgress===null||routeChanged))row.visualProgress=closestRouteProgress(route,row.current);
-    const latGap=Math.abs(clean[0]-row.current[0]),lngGap=Math.abs(shortestLongitudeDelta(row.current[1],clean[1]));if(latGap>45||lngGap>120)row.needsResync=true;
+    const previousRoute=row.route,previousRouteKey=row.routeKey;let previousProgress=row.visualProgress;if(previousRoute&&!Number.isFinite(previousProgress))previousProgress=closestRouteProgress(previousRoute,row.current);
+    // Route keys are the stable presentation identity. Some providers rebuild
+    // an equivalent point array when their live view is refreshed; treating
+    // that as a new route would create a needless bridge on every frame.
+    const routeChanged=Boolean(previousRoute&&route&&(previousRouteKey&&routeKey?previousRouteKey!==routeKey:previousRoute!==route));
+    let bridged=false;
+    if(route){
+      row.route=route;row.routeKey=routeKey;row.targetProgress=targetProgress;
+      if(routeChanged)bridged=queuePresentationBridge(row,route,routeKey,previousRoute,previousRouteKey,previousProgress);
+      else if(Number.isFinite(previousProgress)&&Number.isFinite(targetProgress)&&targetProgress+.002<previousProgress&&!(row.routeBridge?.length))bridged=queuePresentationBridge(row,route,routeKey,route,routeKey,previousProgress);
+      if(!bridged&&(!Number.isFinite(row.visualProgress)||routeChanged))row.visualProgress=closestRouteProgress(route,row.current);
+      if(!bridged&&Number.isFinite(row.visualProgress)&&Number.isFinite(targetProgress)&&targetProgress+.002<row.visualProgress)row.needsResync=true;
+      if(bridged)row.needsResync=false;
+    }else{row.route=null;row.routeKey=null;row.targetProgress=null;row.visualProgress=null;row.routeBridge=[];}
+    const latGap=Math.abs(clean[0]-row.current[0]),lngGap=Math.abs(shortestLongitudeDelta(row.current[1],clean[1]));if((latGap>45||lngGap>120)&&!route)row.needsResync=true;
     if(force&&visualResyncRequested)row.needsResync=true;
   }
+  function advanceRouteSegment(route,visualProgress,targetProgress,current,maxPixels){
+    if(!route||!Number.isFinite(visualProgress)||!Number.isFinite(targetProgress)||targetProgress+.000001<visualProgress)return null;
+    const targetPoint=interpolatePresentationRoute(route,targetProgress),remaining=markerScreenDistance(current,targetPoint);if(remaining<=maxPixels)return {point:targetPoint,progress:targetProgress};
+    let low=visualProgress,high=targetProgress,best=low;for(let i=0;i<12;i++){const mid=(low+high)/2,point=interpolatePresentationRoute(route,mid),distance=markerScreenDistance(current,point);if(distance<=maxPixels){best=mid;low=mid;}else high=mid;}
+    return {point:interpolatePresentationRoute(route,best),progress:best};
+  }
   function advanceRouteMotion(row,maxPixels){
+    const bridge=row.routeBridge?.[0];
+    if(bridge){const step=advanceRouteSegment(bridge.route,bridge.visualProgress,bridge.targetProgress,row.current,maxPixels);if(!step){row.needsResync=true;return null;}bridge.visualProgress=step.progress;if(step.progress>=bridge.targetProgress-.000001){row.routeBridge.shift();if(!row.routeBridge.length)row.visualProgress=0;}return {...step,bridge:true};}
     if(!row.route||!Number.isFinite(row.visualProgress)||!Number.isFinite(row.targetProgress))return null;
-    if(row.targetProgress+0.002<row.visualProgress){row.needsResync=true;return null;}
-    const targetPoint=interpolateRoute(row.route,row.targetProgress),remaining=markerScreenDistance(row.current,targetPoint);if(remaining<=maxPixels)return {point:targetPoint,progress:row.targetProgress};
-    let low=row.visualProgress,high=row.targetProgress,best=low;for(let i=0;i<12;i++){const mid=(low+high)/2,point=interpolateRoute(row.route,mid),distance=markerScreenDistance(row.current,point);if(distance<=maxPixels){best=mid;low=mid;}else high=mid;}
-    return {point:interpolateRoute(row.route,best),progress:best};
+    if(row.targetProgress+0.002<row.visualProgress){if(queuePresentationBridge(row,row.route,row.routeKey,row.route,row.routeKey,row.visualProgress))return advanceRouteMotion(row,maxPixels);row.needsResync=true;return null;}
+    return advanceRouteSegment(row.route,row.visualProgress,row.targetProgress,row.current,maxPixels);
   }
   function animateMapMarkerPositions(now){
     if(!markerMotionStates.size||mapInteractionActive||document.hidden)return;
@@ -1319,13 +1385,13 @@
       const maxPixels=profile.maxPixelsPerSecond*Math.min(50,elapsed)/1000;if(maxPixels<=0)continue;
       const routeStep=advanceRouteMotion(row,maxPixels);if(row.needsResync){fadeResyncMarker(row,now);continue;}
       let next=routeStep?.point;
-      if(routeStep)row.visualProgress=routeStep.progress;
+      if(routeStep){if(!routeStep.bridge)row.visualProgress=routeStep.progress;}
       else{const distance=markerScreenDistance(row.current,row.target),ratio=boundedStepRatio(distance,maxPixels);next=interpolateMarkerPoint(row.current,row.target,ratio);}
-      if(next){if(routeStep&&key.startsWith('own:mobility:')&&(next[0]!==row.current[0]||next[1]!==row.current[1]))refreshVehicleMarker(row.marker,'mobility',bearingBetween(row.current,next),true);row.marker.setLatLng(next);row.current=next;}
+      if(next){const moved=next[0]!==row.current[0]||next[1]!==row.current[1];if(routeStep&&moved&&((routeStep.bridge&&row.markerType)||key.startsWith('own:mobility:')))refreshVehicleMarker(row.marker,row.markerType||'mobility',bearingBetween(row.current,next),row.markerMoving!==false);row.marker.setLatLng(next);row.current=next;}
     }catch(error){markerMotionStates.delete(key);nonCritical('map-marker-motion',error);}}
     visualResyncRequested=false;
   }
-  window.GH_VISUAL_MOTION=Object.freeze({MAX_FRAME_MS:50,profile:markerMotionProfile,boundedStepRatio});
+  window.GH_VISUAL_MOTION=Object.freeze({MAX_FRAME_MS:50,profile:markerMotionProfile,boundedStepRatio,interpolateRoute:interpolatePresentationRoute});
   function mapStructureSignature(){if(!map)return'';const zoom=Math.floor(Number(map.getZoom?.())||0),assetRows=(state.assets||[]).map(a=>`${a.id}:${a.type}:${a.phase==='moving'?'M':'S'}:${a.baseFacility||''}:${a.routeId||''}`).join('|'),mobilityRows=(state.mobility?.vehicles||[]).map(v=>`${v.id}:${v.status==='moving'?'M':'S'}:${v.centerId||''}`).join('|'),facilityRows=getDynamicFacilities().filter(f=>f?.owned).map(f=>`${f.id}:${f.kind}:${f.company||''}:${f.commissioned===false?0:1}`).join('|');return `${state.activeFilter||'all'};${state.showCompetitors?1:0};${zoom};${selectedAssetId||''};${selectedMobilityId||''};${selectedFacilityId||''};${assetRows};${mobilityRows};${facilityRows}`;}
 
   function updateMarkerPositions(force=false){
@@ -1340,11 +1406,11 @@
     const assetIndex=new Map((state.assets||[]).map(asset=>[asset.id,asset]));
     // Visual targets are derived from committed simulation state, but interpolation
     // is presentation-only and never writes progress, simSeconds, finance or saves.
-    for(const id of renderedAssetIds){const a=assetIndex.get(id),m=ownMarkers.get(id);if(a&&m){const route=a.phase==='moving'?currentAssetRoute(a):null;setMapMarkerTarget(`own:${id}`,m,assetPosition(a),now,force,{route,routeKey:route?`${a.routeId}:${a.reverse?1:0}`:null,progress:route?a.progress:null});refreshVehicleMarker(m,a.type,assetBearing(a),a.phase==='moving');}}
+    for(const id of renderedAssetIds){const a=assetIndex.get(id),m=ownMarkers.get(id);if(a&&m){const onRoute=a.phase==='moving'||a.phase==='turnaround',route=onRoute?currentAssetRoute(a):null,progress=route?(a.phase==='turnaround'?1:a.progress):null,motionKey=`own:${id}`;setMapMarkerTarget(motionKey,m,assetPosition(a),now,force,{route,routeKey:route?`${a.routeId}:${a.reverse?1:0}`:null,progress,type:a.type,moving:a.phase==='moving'});const bridge=markerMotionStates.get(motionKey)?.routeBridge?.[0];refreshVehicleMarker(m,a.type,bridge?routeBearing(bridge.route,bridge.visualProgress):assetBearing(a),a.phase==='moving'||!!bridge);}}
     for(const [key,cluster] of movingFleetClusters){const assets=cluster.assetIds.map(id=>assetIndex.get(id)).filter(Boolean),point=averageMapPoint(assets,assetPosition);if(point)setMapMarkerTarget(`own:${key}`,cluster.marker,point,now,force);}
-    const liveIds=[...renderedMobilityIds];for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,Math.max(1,liveIds.length),{onlyIds:liveIds})||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){const motionKey=`own:mobility:${vehicle.id}`;setMapMarkerTarget(motionKey,m,interpolateRoute(vehicle.route,vehicle.progress),now,force,{route:vehicle.phase==='moving'?vehicle.route:null,routeKey:vehicle.phase==='moving'?`${vehicle.id}:${vehicle.routeKey||vehicle.route?.length||0}`:null,progress:vehicle.phase==='moving'?vehicle.progress:null});const visualProgress=markerMotionStates.get(motionKey)?.visualProgress??vehicle.progress;refreshVehicleMarker(m,'mobility',routeBearing(vehicle.route,visualProgress),vehicle.phase==='moving');}}
+    const liveIds=[...renderedMobilityIds];for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,Math.max(1,liveIds.length),{onlyIds:liveIds})||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){const motionKey=`own:mobility:${vehicle.id}`,route=vehicle.phase==='moving'?vehicle.route:null;setMapMarkerTarget(motionKey,m,interpolatePresentationRoute(vehicle.route,vehicle.progress),now,force,{route,routeKey:route?`${vehicle.id}:${vehicle.routeKey||vehicle.route?.length||0}`:null,progress:route?vehicle.progress:null,type:'mobility',moving:vehicle.phase==='moving'});const row=markerMotionStates.get(motionKey),bridge=row?.routeBridge?.[0],visualProgress=bridge?.visualProgress??row?.visualProgress??vehicle.progress;refreshVehicleMarker(m,'mobility',routeBearing(bridge?.route||vehicle.route,visualProgress),vehicle.phase==='moving'||!!bridge);}}
     const mobilityClusterIndex=new Map((window.GH_MOBILITY_CORE?.movingClusters?.(state,liveIds)||[]).map(cluster=>[cluster.centerId,cluster]));for(const [key,cluster] of movingMobilityClusters){const live=mobilityClusterIndex.get(cluster.centerId);if(live?.coords)setMapMarkerTarget(`own:${key}`,cluster.marker,live.coords,now,force);}
-    competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){setMapMarkerTarget(`competitor:${a.id}`,m,interpolateRoute(a.route,a.progress),now,force,{route:a.route,routeKey:`${a.id}:${a.route?.length||0}`,progress:a.progress});refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
+    competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){setMapMarkerTarget(`competitor:${a.id}`,m,interpolatePresentationRoute(a.route,a.progress),now,force,{route:a.route,routeKey:`${a.id}:${a.route?.length||0}`,progress:a.progress,type:a.type,moving:true});refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
     if(previousMarkerFrameAt===0&&force)animateMapMarkerPositions(now);
   }
 
@@ -1361,6 +1427,15 @@
     if(seconds<86400)return `${(seconds/3600).toFixed(seconds<10800?1:0)} ساعة`;
     return `${(seconds/86400).toFixed(seconds<259200?1:0)} يوم`;
   }
+  function updateDayStepControl(){
+    const button=$('simNextDay');if(!button)return;
+    const advance=window.GH_SIM_KERNEL?.snapshot?.().manualAdvance;
+    if(advance){
+      button.textContent='إيقاف الترحيل';button.title=`إيقاف الترحيل الجاري؛ المتبقي ${formatDuration(advance.remaining)}`;button.setAttribute('aria-label',button.title);button.dataset.advancing='true';
+    }else{
+      button.textContent='اليوم التالي';button.title='ترحيل آمن إلى بداية اليوم التالي عبر محرك المحاكاة';button.setAttribute('aria-label',button.title);delete button.dataset.advancing;
+    }
+  }
 
   function updateKpis(){
     $('groupName').textContent=state.profile.name;
@@ -1375,6 +1450,7 @@
     if($('executionLogCount'))$('executionLogCount').textContent='✓';
     $('simDate').textContent=formatSimDate();
     if($('simDay'))$('simDay').textContent=`اليوم ${Math.floor(Math.max(0,Number(state.simSeconds)||0)/86400)+1}`;
+    updateDayStepControl();
     $('godMoneyToggle').checked=!!state.godMoney;
     $('infiniteToggle').checked=!!state.infiniteMoney;
   }
@@ -1795,7 +1871,7 @@
     getSimTime:()=>state.simSeconds,
     setSimTime:value=>{state.simSeconds=value;},
     createSliceJob:createSimulationSliceJob,
-    onMaintenance:hour=>{diag('SIM_MAINTENANCE',{hour});window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'SIMULATION_MAINTENANCE',domain:'simulation',actor:'simulation-core',correlationId:`SIM-HOUR-${hour}`,detail:{hour}});compactSimulationState(false);const health=window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()});const central=window.GH_CONTROL_PLANE?.check?.(state);if(requiresGlobalHalt(health,central)){state.speed=0;pushAlert('أُوقفت المحاكاة لأن خللًا في سلامة الحفظ أو سجل الأوامر قد يهدد الحالة كاملة. مشكلات القطاعات الأخرى تبقى معزولة داخل قطاعها.');}},
+    onMaintenance:hour=>{diag('SIM_MAINTENANCE',{hour});window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'SIMULATION_MAINTENANCE',domain:'simulation',actor:'simulation-core',correlationId:`SIM-HOUR-${hour}`,detail:{hour}});compactSimulationState(false);const health=window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()});const central=window.GH_CONTROL_PLANE?.check?.(state);if(requiresGlobalHalt(health,central)){simulationEngine.cancelAdvance?.('global-halt');state.speed=0;pushAlert('أُوقفت المحاكاة لأن خللًا في سلامة الحفظ أو سجل الأوامر قد يهدد الحالة كاملة. مشكلات القطاعات الأخرى تبقى معزولة داخل قطاعها.');}},
     onRender:({now,speed,jobActive})=>{
       if(now-lastUiRefreshMs>=500){lastUiRefreshMs=now;updateKpis();updateMapStatus();if(selectedAssetId&&!$('assetCard').classList.contains('hidden'))refreshAssetCard(selectedAssetId);}state.simulationKernel={...(state.simulationKernel||{}),...simulationEngine.snapshot(),coreVersion:window.GH_SIMULATION_CORE.VERSION,transactionVersion:window.GH_TRANSACTION_CORE.VERSION};
       // Diagnostics may use wall-clock cadence for UI health only. No business decision
@@ -1807,8 +1883,9 @@
       }
     },
     onPersist:()=>{if(hardResetInProgress)return;const run=()=>{try{compactSimulationState(true);save();}catch(error){console.warn('تعذر حفظ المحاكاة',error);}};if(typeof window.requestIdleCallback==='function')window.requestIdleCallback(run,{timeout:1500});else setTimeout(run,0);},
+    onAdvance:()=>{updateDayStepControl();},
     isSuspended:()=>hardResetInProgress,
-    onFatal:error=>{state.speed=0;diag('SIM_FATAL',{message:String(error?.message||error)});console.error('Simulation Core fatal error',error);try{pushAlert('أوقف محرك المحاكاة الوقت لحماية الحفظ بعد خطأ داخلي.');}catch(alertError){console.error('تعذر تسجيل تنبيه خطأ المحاكاة',alertError);}},
+    onFatal:error=>{simulationEngine.cancelAdvance?.('simulation-fatal');state.speed=0;diag('SIM_FATAL',{message:String(error?.message||error)});console.error('Simulation Core fatal error',error);try{pushAlert('أوقف محرك المحاكاة الوقت لحماية الحفظ بعد خطأ داخلي.');}catch(alertError){console.error('تعذر تسجيل تنبيه خطأ المحاكاة',alertError);}},
     onWarning:({stage,error})=>{diag('SIM_WARNING',{stage,message:String(error?.message||error)});console.warn(`Simulation Core warning [${stage}]`,error);},
     onThrottle:({took,reason,stage})=>{diag('SIM_THROTTLE',{took,reason,stage});console.warn(`Simulation watchdog throttled after ${Math.round(took)}ms ${stage||'work'} stage`);},
     onGovernor:({level,avgChunkMs,avgWorkMs,stage,took})=>{diag('SIM_GOVERNOR',{level,avgChunkMs,avgWorkMs,stage,took});runtimeGovernor={level,avgChunkMs,avgWorkMs,stage,took};}
@@ -2634,13 +2711,22 @@
   function payTaxes(company='group'){company=COMPANY_FINANCE_TYPES.includes(company)?company:'group';try{const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'finance','pay-taxes',{company},{actor:'finance-ui'}).result;if(!result.amount){pushAlert(`لا توجد فترة ضريبية مستحقة على ${companyFinanceName(company)}.`);return;}pushAlert(`تم سداد ضريبة ${companyFinanceName(company)} بقيمة ${fmtMoney(result.amount)} عن ${result.count} فترة.`);save();openDrawer('finance');}catch(error){notice(`تعذر سداد الضريبة: ${error.message}`);}}
 
   function viewInvoices(company='all'){openDrawer('invoices',{company,tab:'all'});}
-  function manualPurchaseFromCard(button){
+  async function manualPurchaseFromCard(button){
     const card=button?.closest?.('.asset-market-card'),type=button?.dataset?.type,tab=button?.dataset?.tab,id=button?.dataset?.id;
     const baseId=card?.querySelector('.manual-asset-base')?.value,qty=card?.querySelector('.manual-asset-qty')?.value,mode=card?.querySelector('.manual-asset-mode')?.value||'cash';
     if(!type||!id||!baseId){notice('اختر أصلًا وقاعدة تسليم متوافقة.');return null;}
-    button.disabled=true;const orderId=buyAsset(type,tab,id,mode,qty,baseId,true,nextId('MANUAL-ASSET'));
-    if(!orderId){button.disabled=false;notice('لم يُنفذ الشراء ولم يحدث أي خصم. راجع الرصيد والمورد والسعة.');return null;}
-    pushAlert(`سُجل أمر الشراء اليدوي ${orderId}. لم ينشئ النظام أصلًا إضافيًا أو مسارًا أو قرارًا نيابةً عنك.`);save();updateKpis();openDrawer('assetMarket',type);return orderId;
+    if(button.disabled||button.dataset.busy==='true')return null;
+    button.disabled=true;button.dataset.busy='true';button.setAttribute('aria-busy','true');
+    // Small purchases retain their synchronous command contract. Large batches
+    // yield one paint first so the player receives immediate busy feedback.
+    if(Math.max(1,Math.floor(Number(qty)||1))>=64)await new Promise(resolve=>{if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>setTimeout(resolve,0));else setTimeout(resolve,0);});
+    try{
+      const orderId=buyAsset(type,tab,id,mode,qty,baseId,true,nextId('MANUAL-ASSET'));
+      if(!orderId)throw new Error('asset-purchase-rejected');
+      pushAlert(`سُجل أمر الشراء اليدوي ${orderId}. لم ينشئ النظام أصلًا إضافيًا أو مسارًا أو قرارًا نيابةً عنك.`);save();updateKpis();openDrawer('assetMarket',type);return orderId;
+    }catch(error){
+      button.disabled=false;delete button.dataset.busy;button.removeAttribute('aria-busy');notice('لم يُنفذ الشراء ولم يحدث أي خصم. راجع الرصيد والمورد والسعة.');return null;
+    }
   }
   function manualMobilityPurchaseFromCard(button){
     const card=button?.closest?.('.mobility-market-card'),classId=button?.dataset?.class,centerId=card?.querySelector('.mobility-purchase-center')?.value,quantity=Math.max(1,Math.min(50,Math.round(Number(card?.querySelector('.mobility-purchase-qty')?.value)||1)));
@@ -2678,8 +2764,9 @@
       }
       const result={orderId:results[0]?.orderId||null,count:allAssetIds.length,assetIds:allAssetIds,deliveryOrderIds:allDeliveryOrderIds,allocations:allocations.map(row=>({baseId:row.base.id,baseName:row.base.name,qty:row.qty}))};if(result.count!==qty)throw new Error('لم تكتمل كل توزيعات أمر الشراء.');
       window.GH_REALISM?.onSimulationTime?.(state,state.simSeconds);
-      const deliveredIds=new Set((state.assets||[]).filter(asset=>result.assetIds.includes(asset.id)&&asset.deliveryStatus==='delivered'&&asset.staffing?.ready===true).map(asset=>asset.id));
-      if(deliveredIds.size!==qty||result.deliveryOrderIds.some(orderId=>state.realism?.procurement?.deliveries?.find(row=>row.id===orderId)?.status!=='delivered'))throw new Error('تعذر إثبات التسليم والطاقم داخل معاملة الشراء.');
+      const purchasedAssetIds=new Set(result.assetIds),deliveryById=new Map((state.realism?.procurement?.deliveries||[]).map(row=>[row.id,row]));
+      const deliveredIds=new Set((state.assets||[]).filter(asset=>purchasedAssetIds.has(asset.id)&&asset.deliveryStatus==='delivered'&&asset.staffing?.ready===true).map(asset=>asset.id));
+      if(deliveredIds.size!==qty||result.deliveryOrderIds.some(orderId=>deliveryById.get(orderId)?.status!=='delivered'))throw new Error('تعذر إثبات التسليم والطاقم داخل معاملة الشراء.');
       const distribution=result.allocations.map(row=>`${row.baseName}: ${row.qty}`).join(' · ');pushAlert(`تم شراء وتسليم ${qty} × ${item.name} وتوزيعها ذريًا (${distribution})، مع تكوين الطاقم الثابت والراتب تلقائيًا. مرجع المورد ${result.orderId}.`);
       save();tx.afterCommit(()=>{updateKpis();if(!silent)openDrawer('assetMarket',type);});return result.orderId;
       }});return out.value;
@@ -2808,7 +2895,15 @@
     positionMapPopover($('layerBtn'),$('layerMenu'));
   }
   function closeMapPopovers(){$('filterPopover').classList.add('hidden');$('layerMenu').classList.add('hidden');$('speedMenu').classList.add('hidden');}
-  function setSpeed(value){const next=Number(value);state.speed=SAFE_SPEED_VALUES.includes(next)?next:1;simulationEngine.reset(performance.now(),'user-speed-change');document.querySelectorAll('#speedMenu button[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===state.speed));$('speedLabel').textContent=SPEED_LABEL_BY_LEVEL[state.speed];save();}
+  function advanceToNextSimulationDay(){
+    const active=simulationEngine.snapshot().manualAdvance;
+    if(active){simulationEngine.cancelAdvance('manual-day-step-cancelled');updateDayStepControl();return false;}
+    const now=Math.max(0,Number(state.simSeconds)||0),target=(Math.floor(now/86400)+1)*86400;
+    const request=simulationEngine.advanceTo(target,{speed:600,reason:'calendar-next-day',maxSeconds:86400});
+    if(!request.accepted){notice('تعذر ترحيل التاريخ الآن؛ لم يُكتب أي وقت مباشرة.');return false;}
+    updateDayStepControl();return true;
+  }
+  function setSpeed(value){const next=Number(value);simulationEngine.cancelAdvance?.('user-speed-change');state.speed=SAFE_SPEED_VALUES.includes(next)?next:1;simulationEngine.reset(performance.now(),'user-speed-change');document.querySelectorAll('#speedMenu button[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===state.speed));$('speedLabel').textContent=SPEED_LABEL_BY_LEVEL[state.speed];updateDayStepControl();save();}
 
   function openWorld(){closeDrawer();closeGod();closeMapPopovers();$('assetCard').classList.add('hidden');setActiveNav('map');updateMapStatus();}
   document.querySelectorAll('[data-panel]').forEach(btn=>btn.addEventListener('click',()=>openDrawer(btn.dataset.panel)));
@@ -2825,6 +2920,7 @@
   $('filterToggle').addEventListener('click',e=>{e.stopPropagation();const pop=$('filterPopover'),opening=pop.classList.contains('hidden');pop.classList.toggle('hidden');$('layerMenu').classList.add('hidden');$('speedMenu').classList.add('hidden');if(opening)requestAnimationFrame(()=>positionMapPopover($('filterToggle'),pop));});
   $('layerBtn').addEventListener('click',e=>{e.stopPropagation();const pop=$('layerMenu'),opening=pop.classList.contains('hidden');pop.classList.toggle('hidden');$('filterPopover').classList.add('hidden');$('speedMenu').classList.add('hidden');if(opening)requestAnimationFrame(()=>positionMapPopover($('layerBtn'),pop));});
   $('speedToggle').addEventListener('click',e=>{e.stopPropagation();$('speedMenu').classList.toggle('hidden');$('filterPopover').classList.add('hidden');$('layerMenu').classList.add('hidden');});
+  $('simNextDay')?.addEventListener('click',advanceToNextSimulationDay);
   $('fitWorldBtn').addEventListener('click',()=>{if(map)map.setView([22,28],3);closeMapPopovers();});
   document.addEventListener('click',e=>{if(!e.target.closest('.map-popover')&&!e.target.closest('.map-fab')&&!e.target.closest('.speed-dock'))closeMapPopovers();});
   document.querySelectorAll('.filter-btn').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();state.activeFilter=btn.dataset.filter;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.toggle('active',b===btn));save();renderMap();

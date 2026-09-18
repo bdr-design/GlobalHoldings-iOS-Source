@@ -37,6 +37,7 @@
     if(key==='hr:hire'&&(!object||value.ok!==true||value.missingAfter!==0||!Number.isInteger(value.total)))fail();
     if(key==='facilities:hire'&&(!object||value.ok!==true||!Number.isFinite(value.staff)))fail();
     if(key==='fleet:record-delivery'&&(!object||value.baseFacility!==payload.baseId||value.deliveryOrderId!==payload.deliveryId||!value.id))fail();
+    if(key==='fleet:record-delivery-batch'&&(!Array.isArray(value)||value.length!==payload.deliveries?.length||value.some((asset,index)=>!asset?.id||asset.baseFacility!==payload.deliveries[index]?.baseId||asset.deliveryOrderId!==payload.deliveries[index]?.deliveryId)))fail();
     if(['corporate:acquire-stake','market:acquire-stake'].includes(key)&&(!object||value.id!==payload.id||value.stake!==Number(payload.stake)))fail();
     return true;
   }
