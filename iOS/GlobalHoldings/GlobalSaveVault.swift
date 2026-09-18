@@ -107,18 +107,31 @@ final class GlobalSaveVault {
     }
 
     private func stageManualSlotsForReset() throws {
+        // Two-phase staging: copy and verify every existing slot before deleting
+        // any source. A crash while staging therefore cannot destroy an unstaged slot.
         for index in 0...2 {
             let source = manualSlotURL(index), backup = manualSlotBackupURL(index)
             if fm.fileExists(atPath: backup.path) { try fm.removeItem(at: backup) }
-            if fm.fileExists(atPath: source.path) { try fm.moveItem(at: source, to: backup) }
+            guard fm.fileExists(atPath: source.path) else { continue }
+            try fm.copyItem(at: source, to: backup)
+            guard try Data(contentsOf: source) == Data(contentsOf: backup) else {
+                throw VaultError.message("Manual slot reset backup verification failed.")
+            }
+        }
+        for index in 0...2 {
+            let source = manualSlotURL(index)
+            if fm.fileExists(atPath: source.path) { try fm.removeItem(at: source) }
         }
     }
 
     private func restoreManualSlotsAfterResetFailure() throws {
         for index in 0...2 {
             let source = manualSlotURL(index), backup = manualSlotBackupURL(index)
+            // No backup means this slot was either originally empty or staging had
+            // not reached it yet; preserve any still-existing source in that case.
+            guard fm.fileExists(atPath: backup.path) else { continue }
             if fm.fileExists(atPath: source.path) { try fm.removeItem(at: source) }
-            if fm.fileExists(atPath: backup.path) { try fm.moveItem(at: backup, to: source) }
+            try fm.moveItem(at: backup, to: source)
         }
     }
 
@@ -326,7 +339,6 @@ final class GlobalSaveVault {
                     _ = try self.commitLocked(envelope.payload, runtimeVersion: runtimeVersion ?? envelope.metadata.runtimeVersion, allowRegression: true)
                     let generation = try self.commitLocked(envelope.payload, runtimeVersion: runtimeVersion ?? envelope.metadata.runtimeVersion, allowRegression: true)
                     try self.fm.removeItem(at: self.resetCheckpointURL)
-                    if clearManualSlots { self.discardManualSlotResetBackups() }
                     return generation
                 } catch {
                     let failure = error
@@ -391,6 +403,7 @@ final class GlobalSaveVault {
                     _ = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true)
                     let generation = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true)
                     try self.fm.removeItem(at: self.resetCheckpointURL)
+                    if clearManualSlots { self.discardManualSlotResetBackups() }
                     return generation
                 } catch {
                     let failure = error
