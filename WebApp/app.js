@@ -2249,6 +2249,12 @@
       const shell=$('app');shell.setAttribute('aria-hidden','true');shell.style.pointerEvents='none';
       updateFounderLogoPreview();simulationEngine.reset(performance.now(),'new-group');updateKpis();renderMap();updateMapStatus();return true;
     }catch(error){
+      if(error.requiresNativeReload){
+        state.speed=0;
+        notice('تم اعتماد إعادة التعيين في الحفظ Native لكن تعذر تحديث الذاكرة؛ ستُعاد مزامنة اللعبة من الحفظ الدائم الآن.');
+        location.reload();
+        return false;
+      }
       window.GH_TRANSACTION_CORE.restoreObject(state,previousState);
       if(error.critical){state.speed=0;window.GH_CONTROL_PLANE.incident(state,{fingerprint:'RESET_COMPENSATION_FAILED',code:'RESET_COMPENSATION_FAILED',severity:'critical',domain:'save',title:'فشل استرداد الحفظ',detail:String(error.compensationError||error.rollbackError)});}
       notice(error.critical?'تعذر تأكيد استرداد الحفظ. أوقفت المحاكاة لحماية التقدم؛ صدّر تقرير الدعم.':'تعذر إكمال إعادة اللعبة؛ تم الاحتفاظ بالحالة السابقة.');return false;
