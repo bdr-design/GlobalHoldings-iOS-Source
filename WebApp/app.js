@@ -2654,6 +2654,14 @@
     button.dataset.busy=token;button.disabled=true;button.setAttribute('aria-busy','true');if(label)button.textContent=label;
     return ()=>{if(!button.isConnected||button.dataset.busy!==token)return;delete button.dataset.busy;button.disabled=previous.disabled;button.removeAttribute('aria-busy');button.textContent=previous.text;};
   }
+  function yieldForInteractivePaint(timeoutMs=80){
+    return new Promise(resolve=>{
+      let done=false,timer=null;
+      const finish=()=>{if(done)return;done=true;if(timer!==null)clearTimeout(timer);resolve();};
+      timer=setTimeout(finish,Math.max(0,Number(timeoutMs)||0));
+      try{if(typeof requestAnimationFrame==='function')requestAnimationFrame(finish);else finish();}catch(_error){finish();}
+    });
+  }
   function bindDrawerActions(){
     document.querySelectorAll('[data-open]').forEach(b=>{b.dataset.interactionBound='1';b.addEventListener('click',()=>globalThis.GH_INTERACTION?.run?globalThis.GH_INTERACTION.run(b,()=>openDrawer(b.dataset.open,b.dataset.arg||undefined),{action:`open:${b.dataset.open}`,state}):openDrawer(b.dataset.open,b.dataset.arg||undefined));});
     const god1=$('drawerGodBtn'),god2=$('moreGodBtn'); if(god1)god1.addEventListener('click',openGod); if(god2)god2.addEventListener('click',openGod);
@@ -2812,10 +2820,10 @@
     const baseId=card?.querySelector('.manual-asset-base')?.value,qty=card?.querySelector('.manual-asset-qty')?.value,mode=card?.querySelector('.manual-asset-mode')?.value||'cash';
     if(!type||!id||!baseId){notice('اختر أصلًا وقاعدة تسليم متوافقة.');return null;}
     const release=beginButtonOperation(button,'جارٍ الشراء والتسليم…');if(!release)return null;
-    // Small purchases retain their synchronous command contract. Large batches
-    // yield one paint first so the player receives immediate busy feedback.
-    if(Math.max(1,Math.floor(Number(qty)||1))>=64)await new Promise(resolve=>{if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>setTimeout(resolve,0));else setTimeout(resolve,0);});
     try{
+      // Large batches yield for visible busy feedback, but never make the
+      // operation lifecycle depend on WebKit delivering an animation frame.
+      if(Math.max(1,Math.floor(Number(qty)||1))>=64)await yieldForInteractivePaint();
       const orderId=buyAsset(type,tab,id,mode,qty,baseId,true);
       if(!orderId)throw new Error('asset-purchase-rejected');
       pushAlert(`سُجل أمر الشراء اليدوي ${orderId}. لم ينشئ النظام أصلًا إضافيًا أو مسارًا أو قرارًا نيابةً عنك.`);save();updateKpis();openDrawer('assetMarket',type);return orderId;
