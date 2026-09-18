@@ -2,7 +2,7 @@
   'use strict';
   const VERSION='3.0.0';
   const PANEL_DOMAIN={
-    leadershipHub:'القيادة التنفيذية',workspaceHub:'النظام والسلامة',actionCenter:'القيادة التنفيذية',executionLog:'القيادة التنفيذية',programs:'القيادة التنفيذية',news:'القيادة التنفيذية',realism:'القيادة التنفيذية',ma:'القيادة التنفيذية',research:'القيادة التنفيذية',esg:'القيادة التنفيذية',career:'القيادة التنفيذية',
+    leadershipHub:'القيادة التنفيذية',workspaceHub:'النظام والسلامة',actionCenter:'القيادة التنفيذية',executionLog:'القيادة التنفيذية',programs:'القيادة التنفيذية',news:'القيادة التنفيذية',businessWorld:'القيادة التنفيذية',realism:'القيادة التنفيذية',ma:'القيادة التنفيذية',research:'القيادة التنفيذية',esg:'القيادة التنفيذية',career:'القيادة التنفيذية',
     companies:'المجموعة والشركات',companyManage:'المجموعة والشركات',peopleHub:'الموارد البشرية',labor:'الموارد البشرية',control:'التشغيل والأصول',network:'التشغيل والأصول',expansion:'التشغيل والأصول',globalRoute:'التشغيل والأصول',routes:'التشغيل والأصول',assets:'التشغيل والأصول',assetManage:'التشغيل والأصول',ports:'التشغيل والأصول',procurement:'التشغيل والأصول',contracts:'التشغيل والأصول',facilityManage:'التشغيل والأصول',
     finance:'المالية والخزينة',treasury:'المالية والخزينة',invoices:'المالية والخزينة',market:'المالية والخزينة',bank:'المالية والخزينة',
     governanceHub:'الحوكمة والمخاطر',governance:'الحوكمة والمخاطر',audit:'الحوكمة والمخاطر',compliance:'الحوكمة والمخاطر',legal:'الحوكمة والمخاطر',insurance:'الحوكمة والمخاطر',cyber:'الحوكمة والمخاطر',safety:'الحوكمة والمخاطر',
