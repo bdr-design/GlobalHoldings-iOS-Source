@@ -34,6 +34,7 @@
     "assets/images/truck-tanker.webp",
     "assets/images/truck-urban.webp",
     "banking-core.js",
+    "business-world-core.js",
     "catalog.js",
     "contracts-core.js",
     "control-plane-core.js",
