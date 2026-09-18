@@ -17,7 +17,11 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     // backgrounding while Native durability is still in flight.
     await page.evaluate(()=>{
       window.__GH_LIFECYCLE_ENVELOPES__=[];
-      window.webkit={messageHandlers:{saveBridge:{postMessage:envelope=>window.__GH_LIFECYCLE_ENVELOPES__.push(JSON.parse(JSON.stringify(envelope)))}}};
+      window.__GH_RESET_ENVELOPES__=[];
+      window.webkit={messageHandlers:{
+        saveBridge:{postMessage:envelope=>window.__GH_LIFECYCLE_ENVELOPES__.push(JSON.parse(JSON.stringify(envelope)))},
+        updateBridge:{postMessage:envelope=>window.__GH_RESET_ENVELOPES__.push(JSON.parse(JSON.stringify(envelope)))}
+      }};
       window.__GH_BACKGROUND_RESULT__='not-started';
     });
 
@@ -70,19 +74,72 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     });
     await page.waitForFunction(()=>window.__GH_BACKGROUND_RESULT__?.status==='fulfilled-2');
 
-    const saved=await page.evaluate(()=>JSON.parse(JSON.stringify(__GH_STATE__)));
+    const founderState=await page.evaluate(()=>JSON.parse(JSON.stringify(__GH_STATE__)));
+    const cachedFounder=await page.evaluate(()=>JSON.parse(localStorage.getItem('global-holdings-world-v2.0.0')));
+    assert.strictEqual(cachedFounder.onboardingComplete,true);
+    assert.strictEqual(cachedFounder.saveRevision,envelope2.saveRevision,'background Native ACK must correspond to the browser compatibility cache revision');
+    assert.strictEqual(cachedFounder.profile.name,founderState.profile.name);
+
+    // New Game is another Native atomic lifecycle. Backgrounding while its
+    // reset ACK is in flight must wait for that reset rather than abandon the
+    // finite iOS background task with background-save-rejected.
+    await page.evaluate(()=>{
+      window.__GH_RESET_RESULT__='pending';
+      GH_FORCE_NEW_GAME().then(
+        value=>{window.__GH_RESET_RESULT__={status:'fulfilled',value};},
+        error=>{window.__GH_RESET_RESULT__={status:'rejected',message:String(error?.message||error)};}
+      );
+    });
+    await page.waitForFunction(()=>window.__GH_RESET_ENVELOPES__.length===1);
+    assert.strictEqual(await page.evaluate(()=>__GH_STATE__.onboardingComplete),true,'reset must not promote new state before Native reset ACK');
+
+    await page.evaluate(()=>{
+      window.__GH_BACKGROUND_RESET_RESULT__='pending';
+      GH_RUNTIME.persistForBackground().then(
+        value=>{window.__GH_BACKGROUND_RESET_RESULT__={status:'fulfilled',value};},
+        error=>{window.__GH_BACKGROUND_RESET_RESULT__={status:'rejected',message:String(error?.message||error)};}
+      );
+    });
+    await page.waitForTimeout(200);
+    assert.strictEqual(await page.evaluate(()=>window.__GH_BACKGROUND_RESET_RESULT__),'pending','background save must remain pending behind the active Native reset');
+    assert.strictEqual(await page.evaluate(()=>window.__GH_LIFECYCLE_ENVELOPES__.length),2,'backgrounding during reset must not emit a competing save');
+
+    const resetEnvelope=await page.evaluate(()=>window.__GH_RESET_ENVELOPES__[0]);
+    await page.evaluate(detail=>window.dispatchEvent(new CustomEvent('gh-native-reset-ack',{detail})),{
+      action:resetEnvelope.action,requestId:resetEnvelope.requestId,saveRevision:resetEnvelope.saveRevision,resetEpoch:resetEnvelope.resetEpoch,
+      saveHash:resetEnvelope.saveHash,saveSchemaVersion:'2.0.0',success:true,generation:3,message:''
+    });
+    await page.waitForFunction(()=>window.__GH_RESET_RESULT__?.status==='fulfilled');
+    await page.waitForFunction(()=>window.__GH_BACKGROUND_RESET_RESULT__!=='pending');
+    const backgroundReset=await page.evaluate(()=>window.__GH_BACKGROUND_RESET_RESULT__);
+    assert.strictEqual(backgroundReset.status,'fulfilled',backgroundReset.message||'background persistence rejected after Native reset settled');
+    assert.strictEqual(await page.evaluate(()=>window.__GH_LIFECYCLE_ENVELOPES__.length),2,'successful reset already owns durability; background wait must not duplicate it');
+    const resetState=await page.evaluate(()=>JSON.parse(JSON.stringify(__GH_STATE__)));
+    assert.strictEqual(resetState.onboardingComplete,false);
+    assert.strictEqual(resetState.resetEpoch,resetEnvelope.resetEpoch);
+    assert.strictEqual(resetState.assets.length,0);
+    assert.strictEqual(resetState.openedCompanies.length,0);
+
+    const cachedReset=await page.evaluate(()=>JSON.parse(localStorage.getItem('global-holdings-world-v2.0.0')));
+    assert.strictEqual(cachedReset.onboardingComplete,false);
+    assert.strictEqual(cachedReset.resetEpoch,resetEnvelope.resetEpoch);
     await page.reload({waitUntil:'domcontentloaded'});
     const restored=await page.evaluate(()=>JSON.parse(JSON.stringify(__GH_STATE__)));
-    assert.strictEqual(restored.onboardingComplete,true);
-    assert.strictEqual(restored.saveRevision,saved.saveRevision);
-    assert.strictEqual(restored.profile.name,saved.profile.name);
+    assert.strictEqual(restored.onboardingComplete,false);
+    assert.strictEqual(restored.resetEpoch,resetEnvelope.resetEpoch);
+    assert.strictEqual(restored.assets.length,0);
+    assert.strictEqual(restored.openedCompanies.length,0);
+    assert.strictEqual(restored.cash,0);
+    assert(restored.saveRevision>=cachedReset.saveRevision,'reload must not regress the reset save revision');
     assert.deepStrictEqual(errors,[]);
 
     evidence.firstDurableRevision=envelope.saveRevision;
     evidence.backgroundRevision=envelope2.saveRevision;
+    evidence.resetEpoch=resetEnvelope.resetEpoch;
     evidence.waitedForInFlightDurable=true;
+    evidence.waitedForInFlightReset=true;
     fs.mkdirSync('.ci-output/ci',{recursive:true});
     fs.writeFileSync(`.ci-output/ci/build315-device-lifecycle-${engineName}.json`,JSON.stringify(evidence,null,2));
-    console.log(`BUILD315 device lifecycle ${engineName}: PASS (background waits for in-flight Native durable command; no competing revision; reload exact)`);
+    console.log(`BUILD315 device lifecycle ${engineName}: PASS (background waits for Native durable/reset lifecycles; no competing revision; reset reload safe)`);
   }finally{await browser.close();await server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
