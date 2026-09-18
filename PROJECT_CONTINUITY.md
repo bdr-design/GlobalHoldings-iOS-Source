@@ -38,19 +38,22 @@
 
 ### Last GREEN
 
-- Name: `B315-C-GREEN-ManualSlots`
-- SHA: `96de035292db0d1794766da2fa83ef873426fd72`
-- CI run: `35373001755` — **SUCCESS**
+- Name: `B315-D-GREEN-Stress1000`
+- SHA: `21c2dcaecc895dcf1104ecb935d46d66a2e71305`
+- CI run: `35374508129` — **SUCCESS**
 - Proven gates:
-  - Source Integrity PASS — 342 files
+  - Source Integrity PASS — 344 files
   - Release metadata PASS — 3.0.0 / Build 314 / Save Schema 2.0.0
-  - JavaScript syntax PASS — 45 files
+  - JavaScript syntax PASS
   - Swift/Native contract PASS
-  - 109/109 active repository tests PASS
+  - 110/110 active repository tests PASS
+  - Procurement idempotency regression PASS
   - Chromium browser suites PASS
   - WebKit browser suites PASS
   - Chromium + WebKit E2E PASS
   - Chromium + WebKit failure scenarios PASS
+  - BUILD315 Stress1000 Chromium PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 517 ms; routing 2231 ms; save 4,037,723 bytes
+  - BUILD315 Stress1000 WebKit PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 1161 ms; routing 3105 ms; save 4,034,879 bytes
   - Swift syntax PASS
   - BUILD312 native runtime inventory PASS
   - BUILD315 Native Save Vault manual slots PASS (>4MB, load promotion, clear, New Game clear, bootstrap freshness)
@@ -61,19 +64,20 @@
   - unsigned IPA packaging PASS
   - final IPA integrity PASS
 - Verified unsigned IPA: `GlobalHoldings_v3_0_0_build314_unsigned.ipa`
-- IPA SHA-256: `1489347a1fffc39d6abc05de90e1856889bdf9c638ea624424d73ec7484c98e0`
-- Previous GREEN retained for historical rollback: `B315-A-GREEN-NativeFirst` → `4469767448a52fb041cd7b5031a63ccddcef84c7`
+- IPA SHA-256: `c15b3f7b0a6683a39724d6b93020a8f746217b2ed964a35f486fc247d53e05ab`
+- Previous GREEN retained: `B315-C-GREEN-ManualSlots` → `96de035292db0d1794766da2fa83ef873426fd72`
+- Earlier rollback: `B315-A-GREEN-NativeFirst` → `4469767448a52fb041cd7b5031a63ccddcef84c7`
 
 ### Current working state
 
-- Name: `B315-D-YELLOW-Stress1000`
-- Baseline: `96de035292db0d1794766da2fa83ef873426fd72`
-- Status: **YELLOW — 1000-asset real E2E + procurement idempotency regression in progress**
-- Implemented but not yet proven from a full candidate SHA:
-  - `tests/build315-procurement-idempotency-test.js`: same-key/same-payload exactly-once purchase; same-key/different-payload fail-closed.
-  - `tests/browser-build315-stress1000.js`: real UI facility expansion → 1000 road assets → fixed crew → 16 shared routes → Native durable save → fresh browser context Native relaunch → exact logical-state comparison.
-  - Stress1000 is wired into `npm run test:browser`, so it must pass on both Chromium and WebKit.
-  - Evidence captures purchase/routing duration, Native save byte size, route/crew invariants and optional heap usage.
+- Name: `B315-E-YELLOW-OperationalRegressionAudit`
+- Baseline: `21c2dcaecc895dcf1104ecb935d46d66a2e71305`
+- Status: **YELLOW — targeted audit of remaining runtime reliability paths before any new production modification**
+- Scope:
+  - non-air route assignment and shared-route commit paths
+  - large-quantity purchasing and button-operation lock release paths
+  - facility/base creation action completion and rollback paths
+  - no production change until a reproducible failing path or invariant violation is proven
 - The current branch must be re-read before resuming because HEAD may advance after this record is updated.
 
 ## 4) Build315 work completed since Last GREEN — code present, not all yet promoted to GREEN
@@ -96,49 +100,31 @@
 - It stopped at the Native Save Slots executable harness because the **test harness itself** used a throwing `revision(...)` call inside a non-throwing Swift autoclosure. Production Swift parsing had already passed and BUILD312 native runtime regression passed.
 - The harness compile defect was corrected in commit `d568dcc632811c470332e154917ca10510e856ea` by evaluating the throwing revision parse before the assertion. This remains **YELLOW** until a fresh full CI/Xcode/IPA run passes from one candidate SHA.
 
-## 5) Unverified / Pending before Manual Slots can become GREEN
+## 5) Current GREEN evidence
 
-Do not promote `B315-B-YELLOW-ManualSlots` to GREEN until the same candidate SHA passes:
+`B315-D-GREEN-Stress1000` is the current rollback-safe checkpoint.
 
-1. Source Integrity
-2. Release metadata
-3. JavaScript syntax
-4. Swift/Native contract guards
-5. All repository guards
-6. Native Save Slots executable regression (>4 MB, load, clear, reset, bootstrap freshness)
-7. Chromium browser suites
-8. WebKit browser suites
-9. E2E
-10. Failure scenarios
-11. Swift parse/native runtime tests
-12. XcodeGen/project verification
-13. iPhoneOS Release build
-14. Built WebApp exact-copy validation
-15. unsigned IPA packaging
-16. final IPA integrity validation
+The exact tested candidate SHA is `21c2dcaecc895dcf1104ecb935d46d66a2e71305`. Do not move the GREEN label to a later SHA unless that later candidate itself completes the required verification chain.
 
-If any gate fails: keep YELLOW or mark RED depending on severity, fix root cause, regenerate integrity, and rerun the full required chain.
+Stress1000 proved the complete path:
 
-## 6) Next stage after Manual Slots GREEN
+`UI → facility expansion → purchase 1000 road assets → finance debit → delivery → 3000 fixed crew → 16 shared road routes → Native durable save → fresh browser context → Native bootstrap restore → exact logical-state comparison`
 
-### `B315-D-YELLOW-Stress1000`
+The procurement idempotency gate also proved:
+- same idempotency key + same payload returns the committed result without another debit or duplicate assets/deliveries
+- same idempotency key + different payload is rejected fail-closed
 
-Real E2E scenario:
+## 6) Next stage
 
-`UI → facility expansion → purchase 1000 assets → finance → delivery → fixed crew → ~16 shared road routes → Native save → simulated Native relaunch → compare assets/balances/routes/crew`
+### `B315-E-YELLOW-OperationalRegressionAudit`
 
-Required properties:
-- deterministic/reproducible fixture where possible
-- no duplicate financial debit
-- no lost/duplicated assets
-- route ownership and shared-fleet invariants remain valid
-- crew counts remain consistent
-- Native save/relaunch restores the same logical state
-- performance/memory observations recorded
-
-Also add the planned idempotency regression for `domain-command-core.js`:
-- retry with the same idempotency key + same payload must not duplicate debit/assets
-- same key + different payload must be rejected
+Audit before modifying:
+- reproduce any remaining non-air routing failure from the actual UI path
+- reproduce any purchase/button lock after repeated or large operations
+- verify every busy-button release occurs on success, validation failure, thrown error, provider failure, save failure, and cancellation
+- trace base/facility creation through transaction commit → persistence → UI unlock
+- add a failing regression first whenever a defect is reproducible
+- keep production code unchanged when no invariant failure can be demonstrated
 
 ## 7) Chat Handoff template
 
