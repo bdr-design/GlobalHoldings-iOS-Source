@@ -300,8 +300,11 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                 completion(.success(generation))
                 return
             }
-            GlobalSaveVault.shared.commitAsync(save, runtimeVersion: GlobalGameStorage.shared.currentVersion) { result in
-                if case .success(let generation) = result { GlobalGameStorage.shared.noteCurrentSaveGeneration(generation) }
+            GlobalSaveVault.shared.commitAsync(save, runtimeVersion: GlobalGameStorage.shared.currentVersion) { [weak self] result in
+                if case .success(let generation) = result {
+                    GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+                    self?.refreshNativeBootstrapScript()
+                }
                 completion(result)
             }
         }
@@ -447,7 +450,9 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                 let label = String((payload["label"] as? String ?? "").prefix(120))
                 GlobalSaveVault.shared.saveManualSlotAsync(index, json: json, label: label, runtimeVersion: GlobalGameStorage.shared.currentVersion) { [weak self] result in
                     switch result {
-                    case .success(let metadata): self?.reportManualSlotAck(payload: payload, success: true, metadata: metadata)
+                    case .success(let metadata):
+                        self?.refreshNativeBootstrapScript()
+                        self?.reportManualSlotAck(payload: payload, success: true, metadata: metadata)
                     case .failure(let error): self?.reportManualSlotAck(payload: payload, success: false, message: error.localizedDescription)
                     }
                 }
@@ -475,7 +480,9 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                 }
                 GlobalSaveVault.shared.clearManualSlotAsync(index) { [weak self] result in
                     switch result {
-                    case .success: self?.reportManualSlotAck(payload: payload, success: true)
+                    case .success:
+                        self?.refreshNativeBootstrapScript()
+                        self?.reportManualSlotAck(payload: payload, success: true)
                     case .failure(let error): self?.reportManualSlotAck(payload: payload, success: false, message: error.localizedDescription)
                     }
                 }
@@ -507,6 +514,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                     self?.preUpdateSaveGeneration = generation
                     self?.reportUpdateLifecycle(phase: "PRE_SAVE_COMMITTED", message: "Verified pre-update save generation \(generation)")
                     GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+                    self?.refreshNativeBootstrapScript()
                     self?.applyWebBridgeUpdate(manifest: manifest, files: files, operationsJSON: operationsJSON, preUpdateSaveGeneration: generation)
                 case .failure(let error):
                     self?.pendingSaveJSON = nil
