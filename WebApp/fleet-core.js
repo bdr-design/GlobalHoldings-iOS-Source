@@ -17,6 +17,13 @@
   // persisted route/save limits while retaining an explicit capacity contract.
   const ROUTE_FLEET_CAPACITY=Object.freeze({air:1,sea:24,road:64});
   const ROUTE_DEPARTURE_INTERVAL_SECONDS=Object.freeze({air:0,sea:60,road:15});
+  // Hard capacity protects assignment integrity; automatic dispatch deliberately
+  // targets a much lower density so normal fleets spread across the world
+  // instead of filling one corridor to its safety ceiling.
+  const AUTOMATIC_ROUTE_DENSITY=Object.freeze({
+    sea:Object.freeze([{maxFleet:80,target:4},{maxFleet:180,target:6},{maxFleet:Infinity,target:10}]),
+    road:Object.freeze([{maxFleet:128,target:16},{maxFleet:512,target:32},{maxFleet:Infinity,target:48}])
+  });
 
   const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
   const simDay=state=>Math.floor((Number(state?.simSeconds)||0)/86400);
@@ -35,6 +42,14 @@
   function routeCapacity(routeOrType){
     const type=typeof routeOrType==='string'?routeOrType:routeOrType?.type;
     return ROUTE_FLEET_CAPACITY[type]||1;
+  }
+  function automaticRouteTargetLoad(type,fleetCount,maxRoutes=Infinity){
+    const hard=routeCapacity(type),count=Math.max(0,Math.floor(Number(fleetCount)||0));
+    if(count<=1||type==='air')return 1;
+    const tiers=AUTOMATIC_ROUTE_DENSITY[type]||[{maxFleet:Infinity,target:hard}],preferred=Math.min(hard,(tiers.find(row=>count<=row.maxFleet)||tiers.at(-1)).target);
+    const minimumRoutes=Math.ceil(count/hard),preferredRoutes=Math.ceil(count/preferred),limit=Number.isFinite(Number(maxRoutes))?Math.max(1,Math.floor(Number(maxRoutes))):preferredRoutes;
+    const routeCount=Math.max(minimumRoutes,Math.min(preferredRoutes,Math.max(minimumRoutes,limit)));
+    return Math.min(hard,Math.max(1,Math.ceil(count/routeCount)));
   }
   function departureDelay(asset){
     const slot=Math.max(0,Math.floor(Number(asset?.routeSlot)||0));
@@ -296,6 +311,6 @@
     if(cmd==='reconcile-staffing')return reconcileStaffing(state,p.facilityResolver);
     throw new Error(`Unknown fleet command: ${cmd}`);
   }
-  const API={VERSION,ROLE_DEFAULTS,ROUTE_FLEET_CAPACITY,ROUTE_DEPARTURE_INTERVAL_SECONDS,normalizeAsset,departDraft,departureDelay,routeCapacity,routeSignature,routeConflict,assignRoutesBatch,departBatch,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,monthlyPayroll,headcount,recordDeliveryBatch};
+  const API={VERSION,ROLE_DEFAULTS,ROUTE_FLEET_CAPACITY,ROUTE_DEPARTURE_INTERVAL_SECONDS,AUTOMATIC_ROUTE_DENSITY,normalizeAsset,departDraft,departureDelay,routeCapacity,automaticRouteTargetLoad,routeSignature,routeConflict,assignRoutesBatch,departBatch,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,monthlyPayroll,headcount,recordDeliveryBatch};
   globalThis.GH_FLEET_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('fleet',API);if(globalThis.window&&window!==globalThis)window.GH_FLEET_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
