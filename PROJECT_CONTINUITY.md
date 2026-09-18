@@ -38,13 +38,13 @@
 
 ### Last GREEN
 
-- Name: `B315-F-GREEN-FinalDeviceReadiness`
-- SHA: `55de368a262c88ac76eefe60612e070fdb2eae3d`
-- Checkpoint branch: `checkpoint-b315-f-green-device-readiness`
-- CI run: `35382957560` — **SUCCESS**
+- Name: `B315-G-GREEN-ReleaseIdentity315`
+- SHA: `10f91ef04a612867b3363da0dd0e5e0d86015378`
+- Checkpoint branch: `checkpoint-b315-g-green-release315`
+- CI run: `35385067336` — **SUCCESS**
 - Proven gates:
   - Source Integrity PASS — 346 files
-  - Release metadata PASS — 3.0.0 / Build 314 / Save Schema 2.0.0
+  - Release metadata PASS — 3.0.0 / Build 315 / Save Schema 2.0.0
   - JavaScript syntax PASS
   - Swift/Native contract PASS
   - 110/110 active repository tests PASS
@@ -52,8 +52,8 @@
   - Chromium + WebKit browser suites PASS
   - Chromium + WebKit E2E PASS
   - Chromium + WebKit failure scenarios PASS
-  - BUILD315 Stress1000 Chromium PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 713 ms; routing 2546 ms; save 4,038,749 bytes
-  - BUILD315 Stress1000 WebKit PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 2290 ms; routing 4326 ms; save 4,034,879 bytes
+  - BUILD315 Stress1000 Chromium PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 466 ms; routing 1863 ms; save 4,037,723 bytes
+  - BUILD315 Stress1000 WebKit PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 1697 ms; routing 3452 ms; save 4,034,879 bytes
   - BUILD315 Operational Regression Chromium PASS — facility/purchase/sea-route rollback + button retry; 25 ships on 2 shared routes
   - BUILD315 Operational Regression WebKit PASS — facility/purchase/sea-route rollback + button retry; 25 ships on 2 shared routes
   - BUILD315 Device Lifecycle Chromium PASS — background waits for Native durable/reset lifecycles; no competing revision; reset reload safe
@@ -69,21 +69,21 @@
   - Built WebApp exact-copy validation PASS — 84 files
   - unsigned IPA packaging PASS
   - final IPA integrity PASS
-- Verified unsigned IPA: `GlobalHoldings_v3_0_0_build314_unsigned.ipa`
-- IPA SHA-256: `4bcb69cd9f835be66c9791742704cca1f0862ffe5d48546654fa9bb5eb6041c3`
-- Previous GREEN retained: `B315-E-GREEN-OperationalRegressionAudit` → `30bd7fc04be36da3ec9f28d39afbc028e11b1974`
-- Earlier rollback: `B315-D-GREEN-Stress1000` → `21c2dcaecc895dcf1104ecb935d46d66a2e71305`
+- Verified unsigned IPA: `GlobalHoldings_v3_0_0_build315_unsigned.ipa`
+- IPA SHA-256: `55eee41c4eff173f40f686f05dda6527c5caf17938c91632a2ed98ad23379084`
+- Previous GREEN retained: `B315-F-GREEN-FinalDeviceReadiness` → `55de368a262c88ac76eefe60612e070fdb2eae3d`
+- Earlier rollback: `B315-E-GREEN-OperationalRegressionAudit` → `30bd7fc04be36da3ec9f28d39afbc028e11b1974`
 
 ### Current working state
 
-- Name: `B315-G-YELLOW-ReleaseIdentity315`
-- Baseline / rollback checkpoint: `B315-F-GREEN-FinalDeviceReadiness` → `55de368a262c88ac76eefe60612e070fdb2eae3d`
-- Status: **YELLOW — release identity promoted from Build 314 to Build 315; full exact-SHA verification pending**
-- Intended release identity:
+- Name: `B315-G-GREEN-ReleaseIdentity315`
+- Baseline / tested SHA: `10f91ef04a612867b3363da0dd0e5e0d86015378`
+- Status: **GREEN — canonical release identity is Build315 and the complete exact-SHA verification chain passed**
+- Release identity:
   - App version: `3.0.0`
   - Native/Web runtime build: `315`
   - Save Schema: `2.0.0` unchanged
-- Modified identity surfaces: root `BUILD`, `package.json`, `package-lock.json`, `project.yml`, `WebApp/app.js`, and the release identity regression.
+- Exact tested unsigned IPA: `GlobalHoldings_v3_0_0_build315_unsigned.ipa`
 - Build314 preserved reference remains immutable.
 - No merge to `main` and no merge of draft PR #12 has been performed.
 
@@ -114,12 +114,14 @@
 - Production fix serializes `persistForBackground()` behind the in-flight durable command and coalesces the background request when that command already advanced the durable revision, avoiding a competing Native write.
 - The lifecycle regression was extended through Native reset/New Game and exposed the same class of race across the reset lifecycle; background persistence now waits for Native reset settlement as well.
 - Exact candidate `55de368a262c88ac76eefe60612e070fdb2eae3d` passed the full Chromium/WebKit/native/Xcode/iPhoneOS/IPA chain in CI run `35382957560`.
+- Release identity was then promoted consistently from Build314 to Build315 across root metadata, package metadata, Xcode project metadata, WebApp runtime badge and release identity regression, without changing app version `3.0.0` or Save Schema `2.0.0`.
+- Exact Build315 candidate `10f91ef04a612867b3363da0dd0e5e0d86015378` passed the complete verification chain in CI run `35385067336`; final unsigned IPA SHA-256 is `55eee41c4eff173f40f686f05dda6527c5caf17938c91632a2ed98ad23379084`.
 
 ## 5) Current GREEN evidence
 
-`B315-F-GREEN-FinalDeviceReadiness` is the current rollback-safe checkpoint.
+`B315-G-GREEN-ReleaseIdentity315` is the current rollback-safe checkpoint.
 
-The exact tested candidate SHA is `55de368a262c88ac76eefe60612e070fdb2eae3d`. Do not move the GREEN label to a later SHA unless that later candidate itself completes the required verification chain.
+The exact tested candidate SHA is `10f91ef04a612867b3363da0dd0e5e0d86015378`. Do not move the GREEN label to a later SHA unless that later candidate itself completes the required verification chain.
 
 The stage proves:
 - Stress1000 complete path remains green: `UI → facility expansion → purchase 1000 road assets → finance debit → delivery → 3000 fixed crew → 16 shared road routes → Native durable save → fresh browser context → Native bootstrap restore → exact logical-state comparison`
@@ -131,14 +133,13 @@ The stage proves:
 
 ## 6) Next stage
 
-### `B315-G-YELLOW-ReleaseIdentity315`
+No unverified Build315 production change is open.
 
-Release freeze work:
-- promote the canonical build identity from `314` to `315` without changing app version `3.0.0` or Save Schema `2.0.0`
-- require all release metadata surfaces and runtime badge to agree on Build315
-- regenerate Source Integrity after the metadata change
-- rerun the complete repository/browser/Swift/Xcode/iPhoneOS/IPA chain from one exact candidate SHA
-- only after that exact candidate succeeds may Build315 release identity be promoted to GREEN
+Before a signed/device-tested IPA is claimed:
+- use `checkpoint-b315-g-green-release315` as the immutable Build315 release candidate
+- preserve Build314 and do not merge PR #12
+- sign only an artifact derived from the exact green Build315 source
+- validate install, launch, background/foreground, kill/relaunch, Native save, Manual Slots and New Game on a physical iPhone
 - signing and physical-device validation remain separate evidence gates and must not be claimed before they are actually performed
 
 ## 7) Chat Handoff template
