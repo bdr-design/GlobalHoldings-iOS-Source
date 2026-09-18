@@ -38,22 +38,26 @@
 
 ### Last GREEN
 
-- Name: `B315-D-GREEN-Stress1000`
-- SHA: `21c2dcaecc895dcf1104ecb935d46d66a2e71305`
-- CI run: `35374508129` — **SUCCESS**
+- Name: `B315-E-GREEN-OperationalRegressionAudit`
+- SHA: `30bd7fc04be36da3ec9f28d39afbc028e11b1974`
+- Checkpoint branch: `checkpoint-b315-e-green-operational`
+- CI run: `35378935054` — **SUCCESS**
 - Proven gates:
-  - Source Integrity PASS — 344 files
+  - Source Integrity PASS — 345 files
   - Release metadata PASS — 3.0.0 / Build 314 / Save Schema 2.0.0
   - JavaScript syntax PASS
   - Swift/Native contract PASS
   - 110/110 active repository tests PASS
   - Procurement idempotency regression PASS
-  - Chromium browser suites PASS
-  - WebKit browser suites PASS
+  - Chromium + WebKit browser suites PASS
   - Chromium + WebKit E2E PASS
   - Chromium + WebKit failure scenarios PASS
-  - BUILD315 Stress1000 Chromium PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 517 ms; routing 2231 ms; save 4,037,723 bytes
-  - BUILD315 Stress1000 WebKit PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 1161 ms; routing 3105 ms; save 4,034,879 bytes
+  - BUILD315 Stress1000 Chromium PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 418 ms; routing 1958 ms; save 4,037,723 bytes
+  - BUILD315 Stress1000 WebKit PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 769 ms; routing 2584 ms; save 4,034,879 bytes
+  - BUILD315 Operational Regression Chromium PASS — facility/purchase/sea-route rollback + button retry; 25 ships on 2 shared routes
+  - BUILD315 Operational Regression WebKit PASS — facility/purchase/sea-route rollback + button retry; 25 ships on 2 shared routes
+  - Stalled requestAnimationFrame regression PASS — large-purchase busy state no longer depends on a WebKit frame callback
+  - Failed purchase request-ID rollback PASS — `MANUAL-ASSET` sequence remains inside the atomic transaction
   - Swift syntax PASS
   - BUILD312 native runtime inventory PASS
   - BUILD315 Native Save Vault manual slots PASS (>4MB, load promotion, clear, New Game clear, bootstrap freshness)
@@ -64,21 +68,17 @@
   - unsigned IPA packaging PASS
   - final IPA integrity PASS
 - Verified unsigned IPA: `GlobalHoldings_v3_0_0_build314_unsigned.ipa`
-- IPA SHA-256: `c15b3f7b0a6683a39724d6b93020a8f746217b2ed964a35f486fc247d53e05ab`
-- Previous GREEN retained: `B315-C-GREEN-ManualSlots` → `96de035292db0d1794766da2fa83ef873426fd72`
-- Earlier rollback: `B315-A-GREEN-NativeFirst` → `4469767448a52fb041cd7b5031a63ccddcef84c7`
+- IPA SHA-256: `7c8ccc607c2b1950a7bdb3da88b9137305f4aa23ba98339e4007def7901f2d8f`
+- Previous GREEN retained: `B315-D-GREEN-Stress1000` → `21c2dcaecc895dcf1104ecb935d46d66a2e71305`
+- Earlier rollback: `B315-C-GREEN-ManualSlots` → `96de035292db0d1794766da2fa83ef873426fd72`
 
 ### Current working state
 
-- Name: `B315-E-YELLOW-OperationalRegressionAudit`
-- Baseline: `21c2dcaecc895dcf1104ecb935d46d66a2e71305`
-- Status: **YELLOW — targeted audit of remaining runtime reliability paths before any new production modification**
-- Scope:
-  - non-air route assignment and shared-route commit paths
-  - large-quantity purchasing and button-operation lock release paths
-  - facility/base creation action completion and rollback paths
-  - no production change until a reproducible failing path or invariant violation is proven
-- The current branch must be re-read before resuming because HEAD may advance after this record is updated.
+- Name: `B315-E-GREEN-OperationalRegressionAudit`
+- Baseline / tested SHA: `30bd7fc04be36da3ec9f28d39afbc028e11b1974`
+- Status: **GREEN — no unverified production modification remains in this stage**
+- The working branch may move after this record is committed; use the checkpoint branch above for the immutable tested rollback point.
+- No merge to `main` and no merge of draft PR #12 has been performed.
 
 ## 4) Build315 work completed since Last GREEN — code present, not all yet promoted to GREEN
 
@@ -96,35 +96,35 @@
 
 ## 4.1) Verification history
 
-- CI run `35372324972` on candidate `c338e01f4c355869cbb02851fe46f857fd3fe43c` passed Source Integrity, release metadata, JavaScript syntax, repository guards, Chromium/WebKit browser suites, E2E and failure scenarios.
-- It stopped at the Native Save Slots executable harness because the **test harness itself** used a throwing `revision(...)` call inside a non-throwing Swift autoclosure. Production Swift parsing had already passed and BUILD312 native runtime regression passed.
-- The harness compile defect was corrected in commit `d568dcc632811c470332e154917ca10510e856ea` by evaluating the throwing revision parse before the assertion. This remains **YELLOW** until a fresh full CI/Xcode/IPA run passes from one candidate SHA.
+- Manual Save Slots were promoted to GREEN before Stress1000 and remain covered by the full current CI chain.
+- Stress1000 was promoted in `B315-D-GREEN-Stress1000` and remains green in the current candidate.
+- Operational audit first reproduced a real large-purchase UI deadlock: if `requestAnimationFrame` never returned, the purchase button remained disabled because the awaited frame was outside the protected lifecycle.
+- The regression was made intentionally failing first in CI run `35378106891`.
+- Production fix: large purchases use a bounded interactive-paint yield with timeout fallback inside the protected `try/finally` lifecycle, so WebKit frame suspension cannot leak the busy token.
+- A second audit exposed that `MANUAL-ASSET` request IDs were allocated before the purchase transaction. The ID allocation was moved inside the atomic transaction so persistence failure rolls it back with the purchase.
+- Full candidate `30bd7fc04be36da3ec9f28d39afbc028e11b1974` then passed the complete browser/native/Xcode/IPA verification chain in CI run `35378935054`.
 
 ## 5) Current GREEN evidence
 
-`B315-D-GREEN-Stress1000` is the current rollback-safe checkpoint.
+`B315-E-GREEN-OperationalRegressionAudit` is the current rollback-safe checkpoint.
 
-The exact tested candidate SHA is `21c2dcaecc895dcf1104ecb935d46d66a2e71305`. Do not move the GREEN label to a later SHA unless that later candidate itself completes the required verification chain.
+The exact tested candidate SHA is `30bd7fc04be36da3ec9f28d39afbc028e11b1974`. Do not move the GREEN label to a later SHA unless that later candidate itself completes the required verification chain.
 
-Stress1000 proved the complete path:
-
-`UI → facility expansion → purchase 1000 road assets → finance debit → delivery → 3000 fixed crew → 16 shared road routes → Native durable save → fresh browser context → Native bootstrap restore → exact logical-state comparison`
-
-The procurement idempotency gate also proved:
-- same idempotency key + same payload returns the committed result without another debit or duplicate assets/deliveries
-- same idempotency key + different payload is rejected fail-closed
+The stage proves:
+- Stress1000 complete path: `UI → facility expansion → purchase 1000 road assets → finance debit → delivery → 3000 fixed crew → 16 shared road routes → Native durable save → fresh browser context → Native bootstrap restore → exact logical-state comparison`
+- Maritime shared routing: 25 ships commit to exactly 2 shared routes under route capacity 24, with valid route slots and scheduled departure staggering.
+- Facility creation, maritime purchase and shared-route commits roll back cleanly when durable persistence fails, and the same UI buttons become retryable.
+- Large-purchase UI no longer hangs when `requestAnimationFrame` stalls.
+- Failed purchases do not consume the business request ID sequence.
+- Procurement idempotency remains fail-closed for same-key/different-payload and exactly-once for same-key/same-payload.
 
 ## 6) Next stage
 
-### `B315-E-YELLOW-OperationalRegressionAudit`
-
-Audit before modifying:
-- reproduce any remaining non-air routing failure from the actual UI path
-- reproduce any purchase/button lock after repeated or large operations
-- verify every busy-button release occurs on success, validation failure, thrown error, provider failure, save failure, and cancellation
-- trace base/facility creation through transaction commit → persistence → UI unlock
-- add a failing regression first whenever a defect is reproducible
-- keep production code unchanged when no invariant failure can be demonstrated
+No unverified Build315 production change is open in this record. Before starting another feature or defect fix:
+- re-read actual branch HEAD and compare it with `checkpoint-b315-e-green-operational`
+- preserve Build314 and do not merge PR #12
+- reproduce the next reported defect first, then add its regression before production changes
+- keep the current GREEN checkpoint immutable
 
 ## 7) Chat Handoff template
 
