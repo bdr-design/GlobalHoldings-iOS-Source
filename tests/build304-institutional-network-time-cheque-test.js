@@ -109,9 +109,12 @@ assert(css.includes('.sim-clock-chip'));
   assert(Math.abs(simTime-86400)<1e-6,`ultra speed must advance exactly one simulation day in 144 seconds, got ${simTime}`);
 }
 
-// Map representation may aggregate but cannot silently drop owned ships/facilities.
-assert(app.includes('movingFleetClusters'));
-assert(app.includes('movingAssetGroups'));
+// Map representation cannot silently drop owned ships/facilities. Moving fleet
+// count-clusters are superseded by route-representative icons plus lightweight
+// individual Canvas points, while stationary facilities may still aggregate.
+assert(app.includes('movingHeroSelection'));
+assert(app.includes('compactFleetMarker'));
+assert(!app.includes('movingAssetGroups'));
 assert(app.includes('facilityRenderGroups'));
 assert(!app.includes("}).slice(0,mapRenderBudget(zoom,'facilities')).forEach(f=>"),'owned facilities are still blindly truncated');
 assert(app.includes('id="roadFrom"')&&app.includes('id="roadTo"'),'road routes must use the explicit two-centre form');
