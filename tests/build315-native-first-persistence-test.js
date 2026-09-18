@@ -5,9 +5,9 @@ const {harness,minimal}=require('./helpers/core-harness');
 function setupNative(){
   const h=harness(['save-schema','persistence-core']);
   h.s.GH_CONTROL_PLANE={sha256:x=>crypto.createHash('sha256').update(x).digest('hex')};
-  let envelope=null,generation=0;
+  let envelope=null,generation=0;const envelopes=[];
   const postMessage=e=>{
-    envelope=e;
+    envelope=e;envelopes.push(e);
     setTimeout(()=>{
       if(['saveManualSlot','loadManualSlot','clearManualSlot'].includes(e.action)){
         const metadata=e.action==='saveManualSlot'?{index:e.index,runtimeVersion:e.appVersion||null,simSeconds:Number(JSON.parse(e.saveJSON).simSeconds)||0,saveRevision:e.saveRevision,resetEpoch:e.resetEpoch,savedAt:1,label:e.label||''}:undefined;
@@ -19,7 +19,7 @@ function setupNative(){
     },0);
   };
   h.s.webkit={messageHandlers:{saveBridge:{postMessage},updateBridge:{postMessage}}};
-  return {...h,p:h.s.GH_PERSISTENCE,getEnvelope:()=>envelope};
+  return {...h,p:h.s.GH_PERSISTENCE,getEnvelope:()=>envelope,getEnvelopes:()=>envelopes.slice()};
 }
 
 (async()=>{
@@ -79,6 +79,19 @@ function setupNative(){
     assert.strictEqual(h.getEnvelope().clearManualSlots,true,'new-game reset must explicitly clear native manual slots');
   }
 
+  {
+    const h=setupNative(),previous=minimal(),next={...minimal(),saveRevision:2,resetEpoch:1};
+    let failure=null;
+    try{
+      await h.p.replaceState(next,previous,{storageKey:'main',appVersion:'3.0.0',clearManualSlots:true,apply:()=>{throw new Error('apply-failed-after-native-commit');}});
+    }catch(error){failure=error;}
+    assert(failure,'post-ACK apply failure must surface');
+    assert.strictEqual(failure.requiresNativeReload,true,'committed New Game must request Native reload instead of partial rollback');
+    const resets=h.getEnvelopes().filter(e=>e.action==='resetGameSave');
+    assert.strictEqual(resets.length,1,'committed New Game slot clear must not compensate by restoring only the old main save');
+    assert.strictEqual(h.p.telemetry().recoveryRequired,true,'runtime must block further saves until Native reload reconciles memory');
+  }
+
   const swift=fs.readFileSync('iOS/GlobalHoldings/GlobalSaveVault.swift','utf8');
   const controller=fs.readFileSync('iOS/GlobalHoldings/GameViewController.swift','utf8');
   assert(swift.includes('window.__GH_NATIVE_SAVE_JSON__=raw'),'native bootstrap must inject the authoritative payload directly');
@@ -90,6 +103,7 @@ function setupNative(){
   const app=fs.readFileSync('WebApp/app.js','utf8');
   assert(advanced.includes("out=await globalThis.GH_PERSISTENCE?.saveSlot?.(slot,s"),'save-slot UI must await the native slot ACK before reporting success');
   assert(app.includes('clearManualSlots:true,prepare:next=>'),'New Game must clear native manual slots in the same reset transaction');
+  assert(app.includes('if(error.requiresNativeReload)'),'New Game must reload from Native when memory application fails after durable reset commit');
   assert(swift.includes('try fm.copyItem(at: source, to: backup)'),'manual-slot reset must copy backups before source deletion');
   assert(swift.includes('let manualSlotHashes: [String?]?'),'reset journal must pin the exact pre-reset manual-slot set');
   assert(swift.includes('sha256(try Data(contentsOf: backup)) == expected'),'staged backups must be hash-verified before source deletion or recovery');
