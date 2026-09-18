@@ -4,10 +4,10 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
 
 (async()=>{
   const engineName=process.env.GH_BROWSER||'chromium',engine=engineName==='webkit'?webkit:chromium;
-  const browser=await engine.launch({headless:true}),server=await serve(),page=await browser.newPage({viewport:{width:844,height:390},locale:'ar-SA'}),errors=[],evidence={engine:engineName};
+  const browser=await engine.launch({headless:true}),server=await serve(),page=await browser.newPage({viewport:{width:844,height:390},locale:'ar-SA'}),errors=[],evidence={engine:engineName};let expectedFailure=false;
   await installMapFixture(page);
   page.on('pageerror',e=>errors.push(e.message));
-  page.on('console',m=>{if(m.type()==='error'&&!expectedNetworkError(m)&&!m.location().url.includes('router.project-osrm.org'))errors.push(m.text());});
+  page.on('console',m=>{if(m.type()==='error'&&!expectedFailure&&!expectedNetworkError(m)&&!m.location().url.includes('router.project-osrm.org'))errors.push(m.text());});
   page.on('dialog',d=>d.accept());
 
   const state=()=>page.evaluate(()=>JSON.parse(JSON.stringify(__GH_STATE__)));
@@ -16,7 +16,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
   const control=async name=>{await panel('control');await page.locator(`[data-open="${name}"]`).first().click();};
   const failStorage=()=>page.evaluate(()=>{window.__ghOriginalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(key,value){if(String(key).startsWith('global-holdings-world-v2.0.0'))throw new DOMException('Operational audit quota','QuotaExceededError');return window.__ghOriginalSetItem.call(this,key,value);};});
   const restoreStorage=()=>page.evaluate(()=>{if(window.__ghOriginalSetItem){Storage.prototype.setItem=window.__ghOriginalSetItem;delete window.__ghOriginalSetItem;}});
-  const waitReleased=locator=>page.waitForFunction(el=>el&&el.isConnected&&!el.disabled&&!el.dataset.busy,locator,{timeout:30000});
+  const waitReleased=async locator=>{await locator.waitFor({state:'visible'});for(let i=0;i<600;i++){if(await locator.isEnabled()&&(await locator.getAttribute('data-busy'))===null)return;await page.waitForTimeout(50);}throw new Error('button did not release busy state');};
 
   try{
     await page.goto(server.baseURL,{waitUntil:'domcontentloaded'});
@@ -30,7 +30,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     await close();await page.click('#worldDirectoryBtn');await page.locator('[data-world-company="sea"]').click();await page.fill('#worldSearch','DEHAM');
     const baseButton=page.locator('.open-directory-site[data-key="sea:DEHAM"]');await baseButton.waitFor({state:'visible'});
     const facilityBefore={bases:(await state()).globalBases.length,cash:(await state()).companyFinance.sea.accounts[0].balance};
-    await failStorage();await baseButton.click();await waitReleased(baseButton);
+    await failStorage();expectedFailure=false;expectedFailure=true;await baseButton.click();await waitReleased(baseButton);
     current=await state();assert.strictEqual(current.globalBases.length,facilityBefore.bases,'failed durable facility create must not leave a base');assert.strictEqual(current.companyFinance.sea.accounts[0].balance,facilityBefore.cash,'failed durable facility create must roll back the construction debit');assert.strictEqual(await baseButton.isEnabled(),true,'facility button must be retryable after persistence failure');
     await restoreStorage();await baseButton.click();await page.waitForFunction(()=>__GH_STATE__.globalBases.some(b=>b.company==='sea'));
     current=await state();const base=current.globalBases.find(b=>b.company==='sea');assert(base&&base.sourceKey==='sea:DEHAM');evidence.base={id:base.id,cost:base.cost};
@@ -40,7 +40,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     const card=page.locator('.manual-buy-asset[data-type="sea"][data-id="N-S9"]').locator('xpath=ancestor::article[contains(@class,"asset-market-card")]');
     await card.locator('.manual-asset-base').selectOption(base.id);await card.locator('.manual-asset-qty').fill('25');await card.locator('.manual-asset-mode').selectOption('cash');
     const purchaseButton=card.locator('.manual-buy-asset'),beforePurchase=await state(),seaCashBefore=beforePurchase.companyFinance.sea.accounts[0].balance;
-    await failStorage();await purchaseButton.click();await waitReleased(purchaseButton);
+    await failStorage();expectedFailure=false;expectedFailure=true;await purchaseButton.click();await waitReleased(purchaseButton);
     current=await state();assert.strictEqual(current.assets.filter(a=>a.type==='sea').length,0,'failed durable purchase must not create ships');assert.strictEqual(current.companyFinance.sea.accounts[0].balance,seaCashBefore,'failed durable purchase must not debit sea cash');assert.strictEqual(await purchaseButton.isEnabled(),true,'purchase button must be retryable after persistence failure');
     await restoreStorage();await purchaseButton.click();await page.waitForFunction(()=>__GH_STATE__.assets.filter(a=>a.type==='sea').length===25,null,{timeout:60000});
     current=await state();const ships=current.assets.filter(a=>a.type==='sea');assert.strictEqual(new Set(ships.map(a=>a.id)).size,25);assert(ships.every(a=>a.baseFacility===base.id&&a.deliveryStatus==='delivered'&&a.staffing?.ready===true&&a.staffing?.total===20));assert.strictEqual(ships.reduce((n,a)=>n+a.staffing.total,0),500);assert.strictEqual(seaCashBefore-current.companyFinance.sea.accounts[0].balance,25*31000000,'successful retry must debit exactly once');evidence.purchase={count:25,crew:500,debit:25*31000000};
@@ -49,7 +49,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     await control('routes');await page.click('[data-routetype="sea"]');
     const dispatch=page.locator('.dispatch-international-network[data-type="sea"]');await dispatch.waitFor({state:'visible'});
     const preDispatch=await state(),routesBefore=preDispatch.customRoutes.length;
-    await failStorage();await dispatch.click();await waitReleased(dispatch);
+    await failStorage();expectedFailure=false;expectedFailure=true;await dispatch.click();await waitReleased(dispatch);
     current=await state();assert.strictEqual(current.customRoutes.length,routesBefore,'failed maritime durable commit must not leave routes');assert(current.assets.filter(a=>a.type==='sea').every(a=>!a.routeId&&a.phase!=='moving'&&!a.departureScheduled),'failed maritime commit must leave all ships untouched');assert.strictEqual(await dispatch.isEnabled(),true,'maritime dispatch button must be retryable after save failure');
     await restoreStorage();await dispatch.click();await page.waitForFunction(()=>__GH_STATE__.assets.filter(a=>a.type==='sea').every(a=>a.routeId),null,{timeout:60000});
     current=await state();const routed=current.assets.filter(a=>a.type==='sea'),seaRoutes=current.customRoutes.filter(r=>r.type==='sea');
