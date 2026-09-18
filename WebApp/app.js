@@ -2385,7 +2385,7 @@
   }
   let marketFilterType='air', marketFilterTab='new',marketSegment='all',marketQuery='',marketCompare=[],ownedFilterType='all',ownedFilterStatus='all',ownedQuery='',routeFilterType='all',routeQuery='';
   function compatibleBases(type){
-    return getDynamicFacilities().filter(f=>f.owned && (type==='air'?['airport-base'].includes(f.kind)&&f.company==='air':type==='sea'?['port-base'].includes(f.kind)&&f.company==='sea':['depot','logistics'].includes(f.kind)&&f.company==='road'));
+    const facility=window.GH_FACILITY_CORE;return getDynamicFacilities().filter(f=>facility?.isAssetFacilityCompatible?.(type,f)===true);
   }
   function facilityFreeAssetCapacity(base){return window.GH_FACILITY_CORE?.availableAssetCapacity?.(state,base)||0;}
   function allocateAssetPurchase(type,qty,preferredBaseId){
@@ -2828,7 +2828,7 @@
   function buyAsset(type,tab,id,mode='cash',qty=1,baseId=null,silent=false,requestRef=null){
     const item=catalogItem(type,id),maxQty=window.GH_PROCUREMENT_CORE?.MAX_ASSET_PURCHASE_QUANTITY||1000;if(!item){if(!silent)notice('تعذر تنفيذ الشراء؛ هذا الأصل لم يعد متاحًا في الكتالوج.');return null;}qty=clamp(Math.floor(Number(qty)||1),1,maxQty);baseId=baseId||item.base;
     const base=findFacility(baseId);if(!base){if(!silent)notice('تعذر تنفيذ الشراء: قاعدة التسليم غير موجودة.');return null;}
-    const compatible=type==='air'?['airport','airport-base'].includes(base.kind):type==='sea'?['port','port-base'].includes(base.kind):['depot','logistics','airport-base','port-base'].includes(base.kind);
+    const compatible=window.GH_FACILITY_CORE?.isAssetFacilityCompatible?.(type,base)===true;
     if(!compatible){if(!silent)notice('قاعدة التسليم لا تدعم هذا النوع من الأصول.');return null;}
     const assetSupplier=supplierFor(type,'assets');if(!assetSupplier){if(!silent)notice('تعذر تنفيذ الشراء: لا يوجد مورد أصول مؤهل.');return null;}
     const totalPrice=Number(item.price)*qty,upfront=mode==='cash'?totalPrice:mode==='finance'?totalPrice*(item.downPayment||.2):Number(item.leaseMonthly||0)*3*qty;
