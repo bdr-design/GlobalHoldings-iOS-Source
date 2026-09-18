@@ -38,12 +38,12 @@
 
 ### Last GREEN
 
-- Name: `B315-E-GREEN-OperationalRegressionAudit`
-- SHA: `30bd7fc04be36da3ec9f28d39afbc028e11b1974`
-- Checkpoint branch: `checkpoint-b315-e-green-operational`
-- CI run: `35378935054` — **SUCCESS**
+- Name: `B315-F-GREEN-FinalDeviceReadiness`
+- SHA: `55de368a262c88ac76eefe60612e070fdb2eae3d`
+- Checkpoint branch: `checkpoint-b315-f-green-device-readiness`
+- CI run: `35382957560` — **SUCCESS**
 - Proven gates:
-  - Source Integrity PASS — 345 files
+  - Source Integrity PASS — 346 files
   - Release metadata PASS — 3.0.0 / Build 314 / Save Schema 2.0.0
   - JavaScript syntax PASS
   - Swift/Native contract PASS
@@ -52,10 +52,12 @@
   - Chromium + WebKit browser suites PASS
   - Chromium + WebKit E2E PASS
   - Chromium + WebKit failure scenarios PASS
-  - BUILD315 Stress1000 Chromium PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 418 ms; routing 1958 ms; save 4,037,723 bytes
-  - BUILD315 Stress1000 WebKit PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 769 ms; routing 2584 ms; save 4,034,879 bytes
+  - BUILD315 Stress1000 Chromium PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 713 ms; routing 2546 ms; save 4,038,749 bytes
+  - BUILD315 Stress1000 WebKit PASS — 1000 assets / 16 shared routes / 3000 fixed crew / Native save+relaunch exact; purchase 2290 ms; routing 4326 ms; save 4,034,879 bytes
   - BUILD315 Operational Regression Chromium PASS — facility/purchase/sea-route rollback + button retry; 25 ships on 2 shared routes
   - BUILD315 Operational Regression WebKit PASS — facility/purchase/sea-route rollback + button retry; 25 ships on 2 shared routes
+  - BUILD315 Device Lifecycle Chromium PASS — background waits for Native durable/reset lifecycles; no competing revision; reset reload safe
+  - BUILD315 Device Lifecycle WebKit PASS — background waits for Native durable/reset lifecycles; no competing revision; reset reload safe
   - Stalled requestAnimationFrame regression PASS — large-purchase busy state no longer depends on a WebKit frame callback
   - Failed purchase request-ID rollback PASS — `MANUAL-ASSET` sequence remains inside the atomic transaction
   - Swift syntax PASS
@@ -68,15 +70,16 @@
   - unsigned IPA packaging PASS
   - final IPA integrity PASS
 - Verified unsigned IPA: `GlobalHoldings_v3_0_0_build314_unsigned.ipa`
-- IPA SHA-256: `7c8ccc607c2b1950a7bdb3da88b9137305f4aa23ba98339e4007def7901f2d8f`
-- Previous GREEN retained: `B315-D-GREEN-Stress1000` → `21c2dcaecc895dcf1104ecb935d46d66a2e71305`
-- Earlier rollback: `B315-C-GREEN-ManualSlots` → `96de035292db0d1794766da2fa83ef873426fd72`
+- IPA SHA-256: `4bcb69cd9f835be66c9791742704cca1f0862ffe5d48546654fa9bb5eb6041c3`
+- Previous GREEN retained: `B315-E-GREEN-OperationalRegressionAudit` → `30bd7fc04be36da3ec9f28d39afbc028e11b1974`
+- Earlier rollback: `B315-D-GREEN-Stress1000` → `21c2dcaecc895dcf1104ecb935d46d66a2e71305`
 
 ### Current working state
 
-- Name: `B315-E-GREEN-OperationalRegressionAudit`
-- Baseline / tested SHA: `30bd7fc04be36da3ec9f28d39afbc028e11b1974`
-- Status: **GREEN — no unverified production modification remains in this stage**
+- Name: `B315-F-GREEN-FinalDeviceReadiness`
+- Baseline / tested SHA: `55de368a262c88ac76eefe60612e070fdb2eae3d`
+- Status: **GREEN — final pre-IPA lifecycle hardening is fully verified**
+- Device lifecycle proof covers backgrounding during an in-flight Native durable command and during Native reset/New Game; background persistence serializes rather than races or rejects.
 - The working branch may move after this record is committed; use the checkpoint branch above for the immutable tested rollback point.
 - No merge to `main` and no merge of draft PR #12 has been performed.
 
@@ -103,28 +106,32 @@
 - Production fix: large purchases use a bounded interactive-paint yield with timeout fallback inside the protected `try/finally` lifecycle, so WebKit frame suspension cannot leak the busy token.
 - A second audit exposed that `MANUAL-ASSET` request IDs were allocated before the purchase transaction. The ID allocation was moved inside the atomic transaction so persistence failure rolls it back with the purchase.
 - Full candidate `30bd7fc04be36da3ec9f28d39afbc028e11b1974` then passed the complete browser/native/Xcode/IPA verification chain in CI run `35378935054`.
+- Final Device Readiness added a failing-first background durability race regression. It proved that background persistence previously returned `background-save-rejected` if iOS backgrounded the app while a Native durable command was awaiting ACK.
+- Production fix serializes `persistForBackground()` behind the in-flight durable command and coalesces the background request when that command already advanced the durable revision, avoiding a competing Native write.
+- The lifecycle regression was extended through Native reset/New Game and exposed the same class of race across the reset lifecycle; background persistence now waits for Native reset settlement as well.
+- Exact candidate `55de368a262c88ac76eefe60612e070fdb2eae3d` passed the full Chromium/WebKit/native/Xcode/iPhoneOS/IPA chain in CI run `35382957560`.
 
 ## 5) Current GREEN evidence
 
-`B315-E-GREEN-OperationalRegressionAudit` is the current rollback-safe checkpoint.
+`B315-F-GREEN-FinalDeviceReadiness` is the current rollback-safe checkpoint.
 
-The exact tested candidate SHA is `30bd7fc04be36da3ec9f28d39afbc028e11b1974`. Do not move the GREEN label to a later SHA unless that later candidate itself completes the required verification chain.
+The exact tested candidate SHA is `55de368a262c88ac76eefe60612e070fdb2eae3d`. Do not move the GREEN label to a later SHA unless that later candidate itself completes the required verification chain.
 
 The stage proves:
-- Stress1000 complete path: `UI → facility expansion → purchase 1000 road assets → finance debit → delivery → 3000 fixed crew → 16 shared road routes → Native durable save → fresh browser context → Native bootstrap restore → exact logical-state comparison`
-- Maritime shared routing: 25 ships commit to exactly 2 shared routes under route capacity 24, with valid route slots and scheduled departure staggering.
-- Facility creation, maritime purchase and shared-route commits roll back cleanly when durable persistence fails, and the same UI buttons become retryable.
-- Large-purchase UI no longer hangs when `requestAnimationFrame` stalls.
-- Failed purchases do not consume the business request ID sequence.
-- Procurement idempotency remains fail-closed for same-key/different-payload and exactly-once for same-key/same-payload.
+- Stress1000 complete path remains green: `UI → facility expansion → purchase 1000 road assets → finance debit → delivery → 3000 fixed crew → 16 shared road routes → Native durable save → fresh browser context → Native bootstrap restore → exact logical-state comparison`
+- Maritime shared routing and atomic rollback remain green on Chromium and WebKit.
+- Large-purchase busy-state and failed-purchase request-ID fixes remain green.
+- Backgrounding while a Native durable command is awaiting ACK no longer rejects or emits a competing save; it waits for settlement and coalesces when durability is already established.
+- Backgrounding during Native reset/New Game is serialized behind the reset lifecycle and resumes from the committed reset state without an unsafe competing revision.
+- Final iPhoneOS Release build, exact WebApp payload validation, unsigned IPA packaging and final IPA integrity all passed from the same tested SHA.
 
 ## 6) Next stage
 
-No unverified Build315 production change is open in this record. Before starting another feature or defect fix:
-- re-read actual branch HEAD and compare it with `checkpoint-b315-e-green-operational`
+No unverified Build315 production change is open in this record. Before producing a signed/device-tested IPA:
+- re-read actual branch HEAD and compare it with `checkpoint-b315-f-green-device-readiness`
 - preserve Build314 and do not merge PR #12
-- reproduce the next reported defect first, then add its regression before production changes
 - keep the current GREEN checkpoint immutable
+- signing and physical-device validation are separate evidence gates; do not claim them until actually performed
 
 ## 7) Chat Handoff template
 
