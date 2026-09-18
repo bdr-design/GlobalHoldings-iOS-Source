@@ -39,7 +39,7 @@ function upsertParty(s,p={}){
  b.parties[id]=row;return row;
 }
 function partyIdForName(s,name,role='counterparty'){
- const raw=String(name||'').trim();if(!raw||/^(عميل تعاقدي مسجل|طرف تعاقدي مسجل|عملاء المجموعة|حسابات الموظفين|مركز التسوية)/.test(raw))return null;
+ const raw=String(name||'').trim();if(!raw||/^(عميل تعاقدي مسجل|طرف تعاقدي مسجل|عملاء المجموعة|حسابات الموظفين|مركز التسوية|مركز تحصيل|وكلاء الحجز|المقترضون|مدفوعات الركاب)/.test(raw))return null;
  const p=findByName(s,raw)||upsertParty(s,{name:raw,role});if(p&&role&&!p.roles.includes(role))p.roles=unique([...p.roles,role]);return p?.id||null;
 }
 function resolveParty(s,value){if(!value)return null;const b=ensure(s);return b.parties[value]||findByName(s,value);}
