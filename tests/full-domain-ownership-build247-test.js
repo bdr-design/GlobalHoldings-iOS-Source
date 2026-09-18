@@ -1,7 +1,7 @@
 const fs=require('fs'),assert=require('assert');
 const read=f=>fs.readFileSync(`WebApp/${f}`,'utf8');
 const app=read('app.js'),adv=read('advanced-core.js'),realism=read('realism-core.js'),market=read('market-core.js'),proc=read('procurement-core.js'),save=read('save-schema.js'),html=read('index.html');
-const owners=['domain-command-core.js','finance-core.js','procurement-core.js','contracts-core.js','banking-core.js','market-core.js','strategy-core.js','facility-core.js','fleet-core.js','route-core.js','operations-core.js','governance-core.js','corporate-core.js','hr-core.js'];
+const owners=['domain-command-core.js','business-world-core.js','finance-core.js','procurement-core.js','contracts-core.js','banking-core.js','market-core.js','strategy-core.js','facility-core.js','fleet-core.js','route-core.js','operations-core.js','governance-core.js','corporate-core.js','hr-core.js'];
 for(const f of owners){assert.strictEqual((html.match(new RegExp(`src=["']${f.replace('.','\\.')}["']`,'g'))||[]).length,1,`${f} must load exactly once`);}
 assert(app.includes("'market','tick-prices'"),'market hourly tick is not delegated to Market Core');
 assert(!app.includes("state.market.forEach(s=>"),'app.js owns stock price mutation');
