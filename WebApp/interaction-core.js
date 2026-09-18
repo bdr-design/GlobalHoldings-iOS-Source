@@ -2,10 +2,12 @@
   'use strict';
   const VERSION='3.0.0';
   const locks=new WeakSet();
+  const sessionEvents=[];
   function state(){return globalThis.__GH_STATE__||globalThis.state||globalThis.window?.state||null;}
   function record(type,detail={},severity='info',explicitState=null){
     const s=explicitState||state();
-    try{if(s&&globalThis.GH_DIAGNOSTICS?.record)globalThis.GH_DIAGNOSTICS.record(s,type,detail,severity);}catch(error){console.warn('Interaction diagnostics record failed',error);}
+    sessionEvents.unshift({type,detail,severity,at:Date.now()});if(sessionEvents.length>100)sessionEvents.length=100;
+    try{if(severity!=='info'&&s&&globalThis.GH_DIAGNOSTICS?.record)globalThis.GH_DIAGNOSTICS.record(s,type,detail,severity);}catch(error){console.warn('Interaction diagnostics record failed',error);}
   }
   function label(btn){return (btn?.textContent||btn?.getAttribute?.('aria-label')||btn?.dataset?.ghAction||btn?.dataset?.open||'زر').trim().replace(/\s+/g,' ').slice(0,120);}
   function disabledReason(btn){return btn?.dataset?.disabledReason||btn?.getAttribute?.('title')||'هذا الإجراء غير متاح في الحالة الحالية.';}
@@ -25,11 +27,7 @@
     }
     locks.add(btn);const oldDisabled=btn.disabled,beforeIntegrity=meta.state&&globalThis.GH_INTEGRITY_CORE?.check?.(meta.state);btn.disabled=true;btn.classList?.add('is-busy');btn.setAttribute?.('aria-busy','true');record('BUTTON_ACTION_BEGIN',info,'info',meta.state);
     try{
-      const cp=globalThis.GH_CONTROL_PLANE;let value;
-      if(meta.state&&cp?.executeAsync){
-        const out=await cp.executeAsync(meta.state,{name:`UI:${info.action||'interaction'}`,domain:'ui',actor:'player',metadata:{label:info.label,panel:info.panel}},async()=>handler(),{verify:()=>{const check=globalThis.GH_INTEGRITY_CORE?.check?.(meta.state);const critical=(check?.issues||[]).filter(x=>x.severity==='critical');const priorIds=new Set(((beforeIntegrity?.issues)||[]).filter(x=>x.severity==='critical').map(x=>String(x.id)));const introduced=critical.filter(x=>!priorIds.has(String(x.id)));return introduced.length?{ok:false,reason:`Critical integrity after UI action: ${introduced.map(x=>x.id).slice(0,4).join(',')}`}:{ok:true};}});
-        value=out?.value;
-      }else value=await handler();
+      const value=await handler();
       const integrity=globalThis.GH_WORKFLOW?.postCheck?.(meta.state,{action:info.action,panel:info.panel,beforeIssues:beforeIntegrity?.issues||[]});record('BUTTON_ACTION_OK',{...info,integrity:integrity?.status||'unavailable'},'info',meta.state);feedback(btn,integrity?.ok===false?'تم التنفيذ مع ملاحظة سلامة؛ راجع HLT.':'تم تنفيذ الإجراء.',integrity?.ok===false?'warning':'success');return {ok:true,value,integrity};
     }catch(error){record('BUTTON_ACTION_FAILED',{...info,error:{name:error?.name||'Error',message:error?.message||String(error),stack:String(error?.stack||'').split('\n').slice(0,8).join('\n')}},'warning',meta.state);feedback(btn,`تعذر التنفيذ: ${error?.message||error}`,'error');globalThis.GH_INTERACTION_NOTICE?.(`تعذر تنفيذ ${info.label}: ${error?.message||error}`,'error');throw error;
     }finally{locks.delete(btn);btn.classList?.remove('is-busy');btn.removeAttribute?.('aria-busy');btn.disabled=oldDisabled;}
@@ -43,6 +41,6 @@
       if(btn.disabled&&!btn.dataset?.disabledReason&&!btn.title&&!intentionallyBusy)issues.push({id:'DISABLED_WITHOUT_REASON',label:label(btn)});
     });return issues;
   }
-  const API={VERSION,run,record,feedback,disabledReason,validate};
+  const API={VERSION,run,record,feedback,disabledReason,validate,telemetry:()=>sessionEvents.map(row=>({...row}))};
   globalThis.GH_INTERACTION=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_INTERACTION=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

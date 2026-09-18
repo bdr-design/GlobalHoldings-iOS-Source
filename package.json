@@ -1,14 +1,15 @@
 {
   "name": "global-holdings-source-guards",
   "private": true,
-  "version": "3.0.0-build303",
+  "version": "3.0.0-build314",
   "scripts": {
     "test:guards": "node scripts/test_runner.cjs",
+    "test:source": "python3 scripts/source_integrity.py --check",
     "lint": "eslint WebApp/*.js && node scripts/ownership_guard.cjs",
     "test:runtime": "python3 scripts/runtime_guard.py && python3 scripts/swift_contract_guard.py",
-    "test:browser": "node tests/browser-qa.js",
+    "test:browser": "node tests/browser-qa.js && node tests/browser-build309.js && node tests/browser-directory-build309.js && node tests/browser-founding-build309.js && node tests/browser-build310.js && node tests/browser-build311.js",
     "test:e2e": "node tests/browser-e2e.js",
-    "test": "npm run lint && npm run test:runtime && npm run test:guards"
+    "test": "npm run lint && npm run test:source && npm run test:runtime && npm run test:guards"
   },
   "devDependencies": {
     "acorn": "8.15.0",

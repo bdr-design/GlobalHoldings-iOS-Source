@@ -24,7 +24,7 @@ This document is a release invariant contract. Future changes must preserve thes
 3. A simulation slice is all-or-nothing. Partial eligible-asset commits are forbidden.
 4. Day/hour boundaries execute inside the same atomic slice transaction.
 5. Business outcomes must not branch on user speed or frame cadence.
-6. Wall-clock timers may be used for UI/performance diagnostics only, never executive AI business decisions.
+6. Wall-clock timers may be used for UI/performance diagnostics only, never business decisions.
 7. Critical post-commit persistence failure rolls state back to the transaction snapshot.
 
 ## Financial invariants
@@ -39,14 +39,14 @@ This document is a release invariant contract. Future changes must preserve thes
 8. Intercompany and treasury transfers create balanced counterpart entries for both entities.
 9. Archived finance data retains source identifiers and compact source traces; open AP/AR consolidation retains `sourceDocumentIds`.
 
-## AI governance invariants
+## Player-control invariants
 
-1. GH AI is a primary operating agent across staffing, fleet, routes, facilities, procurement, finance/risk reviews and dependency closure.
-2. AI review cadence is simulation-time deterministic.
+1. Business commands originate from explicit player actions or documented deterministic simulation schedules.
+2. No conversational agent, recommendation engine, delegated request queue, or autonomous decision layer is part of the runtime.
 3. Major standalone decisions require explicit user authorization.
-4. An approved annual plan is scoped delegation, not unlimited authority. Execution must remain within plan company/type/budget/quantity constraints.
-5. AI must not bypass funding, capacity, workforce, procurement, finance, lifecycle or integrity gates.
-6. Every AI request/delegated action has a stable request/plan reference and lifecycle state.
+4. Bulk actions remain scoped to one company and one operation, with budget, quantity, route and lifecycle constraints checked before commit.
+5. No command may bypass funding, capacity, workforce, procurement, finance, lifecycle or integrity gates.
+6. Every executed command has a stable reference and lifecycle state in the execution log.
 
 ## Release gate
 
