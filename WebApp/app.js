@@ -2816,7 +2816,7 @@
     // yield one paint first so the player receives immediate busy feedback.
     if(Math.max(1,Math.floor(Number(qty)||1))>=64)await new Promise(resolve=>{if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>setTimeout(resolve,0));else setTimeout(resolve,0);});
     try{
-      const orderId=buyAsset(type,tab,id,mode,qty,baseId,true,nextId('MANUAL-ASSET'));
+      const orderId=buyAsset(type,tab,id,mode,qty,baseId,true);
       if(!orderId)throw new Error('asset-purchase-rejected');
       pushAlert(`سُجل أمر الشراء اليدوي ${orderId}. لم ينشئ النظام أصلًا إضافيًا أو مسارًا أو قرارًا نيابةً عنك.`);save();updateKpis();openDrawer('assetMarket',type);return orderId;
     }catch(error){
@@ -2851,9 +2851,9 @@
         if(companyOperatingBalance('group')<fundingGap||!transferBetweenCompanies('group',type,fundingGap,`تمويل شراء أصول يدوي · ${item.name} × ${qty}`))throw new Error('تعذر تمويل الشركة التابعة داخل معاملة الشراء.');
         pushAlert(`حُوِّل ${fmtMoney(fundingGap)} من الشركة القابضة إلى ${typeName(type)} لتغطية شراء ${item.name}.`);
       }
-      const paymentMethod='شيك مصرفي',results=[],allAssetIds=[],allDeliveryOrderIds=[];let allocatedPrice=0,allocatedUpfront=0;
+      const paymentMethod='شيك مصرفي',results=[],allAssetIds=[],allDeliveryOrderIds=[],commandRef=requestRef||nextId('MANUAL-ASSET');let allocatedPrice=0,allocatedUpfront=0;
       for(const [index,allocation] of allocations.entries()){
-        const last=index===allocations.length-1,allocationPrice=last?totalPrice-allocatedPrice:Number(item.price)*allocation.qty,allocationUpfront=last?upfront-allocatedUpfront:upfront*(allocation.qty/qty),allocationRef=`${requestRef||nextId('MANUAL-ASSET')}-${index+1}`;
+        const last=index===allocations.length-1,allocationPrice=last?totalPrice-allocatedPrice:Number(item.price)*allocation.qty,allocationUpfront=last?upfront-allocatedUpfront:upfront*(allocation.qty/qty),allocationRef=`${commandRef}-${index+1}`;
         const result=window.GH_DOMAIN_COMMANDS.dispatch({state},'procurement','purchase-assets',{type,tab,item,mode,qty:allocation.qty,base:allocation.base,supplier:assetSupplier,manual:true,requestRef:allocationRef,upfront:allocationUpfront,totalPrice:allocationPrice,paymentMethod,documentLeadDays,leadSeconds:0,immediateDelivery:true,companyName:companyFinanceName(type)},{actor:'asset-purchase',idempotencyKey:allocationRef}).result;
         if(!result?.orderId||Number(result.count)!==allocation.qty)throw new Error('Procurement Core لم ينشئ عقد التسليم كاملًا.');results.push(result);allAssetIds.push(...result.assetIds);allDeliveryOrderIds.push(...result.deliveryOrderIds);allocatedPrice+=allocationPrice;allocatedUpfront+=allocationUpfront;
       }
