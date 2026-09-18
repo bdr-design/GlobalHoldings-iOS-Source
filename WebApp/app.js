@@ -477,17 +477,17 @@
     esg:{environment:46,social:58,governance:62},insurancePolicies:[],careerLevel:1,ipo:{listed:false,ticker:''}
   };
 
-  let state;
+  let state,startupLoadMeta=null;
   if(!window.GH_MIGRATION_CORE?.load)throw new Error('Migration Core failed to load before app.js');
   try{
     if(window.webkit?.messageHandlers?.saveBridge&&Number(window.GH_NATIVE_BUILD||0)<251)throw new Error('Native Build251 is required');
     if(window.GH_NATIVE_RECOVERY_BLOCKED)throw new Error('Native recovery required');
-    ({state}=window.GH_MIGRATION_CORE.load({defaultState,storageKey,legacyStorageKeys,resetMarkerKey,saveSchema:window.GH_SAVE_SCHEMA}));
+    startupLoadMeta=window.GH_MIGRATION_CORE.load({defaultState,storageKey,legacyStorageKeys,resetMarkerKey,saveSchema:window.GH_SAVE_SCHEMA});state=startupLoadMeta.state;
   }catch(error){
     const box=document.createElement('div');box.style.cssText='position:fixed;inset:0;z-index:2147483647;background:#071c25;color:white;display:grid;place-content:center;padding:32px;gap:20px;text-align:center';
     box.id='saveRecovery';const title=document.createElement('h2');title.textContent=String(error.message).includes('Build251')?'يلزم تثبيت تطبيق Build251 المحدث':'تعذر فتح الحفظ بأمان';box.appendChild(title);
     const message=document.createElement('p');message.textContent='احتفظنا بالملف الحالي دون تغييره. صدّر نسخة لاستعادتها أو مراجعتها قبل متابعة اللعب.';box.appendChild(message);
-    const button=document.createElement('button');button.textContent='تصدير الحفظ للمراجعة';button.onclick=()=>{const raw=localStorage.getItem(storageKey)||legacyStorageKeys.map(k=>localStorage.getItem(k)).find(Boolean)||'';const url=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='GlobalHoldings_Recovery.ghsave';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};box.appendChild(button);document.body.appendChild(box);console.error('SAVE_LOAD_BLOCKED',error);return;
+    const button=document.createElement('button');button.textContent='تصدير الحفظ للمراجعة';button.onclick=()=>{const raw=window.__GH_NATIVE_SAVE_JSON__||localStorage.getItem(storageKey)||legacyStorageKeys.map(k=>localStorage.getItem(k)).find(Boolean)||'';const url=URL.createObjectURL(new Blob([raw],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='GlobalHoldings_Recovery.ghsave';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};box.appendChild(button);document.body.appendChild(box);console.error('SAVE_LOAD_BLOCKED',error);return;
   }
   // Speed is still a multiplier-only input. Existing persisted levels 1/2/4
   // retain their exact 30/120/600 rates; levels 5 and 3 only fill the gaps.
@@ -618,6 +618,9 @@
     const tx=window.GH_TRANSACTION_CORE;
     if(tx.isActive()){tx.afterCommit(()=>persistStateNow({throwOnError:true}),{critical:true,priority:100,key:'save'});return true;}
     return persistStateNow();
+  }
+  if(startupLoadMeta?.source==='native'&&startupLoadMeta.needsCanonicalPersist){
+    setTimeout(()=>{try{persistStateNow({throwOnError:true});}catch(error){console.warn('تعذر تثبيت Migration الحفظ Native بعد الإقلاع',error);}},0);
   }
   function routeRuntimeForState(target){
     const runtime={};
