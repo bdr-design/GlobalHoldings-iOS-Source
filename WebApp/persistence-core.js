@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
   const VERSION='3.0.0', SLOT_FORMAT='global-holdings-save-slot-v2', EXPORT_FORMAT='global-holdings-save';
-  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,ackTimeoutMs:10000,pending:16});
+  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeHardBytes:30*1024*1024,ackTimeoutMs:10000,pending:16});
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const clock=()=>globalThis.performance?.now?.()??Date.now();
@@ -20,6 +20,12 @@
     const warning=utf8Bytes>=Math.min(PERSISTENCE_LIMITS.softBytes,options.softBytes||PERSISTENCE_LIMITS.softBytes)||storageBytes>=PERSISTENCE_LIMITS.softBytes;
     if(utf8Bytes>hard||storageBytes>hard||totalStorageBytes>PERSISTENCE_LIMITS.storageBytes){const e=new Error('save-size-hard-limit');e.measurement={utf8Bytes,storageBytes,totalStorageBytes};throw e;}
     return {utf8Bytes,storageBytes,totalStorageBytes,warning};
+  }
+  function inspectNativeJSON(json){
+    if(typeof json!=='string')throw new Error('serialization-failed');
+    const utf8Bytes=bytes(json),storageBytes=json.length*2,warning=utf8Bytes>=PERSISTENCE_LIMITS.softBytes;
+    if(utf8Bytes>PERSISTENCE_LIMITS.nativeHardBytes){const e=new Error('native-save-size-hard-limit');e.measurement={utf8Bytes,storageBytes};throw e;}
+    return {utf8Bytes,storageBytes,totalStorageBytes:null,warning};
   }
   function restoreRaw(key,raw){if(raw===null)localStorage.removeItem(key);else localStorage.setItem(key,raw);if(localStorage.getItem(key)!==raw)throw new Error('save-rollback-verification');}
   function writeJSON(key,json,options={}){
@@ -65,29 +71,44 @@
   function commitState(state,{storageKey='global-holdings-world-v2.0.0',appVersion=VERSION,...options}={}){
     if(locked||durableLocked)return {ok:false,reason:'lifecycle-locked'};
     if(recoveryRequired)return {ok:false,reason:'memory-recovery-required'};
-    if(bridgeFor('commitSave')&&mirrorCount>=PERSISTENCE_LIMITS.pending)return {ok:false,reason:'native-save-backpressure'};
-    const out=writeState(storageKey,state,options);if(!out.ok)return out;
-    if(bridgeFor('commitSave')){
-      mirrorCount++;
-      const work=mirrorTail.then(()=>requestNative('commitSave',out.json,{appVersion,...options}));
-      mirrorTail=work.then(ack=>{mirrorError=null;return ack;},error=>{
-        mirrorError=error;
-        try{if(localStorage.getItem(storageKey)===out.json)restoreRaw(storageKey,out.previous);}catch(e){error.rollbackError=String(e.message||e);}
-        const uncertainNative=error.code==='ACK_TIMEOUT';recoveryRequired=true;status({ok:false,reason:error.message,critical:!!error.rollbackError,requiresMemoryRollback:!uncertainNative,requiresNativeReconciliation:uncertainNative,storageKey});return {ok:false,reason:error.message,uncertainNative};
-      }).finally(()=>{mirrorCount--;});
-      out.native=mirrorTail;
-    }
-    return out;
+    const nativeBridge=!!bridgeFor('commitSave');
+    if(nativeBridge&&mirrorCount>=PERSISTENCE_LIMITS.pending)return {ok:false,reason:'native-save-backpressure'};
+    if(!nativeBridge)return writeState(storageKey,state,options);
+    let json,measurement;
+    try{assertState(state);json=JSON.stringify(state);measurement=inspectNativeJSON(json);}
+    catch(error){return {ok:false,reason:`serialization-or-schema:${error.message||error}`,...error.measurement};}
+    // Native Save Vault is the durability authority on iOS. Browser storage is
+    // only a compatibility cache and must never veto an otherwise valid native save.
+    const cache=writeJSON(storageKey,json,options);
+    const out={ok:true,json,...measurement,browserCache:cache.ok,cacheReason:cache.ok?null:cache.reason,previous:cache.previous??null};
+    if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,utf8Bytes:measurement.utf8Bytes});
+    mirrorCount++;
+    const work=mirrorTail.then(()=>requestNative('commitSave',json,{appVersion,...options}));
+    mirrorTail=work.then(ack=>{mirrorError=null;return ack;},error=>{
+      mirrorError=error;
+      if(cache.ok)try{if(localStorage.getItem(storageKey)===json)restoreRaw(storageKey,cache.previous);}catch(e){error.rollbackError=String(e.message||e);}
+      const uncertainNative=error.code==='ACK_TIMEOUT';recoveryRequired=true;status({ok:false,reason:error.message,critical:!!error.rollbackError,requiresMemoryRollback:!uncertainNative,requiresNativeReconciliation:uncertainNative,storageKey});return {ok:false,reason:error.message,uncertainNative};
+    }).finally(()=>{mirrorCount--;});
+    out.native=mirrorTail;return out;
   }
   async function drain(){await mirrorTail;if(mirrorError)throw mirrorError;return {ok:true,generation};}
   async function commitDurableState(state,{storageKey='global-holdings-world-v2.0.0',appVersion=VERSION,...options}={}){
     if(locked||durableLocked)throw new Error('lifecycle-locked');if(recoveryRequired)throw new Error('memory-recovery-required');durableLocked=true;
     let written=null;
     try{
-      await drain();assertState(state);const json=JSON.stringify(state);written=writeJSON(storageKey,json,options);if(!written.ok)throw new Error(written.reason);
+      await drain();assertState(state);const json=JSON.stringify(state),nativeBridge=!!bridgeFor('commitSave');
+      if(nativeBridge){
+        const measurement=inspectNativeJSON(json),ack=await requestNative('commitSave',json,{appVersion,...options});mirrorError=null;
+        const cache=writeJSON(storageKey,json,options);
+        if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,durable:true,utf8Bytes:measurement.utf8Bytes});
+        telemetry({operation:'durable-commit',ok:true,utf8Bytes:measurement.utf8Bytes,native:true,browserCache:cache.ok,durationMs:0});
+        status({ok:true,validated:true,durable:true,native:true,saveRevision:Number(state.saveRevision)||0});
+        return {ok:true,json,...measurement,ack,durable:true,browserCache:cache.ok,cacheReason:cache.ok?null:cache.reason};
+      }
+      written=writeJSON(storageKey,json,options);if(!written.ok)throw new Error(written.reason);
       const ack=await requestNative('commitSave',json,{appVersion,...options});mirrorError=null;
-      telemetry({operation:'durable-commit',ok:true,utf8Bytes:written.utf8Bytes,native:ack.native===true,durationMs:0});
-      status({ok:true,validated:true,durable:true,native:ack.native===true,saveRevision:Number(state.saveRevision)||0});
+      telemetry({operation:'durable-commit',ok:true,utf8Bytes:written.utf8Bytes,native:false,durationMs:0});
+      status({ok:true,validated:true,durable:true,native:false,saveRevision:Number(state.saveRevision)||0});
       return {...written,ack,durable:true};
     }catch(error){
       if(written?.ok)try{if(localStorage.getItem(storageKey)===written.json)restoreRaw(storageKey,written.previous);}catch(rollbackError){error.rollbackError=String(rollbackError.message||rollbackError);}
@@ -105,12 +126,18 @@
     let oldJSON;
     try{
       await drain();assertState(next);assertState(previous);oldJSON=JSON.stringify(previous);
-      const json=JSON.stringify(next);inspectJSON(json,storageKey);oldRaw=localStorage.getItem(storageKey);oldMarker=resetMarkerKey?localStorage.getItem(resetMarkerKey):null;
+      const json=JSON.stringify(next),nativeBridge=!!bridgeFor('resetGameSave');if(nativeBridge)inspectNativeJSON(json);else inspectJSON(json,storageKey);oldRaw=localStorage.getItem(storageKey);oldMarker=resetMarkerKey?localStorage.getItem(resetMarkerKey):null;
       // The current in-memory game is the compensating checkpoint. Native owns durability.
-      nativeAttempted=!!bridgeFor('resetGameSave');
+      nativeAttempted=nativeBridge;
       await requestNative('resetGameSave',json,{appVersion,timeoutMs});
-      const out=writeJSON(storageKey,json);if(!out.ok){const writeError=new Error(out.reason);writeError.rollbackError=out.rollbackError;throw writeError;}browserTouched=true;
-      if(resetMarkerKey){localStorage.setItem(resetMarkerKey,String(next.resetEpoch||0));if(localStorage.getItem(resetMarkerKey)!==String(next.resetEpoch||0))throw new Error('reset-marker-verification');}
+      const out=writeJSON(storageKey,json);
+      if(out.ok)browserTouched=true;
+      else if(!nativeBridge){const writeError=new Error(out.reason);writeError.rollbackError=out.rollbackError;throw writeError;}
+      else status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:out.reason,reset:true});
+      if(resetMarkerKey){
+        try{localStorage.setItem(resetMarkerKey,String(next.resetEpoch||0));if(localStorage.getItem(resetMarkerKey)!==String(next.resetEpoch||0))throw new Error('reset-marker-verification');}
+        catch(markerError){if(!nativeBridge)throw markerError;status({ok:true,warning:true,reason:'reset-marker-cache-skipped',message:String(markerError.message||markerError)});}
+      }
       if(apply)apply(next);
       for(const key of cleanupKeys)if(key!==storageKey&&key!==resetMarkerKey)try{localStorage.removeItem(key);}catch{}
       mirrorError=null;return {ok:true,native:nativeAttempted,generation};
@@ -137,6 +164,6 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:'2.0.0',saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,requestNative,receiveAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,mirrorCount,recoveryRequired,samples:clone(samples)})});
+  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,requestNative,receiveAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,mirrorCount,recoveryRequired,samples:clone(samples)})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
