@@ -69,6 +69,11 @@
 - Name: `B315-D-YELLOW-Stress1000`
 - Baseline: `96de035292db0d1794766da2fa83ef873426fd72`
 - Status: **YELLOW — 1000-asset real E2E + procurement idempotency regression in progress**
+- Implemented but not yet proven from a full candidate SHA:
+  - `tests/build315-procurement-idempotency-test.js`: same-key/same-payload exactly-once purchase; same-key/different-payload fail-closed.
+  - `tests/browser-build315-stress1000.js`: real UI facility expansion → 1000 road assets → fixed crew → 16 shared routes → Native durable save → fresh browser context Native relaunch → exact logical-state comparison.
+  - Stress1000 is wired into `npm run test:browser`, so it must pass on both Chromium and WebKit.
+  - Evidence captures purchase/routing duration, Native save byte size, route/crew invariants and optional heap usage.
 - The current branch must be re-read before resuming because HEAD may advance after this record is updated.
 
 ## 4) Build315 work completed since Last GREEN — code present, not all yet promoted to GREEN
