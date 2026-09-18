@@ -91,7 +91,9 @@ function setupNative(){
   assert(advanced.includes("out=await globalThis.GH_PERSISTENCE?.saveSlot?.(slot,s"),'save-slot UI must await the native slot ACK before reporting success');
   assert(app.includes('clearManualSlots:true,prepare:next=>'),'New Game must clear native manual slots in the same reset transaction');
   assert(swift.includes('try fm.copyItem(at: source, to: backup)'),'manual-slot reset must copy backups before source deletion');
-  assert(swift.includes('guard fm.fileExists(atPath: backup.path) else { continue }'),'recovery must preserve sources that were never staged');
+  assert(swift.includes('let manualSlotHashes: [String?]?'),'reset journal must pin the exact pre-reset manual-slot set');
+  assert(swift.includes('sha256(try Data(contentsOf: backup)) == expected'),'staged backups must be hash-verified before source deletion or recovery');
+  assert(swift.includes('sha256(try Data(contentsOf: source)) == expected'),'recovery must preserve a still-valid original if backup staging was interrupted');
   assert(swift.includes('if clearManualSlots { self.discardManualSlotResetBackups() }'),'successful reset must finalize staged manual-slot deletion');
   assert(controller.includes('case .success(let metadata):\n                        self?.refreshNativeBootstrapScript()'),'manual-slot save must refresh future bootstrap metadata');
   assert(controller.includes('case .success:\n                        self?.refreshNativeBootstrapScript()'),'manual-slot clear must refresh future bootstrap metadata');
