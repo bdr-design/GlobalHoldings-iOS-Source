@@ -73,15 +73,20 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     current=await state();assert.strictEqual(current.customRoutes.length,routesBefore,'failed maritime durable commit must not leave routes');assert(current.assets.filter(a=>a.type==='sea').every(a=>!a.routeId&&a.phase!=='moving'&&!a.departureScheduled),'failed maritime commit must leave all ships untouched');assert.strictEqual(await dispatch.isEnabled(),true,'maritime dispatch button must be retryable after save failure');
     await restoreStorage();await dispatch.click();await page.waitForFunction(()=>__GH_STATE__.assets.filter(a=>a.type==='sea').every(a=>a.routeId),null,{timeout:60000});
     current=await state();const routed=current.assets.filter(a=>a.type==='sea'),seaRoutes=current.customRoutes.filter(r=>r.type==='sea');
-    assert.strictEqual(seaRoutes.length,2,'25 ships at maritime capacity 24 must use exactly two shared routes');assert.strictEqual(new Set(routed.map(a=>a.routeId)).size,2);assert.strictEqual(routed.filter(a=>a.phase==='moving').length,2);assert.strictEqual(routed.filter(a=>a.phase==='turnaround'&&a.departureScheduled).length,23);
-    for(const route of seaRoutes){const users=routed.filter(a=>a.routeId===route.id);assert(users.length>0&&users.length<=24);assert.strictEqual(new Set(users.map(a=>a.routeSlot)).size,users.length);}
-    evidence.routing={routes:2,moving:2,scheduled:23};
+    assert.strictEqual(seaRoutes.length,7,'25 ships should use seven diverse automatic routes at target load four');assert.strictEqual(new Set(routed.map(a=>a.routeId)).size,7);assert.strictEqual(routed.filter(a=>a.phase==='moving').length,7);assert.strictEqual(routed.filter(a=>a.phase==='turnaround'&&a.departureScheduled).length,18);
+    for(const route of seaRoutes){const users=routed.filter(a=>a.routeId===route.id);assert(users.length>0&&users.length<=4,'automatic maritime route density exceeded diversity target');assert.strictEqual(new Set(users.map(a=>a.routeSlot)).size,users.length);}
+    const destinationIds=new Set(seaRoutes.map(route=>route.toFacility));
+    const sectorOf=route=>{const point=route.route.at(-1),lat=point[0],lon=point[1],latBand=lat<-23?'S':lat>23?'N':'E',lonBand=Math.max(0,Math.min(7,Math.floor((lon+180)/45)));return latBand+':'+lonBand;};
+    const destinationSectors=new Set(seaRoutes.map(sectorOf));
+    assert(destinationIds.size>=6,'automatic maritime dispatch reused too few world destinations');
+    assert(destinationSectors.size>=4,'automatic maritime dispatch did not spread routes across enough world sectors');
+    evidence.routing={routes:7,moving:7,scheduled:18,destinations:destinationIds.size,sectors:destinationSectors.size};
 
     const saved=await state();await page.reload({waitUntil:'domcontentloaded'});const restored=await state();
     for(const key of ['assets','customRoutes','companyFinance','crew','globalBases'])assert.deepStrictEqual(restored[key],saved[key],`reload mismatch: ${key}`);
     assert.deepStrictEqual(errors,[]);
     fs.mkdirSync('.ci-output/ci',{recursive:true});fs.writeFileSync(`.ci-output/ci/build315-operational-regression-${engineName}.json`,JSON.stringify(evidence,null,2));
-    console.log(`BUILD315 operational regression ${engineName}: PASS (facility/purchase/sea-route rollback + button retry; 25 ships on 2 shared routes)`);
+    console.log(`BUILD315 operational regression ${engineName}: PASS (facility/purchase/sea-route rollback + button retry; 25 ships on 7 globally diverse routes)`);
   }finally{
     await restoreStorage().catch(()=>{});
     fs.mkdirSync('tests/screenshots',{recursive:true});await page.screenshot({path:`tests/screenshots/build315-operational-${engineName}.png`}).catch(()=>{});
