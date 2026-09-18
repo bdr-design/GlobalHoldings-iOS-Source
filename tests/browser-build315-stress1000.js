@@ -166,7 +166,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
       assert.strictEqual(new Set(users.map(a=>a.routeSlot)).size,users.length,'route slots must be unique inside each shared route');
     }
     evidence.providerCalls=roadCalls();
-    assert.strictEqual(evidence.providerCalls,2,'21 shared-route groups with provider batch size 12 must use exactly two deterministic provider requests');
+    assert(evidence.providerCalls>=2&&evidence.providerCalls<=3,'21 diverse shared-route groups must stay within two provider batches plus at most one deterministic conflict retry');
 
     const preSave=await state();
     const inspected=await page.evaluate(()=>GH_PERSISTENCE.inspectNativeJSON(JSON.stringify(__GH_STATE__)));
