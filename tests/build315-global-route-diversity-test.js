@@ -21,7 +21,7 @@ const sea25=F.automaticRouteTargetLoad('sea',25,240);
 assert(sea25<=5,'25 ships must no longer collapse into two near-capacity routes');
 
 const road50=F.automaticRouteTargetLoad('road',50,240);
-assert(road50<=16,'a normal 50-truck fleet should use multiple road corridors');
+assert(road50<=8,'a normal 50-truck fleet should spread across at least seven road corridors when route budget is available');
 
 const road1000=F.automaticRouteTargetLoad('road',1000,240);
 assert(road1000>=32&&road1000<=48,'large road fleets must remain bounded to protect save size/provider load');
