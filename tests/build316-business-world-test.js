@@ -107,3 +107,5 @@ assert(snapshot.events.length<=240&&snapshot.competitorActivity.length<=120&&sna
 assert.strictEqual(snapshot.parties.filter(x=>x.id===nova.id).length,1,'Party single source of truth violated');
 
 console.log('BUILD316 business world: PASS — stable parties, named bid rivals, contract→invoice→transfer identity, customer 360, sponsorship idempotency, manual marketing, bounded weekly competitor events');
+
+// CI trigger branch only; production logic is identical to build316-business-world.
