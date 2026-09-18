@@ -1079,7 +1079,7 @@
   function newRouteDiversityLedger(){return {destinations:new Map(),sectors:new Map(),bands:new Map(),coords:[]};}
   function recordRouteDiversity(ledger,key,coords,distanceKm){
     if(!ledger||!Array.isArray(coords))return;
-    const destinationKey=String(key||`${coords[0].toFixed?.(3)||coords[0]}:${coords[1].toFixed?.(3)||coords[1]}`),sector=globalRouteSector(coords),band=globalRouteDistanceBand(Number(distanceKm)||0);
+    const destinationKey=String(key||`${Number(coords[0]).toFixed(3)}:${Number(coords[1]).toFixed(3)}`),sector=globalRouteSector(coords),band=globalRouteDistanceBand(Number(distanceKm)||0);
     ledger.destinations.set(destinationKey,(ledger.destinations.get(destinationKey)||0)+1);ledger.sectors.set(sector,(ledger.sectors.get(sector)||0)+1);ledger.bands.set(band,(ledger.bands.get(band)||0)+1);ledger.coords.push([Number(coords[0]),Number(coords[1])]);
   }
   function chooseDiverseWorldDestination({source,origin,asset,target,routes,ledger,selectionKey}){
@@ -1269,7 +1269,7 @@
   function compactFleetMarker(asset,position,zoom,totalMoving){
     if(!fleetCanvasRenderer)fleetCanvasRenderer=L.canvas({padding:.3});
     const colors={air:'#6aa8c8',sea:'#2da89d',road:'#b59a68'},radius=totalMoving>700?(zoom<4?1.5:2):totalMoving>300?(zoom<4?1.8:2.4):(zoom<4?2.2:zoom<6?2.8:3.4);
-    const marker=L.circleMarker(markerDisplayStart(`own:${asset.id}`,position),{renderer:fleetCanvasRenderer,radius,weight:0,fill:true,fillColor:colors[asset.type]||'#7aa0a5',fillOpacity:selectedAssetId===asset.id?.98:.76,interactive:true}).addTo(map);
+    const marker=L.circleMarker(markerDisplayStart(`own:${asset.id}`,position),{renderer:fleetCanvasRenderer,radius,weight:0,fill:true,fillColor:colors[asset.type]||'#7aa0a5',fillOpacity:selectedAssetId===asset.id ? .98 : .76,interactive:true}).addTo(map);
     marker.bindTooltip(`${esc(asset.name)} · ${esc(typeName(asset.type))}`,{direction:'top',permanent:false,opacity:.88});marker.on('click',()=>showAsset(asset.id));return marker;
   }
   function facilityRenderGroups(rows,zoom){
