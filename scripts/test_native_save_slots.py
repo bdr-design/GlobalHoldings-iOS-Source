@@ -69,7 +69,8 @@ let loadedGeneration: Int = try awaitResult { done in
 }
 try check(loadedGeneration > currentGeneration, "manual slot load must promote a fresh native generation")
 guard let restored = vault.currentSave() else { throw HarnessError.failed("manual slot load produced no current save") }
-try check(try revision(restored) == 7, "manual slot load did not restore the selected payload")
+let restoredRevision = try revision(restored)
+try check(restoredRevision == 7, "manual slot load did not restore the selected payload")
 
 let _: Void = try awaitResult { done in vault.clearManualSlotAsync(0, completion: done) }
 try check(vault.manualSlotMetadata().isEmpty, "manual slot clear must remove the slot")
