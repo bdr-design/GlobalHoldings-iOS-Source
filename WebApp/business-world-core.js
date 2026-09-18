@@ -22,7 +22,7 @@ function ensure(s){
  b.schema=SCHEMA;b.parties=b.parties&&typeof b.parties==='object'&&!Array.isArray(b.parties)?b.parties:{};
  b.relationships=b.relationships&&typeof b.relationships==='object'&&!Array.isArray(b.relationships)?b.relationships:{};
  for(const k of ['opportunities','sponsorships','campaigns','events','competitorActivity'])b[k]=Array.isArray(b[k])?b[k]:[];
- b.sequence=Math.max(0,Math.floor(Number(b.sequence)||0));b.lastCompetitorWeek=Math.max(-1,Math.floor(Number(b.lastCompetitorWeek)??-1));
+ b.sequence=Math.max(0,Math.floor(Number(b.sequence)||0));const lastWeek=Number(b.lastCompetitorWeek);b.lastCompetitorWeek=Number.isFinite(lastWeek)?Math.max(-1,Math.floor(lastWeek)):-1;
  trim(b.opportunities,120);trim(b.sponsorships,60);trim(b.campaigns,80);trim(b.events,240);trim(b.competitorActivity,120);
  seedSponsors(s);return b;
 }
@@ -110,7 +110,7 @@ function launchCampaign(s,p={}){
 }
 function billSponsorship(s,offer,processedDay){
  if(offer.status!=='نشط'||processedDay<offer.nextBillingDay)return 0;if(processedDay>offer.endDay){offer.status='منتهي';return 0;}
- const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)return 0,period=offer.billedPeriods+1,ref=`SPON-${offer.id}-P${period}`,party=resolveParty(s,offer.partyId),amount=Math.min(offer.monthlyValue,Math.max(0,offer.value-offer.billedPeriods*offer.monthlyValue));
+ const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)return 0;const period=offer.billedPeriods+1,ref=`SPON-${offer.id}-P${period}`,party=resolveParty(s,offer.partyId),amount=Math.min(offer.monthlyValue,Math.max(0,offer.value-offer.billedPeriods*offer.monthlyValue));
  if(amount<=0){offer.status='منتهي';return 0;}F.execute({state:s},'credit',{company:offer.company,amount,reference:ref,note:`دفعة رعاية ${offer.id} · الفترة ${period}`,counterparty:party?.legalName||party?.displayName||'راعٍ تجاري',taxable:true,sourceRefs:[offer.id]});offer.billedPeriods=period;offer.lastBillingDay=processedDay;offer.nextBillingDay+=30;if(offer.nextBillingDay>offer.endDay||offer.billedPeriods*offer.monthlyValue>=offer.value-.01)offer.status='منتهي';return amount;
 }
 function competitorTick(s,processedDay){
