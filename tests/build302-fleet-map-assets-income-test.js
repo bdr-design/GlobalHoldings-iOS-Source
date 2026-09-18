@@ -86,10 +86,10 @@ assert.strictEqual(scaleState.mobility.activeTrips.length,scalePairs.length);ass
 // Source guards for the lightweight map and separated registries.
 const app=fs.readFileSync('WebApp/app.js','utf8'),catalog=fs.readFileSync('WebApp/catalog.js','utf8'),css=fs.readFileSync('WebApp/styles.css','utf8'),hrSource=fs.readFileSync('WebApp/hr-core.js','utf8');
 assert(app.includes("mapRenderBudget(zoom,'mobility')"));assert(app.includes('centerClusters?.(state)'));assert(app.includes("routeFilterType='all',routeQuery=''"));assert(app.includes('ownedAssetSearch'));assert(app.includes('routeSearch'));
-// BUILD304: every moving asset and owned facility must remain represented. Adaptive
-// geographic groups replace the old fixed stationary budget, which silently hid
-// ships/facilities after the render cap was reached.
-assert(app.includes('movingAssetGroups'));assert(app.includes('facilityRenderGroups'));
+// Every moving asset and owned facility must remain represented. Moving assets
+// are no longer collapsed into numeric geographic badges: route representatives
+// keep full vehicle icons and overflow stays individually represented on Canvas.
+assert(app.includes('movingHeroSelection'));assert(app.includes('compactFleetMarker'));assert(!app.includes('movingAssetGroups'));assert(app.includes('facilityRenderGroups'));
 assert(!app.includes('stationaryClusterBudget'));assert(app.includes('f.owned===true||assetBaseIds.has(f.id)'));
 assert(app.includes("document.querySelectorAll('.service-asset')")&&app.includes("document.querySelectorAll('.sell-asset')")&&app.includes("'fleet','service'")&&app.includes("'fleet','dispose'"));assert(app.includes("document.querySelectorAll('.service-mobility-asset')")&&app.includes("document.querySelectorAll('.sell-mobility-asset')"));
 assert(app.includes('const routeAssets=new Map()'));assert(app.includes('matchingRoutes.slice(0,80)'));assert(!app.includes("function renderRouteCenter(arg){\n    if(typeof arg==='string'&&['all','air','sea','road','mobility'].includes(arg))routeFilterType=arg;\n    dedupeCustomRoutes();"));
