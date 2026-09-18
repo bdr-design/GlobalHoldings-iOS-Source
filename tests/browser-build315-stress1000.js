@@ -7,7 +7,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
   const browser=await(engine==='webkit'?webkit:chromium).launch({headless:true});
   const server=await serve();
   const nativeVault={json:null,generation:0,commits:0};
-  const evidence={engine,quantity:1000,expectedSharedRoutes:16};
+  const evidence={engine,quantity:1000,expectedSharedRoutes:21};
 
   const createContext=async nativeJSON=>{
     const context=await browser.newContext({viewport:{width:844,height:390},locale:'ar-SA'});
@@ -155,18 +155,18 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     evidence.routePlanMs=Date.now()-routeStart;
     current=await state();
     const routed=current.assets.filter(a=>a.type==='road'),roadRoutes=current.customRoutes.filter(r=>r.type==='road');
-    assert.strictEqual(roadRoutes.length,16,'1000 trucks at route capacity 64 must use exactly 16 shared routes');
-    assert.strictEqual(new Set(routed.map(a=>a.routeId)).size,16,'every truck must be assigned into the 16-route shared network');
+    assert.strictEqual(roadRoutes.length,21,'1000 trucks should use 21 bounded shared routes at automatic target load 48');
+    assert.strictEqual(new Set(routed.map(a=>a.routeId)).size,21,'every truck must be assigned into the 21-route diverse shared network');
     assert(routed.every(a=>a.routeId),'no road asset may be left without a route');
-    assert.strictEqual(routed.filter(a=>a.phase==='moving').length,16,'one truck per shared route should depart immediately');
-    assert.strictEqual(routed.filter(a=>a.phase==='turnaround'&&a.departureScheduled).length,984,'remaining trucks must be scheduled on their shared routes');
+    assert.strictEqual(routed.filter(a=>a.phase==='moving').length,21,'one truck per shared route should depart immediately');
+    assert.strictEqual(routed.filter(a=>a.phase==='turnaround'&&a.departureScheduled).length,979,'remaining trucks must be scheduled on their shared routes');
     for(const route of roadRoutes){
       const users=routed.filter(a=>a.routeId===route.id);
-      assert(users.length>0&&users.length<=64,'shared road route capacity must never exceed 64');
+      assert(users.length>0&&users.length<=48,'automatic road route density must stay within the bounded target of 48');
       assert.strictEqual(new Set(users.map(a=>a.routeSlot)).size,users.length,'route slots must be unique inside each shared route');
     }
     evidence.providerCalls=roadCalls();
-    assert.strictEqual(evidence.providerCalls,2,'16 shared-route groups with provider batch size 12 must use exactly two deterministic provider requests');
+    assert.strictEqual(evidence.providerCalls,2,'21 shared-route groups with provider batch size 12 must use exactly two deterministic provider requests');
 
     const preSave=await state();
     const inspected=await page.evaluate(()=>GH_PERSISTENCE.inspectNativeJSON(JSON.stringify(__GH_STATE__)));
@@ -179,7 +179,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     assert(nativeVault.json,'native bridge must hold the final full save');
     const nativeParsed=JSON.parse(nativeVault.json);
     assert.strictEqual(nativeParsed.assets.filter(a=>a.type==='road').length,1000,'native save must contain all 1000 assets');
-    assert.strictEqual(nativeParsed.customRoutes.filter(r=>r.type==='road').length,16,'native save must contain all 16 routes');
+    assert.strictEqual(nativeParsed.customRoutes.filter(r=>r.type==='road').length,21,'native save must contain all 21 routes');
     const beforeRelaunch=logicalSnapshot(preSave);
     const committedSnapshot=logicalSnapshot(nativeParsed);
     assert.deepStrictEqual(committedSnapshot,beforeRelaunch,'Native acknowledged payload must exactly match the logical pre-relaunch state');
@@ -198,7 +198,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     const restored=await page.evaluate(()=>JSON.parse(JSON.stringify(__GH_STATE__)));
     assert.deepStrictEqual(logicalSnapshot(restored),beforeRelaunch,'simulated Native relaunch must restore assets, balances, routes, crew, facility capacity and deliveries exactly');
     assert.strictEqual(new Set(restored.assets.filter(a=>a.type==='road').map(a=>a.id)).size,1000);
-    assert.strictEqual(restored.customRoutes.filter(r=>r.type==='road').length,16);
+    assert.strictEqual(restored.customRoutes.filter(r=>r.type==='road').length,21);
     assert.strictEqual(restored.assets.filter(a=>a.type==='road').reduce((n,a)=>n+Number(a.staffing?.total||0),0),3000);
     assert.deepStrictEqual(errors,[]);
 
@@ -208,7 +208,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     await page.screenshot({path:`tests/screenshots/build315-stress1000-${engine}.png`});
     fs.mkdirSync('.ci-output/ci',{recursive:true});
     fs.writeFileSync(`.ci-output/ci/build315-stress1000-${engine}.json`,JSON.stringify(evidence,null,2));
-    console.log(`BUILD315 stress1000 ${engine}: PASS (1000 assets, 16 shared routes, 3000 fixed crew, Native save/relaunch exact; purchase ${evidence.purchaseMs}ms, routing ${evidence.routePlanMs}ms, save ${evidence.nativeSaveUtf8Bytes} bytes)`);
+    console.log(`BUILD315 stress1000 ${engine}: PASS (1000 assets, 21 diverse shared routes, 3000 fixed crew, Native save/relaunch exact; purchase ${evidence.purchaseMs}ms, routing ${evidence.routePlanMs}ms, save ${evidence.nativeSaveUtf8Bytes} bytes)`);
   }finally{
     if(context)await context.close().catch(()=>{});
     await browser.close();
