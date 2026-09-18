@@ -167,15 +167,15 @@
     const owner=globalThis.GH_FACILITY_CORE;if(!owner?.assetCapacity)throw new Error('facility-capacity-owner-missing');return owner.assetCapacity(facility);
   }
   function markDeliveryDelivered(state,delivery,day,at){const lifecycle=globalThis.GH_LIFECYCLE_CORE;if(lifecycle?.transition)lifecycle.transition(state,delivery,'deliveryOrder','delivered',{event:'ASSET_DELIVERED',domain:'operations',actor:'delivery-engine'});else delivery.status='delivered';delivery.deliveredDay=day;delivery.deliveredAtSeconds=at;}
-  function deliveryBaseHasRoom(state,facility,deliveryId){
-    const occupied=(state.assets||[]).filter(a=>a.baseFacility===facility.id).length,pending=(state.realism?.procurement?.deliveries||[]).filter(x=>x.id!==deliveryId&&x.status==='pending'&&x.baseId===facility.id).length;
-    return occupied+pending<deliveryCapacity(state,facility);
+  function deliveryCapacitySnapshot(state,deliveries){
+    const occupied=new Map(),pending=new Map();
+    for(const asset of state.assets||[])occupied.set(asset.baseFacility,(occupied.get(asset.baseFacility)||0)+1);
+    for(const delivery of deliveries)if(delivery?.status==='pending'&&delivery.baseId)pending.set(delivery.baseId,(pending.get(delivery.baseId)||0)+1);
+    return {occupied,pending};
   }
-  function resolveDeliveryBase(state,d,snap){
-    // Build246: وجهة الطلب عقد ثابت. لا إعادة توجيه صامتة إلى قاعدة أخرى.
-    const exact=compatibleDeliveryFacilities(state,snap.type).find(f=>f.id===d.baseId);
-    if(!exact||!deliveryBaseHasRoom(state,exact,d.id))return null;
-    return exact;
+  function deliverySnapshotHasRoom(state,snapshot,facility,delivery){
+    const pendingForBase=Math.max(0,(snapshot.pending.get(facility.id)||0)-(delivery?.status==='pending'&&delivery.baseId===facility.id?1:0));
+    return (snapshot.occupied.get(facility.id)||0)+pendingForBase<deliveryCapacity(state,facility);
   }
   function normalizeDeliveryClock(state,d){
     const now=Math.max(0,Number(state.simSeconds)||0),base=Math.max(60,DELIVERY_WINDOW_SECONDS[d.type]||600);
@@ -189,26 +189,40 @@
     return d;
   }
   function deliverDueAssetsAt(state,simSeconds){
-    const r=migrate(state),deliveries=r.procurement.deliveries||[],now=Math.max(0,Number(simSeconds)||Number(state.simSeconds)||0),day=Math.floor(now/86400);
+    const r=migrate(state),deliveries=r.procurement.deliveries||[],now=Math.max(0,Number(simSeconds)||Number(state.simSeconds)||0),day=Math.floor(now/86400),assetById=new Map((state.assets||[]).map(asset=>[asset.id,asset])),snapshot=deliveryCapacitySnapshot(state,deliveries),ready=[],alreadyDelivered=[];
     for(const d of deliveries){
       if(d.status!=='pending')continue;normalizeDeliveryClock(state,d);if(Number(d.dueAtSeconds)>now)continue;
-      const snap=d.asset||{},existing=(state.assets||[]).find(a=>a.id===snap.id);if(existing){if(existing.baseFacility!==d.baseId||existing.deliveryOrderId!==d.id)throw new Error('existing-delivery-evidence-mismatch');markDeliveryDelivered(state,d,day,now);continue;}
-      const base=resolveDeliveryBase(state,d,snap);
-      if(!base){d.blockedReason='approved-destination-missing-or-full';d.lastCheckedAt=now;if(!Number.isFinite(Number(d.lastBlockedAlertAt))||now-Number(d.lastBlockedAlertAt)>=300){d.lastBlockedAlertAt=now;if(Array.isArray(state.alerts))state.alerts.unshift(`${snap.name||'أصل جديد'}: التسليم بانتظار قاعدة/مركز مملوك متوافق مع ${names[snap.type]||snap.type}. لن يعيد النظام توجيه الأصل تلقائيًا؛ سيبقى الطلب معلقًا على نفس الوجهة ويعيد المحاولة بعد معالجة السعة.`);}continue;}
-      const tx=globalThis.GH_TRANSACTION_CORE;if(!tx?.execute)throw new Error('delivery-transaction-unavailable');
-      (tx.isActive()?tx.join:tx.execute)(state,{label:`asset-delivery:${d.id}`,apply:()=>{
-      d.blockedReason=null;
-      const company=state.companyRegistry?.[snap.type]?.legalName||names[snap.type]||snap.company||'شركة تشغيلية';
-      const delivered=globalThis.GH_DOMAIN_COMMANDS?.dispatch?.({state},'fleet','record-delivery',{deliveryId:d.id,asset:{...snap,company},baseId:base.id,phase:'idle',deliveredDay:day,deliveredAtSeconds:now},{actor:'delivery-engine'});
-      if(!delivered?.ok)throw new Error(`delivery-owner-rejected:${d.id}`);
-      // Fleet Core ينشئ الطاقم الثابت وعقد راتبه داخل أمر record-delivery نفسه.
-      // أي فشل هناك يفشل معاملة التسليم والشراء كاملة؛ لا توجد فجوة HR ولا خطأ مبتلع.
-      globalThis.GH_DOMAIN_COMMANDS?.dispatch?.({state},'corporate','adjust-group-value',{delta:snap.ownership==='lease'?(Number(snap.purchasePrice)||0)*.08:(Number(snap.purchasePrice)||0)*.86},{actor:'delivery-engine'});
-      markDeliveryDelivered(state,d,day,now);
-      globalThis.GH_DOMAIN_COMMANDS?.dispatch?.({state},'operations','record-alert',{text:`تم استلام ${snap.name} فورًا في ${base.name||d.destination||'القاعدة'} وتجهيز طاقمه الثابت وراتبه آليًا. الأصل جاهز للتشغيل.`,type:'delivery'},{actor:'delivery-engine'});
-      }});
+      const asset=d.asset||{},existing=assetById.get(asset.id);
+      if(existing){if(existing.baseFacility!==d.baseId||existing.deliveryOrderId!==d.id)throw new Error('existing-delivery-evidence-mismatch');alreadyDelivered.push(d);continue;}
+      const base=compatibleDeliveryFacilities(state,asset.type).find(f=>f.id===d.baseId);
+      if(!base||!deliverySnapshotHasRoom(state,snapshot,base,d)){
+        d.blockedReason='approved-destination-missing-or-full';d.lastCheckedAt=now;
+        if(!Number.isFinite(Number(d.lastBlockedAlertAt))||now-Number(d.lastBlockedAlertAt)>=300){d.lastBlockedAlertAt=now;if(Array.isArray(state.alerts))state.alerts.unshift(`${asset.name||'أصل جديد'}: التسليم بانتظار قاعدة/مركز مملوك متوافق مع ${names[asset.type]||asset.type}. لن يعيد النظام توجيه الأصل تلقائيًا؛ سيبقى الطلب معلقًا على نفس الوجهة ويعيد المحاولة بعد معالجة السعة.`);}
+        continue;
+      }
+      ready.push({delivery:d,asset,base});
     }
-    const pending=deliveries.filter(x=>x.status==='pending'),history=deliveries.filter(x=>x.status!=='pending');r.procurement.deliveries=[...pending,...history];syncManualDeliveryPipeline(state,day);return deliveries.filter(x=>x.status==='delivered'&&Number(x.deliveredAtSeconds)===now).length;
+    if(ready.length||alreadyDelivered.length){
+      const tx=globalThis.GH_TRANSACTION_CORE,commands=globalThis.GH_DOMAIN_COMMANDS;if(!tx?.execute||!commands?.dispatch)throw new Error('delivery-transaction-unavailable');
+      const outcome=(tx.isActive()?tx.join:tx.execute)(state,{label:`asset-delivery-batch:${ready.length}`,apply:()=>{
+        if(ready.length){
+          const inputs=ready.map(({delivery,asset,base})=>({deliveryId:delivery.id,asset:{...asset,company:state.companyRegistry?.[asset.type]?.legalName||names[asset.type]||asset.company||'شركة تشغيلية'},baseId:base.id,phase:'idle',deliveredDay:day,deliveredAtSeconds:now}));
+          // Preserve the single-delivery owner contract; only a true multi-row
+          // batch uses the scalable Fleet Core command.
+          const delivered=inputs.length===1?commands.dispatch({state},'fleet','record-delivery',inputs[0],{actor:'delivery-engine'}):commands.dispatch({state},'fleet','record-delivery-batch',{deliveries:inputs},{actor:'delivery-engine'}),deliveredAssets=inputs.length===1?[delivered?.result]:delivered?.result;
+          if(!delivered?.ok||!Array.isArray(deliveredAssets)||deliveredAssets.length!==ready.length||deliveredAssets.some(asset=>asset.deliveryStatus!=='delivered'||asset.staffing?.ready!==true))throw new Error('delivery-owner-rejected-batch');
+          const valueDelta=ready.reduce((sum,{asset})=>sum+(asset.ownership==='lease'?(Number(asset.purchasePrice)||0)*.08:(Number(asset.purchasePrice)||0)*.86),0);
+          const adjusted=commands.dispatch({state},'corporate','adjust-group-value',{delta:valueDelta},{actor:'delivery-engine'});if(!adjusted?.ok)throw new Error('delivery-value-owner-rejected');
+          for(const {delivery} of ready){delivery.blockedReason=null;markDeliveryDelivered(state,delivery,day,now);}
+          const text=ready.length===1?`تم استلام ${ready[0].asset.name} فورًا في ${ready[0].base.name||ready[0].delivery.destination||'القاعدة'} وتجهيز طاقمه الثابت وراتبه آليًا. الأصل جاهز للتشغيل.`:`تم استلام ${ready.length} أصلًا فورًا داخل معاملة تسليم واحدة، وتجهيز طواقمها الثابتة ورواتبها آليًا. جميع الأصول جاهزة للتشغيل.`;
+          const alert=commands.dispatch({state},'operations','record-alert',{text,type:'delivery'},{actor:'delivery-engine'});if(!alert?.ok)throw new Error('delivery-alert-owner-rejected');
+        }
+        for(const delivery of alreadyDelivered)markDeliveryDelivered(state,delivery,day,now);
+        return ready.length+alreadyDelivered.length;
+      }});
+      if(!outcome?.committed)throw new Error(outcome?.reason||'delivery-batch-transaction-rejected');
+    }
+    const pending=deliveries.filter(x=>x.status==='pending'),history=deliveries.filter(x=>x.status!=='pending');r.procurement.deliveries=[...pending,...history];syncManualDeliveryPipeline(state,day);return ready.length+alreadyDelivered.length;
   }
   function deliverDueAssets(state,day){return deliverDueAssetsAt(state,Math.max(Number(state.simSeconds)||0,Number(day||0)*86400));}
   function updateProjects(state,day){const r=migrate(state),source=state.constructionContracts||[];for(const c of source){let p=r.projects.find(x=>x.sourceId===c.id);if(!p){const total=Math.max(1,Number(c.leadDays)||(c.facilityKind==='power'?180:c.facilityKind==='hq'?120:c.facilityKind==='bank'?90:180));p={id:`CAPEX-${c.id}`,sourceId:c.id,company:c.company||'group',title:c.siteName||c.facilityKind,budget:Number(c.amount)||0,startDay:Math.floor((Number(c.awardedAt)||0)/86400),totalDays:total,stage:'Construction',progress:0,status:'Active'};r.projects.push(p);}const elapsed=Math.max(0,day-p.startDay);p.progress=clamp(elapsed/p.totalDays*100,0,100);p.stage=p.progress<10?'Permits & mobilization':p.progress<70?'Construction':p.progress<95?'Commissioning':'Operational';if(p.progress>=100){p.status='Completed';if(c.company==='power'&&c.capacityKey&&c.capacityAmount&&!c.commissioned){globalThis.GH_DOMAIN_COMMANDS?.dispatch?.({state},'facilities','commission-energy',{key:c.capacityKey,amount:Number(c.capacityAmount)||0},{actor:'project-commissioning'});globalThis.GH_PROCUREMENT_CORE?.execute?.({state},'complete-construction',{id:c.id,status:'مكتمل / مشغل'});const facility=(state.customHubs||[]).find(row=>row.constructionContractId===c.id);if(facility){facility.commissioned=true;facility.status='تشغيل تجاري';facility.dailyCost=Number(facility.plannedDailyCost)||Number(facility.dailyCost)||0;facility.capacity=`مشغل · ${Number(c.capacityAmount)||0} ${c.capacityKey==='storageMWh'?'MWh':'MW'}`;}globalThis.GH_DOMAIN_COMMANDS?.dispatch?.({state},'corporate','adjust-group-value',{delta:(Number(c.amount)||0)*.44},{actor:'project-commissioning'});globalThis.GH_DOMAIN_COMMANDS?.dispatch?.({state},'operations','record-alert',{text:`اكتمل Commissioning لمشروع ${c.siteName||p.title}. أضيفت القدرة الجديدة إلى التشغيل الفعلي.`,type:'commissioning'},{actor:'project-commissioning'});}}}}

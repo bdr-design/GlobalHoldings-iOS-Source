@@ -50,7 +50,7 @@
       maxCreateMs:0,lastCreateMs:0,maxFinishMs:0,lastFinishMs:0,maxCycleMs:0,lastCycleMs:0,
       lastError:'',lastBoundary:'',lastSliceSeconds:0,lastMaintenanceHour:-1,lastCancelReason:'',lastCommitReason:'',lastWorkStage:'',governor:'GREEN',avgChunkMs:0,avgWorkMs:0
     };
-    let lastReal=clock(),backlog=0,job=null,jobSlice=0,jobStart=0,jobSpeed=0,jobBoundary=null,jobWorkMs=0;
+    let lastReal=clock(),backlog=0,job=null,jobSlice=0,jobStart=0,jobSpeed=0,jobBoundary=null,jobWorkMs=0,manualAdvance=null;
     let lastRender=0,lastPersist=0,hidden=false,hardTaskStreak=0,conflictStreak=0,lastObservedSpeed=null,throttlePending=null;const durationSamples=[],workSamples=[];let lastGovernor='GREEN';
     let lastHourCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/3600);
     let lastDayCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/86400);
@@ -68,6 +68,13 @@
     const simNow=()=>Math.max(0,Number(adapter.getSimTime())||0);
     const setSim=t=>adapter.setSimTime(Math.max(0,Number(t)||0));
     const fast=s=>s>=8;
+    const manualSnapshot=()=>manualAdvance?{target:manualAdvance.target,remaining:Math.max(0,manualAdvance.target-simNow()),speed:manualAdvance.speed,reason:manualAdvance.reason,requestedAt:manualAdvance.requestedAt}:null;
+    function completeManualAdvance(){
+      if(!manualAdvance||simNow()+1e-6<manualAdvance.target)return false;
+      const completed={...manualAdvance};manualAdvance=null;backlog=0;
+      try{adapter.onAdvance?.({active:false,completed:true,target:completed.target,reason:completed.reason});}catch(error){report('advance-complete',error,false);}
+      return true;
+    }
     // Keep transaction frequency roughly constant across user multipliers.
     // One real second of intended progress per atomic slice means higher UI multipliers do not create
     // eight full-state transactions per real second as older builds did.
@@ -134,7 +141,7 @@
         health.lastCommitReason=reason;
         if(reason==='asset-conflict'||result?.retry){health.conflicts++;conflictStreak++;}
         cancelJob(reason);
-        if(conflictStreak>=cfg.conflictLimit&&fast(speed)){adapter.setSpeed?.(cfg.fallbackSpeed,{reason:'conflict-watchdog'});backlog=Math.min(backlog,cfg.maxBacklogNormal);conflictStreak=0;}
+        if(conflictStreak>=cfg.conflictLimit&&fast(speed)){if(manualAdvance)manualAdvance.speed=cfg.fallbackSpeed;adapter.setSpeed?.(cfg.fallbackSpeed,{reason:'conflict-watchdog'});backlog=Math.min(backlog,cfg.maxBacklogNormal);conflictStreak=0;}
         return {done:false,breakFrame:true};
       }
       conflictStreak=0;
@@ -157,7 +164,7 @@
       const deadline=now+cfg.frameBudgetMs;
       while(clock()<deadline){
         if(!job&&!startJob(speed))break;
-        if(throttlePending){const pending=throttlePending;throttlePending=null;adapter.setSpeed?.(cfg.fallbackSpeed,{reason:pending.reason,took:pending.took,stage:pending.stage,avgWorkMs:health.avgWorkMs});backlog=0;cancelJob(`${pending.reason}:${pending.stage}`);hardTaskStreak=0;adapter.onThrottle?.({took:pending.took,reason:`${pending.reason}:${pending.stage}`,stage:pending.stage});break;}
+        if(throttlePending){const pending=throttlePending;throttlePending=null;if(manualAdvance)manualAdvance.speed=cfg.fallbackSpeed;adapter.setSpeed?.(cfg.fallbackSpeed,{reason:pending.reason,took:pending.took,stage:pending.stage,avgWorkMs:health.avgWorkMs});backlog=0;cancelJob(`${pending.reason}:${pending.stage}`);hardTaskStreak=0;adapter.onThrottle?.({took:pending.took,reason:`${pending.reason}:${pending.stage}`,stage:pending.stage});break;}
         if(clock()>=deadline)break;
         const chunkStart=clock();let done=false;
         try{done=!!job.runChunk(cfg.chunkItems,{deadline,speed,fast:fast(speed)});}catch(error){report('sliceChunk',error,true);cancelJob('chunk-error');backlog=0;return;}
@@ -166,9 +173,9 @@
         health.chunks++;health.lastChunkMs=took;health.maxChunkMs=Math.max(health.maxChunkMs,took);
         durationSamples.push(took);if(durationSamples.length>30)durationSamples.shift();health.avgChunkMs=durationSamples.reduce((a,b)=>a+b,0)/Math.max(1,durationSamples.length);
         observeWork('chunk',took,speed);
-        if(throttlePending){const pending=throttlePending;throttlePending=null;adapter.setSpeed?.(cfg.fallbackSpeed,{reason:pending.reason,took:pending.took,stage:pending.stage,avgWorkMs:health.avgWorkMs});backlog=0;cancelJob(`${pending.reason}:${pending.stage}`);hardTaskStreak=0;adapter.onThrottle?.({took:pending.took,reason:`${pending.reason}:${pending.stage}`,stage:pending.stage});break;}
+        if(throttlePending){const pending=throttlePending;throttlePending=null;if(manualAdvance)manualAdvance.speed=cfg.fallbackSpeed;adapter.setSpeed?.(cfg.fallbackSpeed,{reason:pending.reason,took:pending.took,stage:pending.stage,avgWorkMs:health.avgWorkMs});backlog=0;cancelJob(`${pending.reason}:${pending.stage}`);hardTaskStreak=0;adapter.onThrottle?.({took:pending.took,reason:`${pending.reason}:${pending.stage}`,stage:pending.stage});break;}
         if(done){const outcome=finishJob(speed);if(outcome.breakFrame)break;}
-        if(throttlePending){const pending=throttlePending;throttlePending=null;adapter.setSpeed?.(cfg.fallbackSpeed,{reason:pending.reason,took:pending.took,stage:pending.stage,avgWorkMs:health.avgWorkMs});backlog=0;hardTaskStreak=0;adapter.onThrottle?.({took:pending.took,reason:`${pending.reason}:${pending.stage}`,stage:pending.stage});break;}
+        if(throttlePending){const pending=throttlePending;throttlePending=null;if(manualAdvance)manualAdvance.speed=cfg.fallbackSpeed;adapter.setSpeed?.(cfg.fallbackSpeed,{reason:pending.reason,took:pending.took,stage:pending.stage,avgWorkMs:health.avgWorkMs});backlog=0;hardTaskStreak=0;adapter.onThrottle?.({took:pending.took,reason:`${pending.reason}:${pending.stage}`,stage:pending.stage});break;}
         if(clock()>=deadline)break;
       }
     }
@@ -182,28 +189,56 @@
       if(now-lastPersist>=every){lastPersist=now;try{adapter.onPersist?.({now,speed});}catch(error){report('persist',error,false);}}
     }
 
+    function advanceTo(target,options={}){
+      const current=simNow(),requested=Number(target),maxSeconds=Math.max(86400,Math.min(366*86400,Number(options.maxSeconds)||366*86400));
+      if(!Number.isFinite(requested)||requested<=current+1e-6)return {accepted:false,reason:'advance-target-not-forward',target:current};
+      if(requested-current>maxSeconds)return {accepted:false,reason:'advance-target-too-far',target:current};
+      const preferred=Number(options.speed),positiveSpeeds=cfg.allowedSpeeds.filter(speed=>speed>0),fastest=positiveSpeeds.length?Math.max(...positiveSpeeds):0;
+      const speed=cfg.allowedSpeeds.includes(preferred)&&preferred>0?preferred:fastest;
+      if(speed<=0)return {accepted:false,reason:'advance-speed-unavailable',target:current};
+      cancelJob('manual-advance-request');
+      manualAdvance={target:requested,speed,reason:String(options.reason||'manual-advance'),requestedAt:clock()};
+      backlog=0;lastReal=clock();lastObservedSpeed=speed;
+      try{adapter.onAdvance?.({active:true,target:requested,remaining:requested-current,speed,reason:manualAdvance.reason});}catch(error){report('advance-start',error,false);}
+      return {accepted:true,...manualSnapshot()};
+    }
+    function cancelAdvance(reason='manual-advance-cancelled'){
+      if(!manualAdvance)return false;
+      const cancelled={...manualAdvance};cancelJob(reason);manualAdvance=null;backlog=0;lastReal=clock();
+      try{adapter.onAdvance?.({active:false,cancelled:true,target:cancelled.target,reason});}catch(error){report('advance-cancel',error,false);}
+      return true;
+    }
     function frame(now=clock()){
-      health.frames++;
-      const speed=getSpeed();
+      health.frames++;completeManualAdvance();
+      const advancing=manualAdvance,speed=advancing?advancing.speed:getSpeed();
       if(lastObservedSpeed===null)lastObservedSpeed=speed;
       if(speed!==lastObservedSpeed){cancelJob('speed-change');backlog=0;lastReal=now;lastObservedSpeed=speed;maybeRender(now,speed);maybePersist(now,speed);return;}
       let realDelta=(now-lastReal)/1000;lastReal=now;
       if(!Number.isFinite(realDelta)||realDelta<0)realDelta=0;
       if(realDelta>cfg.maxRealDelta){health.droppedRealSeconds+=realDelta;health.stallGaps=(health.stallGaps||0)+1;realDelta=0;}
-      if(hidden||adapter.isSuspended?.()||speed<=0){backlog=0;cancelJob(hidden?'hidden':speed<=0?'paused':'suspended');maybeRender(now,speed);return;}
-      backlog+=realDelta*speed;
-      const cap=backlogCap(speed);if(backlog>cap){backlog=cap;health.backlogClamps++;}
-      work(now,speed);maybeRender(now,speed);maybePersist(now,speed);
+      if(hidden||adapter.isSuspended?.()||(speed<=0&&!advancing)){backlog=0;cancelJob(hidden?'hidden':speed<=0?'paused':'suspended');maybeRender(now,speed);return;}
+      if(advancing){
+        const remaining=Math.max(0,advancing.target-simNow());
+        if(remaining<=1e-6){completeManualAdvance();maybeRender(now,speed);maybePersist(now,speed);return;}
+        // Manual calendar navigation sets a target; the normal atomic slice and
+        // boundary machinery remain the only authority that advances game time.
+        backlog=remaining;
+      }else{
+        backlog+=realDelta*speed;
+        const cap=backlogCap(speed);if(backlog>cap){backlog=cap;health.backlogClamps++;}
+      }
+      work(now,speed);completeManualAdvance();maybeRender(now,speed);maybePersist(now,speed);
     }
 
     function reset(now=clock(),reason='reset'){
-      cancelJob(reason);lastReal=now;backlog=0;jobSlice=0;jobStart=simNow();jobSpeed=0;jobBoundary=null;jobWorkMs=0;hardTaskStreak=0;conflictStreak=0;throttlePending=null;
+      const cancelled=manualAdvance;manualAdvance=null;cancelJob(reason);lastReal=now;backlog=0;jobSlice=0;jobStart=simNow();jobSpeed=0;jobBoundary=null;jobWorkMs=0;hardTaskStreak=0;conflictStreak=0;throttlePending=null;
+      if(cancelled)try{adapter.onAdvance?.({active:false,cancelled:true,target:cancelled.target,reason});}catch(error){report('advance-reset',error,false);}
       lastHourCommitted=Math.floor((simNow()+1e-6)/3600);lastDayCommitted=Math.floor((simNow()+1e-6)/86400);lastObservedSpeed=getSpeed();
     }
     function setHidden(v){hidden=!!v;reset(clock(),hidden?'hidden':'visible');if(hidden){try{adapter.onPersist?.({reason:'hidden',speed:getSpeed()});}catch(error){report('persist-hidden',error,false);}}}
-    function snapshot(){return {...health,simSeconds:simNow(),speed:getSpeed(),backlog,jobActive:!!job,jobSlice,jobSpeed,hidden,config:{...cfg,allowedSpeeds:[...cfg.allowedSpeeds],nowMs:undefined}};}
+    function snapshot(){return {...health,simSeconds:simNow(),speed:getSpeed(),backlog,jobActive:!!job,jobSlice,jobSpeed,hidden,manualAdvance:manualSnapshot(),config:{...cfg,allowedSpeeds:[...cfg.allowedSpeeds],nowMs:undefined}};}
 
-    return {version:VERSION,frame,reset,setHidden,snapshot,health:()=>({...health}),config:()=>({...cfg,allowedSpeeds:[...cfg.allowedSpeeds],nowMs:undefined})};
+    return {version:VERSION,frame,reset,setHidden,advanceTo,cancelAdvance,snapshot,health:()=>({...health}),config:()=>({...cfg,allowedSpeeds:[...cfg.allowedSpeeds],nowMs:undefined})};
   }
 
   const API=Object.freeze({VERSION,DEFAULTS,normalizeConfig,create});
