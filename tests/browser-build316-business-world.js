@@ -43,10 +43,12 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     // The scheduled billing is execution of an accepted contract, not a new automatic decision.
     await page.evaluate(()=>GH_DOMAIN_COMMANDS.dispatch({state:__GH_STATE__},'business-world','tick-day',{day:0},{actor:'simulation-scheduler'}));
     current=await state();
-    const sponsorTransfer=current.treasury.ledger.find(x=>x.fromPartyId&&String(x.note||'').includes('دفعة رعاية SPON-GROUP-001'));
-    assert(sponsorTransfer,'sponsorship billing did not create an incoming transfer');
+    const sponsorTransfer=current.treasury.ledger.find(x=>x.collection===true&&x.fromPartyId&&(x.sourceRefs||[]).includes('SPON-GROUP-001'));
+    assert(sponsorTransfer,'sponsorship billing did not create a source-linked incoming collection');
+    assert(current.finance.transfers.some(x=>x.reference===sponsorTransfer.reference&&x.fromPartyId===sponsorTransfer.fromPartyId),'sponsorship collection diverged between finance transfer and treasury ledger');
+    assert.strictEqual(current.companyFinance.group.accounts[0].balance,groupCashBefore+sponsorTransfer.amount,'sponsorship billing did not credit the exact contractual collection');
     const sponsorParty=current.businessWorld.parties[sponsorTransfer.fromPartyId];assert(sponsorParty&&sponsorParty.displayName==='Crestline Business Network','incoming sponsorship transfer lost remitter identity');
-    evidence.sponsorship={party:sponsorParty.displayName,amount:sponsorTransfer.amount};
+    evidence.sponsorship={party:sponsorParty.displayName,amount:sponsorTransfer.amount,reference:sponsorTransfer.reference};
 
     // Marketing is also manual: one click, one exact debit, one named agency.
     await panel('control');await page.locator('[data-open="businessWorld"]').first().click();await page.locator('[data-business-tab="marketing"]').click();
