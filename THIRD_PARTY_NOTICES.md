@@ -12,6 +12,7 @@ The compact ports/stations registry was generated from data distributed with `se
 
 ## Maps and routing
 
+- Map rendering engine: Leaflet 1.9.4, BSD 2-Clause License. Its runtime files are bundled locally in `WebApp/vendor/leaflet` so the game does not depend on a remote script host.
 - Base map tiles and geographic attribution: © OpenStreetMap contributors, Open Database License (ODbL): https://www.openstreetmap.org/copyright
 - Tile service usage policy: https://operations.osmfoundation.org/policies/tiles/
 - Road route geometry: OSRM HTTP Route Service: https://project-osrm.org/docs/v5.24.0/api/
@@ -20,4 +21,4 @@ The game keeps visible OpenStreetMap attribution on the map. Public routing and 
 
 ## Visual library
 
-The asset photographs included in `WebApp/assets/images` are AI-generated fictional imagery created specifically for this project. They intentionally avoid real corporate marks, model logos, readable branding and watermarks.
+The asset photographs included in `WebApp/assets/images` are original fictional imagery created specifically for this project. They intentionally avoid real corporate marks, model logos, readable branding and watermarks.

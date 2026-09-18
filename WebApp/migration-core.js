@@ -10,16 +10,17 @@
     // Validate the actual persisted root before merging defaults or normalizing.
     // A corrupt/future save remains untouched for recovery or explicit export.
     let saved;try{saved=JSON.parse(raw);}catch{throw new Error('MIGRATION_JSON_INVALID');}
+    const legacyUpgrade=saveSchema.migrateLegacy?.(saved)||{state:saved,changed:false};saved=legacyUpgrade.state;
     const validation=saveSchema.validate(saved);
     if(!validation.ok)throw new Error(`MIGRATION_SAVE_REJECTED:${validation.errors.join(',')}`);
     const resetEpoch=resetMarkerKey?Number(localStorage.getItem(resetMarkerKey)||0):0;
     if(resetEpoch&&Number(saved.resetEpoch||0)<resetEpoch)throw new Error('MIGRATION_RESET_EPOCH_CONFLICT');
     const state=saveSchema.normalize({...clone(defaultState),...saved},defaultState);
-    if(migratedLegacyKey){
+    if(migratedLegacyKey||legacyUpgrade.changed){
       const persistence=globalThis.GH_PERSISTENCE;if(!persistence?.writeState)throw new Error('MIGRATION_PERSISTENCE_UNAVAILABLE');
       const out=persistence.writeState(storageKey,state);if(!out.ok)throw new Error(`MIGRATION_CANONICAL_WRITE_FAILED:${out.reason}`);
       if(localStorage.getItem(storageKey)!==out.json)throw new Error('MIGRATION_READBACK_FAILED');
-      localStorage.removeItem(migratedLegacyKey);
+      if(migratedLegacyKey)localStorage.removeItem(migratedLegacyKey);
     }
     return {state,source:migratedLegacyKey?'legacy':'current',migratedLegacyKey};
   }

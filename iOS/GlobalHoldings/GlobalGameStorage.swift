@@ -64,6 +64,10 @@ final class GlobalGameStorage {
     static let updateFormat = "global-holdings-update"
     private static let updateSignatureKeyId = "gh-primary-2026"
     private static let updatePublicKeyBase64 = "evYy4hozGTbgYxWOYn+WKGc9rgK8iPSxnvsxwkhRVLo="
+    private static let trustedUpdateKeys = [
+        updateSignatureKeyId: updatePublicKeyBase64,
+        "gh-primary-2026-build310": "dvnhw1V/4vPHKlWf/NRtm45x5GWfChL+CiRxT9q21fI="
+    ]
 
     private let fileManager = FileManager.default
     private let folderName = "GlobalHoldingsRuntime"
@@ -614,22 +618,7 @@ final class GlobalGameStorage {
     private func validateExactSnapshot(at folder: URL, expectedFiles: [UpdateFile]) throws {
         let expected = Set(expectedFiles.map { $0.path })
         guard !expected.isEmpty else { throw UpdateError.message("Clean Snapshot لا يحتوي أي ملفات.") }
-        guard let enumerator = fileManager.enumerator(
-            at: folder,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { throw UpdateError.message("تعذر فهرسة مجلد Staging للتحقق من نظافة التحديث.") }
-
-        var actual = Set<String>()
-        for case let url as URL in enumerator {
-            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
-            guard values.isRegularFile == true else { continue }
-            guard let relative = safeRelativePath(of: url, inside: folder) else {
-                throw UpdateError.message("مسار ملف Staging غير متوقع.")
-            }
-            guard isSafePath(relative) else { throw UpdateError.message("مسار غير آمن داخل Staging: \(relative)") }
-            actual.insert("WebApp/" + relative)
-        }
+        let actual = Set(try runtimeFilePaths(at: folder).map { "WebApp/" + $0 })
         let missing = expected.subtracting(actual).sorted()
         let orphaned = actual.subtracting(expected).sorted()
         guard missing.isEmpty, orphaned.isEmpty else {
@@ -1006,16 +995,12 @@ final class GlobalGameStorage {
             }
         }
 
-        guard let entries = fileManager.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else {
-            throw UpdateError.message("تعذر تعداد ملفات Runtime.")
+        let actual = try runtimeFilePaths(at: folder)
+        let missing = Set(required).subtracting(actual).sorted()
+        let unexpected = actual.subtracting(Set(required)).sorted()
+        guard missing.isEmpty, unexpected.isEmpty else {
+            throw UpdateError.message("Runtime file set differs from its manifest. Missing: [\(missing.prefix(6).joined(separator: ", "))] Extra: [\(unexpected.prefix(6).joined(separator: ", "))]")
         }
-        var actual = Set<String>()
-        for case let entry as URL in entries {
-            let values = try entry.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-            if values.isSymbolicLink == true { throw UpdateError.message("Runtime symlinks are forbidden.") }
-            if values.isRegularFile == true { actual.insert(String(entry.path.dropFirst(folder.path.count + 1))) }
-        }
-        guard actual == Set(required) else { throw UpdateError.message("Runtime file set differs from its manifest.") }
 
         let indexURL = folder.appendingPathComponent("index.html")
         guard let html = try? String(contentsOf: indexURL, encoding: .utf8) else {
@@ -1083,10 +1068,11 @@ final class GlobalGameStorage {
 
     private func verifyManifestSignature(_ manifest: [String: Any]) throws {
         guard let algorithm = manifest["signatureAlgorithm"] as? String, algorithm.lowercased() == "ed25519",
-              let keyId = manifest["signatureKeyId"] as? String, keyId == Self.updateSignatureKeyId,
+              let keyId = manifest["signatureKeyId"] as? String,
+              let trustedKey = Self.trustedUpdateKeys[keyId],
               let signatureText = manifest["signature"] as? String,
               let signature = Data(base64Encoded: signatureText), signature.count == 64,
-              let publicKeyData = Data(base64Encoded: Self.updatePublicKeyBase64), publicKeyData.count == 32 else {
+              let publicKeyData = Data(base64Encoded: trustedKey), publicKeyData.count == 32 else {
             throw UpdateError.message("حزمة التحديث غير موقعة بمفتاح Global Holdings الموثوق.")
         }
         guard let id = manifest["id"] as? String,
@@ -1133,6 +1119,27 @@ final class GlobalGameStorage {
             }
         } catch let error as UpdateError { throw error }
         catch { throw UpdateError.message("تعذر التحقق من توقيع حزمة التحديث.") }
+    }
+
+    /// Both runtime checks use one inventory, including hidden files. Only the root
+    /// alias is canonicalized; symlinks within the delivered runtime remain forbidden.
+    private func runtimeFilePaths(at folder: URL) throws -> Set<String> {
+        let root = folder.resolvingSymlinksInPath().standardizedFileURL
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+        ) else { throw UpdateError.message("تعذر تعداد ملفات Runtime.") }
+        var actual = Set<String>()
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            if values.isSymbolicLink == true { throw UpdateError.message("Runtime symlinks are forbidden.") }
+            guard values.isRegularFile == true else { continue }
+            guard let relative = safeRelativePath(of: url, inside: root),
+                  actual.insert(relative).inserted else {
+                throw UpdateError.message("مسار Runtime غير آمن أو مكرر.")
+            }
+        }
+        return actual
     }
 
     /// Returns a safe relative path after canonicalizing both URLs.

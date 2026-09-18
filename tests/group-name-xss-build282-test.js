@@ -1,3 +1,5 @@
+const {foundGame}=require('./helpers/found-game');
+(async()=>{
 'use strict';
 // BUILD282: يمنع رجوع ثغرة XSS مخزَّنة عبر اسم المجموعة (أول حقل نص يكتبه أي لاعب في اللعبة).
 //
@@ -47,10 +49,9 @@ const D = window.document;
 const click = sel => { const el = D.querySelector(sel); if (el) el.dispatchEvent(new window.Event('click', { bubbles: true })); return !!el; };
 
 const PAYLOAD = '<img src=x onerror="window.__XSS_FIRED=true">';
-D.getElementById('founderName').value = PAYLOAD;
-D.getElementById('founderShort').value = 'GH';
-D.getElementById('founderOwner').value = 'x';
-D.getElementById('founderForm').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await foundGame(window);
+// Older saves and later rename commands still require output escaping.
+window.GH_CORPORATE_CORE.execute({state:window.__GH_STATE__},'rename-company',{type:'group',legalName:PAYLOAD});
 assert.strictEqual(window.__GH_STATE__.profile.name, PAYLOAD, 'the raw payload must be stored as-is (escaping happens at render time, not input time)');
 
 click('[data-panel="workspaceHub"]'); click('[data-open="companies"]'); click('[data-companytab="holding"]');
@@ -69,3 +70,5 @@ assert.strictEqual(heroImg.getAttribute('src'), 'assets/images/company-hq-v2.web
 assert.strictEqual(uncaught.length, 0, `no uncaught errors expected: ${uncaught.join(' | ')}`);
 console.log('group-name-xss-build282-test: ok');
 process.exit(0);
+
+})().catch(error=>{console.error(error);process.exitCode=1;});

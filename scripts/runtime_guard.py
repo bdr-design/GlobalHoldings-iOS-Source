@@ -30,7 +30,7 @@ def validate(root):
     if len(local)!=len(set(local)): raise ValueError('Duplicate runtime script/style reference')
     if any(x not in data for x in local): raise ValueError('Missing index dependency')
     scripts=re.findall(r'<script\b[^>]*src="([^"]+)"',html,re.I)
-    order=['transaction-core.js','domain-command-core.js','finance-core.js','hr-core.js','fleet-core.js','corporate-core.js','control-plane-core.js','map-provider-core.js','app.js']
+    order=['transaction-core.js','domain-command-core.js','finance-core.js','hr-core.js','fleet-core.js','corporate-core.js','control-plane-core.js','map-provider-core.js','road-planner.js','app.js']
     if any(x not in scripts for x in order) or sorted(scripts.index(x) for x in order)!=[scripts.index(x) for x in order]: raise ValueError('Unsafe domain registration/bootstrap order')
     if 'Content-Security-Policy' not in html or "object-src 'none'" not in html or "'unsafe-eval'" in html: raise ValueError('Unsafe runtime CSP')
     for tag in re.findall(r'<(?:script|link)\b[^>]*https://[^>]*>',html):

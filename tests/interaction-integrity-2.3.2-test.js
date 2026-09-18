@@ -13,7 +13,9 @@ function button(extra={}){return {disabled:false,dataset:{ghAction:'demo',...ext
  const p2=await core.run(b,async()=>{calls++;},{state});
  assert.strictEqual(p2.busy,true,'duplicate click must be blocked');await p1;assert.strictEqual(calls,1);
  const d=button({disabledReason:'شرط غير مكتمل'});d.disabled=true;const dr=await core.run(d,()=>{}, {state});assert.strictEqual(dr.disabled,true);
- assert(events.some(x=>x.t==='BUTTON_ACTION_OK'));assert(events.some(x=>x.t==='BUTTON_DUPLICATE_BLOCKED'));assert(events.some(x=>x.t==='BUTTON_DISABLED'));
+ const session=core.telemetry();assert(session.some(x=>x.type==='BUTTON_ACTION_OK'));assert(session.some(x=>x.type==='BUTTON_DUPLICATE_BLOCKED'));assert(session.some(x=>x.type==='BUTTON_DISABLED'));
+ assert(!events.some(x=>x.t==='BUTTON_ACTION_OK'),'successful clicks must remain session-only instead of inflating the durable save');
+ assert(events.some(x=>x.t==='BUTTON_DUPLICATE_BLOCKED'),'blocked duplicate clicks must remain diagnosable');
  const css=fs.readFileSync(path.join(root,'WebApp','styles.css'),'utf8');assert(css.includes('.drawer .finance-domain-nav{grid-template-columns:repeat(2'));assert(css.includes('.workflow-stepper'));
  const adv=fs.readFileSync(path.join(root,'WebApp','advanced-core.js'),'utf8');assert(adv.includes('workflow-stepper ma-workflow'));assert(!adv.includes('request-financial-summary'),'the dead AI asset-request/portfolio panels (removed BUILD259) must not resurface');
  console.log('Interaction integrity 2.3.9: PASS');

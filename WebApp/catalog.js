@@ -24,7 +24,7 @@
     residual5y:extra.residual5y||48,rating:extra.rating||4.2,description:extra.description||'مركبة أسطول متصلة بالتليماتكس والصيانة التنبؤية.',
     specs:{rangeKm,speedKmh,capacity,capacityUnit:extra.capacityUnit||'طن',fuelLPer100km:extra.fuelLPer100km||0,
       electric:!!extra.electric,hydrogen:!!extra.hydrogen,energyKWhPer100km:extra.energyKWhPer100km||0,
-      refrigerated:!!extra.refrigerated,autonomous:!!extra.autonomous,tanker:!!extra.tanker,container:!!extra.container,
+      refrigerated:!!extra.refrigerated,tanker:!!extra.tanker,container:!!extra.container,
       axles:extra.axles||5,drivetrain:extra.drivetrain||'ديزل Euro VI',maintenancePerKm:extra.maintenancePerKm||.18,
       co2Band:extra.co2Band||'C',safety:extra.safety||92,reliability:extra.reliability||97.2,yieldMultiplier:extra.yieldMultiplier||1}
   });
@@ -102,7 +102,7 @@
     truck('N-T2','Cold Chain 20T · شاحنة تبريد','تبريد',214000,'truck-reefer',1600,88,20,{fuelLPer100km:35,refrigerated:true,capacityUnit:'طن مبرد',axles:5,safety:95}),
     truck('N-T3','Electric Long Haul 21T · كهربائية','كهربائي',248000,'truck-electric',800,90,21,{electric:true,energyKWhPer100km:118,drivetrain:'كهربائي 800V',co2Band:'A',safety:96}),
     truck('N-T11','Hydrogen Long Haul 22T · هيدروجين','هيدروجين',312000,'truck-electric',1050,90,22,{hydrogen:true,drivetrain:'خلية وقود 300kW',co2Band:'A',safety:95,delivery:'18–28 أسبوع'}),
-    truck('N-T4','Autonomous Ready 24T · ذاتية','ذاتي',286000,'truck-autonomous',1500,86,24,{fuelLPer100km:29,autonomous:true,drivetrain:'ديزل هجين L4-ready',safety:98}),
+    truck('N-T4','Hybrid Safety 24T · هجينة آمنة','نقل ثقيل',286000,'truck-longhaul-v2',1500,86,24,{fuelLPer100km:29,drivetrain:'ديزل هجين',safety:98}),
     truck('N-T5','Fuel Tanker 36,000L · ناقلة وقود','صهريج',198000,'truck-tanker',1300,82,29,{fuelLPer100km:38,tanker:true,axles:6,safety:97}),
     truck('N-T12','Chemical Tanker 30,000L · كيميائيات','صهريج',236000,'truck-tanker',1250,80,27,{fuelLPer100km:39,tanker:true,axles:6,safety:98,warranty:'5 سنوات للخزان'}),
     truck('N-T6','Intermodal 30T · ناقلة حاويات','حاويات',182000,'truck-container',1700,88,30,{fuelLPer100km:34,container:true,axles:5,safety:94}),
@@ -121,7 +121,7 @@
     truck('N-T25','Food Reefer 28T · أغذية','تبريد',318000,'truck-reefer',1900,86,28,{fuelLPer100km:38,refrigerated:true,capacityUnit:'طن مبرد',axles:6,safety:97}),
     truck('N-T26','Fuel Tanker 45KL · صهريج كبير','صهريج',248000,'truck-tanker',1450,80,34,{fuelLPer100km:42,tanker:true,axles:7,safety:99}),
     truck('N-T27','Intermodal 34T · حاويات مزدوجة','حاويات',214000,'truck-container',1800,86,34,{fuelLPer100km:36,container:true,axles:6,safety:96}),
-    truck('N-T28','Autonomous EV 20T · ذاتية كهربائية','ذاتي',412000,'truck-autonomous',1050,85,20,{electric:true,autonomous:true,energyKWhPer100km:110,drivetrain:'كهربائي L4-ready',co2Band:'A',safety:99}),
+    truck('N-T28','Electric Long Range 20T · كهربائية بعيدة','كهربائي',412000,'truck-electric',1050,85,20,{electric:true,energyKWhPer100km:110,drivetrain:'كهربائي 900V',co2Band:'A',safety:99}),
     truck('N-T29','Construction Mixer 26T · خرسانة','إنشاءات',238000,'truck-longhaul-v2',750,72,26,{fuelLPer100km:44,axles:6,safety:95}),
     truck('N-T30','Recovery 18T · إنقاذ أساطيل','دعم',198000,'truck-longhaul-v2',900,78,18,{fuelLPer100km:29,axles:4,safety:98,yieldMultiplier:2.4})
   ];
