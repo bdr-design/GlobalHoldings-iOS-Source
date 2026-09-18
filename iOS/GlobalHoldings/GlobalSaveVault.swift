@@ -439,8 +439,8 @@ final class GlobalSaveVault {
                 let data = try JSONEncoder().encode(checkpoint)
                 try data.write(to: self.resetCheckpointURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
                 guard try Data(contentsOf: self.resetCheckpointURL) == data else { throw VaultError.message("Reset checkpoint verification failed.") }
-                if let manualSlotHashes { try self.stageManualSlotsForReset(expectedHashes: manualSlotHashes) }
                 do {
+                    if let manualSlotHashes { try self.stageManualSlotsForReset(expectedHashes: manualSlotHashes) }
                     _ = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true)
                     let generation = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true)
                     try self.fm.removeItem(at: self.resetCheckpointURL)
