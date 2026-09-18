@@ -76,11 +76,15 @@
 
 ### Current working state
 
-- Name: `B315-F-GREEN-FinalDeviceReadiness`
-- Baseline / tested SHA: `55de368a262c88ac76eefe60612e070fdb2eae3d`
-- Status: **GREEN — final pre-IPA lifecycle hardening is fully verified**
-- Device lifecycle proof covers backgrounding during an in-flight Native durable command and during Native reset/New Game; background persistence serializes rather than races or rejects.
-- The working branch may move after this record is committed; use the checkpoint branch above for the immutable tested rollback point.
+- Name: `B315-G-YELLOW-ReleaseIdentity315`
+- Baseline / rollback checkpoint: `B315-F-GREEN-FinalDeviceReadiness` → `55de368a262c88ac76eefe60612e070fdb2eae3d`
+- Status: **YELLOW — release identity promoted from Build 314 to Build 315; full exact-SHA verification pending**
+- Intended release identity:
+  - App version: `3.0.0`
+  - Native/Web runtime build: `315`
+  - Save Schema: `2.0.0` unchanged
+- Modified identity surfaces: root `BUILD`, `package.json`, `package-lock.json`, `project.yml`, `WebApp/app.js`, and the release identity regression.
+- Build314 preserved reference remains immutable.
 - No merge to `main` and no merge of draft PR #12 has been performed.
 
 ## 4) Build315 work completed since Last GREEN — code present, not all yet promoted to GREEN
@@ -127,11 +131,15 @@ The stage proves:
 
 ## 6) Next stage
 
-No unverified Build315 production change is open in this record. Before producing a signed/device-tested IPA:
-- re-read actual branch HEAD and compare it with `checkpoint-b315-f-green-device-readiness`
-- preserve Build314 and do not merge PR #12
-- keep the current GREEN checkpoint immutable
-- signing and physical-device validation are separate evidence gates; do not claim them until actually performed
+### `B315-G-YELLOW-ReleaseIdentity315`
+
+Release freeze work:
+- promote the canonical build identity from `314` to `315` without changing app version `3.0.0` or Save Schema `2.0.0`
+- require all release metadata surfaces and runtime badge to agree on Build315
+- regenerate Source Integrity after the metadata change
+- rerun the complete repository/browser/Swift/Xcode/iPhoneOS/IPA chain from one exact candidate SHA
+- only after that exact candidate succeeds may Build315 release identity be promoted to GREEN
+- signing and physical-device validation remain separate evidence gates and must not be claimed before they are actually performed
 
 ## 7) Chat Handoff template
 
