@@ -51,7 +51,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     // the button lifecycle must not depend on a frame callback ever arriving.
     await card.locator('.manual-asset-qty').fill('64');
     await page.evaluate(()=>{window.__GH_AUDIT_RAF=requestAnimationFrame;window.requestAnimationFrame=()=>1;});
-    await purchaseButton.click();await page.waitForTimeout(250);
+    expectedFailure=true;await purchaseButton.click();await page.waitForTimeout(250);expectedFailure=false;
     assert.strictEqual(await purchaseButton.isEnabled(),true,'large-purchase button stayed disabled when requestAnimationFrame never fired');
     assert.strictEqual(await purchaseButton.getAttribute('data-busy'),null,'large-purchase busy token leaked when requestAnimationFrame never fired');
     current=await state();assert.strictEqual(current.assets.filter(a=>a.type==='sea').length,0,'rejected 64-ship probe must not create assets');
