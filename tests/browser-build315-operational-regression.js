@@ -27,21 +27,27 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     let current=await state();assert(current.openedCompanies.includes('sea'));assert(current.companyFinance.sea.accounts[0].balance>=950000000);
 
     // Facility creation must roll back on durability failure and leave the same UI action retryable.
-    await close();await page.click('#worldDirectoryBtn');await page.locator('[data-world-company="sea"]').click();await page.fill('#worldSearch','DEHAM');
-    const baseButton=page.locator('.open-directory-site[data-key="sea:DEHAM"]');await baseButton.waitFor({state:'visible'});
+    await close();await page.click('#worldDirectoryBtn');await page.locator('[data-world-company="sea"]').click();
+    const seaSource=await page.evaluate(()=>{
+      const row=GH_WORLD_DATA.ports.find(site=>site[0]==='DEHAM');if(!row)throw new Error('DEHAM sea fixture missing');
+      const city=row[1],key=`port:${row[0]}:${row[3]}:${row[4]}`;
+      return {key,city,cityId:`DE:${GH_DIRECTORY_CORE.normalize(city)}`};
+    });
+    await page.selectOption('#worldCountry','DE');await page.selectOption('#worldCity',seaSource.cityId);
+    const baseCard=page.locator(`.world-result[data-company="sea"][data-key="${seaSource.key}"]`),baseButton=baseCard.locator('.open-directory-site');await baseButton.waitFor({state:'visible'});
     const facilityBefore={bases:(await state()).globalBases.length,cash:(await state()).companyFinance.sea.accounts[0].balance};
     await failStorage();expectedFailure=true;await baseButton.click();await waitReleased(baseButton);expectedFailure=false;
     current=await state();assert.strictEqual(current.globalBases.length,facilityBefore.bases,'failed durable facility create must not leave a base');assert.strictEqual(current.companyFinance.sea.accounts[0].balance,facilityBefore.cash,'failed durable facility create must roll back the construction debit');assert.strictEqual(await baseButton.isEnabled(),true,'facility button must be retryable after persistence failure');
     await restoreStorage();await baseButton.click();await page.waitForFunction(()=>__GH_STATE__.globalBases.some(b=>b.company==='sea'));
-    current=await state();const base=current.globalBases.find(b=>b.company==='sea');assert(base&&base.sourceKey==='sea:DEHAM');evidence.base={id:base.id,cost:base.cost};
+    current=await state();const base=current.globalBases.find(b=>b.company==='sea');assert(base&&base.sourceKey===seaSource.key);evidence.base={id:base.id,cost:base.cost,key:seaSource.key};
 
     // Large-ish maritime purchase must roll back atomically on save failure, release the button, then succeed on retry.
     await control('assetMarket');await page.click('[data-markettype="sea"]');
     const card=page.locator('.manual-buy-asset[data-type="sea"][data-id="N-S9"]').locator('xpath=ancestor::article[contains(@class,"asset-market-card")]');
     await card.locator('.manual-asset-base').selectOption(base.id);await card.locator('.manual-asset-qty').fill('25');await card.locator('.manual-asset-mode').selectOption('cash');
-    const purchaseButton=card.locator('.manual-buy-asset'),beforePurchase=await state(),seaCashBefore=beforePurchase.companyFinance.sea.accounts[0].balance;
+    const purchaseButton=card.locator('.manual-buy-asset'),beforePurchase=await state(),seaCashBefore=beforePurchase.companyFinance.sea.accounts[0].balance,sequencesBeforeFailure=JSON.parse(JSON.stringify(beforePurchase.sequences||{}));
     await failStorage();expectedFailure=true;await purchaseButton.click();await waitReleased(purchaseButton);expectedFailure=false;
-    current=await state();assert.strictEqual(current.assets.filter(a=>a.type==='sea').length,0,'failed durable purchase must not create ships');assert.strictEqual(current.companyFinance.sea.accounts[0].balance,seaCashBefore,'failed durable purchase must not debit sea cash');assert.strictEqual(await purchaseButton.isEnabled(),true,'purchase button must be retryable after persistence failure');
+    current=await state();assert.strictEqual(current.assets.filter(a=>a.type==='sea').length,0,'failed durable purchase must not create ships');assert.strictEqual(current.companyFinance.sea.accounts[0].balance,seaCashBefore,'failed durable purchase must not debit sea cash');assert.deepStrictEqual(current.sequences||{},sequencesBeforeFailure,'failed purchase must roll back request/ID sequences as part of the same atomic operation');assert.strictEqual(await purchaseButton.isEnabled(),true,'purchase button must be retryable after persistence failure');
     await restoreStorage();await purchaseButton.click();await page.waitForFunction(()=>__GH_STATE__.assets.filter(a=>a.type==='sea').length===25,null,{timeout:60000});
     current=await state();const ships=current.assets.filter(a=>a.type==='sea');assert.strictEqual(new Set(ships.map(a=>a.id)).size,25);assert(ships.every(a=>a.baseFacility===base.id&&a.deliveryStatus==='delivered'&&a.staffing?.ready===true&&a.staffing?.total===20));assert.strictEqual(ships.reduce((n,a)=>n+a.staffing.total,0),500);assert.strictEqual(seaCashBefore-current.companyFinance.sea.accounts[0].balance,25*31000000,'successful retry must debit exactly once');evidence.purchase={count:25,crew:500,debit:25*31000000};
 
