@@ -125,7 +125,8 @@ function tickDay(s,p={}){
  const competitor=competitorTick(s,processedDay);return {day:processedDay,sponsorshipRevenue,completedCampaigns,competitor};
 }
 function customerSnapshot(s,partyId){
- const b=ensure(s),party=b.parties[partyId];if(!party)return null,names=new Set((party.aliases||[]).map(norm)),matches=x=>x?.counterpartyPartyId===partyId||names.has(norm(x?.counterparty));
+ const b=ensure(s),party=b.parties[partyId];if(!party)return null;
+ const names=new Set((party.aliases||[]).map(norm)),matches=x=>x?.counterpartyPartyId===partyId||names.has(norm(x?.counterparty));
  const invoices=(s.finance?.invoices||[]).filter(matches),incoming=(s.finance?.transfers||[]).filter(x=>x.fromPartyId===partyId||names.has(norm(x.from))),relationships=Object.values(b.relationships).filter(r=>r.partyId===partyId),ops=b.opportunities.filter(o=>o.partyId===partyId);
  return {party,relationships,opportunities:ops,contracts:ops.filter(o=>['نشط','منتهي'].includes(o.status)),invoices,totalBilled:invoices.filter(x=>x.kind==='دخل').reduce((n,x)=>n+num(x.total),0),outstanding:invoices.filter(x=>x.kind==='دخل'&&!['محصلة','مدفوعة','مسددة'].includes(x.status)).reduce((n,x)=>n+num(x.total),0),received:incoming.reduce((n,x)=>n+num(x.amount),0),lastInteractionAt:Math.max(0,...relationships.map(r=>num(r.lastInteractionAt)),...invoices.map(x=>num(x.at)),...incoming.map(x=>num(x.at)))};
 }
