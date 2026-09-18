@@ -5,7 +5,7 @@
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const now=s=>Number(s?.simSeconds)||0;
   const stable=v=>Array.isArray(v)?`[${v.map(stable).join(',')}]`:v&&typeof v==='object'?`{${Object.keys(v).sort().map(k=>`${JSON.stringify(k)}:${stable(v[k])}`).join(',')}}`:JSON.stringify(v);
-  const isManualActor=actor=>!(/^(simulation(?:-|$)|finance-scheduler$|payroll-scheduler$|financial-close$|delivery-engine$|project-commissioning$|banking-read-model$|GH Intelligence$|system(?:-|$)|migration(?:-|$))/i.test(String(actor||'ui')));
+  const isManualActor=actor=>!(/^(simulation(?:-|$)|finance-scheduler$|payroll-scheduler$|financial-close$|delivery-engine$|project-commissioning$|banking-read-model$|system(?:-|$)|migration(?:-|$))/i.test(String(actor||'ui')));
   function prune(r,at){
     for(const [key,row] of Object.entries(r.idempotency))if(!row||!Number.isFinite(row.at)||at-row.at>IDEMPOTENCY_TTL||row.at>at||!row.fingerprint)delete r.idempotency[key];
     const keys=Object.keys(r.idempotency).sort((a,b)=>r.idempotency[a].at-r.idempotency[b].at);
@@ -30,16 +30,22 @@
     const key=domain+':'+name,object=value&&typeof value==='object'&&!Array.isArray(value);
     const fail=()=>{throw new Error('Domain result contract violated: '+key);};
     if(key==='finance:settle-cheque'&&(!object||typeof value.settled!=='boolean'||!['settled','bounced'].includes(value.status)||typeof value.reason!=='string'||!value.id))fail();
+    if(key==='finance:pay-by-cheque'&&(!object||!value.cheque?.id||value.cheque.status!=='مصروف'||value.invoice?.status!=='مسددة'||value.reference!==value.cheque.id))fail();
     if(key==='finance:transfer'&&(!object||value.transferred!==true||value.amount!==Number(payload.amount)||value.from!==payload.from||value.to!==payload.to))fail();
+    if(key==='finance:settle-intercompany-interest'&&(!object||value.settled!==true||value.to!=='bank'||value.from!==(payload.from||payload.company)||!Number.isFinite(Number(value.cashPostedRevenue))))fail();
     if(key==='procurement:purchase-assets'&&(!object||value.count!==Number(payload.qty)||value.baseId!==payload.base?.id||!Array.isArray(value.deliveryOrderIds)||!Array.isArray(value.assetIds)||value.deliveryOrderIds.length!==value.count||value.assetIds.length!==value.count||new Set(value.deliveryOrderIds).size!==value.count||new Set(value.assetIds).size!==value.count))fail();
     if(key==='hr:hire'&&(!object||value.ok!==true||value.missingAfter!==0||!Number.isInteger(value.total)))fail();
     if(key==='facilities:hire'&&(!object||value.ok!==true||!Number.isFinite(value.staff)))fail();
     if(key==='fleet:record-delivery'&&(!object||value.baseFacility!==payload.baseId||value.deliveryOrderId!==payload.deliveryId||!value.id))fail();
+    if(key==='fleet:record-delivery-batch'&&(!Array.isArray(value)||value.length!==payload.deliveries?.length||value.some((asset,index)=>!asset?.id||asset.baseFacility!==payload.deliveries[index]?.baseId||asset.deliveryOrderId!==payload.deliveries[index]?.deliveryId)))fail();
+    if(key==='fleet:assign-routes-batch'&&(!Array.isArray(value)||value.length!==payload.assignments?.length||value.some((asset,index)=>!asset?.id||asset.id!==payload.assignments[index]?.id||asset.routeId!==payload.assignments[index]?.routeId||asset.phase!=='turnaround')))fail();
+    if(key==='fleet:depart-batch'&&(!Array.isArray(value)||value.length!==payload.departures?.length||value.some((asset,index)=>!asset?.id||asset.id!==payload.departures[index]?.id||!['moving','turnaround'].includes(asset.phase))))fail();
     if(['corporate:acquire-stake','market:acquire-stake'].includes(key)&&(!object||value.id!==payload.id||value.stake!==Number(payload.stake)))fail();
     return true;
   }
   function dispatch(ctx,domain,name,payload={},options={}){
     const state=ctx?.state||ctx;if(!state||typeof state!=='object')throw new Error('Domain command requires state');
+    const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable?.liveState===state&&durable.draft!==state)throw new Error('Durable state command is in progress');
     if(globalThis.GH_PERSISTENCE?.isLocked?.())throw new Error('Lifecycle persistence operation is in progress');
     const owner=owners.get(String(domain));if(!owner)throw new Error(`No owner registered for domain ${domain}`);
     const tx=globalThis.GH_TRANSACTION_CORE;if(!tx?.execute)throw new Error('Transaction owner unavailable');

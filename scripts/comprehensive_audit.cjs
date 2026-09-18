@@ -41,12 +41,12 @@ for (const f of coreFiles) {
 const domainCmds = {};
 for (const [domain, f] of Object.entries(domainFile)) {
   const c = read(f);
-  const cmds = new Set([...c.matchAll(/cmd==='([a-zA-Z0-9_-]+)'/g)].map(x => x[1]));
+  const cmds = new Set([...c.matchAll(/(?:cmd|command)==='([a-zA-Z0-9_-]+)'/g)].map(x => x[1]));
   for (const m of c.matchAll(/case\s*'([a-zA-Z0-9_-]+)'\s*:/g)) cmds.add(m[1]);
   domainCmds[domain] = cmds;
 }
 const coreVarToDomain = {
-  GH_HR_CORE: 'hr', GH_AI_EXECUTIVE_CORE: 'ai', GH_CONTRACTS_CORE: 'contracts', GH_MARKET_CORE: 'market',
+  GH_HR_CORE: 'hr', GH_CONTRACTS_CORE: 'contracts', GH_MARKET_CORE: 'market',
   GH_CORPORATE_CORE: 'corporate', GH_BANKING_CORE: 'banking', GH_FACILITY_CORE: 'facilities', GH_GOVERNANCE_CORE: 'governance',
   GH_ROUTE_CORE: 'routes', GH_OPERATIONS_CORE: 'operations', GH_PROCUREMENT_CORE: 'procurement', GH_STRATEGY_CORE: 'strategy',
   GH_FLEET_CORE: 'fleet', GH_FINANCE_CORE: 'finance',
