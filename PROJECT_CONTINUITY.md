@@ -38,30 +38,37 @@
 
 ### Last GREEN
 
-- Name: `B315-A-GREEN-NativeFirst`
-- SHA: `4469767448a52fb041cd7b5031a63ccddcef84c7`
+- Name: `B315-C-GREEN-ManualSlots`
+- SHA: `96de035292db0d1794766da2fa83ef873426fd72`
+- CI run: `35373001755` — **SUCCESS**
 - Proven gates:
-  - Source Integrity PASS
-  - Release metadata PASS
-  - JavaScript syntax PASS
+  - Source Integrity PASS — 342 files
+  - Release metadata PASS — 3.0.0 / Build 314 / Save Schema 2.0.0
+  - JavaScript syntax PASS — 45 files
   - Swift/Native contract PASS
-  - 109/109 repository tests PASS
-  - Chromium PASS
-  - WebKit PASS
-  - E2E PASS
-  - Failure scenarios PASS
-  - Swift syntax/native runtime PASS
+  - 109/109 active repository tests PASS
+  - Chromium browser suites PASS
+  - WebKit browser suites PASS
+  - Chromium + WebKit E2E PASS
+  - Chromium + WebKit failure scenarios PASS
+  - Swift syntax PASS
+  - BUILD312 native runtime inventory PASS
+  - BUILD315 Native Save Vault manual slots PASS (>4MB, load promotion, clear, New Game clear, bootstrap freshness)
   - XcodeGen/project verification PASS
   - iPhoneOS Release build PASS
-  - WebApp payload validation PASS
+  - Native package contract PASS
+  - Built WebApp exact-copy validation PASS — 84 files
   - unsigned IPA packaging PASS
-  - final IPA content validation PASS
+  - final IPA integrity PASS
+- Verified unsigned IPA: `GlobalHoldings_v3_0_0_build314_unsigned.ipa`
+- IPA SHA-256: `1489347a1fffc39d6abc05de90e1856889bdf9c638ea624424d73ec7484c98e0`
+- Previous GREEN retained for historical rollback: `B315-A-GREEN-NativeFirst` → `4469767448a52fb041cd7b5031a63ccddcef84c7`
 
 ### Current working state
 
-- Name: `B315-B-YELLOW-ManualSlots`
-- Baseline at continuity adoption: `c749120d624748507b0f67297b99c7139eba69e0`
-- Status: **YELLOW — Native Manual Save Slots verification in progress**
+- Name: `B315-D-YELLOW-Stress1000`
+- Baseline: `96de035292db0d1794766da2fa83ef873426fd72`
+- Status: **YELLOW — 1000-asset real E2E + procurement idempotency regression in progress**
 - The current branch must be re-read before resuming because HEAD may advance after this record is updated.
 
 ## 4) Build315 work completed since Last GREEN — code present, not all yet promoted to GREEN
