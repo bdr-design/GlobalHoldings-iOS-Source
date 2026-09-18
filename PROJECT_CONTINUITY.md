@@ -78,6 +78,12 @@
 - Tests added for native manual slots including a payload larger than 4 MB.
 - Executable Swift/macOS Native Save Vault regression added and wired into CI.
 
+## 4.1) Verification history
+
+- CI run `35372324972` on candidate `c338e01f4c355869cbb02851fe46f857fd3fe43c` passed Source Integrity, release metadata, JavaScript syntax, repository guards, Chromium/WebKit browser suites, E2E and failure scenarios.
+- It stopped at the Native Save Slots executable harness because the **test harness itself** used a throwing `revision(...)` call inside a non-throwing Swift autoclosure. Production Swift parsing had already passed and BUILD312 native runtime regression passed.
+- The harness compile defect was corrected in commit `d568dcc632811c470332e154917ca10510e856ea` by evaluating the throwing revision parse before the assertion. This remains **YELLOW** until a fresh full CI/Xcode/IPA run passes from one candidate SHA.
+
 ## 5) Unverified / Pending before Manual Slots can become GREEN
 
 Do not promote `B315-B-YELLOW-ManualSlots` to GREEN until the same candidate SHA passes:
