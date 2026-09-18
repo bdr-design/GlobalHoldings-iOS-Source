@@ -91,7 +91,7 @@ function recordContract(s,p={}){
 function recordFinance(s,p={}){
  const partyId=p.partyId||partyIdForName(s,p.counterparty||p.partyName,p.direction==='outgoing'?'supplier':'customer');if(!partyId)return null;
  const rel=touchRelationship(s,{partyId,company:p.company||'group',role:p.direction==='outgoing'?'supplier':'customer',reference:p.reference,documentNumber:p.documentNumber,transferRef:p.transferRef});
- if(p.settled)recordEvent(s,{kind:'payment',partyId,company:p.company||'group',title:p.direction==='outgoing'?`حوالة صادرة إلى ${resolveParty(s,partyId)?.displayName}`:`حوالة واردة من ${resolveParty(s,partyId)?.displayName}`,detail:p.note||'',amount:p.amount,reference:`PAY-${p.reference||p.transferRef||p.documentNumber}`,severity:'neutral'});return rel;
+ if(p.settled&&p.news===true)recordEvent(s,{kind:'payment',partyId,company:p.company||'group',title:p.direction==='outgoing'?`حوالة صادرة إلى ${resolveParty(s,partyId)?.displayName}`:`حوالة واردة من ${resolveParty(s,partyId)?.displayName}`,detail:p.note||'',amount:p.amount,reference:`PAY-${p.reference||p.transferRef||p.documentNumber}`,severity:'neutral'});return rel;
 }
 function acceptSponsorship(s,p={}){
  const b=ensure(s),offer=b.sponsorships.find(x=>x.id===p.id);if(!offer)throw new Error('sponsorship-not-found');if(offer.status!=='عرض متاح')throw new Error('sponsorship-not-available');
