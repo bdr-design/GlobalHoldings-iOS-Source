@@ -71,7 +71,13 @@ final class GlobalSaveVault {
         // Keep the journal on recovery failure so bootstrap and writes fail closed.
         do { try recoverPendingReset() } catch { print("Native reset recovery blocked: \(error.localizedDescription)") }
     }
-    private struct ResetCheckpoint: Codable { let payload: String?; let runtimeVersion: String?; let sha256: String?; let clearManualSlots: Bool? }
+    private struct ResetCheckpoint: Codable {
+        let payload: String?
+        let runtimeVersion: String?
+        let sha256: String?
+        let clearManualSlots: Bool?
+        let manualSlotHashes: [String?]?
+    }
     private var resetCheckpointURL: URL { folder.appendingPathComponent("pending-reset.json") }
     private func recoverPendingReset() throws {
         guard fm.fileExists(atPath: resetCheckpointURL.path) else {
@@ -87,7 +93,12 @@ final class GlobalSaveVault {
         } else {
             for slot in ["A", "B"] { if fm.fileExists(atPath: url(slot).path) { try fm.removeItem(at: url(slot)) } }
         }
-        if checkpoint.clearManualSlots == true { try restoreManualSlotsAfterResetFailure() }
+        if checkpoint.clearManualSlots == true {
+            guard let hashes = checkpoint.manualSlotHashes, hashes.count == 3 else {
+                throw VaultError.message("Manual slot reset checkpoint is incomplete.")
+            }
+            try restoreManualSlotsAfterResetFailure(expectedHashes: hashes)
+        }
         try fm.removeItem(at: resetCheckpointURL)
         discardManualSlotResetBackups()
     }
@@ -106,15 +117,31 @@ final class GlobalSaveVault {
         return index
     }
 
-    private func stageManualSlotsForReset() throws {
-        // Two-phase staging: copy and verify every existing slot before deleting
-        // any source. A crash while staging therefore cannot destroy an unstaged slot.
+    private func manualSlotRawHashes() throws -> [String?] {
+        try (0...2).map { index in
+            let file = manualSlotURL(index)
+            guard fm.fileExists(atPath: file.path) else { return nil }
+            return sha256(try Data(contentsOf: file))
+        }
+    }
+
+    private func stageManualSlotsForReset(expectedHashes: [String?]) throws {
+        guard expectedHashes.count == 3 else { throw VaultError.message("Invalid manual slot reset hash set.") }
+        // Two-phase staging: copy + hash-verify every original before deleting any
+        // source. A crash during copy leaves the original authoritative.
         for index in 0...2 {
             let source = manualSlotURL(index), backup = manualSlotBackupURL(index)
             if fm.fileExists(atPath: backup.path) { try fm.removeItem(at: backup) }
-            guard fm.fileExists(atPath: source.path) else { continue }
+            guard let expected = expectedHashes[index] else {
+                guard !fm.fileExists(atPath: source.path) else { throw VaultError.message("Manual slot set changed while reset was staged.") }
+                continue
+            }
+            guard fm.fileExists(atPath: source.path),
+                  sha256(try Data(contentsOf: source)) == expected else {
+                throw VaultError.message("Manual slot source changed before reset staging.")
+            }
             try fm.copyItem(at: source, to: backup)
-            guard try Data(contentsOf: source) == Data(contentsOf: backup) else {
+            guard sha256(try Data(contentsOf: backup)) == expected else {
                 throw VaultError.message("Manual slot reset backup verification failed.")
             }
         }
@@ -124,14 +151,27 @@ final class GlobalSaveVault {
         }
     }
 
-    private func restoreManualSlotsAfterResetFailure() throws {
+    private func restoreManualSlotsAfterResetFailure(expectedHashes: [String?]) throws {
+        guard expectedHashes.count == 3 else { throw VaultError.message("Invalid manual slot recovery hash set.") }
         for index in 0...2 {
             let source = manualSlotURL(index), backup = manualSlotBackupURL(index)
-            // No backup means this slot was either originally empty or staging had
-            // not reached it yet; preserve any still-existing source in that case.
-            guard fm.fileExists(atPath: backup.path) else { continue }
-            if fm.fileExists(atPath: source.path) { try fm.removeItem(at: source) }
-            try fm.moveItem(at: backup, to: source)
+            guard let expected = expectedHashes[index] else {
+                if fm.fileExists(atPath: source.path) { try fm.removeItem(at: source) }
+                if fm.fileExists(atPath: backup.path) { try fm.removeItem(at: backup) }
+                continue
+            }
+            if fm.fileExists(atPath: backup.path),
+               sha256(try Data(contentsOf: backup)) == expected {
+                if fm.fileExists(atPath: source.path) { try fm.removeItem(at: source) }
+                try fm.moveItem(at: backup, to: source)
+                continue
+            }
+            if fm.fileExists(atPath: source.path),
+               sha256(try Data(contentsOf: source)) == expected {
+                if fm.fileExists(atPath: backup.path) { try fm.removeItem(at: backup) }
+                continue
+            }
+            throw VaultError.message("Manual slot reset recovery could not verify the original slot.")
         }
     }
 
@@ -331,7 +371,7 @@ final class GlobalSaveVault {
                 try self.recoverPendingReset()
                 try self.fm.createDirectory(at: self.folder, withIntermediateDirectories: true)
                 let current = self.bestEnvelope()
-                let checkpoint = ResetCheckpoint(payload: current?.payload, runtimeVersion: current?.runtimeVersion, sha256: current?.sha256, clearManualSlots: false)
+                let checkpoint = ResetCheckpoint(payload: current?.payload, runtimeVersion: current?.runtimeVersion, sha256: current?.sha256, clearManualSlots: false, manualSlotHashes: nil)
                 let checkpointData = try JSONEncoder().encode(checkpoint)
                 try checkpointData.write(to: self.resetCheckpointURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
                 guard try Data(contentsOf: self.resetCheckpointURL) == checkpointData else { throw VaultError.message("Manual slot load checkpoint verification failed.") }
@@ -394,11 +434,12 @@ final class GlobalSaveVault {
                 try self.recoverPendingReset()
                 try self.fm.createDirectory(at: self.folder, withIntermediateDirectories: true)
                 let current = self.bestEnvelope()
-                let checkpoint = ResetCheckpoint(payload: current?.payload, runtimeVersion: current?.runtimeVersion, sha256: current?.sha256, clearManualSlots: clearManualSlots)
+                let manualSlotHashes = clearManualSlots ? try self.manualSlotRawHashes() : nil
+                let checkpoint = ResetCheckpoint(payload: current?.payload, runtimeVersion: current?.runtimeVersion, sha256: current?.sha256, clearManualSlots: clearManualSlots, manualSlotHashes: manualSlotHashes)
                 let data = try JSONEncoder().encode(checkpoint)
                 try data.write(to: self.resetCheckpointURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
                 guard try Data(contentsOf: self.resetCheckpointURL) == data else { throw VaultError.message("Reset checkpoint verification failed.") }
-                if clearManualSlots { try self.stageManualSlotsForReset() }
+                if let manualSlotHashes { try self.stageManualSlotsForReset(expectedHashes: manualSlotHashes) }
                 do {
                     _ = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true)
                     let generation = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true)
