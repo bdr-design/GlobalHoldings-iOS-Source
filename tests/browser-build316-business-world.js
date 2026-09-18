@@ -67,7 +67,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     await page.locator('[data-tab="outgoing"]').click();await page.getByText('Nexa Media Exchange',{exact:true}).first().waitFor({state:'visible'});
 
     // Newsroom consumes actual Business World events rather than inventing an unrelated feed.
-    await panel('leadership');await page.locator('[data-open="news"]').first().click();await page.locator('[data-news-filter="business"]').click();
+    await panel('leadershipHub');await page.locator('[data-open="news"]').first().click();await page.locator('[data-news-filter="business"]').click();
     const newsText=await page.locator('.news-feed').innerText();assert(newsText.includes('Crestline Business Network'),'business newsroom missing sponsor event');assert(newsText.includes('حملة رقمية'),'business newsroom missing campaign event');
 
     current=await state();assert(current.businessWorld.events.length<=240&&current.businessWorld.opportunities.length<=120&&current.businessWorld.campaigns.length<=80,'Business World bounded-growth invariant violated');
