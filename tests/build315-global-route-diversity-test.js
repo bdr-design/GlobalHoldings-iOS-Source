@@ -5,14 +5,20 @@ const {harness}=require('./helpers/core-harness');
 const {s}=harness(['transaction-core','domain-command-core','route-core','fleet-core']);
 const F=s.GH_FLEET_CORE;
 
-assert.strictEqual(F.routeCapacity('air'),1,'air hard separation must remain exclusive');
+assert.strictEqual(F.routeCapacity('air'),24,'air scheduled-corridor hard capacity must stay bounded at 24');
 assert.strictEqual(F.routeCapacity('sea'),24,'sea hard safety capacity must remain unchanged');
 assert.strictEqual(F.routeCapacity('road'),64,'road hard safety capacity must remain unchanged');
 assert.strictEqual(typeof F.automaticRouteTargetLoad,'function','automatic diversity policy is missing');
 
-// Automatic planning must deliberately stay well below the hard shared-route
-// ceiling for normal fleets. The hard capacity remains a safety boundary, not
-// the default dispatch density.
+// Automatic planning must deliberately stay well below every hard shared-route
+// ceiling. Air corridors are shared through unique departure slots instead of
+// allocating one persistent route per aircraft.
+
+const air300=F.automaticRouteTargetLoad('air',300,240);
+assert.strictEqual(air300,12,'300-aircraft automatic planning should target 12 aircraft per scheduled corridor');
+assert.strictEqual(Math.ceil(300/air300),25,'300 aircraft should need only 25 bounded shared routes');
+assert(F.departureDelay({type:'air',routeSlot:11})>F.departureDelay({type:'air',routeSlot:1}),'air route slots must create staggered departures');
+
 const sea50=F.automaticRouteTargetLoad('sea',50,240);
 assert(sea50<=5,'50 ships are still packed too densely ('+sea50+' per route)');
 assert(Math.ceil(50/sea50)>=10,'50 ships must spread over at least ten maritime routes when route budget is available');
