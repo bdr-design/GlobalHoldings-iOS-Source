@@ -7,7 +7,7 @@
     "test:source": "python3 scripts/source_integrity.py --check",
     "lint": "eslint WebApp/*.js && node scripts/ownership_guard.cjs",
     "test:runtime": "python3 scripts/runtime_guard.py && python3 scripts/swift_contract_guard.py",
-    "test:browser": "node tests/browser-qa.js && node tests/browser-build309.js && node tests/browser-directory-build309.js && node tests/browser-founding-build309.js && node tests/browser-build310.js && node tests/browser-build311.js && node tests/browser-build315-stress1000.js && node tests/browser-build315-operational-regression.js && node tests/browser-build315-device-lifecycle.js && node tests/browser-build316-business-world.js",
+    "test:browser": "node tests/browser-qa.js && node tests/browser-build309.js && node tests/browser-directory-build309.js && node tests/browser-founding-build309.js && node tests/browser-build310.js && node tests/browser-build311.js && node tests/browser-build315-stress1000.js && node tests/browser-build315-operational-regression.js && node tests/browser-build315-device-lifecycle.js && node tests/browser-build316-business-world.js && node tests/browser-build317-air300.js",
     "test:e2e": "node tests/browser-e2e.js",
     "test": "npm run lint && npm run test:source && npm run test:runtime && npm run test:guards"
   },
