@@ -50,16 +50,18 @@ const facilityCount=state.customHubs.length,branchCount=state.bank.branchNetwork
 assert.throws(()=>s.GH_TRANSACTION_CORE.execute(state,{label:'injected-bank-opening-failure',apply(){const auh=site('bank','AUH'),row=facility('bank','bank','BANK-AUH','AUH');command('facilities','create',{facility:row,bucket:'customHubs'});command('banking','open-branch',{branchId:'BR-AUH',facilityId:row.id,site:auh});throw new Error('injected-after-branch');}}),/injected-after-branch/);
 assert.strictEqual(state.customHubs.length,facilityCount);assert.strictEqual(state.bank.branchNetwork.length,branchCount,'failed bank opening was not atomic');
 
-// A route and its complete geometry belong to one asset only. Both exact
-// route-id reuse and a different id carrying the same shape are rejected.
+// Aviation now shares one canonical route by bounded departure slots. Reusing
+// the same route ID under capacity is valid, while a different route ID carrying
+// duplicate corridor geometry remains forbidden.
 const staffing={mode:'automatic-fixed',ready:true,roles:[],total:1,monthlyPayroll:1};
 state.assets.push({id:'AIR-A',name:'A',type:'air',phase:'idle',baseFacility:'BASE-A',staffing},{id:'AIR-B',name:'B',type:'air',phase:'idle',baseFacility:'BASE-A',staffing},{id:'AIR-C',name:'C',type:'air',phase:'idle',baseFacility:'BASE-A',staffing});
 const routeA={id:'ROUTE-A',type:'air',fromFacility:'BASE-A',toFacility:'PUBLIC-A',from:'Base',to:'A',route:[[24,46],[35,10]],tripSeconds:1000,dwellHours:1,effectiveSpeedKmh:700};
 const routeB={...routeA,id:'ROUTE-B',toFacility:'PUBLIC-B',to:'B',route:[[24,46],[51,-.1]]};
 const routeC={...routeA,id:'ROUTE-C',route:[[24,46],[30,32],[35,10]]};
 command('routes','create',{route:routeA});command('fleet','assign-route',{id:'AIR-A',routeId:routeA.id,route:routeA});
-assert.throws(()=>command('fleet','assign-route',{id:'AIR-B',routeId:routeA.id,route:routeA}),/asset-route-exclusive/);
-assert.throws(()=>command('fleet','assign-route',{id:'AIR-B',routeId:'ROUTE-CLONE',route:{...routeA,id:'ROUTE-CLONE'}}),/asset-route-exclusive/);
+assert.doesNotThrow(()=>command('fleet','assign-route',{id:'AIR-B',routeId:routeA.id,route:routeA}));
+assert.deepStrictEqual(state.assets.filter(asset=>asset.routeId===routeA.id).map(asset=>asset.routeSlot).sort((a,b)=>a-b),[0,1],'shared air route must allocate unique departure slots');
+assert.throws(()=>command('fleet','assign-route',{id:'AIR-B',routeId:'ROUTE-CLONE',route:{...routeA,id:'ROUTE-CLONE'}}),/asset-route-capacity-or-corridor/);
 command('routes','create',{route:routeB});command('fleet','assign-route',{id:'AIR-B',routeId:routeB.id,route:routeB});
 command('routes','create',{route:routeC});command('fleet','assign-route',{id:'AIR-C',routeId:routeC.id,route:routeC});
 assert.strictEqual(new Set(state.assets.map(asset=>asset.routeId)).size,state.assets.length);
