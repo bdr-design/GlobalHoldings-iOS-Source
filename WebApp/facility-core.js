@@ -81,7 +81,7 @@ function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);const f=p.id?fin
  if(cmd==='expand'){const cost=num(p.cost||12000000),payment=purchase(s,ownerCompany(f),cost,`توسعة ${f.name}`,p.contractor||`مقاول توسعة ${f.name}`),factor=Math.max(1.01,Number(p.factor)||1.25),add=p.addCapacity!=null?Math.max(1,Number(p.addCapacity)||1):null;m.level++;if(add!=null)m.capacity=Math.max(m.capacity,Number(p.currentCapacity)||0)+add;else m.capacity=Math.round(m.capacity*factor);if(assetCapacity(f)>0){const currentAssetCapacity=assetCapacity(f),nextAssetCapacity=add!=null?currentAssetCapacity+add:Math.max(currentAssetCapacity+1,Math.round(currentAssetCapacity*factor));f.deliveryCapacity=nextAssetCapacity;m.assetCapacity=nextAssetCapacity;}m.budget+=num(p.budgetAdd||3000000);value(s,num(p.groupValueAdd||cost*.7));return {facilityId:f.id,capacity:m.capacity,assetCapacity:assetCapacity(f),paymentRef:payment?.cheque?.id||null,invoiceRef:payment?.invoice?.number||null,message:log(s,m,'اكتملت توسعة القدرة التشغيلية.')};}
  if(cmd==='hire'){
   const hr=globalThis.GH_HR_CORE;if(!hr?.snapshot||!hr?.executeHiring)throw new Error('hr-core-missing');
-  const company=ownerCompany(f),context={...(p.hrContext||{}),facilityId:f.id};
+  const company=ownerCompany(f),context={candidates:Array.isArray(ctx.candidates)?ctx.candidates:[],getDynamicFacilities:typeof ctx.getDynamicFacilities==='function'?ctx.getDynamicFacilities:undefined,facilityId:f.id};
   const need=hr.snapshot(s,context,company).facilities.find(x=>x.facilityId===f.id);
   if(!need)throw new Error('facility-hr-need-unavailable');
   if(need.missing===0)return {ok:true,status:'already-staffed',staff:m.staff,hired:0};
