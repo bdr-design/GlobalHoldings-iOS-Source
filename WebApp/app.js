@@ -2543,33 +2543,42 @@
   let lastDepartureBlocked=[];
   function routeGeometrySignature(route){return window.GH_ROUTE_CORE.signature(route)||String(route?.id||'');}
   function normalizeLegacyRouteAssignments(){
-    const groups=[],sharedSlots=new Map();let changed=false,released=0,pending=0;
+    const sharedSlots=new Map();let changed=false,released=0,pending=0;
+    const clearAssignment=asset=>{asset.routeId=null;asset.routeSignature=null;asset.routeSlot=null;asset.departureScheduled=false;delete asset.departureScheduledAt;asset.releaseExclusiveRouteOnArrival=false;asset.phase='idle';asset.progress=0;asset.dwellRemaining=0;changed=true;released++;};
+    // All transport modes now use bounded route slots, including aviation.
+    // This pass repairs duplicate/missing slots on one canonical route without
+    // conflating shared use of the same route with duplicate route geometry.
     for(const asset of state.assets||[]){
       if(!asset?.routeId)continue;
       const route=routeTemplates[asset.routeId],signature=route?window.GH_ROUTE_CORE.signature(route):String(asset.routeSignature||asset.routeId);
       if(asset.routeSignature!==signature){asset.routeSignature=signature;changed=true;}
-      if(asset.type!=='air'){
-        let used=sharedSlots.get(asset.routeId);if(!used){used=new Set();sharedSlots.set(asset.routeId,used);}
-        let slot=Number.isInteger(asset.routeSlot)&&asset.routeSlot>=0&&!used.has(asset.routeSlot)?asset.routeSlot:0;while(used.has(slot))slot++;
-        const capacity=window.GH_FLEET_CORE.routeCapacity(route||asset.type);
-        if(slot>=capacity){
-          if(asset.phase==='moving'){if(asset.releaseExclusiveRouteOnArrival!==true){asset.releaseExclusiveRouteOnArrival=true;changed=true;}pending++;}
-          else{asset.routeId=null;asset.routeSignature=null;asset.routeSlot=null;asset.departureScheduled=false;asset.phase='idle';asset.progress=0;asset.dwellRemaining=0;changed=true;released++;}
-          continue;
-        }
-        used.add(slot);if(asset.routeSlot!==slot){asset.routeSlot=slot;changed=true;}if(asset.releaseExclusiveRouteOnArrival===true){asset.releaseExclusiveRouteOnArrival=false;changed=true;}continue;
+      let used=sharedSlots.get(asset.routeId);if(!used){used=new Set();sharedSlots.set(asset.routeId,used);}
+      let slot=Number.isInteger(asset.routeSlot)&&asset.routeSlot>=0&&!used.has(asset.routeSlot)?asset.routeSlot:0;while(used.has(slot))slot++;
+      const capacity=window.GH_FLEET_CORE.routeCapacity(route||asset.type);
+      if(slot>=capacity){
+        if(asset.phase==='moving'){if(asset.releaseExclusiveRouteOnArrival!==true){asset.releaseExclusiveRouteOnArrival=true;changed=true;}pending++;}
+        else clearAssignment(asset);
+        continue;
       }
-      if(asset.routeSlot!==0){asset.routeSlot=0;changed=true;}
-      const group=groups.find(rows=>rows.some(other=>{const otherRoute=routeTemplates[other.routeId];return other.routeId===asset.routeId||(route&&otherRoute&&(window.GH_ROUTE_CORE.signature(otherRoute)===signature||window.GH_ROUTE_CORE.corridorMetrics(otherRoute,route).duplicate));}));
-      if(group)group.push(asset);else groups.push([asset]);
+      used.add(slot);if(asset.routeSlot!==slot){asset.routeSlot=slot;changed=true;}if(asset.releaseExclusiveRouteOnArrival===true){asset.releaseExclusiveRouteOnArrival=false;changed=true;}
     }
-    for(const rows of groups){
-      if(rows.length===1)continue;
-      const keeper=rows.find(asset=>asset.phase==='moving')||rows[0];
-      for(const asset of rows){
-        if(asset===keeper){if(asset.releaseExclusiveRouteOnArrival===true){asset.releaseExclusiveRouteOnArrival=false;changed=true;}continue;}
-        if(asset.phase==='moving'){if(asset.releaseExclusiveRouteOnArrival!==true){asset.releaseExclusiveRouteOnArrival=true;changed=true;}pending++;continue;}
-        asset.routeId=null;asset.routeSignature=null;asset.routeSlot=null;asset.departureScheduled=false;asset.releaseExclusiveRouteOnArrival=false;asset.phase='idle';asset.progress=0;asset.dwellRemaining=0;changed=true;released++;
+    // Legacy aviation saves may contain two different route IDs that describe
+    // the same/near-same corridor. Sharing one route ID is valid; duplicating
+    // the corridor under different IDs is not. Moving duplicates finish safely,
+    // while stationary duplicates are released for a fresh canonical assignment.
+    const airRouteIds=[...new Set((state.assets||[]).filter(asset=>asset.type==='air'&&asset.routeId).map(asset=>asset.routeId))],groups=[];
+    for(const routeId of airRouteIds){
+      const route=routeTemplates[routeId];if(!route)continue;
+      const signature=window.GH_ROUTE_CORE.signature(route),group=groups.find(row=>{const other=routeTemplates[row[0]];return other&&(window.GH_ROUTE_CORE.signature(other)===signature||window.GH_ROUTE_CORE.corridorMetrics(other,route).duplicate);});
+      if(group)group.push(routeId);else groups.push([routeId]);
+    }
+    for(const routeIds of groups){
+      if(routeIds.length<2)continue;
+      const users=(state.assets||[]).filter(asset=>asset.type==='air'&&routeIds.includes(asset.routeId)),moving=users.find(asset=>asset.phase==='moving'),canonicalId=moving?.routeId||routeIds[0];
+      for(const asset of users){
+        if(asset.routeId===canonicalId){if(asset.releaseExclusiveRouteOnArrival===true){asset.releaseExclusiveRouteOnArrival=false;changed=true;}continue;}
+        if(asset.phase==='moving'){if(asset.releaseExclusiveRouteOnArrival!==true){asset.releaseExclusiveRouteOnArrival=true;changed=true;}pending++;}
+        else clearAssignment(asset);
       }
     }
     return {changed,released,pending};
