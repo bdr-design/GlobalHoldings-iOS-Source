@@ -17,6 +17,7 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
   try{
     await page.goto(server.baseURL,{waitUntil:'domcontentloaded'});
     await page.selectOption('#founderMode','sandbox');await page.click('#founderReview');await page.locator('#founderForm button[type="submit"]').click();await page.waitForFunction(()=>__GH_STATE__.onboardingComplete);
+    await page.evaluate(()=>{__GH_STATE__.godMoney=false;__GH_STATE__.infiniteMoney=false;GH_FINANCE_CORE.book(__GH_STATE__,'group').accounts[0].balance=5000000;GH_FINANCE_CORE.reconcile(__GH_STATE__);});
 
     await docs();await page.locator('[data-tab="cheques"]').click();
     let current=await snapshot(),cashBefore=current.companyFinance.group.accounts[0].balance;
