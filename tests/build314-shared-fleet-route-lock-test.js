@@ -14,7 +14,7 @@ const assignment=(row,r)=>({id:row.id,routeId:r.id,baseFacility:row.baseFacility
 // assignments behind.
 const roadRoute=route('ROAD-FLEET'),roadAssets=Array.from({length:65},(_,index)=>asset(`ROAD-${String(index).padStart(3,'0')}`));
 const roadState={customRoutes:[roadRoute],assets:roadAssets,advanced:{},crew:[],sequences:{},simSeconds:0};
-assert.strictEqual(F.routeCapacity('road'),64);assert.strictEqual(F.routeCapacity('sea'),24);assert.strictEqual(F.routeCapacity('air'),1);
+assert.strictEqual(F.routeCapacity('road'),64);assert.strictEqual(F.routeCapacity('sea'),24);assert.strictEqual(F.routeCapacity('air'),24);
 assert.throws(()=>F.execute({state:roadState},'assign-routes-batch',{assignments:roadAssets.map(row=>assignment(row,roadRoute))}),/asset-route-capacity/);
 assert(roadAssets.every(row=>row.routeId===null&&row.phase==='idle'),'capacity failure partially assigned the road fleet');
 
@@ -35,11 +35,15 @@ const seaRoute=route('SEA-FLEET','sea'),seaAssets=Array.from({length:25},(_,inde
 assert.throws(()=>F.execute({state:seaState},'assign-routes-batch',{assignments:seaAssets.map(row=>assignment(row,seaRoute))}),/asset-route-capacity/);assert(seaAssets.every(row=>row.routeId===null));
 F.execute({state:seaState},'assign-routes-batch',{assignments:seaAssets.slice(0,24).map(row=>assignment(row,seaRoute))});assert.strictEqual(F.departureDelay(seaAssets[23]),23*60);
 
-// Aviation separation remains exactly as before: neither route-id reuse nor
-// the shared-fleet capacity path is available to a second aircraft.
-const airRoute=route('AIR-EXCLUSIVE','air'),airState={customRoutes:[airRoute],assets:[asset('AIR-1','air'),asset('AIR-2','air')],advanced:{},crew:[],sequences:{}};
-F.execute({state:airState},'assign-route',assignment(airState.assets[0],airRoute));
-assert.throws(()=>F.execute({state:airState},'assign-route',assignment(airState.assets[1],airRoute)),/asset-route-exclusive/);
+// Aviation shares one canonical route up to the hard limit with unique slots
+// and staggered departures. The 25th aircraft must reject the whole batch.
+const airRoute=route('AIR-SHARED','air'),airAssets=Array.from({length:25},(_,index)=>asset(`AIR-${String(index+1).padStart(2,'0')}`,'air')),airState={customRoutes:[airRoute],assets:airAssets,advanced:{},crew:[],sequences:{},simSeconds:0};
+assert.throws(()=>F.execute({state:airState},'assign-routes-batch',{assignments:airAssets.map(row=>assignment(row,airRoute))}),/asset-route-capacity/);
+assert(airAssets.every(row=>row.routeId===null&&row.phase==='idle'),'air capacity failure partially assigned the fleet');
+const airAssigned=F.execute({state:airState},'assign-routes-batch',{assignments:airAssets.slice(0,24).map(row=>assignment(row,airRoute))});
+assert.deepStrictEqual([...airAssigned.map(row=>row.routeSlot)].sort((a,b)=>a-b),Array.from({length:24},(_,index)=>index),'shared air slots must be unique and contiguous');
+const airDeparted=F.execute({state:airState},'depart-batch',{departures:airAssigned.map(row=>({id:row.id,route:airRoute,load:'اختبار',delaySeconds:F.departureDelay(row)}))});
+assert.strictEqual(airDeparted.filter(row=>row.phase==='moving').length,1);assert.strictEqual(airDeparted.filter(row=>row.phase==='turnaround'&&row.departureScheduled).length,23);assert.strictEqual(airDeparted.at(-1).dwellRemaining,23*180);
 
 const barrierRoute=route('ROAD-BARRIER'),barrierLive={customRoutes:[barrierRoute],assets:[asset('BARRIER-LIVE')],advanced:{},crew:[],sequences:{},simSeconds:0},barrierDraft=structuredClone(barrierLive),barrierPayload=assignment(barrierDraft.assets[0],barrierRoute);
 s.__GH_DURABLE_COMMAND_CONTEXT__={name:'test',liveState:barrierLive,draft:barrierDraft};
@@ -51,6 +55,9 @@ assert.doesNotThrow(()=>s.GH_DOMAIN_COMMANDS.dispatch({state:barrierDraft},'flee
 const save={...minimal(),customRoutes:[roadRoute],routeEndpoints:{},routeCache:{},assets:Array.from({length:64},(_,index)=>({...asset(`LEGACY-${index}`),routeId:roadRoute.id,phase:'turnaround'}))};
 const migrated=S.migrateLegacy(save);assert(migrated.changed);assert.strictEqual(migrated.state.assets.filter(row=>row.routeId===roadRoute.id).length,64);assert.strictEqual(new Set(migrated.state.assets.map(row=>row.routeSlot)).size,64);assert(S.validate(migrated.state).ok,S.validate(migrated.state).errors.join(','));
 const over={...migrated.state,assets:[...migrated.state.assets,{...asset('OVER'),routeId:roadRoute.id,routeSlot:64,phase:'turnaround'}]};assert(S.validate(over).errors.includes('asset-route-capacity'));
+const airSave={...minimal(),customRoutes:[airRoute],routeEndpoints:{},routeCache:{},assets:Array.from({length:24},(_,index)=>({...asset(`AIR-SAVE-${index}`,'air'),routeId:airRoute.id,routeSlot:index,phase:'turnaround'}))};
+assert(S.validate(airSave).ok,S.validate(airSave).errors.join(','));
+const airOver={...airSave,assets:[...airSave.assets,{...asset('AIR-SAVE-OVER','air'),routeId:airRoute.id,routeSlot:24,phase:'turnaround'}]};assert(S.validate(airOver).errors.includes('asset-route-capacity'),'save boundary must reject the 25th aircraft on one route');
 
 const app=fs.readFileSync('WebApp/app.js','utf8'),domain=fs.readFileSync('WebApp/domain-command-core.js','utf8'),planner=fs.readFileSync('WebApp/road-planner.js','utf8');
 assert(app.includes('let durableCommandInProgress=false')&&app.includes('finally{release();}'),'UI operations must release their busy state on every outcome');
