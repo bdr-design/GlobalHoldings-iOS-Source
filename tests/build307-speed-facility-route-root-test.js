@@ -66,8 +66,8 @@ command('routes','create',{route:routeB});command('fleet','assign-route',{id:'AI
 command('routes','create',{route:routeC});command('fleet','assign-route',{id:'AIR-C',routeId:routeC.id,route:routeC});
 assert.strictEqual(new Set(state.assets.map(asset=>asset.routeId)).size,state.assets.length);
 assert.strictEqual(new Set(state.assets.map(asset=>asset.routeSignature)).size,state.assets.length);
-assert(app.includes('releaseExclusiveRouteOnArrival'),'legacy moving duplicates must finish safely and then release their shared route');
-assert(app.includes("const keeper=rows.find(asset=>asset.phase==='moving')||rows[0]"),'legacy exclusivity migration must retain one canonical assignment instead of clearing every asset');
+assert(app.includes('releaseExclusiveRouteOnArrival'),'legacy moving duplicate corridor IDs must finish safely before release');
+assert(app.includes("const airRouteIds=[...new Set(")&&app.includes("canonicalId=moving?.routeId||routeIds[0]"),'legacy air migration must distinguish valid shared route slots from duplicate corridor IDs and retain one canonical corridor');
 assert(!fleetSource.includes("cmd==='remap-routes'")&&!app.includes('roadHubCandidates:'),'shared-route remapping and raw logistics-site context must not survive as dormant bypasses');
 
 // Mobility keeps one active vehicle per directed street path. A second request
