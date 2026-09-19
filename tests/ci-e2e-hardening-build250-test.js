@@ -13,5 +13,6 @@ const build=fs.readFileSync('BUILD','utf8').trim();assert(project.includes('CURR
 const mobile=(html.match(/<nav class="bottom-nav[\s\S]*?<\/nav>/)||[''])[0];
 assert.strictEqual((mobile.match(/<button/g)||[]).length,5,'iPhone navigation must have exactly five primary destinations');
 assert(browser.includes("openHubChild(landscape.page, 'control', 'assets')"),'Browser QA must traverse Operations → Assets using current workspace ownership');
-assert(browser.includes("openHubChild(portrait.page, 'leadershipHub', 'intelligence')"),'Browser QA must traverse Leadership → Intelligence using current workspace ownership');
+assert(browser.includes("openHubChild(portrait.page, 'leadershipHub', 'executionLog')"),'Browser QA must traverse Leadership → Execution Log using current workspace ownership');
+assert(browser.includes("#aiPrompt,[data-gh-action=\"ai-send\"],.ai-message"),'Browser QA must prove retired autonomous controls stay absent');
 console.log('CI/E2E hardening Build250 guard: PASS');

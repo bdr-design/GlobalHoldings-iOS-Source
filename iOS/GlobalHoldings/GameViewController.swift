@@ -300,21 +300,25 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                 completion(.success(generation))
                 return
             }
-            GlobalSaveVault.shared.commitAsync(save, runtimeVersion: GlobalGameStorage.shared.currentVersion) { result in
-                if case .success(let generation) = result { GlobalGameStorage.shared.noteCurrentSaveGeneration(generation) }
+            GlobalSaveVault.shared.commitAsync(save, runtimeVersion: GlobalGameStorage.shared.currentVersion) { [weak self] result in
+                if case .success(let generation) = result {
+                    GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+                    self?.refreshNativeBootstrapScript()
+                }
                 completion(result)
             }
         }
-        // If the runtime is loaded, capture the freshest browser state. Otherwise
-        // the latest verified native generation is the authoritative checkpoint.
+        // If the runtime is loaded, capture the freshest in-memory state directly.
+        // Native Save Vault remains the authoritative fallback when WebKit is unavailable.
         guard isViewLoaded, webView.url != nil else { commit(GlobalSaveVault.shared.currentSave()); return }
-        webView.evaluateJavaScript("localStorage.getItem('global-holdings-world-v2.0.0')") { value, error in
+        webView.evaluateJavaScript("JSON.stringify(window.__GH_STATE__||null)") { value, error in
             if let error {
                 if let native = GlobalSaveVault.shared.currentSave() { commit(native) }
                 else { completion(.failure(error)) }
                 return
             }
-            commit(value as? String ?? GlobalSaveVault.shared.currentSave())
+            let live = (value as? String).flatMap { $0 == "null" || $0.isEmpty ? nil : $0 }
+            commit(live ?? GlobalSaveVault.shared.currentSave())
         }
     }
 
@@ -350,7 +354,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
 
     private func restorePreviousVersion() {
         webView.stopLoading()
-        // Manual rollback must checkpoint the freshest browser state first so
+        // Manual rollback must checkpoint the freshest in-memory game state first so
         // toggling back later restores an exact Runtime + Save pair.
         captureVerifiedPreUpdateCheckpoint { [weak self] checkpoint in
             guard let self else { return }
@@ -379,23 +383,111 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
     }
 
+    private func refreshNativeBootstrapScript(force: Bool = false, pause: Bool = false) {
+        webView.configuration.userContentController.removeAllUserScripts()
+        let bootstrap = GlobalSaveVault.shared.bootstrapJavaScript(force: force, pause: pause)
+        if !bootstrap.isEmpty {
+            webView.configuration.userContentController.addUserScript(
+                WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+            )
+        }
+    }
+
+    private func manualSlotMetadataDictionary(_ metadata: GlobalSaveVault.ManualSlotMetadata) -> [String: Any] {
+        var out: [String: Any] = [
+            "index": metadata.index,
+            "simSeconds": metadata.simSeconds,
+            "saveRevision": metadata.saveRevision,
+            "resetEpoch": metadata.resetEpoch,
+            "savedAt": metadata.savedAt,
+            "label": metadata.label
+        ]
+        if let runtimeVersion = metadata.runtimeVersion { out["runtimeVersion"] = runtimeVersion }
+        return out
+    }
+
+    private func reportManualSlotAck(payload: [String: Any], success: Bool, generation: Int? = nil, metadata: GlobalSaveVault.ManualSlotMetadata? = nil, message: String? = nil) {
+        var detail: [String: Any] = [
+            "success": success,
+            "message": message ?? "",
+            "action": payload["action"] as? String ?? "",
+            "requestId": payload["requestId"] as? String ?? "",
+            "index": payloadInteger(payload["index"]) ?? -1
+        ]
+        if let generation { detail["generation"] = generation }
+        if let metadata { detail["metadata"] = manualSlotMetadataDictionary(metadata) }
+        reportBridgeEvent("gh-native-slot-ack", detail: detail)
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let payload = message.body as? [String: Any], let action = payload["action"] as? String else { return }
         if message.name == "saveBridge" {
-            guard action == "commitSave", let json = payload["saveJSON"] as? String else { return }
-            guard validSaveEnvelope(payload, json: json) else {
-                reportSaveAck(payload: payload, success: false, generation: nil, message: "Invalid save envelope.")
-                return
-            }
-            GlobalSaveVault.shared.commitAsync(json, runtimeVersion: GlobalGameStorage.shared.currentVersion) { [weak self] result in
-                switch result {
-                case .success(let generation):
-                    GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
-                    self?.reportSaveAck(payload: payload, success: true, generation: generation, message: nil)
-                case .failure(let error):
-                    print("GlobalSaveVault commit failed: \(error.localizedDescription)")
-                    self?.reportSaveAck(payload: payload, success: false, generation: nil, message: error.localizedDescription)
+            switch action {
+            case "commitSave":
+                guard let json = payload["saveJSON"] as? String else { return }
+                guard validSaveEnvelope(payload, json: json) else {
+                    reportSaveAck(payload: payload, success: false, generation: nil, message: "Invalid save envelope.")
+                    return
                 }
+                GlobalSaveVault.shared.commitAsync(json, runtimeVersion: GlobalGameStorage.shared.currentVersion) { [weak self] result in
+                    switch result {
+                    case .success(let generation):
+                        GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+                        self?.refreshNativeBootstrapScript()
+                        self?.reportSaveAck(payload: payload, success: true, generation: generation, message: nil)
+                    case .failure(let error):
+                        print("GlobalSaveVault commit failed: \(error.localizedDescription)")
+                        self?.reportSaveAck(payload: payload, success: false, generation: nil, message: error.localizedDescription)
+                    }
+                }
+            case "saveManualSlot":
+                guard let index = payloadInteger(payload["index"]), (0...2).contains(index),
+                      let json = payload["saveJSON"] as? String,
+                      validSaveEnvelope(payload, json: json) else {
+                    reportManualSlotAck(payload: payload, success: false, message: "Invalid manual slot save envelope.")
+                    return
+                }
+                let label = String((payload["label"] as? String ?? "").prefix(120))
+                GlobalSaveVault.shared.saveManualSlotAsync(index, json: json, label: label, runtimeVersion: GlobalGameStorage.shared.currentVersion) { [weak self] result in
+                    switch result {
+                    case .success(let metadata):
+                        self?.refreshNativeBootstrapScript()
+                        self?.reportManualSlotAck(payload: payload, success: true, metadata: metadata)
+                    case .failure(let error): self?.reportManualSlotAck(payload: payload, success: false, message: error.localizedDescription)
+                    }
+                }
+            case "loadManualSlot":
+                guard let requestId = payload["requestId"] as? String, !requestId.isEmpty, requestId.count <= 200,
+                      let index = payloadInteger(payload["index"]), (0...2).contains(index) else {
+                    reportManualSlotAck(payload: payload, success: false, message: "Invalid manual slot load request.")
+                    return
+                }
+                GlobalSaveVault.shared.loadManualSlotAsync(index, runtimeVersion: GlobalGameStorage.shared.currentVersion) { [weak self] result in
+                    switch result {
+                    case .success(let generation):
+                        GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+                        self?.refreshNativeBootstrapScript(force: true)
+                        self?.reportManualSlotAck(payload: payload, success: true, generation: generation)
+                    case .failure(let error):
+                        self?.reportManualSlotAck(payload: payload, success: false, message: error.localizedDescription)
+                    }
+                }
+            case "clearManualSlot":
+                guard let requestId = payload["requestId"] as? String, !requestId.isEmpty, requestId.count <= 200,
+                      let index = payloadInteger(payload["index"]), (0...2).contains(index) else {
+                    reportManualSlotAck(payload: payload, success: false, message: "Invalid manual slot clear request.")
+                    return
+                }
+                GlobalSaveVault.shared.clearManualSlotAsync(index) { [weak self] result in
+                    switch result {
+                    case .success:
+                        self?.refreshNativeBootstrapScript()
+                        self?.reportManualSlotAck(payload: payload, success: true)
+                    case .failure(let error): self?.reportManualSlotAck(payload: payload, success: false, message: error.localizedDescription)
+                    }
+                }
+            default:
+                break
             }
             return
         }
@@ -422,6 +514,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                     self?.preUpdateSaveGeneration = generation
                     self?.reportUpdateLifecycle(phase: "PRE_SAVE_COMMITTED", message: "Verified pre-update save generation \(generation)")
                     GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+                    self?.refreshNativeBootstrapScript()
                     self?.applyWebBridgeUpdate(manifest: manifest, files: files, operationsJSON: operationsJSON, preUpdateSaveGeneration: generation)
                 case .failure(let error):
                     self?.pendingSaveJSON = nil
@@ -442,6 +535,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                 switch result {
                 case .success(let generation):
                     do {
+                        self.refreshNativeBootstrapScript()
                         try GlobalGameStorage.shared.markUpdateStateCommitted(version: version, build: build, saveGeneration: generation)
                         self.updateStateCommittedIdentity = self.updateIdentity(version: version, build: build)
                         self.updateStateSaveGeneration = generation
@@ -475,11 +569,13 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                 return
             }
             let version = GlobalGameStorage.shared.currentVersion
-            GlobalSaveVault.shared.resetToAsync(cleanSave, runtimeVersion: version) { [weak self] result in
+            let clearManualSlots = payload["clearManualSlots"] as? Bool ?? false
+            GlobalSaveVault.shared.resetToAsync(cleanSave, runtimeVersion: version, clearManualSlots: clearManualSlots) { [weak self] result in
                 guard let self else { return }
                 switch result {
                 case .success(let generation):
                     GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+                    self.refreshNativeBootstrapScript(force: true)
                     self.reportSaveAck(payload: payload, success: true, generation: generation, message: nil)
                 case .failure(let error):
                     self.reportSaveAck(payload: payload, success: false, generation: nil, message: error.localizedDescription)
@@ -604,27 +700,23 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         recoveredWebProcess = true
-        webView.configuration.userContentController.removeAllUserScripts()
-        let recovery = GlobalSaveVault.shared.bootstrapJavaScript(force: true, pause: true)
-        if !recovery.isEmpty {
-            webView.configuration.userContentController.addUserScript(WKUserScript(source: recovery, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        }
+        refreshNativeBootstrapScript(force: true, pause: true)
         loadGame(cacheBuster: "recovery-\(GlobalSaveVault.shared.currentGeneration())-\(UUID().uuidString)")
     }
 
     @discardableResult
     private func restorePendingSaveIfNeeded() -> Bool {
-        guard let save = pendingSaveJSON, let data = save.data(using: .utf8) else { return false }
-        let encoded = data.base64EncodedString()
-        let script = "(()=>{const b=Uint8Array.from(atob('\(encoded)'),c=>c.charCodeAt(0));localStorage.setItem('global-holdings-world-v2.0.0',new TextDecoder().decode(b));setTimeout(()=>location.reload(),0);return true;})()"
-        webView.evaluateJavaScript(script) { [weak self] _, error in
-            guard let self else { return }
-            if let error {
-                self.rollbackFailedUpdate(reason: "restore-pending-save-failed: \(error.localizedDescription)")
-            } else {
-                self.pendingSaveJSON = nil
-            }
+        guard let save = pendingSaveJSON else { return false }
+        guard GlobalSaveVault.shared.currentSave() == save else {
+            pendingSaveJSON = nil
+            rollbackFailedUpdate(reason: "restore-pending-save-native-mismatch")
+            return true
         }
+        // Rebuild the document-start bootstrap from the newly committed native
+        // generation. Never round-trip the full world through localStorage.
+        pendingSaveJSON = nil
+        refreshNativeBootstrapScript(force: true)
+        loadGame(cacheBuster: "native-restore-\(GlobalSaveVault.shared.currentGeneration())-\(UUID().uuidString)")
         return true
     }
 
@@ -650,8 +742,8 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
           Promise.resolve(window.GH_RUNTIME?.applyNativeUpdate?.(p)).then(()=>{
             const integrity=window.GH_RUNTIME?.businessIntegrity?.();
             if(integrity&&integrity.status==='critical') throw new Error('Critical integrity failure after update operations: '+JSON.stringify(integrity.counts||{}));
-            const save=localStorage.getItem('global-holdings-world-v2.0.0');
-            if(!save) throw new Error('Durable update save payload missing');
+            const save=JSON.stringify(window.__GH_STATE__||null);
+            if(!save||save==='null') throw new Error('Durable update state is unavailable');
             window.webkit?.messageHandlers?.updateBridge?.postMessage({action:'commitUpdateState',version:'\(version)',build:\(build),saveJSON:save});
           }).catch(error=>{
             window.webkit?.messageHandlers?.updateBridge?.postMessage({action:'updateOperationsFailed',version:'\(version)',build:\(build),message:String(error?.message||error)});
