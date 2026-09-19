@@ -2,7 +2,7 @@
   'use strict';
   const VERSION='3.0.0',SAVE_SCHEMA_VERSION='2.0.0';
   const ROUTE_TYPES=new Set(['air','sea','road']),ASSET_PHASES=new Set(['idle','delivery','turnaround','moving']);
-  const ROUTE_FLEET_CAPACITY=Object.freeze({air:1,sea:24,road:64});
+  const ROUTE_FLEET_CAPACITY=Object.freeze({air:24,sea:24,road:64});
   const BUILTIN_ROUTES=new Set(['AIR_RUH_LHR','AIR_DXB_SIN','SEA_SIN_JED','SEA_RTM_NYC','ROAD_RUH_JED','ROAD_DXB_RUH']);
   const STATE_LIMITS=Object.freeze({customRoutes:240,routeEndpoints:360,routeCache:160,routePoints:2048,routeBytes:256*1024,routeCacheBytes:512*1024,controlEvents:240,controlCommands:120,controlIncidents:80,controlOutbox:100,controlBlackBox:120,domainCommands:240,businessEvents:240,businessWorldEvents:240,businessWorldOpportunities:120,businessWorldSponsorships:60,businessWorldCampaigns:80,businessWorldCompetitorActivity:120,businessWorldParties:500,businessWorldRelationships:1500});
   function object(v){return !!v&&typeof v==='object'&&!Array.isArray(v);}
@@ -68,7 +68,7 @@
     const routeById=new Map(state.customRoutes.map(route=>[route.id,route])),assignmentGroups=new Map();for(const asset of assets)if(asset.routeId){const rows=assignmentGroups.get(asset.routeId)||[];rows.push(asset);assignmentGroups.set(asset.routeId,rows);}
     for(const [routeId,rows] of assignmentGroups)if(rows.length>1){
       const type=routeById.get(routeId)?.type||rows[0]?.type;
-      if(type==='sea'||type==='road'){
+      if(['air','sea','road'].includes(type)){
         const capacity=routeCapacity(type),used=new Set(),ordered=[...rows].sort((a,b)=>Number(b.phase==='moving')-Number(a.phase==='moving')||(Number.isInteger(a.routeSlot)?a.routeSlot:capacity)-(Number.isInteger(b.routeSlot)?b.routeSlot:capacity)||String(a.id).localeCompare(String(b.id)));
         for(const asset of ordered){
           if(asset.type!==type){clearLegacyRouteAssignment(asset);changed=true;continue;}
@@ -85,7 +85,7 @@
     const removedRouteIds=new Set();
     for(const routes of signatureGroups.values())if(routes.length>1){
       const ids=new Set(routes.map(route=>route.id)),users=assets.filter(asset=>ids.has(asset.routeId)),type=routes[0]?.type;
-      if(type==='sea'||type==='road'){
+      if(['air','sea','road'].includes(type)){
         const capacity=routeCapacity(type),canonical=routes.slice().sort((a,b)=>users.filter(asset=>asset.routeId===b.id).length-users.filter(asset=>asset.routeId===a.id).length||String(a.id).localeCompare(String(b.id)))[0],accepted=[],retained=new Set([canonical.id]);
         for(const asset of users.slice().sort((a,b)=>Number(b.phase==='moving')-Number(a.phase==='moving')||Number(b.routeId===canonical.id)-Number(a.routeId===canonical.id)||String(a.id).localeCompare(String(b.id)))){
           const compatible=asset.type===type&&[canonical.fromFacility,canonical.toFacility].includes(asset.baseFacility);
@@ -152,7 +152,7 @@
       if(['moving','turnaround'].includes(asset.phase)&&!asset.routeId)errors.push('asset-route-required');
       if(asset.routeId){const users=routeUsers.get(asset.routeId)||[];users.push(asset);routeUsers.set(asset.routeId,users);const route=routes.find(row=>row.id===asset.routeId);if(route&&route.type!==asset.type)errors.push('asset-route-company');}
     }
-    for(const [routeId,users] of routeUsers){const stable=users.filter(asset=>!transitionalRouteUser(asset)),type=routes.find(route=>route.id===routeId)?.type||users[0]?.type,capacity=routeCapacity(type);if(stable.length>capacity)errors.push(type==='air'?'asset-route-exclusive':'asset-route-capacity');}
+    for(const [routeId,users] of routeUsers){const stable=users.filter(asset=>!transitionalRouteUser(asset)),type=routes.find(route=>route.id===routeId)?.type||users[0]?.type,capacity=routeCapacity(type);if(stable.length>capacity)errors.push('asset-route-capacity');}
     for(const group of routeSignatureGroups.values())if(group.length>1){const stable=group.filter(route=>{const users=routeUsers.get(route.id)||[];return !users.length||users.some(asset=>!transitionalRouteUser(asset));});if(stable.length!==1)errors.push('route-geometry-duplicate');}
     if(object(s?.routeEndpoints)){if(Object.keys(s.routeEndpoints).length>STATE_LIMITS.routeEndpoints)errors.push('route-endpoint-capacity');for(const [id,endpoint] of Object.entries(s.routeEndpoints))if(!id||!object(endpoint)||endpoint.id!==id||!validPoint(endpoint.coords))errors.push('route-endpoint');}
     else if(s?.routeEndpoints!==undefined)errors.push('route-endpoints-shape');
