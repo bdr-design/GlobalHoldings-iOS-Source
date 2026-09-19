@@ -52,13 +52,15 @@ const asset=(id,type='air',baseFacility='BASE-AIR')=>({id,type,name:id,baseFacil
     F.execute({state},'finalize-sale',{id:'AIR-1'});assert.strictEqual(F.headcount(state,'air'),12);assert.strictEqual(state.advanced.labor.employmentContracts.find(row=>row.assetId==='AIR-1').status,'منتهي');
   });
 
-  await test('fleet owner enforces exclusive and near-distinct corridors',()=>{
+  await test('fleet owner shares one air route but rejects duplicate corridor IDs',()=>{
     const {s}=harness(['route-core','fleet-core']),F=s.GH_FLEET_CORE,one=route('A-ONE'),near={...route('A-NEAR'),route:[[20.004,30.004],[21.004,31.004]]},far=route('A-FAR', 'air',10);
-    const state={customRoutes:[one,near,far],assets:[asset('A1'),asset('A2')],advanced:{},crew:[],sequences:{}};for(const row of state.assets)F.provisionStaffing(state,row,{name:'Base'});
-    state.assets[0].baseFacility=one.fromFacility;state.assets[1].baseFacility=near.fromFacility;
+    const state={customRoutes:[one,near,far],assets:[asset('A1'),asset('A2'),asset('A3')],advanced:{},crew:[],sequences:{}};for(const row of state.assets)F.provisionStaffing(state,row,{name:'Base'});
+    state.assets[0].baseFacility=one.fromFacility;state.assets[1].baseFacility=one.fromFacility;state.assets[2].baseFacility=near.fromFacility;
     F.execute({state},'assign-route',{id:'A1',routeId:one.id,baseFacility:one.fromFacility,phase:'turnaround',route:one});
-    assert.throws(()=>F.execute({state},'assign-route',{id:'A2',routeId:near.id,baseFacility:near.fromFacility,phase:'turnaround',route:near}),/asset-route-exclusive/);
-    state.assets[1].baseFacility=far.fromFacility;assert.doesNotThrow(()=>F.execute({state},'assign-route',{id:'A2',routeId:far.id,baseFacility:far.fromFacility,phase:'turnaround',route:far}));
+    assert.doesNotThrow(()=>F.execute({state},'assign-route',{id:'A2',routeId:one.id,baseFacility:one.fromFacility,phase:'turnaround',route:one}));
+    assert.deepStrictEqual(state.assets.slice(0,2).map(row=>row.routeSlot),[0,1]);
+    assert.throws(()=>F.execute({state},'assign-route',{id:'A3',routeId:near.id,baseFacility:near.fromFacility,phase:'turnaround',route:near}),/asset-route-capacity-or-corridor/);
+    state.assets[2].baseFacility=far.fromFacility;assert.doesNotThrow(()=>F.execute({state},'assign-route',{id:'A3',routeId:far.id,baseFacility:far.fromFacility,phase:'turnaround',route:far}));
   });
 
   await test('save schema migrates retired state and rejects unbounded route growth',()=>{
@@ -80,7 +82,7 @@ const asset=(id,type='air',baseFacility='BASE-AIR')=>({id,type,name:id,baseFacil
       {...asset('STOP','air',three.fromFacility),phase:'turnaround',routeId:three.id,progress:0}
     ];
     const migrated=S.migrateLegacy(state);assert(migrated.changed);const keep=migrated.state.assets.find(row=>row.id==='KEEP'),finishing=migrated.state.assets.filter(row=>row.id.startsWith('FINISH')),stop=migrated.state.assets.find(row=>row.id==='STOP');
-    assert.notStrictEqual(keep.releaseExclusiveRouteOnArrival,true);assert(finishing.every(row=>row.releaseExclusiveRouteOnArrival===true));assert.strictEqual(stop.phase,'idle');assert.strictEqual(stop.routeId,null);assert(!migrated.state.customRoutes.some(row=>row.id===three.id));assert.strictEqual(migrated.state.routeCache[one.id].canonicalRouteId,one.id);assert(!migrated.state.routeCache[one.id].route);assert(Object.keys(migrated.state.routeCache).length<=S.STATE_LIMITS.routeCache);assert(S.validate(migrated.state).ok,S.validate(migrated.state).errors.join(','));
+    assert.notStrictEqual(keep.releaseExclusiveRouteOnArrival,true);assert(finishing.every(row=>row.routeId===one.id&&!row.releaseExclusiveRouteOnArrival),'exact duplicate air geometry should migrate onto one canonical shared route');assert.strictEqual(new Set([keep,...finishing].map(row=>row.routeSlot)).size,3,'migrated shared-air users need unique slots');assert.strictEqual(stop.routeId,one.id);assert.strictEqual(stop.phase,'turnaround');assert(!migrated.state.customRoutes.some(row=>row.id===two.id||row.id===three.id));assert.strictEqual(migrated.state.routeCache[one.id].canonicalRouteId,one.id);assert(!migrated.state.routeCache[one.id].route);assert(Object.keys(migrated.state.routeCache).length<=S.STATE_LIMITS.routeCache);assert(S.validate(migrated.state).ok,S.validate(migrated.state).errors.join(','));
   });
 
   await test('durable save ACK commits, NACK rolls back, and timeout locks for reconciliation',async()=>{
@@ -102,7 +104,7 @@ const asset=(id,type='air',baseFacility='BASE-AIR')=>({id,type,name:id,baseFacil
 
   await test('BUILD308 source contract keeps one route UI, bounded motion and local map runtime',()=>{
     const read=file=>fs.readFileSync(path.join(ROOT,file),'utf8'),app=read('WebApp/app.js'),html=read('WebApp/index.html'),runtime=read('WebApp/runtime-required.json'),advanced=read('WebApp/advanced-core.js'),catalog=read('WebApp/catalog.js');
-    assert(app.includes('مغادرة جماعية لمسارات مختلفة'));assert(app.includes("async function dispatchInternationalNetwork(type)"));assert(app.includes("async function dispatchExistingDistinctNetwork(type,assetId=null)"));assert(app.includes("runDurableStateCommand(`bulk-distinct-departure:${type}`"));
+    assert(app.includes('توزيع وتشغيل الشبكة الجوية'));assert(app.includes("async function dispatchInternationalNetwork(type)"));assert(app.includes("async function dispatchSharedInternationalNetwork(type)"));assert(app.includes("runDurableStateCommand(`bulk-shared-departure:${type}`"));
     assert(!app.includes('function renderAssignRoute'));assert(!advanced.includes('renderIntelligence'));assert(!html.includes('unpkg.com/leaflet'));assert(html.includes('vendor/leaflet/leaflet.js'));assert(runtime.includes('vendor/leaflet/leaflet.js'));
     assert(!runtime.includes('ai-executive-core.js'));assert(!fs.existsSync(path.join(ROOT,'WebApp','ai-executive-core.js')));assert(app.includes('MAX_FRAME_MS:50'));assert(app.includes('maxPixelsPerSecond:8'));assert(app.includes("draft.simulationFault={code:'ASSET_SIMULATION_ISOLATED'"));
     assert(!catalog.toLowerCase().includes('autonomous'));assert(!runtime.includes('truck-autonomous'));assert(!fs.existsSync(path.join(ROOT,'WebApp','assets','images','truck-autonomous.webp')));
