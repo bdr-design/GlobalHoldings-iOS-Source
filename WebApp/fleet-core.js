@@ -84,13 +84,36 @@
       const preferred=Number.isInteger(other.routeSlot)&&other.routeSlot>=0?other.routeSlot:null;
       if(preferred!=null&&!used.has(preferred))used.add(preferred);else{let slot=0;while(used.has(slot))slot++;used.add(slot);}
     }
+
+    // Air corridor conflict validation is batch-indexed. The former path rebuilt a
+    // shadow state and rescanned every aircraft for every assignment (O(n²)),
+    // which could block WebKit for several seconds with 300 aircraft. Capacity
+    // remains enforced by slotUsage below; this index only guards duplicate
+    // geometry across different route IDs and preserves the same invariant.
+    const airRouteIndex=new Map((state.customRoutes||[]).filter(route=>route?.type==='air').map(route=>[route.id,route])),
+      airOccupiedByRoute=new Map(),airSignatureCache=new Map(),airValidatedRoutes=new Set();
+    for(const other of fixedAssets)if(other?.type==='air'&&other.routeId&&!airOccupiedByRoute.has(other.routeId))airOccupiedByRoute.set(other.routeId,other.id);
+    const airSignature=route=>{
+      if(!route)return '';
+      if(airSignatureCache.has(route.id))return airSignatureCache.get(route.id);
+      const signature=routeSignature(route);airSignatureCache.set(route.id,signature);return signature;
+    };
+    const validateAirRoute=(route,assetId)=>{
+      if(airValidatedRoutes.has(route.id))return;
+      airRouteIndex.set(route.id,route);const signature=airSignature(route);
+      for(const [otherRouteId,ownerId] of airOccupiedByRoute){
+        if(otherRouteId===route.id)continue;
+        const otherRoute=airRouteIndex.get(otherRouteId);if(!otherRoute)continue;
+        const otherSignature=airSignature(otherRoute);
+        if((signature&&otherSignature&&signature===otherSignature)||globalThis.GH_ROUTE_CORE?.corridorMetrics?.(otherRoute,route)?.duplicate)throw new Error(`asset-route-capacity-or-corridor:${ownerId}`);
+      }
+      airValidatedRoutes.add(route.id);if(!airOccupiedByRoute.has(route.id))airOccupiedByRoute.set(route.id,assetId);
+    };
+
     for(const p of rows){
       const asset=p?.id?assetById.get(p.id):null,route=p?.route;if(!asset||requested.has(asset.id))throw new Error('route-assignment-contract');requested.add(asset.id);
       if(!route||route.id!==p.routeId||route.type!==asset.type||(route.company||route.type)!==asset.type||asset.phase==='moving'||asset.salePending||asset.deliveryStatus==='pending'||(p.phase!=null&&p.phase!=='turnaround')||(p.baseFacility!=null&&p.baseFacility!==asset.baseFacility)||![route.fromFacility,route.toFacility].includes(asset.baseFacility))throw new Error('route-assignment-contract');
-      if(asset.type==='air'){
-        const shadow={...state,assets:[...fixedAssets,...prepared.map(row=>({...row.asset,routeId:row.input.routeId,routeSignature:routeSignature(row.input.route)}))]};
-        const conflict=routeConflict(shadow,asset.id,p.routeId,route);if(conflict)throw new Error(`asset-route-capacity-or-corridor:${conflict.id}`);
-      }
+      if(asset.type==='air')validateAirRoute(route,asset.id);
       let used=slotUsage.get(p.routeId);if(!used){used=new Set();slotUsage.set(p.routeId,used);}
       let slot=0;const preferred=asset.routeId===p.routeId&&Number.isInteger(asset.routeSlot)&&asset.routeSlot>=0?asset.routeSlot:null;
       if(preferred!=null&&!used.has(preferred))slot=preferred;else{while(used.has(slot))slot++;}
