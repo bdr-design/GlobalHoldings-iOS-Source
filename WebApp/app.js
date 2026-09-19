@@ -1124,65 +1124,59 @@
     },{afterCommit:result=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('assetManage',result.assetId);}});
   }
   const yieldFleetPlanning=()=>new Promise(resolve=>setTimeout(resolve,0));
-  async function dispatchSharedMaritimeNetwork(){
-    return runDurableStateCommand('bulk-shared-departure:sea',async({state:draft,routes})=>{
-      const eligible=draft.assets.filter(asset=>asset.type==='sea'&&asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.departureScheduled&&!asset.salePending).sort((a,b)=>assetRangeKm(a)-assetRangeKm(b)||String(a.id).localeCompare(String(b.id)));
-      if(!eligible.length)throw new Error('لا توجد سفن متاحة للمغادرة');
-      const source=WORLD.ports.map(portEntity);if(!source.length)throw new Error('دليل الموانئ العالمي فارغ');
-      const fleet=window.GH_FLEET_CORE,capacity=fleet.routeCapacity('sea'),nonSeaRoutes=draft.customRoutes.filter(route=>route.type!=='sea').length,availableSeaRoutes=Math.max(0,window.GH_ROUTE_CORE.LIMITS.routes-nonSeaRoutes),minimumSeaRoutes=Math.ceil(eligible.length/capacity);if(availableSeaRoutes<minimumSeaRoutes)throw new Error('سعة سجل المسارات لا تكفي لتوزيع الأسطول البحري بأمان؛ احذف مسارات غير مستخدمة أولًا');
-      const targetLoad=fleet.automaticRouteTargetLoad('sea',eligible.length,availableSeaRoutes),eligibleIds=new Set(eligible.map(asset=>asset.id)),loads=new Map(),waitingByOrigin=new Map(),assignments=[],previousRouteIds=new Set(eligible.map(asset=>asset.routeId).filter(Boolean)),createdRoutes=[],diversity=newRouteDiversityLedger(),diversityRoutes=new Set();
-      for(const asset of draft.assets)if(asset.type==='sea'&&asset.routeId&&!eligibleIds.has(asset.id))loads.set(asset.routeId,(loads.get(asset.routeId)||0)+1);
-      const registeredSeaRoutes=()=>draft.customRoutes.filter(route=>route.type==='sea'&&routes[route.id]);
+  async function dispatchSharedInternationalNetwork(type){
+    if(!['air','sea'].includes(type))throw new Error('unsupported-shared-international-type');
+    await yieldFleetPlanning();
+    const label=type==='air'?'الطائرات':'السفن',routeLabel=type==='air'?'الجوية':'البحرية',source=type==='air'?WORLD.airports.map(airportEntity):WORLD.ports.map(portEntity);
+    return runDurableStateCommand(`bulk-shared-departure:${type}`,async({state:draft,routes})=>{
+      const eligible=draft.assets.filter(asset=>asset.type===type&&asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.departureScheduled&&!asset.salePending).sort((a,b)=>assetRangeKm(a)-assetRangeKm(b)||String(a.id).localeCompare(String(b.id)));
+      if(!eligible.length)throw new Error(`لا توجد ${label} متاحة للمغادرة`);
+      if(!source.length)throw new Error(`دليل الوجهات ${routeLabel} فارغ`);
+      const fleet=window.GH_FLEET_CORE,capacity=fleet.routeCapacity(type),nonTypeRoutes=draft.customRoutes.filter(route=>route.type!==type).length,availableRoutes=Math.max(0,window.GH_ROUTE_CORE.LIMITS.routes-nonTypeRoutes),minimumRoutes=Math.ceil(eligible.length/capacity);
+      if(availableRoutes<minimumRoutes)throw new Error(`سعة سجل المسارات لا تكفي لتوزيع أسطول ${label} بأمان؛ المتاح ${availableRoutes} مسار والحد الأدنى المطلوب ${minimumRoutes}`);
+      const targetLoad=fleet.automaticRouteTargetLoad(type,eligible.length,availableRoutes),eligibleIds=new Set(eligible.map(asset=>asset.id)),loads=new Map(),waitingByOrigin=new Map(),assignments=[],previousRouteIds=new Set(eligible.map(asset=>asset.routeId).filter(Boolean)),createdRoutes=[],diversity=newRouteDiversityLedger(),diversityRoutes=new Set();
+      for(const asset of draft.assets)if(asset.type===type&&asset.routeId&&!eligibleIds.has(asset.id))loads.set(asset.routeId,(loads.get(asset.routeId)||0)+1);
+      const registeredRoutes=()=>draft.customRoutes.filter(route=>route.type===type&&routes[route.id]);
       for(const asset of eligible){
-        const origin=routeOriginForAsset(asset,draft,routes);if(!origin)throw new Error(`${asset.name}: لا توجد نقطة انطلاق بحرية صالحة`);
-        const candidates=registeredSeaRoutes().filter(route=>(loads.get(route.id)||0)<targetLoad&&routeFitsAsset(asset,route)&&(sameUnderlyingFacilityFor(draft,origin.id,route.fromFacility)||sameUnderlyingFacilityFor(draft,origin.id,route.toFacility))).sort((a,b)=>(loads.get(a.id)||0)-(loads.get(b.id)||0)||String(a.id).localeCompare(String(b.id)));
+        const origin=routeOriginForAsset(asset,draft,routes);if(!origin)throw new Error(`${asset.name}: لا توجد نقطة انطلاق ${routeLabel} صالحة`);
+        const candidates=registeredRoutes().filter(route=>(loads.get(route.id)||0)<targetLoad&&routeFitsAsset(asset,route)&&(sameUnderlyingFacilityFor(draft,origin.id,route.fromFacility)||sameUnderlyingFacilityFor(draft,origin.id,route.toFacility))).sort((a,b)=>(loads.get(a.id)||0)-(loads.get(b.id)||0)||String(a.id).localeCompare(String(b.id)));
         const existing=candidates[0];
-        if(existing){loads.set(existing.id,(loads.get(existing.id)||0)+1);assignments.push({asset,route:existing});if(!diversityRoutes.has(existing.id)){const fromOrigin=sameUnderlyingFacilityFor(draft,origin.id,existing.fromFacility),point=fromOrigin?existing.route.at(-1):existing.route[0];recordRouteDiversity(diversity,existing.id,point,haversine(origin.coords,point));diversityRoutes.add(existing.id);}continue;}
+        if(existing){
+          loads.set(existing.id,(loads.get(existing.id)||0)+1);assignments.push({asset,route:existing});
+          if(!diversityRoutes.has(existing.id)){const fromOrigin=sameUnderlyingFacilityFor(draft,origin.id,existing.fromFacility),point=fromOrigin?existing.route.at(-1):existing.route[0];recordRouteDiversity(diversity,existing.id,point,haversine(origin.coords,point));diversityRoutes.add(existing.id);}
+          continue;
+        }
         const group=waitingByOrigin.get(origin.id)||{origin,assets:[]};group.assets.push(asset);waitingByOrigin.set(origin.id,group);
       }
       let createdCount=0;
       for(const group of waitingByOrigin.values()){
         group.assets.sort((a,b)=>assetRangeKm(a)-assetRangeKm(b)||String(a.id).localeCompare(String(b.id)));
-        for(let start=0;start<group.assets.length;start+=targetLoad){
-          const members=group.assets.slice(start,start+targetLoad),seedAsset=members[0],choice=chooseDiverseWorldDestination({source,origin:group.origin,asset:seedAsset,target:draft,routes,ledger:diversity,selectionKey:`sea-fleet:${group.origin.id}:${start}`}),entity=choice?.candidate;
-          if(!entity)throw new Error(`${seedAsset.name}: لا توجد وجهة بحرية آمنة ومتنوعة ضمن مدى مجموعة الأسطول`);
-          const destination=ensurePublicRouteEndpoint(entity,draft),route=buildPublicRoute(seedAsset,group.origin,destination,draft);if(!route)throw new Error(`${seedAsset.name}: تعذر بناء هندسة المسار البحري`);
-          window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'routes','create',{route},{actor:'sea-fleet-dispatch'});routes[route.id]=route;loads.set(route.id,members.length);createdRoutes.push(route);recordRouteDiversity(diversity,entity.key,entity.coords,choice.direct);for(const asset of members)assignments.push({asset,route});
-          createdCount++;if(createdCount%4===0)await yieldFleetPlanning();
+        for(let offset=0;offset<group.assets.length;offset+=targetLoad){
+          const members=group.assets.slice(offset,offset+targetLoad),seedAsset=members[0],choice=chooseDiverseWorldDestination({source,origin:group.origin,asset:seedAsset,target:draft,routes,ledger:diversity,selectionKey:`${type}-fleet:${group.origin.id}:${offset}`}),entity=choice?.candidate;
+          if(!entity)throw new Error(`${seedAsset.name}: لا توجد وجهة ${routeLabel} آمنة ومتنوعة ضمن مدى مجموعة الأسطول`);
+          const destination=ensurePublicRouteEndpoint(entity,draft),route=buildPublicRoute(seedAsset,group.origin,destination,draft);if(!route)throw new Error(`${seedAsset.name}: تعذر بناء هندسة المسار ${routeLabel}`);
+          if(members.some(asset=>!routeFitsAsset(asset,route)))throw new Error(`${seedAsset.name}: المسار المختار لا يناسب كل أصول الدفعة`);
+          window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'routes','create',{route},{actor:`${type}-fleet-dispatch`});routes[route.id]=route;loads.set(route.id,members.length);createdRoutes.push(route);recordRouteDiversity(diversity,entity.key,entity.coords,choice.direct);for(const asset of members)assignments.push({asset,route});
+          createdCount++;if(createdCount%3===0)await yieldFleetPlanning();
         }
       }
-      if(assignments.length!==eligible.length)throw new Error('لم يكتمل توزيع جميع السفن على مسارات الأسطول');
+      if(assignments.length!==eligible.length)throw new Error(`لم يكتمل توزيع جميع ${label} على شبكة التشغيل`);
       const batch=assignments.map(({asset,route})=>({id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',route:routeMatchingFacilityFor(draft,routes,route.id,asset.baseFacility)}));
-      const assigned=window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','assign-routes-batch',{assignments:batch},{actor:'sea-fleet-dispatch'}).result;if(!Array.isArray(assigned)||assigned.length!==eligible.length)throw new Error('رفض محرك الأسطول توزيع السفن');
+      const assigned=window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','assign-routes-batch',{assignments:batch},{actor:`${type}-fleet-dispatch`}).result;
+      if(!Array.isArray(assigned)||assigned.length!==eligible.length)throw new Error(`رفض محرك الأسطول توزيع ${label}`);
       for(const asset of assigned){const route=routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility);window.GH_FLEET_CORE.normalizeAsset(asset,{route,catalogItem:catalogItem(asset.type,asset.catalogId)});}
       const departures=assigned.map(asset=>({id:asset.id,route:routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility),load:loadLabel(asset),delaySeconds:fleet.departureDelay(asset)}));
-      const departed=window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','depart-batch',{departures},{actor:'sea-fleet-dispatch'}).result;if(!Array.isArray(departed)||departed.length!==eligible.length)throw new Error('رفض محرك الأسطول جدولة مغادرة السفن');
+      const departed=window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','depart-batch',{departures},{actor:`${type}-fleet-dispatch`}).result;
+      if(!Array.isArray(departed)||departed.length!==eligible.length)throw new Error(`رفض محرك الأسطول جدولة مغادرة ${label}`);
       for(const routeId of previousRouteIds)if(!draft.assets.some(asset=>asset.routeId===routeId)&&(draft.customRoutes||[]).some(route=>route.id===routeId)){window.GH_ROUTE_CORE.execute({state:draft},'delete',{id:routeId});delete routes[routeId];}
-      window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`وُزعت ${eligible.length} سفينة ذريًا على ${new Set(assigned.map(asset=>asset.routeId)).size} مسارًا بحريًا بسعات مجدولة؛ أُنشئ ${createdRoutes.length} مسارًا جديدًا فقط.`,type:'dispatch'});return {departed:eligible.length,routeIds:[...new Set(assigned.map(asset=>asset.routeId))]};
-    },{afterCommit:()=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('routes','sea');}});
+      const routeIds=[...new Set(assigned.map(asset=>asset.routeId))],moving=assigned.filter(asset=>asset.phase==='moving').length,scheduled=assigned.filter(asset=>asset.departureScheduled).length;
+      window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`وُزعت ${eligible.length} ${type==='air'?'طائرة':'سفينة'} ذريًا على ${routeIds.length} مسارًا ${routeLabel} مشتركًا؛ ${moving} غادرت و${scheduled} مجدولة بفتحات زمنية، وأُنشئ ${createdRoutes.length} مسار جديد فقط.`,type:'dispatch'});
+      return {departed:eligible.length,routeIds,moving,scheduled,createdRoutes:createdRoutes.length,targetLoad};
+    },{afterCommit:()=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('routes',type);}});
   }
   async function dispatchInternationalNetwork(type){
     if(!['air','sea'].includes(type)){notice('اختر الشركة الجوية أو البحرية؛ لا يسمح بأمر مختلط بين شركتين.');return false;}
-    if(type==='sea')return dispatchSharedMaritimeNetwork();
-    return runDurableStateCommand(`bulk-distinct-departure:${type}`,({state:draft,routes})=>{
-      const eligible=draft.assets.filter(asset=>asset.type===type&&asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.departureScheduled&&!asset.salePending);if(!eligible.length)throw new Error('لا توجد أصول متاحة للمغادرة');
-      const source=type==='air'?WORLD.airports.map(airportEntity):WORLD.ports.map(portEntity);if(!source.length)throw new Error('دليل الوجهات العالمي فارغ');
-      const created=[],retired=new Set(),diversity=newRouteDiversityLedger();
-      for(const asset of eligible){
-        const origin=routeOriginForAsset(asset,draft,routes);if(!origin)throw new Error(`${asset.name}: لا توجد نقطة انطلاق صالحة`);
-        const choice=chooseDiverseWorldDestination({source,origin,asset,target:draft,routes,ledger:diversity,selectionKey:`bulk-distinct:${type}:${asset.id}`}),entity=choice?.candidate;
-        if(!entity)throw new Error(`${asset.name}: لا توجد وجهة مستقلة وآمنة ومتنوعة ضمن مدى الأصل`);
-        const destination=ensurePublicRouteEndpoint(entity,draft),route=buildPublicRoute(asset,origin,destination,draft);if(!route)throw new Error(`${asset.name}: تعذر بناء هندسة المسار`);
-        const previousRouteId=asset.routeId,replaceable=Boolean(previousRouteId&&(draft.customRoutes||[]).some(row=>row.id===previousRouteId)&&!draft.assets.some(row=>row.id!==asset.id&&row.routeId===previousRouteId));
-        window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'routes',replaceable?'replace':'create',replaceable?{replaceId:previousRouteId,assetId:asset.id,route}:{route},{actor:'bulk-distinct-dispatch'});if(replaceable)delete routes[previousRouteId];routes[route.id]=route;
-        window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','assign-route',{id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',route},{actor:'bulk-distinct-dispatch'});window.GH_FLEET_CORE.normalizeAsset(asset,{route,catalogItem:catalogItem(asset.type,asset.catalogId)});
-        if(asset.staffing?.mode!=='automatic-fixed'||asset.staffing.ready!==true)throw new Error(`${asset.name}: سجل الطاقم الثابت غير مكتمل`);
-        window.GH_DOMAIN_COMMANDS.dispatch({state:draft},'fleet','depart',{id:asset.id,route,load:loadLabel(asset)},{actor:'bulk-distinct-dispatch'});created.push(route);recordRouteDiversity(diversity,entity.key,entity.coords,choice.direct);if(!replaceable&&previousRouteId&&previousRouteId!==route.id)retired.add(previousRouteId);
-      }
-      for(const routeId of retired)if(!draft.assets.some(asset=>asset.routeId===routeId)&&(draft.customRoutes||[]).some(route=>route.id===routeId))window.GH_ROUTE_CORE.execute({state:draft},'delete',{id:routeId});
-      const signatures=new Set(created.map(route=>window.GH_ROUTE_CORE.signature(route)));if(signatures.size!==created.length)throw new Error('اكتُشف تكرار في المسارات قبل الحفظ');
-      window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`مغادرة جماعية ذرّية: غادر ${created.length} أصلًا من ${typeName(type)} على ${created.length} مسارًا مختلفًا بلا تكرار.`,type:'dispatch'});return {departed:created.length,routeIds:created.map(route=>route.id)};
-    },{afterCommit:()=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('routes',type);}});
+    return dispatchSharedInternationalNetwork(type);
   }
   let roadPlanning=null;
   function roadPlanningMarkup(){return roadPlanning?`<p class="road-plan-status" role="status" aria-live="polite">${esc(roadPlanning.text)}</p><button class="secondary-btn cancel-road-plan">إلغاء حساب المسارات</button>`:'';}
@@ -2606,7 +2600,7 @@
     if(['air','sea','road'].includes(routeFilterType)){
       const international=['air','sea'].includes(routeFilterType),manualAssets=selectedAssets.filter(asset=>asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.departureScheduled&&!asset.salePending),bulkReady=manualAssets.length;
       const manualRoute=international&&manualAssets.length?`<div class="route-builder"><label>الأصل لمسار يدوي<select id="manualGlobalAsset">${manualAssets.map(asset=>`<option value="${esc(asset.id)}">${esc(asset.icon||assetIcon(asset.type))} ${esc(asset.name)}</option>`).join('')}</select></label></div><div class="action-row"><button class="secondary-btn open-global-route-selected">إنشاء مسار يدوي للأصل المحدد</button></div>`:'';
-      workspace=`<article class="list-item sector-${routeFilterType}"><div class="list-item-head"><div><h3>تشغيل ${typeName(routeFilterType)}</h3><p>المسارات والأصول والأوامر هنا خاصة بهذا القطاع فقط.</p></div><span class="tag positive">${selectedAssets.length} أصل</span></div><div class="metric-row"><div><span>بلا مسار</span><b>${idle}</b></div><div><span>مكلّفة</span><b>${assigned}</b></div><div><span>متحركة</span><b>${moving}</b></div><div><span>جاهزة</span><b>${ready}</b></div></div><div class="action-row">${international?`<button class="primary-btn dispatch-international-network" data-type="${routeFilterType}" ${internationalReady?'':'disabled'}>${routeFilterType==='sea'?'توزيع وتشغيل الأسطول البحري':'مغادرة جماعية لمسارات مختلفة'} (${internationalReady})</button><button class="secondary-btn depart-all-assets" data-type="${routeFilterType}" ${ready?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button>`:`<button class="primary-btn dispatch-existing-network" data-type="road" ${bulkReady&&!roadPlanning?'':'disabled'}>توزيع وتشغيل أسطول الشاحنات (${bulkReady})</button><button class="secondary-btn depart-all-assets" data-type="road" ${ready&&!roadPlanning?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button><p class="section-mini">تُنشأ مسارات طريق مشتركة ذات سعة محددة وتُوزع الشاحنات عليها بفتحات مغادرة متدرجة. عدد المسارات يبقى محدودًا حتى مع أسطول كبير.</p>${roadPlanningMarkup()}`}</div>${manualRoute}</article><article class="list-item"><div class="asset-filters"><input id="routeSearch" value="${esc(routeQuery)}" placeholder="بحث باسم المسار أو نقطة الانطلاق أو الوجهة"></div><p class="section-mini">${fmtNumber(matchingRoutes.length)} من ${fmtNumber(routes.length)} مسار${matchingRoutes.length>80?' · يعرض أول 80 فقط لحماية الأداء، استخدم البحث للوصول المباشر.':''}</p></article>${idleRows?`<article class="list-item"><h3>أصول تنتظر تعيين مسار</h3>${idleRows}</article>`:''}`;
+      workspace=`<article class="list-item sector-${routeFilterType}"><div class="list-item-head"><div><h3>تشغيل ${typeName(routeFilterType)}</h3><p>المسارات والأصول والأوامر هنا خاصة بهذا القطاع فقط.</p></div><span class="tag positive">${selectedAssets.length} أصل</span></div><div class="metric-row"><div><span>بلا مسار</span><b>${idle}</b></div><div><span>مكلّفة</span><b>${assigned}</b></div><div><span>متحركة</span><b>${moving}</b></div><div><span>جاهزة</span><b>${ready}</b></div></div><div class="action-row">${international?`<button class="primary-btn dispatch-international-network" data-type="${routeFilterType}" ${internationalReady?'':'disabled'}>${routeFilterType==='sea'?'توزيع وتشغيل الأسطول البحري':'توزيع وتشغيل الشبكة الجوية'} (${internationalReady})</button><button class="secondary-btn depart-all-assets" data-type="${routeFilterType}" ${ready?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button>`:`<button class="primary-btn dispatch-existing-network" data-type="road" ${bulkReady&&!roadPlanning?'':'disabled'}>توزيع وتشغيل أسطول الشاحنات (${bulkReady})</button><button class="secondary-btn depart-all-assets" data-type="road" ${ready&&!roadPlanning?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button><p class="section-mini">تُنشأ مسارات طريق مشتركة ذات سعة محددة وتُوزع الشاحنات عليها بفتحات مغادرة متدرجة. عدد المسارات يبقى محدودًا حتى مع أسطول كبير.</p>${roadPlanningMarkup()}`}</div>${routeFilterType==='air'?'<p class="section-mini">تُوزع الطائرات على خطوط جوية مشتركة بسعة محددة وفتحات إقلاع متدرجة؛ لا يُنشأ مسار مستقل لكل طائرة، لحماية الأداء مع الأساطيل الكبيرة.</p>':''}${manualRoute}</article><article class="list-item"><div class="asset-filters"><input id="routeSearch" value="${esc(routeQuery)}" placeholder="بحث باسم المسار أو نقطة الانطلاق أو الوجهة"></div><p class="section-mini">${fmtNumber(matchingRoutes.length)} من ${fmtNumber(routes.length)} مسار${matchingRoutes.length>80?' · يعرض أول 80 فقط لحماية الأداء، استخدم البحث للوصول المباشر.':''}</p></article>${idleRows?`<article class="list-item"><h3>أصول تنتظر تعيين مسار</h3>${idleRows}</article>`:''}`;
       if(routeFilterType==='road'){const options=points.map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('');workspace+=`<article class="list-item"><h3>إنشاء مسار بري يدوي</h3><p>اختياري لرحلة تحددها بنفسك بين مركزين. التشغيل التلقائي أعلاه ينشئ المسارات دون هذه الخطوة.</p>${points.length?`<div class="route-builder"><label>نقطة الانطلاق<select id="roadFrom">${options}</select></label><label>الوجهة<select id="roadTo">${[...points].reverse().map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('')}</select></label></div><div class="action-row">${points.length>=2?'<button class="secondary-btn build-road-route">بين قاعدتين</button>':''}<button class="secondary-btn" data-open="companyFacilities" data-arg="road">إضافة مركز</button></div>`:'<div class="empty">افتح مركزًا لوجستيًا مملوكًا أولًا.</div>'}</article>`;}
       workspace+=`<div class="section-mini">${matchingRoutes.length} مسار ${typeName(routeFilterType)} مطابق</div>${routeCards||'<div class="empty">لا توجد مسارات مطابقة. غيّر البحث أو أنشئ مسارًا جديدًا.</div>'}`;
     }
