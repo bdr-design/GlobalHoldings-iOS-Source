@@ -15,12 +15,13 @@
   // operations share one canonical geometry across a bounded fleet instead of
   // copying a heavy route for every asset. This keeps large fleets below the
   // persisted route/save limits while retaining an explicit capacity contract.
-  const ROUTE_FLEET_CAPACITY=Object.freeze({air:1,sea:24,road:64});
-  const ROUTE_DEPARTURE_INTERVAL_SECONDS=Object.freeze({air:0,sea:60,road:15});
+  const ROUTE_FLEET_CAPACITY=Object.freeze({air:24,sea:24,road:64});
+  const ROUTE_DEPARTURE_INTERVAL_SECONDS=Object.freeze({air:180,sea:60,road:15});
   // Hard capacity protects assignment integrity; automatic dispatch deliberately
   // targets a much lower density so normal fleets spread across the world
   // instead of filling one corridor to its safety ceiling.
   const AUTOMATIC_ROUTE_DENSITY=Object.freeze({
+    air:Object.freeze([{maxFleet:60,target:4},{maxFleet:180,target:8},{maxFleet:360,target:12},{maxFleet:Infinity,target:16}]),
     sea:Object.freeze([{maxFleet:80,target:4},{maxFleet:180,target:6},{maxFleet:Infinity,target:10}]),
     road:Object.freeze([{maxFleet:128,target:8},{maxFleet:512,target:24},{maxFleet:Infinity,target:48}])
   });
@@ -45,7 +46,7 @@
   }
   function automaticRouteTargetLoad(type,fleetCount,maxRoutes=Infinity){
     const hard=routeCapacity(type),count=Math.max(0,Math.floor(Number(fleetCount)||0));
-    if(count<=1||type==='air')return 1;
+    if(count<=1)return 1;
     const tiers=AUTOMATIC_ROUTE_DENSITY[type]||[{maxFleet:Infinity,target:hard}],preferred=Math.min(hard,(tiers.find(row=>count<=row.maxFleet)||tiers.at(-1)).target);
     const minimumRoutes=Math.ceil(count/hard),preferredRoutes=Math.ceil(count/preferred),limit=Number.isFinite(Number(maxRoutes))?Math.max(1,Math.floor(Number(maxRoutes))):preferredRoutes;
     const routeCount=Math.max(minimumRoutes,Math.min(preferredRoutes,Math.max(minimumRoutes,limit)));
@@ -57,14 +58,12 @@
   }
   function routeConflict(state,assetId,routeId,route){
     if(!route?.type||!routeId)return null;
-    if(route.type!=='air'){
-      const users=ensure(state).filter(other=>other.id!==assetId&&other.type===route.type&&other.routeId===routeId);
-      return users.length>=routeCapacity(route)?users[0]:null;
-    }
+    const sameRouteUsers=ensure(state).filter(other=>other.id!==assetId&&other.type===route.type&&other.routeId===routeId);
+    if(sameRouteUsers.length>=routeCapacity(route))return sameRouteUsers[0]||null;
+    if(route.type!=='air')return null;
     const signature=routeSignature(route),routeIndex=new Map((state.customRoutes||[]).filter(Boolean).map(row=>[row.id,row]));
     return ensure(state).find(other=>{
-      if(other.id===assetId||!other.routeId||other.type!==route?.type)return false;
-      if(other.routeId===routeId)return true;
+      if(other.id===assetId||!other.routeId||other.type!=='air'||other.routeId===routeId)return false;
       const registered=routeIndex.get(other.routeId),otherSignature=registered?routeSignature(registered):other.routeSignature;
       if(signature&&otherSignature&&signature===otherSignature)return true;
       return Boolean(registered&&globalThis.GH_ROUTE_CORE?.corridorMetrics?.(registered,route)?.duplicate);
@@ -80,7 +79,7 @@
     if(batchIds.size!==rows.length)throw new Error('route-assignment-batch-duplicate');
     const fixedAssets=assets.filter(asset=>!batchIds.has(asset.id)),prepared=[],slotUsage=new Map();
     for(const other of fixedAssets){
-      if(!other?.routeId||!['sea','road'].includes(other.type))continue;
+      if(!other?.routeId||!['air','sea','road'].includes(other.type))continue;
       let used=slotUsage.get(other.routeId);if(!used){used=new Set();slotUsage.set(other.routeId,used);}
       const preferred=Number.isInteger(other.routeSlot)&&other.routeSlot>=0?other.routeSlot:null;
       if(preferred!=null&&!used.has(preferred))used.add(preferred);else{let slot=0;while(used.has(slot))slot++;used.add(slot);}
@@ -88,16 +87,14 @@
     for(const p of rows){
       const asset=p?.id?assetById.get(p.id):null,route=p?.route;if(!asset||requested.has(asset.id))throw new Error('route-assignment-contract');requested.add(asset.id);
       if(!route||route.id!==p.routeId||route.type!==asset.type||(route.company||route.type)!==asset.type||asset.phase==='moving'||asset.salePending||asset.deliveryStatus==='pending'||(p.phase!=null&&p.phase!=='turnaround')||(p.baseFacility!=null&&p.baseFacility!==asset.baseFacility)||![route.fromFacility,route.toFacility].includes(asset.baseFacility))throw new Error('route-assignment-contract');
-      let slot=0;
       if(asset.type==='air'){
         const shadow={...state,assets:[...fixedAssets,...prepared.map(row=>({...row.asset,routeId:row.input.routeId,routeSignature:routeSignature(row.input.route)}))]};
-        const conflict=routeConflict(shadow,asset.id,p.routeId,route);if(conflict)throw new Error(`asset-route-exclusive:${conflict.id}`);
-      }else{
-        let used=slotUsage.get(p.routeId);if(!used){used=new Set();slotUsage.set(p.routeId,used);}
-        const preferred=asset.routeId===p.routeId&&Number.isInteger(asset.routeSlot)&&asset.routeSlot>=0?asset.routeSlot:null;
-        if(preferred!=null&&!used.has(preferred))slot=preferred;else{while(used.has(slot))slot++;}
-        if(slot>=routeCapacity(route))throw new Error(`asset-route-capacity:${p.routeId}`);used.add(slot);
+        const conflict=routeConflict(shadow,asset.id,p.routeId,route);if(conflict)throw new Error(`asset-route-capacity-or-corridor:${conflict.id}`);
       }
+      let used=slotUsage.get(p.routeId);if(!used){used=new Set();slotUsage.set(p.routeId,used);}
+      let slot=0;const preferred=asset.routeId===p.routeId&&Number.isInteger(asset.routeSlot)&&asset.routeSlot>=0?asset.routeSlot:null;
+      if(preferred!=null&&!used.has(preferred))slot=preferred;else{while(used.has(slot))slot++;}
+      if(slot>=routeCapacity(route))throw new Error(`asset-route-capacity:${p.routeId}`);used.add(slot);
       prepared.push({asset,input:p,slot});
     }
     for(const row of prepared)applyRouteAssignment(row.asset,row.input,row.slot);
