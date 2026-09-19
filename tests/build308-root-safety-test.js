@@ -73,16 +73,19 @@ const asset=(id,type='air',baseFacility='BASE-AIR')=>({id,type,name:id,baseFacil
     const result=S.validate(oversized);assert(!result.ok);assert(result.errors.includes('route-capacity'));
   });
 
-  await test('legacy duplicate corridors finish moving trips without blocking save migration',()=>{
-    const {s}=harness(['save-schema']),S=s.GH_SAVE_SCHEMA,state=minimal(),one=route('LEGACY-1'),two={...route('LEGACY-2'),route:route('LEGACY-1').route},three={...route('LEGACY-3'),route:route('LEGACY-1').route};
+  await test('legacy duplicate air corridors consolidate into one bounded shared route',()=>{
+    const {s}=harness(['save-schema']),S=s.GH_SAVE_SCHEMA,state=minimal(),one=route('LEGACY-1'),two={...one,id:'LEGACY-2',name:'LEGACY-2'},three={...one,id:'LEGACY-3',name:'LEGACY-3'};
     state.customRoutes=[one,two,three];state.routeCache=Object.fromEntries([[one.id,{route:one.route,distanceKm:150}],...Array.from({length:170},(_,index)=>[`CACHE-${index}`,{distanceKm:index}])]);state.assets=[
       {...asset('KEEP','air',one.fromFacility),phase:'moving',routeId:one.id,progress:.4},
-      {...asset('FINISH','air',two.fromFacility),phase:'moving',routeId:two.id,progress:.6},
-      {...asset('FINISH-2','air',two.fromFacility),phase:'moving',routeId:two.id,progress:.2},
-      {...asset('STOP','air',three.fromFacility),phase:'turnaround',routeId:three.id,progress:0}
+      {...asset('KEEP-2','air',one.fromFacility),phase:'turnaround',routeId:one.id,progress:0},
+      {...asset('MIGRATE-MOVING','air',two.fromFacility),phase:'moving',routeId:two.id,progress:.6},
+      {...asset('MIGRATE-READY','air',three.fromFacility),phase:'turnaround',routeId:three.id,progress:0}
     ];
-    const migrated=S.migrateLegacy(state);assert(migrated.changed);const keep=migrated.state.assets.find(row=>row.id==='KEEP'),finishing=migrated.state.assets.filter(row=>row.id.startsWith('FINISH')),stop=migrated.state.assets.find(row=>row.id==='STOP');
-    assert.notStrictEqual(keep.releaseExclusiveRouteOnArrival,true);assert(finishing.every(row=>row.routeId===one.id&&!row.releaseExclusiveRouteOnArrival),'exact duplicate air geometry should migrate onto one canonical shared route');assert.strictEqual(new Set([keep,...finishing].map(row=>row.routeSlot)).size,3,'migrated shared-air users need unique slots');assert.strictEqual(stop.routeId,one.id);assert.strictEqual(stop.phase,'turnaround');assert(!migrated.state.customRoutes.some(row=>row.id===two.id||row.id===three.id));assert.strictEqual(migrated.state.routeCache[one.id].canonicalRouteId,one.id);assert(!migrated.state.routeCache[one.id].route);assert(Object.keys(migrated.state.routeCache).length<=S.STATE_LIMITS.routeCache);assert(S.validate(migrated.state).ok,S.validate(migrated.state).errors.join(','));
+    const migrated=S.migrateLegacy(state);assert(migrated.changed);const users=migrated.state.assets.filter(row=>row.type==='air');
+    assert(users.every(row=>row.routeId===one.id&&!row.releaseExclusiveRouteOnArrival),'duplicate air route IDs with identical endpoints must consolidate to the canonical shared route');
+    assert.strictEqual(new Set(users.map(row=>row.routeSlot)).size,4,'migrated shared-air users need unique route slots');
+    assert(!migrated.state.customRoutes.some(row=>row.id===two.id||row.id===three.id),'duplicate air route records survived migration');
+    assert.strictEqual(migrated.state.routeCache[one.id].canonicalRouteId,one.id);assert(!migrated.state.routeCache[one.id].route);assert(Object.keys(migrated.state.routeCache).length<=S.STATE_LIMITS.routeCache);assert(S.validate(migrated.state).ok,S.validate(migrated.state).errors.join(','));
   });
 
   await test('durable save ACK commits, NACK rolls back, and timeout locks for reconciliation',async()=>{
