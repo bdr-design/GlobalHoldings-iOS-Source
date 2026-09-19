@@ -33,6 +33,14 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     let current=await state(),base=current.globalBases.find(b=>b.company==='air');
     assert(base&&Number(base.deliveryCapacity)===300,'air base must expose the documented 300-aircraft capacity');
 
+    // Regression for the uploaded incident: facility hire must keep function-bearing HR helpers
+    // in command context, never inside the cloneable payload.
+    await page.locator('[data-facility-tab="people"]').click();
+    const hireButton=page.locator('[data-gh-action="facility-hire"]');await hireButton.waitFor({state:'visible'});await hireButton.click();
+    await page.waitForFunction(()=>__GH_STATE__.domainRuntime?.commands?.some(row=>row.domain==='facilities'&&row.name==='hire'&&row.status==='committed'));
+    current=await state();
+    assert(!current.controlPlane?.incidents?.some(row=>row.code==='DOMAIN_COMMAND_FAILED'&&row.domain==='facilities'&&String(row.detail||'').includes('clone')),'facility hire reproduced non-cloneable payload incident');
+
     await control('assetMarket');await page.click('[data-markettype="air"]');
     const card=page.locator('.manual-buy-asset[data-type="air"][data-id="N-A5"]').locator('xpath=ancestor::article[contains(@class,"asset-market-card")]');
     await card.locator('.manual-asset-base').selectOption(base.id);await card.locator('.manual-asset-qty').fill('300');await card.locator('.manual-asset-mode').selectOption('cash');
