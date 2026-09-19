@@ -11,10 +11,10 @@
     drivers:{name:'سائقو الشاحنات',dailyRate:150},
     mech:{name:'فنيو الصيانة',dailyRate:170}
   });
-  // Aircraft keep an exclusive corridor for separation. Maritime and road
-  // operations share one canonical geometry across a bounded fleet instead of
-  // copying a heavy route for every asset. This keeps large fleets below the
-  // persisted route/save limits while retaining an explicit capacity contract.
+  // Every transport mode shares canonical route geometry across a bounded fleet.
+  // Aircraft preserve separation through unique route slots and staggered
+  // departures rather than persisting one heavy route per aircraft. This keeps
+  // large fleets below route/save limits while retaining explicit capacity.
   const ROUTE_FLEET_CAPACITY=Object.freeze({air:24,sea:24,road:64});
   const ROUTE_DEPARTURE_INTERVAL_SECONDS=Object.freeze({air:180,sea:60,road:15});
   // Hard capacity protects assignment integrity; automatic dispatch deliberately
