@@ -270,11 +270,27 @@
   }
   function departBatch(state,rows){
     if(!Array.isArray(rows)||!rows.length)throw new Error('departure-batch-empty');
-    const requested=new Set(),prepared=[];
+    const assets=ensure(state),assetById=new Map(assets.map(asset=>[asset.id,asset])),requested=new Set(),prepared=[],
+      routeIndex=new Map((state.customRoutes||[]).filter(Boolean).map(route=>[route.id,route])),routeOccupancy=new Map(),routeOwner=new Map();
+    for(const asset of assets){
+      if(!asset?.routeId||!['air','sea','road'].includes(asset.type))continue;
+      routeOccupancy.set(asset.routeId,(routeOccupancy.get(asset.routeId)||0)+1);if(!routeOwner.has(asset.routeId))routeOwner.set(asset.routeId,asset.id);
+    }
+    for(const p of rows)if(p?.route?.id&&!routeIndex.has(p.route.id))routeIndex.set(p.route.id,p.route);
+    for(const [routeId,count] of routeOccupancy){
+      const route=routeIndex.get(routeId);if(route&&count>routeCapacity(route))throw new Error(`asset-route-capacity:${routeOwner.get(routeId)||routeId}`);
+    }
+    // Validate duplicate aviation corridors once per occupied route pair rather
+    // than rescanning the entire fleet for every departing aircraft.
+    const occupiedAirRoutes=[...routeOccupancy.keys()].map(id=>routeIndex.get(id)).filter(route=>route?.type==='air'),signatureCache=new Map();
+    const signature=route=>{if(signatureCache.has(route.id))return signatureCache.get(route.id);const value=routeSignature(route);signatureCache.set(route.id,value);return value;};
+    for(let i=0;i<occupiedAirRoutes.length;i++)for(let j=i+1;j<occupiedAirRoutes.length;j++){
+      const a=occupiedAirRoutes[i],b=occupiedAirRoutes[j],sa=signature(a),sb=signature(b);
+      if((sa&&sb&&sa===sb)||globalThis.GH_ROUTE_CORE?.corridorMetrics?.(a,b)?.duplicate)throw new Error(`asset-route-capacity:${routeOwner.get(b.id)||b.id}`);
+    }
     for(const p of rows){
-      const asset=p?.id?find(state,p.id):null,route=p?.route;if(!asset||requested.has(asset.id))throw new Error('departure-batch-contract');requested.add(asset.id);
+      const asset=p?.id?assetById.get(p.id):null,route=p?.route;if(!asset||requested.has(asset.id))throw new Error('departure-batch-contract');requested.add(asset.id);
       if(asset.phase!=='turnaround'||!route||route.id!==asset.routeId||route.type!==asset.type||![route.fromFacility,route.toFacility].includes(asset.baseFacility)||asset.staffing?.ready!==true)throw new Error('route-departure-contract');
-      const conflict=routeConflict(state,asset.id,asset.routeId,route);if(conflict)throw new Error(`asset-route-capacity:${conflict.id}`);
       prepared.push({asset,route,load:p.load,delaySeconds:Math.max(0,Number(p.delaySeconds)||0)});
     }
     for(const row of prepared){
