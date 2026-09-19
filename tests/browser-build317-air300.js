@@ -33,9 +33,13 @@ const {chromium,webkit}=require('playwright'),{serve}=require('./helpers/web-ser
     let current=await state(),base=current.globalBases.find(b=>b.company==='air');
     assert(base&&Number(base.deliveryCapacity)===300,'air base must expose the documented 300-aircraft capacity');
 
-    // Regression for the uploaded incident: facility hire must keep function-bearing HR helpers
-    // in command context, never inside the cloneable payload.
-    await page.locator('[data-facility-tab="people"]').click();
+    // Regression for the uploaded incident: reopen the owned facility through the same
+    // public UI path first, then hire. HR helpers must remain in command context,
+    // never inside the cloneable payload.
+    await close();await page.click('#worldDirectoryBtn');await page.fill('#worldSearch','RUH');await page.waitForTimeout(200);
+    const manageFacility=page.locator(`.world-result[data-company="air"][data-key="${ruh.key}"] [data-open="facilityManage"][data-arg="${base.id}"]`);
+    await manageFacility.waitFor({state:'visible'});await manageFacility.click();
+    const peopleTab=page.locator('[data-facility-tab="people"]');await peopleTab.waitFor({state:'visible'});await peopleTab.click();
     const hireButton=page.locator('[data-gh-action="facility-hire"]');await hireButton.waitFor({state:'visible'});await hireButton.click();
     await page.waitForFunction(()=>__GH_STATE__.domainRuntime?.commands?.some(row=>row.domain==='facilities'&&row.name==='hire'&&row.status==='committed'));
     current=await state();
