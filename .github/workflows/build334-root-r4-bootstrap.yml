@@ -1,0 +1,100 @@
+name: Build334 ROOT_R4 native bootstrap validation - NO IPA
+on:
+  push:
+    branches: [build334-root-r4-bootstrap-validation]
+    paths: ['.github/workflows/build334-root-r4-bootstrap.yml']
+permissions:
+  contents: read
+jobs:
+  validate-native:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Recover pinned native baseline and exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init ref
+          git -C ref remote add origin https://github.com/bdr-design/GlobalHoldings-iOS-Source.git
+          git -C ref fetch --depth=1 origin 5f9d195e4a23ccfa669eeb0e9f7e92acfb3ac01f
+          git -C ref checkout --detach FETCH_HEAD
+          git init control
+          git -C control remote add origin https://github.com/bdr-design/GlobalHoldings-iOS-Source.git
+          git -C control fetch --depth=1 origin "$GITHUB_SHA"
+          git -C control checkout --detach FETCH_HEAD
+          mkdir -p audit/reference/iOS audit/evidence audit/tools
+          cp -R ref/iOS/GlobalHoldings audit/reference/iOS/
+          cp ref/project.yml audit/reference/
+          cp control/audit-tools/*.py audit/tools/
+          cp control/audit-tools/r4-native.diff audit/tools/
+          python3 audit/tools/patch_native.py --reference audit/reference --output audit/n1
+          cp -R audit/n1/source audit/candidate
+          (cd audit/candidate && git apply --check ../tools/r4-native.diff && git apply ../tools/r4-native.diff)
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,hashlib,os
+          p=Path('audit/candidate/iOS/GlobalHoldings/GameViewController.swift');s=p.read_text()
+          s=s.replace('    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {','    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {\n        guard webView === self.webView else { return }\n        // Also cover JavaScript reloads, not only the native loadGame entry point.\n        nativePageEpoch &+= 1\n        nativeBootstrapEpoch &+= 1\n    }\n\n    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {')
+          start=s.index('            case "commitSave":');end=s.index('            case "saveManualSlot":',start);seg=s[start:end]
+          seg=seg.replace('                    // An acknowledgement belongs only to the document that sent it.','                    if case .success(let generation) = result {\n                        GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)\n                    }\n                    // An acknowledgement belongs only to the document that sent it.')
+          seg=seg.replace('                    case .success(let generation):\n                        GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)\n','                    case .success(let generation):\n');s=s[:start]+seg+s[end:];p.write_text(s)
+          expected={'AppDelegate.swift':'ac85c6e05e16ee9e7ac927d2e46bd83c577c7d208bff503709decd1f3dd2421b','GameViewController.swift':'28a7439c461d5e115952117c8ae591960318fcb6e058ef7c4b22a149818f829c','GlobalGameStorage.swift':'facdc70c3086f2bafb486b17a77db3e2472557cda3aef961b07555e4bb0792e5','GlobalSaveVault.swift':'ea85b5d06e0ab7797f9ed0d3a8705a5cf13c30771fb6d56946445004082b4941'}
+          for name,digest in expected.items():
+              actual=hashlib.sha256((p.parent/name).read_bytes()).hexdigest()
+              if actual!=digest:raise SystemExit('Candidate mismatch: '+name+' '+actual)
+          Path('audit/evidence/provenance.json').write_text(json.dumps({'workflow_commit':os.environ['GITHUB_SHA'],'native_reference':'5f9d195e4a23ccfa669eeb0e9f7e92acfb3ac01f','candidate_sha256':expected,'build334_webapp_unchanged_by_this_job':True,'ipa_built':False},indent=2))
+          PY
+          xcodebuild -version > audit/evidence/xcode.txt
+          xcrun swiftc --version > audit/evidence/swift.txt
+      - name: Typecheck all source against iPhoneOS SDK without linking
+        shell: bash
+        run: |
+          set -euo pipefail
+          for kind in n1/source candidate; do
+            LOG=$(echo "$kind" | tr / _)
+            xcrun swiftc -parse audit/$kind/iOS/GlobalHoldings/*.swift 2>&1 | tee "audit/evidence/$LOG-parse.log"
+            xcrun swiftc -typecheck -swift-version 5 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" -target arm64-apple-ios17.0 audit/$kind/iOS/GlobalHoldings/*.swift 2>&1 | tee "audit/evidence/$LOG-typecheck.log"
+          done
+      - name: Run old 36 native regression cases on exact new source
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/audit/candidate"
+          OUT="$GITHUB_WORKSPACE/audit/evidence/native-regressions"
+          python3 audit/tools/prepare_native_tests.py --source "$SRC" --output "$OUT"
+          xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" "$SRC/iOS/GlobalHoldings/GlobalSaveVault.swift" "$SRC/iOS/GlobalHoldings/GlobalGameStorage.swift" "$OUT/main.swift" -o "$RUNNER_TEMP/regressions" 2>&1 | tee "$OUT/compile.log"
+          (cd "$OUT" && GH_NATIVE_AUDIT_EPHEMERAL=1 "$RUNNER_TEMP/regressions") 2>&1 | tee "$OUT/run.log"
+      - name: Run generation ordering and bootstrap comparisons on real files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for kind in n1 candidate; do
+            SRC="$GITHUB_WORKSPACE/audit/candidate"
+            if [[ "$kind" == n1 ]]; then SRC="$GITHUB_WORKSPACE/audit/n1/source"; fi
+            OUT="$GITHUB_WORKSPACE/audit/evidence/$kind-bootstrap"
+            python3 audit/tools/prepare_r4_bootstrap_tests.py --source "$SRC" --output "$OUT"
+            xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" "$SRC/iOS/GlobalHoldings/GlobalSaveVault.swift" "$SRC/iOS/GlobalHoldings/GlobalGameStorage.swift" "$OUT/main.swift" -o "$RUNNER_TEMP/bootstrap-$kind" 2>&1 | tee "$OUT/compile.log"
+            set +e
+            (cd "$OUT" && GH_NATIVE_AUDIT_EPHEMERAL=1 "$RUNNER_TEMP/bootstrap-$kind") 2>&1 | tee "$OUT/run.log"
+            STATUS=${PIPESTATUS[0]}
+            set -e
+            echo "$STATUS" > "$OUT/exit-code.txt"
+            test -f "$OUT/native-bootstrap-tests.json"
+          done
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('audit/evidence/n1-bootstrap/native-bootstrap-tests.json').read_text())
+          b=json.loads(Path('audit/evidence/candidate-bootstrap/native-bootstrap-tests.json').read_text())
+          if a['failed']<1 or b['failed']!=0:raise SystemExit('Regression comparison failed')
+          print('Before',a['passed'],'/',a['total'],'After',b['passed'],'/',b['total'])
+          Path('audit/evidence/status.json').write_text(json.dumps({'typecheck':'passed','native_regressions':'passed','bootstrap_cases':b['total'],'baseline_failed_cases':a['failed'],'iphone_device_test':False,'webkit_install_measured':False,'ipa_built':False},indent=2))
+          PY
+      - name: Preserve exact source and all evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build334-ROOT-R4-native-${{ github.run_id }}
+          path: audit/
+          retention-days: 14
+          if-no-files-found: error
