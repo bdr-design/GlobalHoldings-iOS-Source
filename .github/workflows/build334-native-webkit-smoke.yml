@@ -1,0 +1,47 @@
+name: Build334 native WebKit gate smoke - NO IPA
+on:
+  push:
+    branches: [build334-native-audit-n1-20260921]
+    paths: ['.github/workflows/build334-native-webkit-smoke.yml']
+permissions:
+  contents: read
+jobs:
+  webkit-gate:
+    runs-on: macos-15
+    timeout-minutes: 8
+    steps:
+      - name: Reconstruct same pinned native candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in reference control; do
+            git init "$dir"
+            git -C "$dir" remote add origin https://github.com/bdr-design/GlobalHoldings-iOS-Source.git
+          done
+          git -C reference fetch --depth=1 origin 5f9d195e4a23ccfa669eeb0e9f7e92acfb3ac01f
+          git -C reference checkout --detach FETCH_HEAD
+          git -C control fetch --depth=1 origin "$GITHUB_SHA"
+          git -C control checkout --detach FETCH_HEAD
+          mkdir -p input/iOS audit
+          cp -R reference/iOS/GlobalHoldings input/iOS/
+          cp reference/project.yml input/project.yml
+          python3 control/audit-tools/patch_native.py --reference input --output candidate
+          python3 control/audit-tools/prepare_webkit_smoke.py candidate/source audit
+          cp candidate/NATIVE_N1_MANIFEST.json audit/
+          cp control/audit-tools/prepare_webkit_smoke.py audit/
+          xcodebuild -version > audit/xcode-version.txt
+          sw_vers > audit/macos-version.txt
+      - name: Compile and exercise real WKWebView messages
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" -framework WebKit -framework AppKit audit/main.swift -o "$RUNNER_TEMP/webkit-smoke" 2>&1 | tee audit/compile.log
+          (cd audit && "$RUNNER_TEMP/webkit-smoke") 2>&1 | tee audit/run.log
+      - name: Retain evidence including failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build334-N1-WebKit-gate-${{ github.run_id }}
+          path: audit/
+          retention-days: 14
+          if-no-files-found: error
