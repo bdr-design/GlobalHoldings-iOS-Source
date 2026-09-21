@@ -1,0 +1,75 @@
+name: Build334 N2 recovery audit - NO IPA
+on:
+  push:
+    branches: [build334-native-audit-n1-20260921]
+    paths: ['.github/workflows/build334-native-n2-audit.yml', 'audit-tools/prepare_n2*.py']
+permissions:
+  contents: read
+jobs:
+  native-recovery:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Recover pinned native source and current audit tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in native-reference audit-control; do
+            git init "$dir"
+            git -C "$dir" remote add origin https://github.com/bdr-design/GlobalHoldings-iOS-Source.git
+          done
+          git -C native-reference fetch --depth=1 origin 5f9d195e4a23ccfa669eeb0e9f7e92acfb3ac01f
+          git -C native-reference checkout --detach FETCH_HEAD
+          git -C audit-control fetch --depth=1 origin "$GITHUB_SHA"
+          git -C audit-control checkout --detach FETCH_HEAD
+          mkdir -p audit/reference/iOS audit/evidence audit/tools
+          cp -R native-reference/iOS/GlobalHoldings audit/reference/iOS/
+          cp native-reference/project.yml audit/reference/project.yml
+          cp audit-control/audit-tools/*.py audit/tools/
+          python3 audit/tools/patch_native.py --reference audit/reference --output audit/n1
+          python3 audit/tools/prepare_n2.py --source audit/n1/source --output audit/native-candidate
+          xcodebuild -version > audit/evidence/xcode-version.txt
+          xcrun swiftc --version > audit/evidence/swift-version.txt
+          sw_vers > audit/evidence/macos-version.txt
+          printf '%s\n' "$GITHUB_SHA" > audit/evidence/workflow-commit.txt
+          printf '%s\n' 'Build334 N2 native recovery candidate only; no historical WebApp, no iPhone app, no IPA. macOS WKWebView is not an iPhone device test.' > audit/README.txt
+      - name: Validate full native candidate against iPhoneOS SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun swiftc -parse audit/native-candidate/iOS/GlobalHoldings/*.swift 2>&1 | tee audit/evidence/parse.log
+          xcrun swiftc -typecheck -swift-version 5 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" -target arm64-apple-ios17.0 audit/native-candidate/iOS/GlobalHoldings/*.swift 2>&1 | tee audit/evidence/iphoneos-typecheck.log
+          printf '%s\n' '{"parse":"passed","iphoneos_typecheck":"passed","linked_app":false,"ipa":false}' > audit/evidence/typecheck-status.json
+      - name: Execute complete N1 native storage regression on N2
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/audit/native-candidate"
+          OUT="$GITHUB_WORKSPACE/audit/evidence/n1-regression"
+          python3 audit/tools/prepare_native_tests.py --source "$SRC" --output "$OUT"
+          xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" "$SRC/iOS/GlobalHoldings/GlobalSaveVault.swift" "$SRC/iOS/GlobalHoldings/GlobalGameStorage.swift" "$OUT/main.swift" -o "$RUNNER_TEMP/n1-regression" 2>&1 | tee "$OUT/compile.log"
+          (cd "$OUT" && GH_NATIVE_AUDIT_EPHEMERAL=1 "$RUNNER_TEMP/n1-regression") 2>&1 | tee "$OUT/run.log"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('audit/evidence/n1-regression/native-tests.json').read_text())
+          assert r['failed']==0, r
+          print('N1 regression:',r['passed'],'/',r['total'])
+          PY
+      - name: Compile and run real WKWebView queued-recovery integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/audit/native-candidate"
+          OUT="$GITHUB_WORKSPACE/audit/evidence/n2-navigation"
+          python3 audit/tools/prepare_n2_tests.py "$SRC" "$OUT"
+          xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" -framework AppKit -framework WebKit "$SRC/iOS/GlobalHoldings/GlobalSaveVault.swift" "$SRC/iOS/GlobalHoldings/GlobalGameStorage.swift" "$OUT/main.swift" -o "$RUNNER_TEMP/n2-navigation" 2>&1 | tee "$OUT/compile.log"
+          (cd "$OUT" && GH_NATIVE_AUDIT_EPHEMERAL=1 "$RUNNER_TEMP/n2-navigation") 2>&1 | tee "$OUT/run.log"
+      - name: Preserve candidate and all test evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build334-N2-native-recovery-${{ github.run_id }}
+          path: audit/
+          retention-days: 14
+          if-no-files-found: error
