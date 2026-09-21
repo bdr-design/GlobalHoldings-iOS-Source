@@ -1,0 +1,144 @@
+--- a/iOS/GlobalHoldings/GlobalSaveVault.swift
++++ b/iOS/GlobalHoldings/GlobalSaveVault.swift
+@@ -179,13 +179,24 @@
+         for index in 0...2 { try? fm.removeItem(at: manualSlotBackupURL(index)) }
+     }
+ 
+-    func commitAsync(_ json: String, runtimeVersion: String? = nil, envelope: [String: Any]? = nil, completion: ((Result<Int, Error>) -> Void)? = nil) {
++    func commitAsync(_ json: String, runtimeVersion: String? = nil, envelope: [String: Any]? = nil, bootstrap: ((String) -> Void)? = nil, completion: ((Result<Int, Error>) -> Void)? = nil) {
+         queue.async {
++            var script: String?
+             let result = Result<Int, Error> {
+                 if let envelope { try self.validateBridgeEnvelope(envelope, json: json, action: "commitSave") }
+-                return try self.commitLocked(json, runtimeVersion: runtimeVersion)
++                let verified = try self.commitEnvelopeLocked(json, runtimeVersion: runtimeVersion)
++                // This exact verified generation and the manual slot metadata are
++                // captured on the write queue before another write/reset can run.
++                if bootstrap != nil { script = self.bootstrapJavaScriptLocked(force: false, pause: false, verified: verified) }
++                return verified.generation
++            }
++            if completion != nil || bootstrap != nil {
++                DispatchQueue.main.async {
++                    // The UI installs recovery data before acknowledging the write.
++                    if case .success = result, let script { bootstrap?(script) }
++                    completion?(result)
++                }
+             }
+-            if let completion { DispatchQueue.main.async { completion(result) } }
+         }
+     }
+ 
+@@ -195,6 +206,10 @@
+     }
+ 
+     private func commitLocked(_ json: String, runtimeVersion: String? = nil, allowRegression: Bool = false) throws -> Int {
++        try commitEnvelopeLocked(json, runtimeVersion: runtimeVersion, allowRegression: allowRegression).generation
++    }
++
++    private func commitEnvelopeLocked(_ json: String, runtimeVersion: String? = nil, allowRegression: Bool = false) throws -> Envelope {
+         if !allowRegression && fm.fileExists(atPath: resetCheckpointURL.path) { throw VaultError.message("Reset recovery is pending.") }
+         let validation = try validatePayload(json)
+         try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+@@ -235,7 +250,7 @@
+               (verified.saveRevision ?? 0) == validation.saveRevision else {
+             throw VaultError.message("Native save verification failed after write.")
+         }
+-        return generation
++        return verified
+     }
+ 
+     func currentSave() -> String? { queue.sync { bestEnvelope()?.payload } }
+@@ -465,10 +480,15 @@
+     /// Native commits are durable authority after restart; unacknowledged browser
+     /// revisions cannot promote themselves merely by having a larger clock.
+     func bootstrapJavaScript(force: Bool, pause: Bool = false) -> String {
++        queue.sync { bootstrapJavaScriptLocked(force: force, pause: pause) }
++    }
++
++    private func bootstrapJavaScriptLocked(force: Bool, pause: Bool, verified: Envelope? = nil) -> String {
++        dispatchPrecondition(condition: .onQueue(queue))
+         let nativeBuild = Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0") ?? 0
+         let compatibility = "window.GH_NATIVE_BUILD=\(nativeBuild);"
+         if fm.fileExists(atPath: resetCheckpointURL.path) { return compatibility + "window.GH_NATIVE_RECOVERY_BLOCKED=true;" }
+-        guard let envelope = queue.sync(execute: { bestEnvelope() }), let data = envelope.payload.data(using: .utf8) else { return compatibility + (["A", "B"].contains(where: { fm.fileExists(atPath: url($0).path) }) ? "window.GH_NATIVE_RECOVERY_BLOCKED=true;" : "") }
++        guard let envelope = verified ?? bestEnvelope(), let data = envelope.payload.data(using: .utf8) else { return compatibility + (["A", "B"].contains(where: { fm.fileExists(atPath: url($0).path) }) ? "window.GH_NATIVE_RECOVERY_BLOCKED=true;" : "") }
+         let b64 = data.base64EncodedString()
+         let forceValue = force ? "true" : "false"
+         let pauseValue = pause ? "true" : "false"
+@@ -476,7 +496,7 @@
+         let nativeRevision = envelope.saveRevision ?? 0
+         let nativeReset = String(format: "%.0f", envelope.resetEpoch ?? 0)
+         let nativeGeneration = envelope.generation
+-        let slotMetadata = manualSlotMetadata()
++        let slotMetadata = (0...2).compactMap { readManualSlot($0)?.metadata }
+         let slotJSON = (try? JSONEncoder().encode(slotMetadata)) ?? Data("[]".utf8)
+         let slotB64 = slotJSON.base64EncodedString()
+         return compatibility + """
+--- a/iOS/GlobalHoldings/GameViewController.swift
++++ b/iOS/GlobalHoldings/GameViewController.swift
+@@ -23,6 +23,9 @@
+     private var backgroundSaveTask: UIBackgroundTaskIdentifier = .invalid
+     private var backgroundSaveInFlight = false
+     private var backgroundSaveToken: UInt = 0
++    // UI lifecycle tokens only; never simulation time or persistent revision.
++    private var nativeBootstrapEpoch: UInt = 0
++    private var nativePageEpoch: UInt = 0
+ 
+     override func loadView() {
+         let configuration = WKWebViewConfiguration()
+@@ -391,15 +394,27 @@
+ 
+     private func loadGame(cacheBuster: String = UUID().uuidString) {
+         guard let url = URL(string: "gh://app/index.html?v=\(cacheBuster.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cacheBuster)") else { return }
++        nativePageEpoch &+= 1
++        nativeBootstrapEpoch &+= 1
+         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
+     }
+ 
+     private func refreshNativeBootstrapScript(force: Bool = false, pause: Bool = false) {
++        // A synchronous reset/recovery/slot snapshot supersedes queued snapshots.
++        nativeBootstrapEpoch &+= 1
++        installNativeBootstrapScript(GlobalSaveVault.shared.bootstrapJavaScript(force: force, pause: pause))
++    }
++
++    private func acceptsNativeCallback(pageEpoch: UInt, bootstrapEpoch: UInt? = nil) -> Bool {
++        pageEpoch == nativePageEpoch && (bootstrapEpoch == nil || bootstrapEpoch == nativeBootstrapEpoch)
++    }
++
++    private func installNativeBootstrapScript(_ script: String) {
++        dispatchPrecondition(condition: .onQueue(.main))
+         webView.configuration.userContentController.removeAllUserScripts()
+-        let bootstrap = GlobalSaveVault.shared.bootstrapJavaScript(force: force, pause: pause)
+-        if !bootstrap.isEmpty {
++        if !script.isEmpty {
+             webView.configuration.userContentController.addUserScript(
+-                WKUserScript(source: bootstrap, injectionTime: .atDocumentStart, forMainFrameOnly: true)
++                WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+             )
+         }
+     }
+@@ -442,15 +457,20 @@
+                     reportSaveAck(payload: payload, success: false, generation: nil, message: "Invalid save envelope.")
+                     return
+                 }
+-                GlobalSaveVault.shared.commitAsync(json, runtimeVersion: GlobalGameStorage.shared.currentVersion, envelope: payload) { [weak self] result in
++                let bootstrapEpoch = nativeBootstrapEpoch, pageEpoch = nativePageEpoch
++                GlobalSaveVault.shared.commitAsync(json, runtimeVersion: GlobalGameStorage.shared.currentVersion, envelope: payload, bootstrap: { [weak self] script in
++                    guard let self, self.acceptsNativeCallback(pageEpoch: pageEpoch, bootstrapEpoch: bootstrapEpoch) else { return }
++                    self.installNativeBootstrapScript(script)
++                }) { [weak self] result in
++                    // An acknowledgement belongs only to the document that sent it.
++                    guard let self, self.acceptsNativeCallback(pageEpoch: pageEpoch) else { return }
+                     switch result {
+                     case .success(let generation):
+                         GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+-                        self?.refreshNativeBootstrapScript()
+-                        self?.reportSaveAck(payload: payload, success: true, generation: generation, message: nil)
++                        self.reportSaveAck(payload: payload, success: true, generation: generation, message: nil)
+                     case .failure(let error):
+                         print("GlobalSaveVault commit failed: \(error.localizedDescription)")
+-                        self?.reportSaveAck(payload: payload, success: false, generation: nil, message: error.localizedDescription)
++                        self.reportSaveAck(payload: payload, success: false, generation: nil, message: error.localizedDescription)
+                     }
+                 }
+             case "saveManualSlot":
