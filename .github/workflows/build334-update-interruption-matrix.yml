@@ -1,0 +1,166 @@
+name: Build334 signed update interruption matrix
+on:
+  push:
+    branches: [build334-r4-source-ipa-20260922]
+    paths:
+      - '.github/workflows/build334-update-interruption-matrix.yml'
+      - 'audit-tools/prepare_update_interruption_matrix.py.gz.b64'
+      - 'audit-tools/r4-native-change.gz.b64'
+      - 'audit-tools/r4-bundled-copy-alias-fix.patch'
+permissions:
+  contents: read
+jobs:
+  update-matrix:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout audit branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Reconstruct exact production native source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init native-reference
+          git -C native-reference remote add origin https://github.com/bdr-design/GlobalHoldings-iOS-Source.git
+          git -C native-reference fetch --depth=1 origin 5f9d195e4a23ccfa669eeb0e9f7e92acfb3ac01f
+          git -C native-reference checkout --detach FETCH_HEAD
+          mkdir -p audit/reference/iOS audit/evidence audit/tools
+          cp -R native-reference/iOS/GlobalHoldings audit/reference/iOS/
+          cp native-reference/project.yml audit/reference/project.yml
+          cp audit-tools/patch_native.py audit/tools/
+          python3 audit/tools/patch_native.py --reference audit/reference --output audit/n1
+          cp -R audit/n1/source audit/production
+          python3 - <<'PY'
+          import base64,gzip,hashlib,subprocess
+          from pathlib import Path
+          root=Path('audit/production')
+          diff=gzip.decompress(base64.b64decode(Path('audit-tools/r4-native-change.gz.b64').read_text()))
+          assert hashlib.sha256(diff).hexdigest()=='2ec982d7bead499cfac59407f530dbce0fb9fe0d2872eeaea6b2c5a2ee23de25'
+          p=Path('audit/evidence/native-source-changes.diff');p.write_bytes(diff)
+          subprocess.run(['patch','-p1','-i',str(p.resolve())],cwd=root,check=True)
+          subprocess.run(['patch','-p1','-i',str(Path('audit-tools/r4-bundled-copy-alias-fix.patch').resolve())],cwd=root,check=True)
+          expected={
+            'GlobalGameStorage.swift':'cee936612b3017c810e5c904b617d96091046077400c2f9e187b7a020b81a44a',
+            'GlobalSaveVault.swift':'71258a4fb4482d0a77e89bd532647ab6010b6b22f6def25f36bf79b431989b7b',
+            'GameViewController.swift':'329103397d05e60156fc33366159e475b0e63b2871dd08085c6e9d6a4b284643'
+          }
+          for name,want in expected.items():
+              got=hashlib.sha256((root/'iOS/GlobalHoldings'/name).read_bytes()).hexdigest()
+              assert got==want,(name,got,want)
+          Path('audit/evidence/production-native-sha256.txt').write_text('\n'.join(f'{v}  iOS/GlobalHoldings/{k}' for k,v in expected.items())+'\n')
+          PY
+
+      - name: Generate ephemeral Ed25519 test key without touching production source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > audit/tools/keygen.swift <<'SWIFT'
+          import Foundation
+          import CryptoKit
+          let key=Curve25519.Signing.PrivateKey()
+          print(key.rawRepresentation.base64EncodedString())
+          print(key.publicKey.rawRepresentation.base64EncodedString())
+          SWIFT
+          xcrun swift audit/tools/keygen.swift > audit/evidence/ephemeral-keypair.txt
+          PRIVATE_KEY="$(sed -n '1p' audit/evidence/ephemeral-keypair.txt)"
+          PUBLIC_KEY="$(sed -n '2p' audit/evidence/ephemeral-keypair.txt)"
+          echo "GH_TEST_UPDATE_PRIVATE_KEY_B64=$PRIVATE_KEY" >> "$GITHUB_ENV"
+          cp -R audit/production audit/test-source
+          PUBLIC_KEY="$PUBLIC_KEY" python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          production=Path('audit/production/iOS/GlobalHoldings/GlobalGameStorage.swift')
+          test=Path('audit/test-source/iOS/GlobalHoldings/GlobalGameStorage.swift')
+          before=production.read_text()
+          old='evYy4hozGTbgYxWOYn+WKGc9rgK8iPSxnvsxwkhRVLo='
+          new=os.environ['PUBLIC_KEY']
+          assert before.count(old)==1
+          test.write_text(before.replace(old,new))
+          after=production.read_text()
+          assert after==before
+          evidence={
+            'production_sha256':hashlib.sha256(production.read_bytes()).hexdigest(),
+            'test_source_sha256':hashlib.sha256(test.read_bytes()).hexdigest(),
+            'production_key_unchanged':old in after,
+            'test_key_is_ephemeral':new in test.read_text(),
+            'production_source_modified':False
+          }
+          Path('audit/evidence/test-key-substitution.json').write_text(json.dumps(evidence,indent=2,sort_keys=True))
+          PY
+          # Do not preserve private key in the artifact.
+          rm audit/evidence/ephemeral-keypair.txt
+
+      - name: Prepare real GlobalGameStorage interruption matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,gzip
+          from pathlib import Path
+          raw=base64.b64decode(Path('audit-tools/prepare_update_interruption_matrix.py.gz.b64').read_text())
+          Path('audit/tools/prepare_update_interruption_matrix.py').write_bytes(gzip.decompress(raw))
+          PY
+          OUT="$GITHUB_WORKSPACE/audit/evidence/update-matrix"
+          python3 audit/tools/prepare_update_interruption_matrix.py "$OUT"
+          xcrun swiftc -parse audit/test-source/iOS/GlobalHoldings/*.swift "$OUT/main.swift"
+
+      - name: Compile and run signed update interruption matrix with real file I/O
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/audit/evidence/update-matrix"
+          APP="$RUNNER_TEMP/GlobalHoldingsUpdateMatrix.app"
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          export APP
+          python3 - <<'PY'
+          import os,plistlib
+          from pathlib import Path
+          info={
+            'CFBundleIdentifier':'com.example.globalholdings.updatematrix',
+            'CFBundleExecutable':'UpdateMatrix',
+            'CFBundlePackageType':'APPL',
+            'CFBundleShortVersionString':'3.0.0',
+            'CFBundleVersion':'334',
+            'GHSourceSnapshotSHA256':'026658c9fc651ef72bd20ca611f59e819ad0998d54d6ff8c25b408df6a1d4d13'
+          }
+          Path(os.environ['APP'],'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+          PY
+          xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)"             audit/test-source/iOS/GlobalHoldings/GlobalSaveVault.swift             audit/test-source/iOS/GlobalHoldings/GlobalGameStorage.swift             "$OUT/main.swift"             -o "$APP/Contents/MacOS/UpdateMatrix" 2>&1 | tee "$OUT/compile.log"
+          (
+            cd "$OUT"
+            GH_NATIVE_AUDIT_EPHEMERAL=1             GH_TEST_UPDATE_PRIVATE_KEY_B64="$GH_TEST_UPDATE_PRIVATE_KEY_B64"             "$APP/Contents/MacOS/UpdateMatrix"
+          ) 2>&1 | tee "$OUT/run.log"
+
+      - name: Verify production native source remained byte-identical
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          expected={
+            'GlobalGameStorage.swift':'cee936612b3017c810e5c904b617d96091046077400c2f9e187b7a020b81a44a',
+            'GlobalSaveVault.swift':'71258a4fb4482d0a77e89bd532647ab6010b6b22f6def25f36bf79b431989b7b'
+          }
+          results={}
+          for name,want in expected.items():
+              p=Path('audit/production/iOS/GlobalHoldings')/name
+              got=hashlib.sha256(p.read_bytes()).hexdigest()
+              assert got==want,(name,got,want)
+              results[name]={'sha256':got,'unchanged':True}
+          matrix=json.loads(Path('audit/evidence/update-matrix/update-interruption-matrix.json').read_text())
+          assert matrix['failed']==0 and matrix['passed']==matrix['total']
+          results['matrix']={'passed':matrix['passed'],'total':matrix['total']}
+          Path('audit/evidence/final-update-matrix-verification.json').write_text(json.dumps(results,indent=2,sort_keys=True))
+          PY
+
+      - name: Publish interruption-matrix evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Build334-update-interruption-matrix-${{ github.run_id }}
+          path: audit/evidence
+          if-no-files-found: error
+          retention-days: 14
