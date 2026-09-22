@@ -2,7 +2,7 @@ name: Build334 R4 source verification and fresh native build
 on:
   push:
     branches: [build334-r4-source-ipa-20260922]
-    paths: ['.github/workflows/build334-r4-native-build.yml', 'audit-tools/r4-native-change.gz.b64', 'audit-tools/prepare_r4_bundle_tests.py']
+    paths: ['.github/workflows/build334-r4-native-build.yml', 'audit-tools/r4-native-change.gz.b64', 'audit-tools/r4-bundled-copy-alias-fix.patch', 'audit-tools/prepare_r4_bundle_tests.py']
 permissions:
   contents: read
 jobs:
@@ -40,6 +40,15 @@ jobs:
           subprocess.run(['patch','-p1','-i',str(Path('audit/evidence/native-source-changes.diff').resolve())],cwd=root,check=True)
           expected={'AppDelegate.swift':'ac85c6e05e16ee9e7ac927d2e46bd83c577c7d208bff503709decd1f3dd2421b','GlobalGameStorage.swift':'31ca90eeb448810ea49b8c6e0cfe14dd3f4615ff0dce1edff7616bac9ce9f4ea','GlobalSaveVault.swift':'71258a4fb4482d0a77e89bd532647ab6010b6b22f6def25f36bf79b431989b7b','GameViewController.swift':'329103397d05e60156fc33366159e475b0e63b2871dd08085c6e9d6a4b284643'}
           for n,h in expected.items(): assert hashlib.sha256((root/'iOS/GlobalHoldings'/n).read_bytes()).hexdigest()==h,n
+          alias_fix=(Path('audit-control/audit-tools/r4-bundled-copy-alias-fix.patch')).resolve()
+          subprocess.run(['patch','-p1','-i',str(alias_fix)],cwd=root,check=True)
+          fixed_hash=hashlib.sha256((root/'iOS/GlobalHoldings/GlobalGameStorage.swift').read_bytes()).hexdigest()
+          assert fixed_hash=='cee936612b3017c810e5c904b617d96091046077400c2f9e187b7a020b81a44a',fixed_hash
+          fixed_text=(root/'iOS/GlobalHoldings/GlobalGameStorage.swift').read_text()
+          block=fixed_text[fixed_text.index('    private func validateBundledCopy'):fixed_text.index('    private func installBundledBaseline')]
+          assert 'safeRelativePath(of: file, inside: root)' in block
+          assert 'dropFirst(root.path.count + 1)' not in block
+          expected['GlobalGameStorage.swift']=fixed_hash
           webhash='8d01dac37feda0dca39ca72e88f0bc32043decf578e0e06208434eae619e4992'
           project=root/'project.yml';text=project.read_text().replace('CURRENT_PROJECT_VERSION: "315"','CURRENT_PROJECT_VERSION: "334"').replace('CFBundleVersion: "315"','CFBundleVersion: "334"\n        GHSourceSnapshotSHA256: "'+webhash+'"');project.write_text(text)
           (root/'WebApp').mkdir()
