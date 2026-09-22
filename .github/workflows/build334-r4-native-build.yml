@@ -40,7 +40,7 @@ jobs:
           subprocess.run(['patch','-p1','-i',str(Path('audit/evidence/native-source-changes.diff').resolve())],cwd=root,check=True)
           expected={'AppDelegate.swift':'ac85c6e05e16ee9e7ac927d2e46bd83c577c7d208bff503709decd1f3dd2421b','GlobalGameStorage.swift':'31ca90eeb448810ea49b8c6e0cfe14dd3f4615ff0dce1edff7616bac9ce9f4ea','GlobalSaveVault.swift':'71258a4fb4482d0a77e89bd532647ab6010b6b22f6def25f36bf79b431989b7b','GameViewController.swift':'329103397d05e60156fc33366159e475b0e63b2871dd08085c6e9d6a4b284643'}
           for n,h in expected.items(): assert hashlib.sha256((root/'iOS/GlobalHoldings'/n).read_bytes()).hexdigest()==h,n
-          webhash='ae7d120bc99d0b55940b246ab3f63aa07800a102b0e644309ee6dcc2d19e3256'
+          webhash='8d01dac37feda0dca39ca72e88f0bc32043decf578e0e06208434eae619e4992'
           project=root/'project.yml';text=project.read_text().replace('CURRENT_PROJECT_VERSION: "315"','CURRENT_PROJECT_VERSION: "334"').replace('CFBundleVersion: "315"','CFBundleVersion: "334"\n        GHSourceSnapshotSHA256: "'+webhash+'"');project.write_text(text)
           (root/'WebApp').mkdir()
           # This is only an intermediate compiler product. The final IPA is
@@ -124,7 +124,7 @@ jobs:
           import hashlib,json,os,plistlib
           from pathlib import Path
           app=Path(os.environ['APP']);p=plistlib.loads((app/'Info.plist').read_bytes());assert p['CFBundleVersion']=='334' and p['CFBundleShortVersionString']=='3.0.0';assert p['UIDeviceFamily']==[1];assert (app/'Assets.car').stat().st_size>0
-          assert p['GHSourceSnapshotSHA256']=='ae7d120bc99d0b55940b246ab3f63aa07800a102b0e644309ee6dcc2d19e3256'
+          assert p['GHSourceSnapshotSHA256']=='8d01dac37feda0dca39ca72e88f0bc32043decf578e0e06208434eae619e4992'
           records={x.relative_to(app).as_posix():hashlib.sha256(x.read_bytes()).hexdigest() for x in app.rglob('*') if x.is_file()}
           Path('../evidence/native-product-hashes.json').write_text(json.dumps(records,indent=2))
           PY
