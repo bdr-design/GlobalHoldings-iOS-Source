@@ -49,7 +49,7 @@ jobs:
           assert 'safeRelativePath(of: file, inside: root)' in block
           assert 'dropFirst(root.path.count + 1)' not in block
           expected['GlobalGameStorage.swift']=fixed_hash
-          webhash='8d01dac37feda0dca39ca72e88f0bc32043decf578e0e06208434eae619e4992'
+          webhash='026658c9fc651ef72bd20ca611f59e819ad0998d54d6ff8c25b408df6a1d4d13'
           project=root/'project.yml';text=project.read_text().replace('CURRENT_PROJECT_VERSION: "315"','CURRENT_PROJECT_VERSION: "334"').replace('CFBundleVersion: "315"','CFBundleVersion: "334"\n        GHSourceSnapshotSHA256: "'+webhash+'"');project.write_text(text)
           (root/'WebApp').mkdir()
           # This is only an intermediate compiler product. The final IPA is
@@ -133,7 +133,7 @@ jobs:
           import hashlib,json,os,plistlib
           from pathlib import Path
           app=Path(os.environ['APP']);p=plistlib.loads((app/'Info.plist').read_bytes());assert p['CFBundleVersion']=='334' and p['CFBundleShortVersionString']=='3.0.0';assert p['UIDeviceFamily']==[1];assert (app/'Assets.car').stat().st_size>0
-          assert p['GHSourceSnapshotSHA256']=='8d01dac37feda0dca39ca72e88f0bc32043decf578e0e06208434eae619e4992'
+          assert p['GHSourceSnapshotSHA256']=='026658c9fc651ef72bd20ca611f59e819ad0998d54d6ff8c25b408df6a1d4d13'
           records={x.relative_to(app).as_posix():hashlib.sha256(x.read_bytes()).hexdigest() for x in app.rglob('*') if x.is_file()}
           Path('../evidence/native-product-hashes.json').write_text(json.dumps(records,indent=2))
           PY
