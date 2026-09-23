@@ -1,0 +1,66 @@
+{
+  "schema": "global-holdings-build339-phase0-provenance-v1",
+  "recorded_at": "2026-09-24",
+  "version": "3.0.0",
+  "build": 339,
+  "save_schema": "2.0.0",
+  "phase": "Phase 0 — clean architecture bootstrap and transient instrumentation",
+  "source_of_truth": {
+    "type": "full-source-archive",
+    "archive": "GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip",
+    "library_path": "/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip",
+    "library_file_id": "libfile_8a29d23930cc8191877904f40fd325cc",
+    "source_zip_sha256": "0528355bb0ad1daca83ea09c09285a61a8d589c3981a113f9ae5000c263b1de9",
+    "source_zip_bytes": 132212366,
+    "runtime_source_tree_sha256": "8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a",
+    "webapp_tree_sha256": "06234729bd9a6395f23fc46c958b4ee8f7d5c9e99c66c93f5e1b1aea78ce1652",
+    "runtime_files": 480,
+    "old_ipa_used": false
+  },
+  "bootstrap_parent": {
+    "build": 338,
+    "runtime_source_tree_sha256": "387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b",
+    "source_zip_sha256": "0a5be18327001bb0ceaf4feec99946f36b8eb0290d40523ddfa3265ab5285335",
+    "role": "frozen fallback only"
+  },
+  "phase0_scope": [
+    "Build/package/native/WebApp identity aligned to 339",
+    "transaction post-commit per-task transient timing",
+    "control-plane baseline/final integrity transient timing",
+    "save-schema authorization/document-proof/company-platform sub-owner transient timing",
+    "diagnostic export carries transient transaction/control/save-schema/render telemetry",
+    "map/render frame, marker target update, marker animation and structural render timing samples",
+    "Build339 bootstrap regression contract",
+    "no intentional game-state semantic change"
+  ],
+  "local_regression_evidence": {
+    "source_verifier": "PASS",
+    "source_layout": "10/10 PASS",
+    "build339_bootstrap": "12/12 PASS",
+    "simulation_time_contract": "PASS",
+    "air_600_calendar_regression": "PASS",
+    "asset_route_hr_contract": "PASS",
+    "finance_settlement_contract": "PASS",
+    "finance_company_security": "8/8 PASS",
+    "durable_authorization": "5/5 PASS",
+    "document_proof_v3_security": "PASS",
+    "durable_postcommit": "6/6 PASS",
+    "hour83_calendar_proof_regression": "PASS",
+    "core_regressions": "PASS",
+    "fleet_regressions": "PASS",
+    "persistence_regressions": "PASS",
+    "build338_regression_contract": "PASS",
+    "local_node_version": "v22.16.0",
+    "note": "Node 24 / ESLint / full CI is still pending and local Node 22 evidence is not a release gate."
+  },
+  "release_state": {
+    "production_approved": false,
+    "device_tested": false,
+    "pending": [
+      "Node 24 / ESLint / full source acceptance CI",
+      "Fresh iPhoneOS/WKWebView/native gates",
+      "Physical iPhone Build339 diagnostic",
+      "Architecture phases beyond Phase0"
+    ]
+  }
+}
