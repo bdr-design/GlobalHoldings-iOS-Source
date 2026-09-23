@@ -138,52 +138,36 @@ Build 338-A implemented scope:
 
 ## 3. Latest device diagnostic
 
-Latest device diagnostic after Build 337 testing:
-`GlobalHoldings_diagnostic_v3.0.0_1790187863706.ghdiagnostic`
+Latest device diagnostic after Build 338 iPhone testing:
+`GlobalHoldings_diagnostic_v3.0.0_1790198108064.ghdiagnostic`
 
-- Diagnostic SHA-256: **c67b5d04877f97aa64a48517c1e3530007f38deb6620d87883f1984a9cee031f**
-- Generated at: **2026-09-23T18:24:22.659Z**
-- Diagnostic metadata build: **337**
+- Diagnostic SHA-256: **709e39982e589364e5a75fe79df397b49e028a3fd633101f0347b288c125a43e**
+- Generated at: **2026-09-23T21:15:06.801Z**
+- Build: **338**
 - Save Schema: **2.0.0**
-- simSeconds at export: **2,686,800**
+- simSeconds: **2,836,800**
+- stateRevision: **788**
+- saveRevision: **119**
 
-This is the **primary current device evidence** for Build 338. Older Build 336 diagnostics remain valid for longitudinal comparison/trend analysis and must not be discarded as evidence.
+This supersedes the Build 337 diagnostic as the primary current device evidence, while Build 337 remains the comparison baseline.
 
-Key observed findings:
-- Root persistent state approximately 36,192,808 bytes.
-- domainRuntime approximately 14,968,632 bytes.
-- domainRuntime.idempotency approximately 14,899,945 bytes.
-- mobility approximately 9,077,865 bytes.
-- mobility.tripArchive approximately 7,539,344 bytes.
-- assets approximately 3,907,407 bytes.
-- documentProofs approximately 3,026,690 bytes.
-- The four largest measured fleet idempotency entries total **14,134,106 bytes**:
-  - combined raw `fingerprint` bytes: **8,646,598**
-  - combined `result` bytes: **5,487,308**
-  - families: `fleet/depart-batch` and `fleet/assign-routes-batch`
-- Chunk execution remained comparatively cheap: device health reported `avgChunkMs=0.23333333333333334`, `maxChunkMs=8`.
-- Finish remained expensive: `maxFinishMs=546`; `hardTasks=737`; governor at export was `ORANGE`.
-- Measured full-snapshot hourly sample:
-  - label: `simulation:2677800->2678400`
-  - `fullSnapshot=true`, `scopeSize=null`
-  - `snapshotMs=118`, `validateMs=4`, `applyMs=399`, `postCommitCriticalMs=1`, `totalMs=522`
-- Measured scoped sample near export:
-  - label: `simulation:2686200->2686800`
-  - `fullSnapshot=false`, `scopeSize=29`
-  - `snapshotMs=77`, `validateMs=4`, `applyMs=4`, `totalMs=85`
-- Last successful measured ordinary save before hard-limit failures:
-  - `saveRevision=55`, `utf8Bytes=31,268,953`
-  - `schemaMs=74`, `stringifyMs=65`, `totalSyncMs=165`
-  - browser cache reason: `browser-cache-size-bypass`
-- Last successful native ACK:
-  - `saveRevision=55`, `generation=54`
-  - `bridgeDispatchMs=35`, `nativeAckLatencyMs=6068`
-  - `nativeVaultCommitMs=5949.962083308492`
-- Subsequent `saveRevision=56` attempts repeatedly failed with `native-save-size-hard-limit`.
-- Latest failed save sample recorded `schemaMs=298`, `stringifyMs=66`, `totalSyncMs=394`.
-- Integrity at export: `proofForensics.ok=true`, `danglingReferences=[]`, `documentFailures=[]`, `recordFailures=[]`.
+Key measured results:
+- Persistent save progressed beyond the old failure point and remained active through `saveRevision=119`.
+- Build 337 `native-save-size-hard-limit` failure mode is no longer the dominant blocker in this run.
+- `domainRuntime.idempotency` dropped dramatically versus Build 337, confirming the Build 338-A compaction/migration direction.
+- The remaining lag is now dominated by the hourly finish/post-commit path rather than ordinary chunk execution.
+- A representative heavy hourly sample shows low `applyMs` but very high `postCommitCriticalMs`, making post-commit integrity work the next primary performance owner.
+- `maxFinishMs` is still high enough to cause visible stutter/frame drops under load.
+- `mobility.tripArchive` remains a major persistent-state owner and is still pending audit/compaction.
+- Internal/native saving works, but user-facing export/import for later restoration is reported as not working and must be traced end-to-end.
+- User reports large route overlap: when launching/assigning about 900 assets, roughly 100 can stack on the same visible route/geometry. This must be fixed at routing/assignment ownership, not by cosmetic marker offsets alone.
+- Screenshot evidence also shows severe visual concentration/stacking on the map during high-load operation.
 
-The raw diagnostic is evidence. Do not replace exact profiler data with this rounded summary for destructive decisions.
+Current user-visible priorities:
+1. Major lag/frame-drop reduction.
+2. Reliable save export + later import/restore.
+3. Route diversity / anti-overlap for large fleets.
+4. Preserve the already-recovered payable cheque/transfer and durable save behavior.
 
 ## 4. Engineering method — mandatory
 
@@ -289,23 +273,32 @@ If deletion/compaction is proven safe:
 
 ## 8. Build 338 decision status
 
-**Build 338-A is APPROVED, IMPLEMENTED, and CI-VALIDATED. Device validation remains pending.**
+**Build 338-A is implemented, CI-validated, and now device-tested.**
 
-Approved/implemented scope:
-- idempotency V2 hash fingerprint migration;
-- compact family-specific receipts for the proven heavy fleet batch results;
-- payable cheque/transfer durable-save recovery path;
-- hourly integrity scan de-duplication that preserves transaction rollback/integrity guarantees.
+Confirmed from the iPhone retest:
+- durable/native saving progresses beyond the Build 337 hard-limit failure point;
+- idempotency size reduction is effective;
+- cheque/transfer rollback caused by the old hard-limit is no longer the primary blocker;
+- the dominant performance problem remains in the hourly finish/post-commit path.
 
-Still pending and NOT approved for destructive implementation until new Build 338 iPhone evidence is reviewed:
-- mobility.tripArchive retention/compaction;
-- fullSnapshot/scoped transaction redesign;
-- deeper applyMs optimization;
-- documentProofs signedContent changes;
-- procurement delivery archival;
-- asset staffing/lastTrip compaction.
+Newly elevated issues:
+- user-facing save export/import restore path does not work;
+- severe route/geometry overlap for large fleet batch assignment;
+- visible map/frame-rate pressure with ~2,000 assets and many simultaneous moving entities.
 
-Do not turn previous target estimates (MB, ms, FPS, retention counts) into requirements without new device evidence.
+Approved next investigation/implementation sequence:
+1. **338-E1:** root lag/frame pipeline — postCommitCritical / integrity / snapshot / rendering attribution.
+2. **338-E2:** native-backed save export/import restore path.
+3. **338-E3:** route diversity and anti-overlap at routing ownership.
+4. **338-E4:** map renderer density/culling/Canvas strategy if profiling confirms DOM/Leaflet marker cost.
+5. **338-E5:** mobility.tripArchive compaction only after its readers/references are audited.
+
+Still forbidden without reference/contract audit:
+- destructive proof stripping;
+- arbitrary procurement retention windows;
+- arbitrary route-history deletion;
+- disabling rollback/integrity to gain speed;
+- cosmetic-only route offsets as a substitute for routing correctness.
 
 ## 9. Build 338 priorities
 
@@ -401,33 +394,32 @@ When a new conversation receives “كمل Global Holdings” or equivalent:
 
 ## 14. NEXT ACTION — Build 338
 
-1. Install/sign the CI-produced **GlobalHoldings_v3_0_0_build338_unsigned.ipa** on the physical iPhone.
-2. Load the same heavy save/state used for Build 337 testing; do not start from a fresh/light game for the primary comparison.
-3. Verify the payable finance workflow manually:
-   - issue a payable cheque;
-   - issue a payable bank transfer;
-   - confirm current-account deduction / payable settlement / document creation;
-   - close/reopen the app and confirm persistence.
-4. Run the same high-load simulation/date-advance/speed scenario long enough to cross multiple hourly boundaries.
-5. Export a new Build 338 `.ghdiagnostic`.
-6. Compare against Build 337 evidence:
-   - `rootBytes` / `utf8Bytes`;
-   - idempotency bytes;
-   - SAVE_OK revision progression;
-   - absence/presence of `native-save-size-hard-limit`;
-   - `nativeVaultCommitMs` / ACK latency;
-   - `maxFinishMs` and fullSnapshot/scoped samples;
-   - `applyMs` at hourly boundaries;
-   - proofForensics / dangling references / rollback events.
-7. Only after that diagnostic decide whether 338-C (mobility.tripArchive) or 338-D (hourly apply/snapshot) is the next root fix.
-8. Production approval remains CLOSED until physical-device evidence is reviewed.
+Continue from the Build 338 verified source tree / source archive already recorded in this MASTER.
+
+### Immediate work order
+1. Trace the lag end-to-end using the Build 338 iPhone diagnostic:
+   - `snapshotMs`
+   - `applyMs`
+   - `postCommitCriticalMs`
+   - `schemaMs`
+   - Native ACK / vault commit
+   - map/render update cost
+2. Repair the true owner of the hourly post-commit spike without removing atomic rollback or full integrity at required safety boundaries.
+3. Trace user-facing save export/import:
+   `export action → serialization → native bridge/file write/share → import picker/read → schema/hash validation → atomic restore`.
+4. Trace large-fleet route assignment:
+   `batch assignment → route candidate generation → duplicate/geometry signature → occupancy/capacity → departure → renderer`.
+5. Prevent large-scale same-route/geometry stacking at assignment ownership; cosmetic map offset is secondary only.
+6. Profile map rendering under ~2,000 assets; if DOM/Leaflet marker churn is material, move dense moving assets toward Canvas/culling while keeping selected/interactive markers precise.
+7. Re-run finance/payable regression to ensure cheque/transfer remains intact.
+8. Run stress tests and export a new diagnostic after each root fix batch.
+9. Do not approve the next candidate until lag, export/import, and route-overlap regressions are all explicitly tested.
+
+### New-chat continuation
+A new conversation should begin with only:
+**"كمل Global Holdings"**
+
+It must read this MASTER from `globalholdings-project-control` and continue from the work order above without asking the user to repeat the project method or current state.
 
 ---
-This file is a living handoff. Update it **only on `globalholdings-project-control`** at every validated build boundary. Each update must distinguish:
-- immutable build/source anchors;
-- moving branch heads;
-- measured device evidence;
-- approved implementation decisions;
-- proposals still under discussion.
-
-The MASTER is a control document, **never a substitute for source hashes, source archives, CI evidence, or raw diagnostics**.
+This file is a living handoff. Update it **only on `globalholdings-project-control`** at every validated build boundary.
