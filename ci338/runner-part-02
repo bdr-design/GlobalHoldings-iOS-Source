@@ -1,0 +1,12 @@
+_approved':False,'device_tested':False,'source_tree_sha256':os.environ['TARGET_SOURCE_TREE_SHA256'],'webapp_tree_sha256':os.environ['TARGET_WEBAPP_TREE_SHA256'],'native_executable_sha256':sha(app/'GlobalHoldings'),'architecture':'arm64','iphoneos_platform':True,'code_signature_commands':signatures,'old_ipa_used':False,'source_acceptance':{'passed':acc['passed'],'total':acc['total'],'node':acc['node']},'apple_tests':{'native':{'passed':nr['passed'],'total':nr['total']},'bundle':{'passed':br['passed'],'total':br['total']}},'build338_focus':['payable-cheque-transfer-durable-save','idempotency-v2-fingerprint-receipt-migration','hourly-integrity-scan-dedup']};(out/'prepackage.json').write_text(json.dumps(record,indent=2)+'\n')
+PY
+rm -rf "$RUNNER_TEMP/Payload"; mkdir -p "$RUNNER_TEMP/Payload"; ditto "$APP" "$RUNNER_TEMP/Payload/GlobalHoldings.app"; cd "$RUNNER_TEMP"; /usr/bin/zip -qry "$GITHUB_WORKSPACE/output/GlobalHoldings_v3_0_0_build338_unsigned.ipa" Payload
+unzip -t "$GITHUB_WORKSPACE/output/GlobalHoldings_v3_0_0_build338_unsigned.ipa" | tee "$GITHUB_WORKSPACE/evidence/ipa-crc.log"; shasum -a 256 "$GITHUB_WORKSPACE/output/GlobalHoldings_v3_0_0_build338_unsigned.ipa" | tee "$GITHUB_WORKSPACE/output/GlobalHoldings_v3_0_0_build338_unsigned.ipa.sha256"
+python3 - <<'PY'
+import hashlib,json,os,plistlib,zipfile
+from pathlib import Path
+out=Path(os.environ['GITHUB_WORKSPACE'])/'output';ipa=out/'GlobalHoldings_v3_0_0_build338_unsigned.ipa';r=json.loads((out/'prepackage.json').read_text());
+with zipfile.ZipFile(ipa) as z:
+ assert z.testzip() is None;names=set(z.namelist());assert 'Payload/GlobalHoldings.app/GlobalHoldings' in names;assert not any('/_CodeSignature/' in n or n.endswith('/embedded.mobileprovision') for n in names);p=plistlib.loads(z.read('Payload/GlobalHoldings.app/Info.plist'));assert p['CFBundleVersion']=='338' and p['CFBundleShortVersionString']=='3.0.0' and p['UIDeviceFamily']==[1]
+h=hashlib.sha256(ipa.read_bytes()).hexdigest();r.update({'ipa_created':True,'final_ipa_crc_passed':True,'ipa_sha256':h,'ipa_bytes':ipa.stat().st_size});(out/'GlobalHoldings_v3_0_0_build338_unsigned.verification.json').write_text(json.dumps(r,indent=2)+'\n');(out/'prepackage.json').unlink()
+PY
