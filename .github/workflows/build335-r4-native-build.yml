@@ -105,6 +105,10 @@ jobs:
           SRC="$GITHUB_WORKSPACE/audit/candidate"
           OUT="$GITHUB_WORKSPACE/audit/evidence/bundle"
           python3 audit/tools/prepare_r4_bundle_tests.py "$OUT"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('audit/evidence/bundle/main.swift');p.write_text(p.read_text().replace('334','335'))
+          PY
           TEST_APP="$RUNNER_TEMP/R4BundleTests.app"
           mkdir -p "$TEST_APP/Contents/MacOS" "$TEST_APP/Contents/Resources"
           export TEST_APP
