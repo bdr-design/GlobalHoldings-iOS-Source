@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build337-instrumentation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build337:
     runs-on: macos-15
