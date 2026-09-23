@@ -61,6 +61,24 @@ jobs:
           assert r['failed']==0 and r['passed']==r['total'] and r['total']>0
           PY
 
+      - name: Bind WKWebView evidence into final verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          ws=Path(os.environ['GITHUB_WORKSPACE'])
+          vp=ws/'output/GlobalHoldings_v3_0_0_build338_unsigned.verification.json'
+          nav=json.loads((ws/'apple/evidence/navigation/n2-navigation-tests.json').read_text())
+          assert nav['failed']==0 and nav['passed']==nav['total'] and nav['total']>0
+          r=json.loads(vp.read_text())
+          r.setdefault('apple_tests',{})['webkit']={'passed':nav['passed'],'total':nav['total']}
+          r['ci_run_id']=int(os.environ['GITHUB_RUN_ID'])
+          r['workflow_commit']=os.environ['GITHUB_SHA']
+          vp.write_text(json.dumps(r,indent=2)+'\\n')
+          PY
+
       - name: Upload Build338 unsigned deliverables
         if: success()
         uses: actions/upload-artifact@v4
