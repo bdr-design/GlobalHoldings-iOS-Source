@@ -2,7 +2,7 @@ name: Build336 R4 source verification and fresh native build
 on:
   push:
     branches: [build336-proof-contract-native-20260923]
-    paths: ['.github/workflows/build335-r4-native-build.yml', 'audit-tools/r4-native-change.gz.b64', 'audit-tools/r4-bundled-copy-alias-fix.patch', 'audit-tools/prepare_r4_bundle_tests.py']
+    paths: ['.github/workflows/build336-proof-contract-native.yml', 'audit-tools/r4-native-change.gz.b64', 'audit-tools/r4-bundled-copy-alias-fix.patch', 'audit-tools/prepare_r4_bundle_tests.py']
 permissions:
   contents: read
 jobs:
