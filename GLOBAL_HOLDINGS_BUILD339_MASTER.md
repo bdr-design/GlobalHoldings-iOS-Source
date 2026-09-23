@@ -1,6 +1,6 @@
 # GLOBAL HOLDINGS — BUILD 339 ARCHITECTURE MASTER
 
-**STATUS:** ACTIVE ARCHITECTURE MIGRATION CONTROL  
+**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 0 LOCKED / PHASE 1 NEXT  
 **CREATED:** 2026-09-24  
 **CONTROL BRANCH:** `build339-architecture-control-20260924`  
 **REPOSITORY:** `bdr-design/GlobalHoldings-iOS-Source`
@@ -262,3 +262,26 @@ Immediate sequence:
 6. Keep user-facing export/import, route engine, asset data layout, rendering migration and tripArchive redesign queued behind the time/transaction foundation unless a dependency requires an earlier interface contract.
 7. Update this MASTER after every meaningful batch with exact files, hashes, test evidence, rejected approaches and the next continuation point.
 
+
+
+## 11. Phase 0 locked checkpoint — 2026-09-24
+
+The first portable Build 339 development source is now locked.
+
+- Source tree SHA-256: `8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a`
+- WebApp tree SHA-256: `06234729bd9a6395f23fc46c958b4ee8f7d5c9e99c66c93f5e1b1aea78ce1652`
+- Source archive: `GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BASE_SOURCE.zip`
+- Source ZIP SHA-256: `b454b554fd67f0699b800c5d073d4e03b4f27c188b474dbe4eb3c87f470c0123`
+- Library path: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BASE_SOURCE.zip`
+- Verification: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE0.verification.json`
+- Detailed checkpoint: `BUILD339_PHASE0_CHECKPOINT.md`
+
+Phase 0 is identity + telemetry only and intentionally makes no domain-semantic replacement.
+
+Do not continue from a local unverified working directory if the conversation changes. Materialize the full Phase 0 archive above, verify its ZIP SHA-256 and runtime source SHA-256, then continue from NEXT ACTION.
+
+## 12. Current NEXT ACTION — Phase 1 deterministic time/scheduler architecture
+
+The next accepted work is **Phase 1**, not more Build 338 stabilization and not another Build 339 bootstrap.
+
+Start by building a golden compatibility harness for current time/boundary semantics, then replace the scheduler architecture in small, independently regression-gated batches. Preserve simSeconds as the sole authoritative simulation-time source until a formally recorded migration says otherwise.
