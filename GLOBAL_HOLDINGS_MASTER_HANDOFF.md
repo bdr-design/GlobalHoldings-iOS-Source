@@ -553,3 +553,22 @@ User-approved control decision:
 - Mandatory pending gate: Node 24 + ESLint + full CI + fresh Apple/WKWebView/native + physical iPhone
 - NEXT ACTION: Build 339 Phase 1 time and transaction architecture, as detailed in the Build339 MASTER.
 
+
+
+## 16. Build 339 Phase 0 locked portable checkpoint — 2026-09-24
+
+Build 339 now has a portable full-source checkpoint and no longer depends on a local conversation workspace.
+
+- Active architecture line: **Build 339**
+- Phase: **Phase 0 locked; Phase 1 next**
+- Runtime source tree SHA-256: `8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a`
+- WebApp tree SHA-256: `06234729bd9a6395f23fc46c958b4ee8f7d5c9e99c66c93f5e1b1aea78ce1652`
+- Full source archive: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BASE_SOURCE.zip`
+- Source ZIP SHA-256: `b454b554fd67f0699b800c5d073d4e03b4f27c188b474dbe4eb3c87f470c0123`
+- Verification: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE0.verification.json`
+- Build 339 control branch: `build339-architecture-control-20260924`
+- Detailed Phase 0 checkpoint: `BUILD339_PHASE0_CHECKPOINT.md`
+
+If a conversation changes, the new conversation MUST read `GLOBAL_HOLDINGS_BUILD339_MASTER.md` and `BUILD339_PHASE0_CHECKPOINT.md` first, then materialize the full source archive and verify both the ZIP hash and runtime source hash before coding.
+
+**NEXT ACTION:** Build 339 Phase 1 deterministic time/scheduler architecture. Do not resume functional work on Build 338.
