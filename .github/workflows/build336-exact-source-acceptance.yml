@@ -1,0 +1,93 @@
+name: Build336 exact source acceptance
+on:
+  push:
+    branches: [build336-proof-contract-acceptance-20260923]
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_PAYLOAD_SHA256: 4f6c81d1c3d1dd3fc8fc9b02b17e8e2a7dc92c2b7777d09324a9ae7baa12d434
+      EXPECTED_SOURCE_TREE_SHA256: ff958436f71c14c4d311621270095d99afe2383b3ba39b1807b8be28c484420a
+      EXPECTED_WEBAPP_TREE_SHA256: fe92da4835d1fa064e9e56098b40f5dc3aad120421674f191bf7cb15d9122fff
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Reconstruct exact Build336 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gh336-parts" "$GITHUB_WORKSPACE/candidate" "$GITHUB_WORKSPACE/evidence"
+          cp transport/part-*.bin "$RUNNER_TEMP/gh336-parts/"
+          cat "$RUNNER_TEMP"/gh336-parts/part-*.bin > "$RUNNER_TEMP/GlobalHoldings_BUILD336_CI_EXACT_PAYLOAD.tar.gz"
+          ACTUAL="$(shasum -a 256 "$RUNNER_TEMP/GlobalHoldings_BUILD336_CI_EXACT_PAYLOAD.tar.gz" | awk '{print $1}')"
+          test "$ACTUAL" = "$EXPECTED_PAYLOAD_SHA256"
+          tar -xzf "$RUNNER_TEMP/GlobalHoldings_BUILD336_CI_EXACT_PAYLOAD.tar.gz" -C "$GITHUB_WORKSPACE/candidate"
+          python3 "$GITHUB_WORKSPACE/candidate/tools/verify_current_source.py" --root "$GITHUB_WORKSPACE/candidate" | tee "$GITHUB_WORKSPACE/evidence/source-verification.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE'])/'candidate'
+          row=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'evidence/source-verification.json').read_text())
+          manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          assert row['verified'] is True
+          assert row['source_tree_sha256']==os.environ['EXPECTED_SOURCE_TREE_SHA256']
+          assert manifest['webapp_tree_sha256']==os.environ['EXPECTED_WEBAPP_TREE_SHA256']
+          assert (row['version'],row['build'],row['save_schema'])==('3.0.0',336,'2.0.0')
+          PY
+          test ! -e "$GITHUB_WORKSPACE/candidate/Payload"
+          find "$GITHUB_WORKSPACE/candidate" \( -iname '*.ipa' -o -iname '*.app' \) -print | tee "$GITHUB_WORKSPACE/evidence/forbidden-source-products.txt"
+          test ! -s "$GITHUB_WORKSPACE/evidence/forbidden-source-products.txt"
+          printf '%s\n' 'old_ipa_used=false' > "$GITHUB_WORKSPACE/evidence/source-origin.txt"
+      - name: Set up exact Node 24.21.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Install pinned JS dependencies and Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/candidate"
+          node --version | tee "$GITHUB_WORKSPACE/evidence/node-version.txt"
+          test "$(node --version)" = 'v24.21.0'
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npm ls --depth=0 > "$GITHUB_WORKSPACE/evidence/npm-top-level.txt"
+      - name: ESLint gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/candidate"
+          npm run lint 2>&1 | tee "$GITHUB_WORKSPACE/evidence/eslint.log"
+      - name: Full Build336 source acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/candidate"
+          python3 tools/run_acceptance.py --output "$GITHUB_WORKSPACE/acceptance" --node "$(command -v node)" --timeout 300
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          p=Path(os.environ['GITHUB_WORKSPACE'])/'acceptance/results.json'
+          r=json.loads(p.read_text())
+          assert r['completed'] is True
+          assert r['all_tests_passed'] is True
+          assert r['runtime_unchanged'] is True
+          assert r['runtime_source']['source_tree_sha256']==os.environ['EXPECTED_SOURCE_TREE_SHA256']
+          assert r['node']=='v24.21.0'
+          assert r['passed']==r['total'] and r['total']>=77
+          print(json.dumps({'passed':r['passed'],'total':r['total'],'node':r['node']},indent=2))
+          PY
+      - name: Upload Build336 acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build336-Source-Acceptance-${{ github.run_id }}
+          path: |
+            acceptance/
+            evidence/
+          retention-days: 14
+          if-no-files-found: error
