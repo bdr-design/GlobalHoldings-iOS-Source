@@ -35,9 +35,13 @@ from pathlib import Path
 r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'evidence/build337-source.json').read_text());assert r['verified'] and r['source_tree_sha256']==os.environ['BASE337_SOURCE_TREE_SHA256'] and r['build']==337
 PY
 cat "$GITHUB_WORKSPACE"/transport338/part-*.b64 > "$RUNNER_TEMP/build338.patch.gz.b64"
-test "$(shasum -a 256 "$RUNNER_TEMP/build338.patch.gz.b64"|awk '{print $1}')" = "$PATCH338_B64_SHA256"
+ACTUAL_PATCH_B64_SHA256="$(shasum -a 256 "$RUNNER_TEMP/build338.patch.gz.b64"|awk '{print $1}')"
+echo "Build338 patch transport sha256=$ACTUAL_PATCH_B64_SHA256 expected=$PATCH338_B64_SHA256"
+test "$ACTUAL_PATCH_B64_SHA256" = "$PATCH338_B64_SHA256"
 /usr/bin/base64 -D -i "$RUNNER_TEMP/build338.patch.gz.b64" | gzip -dc > "$RUNNER_TEMP/build338.patch"
-test "$(shasum -a 256 "$RUNNER_TEMP/build338.patch"|awk '{print $1}')" = "$PATCH338_SHA256"
+ACTUAL_PATCH_SHA256="$(shasum -a 256 "$RUNNER_TEMP/build338.patch"|awk '{print $1}')"
+echo "Build338 decoded patch sha256=$ACTUAL_PATCH_SHA256 expected=$PATCH338_SHA256"
+test "$ACTUAL_PATCH_SHA256" = "$PATCH338_SHA256"
 git init -q; git apply --check "$RUNNER_TEMP/build338.patch"; git apply "$RUNNER_TEMP/build338.patch"; rm -rf .git
 python3 tools/verify_current_source.py --root . | tee "$GITHUB_WORKSPACE/evidence/build338-source.json"
 python3 - <<'PY'
