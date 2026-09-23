@@ -16,8 +16,10 @@ MANDATORY: A new conversation must read this file first, establish the current S
 
 - Product: Global Holdings
 - Version: 3.0.0
-- Current validated build: 337
-- Next development build: 338
+- Current device-validated baseline: **337**
+- Current CI-validated candidate: **338**
+- Active development/retest build: **338**
+- Build 338 device validation: **PENDING**
 - Save Schema: 2.0.0
 - Repository: bdr-design/GlobalHoldings-iOS-Source
 - Build 337 provenance branch locator: **build337-instrumentation-ci-20260923**
@@ -87,6 +89,52 @@ Build 337 gates:
 - Save Schema remains 2.0.0.
 
 Build 337 intentionally did not compress/delete domainRuntime, documentProofs, assets, delivery history, or implement Cold Receipts.
+
+## 2B. Build 338 CI-validated candidate — save/lag root
+
+Build 338-A has been implemented and passed the full CI/Xcode gate. It is **not yet device-approved**.
+
+- Version: **3.0.0**
+- Build: **338**
+- Save Schema: **2.0.0**
+- Development/CI branch: **build338-save-lag-root-20260923**
+- CI workflow commit: **6d62866bc83d551487961d13eeade8802a31eba3**
+- Successful CI run: **35916040802**
+- CI conclusion: **success**
+- Source tree SHA-256: **387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b**
+- WebApp tree SHA-256: **aed5ebc6773603703702de1cddacd2ed6197f9a2e68465ba39bf9ead0cc9aab3**
+- Full source archive: **GlobalHoldings_BUILD338_SAVE_LAG_ROOT_CANDIDATE_SOURCE.zip**
+- Full source archive SHA-256: **0a5be18327001bb0ceaf4feec99946f36b8eb0290d40523ddfa3265ab5285335**
+- IPA: **GlobalHoldings_v3_0_0_build338_unsigned.ipa**
+- IPA SHA-256: **58b4a40b8e1e8a617d00bdf8c8ad8c1ff41f46c9f2d5b516505cc6b7a29e8b4a**
+- IPA bytes: **13,313,106**
+- Native executable SHA-256: **829b480da08a67d4356d902a51c19cbd914bee6610927a0b4b6a0b7d790b2228**
+- Architecture: **arm64 / iPhoneOS**
+- unsigned: **true**
+- old_ipa_used: **false**
+- production_approved: **false**
+- device_tested: **false**
+
+CI gates:
+- Source acceptance: **90/90**
+- Build 338 root-contract test: **PASS**
+- Native storage/security: **36/36**
+- WKWebView/navigation: **11/11**
+- Bundle staging: **5/5**
+- ESLint gate: **PASS**
+- Fresh Xcode 16.4 iPhoneOS Release: **PASS**
+- IPA CRC: **PASS**
+- Native 30 MiB limit test: **PASS**
+
+Build 338-A implemented scope:
+- Versioned SHA-256 idempotency fingerprint migration while preserving canonical payload semantics.
+- Durable compact receipts for the proven heavy fleet batch result families, with replay compatibility/guards.
+- Save-schema integration for one-time migration while keeping Save Schema 2.0.0.
+- Root fix for payable cheque/transfer rollback caused by durable-save hard-limit pressure; finance logic itself was not bypassed.
+- Hourly integrity-scan de-duplication inside the active outer transaction while preserving baseline/final integrity and rollback protection.
+- No tripArchive pruning, documentProof stripping, procurement archival, asset staffing compaction, or broad time-engine rewrite in 338-A.
+
+**Source rule after this point:** any further Build 338 change must start from the exact Build 338 source tree SHA above (or the verified full source archive above), not from Build 337, not from the IPA, and not by replaying the patch from memory.
 
 ## 3. Latest device diagnostic
 
@@ -241,17 +289,23 @@ If deletion/compaction is proven safe:
 
 ## 8. Build 338 decision status
 
-**No destructive Build 338 architecture has been approved yet.**
+**Build 338-A is APPROVED, IMPLEMENTED, and CI-VALIDATED. Device validation remains pending.**
 
-The user and developer are actively discussing candidate solutions such as:
-- hashed idempotency fingerprints;
-- family-specific cold receipts;
-- scoped/copy-on-write transaction snapshots;
-- trip-history hot/cold representation;
-- incremental schema validation;
-- archival/compaction of proofs, assets or procurement history.
+Approved/implemented scope:
+- idempotency V2 hash fingerprint migration;
+- compact family-specific receipts for the proven heavy fleet batch results;
+- payable cheque/transfer durable-save recovery path;
+- hourly integrity scan de-duplication that preserves transaction rollback/integrity guarantees.
 
-These are **proposals/hypotheses until the relevant owner/reference/replay contracts are audited**. Do not convert discussion estimates (for example target MB, target ms, ring-buffer counts, retention counts, or expected FPS) into implementation requirements unless subsequently recorded here as an approved decision with evidence.
+Still pending and NOT approved for destructive implementation until new Build 338 iPhone evidence is reviewed:
+- mobility.tripArchive retention/compaction;
+- fullSnapshot/scoped transaction redesign;
+- deeper applyMs optimization;
+- documentProofs signedContent changes;
+- procurement delivery archival;
+- asset staffing/lastTrip compaction.
+
+Do not turn previous target estimates (MB, ms, FPS, retention counts) into requirements without new device evidence.
 
 ## 9. Build 338 priorities
 
@@ -347,17 +401,26 @@ When a new conversation receives “كمل Global Holdings” or equivalent:
 
 ## 14. NEXT ACTION — Build 338
 
-0. Baseline lock COMPLETE: `GlobalHoldings_BUILD337_INSTRUMENTATION_BASELINE_SOURCE.zip` exists with SHA-256 `f1789309998c3b7831b6a2f30e40e25cb5faa605c91f630164a009b3f66f0d32`, and its extracted runtime tree verifies to `b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484`.
-1. Treat only the verified reconstructed Build 337 tree as the Build 338 baseline; never the repository branch head and never Build 336 directly.
-2. Verify `source_tree_sha256=b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484` and `webapp_tree_sha256=6da1b5d15effaa3a148d3925ac76a2e036d630ee4186b9bbf9f7c015d0144bb0`.
-3. Use the Build 337 iPhone diagnostic `GlobalHoldings_diagnostic_v3.0.0_1790187863706.ghdiagnostic` only after verifying SHA-256 `c67b5d04877f97aa64a48517c1e3530007f38deb6620d87883f1984a9cee031f`.
-4. Perform code-level ownership/reference/replay audit of domainRuntime.idempotency, beginning with largest measured command families.
-5. In parallel map mobility.tripArchive readers/references; do not prune yet.
-6. Design smallest root-level Build 338 change justified by audits.
-7. Preserve Save Schema 2.0.0 and invariants.
-8. Add targeted tests before acceptance.
-9. Re-run stress/diagnostic gates and compare state size plus Finish/Persistence/Native timings.
-10. Only after evidence passes package Build 338.
+1. Install/sign the CI-produced **GlobalHoldings_v3_0_0_build338_unsigned.ipa** on the physical iPhone.
+2. Load the same heavy save/state used for Build 337 testing; do not start from a fresh/light game for the primary comparison.
+3. Verify the payable finance workflow manually:
+   - issue a payable cheque;
+   - issue a payable bank transfer;
+   - confirm current-account deduction / payable settlement / document creation;
+   - close/reopen the app and confirm persistence.
+4. Run the same high-load simulation/date-advance/speed scenario long enough to cross multiple hourly boundaries.
+5. Export a new Build 338 `.ghdiagnostic`.
+6. Compare against Build 337 evidence:
+   - `rootBytes` / `utf8Bytes`;
+   - idempotency bytes;
+   - SAVE_OK revision progression;
+   - absence/presence of `native-save-size-hard-limit`;
+   - `nativeVaultCommitMs` / ACK latency;
+   - `maxFinishMs` and fullSnapshot/scoped samples;
+   - `applyMs` at hourly boundaries;
+   - proofForensics / dangling references / rollback events.
+7. Only after that diagnostic decide whether 338-C (mobility.tripArchive) or 338-D (hourly apply/snapshot) is the next root fix.
+8. Production approval remains CLOSED until physical-device evidence is reviewed.
 
 ---
 This file is a living handoff. Update it **only on `globalholdings-project-control`** at every validated build boundary. Each update must distinguish:
