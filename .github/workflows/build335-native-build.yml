@@ -50,7 +50,7 @@ jobs:
           assert 'dropFirst(root.path.count + 1)' not in block
           expected['GlobalGameStorage.swift']=fixed_hash
           webhash='9025464b775b8fd4dd9c5b713497bdf8e58c175e8e97f18d597f334e8c4ce5cf'
-          project=root/'project.yml';text=project.read_text().replace('CURRENT_PROJECT_VERSION: "315"','CURRENT_PROJECT_VERSION: "334"').replace('CFBundleVersion: "315"','CFBundleVersion: "334"\n        GHSourceSnapshotSHA256: "'+webhash+'"');project.write_text(text)
+          project=root/'project.yml';text=project.read_text().replace('CURRENT_PROJECT_VERSION: "315"','CURRENT_PROJECT_VERSION: "335"').replace('CFBundleVersion: "315"','CFBundleVersion: "335"\n        GHSourceSnapshotSHA256: "'+webhash+'"');project.write_text(text)
           (root/'WebApp').mkdir()
           # This is only an intermediate compiler product. The final IPA is
           # assembled with the exact locally tested 334 WebApp, never old files.
@@ -111,7 +111,7 @@ jobs:
           python3 - <<'PY'
           import os,plistlib
           from pathlib import Path
-          info={'CFBundleIdentifier':'com.example.globalholdings.r4bundletests','CFBundleExecutable':'BundleTests','CFBundlePackageType':'APPL','CFBundleShortVersionString':'3.0.0','CFBundleVersion':'334','GHSourceSnapshotSHA256':'a'*64}
+          info={'CFBundleIdentifier':'com.example.globalholdings.r4bundletests','CFBundleExecutable':'BundleTests','CFBundlePackageType':'APPL','CFBundleShortVersionString':'3.0.0','CFBundleVersion':'335','GHSourceSnapshotSHA256':'a'*64}
           Path(os.environ['TEST_APP'],'Contents/Info.plist').write_bytes(plistlib.dumps(info))
           PY
           xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" "$SRC/iOS/GlobalHoldings/GlobalSaveVault.swift" "$SRC/iOS/GlobalHoldings/GlobalGameStorage.swift" "$OUT/main.swift" -o "$TEST_APP/Contents/MacOS/BundleTests" 2>&1 | tee "$OUT/compile.log"
