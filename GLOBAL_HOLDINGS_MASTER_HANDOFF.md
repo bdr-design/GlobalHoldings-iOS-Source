@@ -1,7 +1,7 @@
 # GLOBAL HOLDINGS — MASTER HANDOFF / CONTINUATION PROTOCOL
 
-**MASTER FORMAT VERSION:** 2.1  
-**LAST AUDITED:** 2026-09-23  
+**MASTER FORMAT VERSION:** 3.0  
+**LAST AUDITED:** 2026-09-24  
 **CANONICAL CONTROL BRANCH:** `globalholdings-project-control`
 
 > This file is the permanent project-control document. The control branch is **documentation/control only** and MUST NEVER be treated as a game-source baseline.
@@ -16,13 +16,13 @@ MANDATORY: A new conversation must read this file first, establish the current S
 
 - Product: **Global Holdings**
 - Version: **3.0.0**
-- Current development Source of Truth: **Build 338**
-- Current physical-device-tested build: **338**
+- Current development line: **Build 339 Architecture Generation**\n- Frozen fallback Source of Truth: **Build 338 verified runtime tree**
+- Current physical-device-tested build: **338**\n- Build 339 status: **architecture control opened; first 339 runtime source hash not yet locked**
 - Production approval: **CLOSED / NOT APPROVED**
 - Save Schema: **2.0.0**
 - Repository: **bdr-design/GlobalHoldings-iOS-Source**
 - Canonical control branch: **globalholdings-project-control**
-- Build 338 development/CI branch: **build338-save-lag-root-20260923**
+- Build 338 frozen provenance/CI branch: **build338-save-lag-root-20260923**\n- Build 339 architecture control branch: **build339-architecture-control-20260924**\n- Build 339 master: **GLOBAL_HOLDINGS_BUILD339_MASTER.md**
 - Build 338 verified runtime source tree SHA-256: **387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b**
 - Build 338 WebApp tree SHA-256: **aed5ebc6773603703702de1cddacd2ed6197f9a2e68465ba39bf9ead0cc9aab3**
 - Build 338 full source archive: **GlobalHoldings_BUILD338_SAVE_LAG_ROOT_CANDIDATE_SOURCE.zip**
@@ -34,9 +34,9 @@ MANDATORY: A new conversation must read this file first, establish the current S
 - Runtime CI input commit: **6d62866bc83d551487961d13eeade8802a31eba3**
 - A later **packaging-only workflow correction** changes only strict JSON newline emission in the verification artifact; it does **not** change the reconstructed Build 338 runtime source tree or IPA payload intent. Packaging revalidation run: **35923863917**.
 
-### Current Source-of-Truth rule
+### Current development / fallback rule
 
-All further functional development after this handoff MUST start only from the verified **Build 338** runtime tree whose source SHA-256 is:
+All new functional/architectural development now belongs to **Build 339**. Until the first Build 339 source candidate is locked, Build 339 may bootstrap only from the frozen verified **Build 338** runtime tree whose source SHA-256 is:
 
 `387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b`
 
@@ -50,7 +50,7 @@ or from the verified full Build 338 source archive named above.
 - mixing source trees from different builds;
 - treating the moving head of a CI/provenance branch as a substitute for the recorded runtime source hash.
 
-Build 337 remains an immutable **comparison/provenance baseline only**. It is no longer the active development Source of Truth.
+Build 337 remains an immutable **comparison/provenance baseline only**.\n\n**Build 338 is now frozen as the recovery/fallback runtime baseline. No further functional development is to be extended on Build 338. Build 339 is the active architecture-development line. If Build 339 develops an unrecoverable architectural regression, return to the exact Build 338 runtime identity recorded above.**
 
 ## 2. Build 337 scope
 
@@ -484,9 +484,9 @@ When a new conversation receives “كمل Global Holdings” or equivalent:
 13. Before closing a validated build, update: build number, immutable source anchor, source/WebApp hashes, CI evidence, latest diagnostic hash, approved decisions, unresolved issues, and NEXT ACTION.
 14. Treat anything not explicitly recorded as an approved decision as **unapproved/pending**, even if it appeared earlier in discussion.
 
-## 14. NEXT ACTION — Build 338 stabilization
+## 14. NEXT ACTION — Build 339 architecture generation
 
-Continue only from the verified Build 338 source tree/archive recorded in Section 1.
+Build 338 stabilization work is closed as an active development line. Continue in Build 339 using the separate master on branch `build339-architecture-control-20260924`. Bootstrap only from the exact verified Build 338 source tree/archive recorded in Section 1, then lock a distinct Build 339 source hash before functional changes.
 
 ### Immediate engineering work order
 1. Instrument the heavy hourly `postCommitCritical` path at sub-owner level before changing behavior.
@@ -525,3 +525,15 @@ The new conversation MUST:
 
 ---
 This MASTER is a living control document. Update it **only** on `globalholdings-project-control`.
+
+
+## 15. Build 338 freeze / Build 339 transition — 2026-09-24
+
+User-approved control decision:
+
+- stop extending Build 338;
+- preserve Build 338 as the exact verified fallback/recovery baseline;
+- open Build 339 as the independent architecture-generation line;
+- if Build 339 introduces an unacceptable architectural regression, return to the exact Build 338 source identity, not an IPA or reconstructed patch stack;
+- Build 339 control reference: branch `build339-architecture-control-20260924`, file `GLOBAL_HOLDINGS_BUILD339_MASTER.md`.
+
