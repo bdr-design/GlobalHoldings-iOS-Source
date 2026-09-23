@@ -1,0 +1,17 @@
+--- a/iOS/GlobalHoldings/GlobalGameStorage.swift
++++ b/iOS/GlobalHoldings/GlobalGameStorage.swift
+@@ -726,8 +726,12 @@
+                 let attrs = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                 if attrs.isSymbolicLink == true { throw UpdateError.message("رابط ملف غير مسموح في المصدر.") }
+                 if attrs.isRegularFile != true { continue }
+-                let path = String(file.path.dropFirst(root.path.count + 1))
+-                guard isSafePath(path) else { throw UpdateError.message("مسار مصدر غير صالح.") }
++                guard let path = safeRelativePath(of: file, inside: root) else {
++                    throw UpdateError.message("مسار مصدر غير صالح.")
++                }
++                guard result[path] == nil else {
++                    throw UpdateError.message("مسار مصدر مكرر أثناء التحقق.")
++                }
+                 result[path] = sha256(try Data(contentsOf: file))
+             }
+             return result

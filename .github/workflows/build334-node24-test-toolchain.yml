@@ -1,0 +1,52 @@
+name: Build334 Node24 source test toolchain
+on:
+  push:
+    branches: [build334-r4-source-ipa-20260922]
+    paths: ['.github/workflows/build334-node24-test-toolchain.yml']
+permissions:
+  contents: read
+jobs:
+  toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Set up exact Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Install exact Node and test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/toolchain/project"
+          cd "$GITHUB_WORKSPACE/toolchain/project"
+          cat > package.json <<'JSON'
+          {
+            "private": true,
+            "devDependencies": {
+              "three": "0.180.0",
+              "esbuild": "0.25.10",
+              "playwright": "1.55.1",
+              "eslint": "10.10.0",
+              "leaflet": "1.9.4"
+            }
+          }
+          JSON
+          npm install --no-audit --no-fund
+          npx playwright install chromium
+          NODE_ROOT="$(dirname "$(dirname "$(command -v node)")")"
+          cp -a "$NODE_ROOT" "$GITHUB_WORKSPACE/toolchain/node"
+          if [ -d "$HOME/.cache/ms-playwright" ]; then
+            mkdir -p "$GITHUB_WORKSPACE/toolchain/playwright-cache"
+            cp -a "$HOME/.cache/ms-playwright/." "$GITHUB_WORKSPACE/toolchain/playwright-cache/"
+          fi
+          "$GITHUB_WORKSPACE/toolchain/node/bin/node" --version > "$GITHUB_WORKSPACE/toolchain/node-version.txt"
+          "$GITHUB_WORKSPACE/toolchain/node/bin/npm" --version > "$GITHUB_WORKSPACE/toolchain/npm-version.txt"
+          du -sh "$GITHUB_WORKSPACE/toolchain" > "$GITHUB_WORKSPACE/toolchain/size.txt"
+      - name: Upload portable Linux test toolchain
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build334-Node24-Test-Toolchain-${{ github.run_id }}
+          path: toolchain/
+          retention-days: 2
+          if-no-files-found: error

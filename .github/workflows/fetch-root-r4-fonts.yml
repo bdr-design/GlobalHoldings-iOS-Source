@@ -1,0 +1,31 @@
+name: Fetch ROOT_R4 pinned official fonts
+on:
+  push:
+    branches: [build334-r4-source-ipa-20260922]
+    paths: ['.github/workflows/fetch-root-r4-fonts.yml']
+permissions:
+  contents: read
+jobs:
+  fetch-fonts:
+    runs-on: macos-15
+    steps:
+      - name: Fetch official Google Fonts repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/google/fonts.git fonts
+          git -C fonts sparse-checkout set ofl/ibmplexsansarabic
+          mkdir -p out
+          cp fonts/ofl/ibmplexsansarabic/IBMPlexSansArabic-Regular.ttf out/
+          cp fonts/ofl/ibmplexsansarabic/IBMPlexSansArabic-Medium.ttf out/
+          cp fonts/ofl/ibmplexsansarabic/IBMPlexSansArabic-SemiBold.ttf out/
+          printf '%s  %s\n' \
+            6f611412270a132bbac838da9259d4c68569b4175f3b3b8fa3fa36a30b56dab9 out/IBMPlexSansArabic-Regular.ttf \
+            b8363ab9f733dfa4f8e96b8b2102c24b5cf4110fb96d1d3d9a9412f6fb49cf74 out/IBMPlexSansArabic-Medium.ttf \
+            597bd5502e5997be4414e4c9c88834b30ff3784250c84f20bce2b20e53ebd467 out/IBMPlexSansArabic-SemiBold.ttf > expected.sha256
+          shasum -a 256 -c expected.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ROOT_R4-official-fonts-${{ github.run_id }}
+          path: out
+          retention-days: 7

@@ -1,0 +1,8 @@
+{
+  "run_id": 35906000960,
+  "run_attempt": 1,
+  "workflow_commit": "24e33178ab492c7ccd97f067aa7f43705271b65e",
+  "branch": "build337-instrumentation-ci-20260923",
+  "status": "success",
+  "artifact_name": "GlobalHoldings-Build337-Unsigned"
+}

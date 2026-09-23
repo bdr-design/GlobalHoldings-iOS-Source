@@ -1,0 +1,44 @@
+name: Build334 verification toolchain
+on:
+  push:
+    branches: [build334-verification-toolchain-20260920]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package-toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install exact Build334 test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bundle/deps bundle/browsers
+          cd bundle/deps
+          cat > package.json <<'JSON'
+          {"name":"gh334-verification-toolchain","private":true,"dependencies":{"three":"0.180.0","esbuild":"0.25.10","playwright":"1.55.1","eslint":"10.10.0","leaflet":"1.9.4"}}
+          JSON
+          npm install --no-audit --no-fund
+          PLAYWRIGHT_BROWSERS_PATH="$GITHUB_WORKSPACE/bundle/browsers" node node_modules/playwright/cli.js install --only-shell chromium
+          cd "$GITHUB_WORKSPACE"
+          NODE_ROOT=$(dirname "$(dirname "$(command -v node)")")
+          cp -a "$NODE_ROOT" bundle/node
+          node --version > bundle/NODE_VERSION.txt
+          npm --version > bundle/NPM_VERSION.txt
+          npm ls --prefix bundle/deps --json > bundle/DEPENDENCIES.json
+          printf '%s\n' 'Public test tools only. No game source, player data, credentials, or signing keys.' > bundle/README.txt
+          tar -czf Build334-verification-toolchain.tar.gz -C bundle .
+          sha256sum Build334-verification-toolchain.tar.gz > Build334-verification-toolchain.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Build334-verification-toolchain
+          path: |
+            Build334-verification-toolchain.tar.gz
+            Build334-verification-toolchain.sha256
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error

@@ -1,0 +1,380 @@
+name: Build337 instrumentation baseline to unsigned iPhone IPA
+on:
+  push:
+    branches: [build337-instrumentation-ci-20260923]
+    paths-ignore:
+      - 'ci/build337-result.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build337-instrumentation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build337:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      BASELINE_PAYLOAD_SHA256: 4f6c81d1c3d1dd3fc8fc9b02b17e8e2a7dc92c2b7777d09324a9ae7baa12d434
+      BASELINE_SOURCE_TREE_SHA256: ff958436f71c14c4d311621270095d99afe2383b3ba39b1807b8be28c484420a
+      BASELINE_WEBAPP_TREE_SHA256: fe92da4835d1fa064e9e56098b40f5dc3aad120421674f191bf7cb15d9122fff
+      TARGET_SOURCE_TREE_SHA256: b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484
+      TARGET_WEBAPP_TREE_SHA256: 6da1b5d15effaa3a148d3925ac76a2e036d630ee4186b9bbf9f7c015d0144bb0
+      PATCH_B64_SHA256: e6abc640011c0312b2b44deb7f8a4f9efa830e1d4fc232c92e686d9b15e6a710
+      PATCH_SHA256: 4f8922a52ea0d76183a1f979bdc9c3301e98b70a09d1164764ae31e009403e99
+      EXPECTED_TEST_SHA256: 0dc412186f6b0d0d44cce43d2518f862c3f34478918d3d21b399de0817aa1a1a
+      EXPECTED_VERSION: 3.0.0
+      EXPECTED_BUILD: '337'
+      EXPECTED_SAVE_SCHEMA: 2.0.0
+
+    steps:
+      - name: Checkout pinned Build336 CI transport
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Reconstruct exact Build336 and apply verified Build337 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gh336-parts" "$GITHUB_WORKSPACE/candidate" "$GITHUB_WORKSPACE/evidence"
+          cp transport/part-*.bin "$RUNNER_TEMP/gh336-parts/"
+          cat "$RUNNER_TEMP"/gh336-parts/part-*.bin > "$RUNNER_TEMP/GlobalHoldings_BUILD336_CI_EXACT_PAYLOAD.tar.gz"
+          test "$(shasum -a 256 "$RUNNER_TEMP/GlobalHoldings_BUILD336_CI_EXACT_PAYLOAD.tar.gz" | awk '{print $1}')" = "$BASELINE_PAYLOAD_SHA256"
+          tar -xzf "$RUNNER_TEMP/GlobalHoldings_BUILD336_CI_EXACT_PAYLOAD.tar.gz" -C "$GITHUB_WORKSPACE/candidate"
+
+          python3 "$GITHUB_WORKSPACE/candidate/tools/verify_current_source.py" --root "$GITHUB_WORKSPACE/candidate" | tee "$GITHUB_WORKSPACE/evidence/build336-source-verification.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE'])/'candidate'
+          row=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'evidence/build336-source-verification.json').read_text())
+          manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          assert row['verified'] is True
+          assert row['source_tree_sha256']==os.environ['BASELINE_SOURCE_TREE_SHA256']
+          assert row['build']==336 and row['save_schema']==os.environ['EXPECTED_SAVE_SCHEMA']
+          assert manifest['webapp_tree_sha256']==os.environ['BASELINE_WEBAPP_TREE_SHA256']
+          PY
+
+          cat transport337/part-*.b64 > "$RUNNER_TEMP/build337.patch.gz.b64"
+          test "$(shasum -a 256 "$RUNNER_TEMP/build337.patch.gz.b64" | awk '{print $1}')" = "$PATCH_B64_SHA256"
+          /usr/bin/base64 -D -i "$RUNNER_TEMP/build337.patch.gz.b64" | gzip -dc > "$RUNNER_TEMP/build337.patch"
+          test "$(shasum -a 256 "$RUNNER_TEMP/build337.patch" | awk '{print $1}')" = "$PATCH_SHA256"
+
+          cd "$GITHUB_WORKSPACE/candidate"
+          git init -q
+          git apply --check "$RUNNER_TEMP/build337.patch"
+          git apply "$RUNNER_TEMP/build337.patch"
+          TEST_SRC="$GITHUB_WORKSPACE/transport337/build337-instrumentation-baseline.cjs"
+          test "$(shasum -a 256 "$TEST_SRC" | awk '{print $1}')" = "$EXPECTED_TEST_SHA256"
+          cp "$TEST_SRC" tests/build337-instrumentation-baseline.cjs
+          test "$(shasum -a 256 tests/build337-instrumentation-baseline.cjs | awk '{print $1}')" = "$EXPECTED_TEST_SHA256"
+          rm -rf .git
+
+          python3 tools/verify_current_source.py --root . | tee "$GITHUB_WORKSPACE/evidence/build337-source-verification.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE'])/'candidate'
+          row=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'evidence/build337-source-verification.json').read_text())
+          manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          assert row['verified'] is True
+          assert row['source_tree_sha256']==os.environ['TARGET_SOURCE_TREE_SHA256']
+          assert (row['version'],row['build'],row['save_schema'])==(os.environ['EXPECTED_VERSION'],337,os.environ['EXPECTED_SAVE_SCHEMA'])
+          assert manifest['webapp_tree_sha256']==os.environ['TARGET_WEBAPP_TREE_SHA256']
+          assert (root/'BUILD').read_text().strip()=='337'
+          assert (root/'VERSION').read_text().strip()==os.environ['EXPECTED_VERSION']
+          PY
+
+          test ! -e "$GITHUB_WORKSPACE/candidate/Payload"
+          find "$GITHUB_WORKSPACE/candidate" -iname '*.ipa' -o -iname '*.app' | tee "$GITHUB_WORKSPACE/evidence/forbidden-source-products.txt"
+          test ! -s "$GITHUB_WORKSPACE/evidence/forbidden-source-products.txt"
+          printf '%s\n' 'old_ipa_used=false' > "$GITHUB_WORKSPACE/evidence/source-origin.txt"
+
+      - name: Set up exact Node 24.21.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+
+      - name: Install pinned JS dependencies and Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/candidate"
+          node --version | tee "$GITHUB_WORKSPACE/evidence/node-version.txt"
+          test "$(node --version)" = 'v24.21.0'
+          npm install --no-audit --no-fund
+          npx playwright install chromium
+          npm ls --depth=0 > "$GITHUB_WORKSPACE/evidence/npm-top-level.txt"
+
+      - name: ESLint gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/candidate"
+          npm run lint 2>&1 | tee "$GITHUB_WORKSPACE/evidence/eslint.log"
+
+      - name: Full Build337 source acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/candidate"
+          python3 tools/run_acceptance.py --output "$GITHUB_WORKSPACE/acceptance" --node "$(command -v node)" --timeout 300
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'acceptance/results.json').read_text())
+          assert r['completed'] is True and r['all_tests_passed'] is True and r['runtime_unchanged'] is True
+          assert r['runtime_source']['source_tree_sha256']==os.environ['TARGET_SOURCE_TREE_SHA256']
+          assert r['node']=='v24.21.0'
+          assert r['passed']==r['total'] and r['total']>=89
+          print(json.dumps({'passed':r['passed'],'total':r['total'],'node':r['node']},indent=2))
+          PY
+
+      - name: Record Apple toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version | tee "$GITHUB_WORKSPACE/evidence/xcode-version.txt"
+          xcrun swiftc --version | tee "$GITHUB_WORKSPACE/evidence/swift-version.txt"
+          sw_vers | tee "$GITHUB_WORKSPACE/evidence/macos-version.txt"
+          xcrun --sdk iphoneos --show-sdk-path | tee "$GITHUB_WORKSPACE/evidence/iphoneos-sdk.txt"
+
+      - name: Parse and typecheck exact Build337 native source
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/candidate"
+          xcrun swiftc -parse "$SRC"/iOS/GlobalHoldings/*.swift 2>&1 | tee "$GITHUB_WORKSPACE/evidence/swift-parse.log"
+          xcrun swiftc -typecheck -swift-version 5 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" -target arm64-apple-ios17.0 "$SRC"/iOS/GlobalHoldings/*.swift 2>&1 | tee "$GITHUB_WORKSPACE/evidence/iphoneos-typecheck.log"
+
+      - name: Native CryptoKit and storage regression gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/candidate"
+          OUT="$GITHUB_WORKSPACE/apple/evidence/native-regression"
+          mkdir -p "$OUT"
+          python3 audit-tools/prepare_native_tests.py --source "$SRC" --output "$OUT"
+          xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" "$SRC/iOS/GlobalHoldings/GlobalSaveVault.swift" "$SRC/iOS/GlobalHoldings/GlobalGameStorage.swift" "$OUT/main.swift" -o "$RUNNER_TEMP/native-regression" 2>&1 | tee "$OUT/compile.log"
+          (cd "$OUT" && GH_NATIVE_AUDIT_EPHEMERAL=1 "$RUNNER_TEMP/native-regression") 2>&1 | tee "$OUT/run.log"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'apple/evidence/native-regression/native-tests.json').read_text())
+          assert r['failed']==0 and r['passed']==r['total'] and r['total']>0
+          PY
+
+      - name: Real macOS WKWebView recovery and navigation gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/candidate"
+          OUT="$GITHUB_WORKSPACE/apple/evidence/navigation"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('audit-tools/prepare_n2_tests.py');s=p.read_text()
+          old="helpers=method('    private func prepareNextNativeBootstrap(')+'\\n'+method('    private func installBootstrapBeforeNavigation(')"
+          new="helpers='\\n'.join(method(name) for name in ['    private func prepareNextNativeBootstrap(', '    private func installBootstrapBeforeNavigation(', '    private func isTrustedGameDocument(', '    private func isCurrentDocument(', '    func webView(_ webView: WKWebView, didCommit navigation:'])"
+          assert old in s;s=s.replace(old,new)
+          s=s.replace(' var nativeNavigationToken:UInt=0',' var nativeNavigationToken:UInt=0'+chr(10)+' var navigationPreparing=false')
+          s=s.replace('func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){if let p=m.body as? [String:Any]{messages.append(p)}}','func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){guard !navigationPreparing,m.webView === webView,m.frameInfo.isMainFrame,isTrustedGameDocument(m.frameInfo.request.url) else{return};if let p=m.body as? [String:Any]{messages.append(p)}}')
+          marker='test("large bootstrap request returns without waiting'
+          tests='test("old-page completion cannot acknowledge a replacement document") {let old=probe.nativeNavigationToken;let _=try navigate();try check(!probe.isCurrentDocument(old),"stale page token accepted");try check(probe.isCurrentDocument(probe.nativeNavigationToken),"current page locked after didCommit")}'+chr(10)
+          tests+='test("navigation preparation rejects completion before commit") {let token=probe.nativeNavigationToken;probe.navigationPreparing=true;try check(!probe.isCurrentDocument(token),"accepted during navigation");probe.navigationPreparing=false;try check(probe.isCurrentDocument(token),"current page not restored")}'+chr(10)
+          assert marker in s;s=s.replace(marker,tests+marker)
+          Path('audit-tools/prepare_build337_navigation_tests.py').write_text(s)
+          PY
+          python3 audit-tools/prepare_build337_navigation_tests.py "$SRC" "$OUT"
+          xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" -framework AppKit -framework WebKit "$SRC/iOS/GlobalHoldings/GlobalSaveVault.swift" "$SRC/iOS/GlobalHoldings/GlobalGameStorage.swift" "$OUT/main.swift" -o "$RUNNER_TEMP/navigation" 2>&1 | tee "$OUT/compile.log"
+          (cd "$OUT" && GH_NATIVE_AUDIT_EPHEMERAL=1 "$RUNNER_TEMP/navigation") 2>&1 | tee "$OUT/run.log"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'apple/evidence/navigation/n2-navigation-tests.json').read_text())
+          assert r['failed']==0 and r['passed']==r['total'] and r['total']>0
+          PY
+
+      - name: First-install and Build337 bundle staging gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/candidate"
+          OUT="$GITHUB_WORKSPACE/apple/evidence/bundle"
+          export OUT
+          mkdir -p "$OUT"
+          python3 audit-tools/prepare_r4_bundle_tests.py "$OUT"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          p=Path(os.environ['OUT'])/'main.swift'
+          p.write_text(p.read_text().replace('334','337'))
+          PY
+          TEST_APP="$RUNNER_TEMP/Build337BundleTests.app"
+          mkdir -p "$TEST_APP/Contents/MacOS" "$TEST_APP/Contents/Resources"
+          export TEST_APP
+          python3 - <<'PY'
+          import os,plistlib
+          from pathlib import Path
+          info={'CFBundleIdentifier':'com.example.globalholdings.build337.tests','CFBundleExecutable':'BundleTests','CFBundlePackageType':'APPL','CFBundleShortVersionString':'3.0.0','CFBundleVersion':'337','GHSourceSnapshotSHA256':os.environ['TARGET_WEBAPP_TREE_SHA256']}
+          Path(os.environ['TEST_APP'],'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+          PY
+          xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" "$SRC/iOS/GlobalHoldings/GlobalSaveVault.swift" "$SRC/iOS/GlobalHoldings/GlobalGameStorage.swift" "$OUT/main.swift" -o "$TEST_APP/Contents/MacOS/BundleTests" 2>&1 | tee "$OUT/compile.log"
+          (cd "$OUT" && GH_NATIVE_AUDIT_EPHEMERAL=1 "$TEST_APP/Contents/MacOS/BundleTests") 2>&1 | tee "$OUT/run.log"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'apple/evidence/bundle/bundle-tests.json').read_text())
+          assert r['failed']==0 and r['passed']==r['total'] and r['total']>0
+          PY
+
+      - name: Fresh Xcode iPhoneOS Release and unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/candidate"
+          OUT="$GITHUB_WORKSPACE/output"
+          mkdir -p "$OUT"
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          cd "$SRC"
+          xcodegen generate --spec project.yml 2>&1 | tee "$GITHUB_WORKSPACE/evidence/project-generation.log"
+          xcodebuild -project GlobalHoldings.xcodeproj -scheme GlobalHoldings -configuration Release -sdk iphoneos -derivedDataPath "$RUNNER_TEMP/Build337Derived" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" clean build 2>&1 | tee "$GITHUB_WORKSPACE/evidence/xcodebuild.log"
+          APP="$RUNNER_TEMP/Build337Derived/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          test -f "$APP/GlobalHoldings"
+          test -d "$APP/WebApp"
+          diff -qr "$SRC/WebApp" "$APP/WebApp" | tee "$GITHUB_WORKSPACE/evidence/webapp-bundle-diff.txt"
+          test ! -s "$GITHUB_WORKSPACE/evidence/webapp-bundle-diff.txt"
+          test ! -e "$APP/_CodeSignature"
+          test ! -e "$APP/embedded.mobileprovision"
+          export APP OUT SRC
+
+          python3 - <<'PY'
+          import hashlib,json,os,plistlib,struct
+          from pathlib import Path
+          app=Path(os.environ['APP']); src=Path(os.environ['SRC']); out=Path(os.environ['OUT']); ws=Path(os.environ['GITHUB_WORKSPACE'])
+          p=plistlib.loads((app/'Info.plist').read_bytes())
+          assert p['CFBundleShortVersionString']=='3.0.0' and p['CFBundleVersion']=='337' and p['UIDeviceFamily']==[1]
+          assert p['CFBundleIdentifier']=='com.example.globalholdings'
+          assert p['GHSourceSnapshotSHA256']==os.environ['TARGET_WEBAPP_TREE_SHA256']
+          data=(app/'GlobalHoldings').read_bytes()
+          magic,cpu,subtype,kind,count,size,flags,reserved=struct.unpack_from('<8I',data)
+          assert magic==0xfeedfacf and cpu==0x100000c and kind==2
+          cursor=32; platforms=[]; signatures=[]
+          for _ in range(count):
+              cmd,length=struct.unpack_from('<II',data,cursor)
+              assert length>=8 and cursor+length<=len(data)
+              if cmd==0x32: platforms.append(struct.unpack_from('<I',data,cursor+8)[0])
+              if cmd==0x1d: signatures.append(struct.unpack_from('<II',data,cursor+8))
+              cursor+=length
+          assert 2 in platforms and signatures==[]
+          def sha(path):
+              h=hashlib.sha256()
+              with path.open('rb') as f:
+                  for b in iter(lambda:f.read(1024*1024),b''): h.update(b)
+              return h.hexdigest()
+          apple={}
+          for key,rel in [('native','apple/evidence/native-regression/native-tests.json'),('webkit','apple/evidence/navigation/n2-navigation-tests.json'),('bundle','apple/evidence/bundle/bundle-tests.json')]:
+              r=json.loads((ws/rel).read_text())
+              assert r['failed']==0 and r['passed']==r['total'] and r['total']>0
+              apple[key]={'passed':r['passed'],'total':r['total']}
+          acceptance=json.loads((ws/'acceptance/results.json').read_text())
+          record={
+              'version':'3.0.0','build':337,'save_schema':'2.0.0',
+              'unsigned':True,'production_approved':False,'device_tested':False,
+              'source_tree_sha256':os.environ['TARGET_SOURCE_TREE_SHA256'],
+              'webapp_tree_sha256':os.environ['TARGET_WEBAPP_TREE_SHA256'],
+              'native_executable_sha256':sha(app/'GlobalHoldings'),
+              'architecture':'arm64','iphoneos_platform':True,'code_signature_commands':signatures,
+              'old_ipa_used':False,
+              'source_acceptance':{'passed':acceptance['passed'],'total':acceptance['total'],'node':acceptance['node']},
+              'apple_tests':apple,
+              'instrumentation_only':True
+          }
+          (out/'build337-prepackage-verification.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+
+          rm -rf "$RUNNER_TEMP/Payload"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          ditto "$APP" "$RUNNER_TEMP/Payload/GlobalHoldings.app"
+          cd "$RUNNER_TEMP"
+          /usr/bin/zip -qry "$OUT/GlobalHoldings_v3_0_0_build337_unsigned.ipa" Payload
+          unzip -t "$OUT/GlobalHoldings_v3_0_0_build337_unsigned.ipa" | tee "$GITHUB_WORKSPACE/evidence/ipa-crc.log"
+          shasum -a 256 "$OUT/GlobalHoldings_v3_0_0_build337_unsigned.ipa" | tee "$OUT/GlobalHoldings_v3_0_0_build337_unsigned.ipa.sha256"
+
+          python3 - <<'PY'
+          import hashlib,json,os,zipfile,plistlib
+          from pathlib import Path
+          out=Path(os.environ['OUT']); ipa=out/'GlobalHoldings_v3_0_0_build337_unsigned.ipa'
+          r=json.loads((out/'build337-prepackage-verification.json').read_text())
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None
+              names=set(z.namelist())
+              assert 'Payload/GlobalHoldings.app/GlobalHoldings' in names
+              assert not any('/_CodeSignature/' in n or n.endswith('/embedded.mobileprovision') for n in names)
+              p=plistlib.loads(z.read('Payload/GlobalHoldings.app/Info.plist'))
+              assert p['CFBundleVersion']=='337' and p['CFBundleShortVersionString']=='3.0.0' and p['UIDeviceFamily']==[1]
+          h=hashlib.sha256(ipa.read_bytes()).hexdigest()
+          r.update({'ipa_created':True,'final_ipa_crc_passed':True,'ipa_sha256':h,'ipa_bytes':ipa.stat().st_size})
+          (out/'GlobalHoldings_v3_0_0_build337_unsigned.verification.json').write_text(json.dumps(r,indent=2)+'\n')
+          (out/'build337-prepackage-verification.json').unlink()
+          PY
+
+      - name: Upload Build337 unsigned test deliverables
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings-Build337-Unsigned
+          path: |
+            output/GlobalHoldings_v3_0_0_build337_unsigned.ipa
+            output/GlobalHoldings_v3_0_0_build337_unsigned.verification.json
+            output/GlobalHoldings_v3_0_0_build337_unsigned.ipa.sha256
+            acceptance/results.json
+            evidence/
+            apple/evidence/native-regression/native-tests.json
+            apple/evidence/navigation/n2-navigation-tests.json
+            apple/evidence/bundle/bundle-tests.json
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Preserve failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings-Build337-Failure
+          path: |
+            evidence/
+            acceptance/
+            apple/evidence/
+          retention-days: 7
+          if-no-files-found: ignore
+
+
+      - name: Publish Build337 CI locator
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p ci
+          STATUS="${{ job.status }}"
+          export STATUS
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          row={
+            'run_id': int(os.environ['GITHUB_RUN_ID']),
+            'run_attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT','1')),
+            'workflow_commit': os.environ['GITHUB_SHA'],
+            'branch': os.environ['GITHUB_REF_NAME'],
+            'status': os.environ['STATUS'],
+            'artifact_name': 'GlobalHoldings-Build337-Unsigned' if os.environ['STATUS']=='success' else 'GlobalHoldings-Build337-Failure'
+          }
+          Path('ci/build337-result.json').write_text(json.dumps(row,indent=2)+'\n')
+          PY
+          git config user.name "GlobalHoldings Build337 CI"
+          git config user.email "build337-ci@users.noreply.github.com"
+          git add ci/build337-result.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "ci: publish Build337 run locator [skip ci]"
+          git push origin "HEAD:$GITHUB_REF_NAME"
