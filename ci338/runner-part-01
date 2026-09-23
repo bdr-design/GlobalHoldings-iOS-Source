@@ -1,0 +1,49 @@
+']=='v24.21.0' and r['passed']==r['total'] and r['total']>=90
+PY
+node tests/build338-idempotency-save-lag-root.cjs | tee "$GITHUB_WORKSPACE/evidence/build338-root-contract.log"
+xcodebuild -version | tee "$GITHUB_WORKSPACE/evidence/xcode-version.txt"; xcrun swiftc --version | tee "$GITHUB_WORKSPACE/evidence/swift-version.txt"; sw_vers | tee "$GITHUB_WORKSPACE/evidence/macos-version.txt"
+xcrun swiftc -parse iOS/GlobalHoldings/*.swift; xcrun swiftc -typecheck -swift-version 5 -sdk "$(xcrun --sdk iphoneos --show-sdk-path)" -target arm64-apple-ios17.0 iOS/GlobalHoldings/*.swift
+OUT="$GITHUB_WORKSPACE/apple/evidence/native-regression"; mkdir -p "$OUT"; python3 "$GITHUB_WORKSPACE/audit-tools/prepare_native_tests.py" --source "$GITHUB_WORKSPACE/candidate" --output "$OUT"
+xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" iOS/GlobalHoldings/GlobalSaveVault.swift iOS/GlobalHoldings/GlobalGameStorage.swift "$OUT/main.swift" -o "$RUNNER_TEMP/native-regression"; (cd "$OUT" && GH_NATIVE_AUDIT_EPHEMERAL=1 "$RUNNER_TEMP/native-regression") | tee "$OUT/run.log"
+python3 - <<'PY'
+import json,os
+from pathlib import Path
+r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'apple/evidence/native-regression/native-tests.json').read_text());assert r['failed']==0 and r['passed']==r['total'] and r['total']>0
+PY
+OUT="$GITHUB_WORKSPACE/apple/evidence/bundle"; export OUT; mkdir -p "$OUT"; python3 "$GITHUB_WORKSPACE/audit-tools/prepare_r4_bundle_tests.py" "$OUT"
+python3 - <<'PY'
+import os
+from pathlib import Path
+p=Path(os.environ['OUT'])/'main.swift';p.write_text(p.read_text().replace('334','338'))
+PY
+TEST_APP="$RUNNER_TEMP/Build338BundleTests.app"; export TEST_APP; mkdir -p "$TEST_APP/Contents/MacOS" "$TEST_APP/Contents/Resources"
+python3 - <<'PY'
+import os,plistlib
+from pathlib import Path
+info={'CFBundleIdentifier':'com.example.globalholdings.build338.tests','CFBundleExecutable':'BundleTests','CFBundlePackageType':'APPL','CFBundleShortVersionString':'3.0.0','CFBundleVersion':'338','GHSourceSnapshotSHA256':os.environ['TARGET_WEBAPP_TREE_SHA256']};Path(os.environ['TEST_APP'],'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+PY
+xcrun swiftc -swift-version 5 -sdk "$(xcrun --sdk macosx --show-sdk-path)" iOS/GlobalHoldings/GlobalSaveVault.swift iOS/GlobalHoldings/GlobalGameStorage.swift "$OUT/main.swift" -o "$TEST_APP/Contents/MacOS/BundleTests"; (cd "$OUT" && GH_NATIVE_AUDIT_EPHEMERAL=1 "$TEST_APP/Contents/MacOS/BundleTests") | tee "$OUT/run.log"
+python3 - <<'PY'
+import json,os
+from pathlib import Path
+r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'apple/evidence/bundle/bundle-tests.json').read_text());assert r['failed']==0 and r['passed']==r['total'] and r['total']>0
+PY
+if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+xcodegen generate --spec project.yml
+xcodebuild -project GlobalHoldings.xcodeproj -scheme GlobalHoldings -configuration Release -sdk iphoneos -derivedDataPath "$RUNNER_TEMP/Build338Derived" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" clean build | tee "$GITHUB_WORKSPACE/evidence/xcodebuild.log"
+APP="$RUNNER_TEMP/Build338Derived/Build/Products/Release-iphoneos/GlobalHoldings.app"; test -f "$APP/GlobalHoldings"; test -d "$APP/WebApp"; diff -qr WebApp "$APP/WebApp" > "$GITHUB_WORKSPACE/evidence/webapp-bundle-diff.txt" || true; test ! -s "$GITHUB_WORKSPACE/evidence/webapp-bundle-diff.txt"; test ! -e "$APP/_CodeSignature"; test ! -e "$APP/embedded.mobileprovision"
+export APP; mkdir -p "$GITHUB_WORKSPACE/output"; export OUT="$GITHUB_WORKSPACE/output"
+python3 - <<'PY'
+import hashlib,json,os,plistlib,struct
+from pathlib import Path
+app=Path(os.environ['APP']);out=Path(os.environ['OUT']);ws=Path(os.environ['GITHUB_WORKSPACE']);p=plistlib.loads((app/'Info.plist').read_bytes());assert p['CFBundleShortVersionString']=='3.0.0' and p['CFBundleVersion']=='338' and p['UIDeviceFamily']==[1] and p['GHSourceSnapshotSHA256']==os.environ['TARGET_WEBAPP_TREE_SHA256']
+data=(app/'GlobalHoldings').read_bytes();magic,cpu,subtype,kind,count,size,flags,reserved=struct.unpack_from('<8I',data);assert magic==0xfeedfacf and cpu==0x100000c and kind==2;cursor=32;platforms=[];signatures=[]
+for _ in range(count):
+ cmd,length=struct.unpack_from('<II',data,cursor);assert length>=8 and cursor+length<=len(data);platforms += [struct.unpack_from('<I',data,cursor+8)[0]] if cmd==0x32 else [];signatures += [struct.unpack_from('<II',data,cursor+8)] if cmd==0x1d else [];cursor+=length
+assert 2 in platforms and signatures==[]
+def sha(path):
+ h=hashlib.sha256()
+ with path.open('rb') as f:
+  for b in iter(lambda:f.read(1024*1024),b''):h.update(b)
+ return h.hexdigest()
+acc=json.loads((ws/'acceptance/results.json').read_text());nr=json.loads((ws/'apple/evidence/native-regression/native-tests.json').read_text());br=json.loads((ws/'apple/evidence/bundle/bundle-tests.json').read_text());record={'version':'3.0.0','build':338,'save_schema':'2.0.0','unsigned':True,'production
