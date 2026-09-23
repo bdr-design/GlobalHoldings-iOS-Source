@@ -1,0 +1,47 @@
+name: Build335 Node24 lightweight acceptance runtime
+on:
+  push:
+    branches: [build335-persistence-root-20260923]
+    paths: ['.github/workflows/build335-node24-runtime.yml']
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Set up exact Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Package Node24 and exact JS test modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/runtime/project"
+          cd "$GITHUB_WORKSPACE/runtime/project"
+          cat > package.json <<'JSON'
+          {
+            "private": true,
+            "devDependencies": {
+              "eslint": "10.10.0",
+              "playwright": "1.55.1",
+              "three": "0.180.0",
+              "esbuild": "0.25.10",
+              "leaflet": "1.9.4"
+            }
+          }
+          JSON
+          npm install --no-audit --no-fund
+          NODE_BIN="$(command -v node)"
+          cp "$NODE_BIN" "$GITHUB_WORKSPACE/runtime/node"
+          cp -a node_modules "$GITHUB_WORKSPACE/runtime/node_modules"
+          "$GITHUB_WORKSPACE/runtime/node" --version > "$GITHUB_WORKSPACE/runtime/node-version.txt"
+          du -sh "$GITHUB_WORKSPACE/runtime" > "$GITHUB_WORKSPACE/runtime/size.txt"
+      - name: Upload lightweight runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build335-Node24-Light-${{ github.run_id }}
+          path: runtime/
+          retention-days: 2
+          if-no-files-found: error
