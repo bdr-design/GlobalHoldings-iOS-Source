@@ -149,3 +149,116 @@ First implementation phase:
 4. implement architecture changes in isolated, regression-gated batches;
 5. keep Build 338 untouched as fallback runtime.
 
+
+## 11. Phase 0 locked checkpoint — 2026-09-24
+
+Phase 0 is complete as the first independent Build 339 full-source checkpoint.
+
+### Authoritative Build 339 source
+
+- Version: **3.0.0**
+- Build: **339**
+- Save Schema: **2.0.0**
+- Runtime source tree SHA-256:
+  `8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a`
+- WebApp tree SHA-256:
+  `06234729bd9a6395f23fc46c958b4ee8f7d5c9e99c66c93f5e1b1aea78ce1652`
+- Full source archive:
+  `GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip`
+- Source ZIP SHA-256:
+  `0528355bb0ad1daca83ea09c09285a61a8d589c3981a113f9ae5000c263b1de9`
+- Source ZIP bytes: **132,212,366**
+- Library source path:
+  `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip`
+- Library file id:
+  `libfile_8a29d23930cc8191877904f40fd325cc`
+- Runtime files covered by source manifest: **480**
+- old_ipa_used: **false**
+- production_approved: **false**
+- physical_device_tested: **false**
+
+From this checkpoint onward, **Build 339 Phase 0 is the active development Source of Truth**. Build 338 must no longer be used for new work; it remains fallback only.
+
+### Phase 0 implementation
+
+Phase 0 intentionally changes identity/instrumentation only and does not intentionally change game semantics.
+
+Implemented:
+- aligned `BUILD`, native project build, package build and `RUNTIME_BUILD` to 339;
+- retained Save Schema 2.0.0;
+- transaction per-task post-commit timings including key/owner/priority/duration/success;
+- control-plane baseline vs final integrity timing with schema/integrity/comparison split;
+- Save Schema timing split for authorization, authorization proof verification, document collection, record proof verification, document verification, company-platform validation and remainder;
+- render timing split for simulation frame sample, marker target collection, visible marker interpolation and structural map rebuild;
+- diagnostics export includes the new transient telemetry;
+- telemetry is runtime-only and must never become authoritative persistent state;
+- added Build 339 bootstrap regression contract;
+- reduced timing perturbation by timing proof loops in aggregate rather than calling the clock around every individual proof.
+
+### Phase 0 regression evidence
+
+Passed locally:
+- source verifier: PASS;
+- source-layout: 10/10;
+- Build339 architecture bootstrap: 12/12;
+- simulation time contract: PASS;
+- 600-air calendar regression: PASS;
+- asset/route/HR contract: PASS;
+- finance settlement: PASS;
+- finance company security: 8/8;
+- durable authorization: 5/5;
+- document-proof v3 security including rollback: PASS;
+- durable post-commit: 6/6;
+- Hour83 proof corruption/calendar rollback: PASS;
+- core regressions: PASS;
+- fleet regressions: PASS;
+- persistence regressions: PASS;
+- Build338 idempotency/save/lag regression contract: PASS.
+
+Local runtime was Node **v22.16.0**. This evidence does **not** replace the mandatory Node 24 / ESLint / CI gate.
+
+### External engineering references approved for Build 339 research
+
+The user explicitly authorized consulting external high-quality engineering/game references.
+
+Current reference set:
+- WebKit — Optimizing WebKit & Safari for Speedometer 3.0:
+  https://webkit.org/blog/15249/optimizing-webkit-safari-for-speedometer-3-0/
+- WebKit — Memory Debugging with Web Inspector:
+  https://webkit.org/blog/6425/memory-debugging-with-web-inspector/
+- WebKit — JavaScriptCore documentation:
+  https://docs.webkit.org/Deep%20Dive/JSC/JavaScriptCore.html
+- Game Programming Patterns — Data Locality:
+  https://gameprogrammingpatterns.com/data-locality.html
+- Game Programming Patterns — Dirty Flag:
+  https://gameprogrammingpatterns.com/dirty-flag.html
+- Game Programming Patterns — Object Pool:
+  https://gameprogrammingpatterns.com/object-pool.html
+- Three.js — InstancedMesh:
+  https://threejs.org/docs/pages/InstancedMesh.html
+- Unity Entities documentation is an architecture comparison reference only; Build 339 does not adopt Unity/DOTS as a dependency.
+
+Rule: external patterns are evidence/ideas only. Nothing enters Build 339 merely because another engine uses it. Every change must be proven against Global Holdings ownership, determinism, rollback, save/restore and device measurements.
+
+### Advisory developer map status
+
+A developer-supplied Build 338 architecture/risk map was received. It states that it was derived partly from an unpacked Build 338 IPA plus the live diagnostic. Therefore it is **advisory only**, not authoritative source evidence. Useful claims must be independently verified against the clean frozen Build 338 source / Build 339 bootstrap source before implementation.
+
+## 12. Phase 1 NEXT ACTION — Time + Transaction architecture
+
+Do not start again from Build 338. Start only from the locked Build 339 Phase 0 source identity above.
+
+Immediate sequence:
+
+1. Build a clean-source writer/reader/boundary map for `simulation-core.js`, `app.js::createSimulationSliceJob`, `transaction-core.js`, and all Hour/Day boundary owners.
+2. Define the Build 339 time contract before code replacement:
+   - `state.simSeconds` remains the single authoritative simulation time unless a separately recorded migration replaces it;
+   - rendering clock must not own economic time;
+   - fixed-step / bounded-work execution must preserve exact boundary ordering;
+   - no skipped or duplicated Hour/Day effects under backlog or manual advance.
+3. Define a mutation-journal / copy-on-write rollback contract that can replace full-tree snapshots without weakening rollback.
+4. Add byte-for-byte rollback tests across representative hourly/day failure cases before disabling any existing full snapshot.
+5. Use Phase 0 telemetry to measure schema/integrity/render sub-owners on device before optimizing them.
+6. Keep user-facing export/import, route engine, asset data layout, rendering migration and tripArchive redesign queued behind the time/transaction foundation unless a dependency requires an earlier interface contract.
+7. Update this MASTER after every meaningful batch with exact files, hashes, test evidence, rejected approaches and the next continuation point.
+
