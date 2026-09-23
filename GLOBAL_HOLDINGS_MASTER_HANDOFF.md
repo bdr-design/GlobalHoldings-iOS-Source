@@ -328,17 +328,20 @@ Never claim device-tested unless actually tested on device.
 ## 13. Conversation continuation behavior
 
 When a new conversation receives “كمل Global Holdings” or equivalent:
-1. Read this MASTER HANDOFF.
-2. Inspect repository/current branch and latest relevant diagnostic/evidence.
-3. Verify Source of Truth before modifying code.
-5. Resume from NEXT ACTION.
-6. Do not ask the user to repeat architecture, repair method, deletion/addition rules, source rules, diagnostic identity, or recorded project state.
-7. Do not stop after every small step asking for permission.
-8. Continue in careful batches and report meaningful checkpoints.
-9. Ask only when a genuinely missing external artifact/decision cannot be established from repository, diagnostics, library or prior evidence.
-10. Never infer a missing source hash/build provenance.
+1. Locate repository **bdr-design/GlobalHoldings-iOS-Source** using the connected GitHub source.
+2. Fetch **`GLOBAL_HOLDINGS_MASTER_HANDOFF.md` specifically from branch `globalholdings-project-control`**. Do not use the copy on a build-provenance branch and do not assume the default `main` branch contains the current handoff.
+3. Read the MASTER completely before asking the user any project-state question.
+4. Inspect the exact immutable source/provenance commit and the latest diagnostic/evidence identities recorded here.
+5. Verify the Source of Truth before modifying code.
+6. Resume from NEXT ACTION.
+7. Do not ask the user to repeat architecture, repair method, deletion/addition rules, source rules, diagnostic identity, or recorded project state.
+8. Do not stop after every small step asking for permission; continue in careful batches and report meaningful checkpoints.
+9. Ask only when a genuinely missing external artifact/decision cannot be established from repository, diagnostics, library, or prior evidence.
+10. Never infer or silently substitute a missing source hash, build provenance, diagnostic identity, or schema.
 11. Communicate in Arabic unless requested otherwise.
 12. Update this MASTER only on the canonical control branch; never mutate a validated build-provenance branch merely to maintain documentation.
+13. Before closing a validated build, update: build number, immutable source anchor, source/WebApp hashes, CI evidence, latest diagnostic hash, approved decisions, unresolved issues, and NEXT ACTION.
+14. Treat anything not explicitly recorded as an approved decision as **unapproved/pending**, even if it appeared earlier in discussion.
 
 ## 14. NEXT ACTION — Build 338
 
