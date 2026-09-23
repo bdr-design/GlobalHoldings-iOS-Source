@@ -50,7 +50,7 @@ jobs:
           assert 'dropFirst(root.path.count + 1)' not in block
           expected['GlobalGameStorage.swift']=fixed_hash
           webhash='699d467fdc3eee220980ae9ad304a1aa8e7f980aa707b61fb16f5d037e94712a'
-          project=root/'project.yml';text=project.read_text().replace('CURRENT_PROJECT_VERSION: "315"','CURRENT_PROJECT_VERSION: "334"').replace('CFBundleVersion: "315"','CFBundleVersion: "334"\n        GHSourceSnapshotSHA256: "'+webhash+'"');project.write_text(text)
+          project=root/'project.yml';text=project.read_text().replace('CURRENT_PROJECT_VERSION: "315"','CURRENT_PROJECT_VERSION: "335"').replace('CFBundleVersion: "315"','CFBundleVersion: "335"\n        GHSourceSnapshotSHA256: "'+webhash+'"');project.write_text(text)
           (root/'WebApp').mkdir()
           # This is only an intermediate compiler product. The final IPA is
           # assembled with the exact locally tested 334 WebApp, never old files.
