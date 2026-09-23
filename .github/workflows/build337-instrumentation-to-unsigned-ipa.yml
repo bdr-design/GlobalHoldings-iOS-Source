@@ -16,10 +16,10 @@ jobs:
       BASELINE_PAYLOAD_SHA256: 4f6c81d1c3d1dd3fc8fc9b02b17e8e2a7dc92c2b7777d09324a9ae7baa12d434
       BASELINE_SOURCE_TREE_SHA256: ff958436f71c14c4d311621270095d99afe2383b3ba39b1807b8be28c484420a
       BASELINE_WEBAPP_TREE_SHA256: fe92da4835d1fa064e9e56098b40f5dc3aad120421674f191bf7cb15d9122fff
-      TARGET_SOURCE_TREE_SHA256: cc1e7ff857d38e562f368ce2b699547db77ceb3f6d3965ea8f974a20feb09318
-      TARGET_WEBAPP_TREE_SHA256: e0aab51337ceb9b893929bd1937bcc27e1236ea417bc7d1befea3c7c16ec0170
-      PATCH_B64_SHA256: 6a29fc937f7f20d16b634abfdf34c810aaf798dbf7a5a881a1caa40e537e5a1c
-      PATCH_SHA256: ead6cfe22780b0fb278745b5bf33e2f18a7847a3535248a37bbf2b103608808f
+      TARGET_SOURCE_TREE_SHA256: b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484
+      TARGET_WEBAPP_TREE_SHA256: 6da1b5d15effaa3a148d3925ac76a2e036d630ee4186b9bbf9f7c015d0144bb0
+      PATCH_B64_SHA256: e6abc640011c0312b2b44deb7f8a4f9efa830e1d4fc232c92e686d9b15e6a710
+      PATCH_SHA256: 4f8922a52ea0d76183a1f979bdc9c3301e98b70a09d1164764ae31e009403e99
       EXPECTED_VERSION: 3.0.0
       EXPECTED_BUILD: '337'
       EXPECTED_SAVE_SCHEMA: 2.0.0
@@ -53,7 +53,7 @@ jobs:
           assert manifest['webapp_tree_sha256']==os.environ['BASELINE_WEBAPP_TREE_SHA256']
           PY
 
-          cat transport/build337-patch-*.b64 > "$RUNNER_TEMP/build337.patch.gz.b64"
+          cp transport/build337-instrumentation-v2.patch.gz.b64 "$RUNNER_TEMP/build337.patch.gz.b64"
           test "$(shasum -a 256 "$RUNNER_TEMP/build337.patch.gz.b64" | awk '{print $1}')" = "$PATCH_B64_SHA256"
           /usr/bin/base64 -D -i "$RUNNER_TEMP/build337.patch.gz.b64" | gzip -dc > "$RUNNER_TEMP/build337.patch"
           test "$(shasum -a 256 "$RUNNER_TEMP/build337.patch" | awk '{print $1}')" = "$PATCH_SHA256"
