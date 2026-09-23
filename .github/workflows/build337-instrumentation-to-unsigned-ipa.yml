@@ -179,11 +179,11 @@ jobs:
           old="helpers=method('    private func prepareNextNativeBootstrap(')+'\\n'+method('    private func installBootstrapBeforeNavigation(')"
           new="helpers='\\n'.join(method(name) for name in ['    private func prepareNextNativeBootstrap(', '    private func installBootstrapBeforeNavigation(', '    private func isTrustedGameDocument(', '    private func isCurrentDocument(', '    func webView(_ webView: WKWebView, didCommit navigation:'])"
           assert old in s;s=s.replace(old,new)
-          s=s.replace(' var nativeNavigationToken:UInt=0',' var nativeNavigationToken:UInt=0\\n var navigationPreparing=false')
+          s=s.replace(' var nativeNavigationToken:UInt=0',' var nativeNavigationToken:UInt=0'+chr(10)+' var navigationPreparing=false')
           s=s.replace('func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){if let p=m.body as? [String:Any]{messages.append(p)}}','func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){guard !navigationPreparing,m.webView === webView,m.frameInfo.isMainFrame,isTrustedGameDocument(m.frameInfo.request.url) else{return};if let p=m.body as? [String:Any]{messages.append(p)}}')
           marker='test("large bootstrap request returns without waiting'
-          tests='test("old-page completion cannot acknowledge a replacement document") {let old=probe.nativeNavigationToken;let _=try navigate();try check(!probe.isCurrentDocument(old),"stale page token accepted");try check(probe.isCurrentDocument(probe.nativeNavigationToken),"current page locked after didCommit")}\\n'
-          tests+='test("navigation preparation rejects completion before commit") {let token=probe.nativeNavigationToken;probe.navigationPreparing=true;try check(!probe.isCurrentDocument(token),"accepted during navigation");probe.navigationPreparing=false;try check(probe.isCurrentDocument(token),"current page not restored")}\\n'
+          tests='test("old-page completion cannot acknowledge a replacement document") {let old=probe.nativeNavigationToken;let _=try navigate();try check(!probe.isCurrentDocument(old),"stale page token accepted");try check(probe.isCurrentDocument(probe.nativeNavigationToken),"current page locked after didCommit")}'+chr(10)
+          tests+='test("navigation preparation rejects completion before commit") {let token=probe.nativeNavigationToken;probe.navigationPreparing=true;try check(!probe.isCurrentDocument(token),"accepted during navigation");probe.navigationPreparing=false;try check(probe.isCurrentDocument(token),"current page not restored")}'+chr(10)
           assert marker in s;s=s.replace(marker,tests+marker)
           Path('audit-tools/prepare_build337_navigation_tests.py').write_text(s)
           PY
