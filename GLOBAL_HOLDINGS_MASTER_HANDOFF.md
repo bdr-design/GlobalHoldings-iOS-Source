@@ -1,6 +1,6 @@
 # GLOBAL HOLDINGS — MASTER HANDOFF / CONTINUATION PROTOCOL
 
-**MASTER FORMAT VERSION:** 3.0  
+**MASTER FORMAT VERSION:** 3.1  
 **LAST AUDITED:** 2026-09-24  
 **CANONICAL CONTROL BRANCH:** `globalholdings-project-control`
 
@@ -23,6 +23,11 @@ MANDATORY: A new conversation must read this file first, establish the current S
 - Repository: **bdr-design/GlobalHoldings-iOS-Source**
 - Canonical control branch: **globalholdings-project-control**
 - Build 338 frozen provenance/CI branch: **build338-save-lag-root-20260923**\n- Build 339 architecture control branch: **build339-architecture-control-20260924**\n- Build 339 master: **GLOBAL_HOLDINGS_BUILD339_MASTER.md**
+- Build 339 runtime source tree SHA-256: **8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a**
+- Build 339 WebApp tree SHA-256: **06234729bd9a6395f23fc46c958b4ee8f7d5c9e99c66c93f5e1b1aea78ce1652**
+- Build 339 full source archive: **GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip**
+- Build 339 source ZIP SHA-256: **0528355bb0ad1daca83ea09c09285a61a8d589c3981a113f9ae5000c263b1de9**
+- Build 339 Library source path: **/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip**
 - Build 338 verified runtime source tree SHA-256: **387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b**
 - Build 338 WebApp tree SHA-256: **aed5ebc6773603703702de1cddacd2ed6197f9a2e68465ba39bf9ead0cc9aab3**
 - Build 338 full source archive: **GlobalHoldings_BUILD338_SAVE_LAG_ROOT_CANDIDATE_SOURCE.zip**
@@ -36,11 +41,19 @@ MANDATORY: A new conversation must read this file first, establish the current S
 
 ### Current development / fallback rule
 
-All new functional/architectural development now belongs to **Build 339**. Until the first Build 339 source candidate is locked, Build 339 may bootstrap only from the frozen verified **Build 338** runtime tree whose source SHA-256 is:
+All new functional/architectural development MUST start from the locked **Build 339 Phase 0** source tree:
 
-`387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b`
+`8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a`
 
-or from the verified full Build 338 source archive named above.
+or its exact full source archive:
+
+`GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip`
+
+with ZIP SHA-256:
+
+`0528355bb0ad1daca83ea09c09285a61a8d589c3981a113f9ae5000c263b1de9`
+
+Build 338 is now fallback/recovery only. It may be used only if Build 339 must be abandoned or rolled back due to an architectural failure.
 
 **Forbidden as a development source from this point forward:**
 - any IPA, unpacked IPA, `.app`, or Payload directory;
@@ -484,32 +497,18 @@ When a new conversation receives “كمل Global Holdings” or equivalent:
 13. Before closing a validated build, update: build number, immutable source anchor, source/WebApp hashes, CI evidence, latest diagnostic hash, approved decisions, unresolved issues, and NEXT ACTION.
 14. Treat anything not explicitly recorded as an approved decision as **unapproved/pending**, even if it appeared earlier in discussion.
 
-## 14. NEXT ACTION — Build 339 architecture generation
+## 14. NEXT ACTION — Build 339 Phase 1: Time + Transaction architecture
 
-Build 338 stabilization work is closed as an active development line. Continue in Build 339 using the separate master on branch `build339-architecture-control-20260924`. Bootstrap only from the exact verified Build 338 source tree/archive recorded in Section 1, then lock a distinct Build 339 source hash before functional changes.
+Phase 0 is locked and is now the active Source of Truth.
 
-### Immediate engineering work order
-1. Instrument the heavy hourly `postCommitCritical` path at sub-owner level before changing behavior.
-2. Instrument map/render update cost separately from simulation finish cost.
-3. Repair the proven lag owner(s) while preserving rollback and integrity safety boundaries.
-4. Trace and repair user-facing save export/import as a full native-backed round trip.
-5. Trace batch fleet route assignment and geometry duplication; eliminate unjustified same-route/corridor concentration at the true owner.
-6. Profile dense map rendering and introduce Canvas/culling/batching only if measured useful.
-7. Audit `mobility.tripArchive` readers/references before any compaction.
-8. Re-test cheque + payable bank transfer explicitly on device.
-9. Run stress tests with the heavy save, ~2,000 assets, high speed, multiple hourly boundaries, and large batch route assignment.
-10. Export a new diagnostic and compare at minimum:
-   - maxFinishMs / lastFinish breakdown;
-   - postCommitCriticalMs;
-   - snapshotMs/fullSnapshot frequency;
-   - schemaMs/stringifyMs;
-   - nativeVaultCommitMs/ACK latency;
-   - rootBytes/utf8Bytes and branch owners;
-   - hardTasks/longTasks/governor/backlog;
-   - rollback/cancel/integrity status;
-   - route overlap counts/geometry duplication;
-   - map render/update timings.
-11. Do not approve the next candidate until lag, export/import, route overlap, and finance regressions are explicitly tested.
+Immediate work:
+1. Verify clean-source boundary/writer/readers for time and transactions.
+2. Define and test the deterministic fixed-step/bounded-work time contract.
+3. Define mutation-journal / copy-on-write rollback architecture.
+4. Add byte-for-byte rollback tests before removing any full snapshot safety.
+5. Use Phase 0 sub-owner telemetry to measure integrity/render owners on physical device.
+6. Continue later with persistence/export/import, route ownership, asset data layout, render migration, and tripArchive redesign in dependency order.
+7. Update the Build339 MASTER after every meaningful batch.
 
 ### New-chat continuation
 
@@ -520,7 +519,7 @@ The user should only need to write:
 The new conversation MUST:
 - open repository `bdr-design/GlobalHoldings-iOS-Source`;
 - read `GLOBAL_HOLDINGS_MASTER_HANDOFF.md` from branch `globalholdings-project-control`;
-- use Build 338 as the active Source of Truth;
+- use Build 339 Phase 0 source tree `8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a` as the active Source of Truth;
 - continue the work order above without asking the user to repeat the architecture, rules, or current state.
 
 ---
@@ -536,4 +535,21 @@ User-approved control decision:
 - open Build 339 as the independent architecture-generation line;
 - if Build 339 introduces an unacceptable architectural regression, return to the exact Build 338 source identity, not an IPA or reconstructed patch stack;
 - Build 339 control reference: branch `build339-architecture-control-20260924`, file `GLOBAL_HOLDINGS_BUILD339_MASTER.md`.
+
+
+
+## 16. Build 339 Phase 0 locked checkpoint — 2026-09-24
+
+- Active runtime source tree SHA-256: `8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a`
+- WebApp tree SHA-256: `06234729bd9a6395f23fc46c958b4ee8f7d5c9e99c66c93f5e1b1aea78ce1652`
+- Full source archive: `GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip`
+- Source ZIP SHA-256: `0528355bb0ad1daca83ea09c09285a61a8d589c3981a113f9ae5000c263b1de9`
+- Library path: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip`
+- Save Schema: 2.0.0
+- Production approval: CLOSED
+- Physical device validation: pending
+- Phase 0 intent: identity + transient instrumentation only, no intentional game semantic change
+- Local regressions: source verifier/source-layout/Build339 bootstrap/time/600-air/finance/security/proofs/Hour83/core/fleet/persistence/Build338 contract all PASS
+- Mandatory pending gate: Node 24 + ESLint + full CI + fresh Apple/WKWebView/native + physical iPhone
+- NEXT ACTION: Build 339 Phase 1 time and transaction architecture, as detailed in the Build339 MASTER.
 
