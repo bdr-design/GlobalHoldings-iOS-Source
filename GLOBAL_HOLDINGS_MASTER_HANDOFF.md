@@ -61,7 +61,9 @@ create a standalone archive named:
 `GlobalHoldings_BUILD337_INSTRUMENTATION_BASELINE_SOURCE.zip`
 from the reconstructed tree that verifies to the Build 337 source-tree hash below. Record the archive SHA-256 here once produced. Until that archive/hash is recorded, functional Build 338 source edits are blocked.
 
-Physical baseline archive SHA-256: **NOT YET RECORDED — REQUIRED BEFORE FUNCTIONAL BUILD 338 EDITS**.
+Physical baseline archive SHA-256: **f1789309998c3b7831b6a2f30e40e25cb5faa605c91f630164a009b3f66f0d32**.
+
+Physical baseline archive created from the verified Build 337 tree on 2026-09-23. The archive is a transport artifact; the authoritative runtime identity remains `source_tree_sha256=b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484`.
 
 ## 2. Build 337 scope
 
@@ -345,7 +347,7 @@ When a new conversation receives “كمل Global Holdings” or equivalent:
 
 ## 14. NEXT ACTION — Build 338
 
-0. Before any functional code change, reconstruct the exact Build 337 candidate from immutable CI input commit `3ae0392d700f5fd41900f4ead8293a825f4e750d`, verify it, create `GlobalHoldings_BUILD337_INSTRUMENTATION_BASELINE_SOURCE.zip`, compute its archive SHA-256, and record that SHA in this MASTER.
+0. Baseline lock COMPLETE: `GlobalHoldings_BUILD337_INSTRUMENTATION_BASELINE_SOURCE.zip` exists with SHA-256 `f1789309998c3b7831b6a2f30e40e25cb5faa605c91f630164a009b3f66f0d32`, and its extracted runtime tree verifies to `b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484`.
 1. Treat only the verified reconstructed Build 337 tree as the Build 338 baseline; never the repository branch head and never Build 336 directly.
 2. Verify `source_tree_sha256=b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484` and `webapp_tree_sha256=6da1b5d15effaa3a148d3925ac76a2e036d630ee4186b9bbf9f7c015d0144bb0`.
 3. Use the Build 337 iPhone diagnostic `GlobalHoldings_diagnostic_v3.0.0_1790187863706.ghdiagnostic` only after verifying SHA-256 `c67b5d04877f97aa64a48517c1e3530007f38deb6620d87883f1984a9cee031f`.
