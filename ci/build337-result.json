@@ -1,7 +1,7 @@
 {
-  "run_id": 35893394452,
+  "run_id": 35893997018,
   "run_attempt": 1,
-  "workflow_commit": "9281970445dc6f3163c7a22ba0ba8ddaab510d5b",
+  "workflow_commit": "7396a4ef671ccb369e58e0ad2961c33becbc8042",
   "branch": "build337-instrumentation-ci-20260923",
   "status": "failure",
   "artifact_name": "GlobalHoldings-Build337-Failure"
