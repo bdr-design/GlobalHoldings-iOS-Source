@@ -19,7 +19,7 @@ jobs:
       TARGET_SOURCE_TREE_SHA256: b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484
       TARGET_WEBAPP_TREE_SHA256: 6da1b5d15effaa3a148d3925ac76a2e036d630ee4186b9bbf9f7c015d0144bb0
       PATCH_B64_SHA256: e6abc640011c0312b2b44deb7f8a4f9efa830e1d4fc232c92e686d9b15e6a710
-      PATCH_SHA256: 4f8922a52ea0d76183a1f979bdc9c3301e98b70a09d1164764ae31e009403e99
+      PATCH_SHA256: 4f8922a52ea0d76183a1f979bdc9c3301e98b70a09d1164764ae31e009403e99\n      EXPECTED_TEST_SHA256: 0dc412186f6b0d0d44cce43d2518f862c3f34478918d3d21b399de0817aa1a1a
       EXPECTED_VERSION: 3.0.0
       EXPECTED_BUILD: '337'
       EXPECTED_SAVE_SCHEMA: 2.0.0
@@ -62,6 +62,10 @@ jobs:
           git init -q
           git apply --check "$RUNNER_TEMP/build337.patch"
           git apply "$RUNNER_TEMP/build337.patch"
+          TEST_SRC="$GITHUB_WORKSPACE/transport337/build337-instrumentation-baseline.cjs"
+          test "$(shasum -a 256 "$TEST_SRC" | awk '{print $1}')" = "$EXPECTED_TEST_SHA256"
+          cp "$TEST_SRC" tests/build337-instrumentation-baseline.cjs
+          test "$(shasum -a 256 tests/build337-instrumentation-baseline.cjs | awk '{print $1}')" = "$EXPECTED_TEST_SHA256"
           rm -rf .git
 
           python3 tools/verify_current_source.py --root . | tee "$GITHUB_WORKSPACE/evidence/build337-source-verification.json"
