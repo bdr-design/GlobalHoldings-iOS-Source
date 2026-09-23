@@ -55,7 +55,7 @@ jobs:
 
           cat transport/build337-patch-*.b64 > "$RUNNER_TEMP/build337.patch.gz.b64"
           test "$(shasum -a 256 "$RUNNER_TEMP/build337.patch.gz.b64" | awk '{print $1}')" = "$PATCH_B64_SHA256"
-          base64 --decode "$RUNNER_TEMP/build337.patch.gz.b64" | gzip -dc > "$RUNNER_TEMP/build337.patch"
+          /usr/bin/base64 -D -i "$RUNNER_TEMP/build337.patch.gz.b64" | gzip -dc > "$RUNNER_TEMP/build337.patch"
           test "$(shasum -a 256 "$RUNNER_TEMP/build337.patch" | awk '{print $1}')" = "$PATCH_SHA256"
 
           cd "$GITHUB_WORKSPACE/candidate"
