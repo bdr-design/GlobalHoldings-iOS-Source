@@ -1,5 +1,13 @@
 # GLOBAL HOLDINGS — MASTER HANDOFF / CONTINUATION PROTOCOL
 
+**MASTER FORMAT VERSION:** 2.0  
+**LAST AUDITED:** 2026-09-23  
+**CANONICAL CONTROL BRANCH:** `globalholdings-project-control`
+
+> This file is the permanent project-control document. The control branch is **documentation/control only** and MUST NEVER be treated as a game-source baseline.
+>
+> A previous copy was committed to `build337-instrumentation-ci-20260923` at commit `24e33178ab492c7ccd97f067aa7f43705271b65e`. That copy is now **superseded**. Do not update the validated Build 337 provenance branch merely to maintain handoff documentation.
+
 Purpose: Permanent source-control handoff for continuing Global Holdings across conversations/developers without re-explaining the project or changing the engineering method.
 
 MANDATORY: A new conversation must read this file first, establish the current Source of Truth and latest diagnostic/evidence, and continue from NEXT ACTION. Do not ask the user to repeat information already recorded here.
@@ -12,9 +20,12 @@ MANDATORY: A new conversation must read this file first, establish the current S
 - Next development build: 338
 - Save Schema: 2.0.0
 - Repository: bdr-design/GlobalHoldings-iOS-Source
-- Provenance branch: build337-instrumentation-ci-20260923
-- Successful Build 337 commit: 3ae0392d700f5fd41900f4ead8293a825f4e750d
-- Successful CI run: 35895055039
+- Build 337 provenance branch locator: **build337-instrumentation-ci-20260923**
+- **Exact successful CI input commit (immutable anchor): 3ae0392d700f5fd41900f4ead8293a825f4e750d**
+- Post-success CI locator commit: **881414c9bfdd09a5fd059c39d3ccacdb1ed1fcc1** (changes only `ci/build337-result.json` relative to the successful CI input commit)
+- Later documentation commit on the old provenance branch: **24e33178ab492c7ccd97f067aa7f43705271b65e**
+- Successful CI run: **35895055039**
+- CI locator confirms `workflow_commit=3ae0392d700f5fd41900f4ead8293a825f4e750d` and `status=success`.
 - Build 337 source tree SHA-256: b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484
 - Build 337 WebApp tree SHA-256: 6da1b5d15effaa3a148d3925ac76a2e036d630ee4186b9bbf9f7c015d0144bb0
 - Build 337 IPA SHA-256: fed887f97912cb08352ec732d1099185de73f6d5c58ea759289f46026bb9873d
@@ -32,7 +43,25 @@ Forbidden as a development source:
 - Overlaying old R1/R2/R3/N1 packages or unrelated patches.
 - Mixing source trees from different builds.
 
-The Build 337 provenance branch reconstructs the validated tree. Preserve that exact validated tree as a standalone clean source archive when practical.
+The Build 337 tree is reconstructed by the workflow at:
+`.github/workflows/build337-instrumentation-to-unsigned-ipa.yml`
+from the **exact successful CI input commit** above.
+
+Pinned reconstruction evidence from that workflow:
+- Build 336 transport payload SHA-256: `4f6c81d1c3d1dd3fc8fc9b02b17e8e2a7dc92c2b7777d09324a9ae7baa12d434`
+- Build 337 compressed patch-base64 SHA-256: `e6abc640011c0312b2b44deb7f8a4f9efa830e1d4fc232c92e686d9b15e6a710`
+- Build 337 decoded patch SHA-256: `4f8922a52ea0d76183a1f979bdc9c3301e98b70a09d1164764ae31e009403e99`
+
+**Critical distinction:** the pinned Build 336 payload is only the internal provenance substrate used to reproduce the already-validated Build 337 tree. It is NOT permission to develop Build 338 from Build 336.
+
+**Branch-head prohibition:** never use the moving head of `build337-instrumentation-ci-20260923` as the source identity. The immutable CI input commit plus the reconstructed candidate hash are the anchors.
+
+**Mandatory physical baseline before the first functional Build 338 edit:**
+create a standalone archive named:
+`GlobalHoldings_BUILD337_INSTRUMENTATION_BASELINE_SOURCE.zip`
+from the reconstructed tree that verifies to the Build 337 source-tree hash below. Record the archive SHA-256 here once produced. Until that archive/hash is recorded, functional Build 338 source edits are blocked.
+
+Physical baseline archive SHA-256: **NOT YET RECORDED — REQUIRED BEFORE FUNCTIONAL BUILD 338 EDITS**.
 
 ## 2. Build 337 scope
 
@@ -60,9 +89,15 @@ Build 337 intentionally did not compress/delete domainRuntime, documentProofs, a
 ## 3. Latest device diagnostic
 
 Latest device diagnostic after Build 337 testing:
-GlobalHoldings_diagnostic_v3.0.0_1790187863706.ghdiagnostic
+`GlobalHoldings_diagnostic_v3.0.0_1790187863706.ghdiagnostic`
 
-This supersedes the older Build 336 field diagnostic for Build 338 decision-making.
+- Diagnostic SHA-256: **c67b5d04877f97aa64a48517c1e3530007f38deb6620d87883f1984a9cee031f**
+- Generated at: **2026-09-23T18:24:22.659Z**
+- Diagnostic metadata build: **337**
+- Save Schema: **2.0.0**
+- simSeconds at export: **2,686,800**
+
+This is the **primary current device evidence** for Build 338. Older Build 336 diagnostics remain valid for longitudinal comparison/trend analysis and must not be discarded as evidence.
 
 Key observed findings:
 - Root persistent state approximately 36,192,808 bytes.
@@ -72,10 +107,31 @@ Key observed findings:
 - mobility.tripArchive approximately 7,539,344 bytes.
 - assets approximately 3,907,407 bytes.
 - documentProofs approximately 3,026,690 bytes.
-- Large idempotency entries include fleet batch command families such as route assignment/departure, with very large fingerprints/results.
-- Chunk execution remained comparatively cheap while Finish remained expensive.
-- Transaction snapshot cost is material and must be treated as measured evidence, not guessed.
-- Persistence reached hard-size pressure/failure.
+- The four largest measured fleet idempotency entries total **14,134,106 bytes**:
+  - combined raw `fingerprint` bytes: **8,646,598**
+  - combined `result` bytes: **5,487,308**
+  - families: `fleet/depart-batch` and `fleet/assign-routes-batch`
+- Chunk execution remained comparatively cheap: device health reported `avgChunkMs=0.23333333333333334`, `maxChunkMs=8`.
+- Finish remained expensive: `maxFinishMs=546`; `hardTasks=737`; governor at export was `ORANGE`.
+- Measured full-snapshot hourly sample:
+  - label: `simulation:2677800->2678400`
+  - `fullSnapshot=true`, `scopeSize=null`
+  - `snapshotMs=118`, `validateMs=4`, `applyMs=399`, `postCommitCriticalMs=1`, `totalMs=522`
+- Measured scoped sample near export:
+  - label: `simulation:2686200->2686800`
+  - `fullSnapshot=false`, `scopeSize=29`
+  - `snapshotMs=77`, `validateMs=4`, `applyMs=4`, `totalMs=85`
+- Last successful measured ordinary save before hard-limit failures:
+  - `saveRevision=55`, `utf8Bytes=31,268,953`
+  - `schemaMs=74`, `stringifyMs=65`, `totalSyncMs=165`
+  - browser cache reason: `browser-cache-size-bypass`
+- Last successful native ACK:
+  - `saveRevision=55`, `generation=54`
+  - `bridgeDispatchMs=35`, `nativeAckLatencyMs=6068`
+  - `nativeVaultCommitMs=5949.962083308492`
+- Subsequent `saveRevision=56` attempts repeatedly failed with `native-save-size-hard-limit`.
+- Latest failed save sample recorded `schemaMs=298`, `stringifyMs=66`, `totalSyncMs=394`.
+- Integrity at export: `proofForensics.ok=true`, `danglingReferences=[]`, `documentFailures=[]`, `recordFailures=[]`.
 
 The raw diagnostic is evidence. Do not replace exact profiler data with this rounded summary for destructive decisions.
 
@@ -181,7 +237,21 @@ If deletion/compaction is proven safe:
 - provide atomic migration/rollback when persisted representation changes;
 - run save/restore and regression tests.
 
-## 8. Build 338 priorities
+## 8. Build 338 decision status
+
+**No destructive Build 338 architecture has been approved yet.**
+
+The user and developer are actively discussing candidate solutions such as:
+- hashed idempotency fingerprints;
+- family-specific cold receipts;
+- scoped/copy-on-write transaction snapshots;
+- trip-history hot/cold representation;
+- incremental schema validation;
+- archival/compaction of proofs, assets or procurement history.
+
+These are **proposals/hypotheses until the relevant owner/reference/replay contracts are audited**. Do not convert discussion estimates (for example target MB, target ms, ring-buffer counts, retention counts, or expected FPS) into implementation requirements unless subsequently recorded here as an approved decision with evidence.
+
+## 9. Build 338 priorities
 
 ### A. domainRuntime.idempotency
 Measured dominant owner. Investigate per command family: fingerprint, command result, proof references, replay contract, indexes/domain state.
@@ -205,7 +275,7 @@ Use moving/idle samples to identify field-level owners. No arbitrary bytes-per-a
 ### F. realism.procurement
 Audit closed deliveries and references from provenance, UI, finance, audit and proofs before archival/compaction.
 
-## 9. Non-regression invariants
+## 10. Non-regression invariants
 
 Preserve where applicable:
 - proofForensics.ok = true
@@ -224,7 +294,7 @@ Preserve where applicable:
 
 Performance fixes may not bypass these invariants.
 
-## 10. Performance methodology
+## 11. Performance methodology
 
 Separate and measure chunk execution, transaction snapshot, validation, apply, post-commit critical/non-critical, serialization, bridge dispatch, native vault commit and UI/render work.
 
@@ -232,7 +302,7 @@ Use device diagnostics to identify the measured owner. Cheap chunks plus expensi
 
 Time-engine changes are high risk. Do not modify speed/time semantics unless the measured owner requires it and dependent domains are audited.
 
-## 11. Source-control / release discipline
+## 12. Source-control / release discipline
 
 Before changing a build:
 - verify input source identity;
@@ -255,25 +325,27 @@ Before IPA:
 
 Never claim device-tested unless actually tested on device.
 
-## 12. Conversation continuation behavior
+## 13. Conversation continuation behavior
 
 When a new conversation receives “كمل Global Holdings” or equivalent:
 1. Read this MASTER HANDOFF.
 2. Inspect repository/current branch and latest relevant diagnostic/evidence.
 3. Verify Source of Truth before modifying code.
-4. Resume from NEXT ACTION.
-5. Do not ask the user to repeat architecture, repair method, deletion/addition rules, source rules, or recorded state.
-6. Do not stop after every small step asking for permission.
-7. Continue in careful batches and report meaningful checkpoints.
-8. Ask only when a genuinely missing external artifact/decision cannot be established from repository, diagnostics, library or prior evidence.
-9. Never infer a missing source hash/build provenance.
-10. Communicate in Arabic unless requested otherwise.
+5. Resume from NEXT ACTION.
+6. Do not ask the user to repeat architecture, repair method, deletion/addition rules, source rules, diagnostic identity, or recorded project state.
+7. Do not stop after every small step asking for permission.
+8. Continue in careful batches and report meaningful checkpoints.
+9. Ask only when a genuinely missing external artifact/decision cannot be established from repository, diagnostics, library or prior evidence.
+10. Never infer a missing source hash/build provenance.
+11. Communicate in Arabic unless requested otherwise.
+12. Update this MASTER only on the canonical control branch; never mutate a validated build-provenance branch merely to maintain documentation.
 
-## 13. NEXT ACTION — Build 338
+## 14. NEXT ACTION — Build 338
 
-1. Treat validated Build 337 tree as sole baseline.
-2. Reconstruct/verify against b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484.
-3. Use latest Build 337 iPhone diagnostic GlobalHoldings_diagnostic_v3.0.0_1790187863706.ghdiagnostic.
+0. Before any functional code change, reconstruct the exact Build 337 candidate from immutable CI input commit `3ae0392d700f5fd41900f4ead8293a825f4e750d`, verify it, create `GlobalHoldings_BUILD337_INSTRUMENTATION_BASELINE_SOURCE.zip`, compute its archive SHA-256, and record that SHA in this MASTER.
+1. Treat only the verified reconstructed Build 337 tree as the Build 338 baseline; never the repository branch head and never Build 336 directly.
+2. Verify `source_tree_sha256=b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484` and `webapp_tree_sha256=6da1b5d15effaa3a148d3925ac76a2e036d630ee4186b9bbf9f7c015d0144bb0`.
+3. Use the Build 337 iPhone diagnostic `GlobalHoldings_diagnostic_v3.0.0_1790187863706.ghdiagnostic` only after verifying SHA-256 `c67b5d04877f97aa64a48517c1e3530007f38deb6620d87883f1984a9cee031f`.
 4. Perform code-level ownership/reference/replay audit of domainRuntime.idempotency, beginning with largest measured command families.
 5. In parallel map mobility.tripArchive readers/references; do not prune yet.
 6. Design smallest root-level Build 338 change justified by audits.
@@ -283,4 +355,11 @@ When a new conversation receives “كمل Global Holdings” or equivalent:
 10. Only after evidence passes package Build 338.
 
 ---
-This file is a living handoff. Update it at every validated build boundary so the next conversation resumes without reconstructing project history from chat memory.
+This file is a living handoff. Update it **only on `globalholdings-project-control`** at every validated build boundary. Each update must distinguish:
+- immutable build/source anchors;
+- moving branch heads;
+- measured device evidence;
+- approved implementation decisions;
+- proposals still under discussion.
+
+The MASTER is a control document, **never a substitute for source hashes, source archives, CI evidence, or raw diagnostics**.
