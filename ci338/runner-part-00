@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export BASE336_PAYLOAD_SHA256=4f6c81d1c3d1dd3fc8fc9b02b17e8e2a7dc92c2b7777d09324a9ae7baa12d434
+export BASE336_SOURCE_TREE_SHA256=ff958436f71c14c4d311621270095d99afe2383b3ba39b1807b8be28c484420a
+export BASE337_PATCH_B64_SHA256=e6abc640011c0312b2b44deb7f8a4f9efa830e1d4fc232c92e686d9b15e6a710
+export BASE337_PATCH_SHA256=4f8922a52ea0d76183a1f979bdc9c3301e98b70a09d1164764ae31e009403e99
+export BASE337_TEST_SHA256=0dc412186f6b0d0d44cce43d2518f862c3f34478918d3d21b399de0817aa1a1a
+export BASE337_SOURCE_TREE_SHA256=b49061cfc68c89eb144c6c1107edf91e997a367325c8ffdd18dcc52ac33fc484
+export PATCH338_B64_SHA256=00d7b2d3693d899749fb3ef5e19a963ad372d905393864e187d2a5a466bb6964
+export PATCH338_SHA256=22fcdd361efd40084198d9719d8de08201d9feee812e74115631fb85d83e3557
+export TARGET_SOURCE_TREE_SHA256=387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b
+export TARGET_WEBAPP_TREE_SHA256=aed5ebc6773603703702de1cddacd2ed6197f9a2e68465ba39bf9ead0cc9aab3
+mkdir -p "$RUNNER_TEMP/gh336-parts" "$GITHUB_WORKSPACE/candidate" "$GITHUB_WORKSPACE/evidence"
+cp transport/part-*.bin "$RUNNER_TEMP/gh336-parts/"
+cat "$RUNNER_TEMP"/gh336-parts/part-*.bin > "$RUNNER_TEMP/build336.tar.gz"
+test "$(shasum -a 256 "$RUNNER_TEMP/build336.tar.gz"|awk '{print $1}')" = "$BASE336_PAYLOAD_SHA256"
+tar -xzf "$RUNNER_TEMP/build336.tar.gz" -C "$GITHUB_WORKSPACE/candidate"
+python3 "$GITHUB_WORKSPACE/candidate/tools/verify_current_source.py" --root "$GITHUB_WORKSPACE/candidate" > "$GITHUB_WORKSPACE/evidence/build336-source.json"
+python3 - <<'PY'
+import json,os
+from pathlib import Path
+r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'evidence/build336-source.json').read_text());assert r['verified'] and r['source_tree_sha256']==os.environ['BASE336_SOURCE_TREE_SHA256'] and r['build']==336
+PY
+cat transport337/part-*.b64 > "$RUNNER_TEMP/build337.patch.gz.b64"
+test "$(shasum -a 256 "$RUNNER_TEMP/build337.patch.gz.b64"|awk '{print $1}')" = "$BASE337_PATCH_B64_SHA256"
+/usr/bin/base64 -D -i "$RUNNER_TEMP/build337.patch.gz.b64" | gzip -dc > "$RUNNER_TEMP/build337.patch"
+test "$(shasum -a 256 "$RUNNER_TEMP/build337.patch"|awk '{print $1}')" = "$BASE337_PATCH_SHA256"
+cd "$GITHUB_WORKSPACE/candidate"; git init -q; git apply --check "$RUNNER_TEMP/build337.patch"; git apply "$RUNNER_TEMP/build337.patch"
+test "$(shasum -a 256 "$GITHUB_WORKSPACE/transport337/build337-instrumentation-baseline.cjs"|awk '{print $1}')" = "$BASE337_TEST_SHA256"
+cp "$GITHUB_WORKSPACE/transport337/build337-instrumentation-baseline.cjs" tests/build337-instrumentation-baseline.cjs; rm -rf .git
+python3 tools/verify_current_source.py --root . > "$GITHUB_WORKSPACE/evidence/build337-source.json"
+python3 - <<'PY'
+import json,os
+from pathlib import Path
+r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'evidence/build337-source.json').read_text());assert r['verified'] and r['source_tree_sha256']==os.environ['BASE337_SOURCE_TREE_SHA256'] and r['build']==337
+PY
+cat "$GITHUB_WORKSPACE"/transport338/part-*.b64 > "$RUNNER_TEMP/build338.patch.gz.b64"
+test "$(shasum -a 256 "$RUNNER_TEMP/build338.patch.gz.b64"|awk '{print $1}')" = "$PATCH338_B64_SHA256"
+/usr/bin/base64 -D -i "$RUNNER_TEMP/build338.patch.gz.b64" | gzip -dc > "$RUNNER_TEMP/build338.patch"
+test "$(shasum -a 256 "$RUNNER_TEMP/build338.patch"|awk '{print $1}')" = "$PATCH338_SHA256"
+git init -q; git apply --check "$RUNNER_TEMP/build338.patch"; git apply "$RUNNER_TEMP/build338.patch"; rm -rf .git
+python3 tools/verify_current_source.py --root . | tee "$GITHUB_WORKSPACE/evidence/build338-source.json"
+python3 - <<'PY'
+import json,os
+from pathlib import Path
+root=Path(os.environ['GITHUB_WORKSPACE'])/'candidate';r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'evidence/build338-source.json').read_text());m=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+assert r['verified'] and r['source_tree_sha256']==os.environ['TARGET_SOURCE_TREE_SHA256'] and r['build']==338 and r['save_schema']=='2.0.0';assert m['webapp_tree_sha256']==os.environ['TARGET_WEBAPP_TREE_SHA256']
+PY
+find "$GITHUB_WORKSPACE/candidate" \( -iname '*.ipa' -o -iname '*.app' \) -print > "$GITHUB_WORKSPACE/evidence/forbidden-source-products.txt"; test ! -s "$GITHUB_WORKSPACE/evidence/forbidden-source-products.txt"; echo old_ipa_used=false > "$GITHUB_WORKSPACE/evidence/source-origin.txt"
+test "$(node --version)" = 'v24.21.0'
+npm install --no-audit --no-fund
+npx playwright install chromium
+npm ls --depth=0 > "$GITHUB_WORKSPACE/evidence/npm-top-level.txt"
+npm run lint 2>&1 | tee "$GITHUB_WORKSPACE/evidence/eslint.log"
+python3 tools/run_acceptance.py --output "$GITHUB_WORKSPACE/acceptance" --node "$(command -v node)" --timeout 300
+python3 - <<'PY'
+import json,os
+from pathlib import Path
+r=json.loads((Path(os.environ['GITHUB_WORKSPACE'])/'acceptance/results.json').read_text());assert r['completed'] and r['all_tests_passed'] and r['runtime_unchanged'] and r['runtime_source']['source_tree_sha256']==os.environ['TARGET_SOURCE_TREE_SHA256'] and r['node
