@@ -76,7 +76,7 @@ jobs:
           r.setdefault('apple_tests',{})['webkit']={'passed':nav['passed'],'total':nav['total']}
           r['ci_run_id']=int(os.environ['GITHUB_RUN_ID'])
           r['workflow_commit']=os.environ['GITHUB_SHA']
-          vp.write_text(json.dumps(r,indent=2)+'\\n')
+          vp.write_text(json.dumps(r,indent=2)+chr(10))
           PY
 
       - name: Upload Build338 unsigned deliverables
