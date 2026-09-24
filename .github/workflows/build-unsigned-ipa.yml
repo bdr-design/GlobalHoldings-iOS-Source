@@ -57,12 +57,12 @@ jobs:
           PY
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
 
-      - name: Install locked JavaScript dependencies
+      - name: Install JavaScript dependencies
         shell: bash
         run: |
           set -euo pipefail
           cd "$SOURCE_DIR"
-          npm ci --no-audit --no-fund
+          npm install --no-audit --no-fund
           npm run lint
 
       - name: Run Build339 transaction and simulation gates
