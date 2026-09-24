@@ -17,17 +17,17 @@ MANDATORY: A new conversation must read this file first, establish the current S
 - Product: **Global Holdings**
 - Version: **3.0.0**
 - Current development line: **Build 339 Architecture Generation**\n- Frozen fallback Source of Truth: **Build 338 verified runtime tree**
-- Current physical-device-tested build: **338**\n- Build 339 status: **Phase 1B-A locked; Phase 1B-B active**
+- Current physical-device-tested build: **338**\n- Build 339 status: **Phase 1B-B source-locked; Phase 1C next**
 - Production approval: **CLOSED / NOT APPROVED**
 - Save Schema: **2.0.0**
 - Repository: **bdr-design/GlobalHoldings-iOS-Source**
 - Canonical control branch: **globalholdings-project-control**
 - Build 338 frozen provenance/CI branch: **build338-save-lag-root-20260923**\n- Build 339 architecture control branch: **build339-architecture-control-20260924**\n- Build 339 master: **GLOBAL_HOLDINGS_BUILD339_MASTER.md**
-- Build 339 runtime source tree SHA-256: **835709c802e82d968a259224563dda0a3c7e242f21ac322bc09703e1226f6cb8**
-- Build 339 WebApp tree SHA-256: **3bdd4ae860baee183dc54715a9bb0d4298cd9073371f9d2eee60508c6cb33338**
-- Build 339 full source archive: **GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip**
-- Build 339 source ZIP SHA-256: **c3c747a187ecee6def4fe94125205f5ea0ff61015ec2be5b05e7cfd63909f1ee**
-- Build 339 Library source path: **/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip**
+- Build 339 runtime source tree SHA-256: **6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54**
+- Build 339 WebApp tree SHA-256: **ada2977ddadc0f6df1558acd0b4543de77163da5ae0bfa6b63eb087522a9489e**
+- Build 339 full source archive: **GlobalHoldings_BUILD339_PHASE1B_B_PACING_SEPARATION_SOURCE.zip**
+- Build 339 source ZIP SHA-256: **acd6cc9f324d6eb2975f74f076421f253e3cff5229104dc319f50a819b2fde77**
+- Build 339 Library source path: **/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_B_PACING_SEPARATION_SOURCE.zip**
 - Build 338 verified runtime source tree SHA-256: **387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b**
 - Build 338 WebApp tree SHA-256: **aed5ebc6773603703702de1cddacd2ed6197f9a2e68465ba39bf9ead0cc9aab3**
 - Build 338 full source archive: **GlobalHoldings_BUILD338_SAVE_LAG_ROOT_CANDIDATE_SOURCE.zip**
@@ -41,17 +41,17 @@ MANDATORY: A new conversation must read this file first, establish the current S
 
 ### Current development / fallback rule
 
-All new functional/architectural development MUST start from the locked **Build 339 Phase 1B-A** source tree:
+All new functional/architectural development MUST start from the locked **Build 339 Phase 1B-B** source tree:
 
-`835709c802e82d968a259224563dda0a3c7e242f21ac322bc09703e1226f6cb8`
+`6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54`
 
 or its exact full source archive:
 
-`GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip`
+`GlobalHoldings_BUILD339_PHASE1B_B_PACING_SEPARATION_SOURCE.zip`
 
 with ZIP SHA-256:
 
-`c3c747a187ecee6def4fe94125205f5ea0ff61015ec2be5b05e7cfd63909f1ee`
+`acd6cc9f324d6eb2975f74f076421f253e3cff5229104dc319f50a819b2fde77`
 
 Build 338 is now fallback/recovery only. It may be used only if Build 339 must be abandoned or rolled back due to an architectural failure.
 
@@ -664,3 +664,35 @@ Phase1B-A accepted:
 
 ### New-chat mandatory startup
 Read the canonical master, Build339 master, and `BUILD339_PHASE1B_A_CHECKPOINT.md`, then materialize the Phase1B-A archive and verify both ZIP and runtime source hashes before coding. Do not use uncommitted local experiments.
+
+
+## 20. CURRENT AUTHORITATIVE CONTINUATION — BUILD 339 PHASE 1B-B
+
+This section supersedes every earlier Build 339 active-source and NEXT ACTION section.
+
+- Active build: **339**
+- Active phase: **Phase 1B-B locked; Phase 1C next**
+- Version: **3.0.0**
+- Save Schema: **2.0.0**
+- Production approval: **CLOSED**
+- Runtime source tree SHA-256: `6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54`
+- WebApp tree SHA-256: `ada2977ddadc0f6df1558acd0b4543de77163da5ae0bfa6b63eb087522a9489e`
+- Canonical archive: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_B_PACING_SEPARATION_SOURCE.zip`
+- ZIP SHA-256: `acd6cc9f324d6eb2975f74f076421f253e3cff5229104dc319f50a819b2fde77`
+- Archive Library ID: `libfile_94bc2253cccc8191b627fbd78626238e`
+- Verification Library ID: `libfile_9ee958e840708191bb47cb2d182d9bc6`
+- Checksum Library ID: `libfile_2bb11d653bac8191a0074a1fe806ea53`
+- Detailed checkpoint: `BUILD339_PHASE1B_B_CHECKPOINT.md` on `build339-architecture-control-20260924`.
+- Build 338 remains frozen fallback only: `387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b`.
+
+### Phase 1B-B accepted
+
+Wall-clock pacing, backlog accumulation, cooperative execution budget, render cadence and persistence cadence are runtime-only. `state.simSeconds` remains the sole authoritative committed economic time. Variable deterministic 30/120/300/600 slices, exact Hour/Day boundary clamping, and midnight **Day → Hour** ordering are unchanged. Manual advance is target-driven and cannot leak its wall duration into later live catch-up. Hidden/background wall time is not replayed as economic catch-up. Runtime scheduler snapshots are no longer persisted into `state.simulationKernel`; legacy runtime snapshot residue is removed during save normalization while semantic/audit fields remain. Full snapshots remain enabled.
+
+Local regression gates passed across Golden Time, Phase1B-B separation, Hour/Day write maps, Hour83, finance/day-close related contracts, scheduler/late-frame, 600-air, save/persistence, Build338 compatibility, source-layout and official source verification. Node24/full CI, controlled ESLint, Apple/WKWebView/native and physical iPhone gates remain pending. Production approval remains closed.
+
+**NEXT ACTION — Phase 1C:** implement Capture-On-First-Write / sparse undo journal with root/entity hybrid rollback and automatic full-snapshot fallback for every unproven writer. Full snapshots may not be removed until writer coverage and byte-equivalent rollback are proven.
+
+### New-chat mandatory startup
+
+Read this central MASTER and `GLOBAL_HOLDINGS_BUILD339_MASTER.md`; materialize the Phase 1B-B archive; verify ZIP SHA-256 `acd6cc9f324d6eb2975f74f076421f253e3cff5229104dc319f50a819b2fde77`; run the official verifier and require runtime SHA-256 `6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54`; continue Phase 1C without redoing prior phases.
