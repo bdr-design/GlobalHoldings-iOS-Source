@@ -17,17 +17,17 @@ MANDATORY: A new conversation must read this file first, establish the current S
 - Product: **Global Holdings**
 - Version: **3.0.0**
 - Current development line: **Build 339 Architecture Generation**\n- Frozen fallback Source of Truth: **Build 338 verified runtime tree**
-- Current physical-device-tested build: **338**\n- Build 339 status: **architecture control opened; first 339 runtime source hash not yet locked**
+- Current physical-device-tested build: **338**\n- Build 339 status: **Phase 1B-A locked; Phase 1B-B active**
 - Production approval: **CLOSED / NOT APPROVED**
 - Save Schema: **2.0.0**
 - Repository: **bdr-design/GlobalHoldings-iOS-Source**
 - Canonical control branch: **globalholdings-project-control**
 - Build 338 frozen provenance/CI branch: **build338-save-lag-root-20260923**\n- Build 339 architecture control branch: **build339-architecture-control-20260924**\n- Build 339 master: **GLOBAL_HOLDINGS_BUILD339_MASTER.md**
-- Build 339 runtime source tree SHA-256: **2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874**
-- Build 339 WebApp tree SHA-256: **7cdb92260070495f8d3e842f4d35407eb4c21f5d5d3cd7414d1676051d8a6901**
-- Build 339 full source archive: **GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip**
-- Build 339 source ZIP SHA-256: **ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4**
-- Build 339 Library source path: **/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip**
+- Build 339 runtime source tree SHA-256: **835709c802e82d968a259224563dda0a3c7e242f21ac322bc09703e1226f6cb8**
+- Build 339 WebApp tree SHA-256: **3bdd4ae860baee183dc54715a9bb0d4298cd9073371f9d2eee60508c6cb33338**
+- Build 339 full source archive: **GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip**
+- Build 339 source ZIP SHA-256: **c3c747a187ecee6def4fe94125205f5ea0ff61015ec2be5b05e7cfd63909f1ee**
+- Build 339 Library source path: **/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip**
 - Build 338 verified runtime source tree SHA-256: **387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b**
 - Build 338 WebApp tree SHA-256: **aed5ebc6773603703702de1cddacd2ed6197f9a2e68465ba39bf9ead0cc9aab3**
 - Build 338 full source archive: **GlobalHoldings_BUILD338_SAVE_LAG_ROOT_CANDIDATE_SOURCE.zip**
@@ -41,17 +41,17 @@ MANDATORY: A new conversation must read this file first, establish the current S
 
 ### Current development / fallback rule
 
-All new functional/architectural development MUST start from the locked **Build 339 Phase 1A** source tree:
+All new functional/architectural development MUST start from the locked **Build 339 Phase 1B-A** source tree:
 
-`2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874`
+`835709c802e82d968a259224563dda0a3c7e242f21ac322bc09703e1226f6cb8`
 
 or its exact full source archive:
 
-`GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip`
+`GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip`
 
 with ZIP SHA-256:
 
-`ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4`
+`c3c747a187ecee6def4fe94125205f5ea0ff61015ec2be5b05e7cfd63909f1ee`
 
 Build 338 is now fallback/recovery only. It may be used only if Build 339 must be abandoned or rolled back due to an architectural failure.
 
