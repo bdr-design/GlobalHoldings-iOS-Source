@@ -634,3 +634,33 @@ The new conversation must read:
 3. `BUILD339_PHASE1A_CHECKPOINT.md`;
 
 then materialize the canonical Phase1A archive, verify its ZIP SHA and runtime source tree hash, and continue Phase1B. Do not use Phase0 or Build338 for active development.
+
+
+## 19. CURRENT AUTHORITATIVE CONTINUATION — BUILD 339 PHASE 1B-A
+
+This section supersedes earlier active-source/NEXT ACTION sections.
+
+- Active build: **339**
+- Active phase: **Phase 1B-A locked; Phase 1B-B next**
+- Runtime source tree SHA-256: `835709c802e82d968a259224563dda0a3c7e242f21ac322bc09703e1226f6cb8`
+- WebApp tree SHA-256: `3bdd4ae860baee183dc54715a9bb0d4298cd9073371f9d2eee60508c6cb33338`
+- Canonical full source archive:
+  `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip`
+- ZIP SHA-256: `c3c747a187ecee6def4fe94125205f5ea0ff61015ec2be5b05e7cfd63909f1ee`
+- Verification:
+  `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.verification.json`
+- Detailed checkpoint:
+  `BUILD339_PHASE1B_A_CHECKPOINT.md`
+- Save Schema: **2.0.0**
+- Production approval: **CLOSED**
+- Build338: **frozen fallback only**
+
+Phase1B-A accepted:
+- real Day-boundary write-map proof across normal/payroll/month-end days;
+- strengthened rollback that restores exact property/root order and byte-equivalent JSON after critical failure;
+- all Phase1A time/Hour/write-set contracts remain passing.
+
+**NEXT ACTION — Phase1B-B:** separate pacing/backlog/render cadence from authoritative simulation time. Keep full snapshots. Root-journal/COW is Phase1C only.
+
+### New-chat mandatory startup
+Read the canonical master, Build339 master, and `BUILD339_PHASE1B_A_CHECKPOINT.md`, then materialize the Phase1B-A archive and verify both ZIP and runtime source hashes before coding. Do not use uncommitted local experiments.
