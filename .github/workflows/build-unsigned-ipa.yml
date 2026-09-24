@@ -1,6 +1,9 @@
 name: Build339 Phase1C-C Unsigned Diagnostic IPA
 
 on:
+  push:
+    branches:
+      - build339-phase1cc-unsigned-20260924
   workflow_dispatch:
 
 permissions:
