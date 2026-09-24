@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           ZIP='GlobalHoldings_BUILD339_PHASE1C_C_UNSIGNED_SOURCE.zip'
-          EXPECTED_ZIP_SHA='900505be86f35a8a23b8c3b93e62b5f2b9993fc6f363423fef85ad49567fda33'
+          EXPECTED_ZIP_SHA='7ddc242e95a62ab77e4bc721d5bd816e2e51a7122ac64746e2f0c6239e8a3bb7'
           cat "$ZIP.parts"/part-* > "$ZIP"
           ACTUAL_ZIP_SHA="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
           [[ "$ACTUAL_ZIP_SHA" == "$EXPECTED_ZIP_SHA" ]] || { echo "::error::Source archive SHA mismatch: $ACTUAL_ZIP_SHA"; exit 1; }
@@ -49,7 +49,7 @@ jobs:
           from pathlib import Path
           root=Path(sys.argv[1])
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
-          if manifest.get('source_tree_sha256')!='41fd396f4229d41198ae5c2617790525c534d007af75ba376bcdddeb68faf92b':
+          if manifest.get('source_tree_sha256')!='07dd1723127fd796d51f0d95d1ccd6098c1237f55ca4a3e91c80050d5ae49cd5':
               raise SystemExit('Unexpected Phase1C-C source identity')
           if manifest.get('save_schema')!='2.0.0':
               raise SystemExit('Unexpected save schema')
@@ -155,9 +155,9 @@ jobs:
           SHA="$(shasum -a 256 "$IPA" | awk '{print $1}')"
           echo "IPA_PATH=$IPA" >> "$GITHUB_OUTPUT"
           echo "IPA_SHA=$SHA" >> "$GITHUB_OUTPUT"
-          printf 'Build=339\nPhase=1C-C diagnostic candidate\nSigned=false\nRuntimeSHA256=41fd396f4229d41198ae5c2617790525c534d007af75ba376bcdddeb68faf92b\nIPA_SHA256=%s\nLiveJournal=OFF\nProductionApproval=CLOSED\n' "$SHA" > "$PACKAGE/BUILD339_PHASE1C_C_IPA_METADATA.txt"
+          printf 'Build=339\nPhase=1C-C diagnostic candidate\nSigned=false\nRuntimeSHA256=07dd1723127fd796d51f0d95d1ccd6098c1237f55ca4a3e91c80050d5ae49cd5\nIPA_SHA256=%s\nLiveJournal=OFF\nProductionApproval=CLOSED\n' "$SHA" > "$PACKAGE/BUILD339_PHASE1C_C_IPA_METADATA.txt"
           echo "### Unsigned diagnostic IPA" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Runtime SHA-256: \`41fd396f4229d41198ae5c2617790525c534d007af75ba376bcdddeb68faf92b\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Runtime SHA-256: \`07dd1723127fd796d51f0d95d1ccd6098c1237f55ca4a3e91c80050d5ae49cd5\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- IPA SHA-256: \`$SHA\`" >> "$GITHUB_STEP_SUMMARY"
           echo '- Live Journal: OFF; production approval: CLOSED' >> "$GITHUB_STEP_SUMMARY"
 
