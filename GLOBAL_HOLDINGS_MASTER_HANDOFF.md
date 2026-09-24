@@ -590,3 +590,47 @@ If a conversation changes, the new conversation MUST read `GLOBAL_HOLDINGS_BUILD
 - Full hour/day snapshots remain enabled. They must not be removed until Phase 1B coverage proves all writes.
 - NEXT ACTION: day-boundary write-map, then safe root-journal/snapshot-on-first-write migration inside the existing transaction owner, with automatic full-snapshot fallback for unproven writers.
 
+
+
+## 18. CURRENT AUTHORITATIVE CONTINUATION — BUILD 339 PHASE 1A
+
+This section supersedes older Phase 0 archive/NEXT ACTION instructions for active development.
+
+- Active build: **339**
+- Active phase: **Phase 1A locked; Phase 1B next**
+- Runtime source tree SHA-256: `2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874`
+- WebApp tree SHA-256: `7cdb92260070495f8d3e842f4d35407eb4c21f5d5d3cd7414d1676051d8a6901`
+- Canonical source archive: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip`
+- ZIP SHA-256: `ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4`
+- Canonical verification: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.verification.json`
+- Build339 control branch: `build339-architecture-control-20260924`
+- Detailed checkpoint: `BUILD339_PHASE1A_CHECKPOINT.md`
+- Save Schema: **2.0.0**
+- Production approval: **CLOSED**
+- Build338: **frozen fallback only**
+
+Accepted Phase1A:
+- pure deterministic time-boundary planner;
+- golden time behavior contract;
+- opt-in transaction write-set proof tooling;
+- clean-source hourly root write-map;
+- byte-equivalent rollback proof for undeclared/late critical failure.
+
+Full hour/day snapshots remain active. They are not to be removed in Phase1B.
+
+**NEXT ACTION — Phase 1B**
+1. complete day-boundary root write map;
+2. separate pacing/backlog/render cadence from authoritative simulation time without changing golden behavior;
+3. preserve `state.simSeconds` as sole committed economic time;
+4. keep full rollback snapshots;
+5. re-run Hour83/day-close/scheduler/late-frame/600-air/write-set regressions after every sub-batch;
+6. only then proceed to Phase1C root-journal/COW rollback.
+
+### New-chat mandatory startup
+
+The new conversation must read:
+1. `GLOBAL_HOLDINGS_MASTER_HANDOFF.md` from `globalholdings-project-control`;
+2. `GLOBAL_HOLDINGS_BUILD339_MASTER.md`;
+3. `BUILD339_PHASE1A_CHECKPOINT.md`;
+
+then materialize the canonical Phase1A archive, verify its ZIP SHA and runtime source tree hash, and continue Phase1B. Do not use Phase0 or Build338 for active development.
