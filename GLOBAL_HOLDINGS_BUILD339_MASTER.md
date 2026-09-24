@@ -1,6 +1,6 @@
 # GLOBAL HOLDINGS — BUILD 339 ARCHITECTURE MASTER
 
-**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 1C-A LOCKED / PHASE 1C-B NEXT
+**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 1C-B LOCKED / PHASE 1C-C NEXT
 **CREATED:** 2026-09-24  
 **CONTROL BRANCH:** `build339-architecture-control-20260924`  
 **REPOSITORY:** `bdr-design/GlobalHoldings-iOS-Source`
@@ -728,3 +728,37 @@ Accepted:
 Important: **the simulation runtime does not request journal mode yet**. Steady slices, Hour and Day behavior remain operationally unchanged from Phase1B-B unless a test explicitly requests journal mode. Full Snapshot protection remains enabled.
 
 **NEXT ACTION — Phase 1C-B:** prove exact steady-slice joined-writer contracts and read-only integrity-final hooks, then wire journal only to no-boundary / no-delivery steady slices. Hour/Day boundaries stay Full Snapshot. iPhone/JavaScriptCore measurement is mandatory before performance claims.
+
+
+## 20. LATEST AUTHORITATIVE CONTINUATION — PHASE 1C-B LOCKED
+
+This section supersedes every earlier active-source / NEXT ACTION section.
+
+- Active build: **339**
+- Active phase: **Phase 1C-B writer proof locked; Phase 1C-C next**
+- Version: **3.0.0**
+- Save Schema: **2.0.0**
+- Production approval: **CLOSED**
+- Runtime source tree SHA-256: `8570d5d7c6b9add34196b564d7f4498648c719a397eb598a65b21b00c9ac9325`
+- WebApp tree SHA-256: `6f12bf6b4f76859229936d1f382d7865275c390e6eb6e7eb7aee9bc2591e91af`
+- Canonical archive: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1C_B_WRITER_PROOF_SOURCE.zip`
+- ZIP SHA-256: `27c1b52295f1adee6629ab2c7b69653b075262d500e07e4ca256f6a642734a5a`
+- Archive Library ID: `libfile_93e80f11561c81919691340e3f3916f8`
+- Verification Library ID: `libfile_05961190666c8191ae8eeef71f2d9c81`
+- Checksum Library ID: `libfile_152aafb479e08191bfd3e2a003195878`
+- Detailed checkpoint: `BUILD339_PHASE1C_B_CHECKPOINT.md`
+
+Accepted:
+- Phase1C-B readiness **7/7 PASS**;
+- Phase1C-A adversarial **8/8 PASS**;
+- Phase1C-B writer proof **6/6 PASS**;
+- 600-asset Full Snapshot vs Journal equivalence PASS;
+- composite/late-join barrier hardening;
+- JSON-safe primitive field contract;
+- write-set barrier before irreversible persistence;
+- `integrity-final` read-only proof after fixing `dependency-core.detectCycles()`.
+
+Critical limitation:
+**Live simulation journal is still OFF.** Phase1C-B is a writer-proof / transaction-barrier checkpoint, not 20k-ready activation. The current journal can still allocate too many records at large fleets.
+
+**NEXT ACTION — Phase 1C-C:** build allocation-bounded Capture-On-First-Write / flat-buffer journal architecture suitable for JavaScriptCore, prove active mobility/helper and async/stale-reference paths, keep Hour/Day/delivery/structural paths on Full Snapshot, then benchmark 600 / 2k / 5k / 10k / 20k / 25k assets on iPhone before live activation.
