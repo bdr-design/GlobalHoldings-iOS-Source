@@ -1,6 +1,6 @@
 # GLOBAL HOLDINGS — BUILD 339 ARCHITECTURE MASTER
 
-**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 1B-B LOCKED / PHASE 1C NEXT
+**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 1C-A LOCKED / PHASE 1C-B NEXT
 **CREATED:** 2026-09-24  
 **CONTROL BRANCH:** `build339-architecture-control-20260924`  
 **REPOSITORY:** `bdr-design/GlobalHoldings-iOS-Source`
@@ -694,3 +694,37 @@ Source-specific finding:
 - current critical save path can mutate authoritative state during save preparation / persistence (including save revision), so persistence publication must be separated from ordinary state-critical hooks in the Phase1C lifecycle.
 
 Phase1C implementation gate remains CLOSED until the new tests prove writer contracts, critical-hook coverage, fallback-before-write and byte-equivalent rollback from the clean Phase1B-B source.
+
+
+
+## 19. LATEST AUTHORITATIVE CONTINUATION — PHASE 1C-A LOCKED
+
+This section supersedes every earlier active-source / NEXT ACTION section.
+
+- Active build: **339**
+- Active phase: **Phase 1C-A transaction foundation locked; Phase 1C-B next**
+- Version: **3.0.0**
+- Save Schema: **2.0.0**
+- Production approval: **CLOSED**
+- Runtime source tree SHA-256: `1e158524e74d6360b334568af89f088e7fe65b22574a8de2ece49ab0de0c4779`
+- WebApp tree SHA-256: `fe2d7fc5e10b4695c9dec3feb9f0d0fe4be27cfa8cf08e8bb094d9a6206e5026`
+- Canonical archive: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1C_A_TRANSACTION_FOUNDATION_SOURCE.zip`
+- ZIP SHA-256: `574dbe1d213ba0b10d011c5e703a565107332c11f10ec82959848538fc47b7ea`
+- Archive Library ID: `libfile_c39fc7197a2c81919e26d6f2198966a3`
+- Verification Library ID: `libfile_7e3fa202a9ec81918e5726d57d498839`
+- Checksum Library ID: `libfile_eade2b2309ec81918413e329aea92de7`
+- Detailed checkpoint: `BUILD339_PHASE1C_A_CHECKPOINT.md`
+
+Accepted:
+- tests-first Phase1C adversarial contract **8/8 PASS**;
+- 600-asset Full Snapshot vs Journal success/rollback equivalence PASS;
+- no whole-array asset copy in the journal equivalence fixture;
+- opt-in transaction journal foundation with automatic Full Snapshot fallback;
+- conservative promotion before joined writers and mutating/unproven critical hooks;
+- terminal irreversible critical ordering guard;
+- descriptor-safe primitive asset-field rollback;
+- historical transaction promotion regression restored to 5/5 without reusing rejected Phase1C code.
+
+Important: **the simulation runtime does not request journal mode yet**. Steady slices, Hour and Day behavior remain operationally unchanged from Phase1B-B unless a test explicitly requests journal mode. Full Snapshot protection remains enabled.
+
+**NEXT ACTION — Phase 1C-B:** prove exact steady-slice joined-writer contracts and read-only integrity-final hooks, then wire journal only to no-boundary / no-delivery steady slices. Hour/Day boundaries stay Full Snapshot. iPhone/JavaScriptCore measurement is mandatory before performance claims.
