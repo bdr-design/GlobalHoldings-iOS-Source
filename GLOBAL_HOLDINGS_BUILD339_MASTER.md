@@ -1,6 +1,6 @@
 # GLOBAL HOLDINGS — BUILD 339 ARCHITECTURE MASTER
 
-**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 1A LOCKED / PHASE 1B NEXT
+**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 1B-A LOCKED / PHASE 1B-B NEXT
 **CREATED:** 2026-09-24  
 **CONTROL BRANCH:** `build339-architecture-control-20260924`  
 **REPOSITORY:** `bdr-design/GlobalHoldings-iOS-Source`
@@ -418,3 +418,27 @@ Phase 0 archives are historical provenance only and MUST NOT be used for new act
 4. move root-journal/COW rollback implementation to Phase 1C after mutation coverage is proven.
 
 If the conversation changes, continue from this section and `BUILD339_PHASE1A_CHECKPOINT.md`; do not repeat Phase 1A.
+
+
+## 14. LATEST AUTHORITATIVE CONTINUATION — PHASE 1B-A LOCKED
+
+This section supersedes Phase0 and Phase1A for active development.
+
+- Runtime source tree: `835709c802e82d968a259224563dda0a3c7e242f21ac322bc09703e1226f6cb8`
+- WebApp tree: `3bdd4ae860baee183dc54715a9bb0d4298cd9073371f9d2eee60508c6cb33338`
+- Canonical archive: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip`
+- ZIP SHA-256: `c3c747a187ecee6def4fe94125205f5ea0ff61015ec2be5b05e7cfd63909f1ee`
+- Verification: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.verification.json`
+- Detailed checkpoint: `BUILD339_PHASE1B_A_CHECKPOINT.md`
+
+Accepted:
+- representative real Day-boundary root write maps;
+- exact JSON-serialization rollback restoration;
+- original root ordering preserved through scoped→full promotion;
+- all prior Phase1A time/write proofs remain passing.
+
+Unaccepted:
+- any local root-journal/COW experiment not present in the canonical archive.
+
+**NEXT ACTION: Phase 1B-B — pacing/backlog/render cadence separation.**
+Full rollback snapshots remain enabled. Phase1C owns root-journal/COW migration.
