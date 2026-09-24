@@ -622,3 +622,22 @@ Implement Capture-On-First-Write / sparse undo journal with root/entity hybrid r
 ### New-chat mandatory startup
 
 Read this MASTER and `GLOBAL_HOLDINGS_MASTER_HANDOFF.md`, then materialize the canonical Phase 1B-B archive above, verify ZIP SHA-256 `acd6cc9f324d6eb2975f74f076421f253e3cff5229104dc319f50a819b2fde77`, run `tools/verify_current_source.py`, require runtime source hash `6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54`, and continue Phase 1C. Do not redo Build338, Phase0, Phase1A, Phase1B-A or Phase1B-B.
+
+
+## 16. REJECTED PHASE 1C EXPERIMENT — CLEAN RESET
+
+Date: **2026-09-24**.
+
+All local Phase 1C work performed after the locked Phase 1B-B source was reviewed and **rejected in full**. It is non-authoritative and must not be replayed, copied, cherry-picked, or reconstructed from memory.
+
+Clean reset completed:
+- deleted the local Phase 1C working source and scratch copies;
+- restored the active worktree only from the canonical Phase 1B-B archive;
+- re-ran `tools/verify_current_source.py` successfully;
+- restored runtime source identity to `6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54`;
+- verified no Phase 1C checkpoint/provenance file exists inside the active source;
+- Build 338 remains fallback only.
+
+Reason for rejection: the attempted journal design exposed unproven rollback coverage for writes that can occur through joined domain owners and critical post-commit hooks. No part of that experiment is accepted architecture.
+
+**Authoritative source remains Build 339 Phase 1B-B. Phase 1C must restart from first principles from the clean Phase 1B-B archive, with writer/critical-hook coverage proven before any snapshot removal.**
