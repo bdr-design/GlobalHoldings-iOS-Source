@@ -63,6 +63,7 @@ jobs:
           set -euo pipefail
           cd "$SOURCE_DIR"
           npm install --no-audit --no-fund
+          cp "$GITHUB_WORKSPACE/.github/ci/build339-eslint.config.cjs" "$SOURCE_DIR/eslint.config.cjs"
           npm run lint
 
       - name: Run Build339 transaction and simulation gates
