@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           ZIP='GlobalHoldings_BUILD339_PHASE1C_C_UNSIGNED_SOURCE.zip'
-          EXPECTED_ZIP_SHA='55a941121bff6ca7882d9b66ba0fa0a5bab3d9581b7c660841c10dac991eac5a'
+          EXPECTED_ZIP_SHA='900505be86f35a8a23b8c3b93e62b5f2b9993fc6f363423fef85ad49567fda33'
           cat "$ZIP.parts"/part-* > "$ZIP"
           ACTUAL_ZIP_SHA="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
           [[ "$ACTUAL_ZIP_SHA" == "$EXPECTED_ZIP_SHA" ]] || { echo "::error::Source archive SHA mismatch: $ACTUAL_ZIP_SHA"; exit 1; }
@@ -43,12 +43,13 @@ jobs:
           [[ "$(cat "$SOURCE_DIR/BUILD" | tr -d '\n\r')" == '339' ]]
           [[ "$(cat "$SOURCE_DIR/VERSION" | tr -d '\n\r')" == '3.0.0' ]]
           python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR"
+          python3 "$SOURCE_DIR/tests/build334-source-layout.py"
           python3 - "$SOURCE_DIR" <<'PY'
           import json, sys
           from pathlib import Path
           root=Path(sys.argv[1])
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
-          if manifest.get('source_tree_sha256')!='bdd9e02e91cb57441bacd300c78f2967ddbcdfeacac846bfcd1d1b7eeacb8905':
+          if manifest.get('source_tree_sha256')!='41fd396f4229d41198ae5c2617790525c534d007af75ba376bcdddeb68faf92b':
               raise SystemExit('Unexpected Phase1C-C source identity')
           if manifest.get('save_schema')!='2.0.0':
               raise SystemExit('Unexpected save schema')
@@ -154,9 +155,9 @@ jobs:
           SHA="$(shasum -a 256 "$IPA" | awk '{print $1}')"
           echo "IPA_PATH=$IPA" >> "$GITHUB_OUTPUT"
           echo "IPA_SHA=$SHA" >> "$GITHUB_OUTPUT"
-          printf 'Build=339\nPhase=1C-C diagnostic candidate\nSigned=false\nRuntimeSHA256=bdd9e02e91cb57441bacd300c78f2967ddbcdfeacac846bfcd1d1b7eeacb8905\nIPA_SHA256=%s\nLiveJournal=OFF\nProductionApproval=CLOSED\n' "$SHA" > "$PACKAGE/BUILD339_PHASE1C_C_IPA_METADATA.txt"
+          printf 'Build=339\nPhase=1C-C diagnostic candidate\nSigned=false\nRuntimeSHA256=41fd396f4229d41198ae5c2617790525c534d007af75ba376bcdddeb68faf92b\nIPA_SHA256=%s\nLiveJournal=OFF\nProductionApproval=CLOSED\n' "$SHA" > "$PACKAGE/BUILD339_PHASE1C_C_IPA_METADATA.txt"
           echo "### Unsigned diagnostic IPA" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Runtime SHA-256: \`bdd9e02e91cb57441bacd300c78f2967ddbcdfeacac846bfcd1d1b7eeacb8905\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Runtime SHA-256: \`41fd396f4229d41198ae5c2617790525c534d007af75ba376bcdddeb68faf92b\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- IPA SHA-256: \`$SHA\`" >> "$GITHUB_STEP_SUMMARY"
           echo '- Live Journal: OFF; production approval: CLOSED' >> "$GITHUB_STEP_SUMMARY"
 
