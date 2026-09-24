@@ -442,3 +442,136 @@ Unaccepted:
 
 **NEXT ACTION: Phase 1B-B — pacing/backlog/render cadence separation.**
 Full rollback snapshots remain enabled. Phase1C owns root-journal/COW migration.
+
+
+## 14. BUILD 339 PHASE 1B-A LOCKED CHECKPOINT — 2026-09-24
+
+This section is the latest authoritative Build 339 continuation point and supersedes earlier Phase 1A NEXT ACTION wording.
+
+### Active source identity
+
+- Build: **339**
+- Version: **3.0.0**
+- Save Schema: **2.0.0**
+- Runtime source tree SHA-256:
+  `835709c802e82d968a259224563dda0a3c7e242f21ac322bc09703e1226f6cb8`
+- WebApp tree SHA-256:
+  `3bdd4ae860baee183dc54715a9bb0d4298cd9073371f9d2eee60508c6cb33338`
+- Canonical full source archive:
+  `GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip`
+- Source ZIP SHA-256:
+  `c3c747a1fce8b9c741b6c809fe2cb4e44f44307a68e77efe6d1f57d0c8aef1ee`
+- Library path:
+  `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip`
+- Library file ID:
+  `libfile_45d494d042188191a4809466fa56cb19`
+- Verification:
+  `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.verification.json`
+- Verification Library file ID:
+  `libfile_68ba3bb085a08191965fc527a81c63fb`
+- Checksum Library file ID:
+  `libfile_2762bc9df30c8191af370e08e6c9c28f`
+
+Build 338 remains frozen fallback/provenance only.
+
+### Accepted Phase 1B-A work
+
+1. Completed the real Day-boundary write map over sequential day execution, including:
+   - ordinary day;
+   - payroll day 27;
+   - month-end behavior.
+2. Strengthened rollback so a failed transaction restores:
+   - values;
+   - object key order;
+   - root key order;
+   - JSON serialization equivalence.
+3. Fixed scoped-to-full snapshot promotion so promoted full snapshots preserve original root order.
+4. Added a Day-boundary regression contract including deliberate critical failure and exact JSON rollback.
+5. Preserved existing Hour83 proof-failure rollback behavior.
+6. Preserved full hour/day snapshots; no COW/root journal is active yet.
+
+### Proven regression evidence
+
+PASS after the Phase 1B-A runtime change:
+- Hour83 proof corruption/calendar rollback
+- durable post-commit/publication
+- finance settlement/day-close related contracts
+- document-proof v3 security
+- durable authorization
+- scheduler liveness
+- late-frame liveness
+- 600-air calendar regression
+- Build338 compatibility/root contracts
+- source-layout 10/10
+- official source verifier PASS after source relock
+
+### Local provenance commits
+
+- `93cbb47` — exact rollback ordering + Day write-map contract
+- `ba6875a` — lock Phase 1B-A source identity and hashes
+
+### Explicitly NOT part of the accepted source
+
+Any earlier local experiments involving root-journal/COW that were not committed and not present in the canonical Phase 1B-A archive are rejected/non-authoritative and must not be replayed from memory.
+
+### Architectural facts confirmed for the next phase
+
+- `state.simSeconds` remains the sole committed simulation-time source.
+- Simulation slices are **not fixed at 600 seconds only**:
+  - 30x ≈ 30 simulation seconds
+  - 120x ≈ 120
+  - 300x ≈ 300
+  - 600x ≈ 600
+  - manual calendar advance may use batches up to 3600 seconds
+  - every slice is clamped at exact hour/day boundaries.
+- Midnight ordering remains **Day → Hour**.
+- Full snapshot rollback remains active for hour/day boundaries.
+- Authoritative persisted state remains a JSON-compatible tree; current Maps/Sets are runtime/local structures only.
+- Asset `specs` are currently copied from catalog and are effectively static during gameplay except legacy save normalization/migration.
+- Asset `load` is currently derived presentation text, not authoritative cargo inventory.
+
+### External architecture reviewer
+
+A performance/architecture reviewer without repository access is assisting on:
+- scheduler/pacing;
+- transaction journal/COW;
+- 20k asset data model;
+- persistence;
+- rendering;
+- routing;
+- stress harness.
+
+Reviewer recommendations are advisory only. They must be checked against the clean Build 339 source and measured on JavaScriptCore/WebKit/iPhone before adoption.
+
+Important correction already sent to the reviewer:
+- the engine uses variable deterministic slices, not fixed 600s-only stepping;
+- the target runtime is JavaScriptCore/WebKit, not V8.
+
+### CURRENT NEXT ACTION — PHASE 1B-B
+
+Start only from the canonical Phase 1B-A archive/hash above.
+
+1. Separate:
+   - wall-clock pacing;
+   - backlog accumulation;
+   - execution budget;
+   - render cadence;
+   from authoritative simulation time.
+2. Preserve the existing variable deterministic slice semantics and exact boundary clamping.
+3. Preserve all Golden Time Contract outcomes, especially midnight Day → Hour ordering.
+4. Keep `state.simSeconds` as the sole committed economic time source.
+5. Keep existing full rollback snapshots during Phase 1B-B.
+6. Measure and test 30x/120x/300x/600x/manual advance/late frame/background catch-up.
+7. Re-run Hour83, Day-close, scheduler, late-frame, 600-air, write-set and save regressions after each accepted sub-batch.
+8. Only after Phase 1B-B is proven may Phase 1C implement root-journal/COW rollback with automatic full-snapshot fallback for unproven writers.
+
+### New-chat mandatory startup
+
+A new conversation must:
+1. read `GLOBAL_HOLDINGS_MASTER_HANDOFF.md` from branch `globalholdings-project-control`;
+2. read `GLOBAL_HOLDINGS_BUILD339_MASTER.md` from branch `build339-architecture-control-20260924`;
+3. use this Phase 1B-A section as the latest continuation point;
+4. materialize the canonical Phase 1B-A full source archive from Library;
+5. verify ZIP SHA-256 `c3c747a1...f1ee`;
+6. run the official source verifier and require runtime source hash `835709c8...6cb8`;
+7. continue Phase 1B-B without redoing Build338, Phase0, Phase1A, or Phase1B-A.
