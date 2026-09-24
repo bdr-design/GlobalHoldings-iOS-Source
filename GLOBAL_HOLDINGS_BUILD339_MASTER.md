@@ -641,3 +641,26 @@ Clean reset completed:
 Reason for rejection: the attempted journal design exposed unproven rollback coverage for writes that can occur through joined domain owners and critical post-commit hooks. No part of that experiment is accepted architecture.
 
 **Authoritative source remains Build 339 Phase 1B-B. Phase 1C must restart from first principles from the clean Phase 1B-B archive, with writer/critical-hook coverage proven before any snapshot removal.**
+
+
+## 17. EXTERNAL REVIEW PROTOCOL — GEMINI ULTRA
+
+Gemini Ultra may be used as an **external adversarial architecture/review assistant only**. It is not a source owner and has no authority to modify or define the canonical Global Holdings source.
+
+Rules:
+- ChatGPT remains the implementation/source-control owner for Build 339 work in this workflow.
+- Gemini Ultra receives only the minimal review packet needed for the current question: architecture facts, relevant code excerpts/diffs, invariants, tests, and measured evidence.
+- Gemini must not be given authority to invent a replacement source tree, replay rejected experiments, or merge code directly.
+- Any Gemini recommendation is advisory and must be independently checked against the clean canonical source, transaction ownership, determinism, rollback, Save Schema 2.0.0, and regression tests.
+- Conflicts are resolved by repository evidence and executable tests, not model confidence.
+- For Phase 1C specifically, Gemini review should focus on writer coverage, joined writers, validation/postCommitCritical mutation risk, byte-equivalent rollback, fallback-before-write guarantees, and JavaScriptCore/WKWebView performance risk.
+- No recommendation may remove Full Snapshot protection until writer coverage is proven.
+
+Operational workflow:
+1. ChatGPT performs clean-source tracing and prepares a narrow review packet.
+2. User may submit that packet to Gemini Ultra.
+3. Gemini returns critique / counterexamples / alternative design.
+4. ChatGPT validates every claim against the repository and tests.
+5. Only validated changes are implemented and recorded in MASTER.
+
+There is currently no direct Gemini connector available in this ChatGPT environment, so exchange with Gemini is user-mediated unless a supported connector becomes available later.
