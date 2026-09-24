@@ -1,0 +1,166 @@
+name: Build339 Phase1C-C Unsigned Diagnostic IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build339-phase1cc-unsigned-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-unsigned-ipa:
+    name: Verify Phase1C-C → Build unsigned iPhone IPA
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout this isolated candidate branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Use Node 24.19.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.19.0'
+
+      - name: Verify exact Build339 Phase1C-C source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP='GlobalHoldings_BUILD339_PHASE1C_C_UNSIGNED_SOURCE.zip'
+          EXPECTED_ZIP_SHA='55a941121bff6ca7882d9b66ba0fa0a5bab3d9581b7c660841c10dac991eac5a'
+          ACTUAL_ZIP_SHA="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
+          [[ "$ACTUAL_ZIP_SHA" == "$EXPECTED_ZIP_SHA" ]] || { echo "::error::Source archive SHA mismatch: $ACTUAL_ZIP_SHA"; exit 1; }
+          SOURCE_DIR="$GITHUB_WORKSPACE/.ci-output/source/GlobalHoldings_BUILD339_PHASE1C_C_UNSIGNED_SOURCE"
+          mkdir -p "$(dirname "$SOURCE_DIR")"
+          ditto -x -k "$ZIP" "$(dirname "$SOURCE_DIR")"
+          test -f "$SOURCE_DIR/BUILD" && test -f "$SOURCE_DIR/project.yml"
+          [[ "$(cat "$SOURCE_DIR/BUILD" | tr -d '\n\r')" == '339' ]]
+          [[ "$(cat "$SOURCE_DIR/VERSION" | tr -d '\n\r')" == '3.0.0' ]]
+          python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR"
+          python3 - "$SOURCE_DIR" <<'PY'
+          import json, sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          if manifest.get('source_tree_sha256')!='bdd9e02e91cb57441bacd300c78f2967ddbcdfeacac846bfcd1d1b7eeacb8905':
+              raise SystemExit('Unexpected Phase1C-C source identity')
+          if manifest.get('save_schema')!='2.0.0':
+              raise SystemExit('Unexpected save schema')
+          if 'no live journal activation' not in manifest.get('phase',''):
+              raise SystemExit('Candidate manifest does not mark the Journal as inactive')
+          PY
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+
+      - name: Install locked JavaScript dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          npm ci --no-audit --no-fund
+          npm run lint
+
+      - name: Run Build339 transaction and simulation gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          npm run test:build339
+          npm run test:simulation-scale
+          node tests/build334-simulation-slice-atomic.cjs
+
+      - name: Validate runtime JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          while IFS= read -r file; do node --check "$file"; done < <(find WebApp -type f -name '*.js' | sort)
+
+      - name: Install XcodeGen and generate the iOS project
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          cd "$SOURCE_DIR"
+          xcodegen generate --spec project.yml
+          xcodebuild -project GlobalHoldings.xcodeproj -list
+
+      - name: Build arm64 iPhoneOS Release without signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          DERIVED_DATA="$GITHUB_WORKSPACE/.ci-output/DerivedData"
+          xcodebuild \
+            -project GlobalHoldings.xcodeproj \
+            -scheme GlobalHoldings \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            DEVELOPMENT_TEAM='' \
+            clean build
+          APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          test -d "$APP_PATH"
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+      - name: Verify app metadata, source payload, and unsigned state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$SOURCE_DIR" "$APP_PATH" <<'PY'
+          import hashlib, json, plistlib, sys
+          from pathlib import Path
+          source,app=Path(sys.argv[1]),Path(sys.argv[2])
+          plist=plistlib.loads((app/'Info.plist').read_bytes())
+          manifest=json.loads((source/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          if (plist.get('CFBundleShortVersionString'),plist.get('CFBundleVersion'),plist.get('CFBundleIdentifier'),plist.get('UIDeviceFamily')) != ('3.0.0','339','com.example.globalholdings',[1]):
+              raise SystemExit(f'Unexpected app identity: {plist}')
+          if not (app/'Assets.car').is_file() or (app/'Assets.car').stat().st_size==0:
+              raise SystemExit('Compiled app icon catalog is missing')
+          if plist.get('GHSourceSnapshotSHA256')!=manifest.get('webapp_tree_sha256'):
+              raise SystemExit('Built runtime snapshot marker does not match the exact WebApp source')
+          if (app/'embedded.mobileprovision').exists() or (app/'_CodeSignature').exists():
+              raise SystemExit('Unexpected signing material in unsigned app')
+          def hashes(root):
+              return {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
+          expected={k[len('WebApp/'):]:row['sha256'] for k,row in manifest['files'].items() if k.startswith('WebApp/')}
+          actual=hashes(app/'WebApp')
+          if actual!=expected:
+              raise SystemExit('Built WebApp payload differs from the verified Build339 source')
+          print(f'Unsigned iPhone app verified; exact WebApp payload files={len(actual)}')
+          PY
+
+      - name: Package and checksum unsigned IPA
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE="$GITHUB_WORKSPACE/.ci-output/package"
+          mkdir -p "$PACKAGE/Payload"
+          ditto "$APP_PATH" "$PACKAGE/Payload/GlobalHoldings.app"
+          IPA="$PACKAGE/GlobalHoldings_v3_0_0_build339_PHASE1C_C_unsigned.ipa"
+          (cd "$PACKAGE" && /usr/bin/zip -qry "$(basename "$IPA")" Payload)
+          unzip -t "$IPA" >/dev/null
+          SHA="$(shasum -a 256 "$IPA" | awk '{print $1}')"
+          echo "IPA_PATH=$IPA" >> "$GITHUB_OUTPUT"
+          echo "IPA_SHA=$SHA" >> "$GITHUB_OUTPUT"
+          printf 'Build=339\nPhase=1C-C diagnostic candidate\nSigned=false\nRuntimeSHA256=bdd9e02e91cb57441bacd300c78f2967ddbcdfeacac846bfcd1d1b7eeacb8905\nIPA_SHA256=%s\nLiveJournal=OFF\nProductionApproval=CLOSED\n' "$SHA" > "$PACKAGE/BUILD339_PHASE1C_C_IPA_METADATA.txt"
+          echo "### Unsigned diagnostic IPA" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Runtime SHA-256: \`bdd9e02e91cb57441bacd300c78f2967ddbcdfeacac846bfcd1d1b7eeacb8905\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- IPA SHA-256: \`$SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo '- Live Journal: OFF; production approval: CLOSED' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload unsigned IPA and build metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: GlobalHoldings-Build339-Phase1C-C-unsigned-diagnostic-IPA
+          path: |
+            ${{ steps.package.outputs.ipa_path }}
+            .ci-output/package/BUILD339_PHASE1C_C_IPA_METADATA.txt
+          if-no-files-found: error
+          retention-days: 30
