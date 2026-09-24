@@ -1,6 +1,6 @@
 # GLOBAL HOLDINGS — MASTER HANDOFF / CONTINUATION PROTOCOL
 
-**MASTER FORMAT VERSION:** 3.1  
+**MASTER FORMAT VERSION:** 3.2  
 **LAST AUDITED:** 2026-09-24  
 **CANONICAL CONTROL BRANCH:** `globalholdings-project-control`
 
@@ -23,11 +23,11 @@ MANDATORY: A new conversation must read this file first, establish the current S
 - Repository: **bdr-design/GlobalHoldings-iOS-Source**
 - Canonical control branch: **globalholdings-project-control**
 - Build 338 frozen provenance/CI branch: **build338-save-lag-root-20260923**\n- Build 339 architecture control branch: **build339-architecture-control-20260924**\n- Build 339 master: **GLOBAL_HOLDINGS_BUILD339_MASTER.md**
-- Build 339 runtime source tree SHA-256: **8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a**
-- Build 339 WebApp tree SHA-256: **06234729bd9a6395f23fc46c958b4ee8f7d5c9e99c66c93f5e1b1aea78ce1652**
-- Build 339 full source archive: **GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip**
-- Build 339 source ZIP SHA-256: **0528355bb0ad1daca83ea09c09285a61a8d589c3981a113f9ae5000c263b1de9**
-- Build 339 Library source path: **/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip**
+- Build 339 runtime source tree SHA-256: **2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874**
+- Build 339 WebApp tree SHA-256: **7cdb92260070495f8d3e842f4d35407eb4c21f5d5d3cd7414d1676051d8a6901**
+- Build 339 full source archive: **GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip**
+- Build 339 source ZIP SHA-256: **ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4**
+- Build 339 Library source path: **/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip**
 - Build 338 verified runtime source tree SHA-256: **387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b**
 - Build 338 WebApp tree SHA-256: **aed5ebc6773603703702de1cddacd2ed6197f9a2e68465ba39bf9ead0cc9aab3**
 - Build 338 full source archive: **GlobalHoldings_BUILD338_SAVE_LAG_ROOT_CANDIDATE_SOURCE.zip**
@@ -41,17 +41,17 @@ MANDATORY: A new conversation must read this file first, establish the current S
 
 ### Current development / fallback rule
 
-All new functional/architectural development MUST start from the locked **Build 339 Phase 0** source tree:
+All new functional/architectural development MUST start from the locked **Build 339 Phase 1A** source tree:
 
-`8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a`
+`2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874`
 
 or its exact full source archive:
 
-`GlobalHoldings_BUILD339_PHASE0_ARCHITECTURE_BOOTSTRAP_SOURCE.zip`
+`GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip`
 
 with ZIP SHA-256:
 
-`0528355bb0ad1daca83ea09c09285a61a8d589c3981a113f9ae5000c263b1de9`
+`ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4`
 
 Build 338 is now fallback/recovery only. It may be used only if Build 339 must be abandoned or rolled back due to an architectural failure.
 
@@ -497,9 +497,9 @@ When a new conversation receives “كمل Global Holdings” or equivalent:
 13. Before closing a validated build, update: build number, immutable source anchor, source/WebApp hashes, CI evidence, latest diagnostic hash, approved decisions, unresolved issues, and NEXT ACTION.
 14. Treat anything not explicitly recorded as an approved decision as **unapproved/pending**, even if it appeared earlier in discussion.
 
-## 14. NEXT ACTION — Build 339 Phase 1: Time + Transaction architecture
+## 14. NEXT ACTION — Build 339 Phase 1B: Root-journal transaction migration
 
-Phase 0 is locked and is now the active Source of Truth.
+Phase 1A is locked and is now the active Source of Truth.
 
 Immediate work:
 1. Verify clean-source boundary/writer/readers for time and transactions.
@@ -519,7 +519,7 @@ The user should only need to write:
 The new conversation MUST:
 - open repository `bdr-design/GlobalHoldings-iOS-Source`;
 - read `GLOBAL_HOLDINGS_MASTER_HANDOFF.md` from branch `globalholdings-project-control`;
-- use Build 339 Phase 0 source tree `8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a` as the active Source of Truth;
+- use Build 339 Phase 1A source tree `2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874` as the active Source of Truth;
 - continue the work order above without asking the user to repeat the architecture, rules, or current state.
 
 ---
@@ -572,3 +572,21 @@ Build 339 now has a portable full-source checkpoint and no longer depends on a l
 If a conversation changes, the new conversation MUST read `GLOBAL_HOLDINGS_BUILD339_MASTER.md` and `BUILD339_PHASE0_CHECKPOINT.md` first, then materialize the full source archive and verify both the ZIP hash and runtime source hash before coding.
 
 **NEXT ACTION:** Build 339 Phase 1 deterministic time/scheduler architecture. Do not resume functional work on Build 338.
+
+
+## 17. Build 339 Phase 1A locked checkpoint — 2026-09-24
+
+**This checkpoint supersedes every older Phase 0 archive reference for active continuation.**
+
+- Runtime source tree SHA-256: `2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874`
+- WebApp tree SHA-256: `7cdb92260070495f8d3e842f4d35407eb4c21f5d5d3cd7414d1676051d8a6901`
+- Full source archive: `GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip`
+- ZIP SHA-256: `ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4`
+- Library path: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip`
+- Library file id: `libfile_a073f623e3a08191b19729b246946975`
+- Save Schema: 2.0.0
+- Build338 remains frozen fallback only.
+- Phase 1A accepted: deterministic time boundary owner extraction + golden time contract + opt-in transaction write-set auditing + actual hourly root write-map + byte-equivalent rollback proof.
+- Full hour/day snapshots remain enabled. They must not be removed until Phase 1B coverage proves all writes.
+- NEXT ACTION: day-boundary write-map, then safe root-journal/snapshot-on-first-write migration inside the existing transaction owner, with automatic full-snapshot fallback for unproven writers.
+
