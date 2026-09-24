@@ -738,3 +738,33 @@ Operational workflow:
 5. Only validated changes are implemented and recorded in MASTER.
 
 There is currently no direct Gemini connector available in this ChatGPT environment, so exchange with Gemini is user-mediated unless a supported connector becomes available later.
+
+
+## 23. GEMINI ULTRA PHASE 1C REVIEW — VALIDATED VERDICT
+
+External adversarial review was received and checked against the clean locked Phase 1B-B source. **No runtime/source code was changed by this review batch.**
+
+Accepted:
+- arbitrary uninstrumented JavaScript cannot guarantee fallback-before-write after execution has already entered an unknown writer; admission must be pre-execution;
+- ensure/normalization/lazy initialization, nested writers, array structural mutation, error paths, critical hooks and reconciliation are real write-contract risks;
+- rollback capture must remain valid through every state-mutating critical phase;
+- Hour/Day boundaries stay Full Snapshot initially;
+- unknown/unproven writers must use Full Snapshot before execution;
+- deterministic/no-rollback equivalence and byte-equivalent rollback are mandatory;
+- JavaScriptCore/iPhone measurement is required before performance claims.
+
+Corrected/rejected:
+- `join()` is not permanently classified as unsafe; current Phase1B-B promotes scoped joins to Full Snapshot, while Phase1C may later admit a joined writer only through an explicit proven contract.
+- Field-level undo is not categorically forbidden. It may be admitted only for fixed, pre-existing own data properties with stable field contracts; object-valued fields require safe value capture, and property/array structural mutations force entity/root/full fallback.
+- The proposed root-reordering delete/read/reinsert sample is not adopted. Restoration must not invoke accessors/getters and must preserve exact JSON order by a proven descriptor/data-tree-safe method.
+- Claimed finance/root sizes and JavaScriptCore slowdown factors are not accepted without measurement.
+- Fixed targets such as `captureMs<=1.5`, `finishMs<=12`, `saveSyncMs<=30`, `jsHeap<=180MB` are hypotheses only until physical-iPhone baselines exist.
+- `fullSnapshotFallbackRate=0%` is not a correctness target during rollout; fallback is a safety mechanism.
+- Reducing persisted state from ~27MB to <3.5MB is **not a Phase1C acceptance criterion**. Journal/COW changes rollback storage, not authoritative persisted-state size. State-size/persistence redesign remains a later phase.
+
+Source-specific finding:
+- current transaction rollback snapshot remains available across critical-task failure, but `activeContext` is cleared before critical tasks;
+- a future sparse journal tied to active context would therefore miss critical-phase mutations unless lifecycle ownership changes or Full Snapshot is forced before such hooks;
+- current critical save path can mutate authoritative state during save preparation / persistence (including save revision), so persistence publication must be separated from ordinary state-critical hooks in the Phase1C lifecycle.
+
+Phase1C implementation gate remains CLOSED until the new tests prove writer contracts, critical-hook coverage, fallback-before-write and byte-equivalent rollback from the clean Phase1B-B source.
