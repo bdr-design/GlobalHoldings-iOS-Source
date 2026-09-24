@@ -1,6 +1,6 @@
 # GLOBAL HOLDINGS — BUILD 339 ARCHITECTURE MASTER
 
-**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 0 LOCKED / PHASE 1 NEXT  
+**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 1A LOCKED / PHASE 1B NEXT
 **CREATED:** 2026-09-24  
 **CONTROL BRANCH:** `build339-architecture-control-20260924`  
 **REPOSITORY:** `bdr-design/GlobalHoldings-iOS-Source`
@@ -396,3 +396,25 @@ ZIP SHA-256:
 `ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4`
 
 Any older Phase 0 archive with a different filename/hash is superseded for active development. It remains historical provenance only.
+
+
+## 13. LATEST AUTHORITATIVE CONTINUATION — PHASE 1A LOCKED
+
+This section supersedes earlier Phase 0 / Phase 1 NEXT ACTION wording.
+
+- Active source tree: `2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874`
+- Active WebApp tree: `7cdb92260070495f8d3e842f4d35407eb4c21f5d5d3cd7414d1676051d8a6901`
+- Canonical archive: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip`
+- ZIP SHA-256: `ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4`
+- Verification: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.verification.json`
+- Detailed checkpoint: `BUILD339_PHASE1A_CHECKPOINT.md`
+
+Phase 0 archives are historical provenance only and MUST NOT be used for new active development.
+
+**NEXT ACTION: Phase 1B**
+1. complete day-boundary write map;
+2. separate pacing/backlog/render cadence from authoritative `simSeconds` while retaining the golden contract;
+3. retain full rollback snapshots throughout Phase 1B;
+4. move root-journal/COW rollback implementation to Phase 1C after mutation coverage is proven.
+
+If the conversation changes, continue from this section and `BUILD339_PHASE1A_CHECKPOINT.md`; do not repeat Phase 1A.
