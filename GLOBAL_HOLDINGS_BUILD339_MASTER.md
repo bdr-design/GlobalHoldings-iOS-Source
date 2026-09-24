@@ -5,6 +5,106 @@
 **CONTROL BRANCH:** `build339-architecture-control-20260924`  
 **REPOSITORY:** `bdr-design/GlobalHoldings-iOS-Source`
 
+## CURRENT AUTHORITATIVE CHECKPOINT — Build 339 Phase 1A
+
+**This section supersedes every older Phase 0 archive/name/hash reference below for continuation purposes. Older sections are historical evidence only.**
+
+- Active development source: **Build 339 Phase 1A**
+- Version: **3.0.0**
+- Build: **339**
+- Save Schema: **2.0.0**
+- Runtime source tree SHA-256: `2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874`
+- WebApp tree SHA-256: `7cdb92260070495f8d3e842f4d35407eb4c21f5d5d3cd7414d1676051d8a6901`
+- Full source archive: `GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip`
+- Source ZIP SHA-256: `ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4`
+- Source ZIP bytes: **132,292,257**
+- Library path: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip`
+- Library file id: `libfile_a073f623e3a08191b19729b246946975`
+- Runtime files in source manifest: **481**
+- old_ipa_used: **false**
+- production_approved: **false**
+- physical_device_tested: **false**
+
+### Phase 1A accepted architecture
+
+1. **Time ownership was not blindly rewritten.** Clean-source tracing proved the existing scheduler already keeps economic time authoritative through the simulation adapter / `state.simSeconds`, accumulates backlog separately, commits atomic slices first, and only then synchronizes external simulation time.
+2. Exact hour/day boundary arithmetic was extracted to the new owner `WebApp/simulation-time-core.js` while preserving scheduler semantics.
+3. A golden time fixture now pins:
+   - manual advance to 90,000 seconds;
+   - exact hour splits;
+   - midnight `day -> hour` order;
+   - 5-second real stall drop policy;
+   - live 3500 -> 3600 -> 4100 boundary split.
+4. `GH_TRANSACTION_CORE` now contains an **opt-in Build 339 write-set proof system**:
+   - `writeRoots`;
+   - `auditWrites`;
+   - `enforceWriteRoots`;
+   - actual mutated-root reporting;
+   - undeclared-root reporting;
+   - byte-equivalent rollback when enforcement fails.
+5. Write auditing is **disabled in normal gameplay by default**. Scoped transactions take an extra full audit baseline only when the architecture audit is explicitly enabled; normal runtime therefore pays no audit clone/compare cost.
+6. `createSimulationSliceJob` supplies the existing ordinary-slice scope as a declared write set when audit mode is enabled. Hour/day boundaries still retain full rollback at this checkpoint.
+7. An actual clean-source hourly Market execution established this current dynamic write map:
+   `advanced, controlPlane, deliveryClosure, domainRuntime, lastMarketHour, maPortfolio, portfolio, portfolioBook, realism, simulationWorld`.
+8. A late critical failure after the actual hourly owner restores the complete tested state byte-equivalent.
+9. **Full Snapshot has NOT been removed yet.** Phase 1A exists specifically to prove ownership before that step.
+
+### Phase 1A regression evidence
+
+Passed locally:
+- Build339 architecture bootstrap: 12/12
+- Build339 time golden: PASS
+- Build339 transaction write-set audit: 5/5
+- Build339 simulation write-set contract: 2/2
+- Build339 actual hour-boundary write map: 2/2
+- Build334 simulation-time contract: PASS
+- Build334 calendar owner cadence: PASS
+- Build334 600-air one-day regression: PASS
+- Build334 calendar safety: 7/7
+- Build334 scheduler liveness: 14/14
+- Build334 late-frame liveness: 4/4
+- Build336 Hour83 proof corruption/calendar rollback: PASS
+- transaction promotion regressions: 5/5 + 5/5
+- document-proof v3 security/rollback: PASS
+- durable post-commit: 6/6
+- source layout: 10/10
+- source verifier: PASS
+
+Local tests used Node 22 where applicable; **Node 24 / ESLint / full acceptance CI and Apple/device gates remain mandatory and pending**.
+
+### Source-history notes
+
+The local clean-source provenance history for this phase recorded:
+- `8d5c6f2` — deterministic simulation-time planner extraction
+- `d125e2e` — opt-in transaction write-set audit
+- `cc4b023` — Phase 1A source/hash lock
+
+The portable full-source archive above is authoritative for cross-conversation continuation; do not rely on a local worktree or those local commit ids alone.
+
+### Rejected / not-yet-approved changes
+
+- No direct switch from full hourly snapshot to scoped snapshot.
+- No disabling/reducing integrity checks.
+- No live-reference proof verification.
+- No Save Schema bump.
+- No new persistence format yet.
+- No route/asset/render/tripArchive migration yet.
+- No claim of 20,000-asset or 60 FPS capability yet.
+
+### NEXT ACTION — Phase 1B
+
+Continue only from the Phase 1A source identity above.
+
+1. Produce a **day-boundary dynamic write map** with the same proof standard used for the hourly path.
+2. Introduce a root-journal / snapshot-on-first-write mode **inside the existing GH_TRANSACTION_CORE**, not a second transaction system.
+3. Unknown/unmigrated nested owners must safely fall back/promote to the existing full snapshot until their write ownership is proven.
+4. Add owner-declared write roots for Domain Commands incrementally; Domain Command infrastructure must include its own persistent roots such as `domainRuntime`, event/control evidence, and approval/proof roots when applicable.
+5. Keep byte-equivalent rollback tests enabled while migrating owners.
+6. Only after Hour + Day paths demonstrate complete declared-write coverage may Build 339 stop using the full hourly/day snapshot.
+7. Recompute hashes, archive a full source checkpoint, and update this MASTER after every accepted batch.
+
+
+
 ## 1. Project decision
 
 Build 338 is now **FROZEN** as the last verified runtime/provenance fallback baseline.
@@ -285,3 +385,14 @@ Do not continue from a local unverified working directory if the conversation ch
 The next accepted work is **Phase 1**, not more Build 338 stabilization and not another Build 339 bootstrap.
 
 Start by building a golden compatibility harness for current time/boundary semantics, then replace the scheduler architecture in small, independently regression-gated batches. Preserve simSeconds as the sole authoritative simulation-time source until a formally recorded migration says otherwise.
+
+
+## Phase 1A archive lock — 2026-09-24
+
+The authoritative portable continuation archive is:
+`/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip`
+
+ZIP SHA-256:
+`ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4`
+
+Any older Phase 0 archive with a different filename/hash is superseded for active development. It remains historical provenance only.
