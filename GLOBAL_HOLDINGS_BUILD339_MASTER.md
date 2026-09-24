@@ -1,13 +1,13 @@
 # GLOBAL HOLDINGS — BUILD 339 ARCHITECTURE MASTER
 
-**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 1B-A LOCKED / PHASE 1B-B NEXT
+**STATUS:** ACTIVE ARCHITECTURE MIGRATION — PHASE 1B-B LOCKED / PHASE 1C NEXT
 **CREATED:** 2026-09-24  
 **CONTROL BRANCH:** `build339-architecture-control-20260924`  
 **REPOSITORY:** `bdr-design/GlobalHoldings-iOS-Source`
 
-## CURRENT AUTHORITATIVE CHECKPOINT — Build 339 Phase 1A
+## HISTORICAL CHECKPOINT — Build 339 Phase 1A
 
-**This section supersedes every older Phase 0 archive/name/hash reference below for continuation purposes. Older sections are historical evidence only.**
+**Historical evidence only. This Phase 1A section is superseded by the Phase 1B-B continuation section at the end of this MASTER.**
 
 - Active development source: **Build 339 Phase 1A**
 - Version: **3.0.0**
@@ -460,7 +460,7 @@ This section is the latest authoritative Build 339 continuation point and supers
 - Canonical full source archive:
   `GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip`
 - Source ZIP SHA-256:
-  `c3c747a1fce8b9c741b6c809fe2cb4e44f44307a68e77efe6d1f57d0c8aef1ee`
+  `c3c747a187ecee6def4fe94125205f5ea0ff61015ec2be5b05e7cfd63909f1ee`
 - Library path:
   `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_A_DAY_ROLLBACK_SOURCE.zip`
 - Library file ID:
@@ -575,3 +575,50 @@ A new conversation must:
 5. verify ZIP SHA-256 `c3c747a1...f1ee`;
 6. run the official source verifier and require runtime source hash `835709c8...6cb8`;
 7. continue Phase 1B-B without redoing Build338, Phase0, Phase1A, or Phase1B-A.
+
+
+## 15. LATEST AUTHORITATIVE CONTINUATION — PHASE 1B-B LOCKED
+
+This section supersedes every earlier active-source and NEXT ACTION section for continuation.
+
+### Active source identity
+
+- Build: **339**
+- Version: **3.0.0**
+- Save Schema: **2.0.0**
+- Production approval: **CLOSED**
+- Runtime source tree SHA-256: `6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54`
+- WebApp tree SHA-256: `ada2977ddadc0f6df1558acd0b4543de77163da5ae0bfa6b63eb087522a9489e`
+- Canonical archive: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1B_B_PACING_SEPARATION_SOURCE.zip`
+- ZIP SHA-256: `acd6cc9f324d6eb2975f74f076421f253e3cff5229104dc319f50a819b2fde77`
+- Archive Library ID: `libfile_94bc2253cccc8191b627fbd78626238e`
+- Verification Library ID: `libfile_9ee958e840708191bb47cb2d182d9bc6`
+- Checksum Library ID: `libfile_2bb11d653bac8191a0074a1fe806ea53`
+- Detailed checkpoint: `BUILD339_PHASE1B_B_CHECKPOINT.md`
+
+### Accepted Phase 1B-B architecture
+
+- wall-clock pacing, backlog accumulation, execution budget, render cadence and persist cadence are runtime-only;
+- `state.simSeconds` remains the sole authoritative committed economic time source;
+- variable deterministic 30/120/300/600 slices are preserved;
+- exact Hour/Day boundary clamping is preserved;
+- midnight ordering remains **Day → Hour**;
+- manual advance remains target-driven and cannot leak its wall duration into later live catch-up;
+- hidden/background wall time is not replayed as economic catch-up;
+- render cadence no longer persists `simulationEngine.snapshot()` into `state.simulationKernel`;
+- save normalization removes legacy scheduler/pacing snapshot residue while preserving semantic simulation audit fields;
+- full snapshot rollback remains enabled; root-journal/COW is still inactive.
+
+### Regression evidence
+
+Local PASS: Build339 architecture bootstrap 12/12; Golden Time; Phase1B-B pacing contract; transaction write-set 5/5; simulation write-set 2/2; Hour map 2/2; Day map 2/2; exact 30/120/300/600 rate contract; scheduler liveness 14/14; late-frame 4/4; R3 calendar work 13/13; Hour83; finance settlement/day-close related contracts; document-proof v3; durable authorization; 600-air; deferred save; persistence snapshot consistency; persistence root coalescing; Build338 root compatibility; source-layout 10/10; official source verifier.
+
+Local lint did not start because the current local source environment lacks the `eslint` package. Node24/full CI, controlled ESLint, Apple/WKWebView/native and physical iPhone gates remain pending. No release gate was opened.
+
+### CURRENT NEXT ACTION — PHASE 1C
+
+Implement Capture-On-First-Write / sparse undo journal with root/entity hybrid rollback and **automatic full-snapshot fallback for every unproven writer**. Do not remove full snapshots until writer coverage and byte-equivalent rollback are proven. Re-run Hour83, Day-close, scheduler, late-frame, 600-air, write-set, save/restore and integrity regressions after every accepted sub-batch.
+
+### New-chat mandatory startup
+
+Read this MASTER and `GLOBAL_HOLDINGS_MASTER_HANDOFF.md`, then materialize the canonical Phase 1B-B archive above, verify ZIP SHA-256 `acd6cc9f324d6eb2975f74f076421f253e3cff5229104dc319f50a819b2fde77`, run `tools/verify_current_source.py`, require runtime source hash `6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54`, and continue Phase 1C. Do not redo Build338, Phase0, Phase1A, Phase1B-A or Phase1B-B.
