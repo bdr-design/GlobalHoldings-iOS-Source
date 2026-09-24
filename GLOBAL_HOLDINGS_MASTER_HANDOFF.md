@@ -17,17 +17,17 @@ MANDATORY: A new conversation must read this file first, establish the current S
 - Product: **Global Holdings**
 - Version: **3.0.0**
 - Current development line: **Build 339 Architecture Generation**\n- Frozen fallback Source of Truth: **Build 338 verified runtime tree**
-- Current physical-device-tested build: **338**\n- Build 339 status: **Phase 1C-A source-locked; Phase 1C-B next**
+- Current physical-device-tested build: **338**\n- Build 339 status: **Phase 1C-B source-locked; Phase 1C-C next**
 - Production approval: **CLOSED / NOT APPROVED**
 - Save Schema: **2.0.0**
 - Repository: **bdr-design/GlobalHoldings-iOS-Source**
 - Canonical control branch: **globalholdings-project-control**
 - Build 338 frozen provenance/CI branch: **build338-save-lag-root-20260923**\n- Build 339 architecture control branch: **build339-architecture-control-20260924**\n- Build 339 master: **GLOBAL_HOLDINGS_BUILD339_MASTER.md**
-- Build 339 runtime source tree SHA-256: **1e158524e74d6360b334568af89f088e7fe65b22574a8de2ece49ab0de0c4779**
-- Build 339 WebApp tree SHA-256: **fe2d7fc5e10b4695c9dec3feb9f0d0fe4be27cfa8cf08e8bb094d9a6206e5026**
-- Build 339 full source archive: **GlobalHoldings_BUILD339_PHASE1C_A_TRANSACTION_FOUNDATION_SOURCE.zip**
-- Build 339 source ZIP SHA-256: **574dbe1d213ba0b10d011c5e703a565107332c11f10ec82959848538fc47b7ea**
-- Build 339 Library source path: **/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1C_A_TRANSACTION_FOUNDATION_SOURCE.zip**
+- Build 339 runtime source tree SHA-256: **8570d5d7c6b9add34196b564d7f4498648c719a397eb598a65b21b00c9ac9325**
+- Build 339 WebApp tree SHA-256: **6f12bf6b4f76859229936d1f382d7865275c390e6eb6e7eb7aee9bc2591e91af**
+- Build 339 full source archive: **GlobalHoldings_BUILD339_PHASE1C_B_WRITER_PROOF_SOURCE.zip**
+- Build 339 source ZIP SHA-256: **27c1b52295f1adee6629ab2c7b69653b075262d500e07e4ca256f6a642734a5a**
+- Build 339 Library source path: **/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1C_B_WRITER_PROOF_SOURCE.zip**
 - Build 338 verified runtime source tree SHA-256: **387fc40ef556af85803766604f554acfaf644e12258ec2e68e1fbfed53fb399b**
 - Build 338 WebApp tree SHA-256: **aed5ebc6773603703702de1cddacd2ed6197f9a2e68465ba39bf9ead0cc9aab3**
 - Build 338 full source archive: **GlobalHoldings_BUILD338_SAVE_LAG_ROOT_CANDIDATE_SOURCE.zip**
@@ -41,17 +41,17 @@ MANDATORY: A new conversation must read this file first, establish the current S
 
 ### Current development / fallback rule
 
-All new functional/architectural development MUST start from the locked **Build 339 Phase 1C-A** source tree:
+All new functional/architectural development MUST start from the locked **Build 339 Phase 1C-B** source tree:
 
-`1e158524e74d6360b334568af89f088e7fe65b22574a8de2ece49ab0de0c4779`
+`8570d5d7c6b9add34196b564d7f4498648c719a397eb598a65b21b00c9ac9325`
 
 or its exact full source archive:
 
-`GlobalHoldings_BUILD339_PHASE1C_A_TRANSACTION_FOUNDATION_SOURCE.zip`
+`GlobalHoldings_BUILD339_PHASE1C_B_WRITER_PROOF_SOURCE.zip`
 
 with ZIP SHA-256:
 
-`574dbe1d213ba0b10d011c5e703a565107332c11f10ec82959848538fc47b7ea`
+`27c1b52295f1adee6629ab2c7b69653b075262d500e07e4ca256f6a642734a5a`
 
 Build 338 is now fallback/recovery only. It may be used only if Build 339 must be abandoned or rolled back due to an architectural failure.
 
@@ -801,3 +801,36 @@ Critical limitation:
 **The live simulation does not request journal mode yet.** Phase1C-A is transaction infrastructure only. Hour/Day boundaries and current live slices are not migrated.
 
 **NEXT ACTION — Phase1C-B:** prove exact contracts for steady-slice joined writers and integrity-final read-only behavior, then enable journal only for no-boundary/no-delivery steady slices. Keep Hour/Day Full Snapshot. Re-run Hour83, finance/day-close, scheduler, late-frame, 600-air and persistence gates. Physical iPhone/JavaScriptCore measurements remain mandatory.
+
+
+## 25. CURRENT AUTHORITATIVE CONTINUATION — BUILD 339 PHASE 1C-B
+
+This section supersedes every earlier Build 339 active-source / NEXT ACTION section.
+
+- Active build: **339**
+- Active phase: **Phase 1C-B writer proof locked; Phase 1C-C next**
+- Runtime source tree SHA-256: `8570d5d7c6b9add34196b564d7f4498648c719a397eb598a65b21b00c9ac9325`
+- WebApp tree SHA-256: `6f12bf6b4f76859229936d1f382d7865275c390e6eb6e7eb7aee9bc2591e91af`
+- Canonical source archive: `/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1C_B_WRITER_PROOF_SOURCE.zip`
+- ZIP SHA-256: `27c1b52295f1adee6629ab2c7b69653b075262d500e07e4ca256f6a642734a5a`
+- Archive Library ID: `libfile_93e80f11561c81919691340e3f3916f8`
+- Verification Library ID: `libfile_05961190666c8191ae8eeef71f2d9c81`
+- Checksum Library ID: `libfile_152aafb479e08191bfd3e2a003195878`
+- Save Schema: **2.0.0**
+- Production approval: **CLOSED**
+- Build338 remains frozen fallback only.
+
+Phase1C-B accepted:
+- readiness **7/7 PASS**;
+- adversarial **8/8 PASS**;
+- writer proof **6/6 PASS**;
+- 600-asset Full Snapshot vs Journal equivalence PASS;
+- composite/late-join safety;
+- JSON-safe primitive field rules;
+- write-set barrier before irreversible persistence;
+- read-only `integrity-final` proof after fixing dependency-cycle read ownership.
+
+Critical limitation:
+**Live simulation journal remains OFF.** Phase1C-B is not the 20k activation point.
+
+**NEXT ACTION — Phase1C-C:** allocation-bounded Capture-On-First-Write / flat-buffer or equivalent low-allocation journal design for JavaScriptCore; prove active mobility/helper plus async/stale-reference paths; keep Hour/Day/delivery/structural paths on Full Snapshot; benchmark 600 / 2k / 5k / 10k / 20k / 25k assets on iPhone before any live journal activation.
