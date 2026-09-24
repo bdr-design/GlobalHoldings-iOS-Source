@@ -1,0 +1,41 @@
+{
+  "schema": "global-holdings-build339-phase1a-provenance-v1",
+  "recorded_at": "2026-09-24",
+  "version": "3.0.0",
+  "build": 339,
+  "save_schema": "2.0.0",
+  "phase": "1A — deterministic time contract + transaction write-set proof",
+  "runtime_source_tree_sha256": "2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874",
+  "webapp_tree_sha256": "7cdb92260070495f8d3e842f4d35407eb4c21f5d5d3cd7414d1676051d8a6901",
+  "source_archive": "GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip",
+  "source_zip_sha256": "ea9e58c26f9f8bfc1a3fc00416a70abef04bb40e1e4fcd336d782d7a505f30a4",
+  "source_zip_bytes": 132292257,
+  "library_path": "/GlobalHoldings-Releases/Build339/GlobalHoldings_BUILD339_PHASE1A_TIME_TRANSACTION_PROOF_SOURCE.zip",
+  "library_file_id": "libfile_a073f623e3a08191b19729b246946975",
+  "runtime_files": 481,
+  "old_ipa_used": false,
+  "production_approved": false,
+  "physical_device_tested": false,
+  "parent_phase0_runtime_source_tree_sha256": "8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a",
+  "hourly_market_write_map": [
+    "advanced",
+    "controlPlane",
+    "deliveryClosure",
+    "domainRuntime",
+    "lastMarketHour",
+    "maPortfolio",
+    "portfolio",
+    "portfolioBook",
+    "realism",
+    "simulationWorld"
+  ],
+  "normal_runtime_write_audit_enabled": false,
+  "full_hour_day_snapshot_removed": false,
+  "pending": [
+    "day-boundary dynamic write-map",
+    "root-journal/snapshot-on-first-write mode",
+    "Node24/ESLint/full acceptance CI",
+    "Apple/WKWebView/native gates",
+    "physical iPhone Phase1 diagnostic"
+  ]
+}
