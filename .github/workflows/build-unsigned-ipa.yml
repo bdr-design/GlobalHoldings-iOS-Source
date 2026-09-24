@@ -30,6 +30,7 @@ jobs:
           set -euo pipefail
           ZIP='GlobalHoldings_BUILD339_PHASE1C_C_UNSIGNED_SOURCE.zip'
           EXPECTED_ZIP_SHA='55a941121bff6ca7882d9b66ba0fa0a5bab3d9581b7c660841c10dac991eac5a'
+          cat "$ZIP.parts"/part-* > "$ZIP"
           ACTUAL_ZIP_SHA="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
           [[ "$ACTUAL_ZIP_SHA" == "$EXPECTED_ZIP_SHA" ]] || { echo "::error::Source archive SHA mismatch: $ACTUAL_ZIP_SHA"; exit 1; }
           SOURCE_DIR="$GITHUB_WORKSPACE/.ci-output/source/GlobalHoldings_BUILD339_PHASE1C_C_UNSIGNED_SOURCE"
