@@ -1,0 +1,226 @@
+name: Build339 accrued-obligation fix unsigned iPhone IPA
+
+on:
+  push:
+    branches:
+      - build339-accrued-obligation-fix-20260925
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build339-accrued-obligation-fix
+  cancel-in-progress: false
+
+jobs:
+  build-and-verify:
+    name: 103 acceptance gates + macOS iPhoneOS Release
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Check out isolated branch
+        uses: actions/checkout@v4
+
+      - name: Select Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+
+      - name: Reconstruct and verify the exact Library archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.ci-output"
+          ARCHIVE="$RUNNER_TEMP/GlobalHoldings_BUILD339_ACCRUED_OBLIGATION_FIX_CANDIDATE.zip"
+          cat candidate-parts/GlobalHoldings_BUILD339_ACCRUED_OBLIGATION_FIX_CANDIDATE.zip.part-* > "$ARCHIVE"
+          ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
+          EXPECTED="41c79d819a3b013c540606dd7b86e7e5cfa7f3cc704365e1567b443b63e45003"
+          test "$ACTUAL" = "$EXPECTED"
+          unzip -t "$ARCHIVE" >/dev/null
+          SOURCE_DIR="$RUNNER_TEMP/build339-accrued-obligation-source"
+          rm -rf "$SOURCE_DIR"
+          mkdir -p "$SOURCE_DIR"
+          unzip -q "$ARCHIVE" -d "$SOURCE_DIR"
+          test -s "$SOURCE_DIR/project.yml"
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+          echo "SOURCE_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          echo "ARCHIVE_SHA256=$ACTUAL" >> "$GITHUB_ENV"
+          printf 'archive_sha256=%s\n' "$ACTUAL" | tee "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
+          printf 'archive_bytes=%s\n' "$(wc -c < "$ARCHIVE" | tr -d ' ')" | tee -a "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
+          printf 'archive_parts=%s\n' "$(find candidate-parts -type f -name '*.zip.part-*' | wc -l | tr -d ' ')" | tee -a "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
+
+      - name: Verify Build 339 source fingerprint and closed release gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification.json"
+          python3 - "$SOURCE_DIR" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          expected='f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5'
+          manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
+          result=json.loads((root/'BUILD339_ACCRUED_OBLIGATION_FIX_VERIFICATION.json').read_text())
+          gate=json.loads((root/'RELEASE_GATE.json').read_text())
+          if manifest.get('source_tree_sha256')!=expected: raise SystemExit('Runtime source fingerprint mismatch')
+          if authorization.get('test_build_authorized') is not True or authorization.get('production_approved') is not False: raise SystemExit('Experimental build authorization state mismatch')
+          if authorization.get('minimum_acceptance_gates',0)<103: raise SystemExit('Declared acceptance floor is below 103')
+          if result.get('runtime_source_tree_sha256')!=expected: raise SystemExit('Accrued-obligation verification is bound to another runtime')
+          fix=result.get('fix',{})
+          required=('record_full_incurred_obligation','reserve_only_available_budget','record_unbudgeted_remainder','settlement_requires_cash','full_snapshot_rollback_preserved')
+          if any(fix.get(key) is not True for key in required): raise SystemExit('Accrued-obligation fix contract mismatch')
+          if gate.get('approved') is not False: raise SystemExit('Production approval must remain closed')
+          print('Build 339 / 3.0.0 / Save Schema 2.0.0; source binding and experimental-only authorization: PASS')
+          PY
+
+      - name: Install pinned project dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          node --version
+          npm --version
+          npm install --no-save --package-lock=false --no-audit --no-fund
+          npm run lint
+
+      - name: Install and verify Chromium and WebKit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          npx playwright install chromium webkit
+          node <<'NODE'
+          const fs = require('node:fs');
+          const playwright = require('playwright');
+          for (const entry of [['chromium', playwright.chromium], ['webkit', playwright.webkit]]) {
+            const executable = entry[1].executablePath();
+            if (!fs.existsSync(executable)) throw new Error(entry[0] + ' executable missing: ' + executable);
+            console.log(entry[0] + ': ' + executable);
+          }
+          NODE
+
+      - name: Run every declared source acceptance test
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCEPTANCE_DIR="$GITHUB_WORKSPACE/.ci-output/acceptance"
+          python3 "$SOURCE_DIR/tools/run_acceptance.py" --output "$ACCEPTANCE_DIR" --timeout 300
+          python3 - "$SOURCE_DIR" "$ACCEPTANCE_DIR/results.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          result=json.loads(Path(sys.argv[2]).read_text())
+          source=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())['source_tree_sha256']
+          required=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())['minimum_acceptance_gates']
+          if result.get('completed') is not True or result.get('all_tests_passed') is not True or result.get('runtime_unchanged') is not True: raise SystemExit('Full source acceptance did not pass')
+          if result.get('total',0)<max(103,required) or result.get('passed')!=result.get('total'): raise SystemExit('Fewer than all authorized acceptance gates passed')
+          if result.get('runtime_source',{}).get('source_tree_sha256')!=source: raise SystemExit('Acceptance result is bound to another runtime')
+          print('Acceptance: %s/%s gates; exact source preserved' % (result['passed'],result['total']))
+          PY
+
+      - name: Run fresh native-storage regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_DIR="$RUNNER_TEMP/build339-native-storage-tests"
+          rm -rf "$TEST_DIR"
+          mkdir -p "$TEST_DIR"
+          python3 "$SOURCE_DIR/tests/native/prepare_native_tests.py" --source "$SOURCE_DIR" --output "$TEST_DIR"
+          xcrun swiftc "$TEST_DIR/main.swift" "$SOURCE_DIR/iOS/GlobalHoldings/GlobalGameStorage.swift" "$SOURCE_DIR/iOS/GlobalHoldings/GlobalSaveVault.swift" -o "$TEST_DIR/native-tests"
+          cd "$TEST_DIR"
+          GH_NATIVE_AUDIT_EPHEMERAL=1 ./native-tests | tee "$GITHUB_WORKSPACE/.ci-output/native-storage-tests.log"
+          cp native-tests.json "$GITHUB_WORKSPACE/.ci-output/native-tests.json"
+          cp save-enqueue-measurement.json "$GITHUB_WORKSPACE/.ci-output/save-enqueue-measurement.json"
+
+      - name: Run fresh native WKWebView origin and frame checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_DIR="$RUNNER_TEMP/build339-webkit-smoke"
+          rm -rf "$TEST_DIR"
+          mkdir -p "$TEST_DIR"
+          python3 "$SOURCE_DIR/tests/native/prepare_webkit_smoke.py" "$SOURCE_DIR" "$TEST_DIR"
+          xcrun swiftc -framework AppKit -framework WebKit "$TEST_DIR/main.swift" -o "$TEST_DIR/webkit-smoke"
+          cd "$TEST_DIR"
+          ./webkit-smoke | tee "$GITHUB_WORKSPACE/.ci-output/webkit-smoke.log"
+          cp webkit-smoke.json "$GITHUB_WORKSPACE/.ci-output/webkit-smoke.json"
+
+      - name: Validate Swift sources and XcodeGen project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          xcrun swiftc -parse iOS/GlobalHoldings/*.swift
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          xcodegen --version
+          xcodebuild -version | tee "$GITHUB_WORKSPACE/.ci-output/xcode-version.txt"
+          xcodebuild -showsdks | tee "$GITHUB_WORKSPACE/.ci-output/xcode-sdks.txt"
+          rm -rf GlobalHoldings.xcodeproj
+          xcodegen generate --spec project.yml
+          test -d GlobalHoldings.xcodeproj
+          xcodebuild -project GlobalHoldings.xcodeproj -list | tee "$GITHUB_WORKSPACE/.ci-output/xcode-project-list.log"
+          grep -q 'GlobalHoldings' "$GITHUB_WORKSPACE/.ci-output/xcode-project-list.log"
+
+      - name: Build a fresh unsigned iPhoneOS Release app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          DERIVED_DATA="$RUNNER_TEMP/build339-derived-data"
+          rm -rf "$DERIVED_DATA"
+          set -o pipefail
+          xcodebuild \
+            -project GlobalHoldings.xcodeproj \
+            -scheme GlobalHoldings \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean build 2>&1 | tee "$GITHUB_WORKSPACE/.ci-output/xcodebuild.log"
+          APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          test -d "$APP_PATH"
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+      - name: Package and verify the newly built IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_ROOT="$GITHUB_WORKSPACE/.ci-output/package"
+          mkdir -p "$BUILD_ROOT"
+          IPA_PATH="$BUILD_ROOT/GlobalHoldings_v3_0_0_build339_unsigned.ipa"
+          rm -f "$IPA_PATH"
+          mkdir -p "$BUILD_ROOT/Payload"
+          ditto "$APP_PATH" "$BUILD_ROOT/Payload/GlobalHoldings.app"
+          (cd "$BUILD_ROOT" && /usr/bin/zip -qry "$(basename "$IPA_PATH")" Payload)
+          test -s "$IPA_PATH"
+          python3 ci/verify_build339_ipa.py \
+            --archive "$SOURCE_ARCHIVE" \
+            --source "$SOURCE_DIR" \
+            --acceptance "$GITHUB_WORKSPACE/.ci-output/acceptance/results.json" \
+            --app "$APP_PATH" \
+            --ipa "$IPA_PATH" \
+            --output "$GITHUB_WORKSPACE/.ci-output/IPA_VERIFICATION.json" \
+            | tee "$GITHUB_WORKSPACE/.ci-output/IPA_VERIFICATION.log"
+
+      - name: Publish the verified Build 339 IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings-v3.0.0-build339-accrued-obligation-fix-unsigned-IPA
+          path: .ci-output/package/GlobalHoldings_v3_0_0_build339_unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Preserve CI diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings-Build339-accrued-obligation-CI-diagnostics
+          path: .ci-output
+          if-no-files-found: warn
+          retention-days: 30
