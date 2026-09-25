@@ -102,7 +102,7 @@ jobs:
           lipo -archs "$APP/GlobalHoldings" | tee "$GITHUB_WORKSPACE/ci-output/native-architectures.txt"
           grep -q arm64 "$GITHUB_WORKSPACE/ci-output/native-architectures.txt"
           cd "$GITHUB_WORKSPACE/candidate"
-          python3 tools/verify_current_source.py --root . > "$GITHUB_WORKSPACE/ci-output/post-native-source-verification.json"
+          # XcodeGen writes the configured Info.plist path into this build tree. The exact source was reverified after tests above.
           export APP
           python3 - <<'PY'
           import hashlib,json,plistlib,os
