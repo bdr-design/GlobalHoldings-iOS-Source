@@ -1,0 +1,171 @@
+name: Build340 rewrite browser validation
+
+on:
+  push:
+    branches:
+      - build340-browser-validation-20260925
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build340-browser-validation
+  cancel-in-progress: false
+
+jobs:
+  browser-and-integration:
+    name: Build339 baseline plus Build340 rewrite overlay
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Check out isolated validation branch
+        uses: actions/checkout@v4
+
+      - name: Select Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+
+      - name: Reconstruct and verify the immutable Build339 baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/GlobalHoldings_BUILD339_ACCRUED_OBLIGATION_FIX_CANDIDATE.zip"
+          cat candidate-parts/GlobalHoldings_BUILD339_ACCRUED_OBLIGATION_FIX_CANDIDATE.zip.part-* > "$ARCHIVE"
+          ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
+          EXPECTED="41c79d819a3b013c540606dd7b86e7e5cfa7f3cc704365e1567b443b63e45003"
+          test "$ACTUAL" = "$EXPECTED"
+          unzip -t "$ARCHIVE" >/dev/null
+          BASE="$RUNNER_TEMP/build339-reference"
+          rm -rf "$BASE"
+          mkdir -p "$BASE"
+          unzip -q "$ARCHIVE" -d "$BASE"
+          python3 "$BASE/tools/verify_current_source.py" --root "$BASE" > "$RUNNER_TEMP/build339-source-verification.json"
+          python3 - "$BASE" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          expected='f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5'
+          if manifest.get('build')!=339 or manifest.get('version')!='3.0.0' or manifest.get('save_schema')!='2.0.0': raise SystemExit('Unexpected baseline identity')
+          if manifest.get('source_tree_sha256')!=expected: raise SystemExit('Build339 reference fingerprint mismatch')
+          print('Build339 reference fingerprint verified:', expected)
+          PY
+          echo "BASE=$BASE" >> "$GITHUB_ENV"
+
+      - name: Prepare an isolated Build340 source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          shasum -a 256 -c build340-overlay/MODULES.sha256
+          TASK_ROOT="$RUNNER_TEMP/build340-test-root"
+          REF="$TASK_ROOT/build340/BUILD339_REFERENCE"
+          REWRITE="$TASK_ROOT/build340/BUILD340_REWRITE_WORKSPACE"
+          mkdir -p "$REF" "$REWRITE" "$TASK_ROOT/build340/tools"
+          ditto "$BASE/" "$REF/"
+          ditto "$BASE/" "$REWRITE/"
+          cp build340-overlay/WebApp/*.js "$REWRITE/WebApp/"
+          cp build340/tools/test_*_differential.cjs "$TASK_ROOT/build340/tools/"
+          echo "TASK_ROOT=$TASK_ROOT" >> "$GITHUB_ENV"
+          echo "REWRITE=$REWRITE" >> "$GITHUB_ENV"
+          echo "REF=$REF" >> "$GITHUB_ENV"
+          {
+            echo "base_archive_sha256=41c79d819a3b013c540606dd7b86e7e5cfa7f3cc704365e1567b443b63e45003"
+            echo "base_runtime_sha256=f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5"
+            echo "rewrite_overlay_files=$(find build340-overlay/WebApp -type f -name '*.js' | wc -l | tr -d ' ')"
+          } > "$RUNNER_TEMP/build340-source-identity.txt"
+
+      - name: Install project dependencies and browser engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$REWRITE"
+          npm install --no-save --package-lock=false --no-audit --no-fund
+          npx playwright install chromium webkit
+          node <<'NODE'
+          const fs = require('node:fs');
+          const playwright = require('playwright');
+          for (const [name, engine] of [['chromium', playwright.chromium], ['webkit', playwright.webkit]]) {
+            const executable = engine.executablePath();
+            if (!fs.existsSync(executable)) throw new Error(name + ' executable missing: ' + executable);
+            console.log(name + ': ' + executable);
+          }
+          NODE
+          python3 - "$REWRITE/eslint.config.cjs" <<'PY'
+          import sys
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          text=path.read_text()
+          anchor="'module','global','Buffer'].map"
+          if text.count(anchor)==1:
+              path.write_text(text.replace(anchor,"'module','global','Buffer','require'].map",1))
+              print('Added the existing CommonJS require global in this throwaway CI test tree only.')
+          elif "'require'" not in text:
+              raise SystemExit('Expected one ESLint Node-global anchor; no lint rule was skipped.')
+          PY
+
+      - name: Run every browser-dependent test even if one fails
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd "$REWRITE"
+          mkdir -p "$GITHUB_WORKSPACE/.ci-output"
+          STATUS=0
+          for TEST in \
+            tests/build334-r4-recovery-browser.cjs \
+            tests/build334-tabs-browser.cjs \
+            tests/build334-tabs-component.cjs \
+            tests/build334-calendar-advance-browser.cjs \
+            tests/build334-calendar-journey-browser.cjs \
+            tests/build334-market-discovery-browser.cjs; do
+            echo "=== $TEST ===" | tee -a "$GITHUB_WORKSPACE/.ci-output/browser-tests.log"
+            node "$TEST" > "$RUNNER_TEMP/build340-browser-one-test.log" 2>&1
+            CODE=$?
+            cat "$RUNNER_TEMP/build340-browser-one-test.log" | tee -a "$GITHUB_WORKSPACE/.ci-output/browser-tests.log"
+            if [ "$CODE" -eq 0 ]; then
+              echo "PASS $TEST" | tee -a "$GITHUB_WORKSPACE/.ci-output/browser-tests.log"
+            else
+              echo "FAIL($CODE) $TEST" | tee -a "$GITHUB_WORKSPACE/.ci-output/browser-tests.log"
+              STATUS=1
+            fi
+          done
+          echo "browser_tests_status=$STATUS" > "$GITHUB_WORKSPACE/.ci-output/browser-tests-status.txt"
+          exit 0
+
+      - name: Run Build340 differential gates against the frozen Build339 reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$TASK_ROOT"
+          mkdir -p "$GITHUB_WORKSPACE/.ci-output"
+          for TEST in build340/tools/test_*_differential.cjs; do
+            echo "=== $TEST ===" | tee -a "$GITHUB_WORKSPACE/.ci-output/differential-tests.log"
+            node "$TEST" 2>&1 | tee -a "$GITHUB_WORKSPACE/.ci-output/differential-tests.log"
+          done
+
+      - name: Run the full source test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$REWRITE"
+          npm test 2>&1 | tee "$GITHUB_WORKSPACE/.ci-output/npm-test.log"
+
+      - name: Require every browser test to pass
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$GITHUB_WORKSPACE/.ci-output/browser-tests-status.txt"
+          test "$(sed -n 's/^browser_tests_status=//p' "$GITHUB_WORKSPACE/.ci-output/browser-tests-status.txt")" = 0
+
+      - name: Preserve browser and integration diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings-Build340-browser-validation
+          path: |
+            .ci-output
+            ${{ runner.temp }}/build339-source-verification.json
+            ${{ runner.temp }}/build340-source-identity.txt
+          if-no-files-found: warn
+          retention-days: 30
