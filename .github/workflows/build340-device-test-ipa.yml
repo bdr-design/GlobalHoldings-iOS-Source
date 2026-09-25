@@ -1,0 +1,175 @@
+name: Build340 unsigned device-diagnostic IPA
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build340-device-test-ipa.yml'
+      - 'transport340/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build340-device-diagnostic-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  build-device-test-ipa:
+    name: Verify Build340 source, 20k flow, and iPhoneOS build
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - name: Check out the isolated diagnostic branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+
+      - name: Reconstruct and verify the exact clean Build340 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/candidate"
+          mkdir -p "$RUNNER_TEMP/build340" "$GITHUB_WORKSPACE/ci-output" "$GITHUB_WORKSPACE/candidate"
+          cat transport340/build340-source.tar.gz.b64.part-* > "$RUNNER_TEMP/build340-source.tar.gz.b64"
+          /usr/bin/base64 -D -i "$RUNNER_TEMP/build340-source.tar.gz.b64" > "$RUNNER_TEMP/build340-source.tar.gz"
+          ACTUAL="$(shasum -a 256 "$RUNNER_TEMP/build340-source.tar.gz" | awk '{print $1}')"
+          EXPECTED="51f1f9b848a6242e37b2f508d69e649f084d927de2e58922fd3e45fcab252157"
+          test "$ACTUAL" = "$EXPECTED"
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          archive=Path(os.environ['RUNNER_TEMP'])/'build340-source.tar.gz'
+          row=json.loads(Path('transport340/build340-source.manifest.json').read_text())
+          assert row['sha256']=='51f1f9b848a6242e37b2f508d69e649f084d927de2e58922fd3e45fcab252157'
+          assert row['bytes']==archive.stat().st_size
+          assert (row['build'],row['save_schema'],row['production_approved'],row['device_tested'])==(340,'2.0.0',False,False)
+          PY
+          echo "$ACTUAL  $RUNNER_TEMP/build340-source.tar.gz" > "$GITHUB_WORKSPACE/ci-output/source-archive.sha256"
+          tar -tzf "$RUNNER_TEMP/build340-source.tar.gz" > "$GITHUB_WORKSPACE/ci-output/source-archive-list.txt"
+          tar -xzf "$RUNNER_TEMP/build340-source.tar.gz" -C "$GITHUB_WORKSPACE/candidate"
+          cd "$GITHUB_WORKSPACE/candidate"
+          python3 tools/verify_current_source.py --root . | tee "$GITHUB_WORKSPACE/ci-output/source-verification.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path.cwd()
+          row=json.loads(Path(os.environ['GITHUB_WORKSPACE']+'/ci-output/source-verification.json').read_text())
+          manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          gate=json.loads((root/'RELEASE_GATE.json').read_text())
+          assert (row['version'],row['build'],row['save_schema'])==('3.0.0',340,'2.0.0')
+          assert manifest['source_tree_sha256']=='0592570312345c8a139f4a49ea9547b2f8a1e90cc1a923539ac3d87a9c2322c4'
+          assert manifest['webapp_tree_sha256']=='d38a5ff836a6fd902872dbfc36c83988e6aabc6e6d27f3db766cadfe8b8d8d78'
+          assert gate['approved'] is False and gate['build']==340
+          assert not list(root.rglob('*.ipa')) and not list(root.rglob('*.app'))
+          print('Build340 source identity and closed production gate verified.')
+          PY
+
+      - name: Run Build340 purchase, delivery, staffing, rollback, and 20k engine tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/candidate"
+          npm run test:build340 2>&1 | tee "$GITHUB_WORKSPACE/ci-output/build340-tests.log"
+          npm run test:build339 2>&1 | tee "$GITHUB_WORKSPACE/ci-output/build339-compatibility-tests.log"
+          npm run test:root-r3 2>&1 | tee "$GITHUB_WORKSPACE/ci-output/source-layout-tests.log"
+          node tests/build334-r2-delivery-lazy-index.cjs 2>&1 | tee "$GITHUB_WORKSPACE/ci-output/delivery-capacity-regression.log"
+          node tests/build334-dynamic-company-consumers.cjs 2>&1 | tee "$GITHUB_WORKSPACE/ci-output/company-procurement-regression.log"
+          node tests/build334-asset-route-hr-contract.cjs 2>&1 | tee "$GITHUB_WORKSPACE/ci-output/asset-route-hr-regression.log"
+          python3 tools/verify_current_source.py --root . > "$GITHUB_WORKSPACE/ci-output/post-test-source-verification.json"
+
+      - name: Generate the project and build the unsigned iPhoneOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/candidate"
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          xcodegen --version | tee "$GITHUB_WORKSPACE/ci-output/xcodegen-version.txt"
+          xcodebuild -version | tee "$GITHUB_WORKSPACE/ci-output/xcode-version.txt"
+          xcodegen generate --spec project.yml 2>&1 | tee "$GITHUB_WORKSPACE/ci-output/xcodegen.log"
+          xcodebuild -project GlobalHoldings.xcodeproj -scheme GlobalHoldings -configuration Release -sdk iphoneos -derivedDataPath "$RUNNER_TEMP/Build340Derived" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' DEVELOPMENT_TEAM='' clean build 2>&1 | tee "$GITHUB_WORKSPACE/ci-output/xcodebuild-iphoneos.log"
+          APP="$RUNNER_TEMP/Build340Derived/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          test -f "$APP/GlobalHoldings"
+          test -d "$APP/WebApp"
+          diff -qr "$GITHUB_WORKSPACE/candidate/WebApp" "$APP/WebApp" > "$GITHUB_WORKSPACE/ci-output/webapp-bundle-diff.txt"
+          test ! -s "$GITHUB_WORKSPACE/ci-output/webapp-bundle-diff.txt"
+          test ! -e "$APP/_CodeSignature"
+          test ! -e "$APP/embedded.mobileprovision"
+          lipo -archs "$APP/GlobalHoldings" | tee "$GITHUB_WORKSPACE/ci-output/native-architectures.txt"
+          grep -q arm64 "$GITHUB_WORKSPACE/ci-output/native-architectures.txt"
+          cd "$GITHUB_WORKSPACE/candidate"
+          # XcodeGen writes the configured Info.plist path into this build tree. The exact source was reverified after tests above.
+          export APP
+          python3 - <<'PY'
+          import hashlib,json,plistlib,os
+          from pathlib import Path
+          app=Path(os.environ['APP'])
+          info=plistlib.loads((app/'Info.plist').read_bytes())
+          assert (info['CFBundleShortVersionString'],info['CFBundleVersion'])==('3.0.0','340')
+          assert info['CFBundleIdentifier']=='com.example.globalholdings'
+          assert info['UIDeviceFamily']==[1]
+          assert info['GHSourceSnapshotSHA256']=='d38a5ff836a6fd902872dbfc36c83988e6aabc6e6d27f3db766cadfe8b8d8d78'
+          def digest(path):
+              h=hashlib.sha256()
+              with path.open('rb') as f:
+                  for block in iter(lambda:f.read(1024*1024),b''):h.update(block)
+              return h.hexdigest()
+          row={'version':'3.0.0','build':340,'save_schema':'2.0.0','unsigned':True,'device_tested':False,'production_approved':False,'source_tree_sha256':'0592570312345c8a139f4a49ea9547b2f8a1e90cc1a923539ac3d87a9c2322c4','webapp_tree_sha256':info['GHSourceSnapshotSHA256'],'native_executable_sha256':digest(app/'GlobalHoldings'),'architecture':'arm64','iphoneos_release_build':True,'signature_present':False}
+          Path(os.environ['GITHUB_WORKSPACE']+'/ci-output/native-build-verification.json').write_text(json.dumps(row,indent=2)+'\n')
+          PY
+
+      - name: Package and verify the test-only IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/Build340Derived/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          OUT="$GITHUB_WORKSPACE/output"
+          mkdir -p "$OUT" "$RUNNER_TEMP/Payload"
+          ditto "$APP" "$RUNNER_TEMP/Payload/GlobalHoldings.app"
+          cd "$RUNNER_TEMP"
+          /usr/bin/zip -qry "$OUT/GlobalHoldings_v3_0_0_build340_unsigned.ipa" Payload
+          unzip -t "$OUT/GlobalHoldings_v3_0_0_build340_unsigned.ipa" > "$GITHUB_WORKSPACE/ci-output/ipa-crc.log"
+          export OUT
+          python3 - <<'PY'
+          import hashlib,json,os,zipfile,plistlib
+          from pathlib import Path
+          out=Path(os.environ['OUT']);ipa=out/'GlobalHoldings_v3_0_0_build340_unsigned.ipa'
+          with zipfile.ZipFile(ipa) as z:
+              assert z.testzip() is None
+              names=set(z.namelist())
+              assert 'Payload/GlobalHoldings.app/GlobalHoldings' in names
+              assert 'Payload/GlobalHoldings.app/WebApp/app.js' in names
+              assert not any('/_CodeSignature/' in name or name.endswith('/embedded.mobileprovision') for name in names)
+              info=plistlib.loads(z.read('Payload/GlobalHoldings.app/Info.plist'))
+              assert info['CFBundleVersion']=='340' and info['CFBundleShortVersionString']=='3.0.0'
+          digest=hashlib.sha256(ipa.read_bytes()).hexdigest()
+          record=json.loads(Path(os.environ['GITHUB_WORKSPACE']+'/ci-output/native-build-verification.json').read_text())
+          record.update({'ipa_created':True,'ipa_crc_passed':True,'ipa_sha256':digest,'ipa_bytes':ipa.stat().st_size,'install_note':'Unsigned diagnostic artifact; sign with the tester’s Apple team before ordinary iPhone installation.'})
+          (out/'GlobalHoldings_v3_0_0_build340_unsigned.verification.json').write_text(json.dumps(record,indent=2)+'\n')
+          (out/'GlobalHoldings_v3_0_0_build340_unsigned.ipa.sha256').write_text(digest+'  GlobalHoldings_v3_0_0_build340_unsigned.ipa\n')
+          PY
+
+      - name: Upload Build340 diagnostic IPA and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings-Build340-Unsigned-Diagnostic
+          path: |
+            output/GlobalHoldings_v3_0_0_build340_unsigned.ipa
+            output/GlobalHoldings_v3_0_0_build340_unsigned.verification.json
+            output/GlobalHoldings_v3_0_0_build340_unsigned.ipa.sha256
+            ci-output/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Preserve failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings-Build340-Failure-Diagnostics
+          path: ci-output/
+          retention-days: 7
+          if-no-files-found: ignore
