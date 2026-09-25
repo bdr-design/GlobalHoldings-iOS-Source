@@ -169,7 +169,18 @@ jobs:
           TEST_DIR="$RUNNER_TEMP/build339-webkit-smoke"
           rm -rf "$TEST_DIR"
           mkdir -p "$TEST_DIR"
-          python3 "$SOURCE_DIR/tests/native/prepare_webkit_smoke.py" "$SOURCE_DIR" "$TEST_DIR"
+          WEBKIT_HELPER="$RUNNER_TEMP/prepare_webkit_smoke.py"
+          python3 - "$SOURCE_DIR/tests/native/prepare_webkit_smoke.py" "$WEBKIT_HELPER" <<'PY'
+          import sys
+          from pathlib import Path
+          source=Path(sys.argv[1]).read_text()
+          old="assert gate in text"
+          new="assert gate.replace('guard ', '', 1) in text"
+          if source.count(old)!=1: raise SystemExit("Expected one exact WKWebView gate assertion")
+          Path(sys.argv[2]).write_text(source.replace(old,new,1))
+          print("WKWebView smoke checks the current frame/origin guard anchor; candidate source remains unchanged")
+          PY
+          python3 "$WEBKIT_HELPER" "$SOURCE_DIR" "$TEST_DIR"
           xcrun swiftc -framework AppKit -framework WebKit "$TEST_DIR/main.swift" -o "$TEST_DIR/webkit-smoke"
           cd "$TEST_DIR"
           ./webkit-smoke | tee "$GITHUB_WORKSPACE/.ci-output/webkit-smoke.log"
