@@ -78,16 +78,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd "$SOURCE_DIR"
-          shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt > "$GITHUB_WORKSPACE/.ci-output/source-package-integrity.log"
+          (cd "$SOURCE_DIR" && shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt) > "$GITHUB_WORKSPACE/.ci-output/source-package-integrity.log"
+          TEST_SOURCE_DIR="$RUNNER_TEMP/build339-accrued-obligation-acceptance"
+          rm -rf "$TEST_SOURCE_DIR"
+          ditto "$SOURCE_DIR" "$TEST_SOURCE_DIR"
+          echo "TEST_SOURCE_DIR=$TEST_SOURCE_DIR" >> "$GITHUB_ENV"
+          cd "$TEST_SOURCE_DIR"
           ORIGINAL_LINT_CONFIG="$RUNNER_TEMP/build339-eslint.config.original.cjs"
           cp eslint.config.cjs "$ORIGINAL_LINT_CONFIG"
           restore_lint_config() {
-            cp "$ORIGINAL_LINT_CONFIG" "$SOURCE_DIR/eslint.config.cjs"
+            cp "$ORIGINAL_LINT_CONFIG" "$TEST_SOURCE_DIR/eslint.config.cjs"
             (cd "$SOURCE_DIR" && shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt >/dev/null)
+            python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" >/dev/null
           }
           trap restore_lint_config EXIT
-          python3 - "$SOURCE_DIR/eslint.config.cjs" "$GITHUB_WORKSPACE/.ci-output/lint-config-ci-overlay.diff" <<'PY'
+          python3 - "$TEST_SOURCE_DIR/eslint.config.cjs" "$GITHUB_WORKSPACE/.ci-output/lint-config-ci-overlay.diff" <<'PY'
           import difflib,sys
           from pathlib import Path
           path=Path(sys.argv[1])
@@ -121,13 +126,14 @@ jobs:
         run: |
           set -euo pipefail
           restore_lint_config() {
-            cp "$LINT_CONFIG_BACKUP" "$SOURCE_DIR/eslint.config.cjs"
+            cp "$LINT_CONFIG_BACKUP" "$TEST_SOURCE_DIR/eslint.config.cjs"
             (cd "$SOURCE_DIR" && shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt >/dev/null)
+            python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" >/dev/null
           }
           trap restore_lint_config EXIT
           ACCEPTANCE_DIR="$GITHUB_WORKSPACE/.ci-output/acceptance"
-          python3 "$SOURCE_DIR/tools/run_acceptance.py" --output "$ACCEPTANCE_DIR" --timeout 300
-          python3 - "$SOURCE_DIR" "$ACCEPTANCE_DIR/results.json" <<'PY'
+          python3 "$TEST_SOURCE_DIR/tools/run_acceptance.py" --output "$ACCEPTANCE_DIR" --timeout 300
+          python3 - "$TEST_SOURCE_DIR" "$ACCEPTANCE_DIR/results.json" <<'PY'
           import json,sys
           from pathlib import Path
           root=Path(sys.argv[1])
@@ -238,6 +244,7 @@ jobs:
           path: .ci-output/package/GlobalHoldings_v3_0_0_build339_unsigned.ipa
           if-no-files-found: error
           retention-days: 30
+          include-hidden-files: true
 
       - name: Preserve CI diagnostics
         if: always()
@@ -247,3 +254,4 @@ jobs:
           path: .ci-output
           if-no-files-found: warn
           retention-days: 30
+          include-hidden-files: true
