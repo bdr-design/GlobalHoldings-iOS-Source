@@ -1,0 +1,12 @@
+{
+  "filename": "BUILD340_DEVICE_TEST_SOURCE.tar.gz",
+  "bytes": 13482306,
+  "sha256": "51f1f9b848a6242e37b2f508d69e649f084d927de2e58922fd3e45fcab252157",
+  "version": "3.0.0",
+  "build": 340,
+  "save_schema": "2.0.0",
+  "source_tree_sha256": "0592570312345c8a139f4a49ea9547b2f8a1e90cc1a923539ac3d87a9c2322c4",
+  "webapp_tree_sha256": "d38a5ff836a6fd902872dbfc36c83988e6aabc6e6d27f3db766cadfe8b8d8d78",
+  "production_approved": false,
+  "device_tested": false
+}
