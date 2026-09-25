@@ -231,6 +231,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # XcodeGen materializes this plist from project.yml only inside the temporary CI source tree.
+          # The exact-source verifier already passed before generation; remove the generated file before rechecking.
+          GENERATED_INFO_PLIST="$SOURCE_DIR/iOS/GlobalHoldings/Info.plist"
+          if [[ -f "$GENERATED_INFO_PLIST" ]]; then
+            rm "$GENERATED_INFO_PLIST"
+          fi
           BUILD_ROOT="$GITHUB_WORKSPACE/.ci-output/package"
           mkdir -p "$BUILD_ROOT"
           IPA_PATH="$BUILD_ROOT/GlobalHoldings_v3_0_0_build339_unsigned.ipa"
