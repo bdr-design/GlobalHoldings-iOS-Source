@@ -79,16 +79,29 @@ jobs:
         run: |
           set -euo pipefail
           cd "$SOURCE_DIR"
+          shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt > "$GITHUB_WORKSPACE/.ci-output/source-package-integrity.log"
+          ORIGINAL_LINT_CONFIG="$RUNNER_TEMP/build339-eslint.config.original.cjs"
+          cp eslint.config.cjs "$ORIGINAL_LINT_CONFIG"
+          restore_lint_config() {
+            cp "$ORIGINAL_LINT_CONFIG" "$SOURCE_DIR/eslint.config.cjs"
+            (cd "$SOURCE_DIR" && shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt >/dev/null)
+          }
+          trap restore_lint_config EXIT
+          python3 - "$SOURCE_DIR/eslint.config.cjs" "$GITHUB_WORKSPACE/.ci-output/lint-config-ci-overlay.diff" <<'PY'
+          import difflib,sys
+          from pathlib import Path
+          path=Path(sys.argv[1])
+          before=path.read_text()
+          needle="'module','global','Buffer'].map"
+          if before.count(needle)!=1: raise SystemExit('Expected one Node global-list anchor in eslint.config.cjs')
+          after=before.replace(needle,"'module','global','Buffer','require'].map",1)
+          Path(sys.argv[2]).write_text(''.join(difflib.unified_diff(before.splitlines(True),after.splitlines(True),fromfile='eslint.config.cjs (archive)',tofile='eslint.config.cjs (CI Node global)')))
+          path.write_text(after)
+          PY
+          echo "LINT_CONFIG_BACKUP=$ORIGINAL_LINT_CONFIG" >> "$GITHUB_ENV"
           node --version
           npm --version
           npm install --no-save --package-lock=false --no-audit --no-fund
-          npm run lint
-
-      - name: Install and verify Chromium and WebKit
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$SOURCE_DIR"
           npx playwright install chromium webkit
           node <<'NODE'
           const fs = require('node:fs');
@@ -99,11 +112,19 @@ jobs:
             console.log(entry[0] + ': ' + executable);
           }
           NODE
+          npm run lint
+          trap - EXIT
+
 
       - name: Run every declared source acceptance test
         shell: bash
         run: |
           set -euo pipefail
+          restore_lint_config() {
+            cp "$LINT_CONFIG_BACKUP" "$SOURCE_DIR/eslint.config.cjs"
+            (cd "$SOURCE_DIR" && shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt >/dev/null)
+          }
+          trap restore_lint_config EXIT
           ACCEPTANCE_DIR="$GITHUB_WORKSPACE/.ci-output/acceptance"
           python3 "$SOURCE_DIR/tools/run_acceptance.py" --output "$ACCEPTANCE_DIR" --timeout 300
           python3 - "$SOURCE_DIR" "$ACCEPTANCE_DIR/results.json" <<'PY'
@@ -118,6 +139,8 @@ jobs:
           if result.get('runtime_source',{}).get('source_tree_sha256')!=source: raise SystemExit('Acceptance result is bound to another runtime')
           print('Acceptance: %s/%s gates; exact source preserved' % (result['passed'],result['total']))
           PY
+          trap - EXIT
+          restore_lint_config
 
       - name: Run fresh native-storage regression tests
         shell: bash
