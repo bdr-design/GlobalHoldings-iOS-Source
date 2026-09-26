@@ -35,7 +35,7 @@ jobs:
           ARCHIVE="$RUNNER_TEMP/GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip"
           cat candidate-parts/GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip.part-* > "$ARCHIVE"
           ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
-          EXPECTED="b81585d50900c6caf8efa3901ed3c25a17236ea12b772967ea1a1e1f45417866"
+          EXPECTED="fb7a6885a254198bdad177c4ad696a925144a37941be691fe2bd9f2d82229629"
           test "$ACTUAL" = "$EXPECTED"
           unzip -t "$ARCHIVE" >/dev/null
           SOURCE_DIR="$RUNNER_TEMP/build340-engine-separation-source"
