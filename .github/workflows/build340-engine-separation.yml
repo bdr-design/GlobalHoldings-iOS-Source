@@ -336,10 +336,10 @@ jobs:
           
           Build 340 uses immutable Worker plans for simulation and air/sea and road routing; indexed procurement, disposal, finance and payroll batches; map read models; and bounded media decoding. The simulation, finance writes, fleet and route commits, persistence, authorization, and transaction owners remain on the serialized authoritative state boundary. This source does not activate the experimental field journal or modify Save Schema 2.0.0.
           
-          Direct-source CI run {2} tested commit {3} and passed the {4} declared source gates, lint, browser checks, native storage and WKWebView checks, and a fresh unsigned arm64 iPhoneOS Release app build. CI created source-bound unsigned Build 340 test IPA {9}, {10} bytes, SHA-256 {11}. No physical iPhone was tested. Node tests with synthetic 4,300/20,000 inputs do not establish iPhone performance.
+          Direct-source CI run {2} tested commit {3} and passed the {4} declared source gates, lint, browser checks, native storage and WKWebView checks, and a fresh unsigned arm64 iPhoneOS Release app build. CI created source-bound unsigned Build 340 test IPA {5}, {6} bytes, SHA-256 {7}. No physical iPhone was tested. Node tests with synthetic 4,300/20,000 inputs do not establish iPhone performance.
           
           The release gate remains closed until purchase, delivery, sale, routes, finance, save/restore, and long-session interaction pass on physical iPhones at 4,300 and 20,000 assets, including the agreed frame-time, touch-latency, memory, and thermal measurements.
-          """.format(candidate_sha,expected_tree,run_id,tested_commit,gate_count,archive_sha,archive_bytes,len(package_paths),gate_count,ipa_record["ipa_name"],ipa_record["ipa_bytes"],ipa_record["ipa_sha256"])
+          """.format(candidate_sha,expected_tree,run_id,tested_commit,gate_count,ipa_record["ipa_name"],ipa_record["ipa_bytes"],ipa_record["ipa_sha256"])
           (root/"README.md").write_text(readme,encoding="utf-8")
           integrity=root/"SOURCE_INTEGRITY_SHA256.txt"
           old_lines=integrity.read_text(encoding="utf-8").splitlines()
