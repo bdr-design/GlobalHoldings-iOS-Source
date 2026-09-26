@@ -1,0 +1,182 @@
+name: Build 340 engine separation verification
+
+on:
+  push:
+    branches:
+      - build340-engine-separation-20260926
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build340-engine-separation
+  cancel-in-progress: false
+
+jobs:
+  source-browser-native:
+    name: 104 source gates, browsers, and unsigned iPhoneOS Release build
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - name: Check out the isolated Build 340 branch
+        uses: actions/checkout@v4
+
+      - name: Select Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+
+      - name: Reconstruct and verify the exact Build 340 clean-source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.ci-output"
+          ARCHIVE="$RUNNER_TEMP/GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip"
+          cat candidate-parts/GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip.part-* > "$ARCHIVE"
+          ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
+          EXPECTED="cd3a8fcf6967d3560954f2780746b39a178208c6d9ec03b14388e2a3177d536e"
+          test "$ACTUAL" = "$EXPECTED"
+          unzip -t "$ARCHIVE" >/dev/null
+          SOURCE_DIR="$RUNNER_TEMP/build340-engine-separation-source"
+          mkdir -p "$SOURCE_DIR"
+          unzip -q "$ARCHIVE" -d "$SOURCE_DIR"
+          test -s "$SOURCE_DIR/project.yml"
+          echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
+          echo "SOURCE_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          printf 'archive_sha256=%s\n' "$ACTUAL" | tee "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
+          printf 'archive_bytes=%s\n' "$(wc -c < "$ARCHIVE" | tr -d ' ')" | tee -a "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
+          printf 'archive_parts=%s\n' "$(find candidate-parts -type f -name 'GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip.part-*' | wc -l | tr -d ' ')" | tee -a "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
+
+      - name: Verify source, runtime, and closed approval gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification.json"
+          (cd "$SOURCE_DIR" && shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt) > "$GITHUB_WORKSPACE/.ci-output/source-package-integrity.log"
+          python3 - "$SOURCE_DIR" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          expected='d794261ef39c376af9bd96a4fac2c5dc49bf49af06e7e3b99b420f557441547f'
+          manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
+          result=json.loads((root/'BUILD340_ENGINE_SEPARATION_VERIFICATION.json').read_text())
+          gate=json.loads((root/'RELEASE_GATE.json').read_text())
+          if manifest.get('source_tree_sha256')!=expected: raise SystemExit('Build 340 source fingerprint mismatch')
+          if authorization.get('test_build_authorized') is not True or authorization.get('production_approved') is not False: raise SystemExit('Experimental authorization mismatch')
+          if authorization.get('minimum_acceptance_gates',0)<104: raise SystemExit('Acceptance floor is below 104')
+          if result.get('source_tree_sha256')!=expected or result.get('build')!=340: raise SystemExit('Build 340 verification is bound to another source')
+          if gate.get('approved') is not False or gate.get('save_schema')!='2.0.0': raise SystemExit('Release gate must remain closed on Save Schema 2.0.0')
+          if authorization.get('rollback_and_ownership',{}).get('full_snapshot_fallback') is not True: raise SystemExit('Full Snapshot rollback fallback must remain enabled')
+          print('Build 340 / 3.0.0 / Save Schema 2.0.0; clean source and experimental-only authorization: PASS')
+          PY
+
+      - name: Install pinned test dependencies and browser engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          node --version
+          npm --version
+          npm install --no-save --package-lock=false --no-audit --no-fund
+          npx playwright install chromium webkit
+          node <<'NODE'
+          const fs = require('node:fs');
+          const playwright = require('playwright');
+          for (const [name, browser] of [['chromium', playwright.chromium], ['webkit', playwright.webkit]]) {
+            const executable = browser.executablePath();
+            if (!fs.existsSync(executable)) throw new Error(`${name} executable missing: ${executable}`);
+            console.log(`${name}: ${executable}`);
+          }
+          NODE
+          npm run lint
+
+      - name: Run all declared Build 340 source acceptance gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCEPTANCE_DIR="$RUNNER_TEMP/build340-source-acceptance"
+          python3 "$SOURCE_DIR/tools/run_acceptance.py" --output "$ACCEPTANCE_DIR" --timeout 300 | tee "$GITHUB_WORKSPACE/.ci-output/source-acceptance.log"
+          cp "$ACCEPTANCE_DIR/results.json" "$GITHUB_WORKSPACE/.ci-output/source-acceptance-results.json"
+          python3 - "$SOURCE_DIR" "$ACCEPTANCE_DIR/results.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]);result=json.loads(Path(sys.argv[2]).read_text())
+          source=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())['source_tree_sha256']
+          required=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())['minimum_acceptance_gates']
+          if result.get('completed') is not True or result.get('all_tests_passed') is not True or result.get('runtime_unchanged') is not True: raise SystemExit('Full source acceptance did not pass')
+          if result.get('total',0)<required or result.get('passed')!=result.get('total'): raise SystemExit('Acceptance gates are missing or failed')
+          if result.get('runtime_source',{}).get('source_tree_sha256')!=source: raise SystemExit('Acceptance result is bound to another runtime')
+          print('Acceptance: %s/%s gates; exact runtime source preserved' % (result['passed'],result['total']))
+          PY
+
+      - name: Run native save-vault regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_DIR="$RUNNER_TEMP/build340-native-storage-tests"
+          mkdir -p "$TEST_DIR"
+          python3 "$SOURCE_DIR/tests/native/prepare_native_tests.py" --source "$SOURCE_DIR" --output "$TEST_DIR"
+          xcrun swiftc "$TEST_DIR/main.swift" "$SOURCE_DIR/iOS/GlobalHoldings/GlobalGameStorage.swift" "$SOURCE_DIR/iOS/GlobalHoldings/GlobalSaveVault.swift" -o "$TEST_DIR/native-tests"
+          cd "$TEST_DIR"
+          GH_NATIVE_AUDIT_EPHEMERAL=1 ./native-tests | tee "$GITHUB_WORKSPACE/.ci-output/native-storage-tests.log"
+          cp native-tests.json "$GITHUB_WORKSPACE/.ci-output/native-tests.json"
+          cp save-enqueue-measurement.json "$GITHUB_WORKSPACE/.ci-output/save-enqueue-measurement.json"
+
+      - name: Run native WKWebView origin and frame smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_DIR="$RUNNER_TEMP/build340-webkit-smoke"
+          mkdir -p "$TEST_DIR"
+          WEBKIT_HELPER="$RUNNER_TEMP/prepare_webkit_smoke.py"
+          python3 - "$SOURCE_DIR/tests/native/prepare_webkit_smoke.py" "$WEBKIT_HELPER" <<'PY'
+          import sys
+          from pathlib import Path
+          source=Path(sys.argv[1]).read_text()
+          old="assert gate in text"
+          new="assert gate.replace('guard ', '', 1) in text"
+          if source.count(old)!=1: raise SystemExit('Expected one WKWebView frame/origin guard anchor')
+          Path(sys.argv[2]).write_text(source.replace(old,new,1))
+          PY
+          python3 "$WEBKIT_HELPER" "$SOURCE_DIR" "$TEST_DIR"
+          xcrun swiftc -framework AppKit -framework WebKit "$TEST_DIR/main.swift" -o "$TEST_DIR/webkit-smoke"
+          cd "$TEST_DIR"
+          ./webkit-smoke | tee "$GITHUB_WORKSPACE/.ci-output/webkit-smoke.log"
+          cp webkit-smoke.json "$GITHUB_WORKSPACE/.ci-output/webkit-smoke.json"
+
+      - name: Build a fresh unsigned arm64 iPhoneOS Release app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          xcrun swiftc -parse iOS/GlobalHoldings/*.swift
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          xcodegen generate --spec project.yml
+          DERIVED_DATA="$RUNNER_TEMP/build340-derived-data"
+          xcodebuild \
+            -project GlobalHoldings.xcodeproj \
+            -scheme GlobalHoldings \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean build 2>&1 | tee "$GITHUB_WORKSPACE/.ci-output/xcodebuild.log"
+          test -d "$DERIVED_DATA/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          printf 'fresh_unsigned_arm64_iphoneos_release=PASS\n' | tee "$GITHUB_WORKSPACE/.ci-output/native-build-verification.txt"
+
+      - name: Preserve verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings-Build340-engine-separation-verification
+          path: .ci-output
+          if-no-files-found: warn
+          retention-days: 30
+          include-hidden-files: true
