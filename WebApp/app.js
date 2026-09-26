@@ -2232,17 +2232,18 @@
     return {settled,total,funded};
   }
 
-  function processFinancialDay(processedDay=null){
+  function processFinancialDay(processedDay=null,measure=null){
+    const phase=typeof measure==='function'?measure:(_name,work)=>work();
     const currentDay=Math.floor(state.simSeconds/86400),day=processedDay==null?currentDay:Math.max(0,Math.floor(Number(processedDay)||0));let financialDaysProcessed=0;
     if(day<=state.lastFinancialDay)return;
     if(day-state.lastFinancialDay!==1)throw new Error(`Non-sequential financial boundary: ${state.lastFinancialDay} -> ${day}`);
     while(state.lastFinancialDay<day&&financialDaysProcessed<1){
       state.lastFinancialDay++;financialDaysProcessed++;
-      for(const c of state.finance.cheques.filter(c=>c.status==='صادر'&&c.dueDay<=state.lastFinancialDay)){
+      phase('simulation.finance-day.cheque-settlement',()=>{for(const c of state.finance.cheques.filter(c=>c.status==='صادر'&&c.dueDay<=state.lastFinancialDay)){
         const result=settleCheque(c);
         if(result.settled===true)pushAlert(`تم صرف الشيك ${result.id} من حساب ${companyFinanceName(result.company)} وتسجيله في الدفتر المالي.`);
         else pushAlert(`ارتجع الشيك ${result.id} لعدم كفاية رصيد أو ميزانية ${companyFinanceName(result.company)}.`);
-      }
+      }});
 
       const tripAccruals=dispatchSystemCommand({state},'finance','consume-trip-accruals',{}, {actor:'financial-close'}).result;
       const tripProfit=tripAccruals.profit,tripRevenue=tripAccruals.revenue,tripFuel=tripAccruals.fuel,tripMaintenance=tripAccruals.maintenance,tripCount=tripAccruals.count,tripCash=tripAccruals.cash||{};
@@ -2264,13 +2265,13 @@
       const contractTerms={};for(const id of (state.acceptedContracts||[])){const c=contracts.find(x=>x.id===id);if(!c)continue;const companyId=contractOwnerCompanyId(c,state);if(!companyId)throw new Error(`contract-owner-unresolved-or-ambiguous:${id}`);const termDays=Math.max(1,Number(c.termMonths)||1)*30,dailyRevenue=c.value/termDays,dailyCost=c.cost/termDays;contractTerms[id]=termDays;companyContractRevenue[companyId]=(companyContractRevenue[companyId]||0)+dailyRevenue;companyContractCost[companyId]=(companyContractCost[companyId]||0)+dailyCost;contractDailyRows.push({id,companyId,sector:c.sector,client:c.client,name:c.name,revenue:dailyRevenue,cost:dailyCost});}const expiredContracts=dispatchSystemCommand({state},'contracts','tick-day',{day:state.lastFinancialDay,terms:contractTerms},{actor:'simulation'}).result?.expired||[];for(const id of expiredContracts){const c=contracts.find(x=>x.id===id);if(c)pushAlert(`اكتمل عقد ${c.name} وانتهت مدته التشغيلية بعد ${c.termMonths} شهرًا.`);}
       // Bank and energy daily owners must close first. The accounting read model
       // below then consumes the report for this same day, never yesterday's values.
-      const advancedCost=window.GH_ADVANCED?window.GH_ADVANCED.onFinancialDay(state,state.lastFinancialDay):0;
-      const payrollMeta=payrollCalendarMeta(state.lastFinancialDay),payrollPlan=monthlyPayrollSnapshot(),payrollDueToday=payrollMeta.dayOfMonth>=27&&!payrollReportForMonth(payrollMeta.monthKey);
-      const leaseByCompany=zeroCompanyMap(state);state.assets.forEach(asset=>{const companyId=assetOwnerCompanyId(asset);if(asset.ownership==='lease'&&companyIdSet.has(companyId))leaseByCompany[companyId]=(leaseByCompany[companyId]||0)+(Number(asset.monthlyLease)||0)/30;});
+      const advancedCost=phase('simulation.finance-day.advanced-owner',()=>window.GH_ADVANCED?window.GH_ADVANCED.onFinancialDay(state,state.lastFinancialDay):0);
+      const payrollMeta=payrollCalendarMeta(state.lastFinancialDay),payrollPlan=phase('simulation.finance-day.payroll-plan',()=>monthlyPayrollSnapshot()),payrollDueToday=payrollMeta.dayOfMonth>=27&&!payrollReportForMonth(payrollMeta.monthKey);
+      const leaseByCompany=zeroCompanyMap(state);phase('simulation.finance-day.asset-leases',()=>state.assets.forEach(asset=>{const companyId=assetOwnerCompanyId(asset);if(asset.ownership==='lease'&&companyIdSet.has(companyId))leaseByCompany[companyId]=(leaseByCompany[companyId]||0)+(Number(asset.monthlyLease)||0)/30;}));
       const baseByCompany=zeroCompanyMap(state),facilityIncomeByCompany=zeroCompanyMap(state);
-      const dailyFacilities=getDynamicFacilities(),facilityCosts=window.GH_FACILITY_CORE.dailyOperatingCosts(state,{facilities:dailyFacilities});for(const companyId of companyIds)baseByCompany[companyId]=Number(facilityCosts.byCompany[companyId])||0;
+      const dailyFacilities=getDynamicFacilities(),facilityCosts=phase('simulation.finance-day.facility-costs',()=>window.GH_FACILITY_CORE.dailyOperatingCosts(state,{facilities:dailyFacilities}));for(const companyId of companyIds)baseByCompany[companyId]=Number(facilityCosts.byCompany[companyId])||0;
       dailyFacilities.filter(f=>f.owned).forEach(f=>{const companyId=facilityOwnerCompanyId(f);if(companyIdSet.has(companyId)){const model=state.advanced?.facilities?.[f.id];if(model)facilityIncomeByCompany[companyId]+=(Number(model.expectedRevenue)||0)/365;}});
-      const eco=window.GH_ECONOMICS_CORE?.sectorEconomics?.(state,{day:state.lastFinancialDay,preferDailyReport:true})||{power:32000,bank:26000,detail:{}};const ed=eco.detail||{};
+      const eco=phase('simulation.finance-day.sector-economics',()=>window.GH_ECONOMICS_CORE?.sectorEconomics?.(state,{day:state.lastFinancialDay,preferDailyReport:true})||{power:32000,bank:26000,detail:{}});const ed=eco.detail||{};
       const operatingRevenue=zeroCompanyMap(state),operatingExpense=zeroCompanyMap(state);for(const companyId of companyIds){operatingRevenue[companyId]=(companyContractRevenue[companyId]||0)+(facilityIncomeByCompany[companyId]||0)+Math.max(0,Number(ed.companyRevenue?.[companyId])||0);operatingExpense[companyId]=(companyContractCost[companyId]||0)+(baseByCompany[companyId]||0)+(leaseByCompany[companyId]||0)+Math.max(0,Number(ed.companyExpense?.[companyId])||0);}
       // The section totals include premises for disclosure. Only their residual
       // expense is added here: baseByCompany already owns the premises posting.
@@ -2282,20 +2283,21 @@
       const cashOperatingRevenue={...operatingRevenue},cashOperatingExpense={...operatingExpense};if(bankCompany)cashOperatingRevenue[bankCompany]=(companyContractRevenue[bankCompany]||0)+(facilityIncomeByCompany[bankCompany]||0)+Math.max(0,Number(ed.companyRevenue?.[bankCompany])||0)+Math.max(0,Number(ed.bankCashRevenueToPost??ed.bankRevenue)||0);if(energyCompany)cashOperatingExpense[energyCompany]=Math.max(0,Number(cashOperatingExpense[energyCompany]||0)-Math.max(0,Number(ed.takeOrPayAccrued)||0));
       // رواتب المنشآت لا تُخصم يوميًا هنا؛ تُصرف مرة واحدة في مسير يوم 27.
       const daily=Object.fromEntries(companyIds.map(companyId=>[companyId,(Number(operatingRevenue[companyId])||0)-(Number(operatingExpense[companyId])||0)]));
-      for(const companyId of companyIds){
+      phase('simulation.finance-day.operating-revenue-payments',()=>{for(const companyId of companyIds){
         const taxable=companyTaxable(state,companyId),revenue=Math.max(0,Number(cashOperatingRevenue[companyId])||0),expense=Math.max(0,Number(cashOperatingExpense[companyId])||0),contractRows=contractDailyRows.filter(row=>row.companyId===companyId),contractRevenue=contractRows.reduce((sum,row)=>sum+Math.max(0,Number(row.revenue)||0),0);
         for(const row of contractRows)if(row.revenue>0)dispatchSystemCommand({state},'finance','credit',{company:companyId,amount:row.revenue,note:`إيراد عقد يومي · ${row.name}`,taxable,reference:`CONTRACT-COLLECT-${row.id}-${state.lastFinancialDay}`,counterparty:row.client,sourceRefs:[row.id,`CONTRACT-DAY-${row.id}-${state.lastFinancialDay}`]},{actor:'financial-close'});
         const residualRevenue=Math.max(0,revenue-contractRevenue);if(residualRevenue>0)dispatchSystemCommand({state},'finance','credit',{company:companyId,amount:residualRevenue,note:`إيراد يومي ${typeName(companyId)} · منشآت/تشغيل غير تعاقدي`,taxable,reference:`OPER-COLLECT-${companyId}-${state.lastFinancialDay}`,periodDay:state.lastFinancialDay,sourceRefs:[`OPER-${companyId}-${state.lastFinancialDay}`]},{actor:'financial-close'});
         if(expense>0){const available=companyOperatingBalance(companyId),paid=Math.min(available,expense);if(paid>0)spendCompanySystem(companyId,paid,`مصروف يومي ${typeName(companyId)} · عقود/منشآت/إيجارات`,'قيد تشغيلي يومي',taxable);if(paid<expense){const due=expense-paid,number=`${companyId.toUpperCase()}-ACC-${state.lastFinancialDay}`;postAccruedExpense(companyId,due,'مصروف تشغيلي مستحق مرحّل من الإقفال اليومي','قيد مستحق',state.lastFinancialDay+7,number,'مصروف تشغيلي');}}
-      }
+      }});
       const closedSectorProfit=Object.fromEntries(companyIds.map(companyId=>[companyId,(Number(tripProfit[companyId])||0)+(Number(daily[companyId])||0)]));
       if(payrollDueToday)for(const companyId of companyIds)closedSectorProfit[companyId]-=Number(payrollPlan[companyId]?.amount)||0;
       const companyDaily={};for(const companyId of companyIds){const tripGross=Math.max(0,Number(tripRevenue[companyId])||0),operatingGross=Math.max(0,Number(operatingRevenue[companyId])||0),companyNet=Number(closedSectorProfit[companyId])||0;companyDaily[companyId]={tripRevenue:tripGross,operatingRevenue:operatingGross,grossRevenue:tripGross+operatingGross,expenses:Math.max(0,tripGross+operatingGross-companyNet),net:companyNet,tripCount:Math.max(0,Number(tripCount[companyId])||0)};}
-      const overhead=42500+state.assets.length*80,realismCost=window.GH_REALISM?window.GH_REALISM.onDay(state,state.lastFinancialDay):0,groupCost=overhead+advancedCost+realismCost,groupPayrollExpense=payrollDueToday?payrollPlan.group.amount:0;
+      const overhead=42500+state.assets.length*80,realismCost=phase('simulation.finance-day.realism-close',()=>window.GH_REALISM?window.GH_REALISM.onDay(state,state.lastFinancialDay):0),groupCost=overhead+advancedCost+realismCost,groupPayrollExpense=payrollDueToday?payrollPlan.group.amount:0;
       if(groupCost>0){const paid=Math.min(companyOperatingBalance('group'),groupCost);if(paid>0)spendCompanySystem('group',paid,'إقفال يومي الشركة القابضة · إدارة وامتثال','قيد يومي',false);if(paid<groupCost){const due=groupCost-paid,number=`GH-ACC-${state.lastFinancialDay}`;postAccruedExpense('group',due,'عجز الشركة القابضة المرحّل','قيد مستحق',state.lastFinancialDay+7,number,'مصروفات إدارية وتشغيلية');}}
-      settleOutstandingPayroll();reconcileConsolidatedCash();const net=Object.values(closedSectorProfit).reduce((a,b)=>a+(Number(b)||0),0)-groupCost-groupPayrollExpense;dispatchSystemCommand({state},'finance','record-daily-close',{day:state.lastFinancialDay,sectors:closedSectorProfit,companies:companyDaily,net},{actor:'financial-close'});dispatchSystemCommand({state},'corporate','adjust-group-value',{delta:net*.03},{actor:'financial-close'});runOperationsCycle(net);
+      phase('simulation.finance-day.payroll-ar-settlement',()=>settleOutstandingPayroll());reconcileConsolidatedCash();const net=Object.values(closedSectorProfit).reduce((a,b)=>a+(Number(b)||0),0)-groupCost-groupPayrollExpense;phase('simulation.finance-day.daily-close-postings',()=>{dispatchSystemCommand({state},'finance','record-daily-close',{day:state.lastFinancialDay,sectors:closedSectorProfit,companies:companyDaily,net},{actor:'financial-close'});dispatchSystemCommand({state},'corporate','adjust-group-value',{delta:net*.03},{actor:'financial-close'});runOperationsCycle(net);});
       // رواتب تقويمية في تاريخ 27؛ إذا وصل حفظ قديم بعد التاريخ تُنفّذ مرة واحدة للشهر نفسه.
       if(payrollDueToday){
+        phase('simulation.finance-day.payroll-payments',()=>{
         const reportId=`PAYROLL-${payrollMeta.monthKey}`,payrollItems=[...companyIds,'group'].map(company=>payrollPlan[company]).filter(row=>row&&row.amount>0),lines=[];
         for(const item of payrollItems){
           const company=item.company,amount=item.amount;if(amount<=0)continue;
@@ -2313,6 +2315,7 @@
         }
         const report=dispatchSystemCommand({state},'finance','record-payroll-report',{report:{id:reportId,day:state.lastFinancialDay,month:payrollMeta.label,monthKey:payrollMeta.monthKey,calendarDate:payrollMeta.date.toISOString().slice(0,10),lines}},{actor:'payroll-scheduler'}).result;
         pushAlert(report?.due>0?`صدر تقرير رواتب يوم 27: صُرف ${fmtMoney(report.paid)} وسُجل ${fmtMoney(report.due)} كرواتب مستحقة، بلا انتظار اعتماد.`:`صدر تقرير رواتب يوم 27 وصُرف كامل المسير بقيمة ${fmtMoney(report?.paid||0)} عبر التحويلات.`);
+        });
       }
       const nextCalendarDate=simulationCalendarDate(state.lastFinancialDay+1),isCalendarMonthEnd=nextCalendarDate.getUTCMonth()!==payrollMeta.date.getUTCMonth();
       if(isCalendarMonthEnd){
@@ -2329,14 +2332,15 @@
     else if(state.lastFinancialDay%7===0)pushAlert(`مؤشر التشغيل الأسبوعي: ${moving} أصلًا متحركًا، جاهزية الأسطول ${Math.round(readiness)}%، صافي اليوم ${fmtMoney(net)}.`);
   }
 
-  function processMarket(processedHour=null){
+  function processMarket(processedHour=null,measure=null){
+    const phase=typeof measure==='function'?measure:(_name,work)=>work();
     const currentHour=Math.floor(state.simSeconds/3600),hour=processedHour==null?currentHour:Math.max(0,Math.floor(Number(processedHour)||0));
     if(hour<=state.lastMarketHour)return;
     if(hour-state.lastMarketHour!==1)throw new Error(`Non-sequential market boundary: ${state.lastMarketHour} -> ${hour}`);
     state.lastMarketHour=hour;
-    dispatchSystemCommand({state},'market','tick-prices',{hour},{actor:'simulation-market'});
-    if(window.GH_REALISM)window.GH_REALISM.onHour(state,hour);
-    if(window.GH_ADVANCED){const marketCycle=()=>{window.GH_ADVANCED.onMarketHour(state,hour);window.GH_DELIVERY_MONITOR?.reconcile?.(state);return {hour};};const cp=window.GH_CONTROL_PLANE;if(cp?.execute)cp.execute(state,{name:'MARKET_HOURLY_CYCLE',domain:'market',actor:'simulation-market',correlationId:`MARKET-HOUR-${hour}`},marketCycle,{atomic:false,integrity:true,deferIntegrityToTransaction:window.GH_TRANSACTION_CORE?.isActive?.()===true});else marketCycle();}
+    phase('simulation.market.price-tick',()=>dispatchSystemCommand({state},'market','tick-prices',{hour},{actor:'simulation-market'}));
+    if(window.GH_REALISM)phase('simulation.market.realism-hour',()=>window.GH_REALISM.onHour(state,hour));
+    if(window.GH_ADVANCED){const marketCycle=()=>{phase('simulation.market.advanced-hour',()=>window.GH_ADVANCED.onMarketHour(state,hour));phase('simulation.market.delivery-reconcile',()=>window.GH_DELIVERY_MONITOR?.reconcile?.(state));return {hour};};const cp=window.GH_CONTROL_PLANE;if(cp?.execute)phase('simulation.market.control-plane',()=>cp.execute(state,{name:'MARKET_HOURLY_CYCLE',domain:'market',actor:'simulation-market',correlationId:`MARKET-HOUR-${hour}`},marketCycle,{atomic:false,integrity:true,deferIntegrityToTransaction:window.GH_TRANSACTION_CORE?.isActive?.()===true}));else marketCycle();}
   }
 
   // ---------------------------------------------------------------------------
@@ -2411,8 +2415,9 @@
     const dayAt=nextDay===null?Infinity:nextDay*86400,hourAt=nextHour===null?Infinity:nextHour*3600;
     const kind=dayAt<=hourAt?'day':'hour',value=kind==='day'?nextDay:nextHour;
     try{
-      const outcome=window.GH_TRANSACTION_CORE.execute(state,{label:`boundary-recovery:${kind}:${value}`,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,apply:()=>{
-        if(kind==='day')processFinancialDay(value);else processMarket(value);
+      const outcome=window.GH_TRANSACTION_CORE.execute(state,{label:`boundary-recovery:${kind}:${value}`,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,apply:measure=>{
+        const profilePhase=typeof measure==='function'?measure:(_name,work)=>work();
+        if(kind==='day')profilePhase('simulation.boundary-recovery.financial-day',()=>processFinancialDay(value,measure));else profilePhase('simulation.boundary-recovery.market-hour',()=>processMarket(value,measure));
         diag(kind==='day'?'BOUNDARY_DAY_RECOVERED':'BOUNDARY_HOUR_RECOVERED',{value});return true;
       }});
       if(!outcome.committed)throw new Error(outcome.reason||'recovery-commit-rejected');
@@ -2544,8 +2549,11 @@
         // original broad scope because delivery may mutate Fleet/HR/Realism atomically.
         const deliveryWorkPending=hasBoundary?true:(window.GH_REALISM?.hasPendingDeliveries?.(state)!==false);
         const declaredWriteRoots=hasBoundary?null:(deliveryWorkPending?SIMULATION_TRANSACTION_SCOPE:SIMULATION_STEADY_TRANSACTION_SCOPE),writeAudit=globalThis.__GH_BUILD339_WRITE_AUDIT__===true;
+        const profileActive=window.GH_DIAGNOSTICS?.recorderIsActive?.(state)===true;
         outcome=tx.execute(state,{
             label:`simulation:${simMeta.from}->${simMeta.to}`,
+            profile:profileActive,
+            profileContext:profileActive?{kind:'simulation-slice',from:Number(simMeta.from),to:Number(simMeta.to),speed:Number(speed),dayBoundary:boundary.day??null,hourBoundary:boundary.hour??null,assetCount:assetSeeds.length,plannedAssets:records.length,competitorCount:competitorSeeds.length,routeGuardCount:routeGuards.size,invoiceCount:state.finance?.invoices?.length||0,receivableCount:state.finance?.receivables?.length||0,payableCount:state.finance?.payables?.length||0,transferCount:state.finance?.transfers?.length||0,pendingDeliveryCount:state.realism?.procurement?.pendingDeliveryCount||0,hasBoundary,deliveryWorkPending,rollbackScope:declaredWriteRoots?declaredWriteRoots.length:'full-snapshot'}:null,
             // Ordinary slices mutate a bounded domain. Hour/day callbacks can touch many
             // business systems, so boundaries deliberately retain full-state rollback.
             scope:declaredWriteRoots,
@@ -2553,21 +2561,23 @@
             // proves actual root writes against this declaration before we replace rollback storage.
             writeRoots:declaredWriteRoots,
             auditWrites:writeAudit,
-            validate:()=>{
+            validate:measure=>{
               if(cancelled)return {ok:false,reason:'cancelled-before-commit'};
               if(!sourceStillCurrent())return {ok:false,reason:'simulation-source-revision-conflict'};
               if(Number(state.simSeconds)!==Number(simMeta.from))return {ok:false,reason:'time-conflict'};
-              commitAssets=new Map((state.assets||[]).map(asset=>[asset.id,asset]));
-              if((state.assets?.length||0)!==assetSeeds.length||commitAssets.size!==assetSeeds.length||records.length!==assetSeeds.length||records.some(rec=>simulationAssetGuard(commitAssets.get(rec.id),false)!==rec.guard))return {ok:false,reason:'asset-conflict'};
-              for(const [routeId,guard] of routeGuards)if(JSON.stringify(routeTemplates[routeId]||null)!==guard)return {ok:false,reason:'route-conflict'};
-              if(simulationContextGuard()!==contextGuard)return {ok:false,reason:'simulation-context-conflict'};
-              if(competitorAssets.length!==competitorSeeds.length||competitorSeeds.some((seed,i)=>JSON.stringify(competitorAssets[i])!==seed.guard))return {ok:false,reason:'competitor-conflict'};
+              commitAssets=measure('simulation.validate.asset-index',()=>new Map((state.assets||[]).map(asset=>[asset.id,asset])));
+              const assetsMatch=measure('simulation.validate.asset-guards',()=>((state.assets?.length||0)===assetSeeds.length&&commitAssets.size===assetSeeds.length&&records.length===assetSeeds.length&&!records.some(rec=>simulationAssetGuard(commitAssets.get(rec.id),false)!==rec.guard)));
+              if(!assetsMatch)return {ok:false,reason:'asset-conflict'};
+              const routesMatch=measure('simulation.validate.route-guards',()=>{for(const [routeId,guard] of routeGuards)if(JSON.stringify(routeTemplates[routeId]||null)!==guard)return false;return true;});
+              if(!routesMatch)return {ok:false,reason:'route-conflict'};
+              if(!measure('simulation.validate.context-guard',()=>simulationContextGuard()===contextGuard))return {ok:false,reason:'simulation-context-conflict'};
+              if(!measure('simulation.validate.competitor-guards',()=>competitorAssets.length===competitorSeeds.length&&!competitorSeeds.some((seed,i)=>JSON.stringify(competitorAssets[i])!==seed.guard)))return {ok:false,reason:'competitor-conflict'};
               return {ok:true};
             },
-            apply:()=>{
+            apply:measure=>{
               movingAssetCount=0;idleAssetCount=0;turnaroundAssetCount=0;
               state.simSeconds=simMeta.to;
-              for(const rec of records){
+              measure('simulation.apply.asset-patches',()=>{for(const rec of records){
                 const current=commitAssets.get(rec.id);
                 if(!current)throw new Error(`Atomic asset disappeared during commit: ${rec.id}`);
                 const planned=rec.patch||rec.draft;
@@ -2576,24 +2586,25 @@
                 for(const field of SIMULATION_ASSET_FIELDS){const value=planned[field];current[field]=value&&typeof value==='object'?clone(value):value;}
                 if(planned.simulationFault?.code==='ASSET_SIMULATION_ISOLATED'&&planned.simulationFault.at===simMeta.from)diag('ASSET_SIMULATION_ISOLATED',{assetId:rec.id,reason:planned.simulationFault.detail});
                 mergeSimulationEffects(journal,rec.effects);
-              }
-              for(const companyId of Object.keys(journal.tripCount))window.GH_CORPORATE_CORE?.model?.(state,companyId);
-              for(const routeId of new Set(journal.retiredRouteIds))if(!state.assets.some(asset=>asset.routeId===routeId)&&(state.customRoutes||[]).some(route=>route.id===routeId))window.GH_ROUTE_CORE.execute({state},'delete',{id:routeId});
-              for(let i=0;i<competitorAssets.length;i++)competitorAssets[i].progress=competitorSeeds[i].draft.progress;
-              window.GH_FINANCE_CORE.execute({state},'apply-simulation-journal',{journal});
-              window.GH_CORPORATE_CORE.execute({state},'adjust-group-value',{delta:Number(journal.groupValue)||0});
-              for(const text of journal.alerts)window.GH_OPERATIONS_CORE.execute({state},'record-alert',{text,type:'simulation'});
+              }});
+              measure('simulation.apply.corporate-and-routes',()=>{for(const companyId of Object.keys(journal.tripCount))window.GH_CORPORATE_CORE?.model?.(state,companyId);
+                for(const routeId of new Set(journal.retiredRouteIds))if(!state.assets.some(asset=>asset.routeId===routeId)&&(state.customRoutes||[]).some(route=>route.id===routeId))window.GH_ROUTE_CORE.execute({state},'delete',{id:routeId});
+                for(let i=0;i<competitorAssets.length;i++)competitorAssets[i].progress=competitorSeeds[i].draft.progress;
+              });
+              measure('simulation.apply.finance-journal',()=>window.GH_FINANCE_CORE.execute({state},'apply-simulation-journal',{journal}));
+              measure('simulation.apply.group-value',()=>window.GH_CORPORATE_CORE.execute({state},'adjust-group-value',{delta:Number(journal.groupValue)||0}));
+              measure('simulation.apply.alerts',()=>{for(const text of journal.alerts)window.GH_OPERATIONS_CORE.execute({state},'record-alert',{text,type:'simulation'});});
               // Delivery cadence is slice-based, not day-based. This keeps procurement responsive under ×1…×4
               // while remaining inside the same atomic transaction as time and asset state.
               const assetCountBeforeDelivery=state.assets.length;
-              if(deliveryWorkPending&&window.GH_REALISM?.onSimulationTime)window.GH_REALISM.onSimulationTime(state,simMeta.to);
+              if(deliveryWorkPending&&window.GH_REALISM?.onSimulationTime)measure('simulation.apply.delivery-work',()=>window.GH_REALISM.onSimulationTime(state,simMeta.to));
               if(state.assets.length!==assetCountBeforeDelivery){mapStructureChanged=true;for(let index=assetCountBeforeDelivery;index<state.assets.length;index++){const phase=state.assets[index]?.phase;if(phase==='moving')movingAssetCount++;else if(phase==='idle')idleAssetCount++;else if(phase==='turnaround')turnaroundAssetCount++;}}
-              window.GH_MOBILITY_CORE?.onSimulationTime?.({state},simMeta.to);
+              measure('simulation.apply.mobility-time',()=>window.GH_MOBILITY_CORE?.onSimulationTime?.({state},simMeta.to));
 
               // Boundary work is inside the SAME transaction as assets and time. A failure rolls all of it back.
               // Midnight closes the financial day first, then the hourly market checkpoint at the same timestamp.
-              if(boundary.day!==null&&boundary.day!==undefined)processFinancialDay(boundary.day);
-              if(boundary.hour!==null&&boundary.hour!==undefined)processMarket(boundary.hour);
+              if(boundary.day!==null&&boundary.day!==undefined)measure('simulation.boundary.financial-day',()=>processFinancialDay(boundary.day));
+              if(boundary.hour!==null&&boundary.hour!==undefined)measure('simulation.boundary.market-hour',()=>processMarket(boundary.hour,measure));
 
               state.simulationKernel=state.simulationKernel||{};
               state.simulationKernel.lastAtomicCommit={from:simMeta.from,to:simMeta.to,assets:records.length,day:boundary.day??null,hour:boundary.hour??null,at:state.simSeconds,core:'2.4.1'};

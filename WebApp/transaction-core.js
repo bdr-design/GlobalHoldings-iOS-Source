@@ -4,7 +4,7 @@
   let activeContext=null,durableSequence=0;
   const targetRevisions=new WeakMap();
   const durableTargets=new WeakSet();
-  const runtimeTelemetry={last:null,lastSimulation:null,samples:[]};
+  const runtimeTelemetry={last:null,lastSimulation:null,samples:[],profiledSamples:[],profiledCount:0};
   const runtimeClock=()=>globalThis.performance?.now?.()??Date.now();
   function publishRuntimeMetric(row){
     const metric={...row,recordedAtMs:Date.now()};
@@ -12,7 +12,22 @@
     if(String(metric.label||'').startsWith('simulation:'))runtimeTelemetry.lastSimulation=metric;
     runtimeTelemetry.samples.push(metric);
     if(runtimeTelemetry.samples.length>24)runtimeTelemetry.samples.shift();
+    if(metric.profiled===true){
+      runtimeTelemetry.profiledCount++;
+      runtimeTelemetry.profiledSamples.push(metric);
+      runtimeTelemetry.profiledSamples.sort((a,b)=>(Number(b.totalMs)||0)-(Number(a.totalMs)||0));
+      if(runtimeTelemetry.profiledSamples.length>24)runtimeTelemetry.profiledSamples.length=24;
+    }
     return metric;
+  }
+  function compactProfileContext(value){
+    if(!value||typeof value!=='object'||Array.isArray(value))return null;
+    const out={};let count=0;
+    for(const [key,item] of Object.entries(value)){
+      if(count++>=24)break;
+      if(item===null||typeof item==='string'||typeof item==='boolean'||(typeof item==='number'&&Number.isFinite(item)))out[String(key).slice(0,64)]=typeof item==='string'?item.slice(0,120):item;
+    }
+    return out;
   }
   function jsonClone(value){if(value===undefined)return undefined;return JSON.parse(JSON.stringify(value));}
   function deepClone(value){if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
@@ -175,9 +190,9 @@
       // scope-union contract is separately proven.
       if(ctx.rollbackStorage==='journal')throw new Error('transaction-journal-unexpected-join');
       if(ctx.scope)promoteToFull(ctx,'joined-writer');
-      const validation=options.validate?options.validate():true;
+      const validation=options.validate?options.validate(ctx.measure):true;
       if(validation===false||validation?.ok===false)throw new Error(validation?.reason||'validation-rejected');
-      const value=options.apply();
+      const value=options.apply(ctx.measure);
       if(value?.then)throw new Error('Asynchronous state mutation requires an explicit lifecycle');
       return {committed:true,value,label:ctx.label,joined:true};
     }catch(error){ctx.failure=error;throw error;}
@@ -186,9 +201,18 @@
     if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');
     if(typeof options.apply!=='function')throw new TypeError('Transaction apply callback is required');
     if(activeContext)throw new Error('Nested state transactions are forbidden; domain commands must join their owner');
-    const label=String(options.label||'transaction'),scope=normalizeScope(options.scope),declaredWriteRoots=normalizeWriteRoots(options.writeRoots),writerContracts=normalizeWriterContracts(options.writerContracts),auditWrites=options.auditWrites===true||options.enforceWriteRoots===true,totalStart=runtimeClock(),requestedJournal=options.rollbackMode==='journal';
+    const label=String(options.label||'transaction'),scope=normalizeScope(options.scope),declaredWriteRoots=normalizeWriteRoots(options.writeRoots),writerContracts=normalizeWriterContracts(options.writerContracts),auditWrites=options.auditWrites===true||options.enforceWriteRoots===true,totalStart=runtimeClock(),requestedJournal=options.rollbackMode==='journal',profiled=options.profile===true||(options.profile!==false&&globalThis.GH_DIAGNOSTICS?.recorderIsActive?.(target)===true),phaseBreakdown=profiled?[]:null;
     let fallbackReason=journalAdmissionReason(options,scope,writerContracts),rollbackStorage='legacy-scoped',snapshot=null,journal=null;
-    const timing={label,scopeSize:scope?scope.length:null,fullSnapshot:false,fullSnapshotFallback:false,fallbackReason:null,rollbackStorage:null,journalRecords:0,snapshotMs:0,validateMs:0,applyMs:0,postCommitCriticalMs:0,postCommitNonCriticalMs:0,postCommitCriticalTasks:[],postCommitNonCriticalTasks:[],writeAudit:auditWrites?{enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots:[],undeclaredRoots:[],declaredButUnchanged:[],stage:'pending'}:null,rollbackMs:0,totalMs:0,committed:false,stage:'snapshot'};
+    let phaseDepth=0;
+    const measure=(name,work)=>{
+      if(typeof work!=='function')throw new TypeError('Profile phase callback is required');
+      if(!profiled)return work();
+      const depth=phaseDepth++,started=runtimeClock();let ok=false;
+      try{const value=work();ok=true;return value;}
+      finally{phaseBreakdown.push({name:String(name||'unnamed').slice(0,100),durationMs:Math.max(0,runtimeClock()-started),depth,ok});if(phaseBreakdown.length>64)phaseBreakdown.shift();phaseDepth--;}
+    };
+    const derivedProfileContext=profiled?{kind:label.startsWith('simulation:')?'simulation-slice':label.startsWith('boundary-recovery:')?'boundary-recovery':'state-transaction',assetCount:Array.isArray(target.assets)?target.assets.length:null,invoiceCount:Array.isArray(target.finance?.invoices)?target.finance.invoices.length:null,receivableCount:Array.isArray(target.finance?.receivables)?target.finance.receivables.length:null,payableCount:Array.isArray(target.finance?.payables)?target.finance.payables.length:null}:null;
+    const timing={label,profiled,profileContext:profiled?compactProfileContext(options.profileContext||derivedProfileContext):null,phaseBreakdown,scopeSize:scope?scope.length:null,fullSnapshot:false,fullSnapshotFallback:false,fallbackReason:null,rollbackStorage:null,journalRecords:0,snapshotMs:0,validateMs:0,applyMs:0,postCommitCriticalMs:0,postCommitNonCriticalMs:0,postCommitCriticalTasks:[],postCommitNonCriticalTasks:[],writeAudit:auditWrites?{enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots:[],undeclaredRoots:[],declaredButUnchanged:[],stage:'pending'}:null,rollbackMs:0,totalMs:0,committed:false,stage:'snapshot'};
     const snapshotStart=runtimeClock();
     if(requestedJournal&&!fallbackReason){
       const captured=captureJournal(target,scope,writerContracts);
@@ -202,13 +226,17 @@
     // their rollback snapshot; scoped/journal transactions take an extra full baseline only when
     // audit/enforcement is explicitly requested. Normal gameplay pays no audit cost.
     const auditBaseline=auditWrites?((rollbackStorage==='full-snapshot')?snapshot:deepClone(target)):null;
-    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,irreversiblePriority:null};
+    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null};
     const rollback=()=>{if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot);};
     let phase='validate';activeContext=context;
     try{
-      const validateStart=runtimeClock(),validation=typeof options.validate==='function'?options.validate():true;timing.validateMs=Math.max(0,runtimeClock()-validateStart);timing.stage='validate';
+      const validateStart=runtimeClock();let validation;
+      try{validation=typeof options.validate==='function'?options.validate(measure):true;}
+      finally{timing.validateMs=Math.max(0,runtimeClock()-validateStart);timing.stage='validate';}
       if(validation===false||validation?.ok===false){const rollbackStart=runtimeClock();rollback();timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);timing.totalMs=Math.max(0,runtimeClock()-totalStart);timing.stage='validation-rejected';publishRuntimeMetric(timing);return {committed:false,reason:validation?.reason||'validation-rejected',label};}
-      phase='commit';const applyStart=runtimeClock(),value=options.apply();timing.applyMs=Math.max(0,runtimeClock()-applyStart);timing.stage='commit';
+      phase='commit';const applyStart=runtimeClock();let value;
+      try{value=options.apply(measure);}
+      finally{timing.applyMs=Math.max(0,runtimeClock()-applyStart);timing.stage='commit';}
       if(value?.then)throw new Error('Asynchronous state mutation requires an explicit lifecycle');
       if(context.failure)throw context.failure;
       if(context.rollbackStorage==='journal'){
@@ -240,7 +268,8 @@
       timing.stage=phase;timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);error.transactionLabel=label;error.transactionStage=phase;throw error;
     }finally{activeContext=null;}
   }
-  function telemetrySnapshot(){const out=deepClone(runtimeTelemetry);if(activeContext)out.active={label:activeContext.label,rollbackStorage:activeContext.rollbackStorage,fullSnapshot:activeContext.rollbackStorage==='full-snapshot',fallbackReason:activeContext.timing?.fallbackReason||null,journalRecords:activeContext.timing?.journalRecords||0};return out;}
+  function resetProfileTelemetry(){runtimeTelemetry.profiledSamples.length=0;runtimeTelemetry.profiledCount=0;runtimeTelemetry.lastSimulation=null;return true;}
+  function telemetrySnapshot(){const out=deepClone(runtimeTelemetry);if(activeContext)out.active={label:activeContext.label,rollbackStorage:activeContext.rollbackStorage,fullSnapshot:activeContext.rollbackStorage==='full-snapshot',fallbackReason:activeContext.timing?.fallbackReason||null,journalRecords:activeContext.timing?.journalRecords||0,profiled:activeContext.timing?.profiled===true,phaseBreakdown:activeContext.timing?.phaseBreakdown?deepClone(activeContext.timing.phaseBreakdown):null};return out;}
   function rejection(reason,label,stage='validate'){const error=new Error(reason);error.transactionLabel=label;error.transactionStage=stage;return error;}
   function criticalIds(result){return new Set((((result?.critical)||((result?.issues)||[]).filter(row=>row.severity==='critical'))||[]).map(row=>String(row.id||row.code||row.title)));}
   async function executeDurable(liveState,options={}){
@@ -274,5 +303,5 @@
       throw error;
     }finally{if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

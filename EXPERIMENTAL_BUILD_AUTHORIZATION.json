@@ -1,15 +1,15 @@
 {
   "test_build_authorized": true,
   "production_approved": false,
-  "source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f",
-  "minimum_acceptance_gates": 123,
+  "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
+  "minimum_acceptance_gates": 124,
   "build": 340,
   "version": "3.0.0",
   "save_schema": "2.0.0",
   "authorized_at": "2026-09-26",
   "user_request": "The user authorized an isolated internal repository branch and requested implementation of engine separation with repository/browser verification.",
   "purpose": "Internal experimental Build 340 verification for immutable-DTO simulation and route planning, indexed procurement, disposal and finance batches, route-center and finance read models, payroll settlement join, and bounded media decoding. Production approval and physical-device acceptance are not implied.",
-  "source_rule": "Use the complete Build 340 source tracked directly at the repository root on build340-engine-separation-20260926. Future development and normal CI must not use an IPA or apply a source overlay. Save Schema 2.0.0, Full Snapshot rollback, and disabled live field journal remain mandatory.",
+  "source_rule": "Use the complete Build 340 source tracked directly at the repository root on build340-hotpath-diagnostics-20260926. Future development and normal CI must not use an IPA or apply a source overlay. Save Schema 2.0.0, Full Snapshot rollback, and disabled live field journal remain mandatory.",
   "rollback_and_ownership": {
     "save_schema_preserved": true,
     "authoritative_state_owner": "existing serialized app/domain transaction boundary",
@@ -30,10 +30,11 @@
   ],
   "source_tracking": {
     "mode": "direct_git_tracked_tree",
-    "branch": "build340-engine-separation-20260926",
-    "tested_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
+    "branch": "build340-hotpath-diagnostics-20260926",
     "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
     "normal_ci_uses_overlay": false,
-    "historical_import_note": "The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source."
+    "historical_import_note": "The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source.",
+    "base_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
+    "runtime_source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731"
   }
 }

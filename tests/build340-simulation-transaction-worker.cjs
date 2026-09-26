@@ -74,7 +74,12 @@ async function run(){
     assert.equal(job.runChunk(32,{deadline:Infinity}),false,'large-fleet snapshot capture yields after the configured chunk count');
     assert(snapshotReads>0&&snapshotReads<32*40,'the first chunk reads only its bounded portion of the fleet');assert.equal(x.workerMessages.length,0,'the worker starts only after a complete immutable input snapshot exists');
     await prepareFully(job);assert.equal(x.asset.progress,.1,'no live asset changes before the owner transaction');
+    x.e.load('diagnostics-core');x.s.GH_DIAGNOSTICS.recorderStart(x.state,{speed:30},{nowMs:1000000000000,performanceNowMs:performance.now()});
     const result=job.finish();assert.equal(result.committed,true);assert(x.asset.progress>.1);assert.equal(x.state.simSeconds,7230);assert.equal(x.state.simulationKernel.lastAtomicCommit.assets,20000);assert.equal(x.workerMessages.length,79,'20,000 assets stay within the 256-row Worker batch limit');
+    const profiled=x.s.GH_TRANSACTION_CORE.telemetry().profiledSamples.find(row=>row.label==='simulation:7200->7230');
+    assert.equal(profiled.profileContext.kind,'simulation-slice');assert.equal(profiled.profileContext.assetCount,20000);
+    assert(profiled.phaseBreakdown.some(row=>row.name==='simulation.validate.asset-index'));
+    assert(profiled.phaseBreakdown.some(row=>row.name==='simulation.apply.asset-patches'));
     console.log(JSON.stringify({suite:'build340-simulation-app-worker-20k',assets:20000,workerBatches:x.workerMessages.length,nodeElapsedMs:+(performance.now()-started).toFixed(2),environment:`Node ${process.version}; app owner transaction integration; synthetic state only; no DOM, native persistence or iPhone`}));
   }
   {
@@ -85,6 +90,16 @@ async function run(){
     assert.equal(x.s.GH_TRANSACTION_CORE.revision(x.state),revisionBefore+1,'only the atomic owner commit advances the runtime target revision');
     assert.equal(x.state.simulationKernel.lastAtomicCommit.assets,1);
     console.log('PASS worker plan crosses the existing validation and atomic simulation transaction before asset/time writes');
+  }
+  {
+    const x=setup(),job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:1,hour:3}});await prepare(job);
+    x.e.load('diagnostics-core');x.s.GH_DIAGNOSTICS.recorderStart(x.state,{speed:30},{nowMs:1000000000000,performanceNowMs:performance.now()});
+    const result=job.finish();assert.equal(result.committed,true);
+    const profiled=x.s.GH_TRANSACTION_CORE.telemetry().profiledSamples.find(row=>row.label==='simulation:7200->7230');
+    const names=profiled.phaseBreakdown.map(row=>row.name),dayIndex=names.indexOf('simulation.boundary.financial-day'),marketIndex=names.indexOf('simulation.boundary.market-hour');
+    assert(dayIndex>=0&&marketIndex>dayIndex,'financial close remains before hourly market work in the measured atomic commit');
+    assert.equal(profiled.rollbackStorage,'full-snapshot','boundary profiling keeps the full-state rollback mode');
+    console.log('PASS hot-path profile captures ordered financial and market boundaries without changing Full Snapshot rollback');
   }
   {
     const x=setup(),job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});await prepare(job);

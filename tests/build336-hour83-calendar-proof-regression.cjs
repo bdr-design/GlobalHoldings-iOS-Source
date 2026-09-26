@@ -33,7 +33,7 @@ function baseEnvironment(){
   s.GH_ROUTE_CORE={execute:()=>({})};
 
   // Actual Build 335/336 owners: market boundary, compaction, slice transaction.
-  vm.runInContext(fragment('  function processMarket(processedHour=null){','  // ---------------------------------------------------------------------------\n  // SIMULATION CORE 2.1'),s,{filename:'app-process-market.js'});
+  vm.runInContext(fragment('  function processMarket(processedHour=null,measure=null){','  // ---------------------------------------------------------------------------\n  // SIMULATION CORE 2.1'),s,{filename:'app-process-market.js'});
   vm.runInContext(fragment('  function financeAuditArchive()','  function normalizeSimulationClocks()'),s,{filename:'app-compaction-owner.js'});
   vm.runInContext(fragment('  function makeSimulationEffects()','  // Pure simulation draft:'),s,{filename:'app-simulation-guards.js'});
   vm.runInContext(fragment('  const SIMULATION_TRANSACTION_SCOPE=',"  if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core compatibility"),s,{filename:'app-simulation-transaction.js'});

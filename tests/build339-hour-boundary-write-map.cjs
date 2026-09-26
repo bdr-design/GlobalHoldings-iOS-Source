@@ -6,7 +6,7 @@ function fragment(start,end){const a=app.indexOf(start),b=app.indexOf(end,a);ass
 function environment(){
  const e=scenario();e.load('advanced-core');
  Object.assign(e.s,{state:e.state,dispatchSystemCommand:(ctx,d,n,p,o)=>e.s.GH_DOMAIN_COMMANDS.dispatchSystem(ctx,d,n,p,o),__GH_BUILD339_WRITE_AUDIT__:true});
- vm.runInContext(fragment('  function processMarket(processedHour=null){','  // ---------------------------------------------------------------------------\n  // SIMULATION CORE 2.1'),e.s,{filename:'app-process-market.js'});
+ vm.runInContext(fragment('  function processMarket(processedHour=null,measure=null){','  // ---------------------------------------------------------------------------\n  // SIMULATION CORE 2.1'),e.s,{filename:'app-process-market.js'});
  e.state.simSeconds=3600;e.state.lastMarketHour=0;return e;
 }
 function test(name,fn){try{results.push({name,ok:true,detail:fn()});}catch(error){results.push({name,ok:false,error:String(error.stack||error)});}}

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - build340-engine-separation-20260926
+      - build340-hotpath-diagnostics-20260926
   workflow_dispatch:
 
 permissions:
@@ -57,7 +58,7 @@ jobs:
           import json,sys
           from pathlib import Path
           root=Path(sys.argv[1])
-          expected='7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f'
+          expected='0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731'
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
           authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
           result=json.loads((root/'BUILD340_ENGINE_SEPARATION_VERIFICATION.json').read_text())
@@ -353,7 +354,7 @@ jobs:
               if not (root/rel).is_file():
                   raise SystemExit("Tracked source package file missing: "+rel)
               paths.append(rel)
-          if len(set(paths))!=759:
+          if len(set(paths))!=761:
               raise SystemExit("Expected 759 files in existing full-source checksum inventory")
           if "BUILD340_ENGINE_SEPARATION_CI_README.md" in paths or ".github/workflows/build340-engine-separation.yml" in paths:
               raise SystemExit("Repository workflow/readme unexpectedly appears in source ZIP inventory")
@@ -363,7 +364,7 @@ jobs:
               lines.append(h+"  "+rel)
           integrity.write_text("\n".join(lines)+"\n",encoding="utf-8")
           package_paths=paths+["SOURCE_INTEGRITY_SHA256.txt"]
-          if len(package_paths)!=760:
+          if len(package_paths)!=762:
               raise SystemExit("Expected 760 files in direct source export")
           outdir=root/".ci-output"
           outdir.mkdir(exist_ok=True)

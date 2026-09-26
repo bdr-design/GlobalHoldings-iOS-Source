@@ -3,7 +3,7 @@
   "version": "3.0.0",
   "build": 340,
   "save_schema": "2.0.0",
-  "source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f",
+  "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
   "webapp_tree_sha256": "dd51380843599fe8b3399058150a624b891215f9ff24688e55a71d453b462d1d",
   "files": {
     "WebApp/advanced-core.js": {
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 644988,
-      "sha256": "23e63b0d07a8d568ce80a095d592b537f772f0f65bda18456a8e29d73a54b6a1"
+      "bytes": 647909,
+      "sha256": "554d88b25f76b4bf5dfdfefcb81d7229a001386ff0e9616cd86ce83315ab77ca"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1659,8 +1659,8 @@
       "sha256": "11650b4b91eebd66bf301e2f4682b07696618001760c7f7c074ff597f089469a"
     },
     "WebApp/diagnostics-core.js": {
-      "bytes": 51505,
-      "sha256": "9a4b1e2ec72a51830672e75e8d9d570800f71280ad3ad202acf92b41a44d1c35"
+      "bytes": 54006,
+      "sha256": "e93b513a5250a916b7aaf877c876558af08fc2ee4a59cf035a0084adfaf45193"
     },
     "WebApp/directory-core.js": {
       "bytes": 16330,
@@ -1891,8 +1891,8 @@
       "sha256": "2e69ee058343d89b2310384a46dcf75992e2376945fa153ce74786adaf30ce02"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 29319,
-      "sha256": "a68414b90b8b0c0009b031fee462c4f7b95e42a1936b4aa8fc23a4eba1763255"
+      "bytes": 31895,
+      "sha256": "529c6a2caf6ad108c19ad96d511baf5cca2bc41595ba39c6afb163e2d6df1a50"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -2030,12 +2030,12 @@
   ],
   "source_tracking": {
     "mode": "direct_git_tracked_tree",
-    "repository_branch": "build340-engine-separation-20260926",
-    "tested_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
+    "repository_branch": "build340-hotpath-diagnostics-20260926",
     "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
-    "runtime_source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f",
+    "runtime_source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
     "normal_ci_uses_overlay": false,
-    "historical_import_note": "One-time import materialized the byte-verified Build 340 candidate payload; the direct-source CI checks out these tracked files and does not apply patches or overlays."
+    "historical_import_note": "One-time import materialized the byte-verified Build 340 candidate payload; the direct-source CI checks out these tracked files and does not apply patches or overlays.",
+    "base_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635"
   },
   "latest_direct_source_ci": {
     "run_id": 36247000333,

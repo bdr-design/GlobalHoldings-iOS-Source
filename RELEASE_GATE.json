@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f",
+  "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
   "version": "3.0.0",
   "build": 340,
   "save_schema": "2.0.0",
@@ -23,7 +23,7 @@
     "full_snapshot_fallback": "ON",
     "live_field_journal": "OFF",
     "save_schema": "2.0.0",
-    "build340_ci": "PASS_DIRECT_GIT_SOURCE_123_OF_123_GATES_ESLINT_CHROMIUM_WEBKIT_NATIVE_STORAGE_WKWEBVIEW_UNSIGNED_ARM64_APP_BUILD_UNSIGNED_TEST_IPA",
+    "build340_ci": "HOTPATH_DIAGNOSTICS_CURRENT_SOURCE_CI_PENDING",
     "simulation_asset_worker": "LOCAL_NODE_20K_PLAN_AND_ATOMIC_APPLY_PASS_CI_PENDING",
     "air_sea_route_worker": "LOCAL_NODE_4300_AND_20K_PLAN_PARITY_PASS_CI_PENDING",
     "procurement_batch_index": "LOCAL_NODE_20K_PARITY_ONE_INDEX_PASS_CI_PENDING",
@@ -31,7 +31,8 @@
     "map_status_read_model": "LOCAL_NODE_20K_NO_REPEAT_SCAN_PASS_CI_PENDING",
     "finance_transfer_index": "LOCAL_NODE_20K_HISTORY_256_REAL_COLLECTION_BATCH_FULL_SNAPSHOT_PASS_CI_PENDING",
     "payroll_settlement_index": "LOCAL_NODE_20K_INVOICE_JOIN_PARITY_PASS_CI_PENDING",
-    "route_center_revision_index": "LOCAL_NODE_20K_SINGLE_REVISION_PASS_CI_PENDING"
+    "route_center_revision_index": "LOCAL_NODE_20K_SINGLE_REVISION_PASS_CI_PENDING",
+    "hotpath_diagnostics": "LOCAL_SOURCE_FOCUSED_TESTS_PASS_DIRECT_CI_AND_IPHONE_PROFILE_PENDING"
   },
   "latest_direct_source_ci": {
     "run_id": 36247000333,
@@ -53,8 +54,9 @@
   },
   "source_tracking": {
     "mode": "direct_git_tracked_tree",
-    "branch": "build340-engine-separation-20260926",
-    "tested_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
-    "source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f"
-  }
+    "branch": "build340-hotpath-diagnostics-20260926",
+    "base_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
+    "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731"
+  },
+  "point": "Build 340 hot-path diagnostics candidate; manual-device profile required"
 }

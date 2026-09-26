@@ -3,7 +3,7 @@
   "version": "3.0.0",
   "build": 340,
   "save_schema": "2.0.0",
-  "source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f",
+  "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
   "source_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
   "baseline_source_tree_sha256": "f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5",
   "map_asset_query_engine": {
@@ -244,9 +244,9 @@
   "repository_source_commit": "73234985380abf3321fb181ba81ba2dcc4967635",
   "source_tracking": {
     "mode": "direct_git_tracked_tree",
-    "branch": "build340-engine-separation-20260926",
-    "tested_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
-    "runtime_source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f",
+    "branch": "build340-hotpath-diagnostics-20260926",
+    "base_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
+    "runtime_source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
     "candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
     "normal_ci_uses_overlay": false
   },
@@ -309,9 +309,9 @@
     "Leaflet_DOM_creation_on_main_thread": true
   },
   "local_candidate": {
-    "source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f",
+    "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
     "runtime_files": 495,
-    "status": "DIRECT_GIT_CI_VERIFIED_PENDING_PHYSICAL_IPHONE",
+    "status": "HOTPATH_DIAGNOSTICS_DIRECT_CI_PENDING",
     "save_schema": "2.0.0",
     "full_snapshot_rollback": true,
     "live_field_journal": false,

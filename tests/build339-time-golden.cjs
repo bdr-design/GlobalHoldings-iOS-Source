@@ -46,8 +46,8 @@ function stallScenario(){
   return {maxRealDelta:3,stallSeconds:5,finalSimSeconds:sim,droppedRealSeconds:snap.droppedRealSeconds,stallGaps:snap.stallGaps};
 }
 function boundaryOrder(){
-  const day=appSource.indexOf('if(boundary.day!==null&&boundary.day!==undefined)processFinancialDay(boundary.day);');
-  const hour=appSource.indexOf('if(boundary.hour!==null&&boundary.hour!==undefined)processMarket(boundary.hour);');
+  const day=appSource.indexOf("if(boundary.day!==null&&boundary.day!==undefined)measure('simulation.boundary.financial-day',()=>processFinancialDay(boundary.day));");
+  const hour=appSource.indexOf("if(boundary.hour!==null&&boundary.hour!==undefined)measure('simulation.boundary.market-hour',()=>processMarket(boundary.hour,measure));");
   assert(day>=0&&hour>=0&&day<hour,'midnight boundary order drifted: day must commit before hourly market work');
   return ['day','hour'];
 }

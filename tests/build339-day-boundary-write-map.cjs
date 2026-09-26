@@ -43,7 +43,7 @@ function postAccruedExpense(company,amount,note,method='قيد مستحق',dueDa
 function settleCheque(cheque){return dispatchSystemCommand({state},'finance','settle-cheque',{id:cheque?.id},{actor:'finance-scheduler'}).result;}
 function spendCompanySystem(company,amount,note='مصروف تشغيلي',method='تحويل بنكي',taxable=true){if(!validMoney(Number(amount)))return false;const out=dispatchSystemCommand({state},'finance','spend',{company,amount,note,method:method==='نقدي'?'تحويل بنكي':method,taxable},{actor:'financial-close'});return !!out.result;}
 `,s);
-  vm.runInContext(fragment('  function simulationCalendarDate','  function processMarket(processedHour=null){'),s,{filename:'app-day-owner.js'});vm.runInContext('globalThis.__processFinancialDay=processFinancialDay',s);return e;
+  vm.runInContext(fragment('  function simulationCalendarDate','  function processMarket(processedHour=null,measure=null){'),s,{filename:'app-day-owner.js'});vm.runInContext('globalThis.__processFinancialDay=processFinancialDay',s);return e;
 }
 function commitDay(e,day,audit=false,lateFailure=false){const {s,state}=e;state.simSeconds=day*86400;return s.GH_TRANSACTION_CORE.execute(state,{label:`build339-day-${day}`,auditWrites:audit,apply:()=>{s.__processFinancialDay(day);if(lateFailure)s.GH_TRANSACTION_CORE.afterCommit(()=>{throw new Error('build339-day-late-failure');},{critical:true,key:'build339-day-late-failure',owner:'build339-day-contract',priority:100});}});}
 function test(name,fn){try{results.push({name,ok:true,detail:fn()});}catch(error){results.push({name,ok:false,error:String(error.stack||error)});}}
