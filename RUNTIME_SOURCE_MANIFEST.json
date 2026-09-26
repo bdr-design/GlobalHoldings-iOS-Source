@@ -1,10 +1,10 @@
 {
-  "point": "Build 340 engine separation: immutable simulation and route plans, indexed procurement/disposal and finance batches, route-center read model, and payroll invoice join",
+  "point": "Build 341 hotpath proof verification cache and nested financial close profiling",
   "version": "3.0.0",
-  "build": 340,
+  "build": 341,
   "save_schema": "2.0.0",
-  "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
-  "webapp_tree_sha256": "dd51380843599fe8b3399058150a624b891215f9ff24688e55a71d453b462d1d",
+  "source_tree_sha256": "1dfac1c095542ea926b62728d75e6ac4f4d90318dd005dbc09b66283734001e9",
+  "webapp_tree_sha256": "46b35965642ec740e7aab88547db4b07439acd45315e9bd06f54d6aabc848690",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 231897,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 647909,
-      "sha256": "554d88b25f76b4bf5dfdfefcb81d7229a001386ff0e9616cd86ce83315ab77ca"
+      "bytes": 647932,
+      "sha256": "c6bf879593e8470e192f166676c4008c66718a87589bf9db2b76d539a0b87a2c"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1571,8 +1571,8 @@
       "sha256": "2f02bf651a4a44927949147c2a1e8fb5c51b56602d39c16daf208b78afdd4a61"
     },
     "WebApp/authorization-core.js": {
-      "bytes": 37123,
-      "sha256": "141ff536408f163349cf6411a6e8b17f8160e8f17112089ebaff108d532d51f5"
+      "bytes": 37224,
+      "sha256": "c20341a1caa0fe6e3b47c7293dcf3900d849425c3fd2d2f580c015ce249aa97f"
     },
     "WebApp/authorization-ui.css": {
       "bytes": 2714,
@@ -1635,8 +1635,8 @@
       "sha256": "a0d207bf3511ea0db3f249526f115595297eded7d3b9b01dcdfda9401f10baaf"
     },
     "WebApp/control-plane-core.js": {
-      "bytes": 31907,
-      "sha256": "db1d1a3af239c53832a292b319c97e55dd3443188404b08aa4017b8bed735363"
+      "bytes": 31933,
+      "sha256": "f6f0565cd1293125ce163419d02a2f03c639dab73e30ef2e5ce3fd685e2e0cfc"
     },
     "WebApp/corporate-core.js": {
       "bytes": 19068,
@@ -1667,8 +1667,8 @@
       "sha256": "eb16acce22f285faec535d82b74620eb26bd0adfa1aa2ce9f05bc37fb7584a8b"
     },
     "WebApp/document-proof-core.js": {
-      "bytes": 42597,
-      "sha256": "1a36112586987a6a3bf60f03ce74ae2e25543a41875534b24e860bd1e396d2cf"
+      "bytes": 42991,
+      "sha256": "12f33c7a1e3ff816e0f2bba119b99b89c9b1b4c14c9e2bf51befdc0f03c028df"
     },
     "WebApp/domain-command-core.js": {
       "bytes": 20621,
@@ -1851,8 +1851,8 @@
       "sha256": "27dc9fcc5dcd52094376f7fb1cb2e21ff418a407116b7017bda1b091a0751fe8"
     },
     "WebApp/save-schema.js": {
-      "bytes": 58073,
-      "sha256": "f98c1bf2d99a0cf1fa10f04d94965dc0b36180d71ed22ebcc2ed0e812f773d66"
+      "bytes": 61524,
+      "sha256": "16a6b054e9831dbd5dfe1b9361a41f02bee104550e987e6b458bf313d0f26536"
     },
     "WebApp/section-identities.css": {
       "bytes": 2444,
@@ -1976,11 +1976,11 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "3a53322ca10c525ebaca6e034bc970b3519d6fe760daccc1b6d49272716f7149"
+      "sha256": "be9b97c5bb3f55b27953a1c38a4a2f15f35bfb9a98d0538f3a1b0a72f7a4564b"
     },
     "BUILD": {
       "bytes": 4,
-      "sha256": "d909e88e7fa0c6e79055b361c918d4801bc157a1b9b680b4041f7f1c7a4590ba"
+      "sha256": "75fa55306cb81a01b436fa14731c79e18036d89472e4280d44bc2776e8d3184b"
     },
     "VERSION": {
       "bytes": 6,
@@ -2030,29 +2030,16 @@
   ],
   "source_tracking": {
     "mode": "direct_git_tracked_tree",
-    "repository_branch": "build340-hotpath-diagnostics-20260926",
-    "tested_commit_sha": "976c9aef615b5dd30c0967d8a81b63d96c374fc2",
-    "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
-    "runtime_source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
+    "repository_branch": "build341-hotpath-fix-20260926",
+    "base_branch": "build340-hotpath-diagnostics-20260926",
+    "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
     "normal_ci_uses_overlay": false,
-    "historical_import_note": "One-time import materialized the byte-verified Build 340 candidate payload; the direct-source CI checks out these tracked files and does not apply patches or overlays."
+    "runtime_source_tree_sha256": "1dfac1c095542ea926b62728d75e6ac4f4d90318dd005dbc09b66283734001e9"
   },
   "latest_direct_source_ci": {
-    "run_id": 36268965706,
-    "tested_commit_sha": "976c9aef615b5dd30c0967d8a81b63d96c374fc2",
-    "result": "SUCCESS",
-    "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
-    "source_mode": "direct_git_tracked_tree",
-    "source_gates": "124/124",
-    "eslint": "PASS",
-    "chromium_webkit": "PASS",
-    "native_storage": "PASS",
-    "native_wkwebview": "PASS",
-    "unsigned_arm64_iphoneos_release_app": "PASS",
-    "ipa_built": true,
-    "test_ipa_name": "GlobalHoldings_BUILD340_unsigned_TEST.ipa",
-    "test_ipa_sha256": "70d07e00279b12b8d9e487590b1d76ccd75386b07cc88052ecb5326914000b8f",
-    "test_ipa_bytes": 13366460,
+    "status": "PENDING",
+    "base_ci_run_id": 36247000333,
+    "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
     "physical_iphone_tested": false
   }
 }

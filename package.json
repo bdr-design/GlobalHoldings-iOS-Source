@@ -1,6 +1,6 @@
 {
   "name": "global-holdings-build340-webapp",
-  "version": "3.0.0-build340",
+  "version": "3.0.0-build341",
   "private": true,
   "engines": {
     "node": ">=24"

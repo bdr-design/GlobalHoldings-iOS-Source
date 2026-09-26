@@ -1,0 +1,39 @@
+{
+  "format": "global-holdings-hotpath-fix-verification-v1",
+  "version": "3.0.0",
+  "build": 341,
+  "save_schema": "2.0.0",
+  "tag": "HOTPATH_FIX",
+  "branch": "build341-hotpath-fix-20260926",
+  "base_branch": "build340-hotpath-diagnostics-20260926",
+  "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
+  "source_tree_sha256": "1dfac1c095542ea926b62728d75e6ac4f4d90318dd005dbc09b66283734001e9",
+  "webapp_tree_sha256": "46b35965642ec740e7aab88547db4b07439acd45315e9bd06f54d6aabc848690",
+  "diagnostic_input": {
+    "file": "GlobalHoldings_diagnostic_v3.0.0_1790456695006.ghdiagnostic",
+    "build": 340,
+    "assets": 2160,
+    "simulated_hours": 1000.33,
+    "capture_duration_ms": 1582496
+  },
+  "fixes": [
+    "Reuse successful proof verification only for deeply frozen rows with matching dependency identities.",
+    "Replace authorization seals and bound document-proof records copy-on-write.",
+    "Keep full Save Schema validation, Full Snapshot rollback, Save Schema 2.0.0, and disabled live field journal.",
+    "Pass simulation phase measurer into financial day close for nested profiling."
+  ],
+  "local_tests": {
+    "build340_suite": "PASS",
+    "durable_authorization_cache_and_tamper_invalidation": "PASS",
+    "document_proof_v3_security": "PASS",
+    "archive_integrity_r2": "PASS",
+    "r4_proof_archive": "PASS",
+    "build339_day_boundary_rollback": "PASS",
+    "build339_source_layout": "10/10 PASS",
+    "build339_architecture_bootstrap": "12/12 PASS"
+  },
+  "direct_source_ci": "PENDING",
+  "unsigned_ipa": "PENDING",
+  "physical_iphone_tested": false,
+  "production_approved": false
+}

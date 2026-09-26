@@ -138,6 +138,27 @@ async function testAuthorizationAndIdempotency() {
   document.issuerSnapshot = originalIssuerSnapshot;
   assert.equal(s.GH_DOCUMENT_PROOF.verifyDocument(state, document).ok, true);
 
+  const lockedValidation = s.GH_SAVE_SCHEMA.validate(state, {lockVerifiedProofs: true});
+  assert.equal(lockedValidation.ok, true, `valid state should enter the verified-proof cache: ${lockedValidation.errors.join(',')}`);
+  const lockedAuthorizationProof = state.authorization.proofsById[first.authorizationProofId];
+  const lockedDocumentProof = state.documentProofs.recordsById[document.documentProofId];
+  assert.equal(Object.isFrozen(lockedAuthorizationProof), true, 'verified authorization proofs are immutable cache keys');
+  assert.equal(Object.isFrozen(lockedAuthorizationProof.mandateSnapshot), true, 'nested proof data is immutable');
+  assert.equal(Object.isFrozen(lockedDocumentProof), true, 'verified document records are immutable cache keys');
+  const repeatedValidation = s.GH_SAVE_SCHEMA.validate(state, {lockVerifiedProofs: true});
+  assert.equal(repeatedValidation.ok, true);
+  const repeatedMetrics = s.GH_SAVE_SCHEMA.telemetry().lastValidation;
+  assert.ok(repeatedMetrics.authorizationProofCacheHits > 0, 'unchanged authorization proofs should skip expensive digest verification');
+  assert.ok(repeatedMetrics.documentRecordCacheHits > 0, 'unchanged document records should skip expensive record verification');
+  assert.ok(repeatedMetrics.authorizationSealCacheHits > 0, 'unchanged visual seals should skip repeated stroke hashing');
+
+  const recordBeforeRebind = state.documentProofs.recordsById[document.documentProofId];
+  const proofForRebind = Auth.verifyProof(state, first.authorizationProofId).proof;
+  s.GH_DOCUMENT_PROOF.bindAuthorization(state, [{document, proofId: document.documentProofId}], proofForRebind);
+  assert.notEqual(state.documentProofs.recordsById[document.documentProofId], recordBeforeRebind, 'binding authorization replaces a locked record instead of mutating it');
+  assert.equal(Object.isFrozen(recordBeforeRebind), true, 'the previous validated record remains immutable');
+  assert.equal(s.GH_SAVE_SCHEMA.validate(state, {lockVerifiedProofs: true}).ok, true, 'copy-on-write authorization binding remains valid');
+
   const orphanProof = {...structuredClone(firstProof), id: 'APR-ORPHAN'};
   state.authorization.proofsById[orphanProof.id] = orphanProof;
   const authorizationCompaction = Auth.compact(state, {proofs: 1});
@@ -150,10 +171,16 @@ async function testAuthorizationAndIdempotency() {
   assert.ok(state.documentProofs.recordsById[document.documentProofId], 'referenced document proof must survive compaction');
 
   state.profile.name = 'Renamed Holdings';
+  const oldActiveSealId = state.authorization.activeVisualSealByPerson.founder;
+  const oldActiveSeal = state.authorization.visualSealAssetsById[oldActiveSealId];
   Auth.createVisualSeal(state, {
     ownerPersonId: 'founder',
     strokes: [[{x: 0.15, y: 0.25}, {x: 0.5, y: 0.75}, {x: 0.95, y: 0.35}]]
   });
+  assert.equal(Object.isFrozen(oldActiveSeal), true, 'the old seal remains immutable after rotation');
+  assert.equal(oldActiveSeal.status, 'active', 'seal rotation does not mutate the previously validated object');
+  assert.equal(state.authorization.visualSealAssetsById[oldActiveSealId].status, 'superseded');
+  assert.notEqual(state.authorization.visualSealAssetsById[oldActiveSealId], oldActiveSeal, 'seal rotation uses copy-on-write');
   const secondEnvelope = Auth.buildActiveEnvelope(state, {
     domain: 'audit', name: 'post', payload: {amount: 225, counterparty: 'Beta'},
     idempotencyKey: 'AUDIT-IDEMPOTENCY-2', actor: {principalId: 'founder'}
@@ -183,6 +210,14 @@ async function testAuthorizationAndIdempotency() {
   const tamperedImportedProof = structuredClone(state);
   tamperedImportedProof.authorization.proofsById[first.authorizationProofId].payloadDigest = '1'.repeat(64);
   assert.ok(s.GH_SAVE_SCHEMA.validate(tamperedImportedProof).errors.includes('authorization-proof-integrity'), 'import validation must recompute authorization proof integrity');
+  assert.equal(s.GH_SAVE_SCHEMA.validate(state, {lockVerifiedProofs: true}).ok, true);
+  const stableProofRow = state.authorization.proofsById[first.authorizationProofId];
+  const replacedProof = {...stableProofRow, payloadDigest: '2'.repeat(64)};
+  state.authorization.proofsById[first.authorizationProofId] = replacedProof;
+  const cacheInvalidation = s.GH_SAVE_SCHEMA.validate(state, {lockVerifiedProofs: true});
+  assert.ok(cacheInvalidation.errors.includes('authorization-proof-integrity'), 'replacing a cached proof must force full verification');
+  state.authorization.proofsById[first.authorizationProofId] = stableProofRow;
+  assert.equal(s.GH_SAVE_SCHEMA.validate(state, {lockVerifiedProofs: true}).ok, true, 'restoring the original verified proof restores the valid cache path');
 }
 
 async function testDraftValidateAckPublish() {

@@ -1,16 +1,13 @@
 {
   "approved": false,
-  "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
+  "source_tree_sha256": "1dfac1c095542ea926b62728d75e6ac4f4d90318dd005dbc09b66283734001e9",
   "version": "3.0.0",
-  "build": 340,
+  "build": 341,
   "save_schema": "2.0.0",
   "blocking_issues": [
-    "The current local source revision must be committed to the direct-Git branch and pass the full CI verification before it is treated as a verified candidate.",
-    "Physical iPhone pressure testing at 4,300 and 20,000 full assets with routes, purchase, delivery, sale, finance, save/restore and long-session interaction is required.",
-    "90Hz/60Hz frame-time, touch-latency, task-at-least-50ms, memory and thermal targets have not been demonstrated on target iPhones.",
-    "Plan validation and state apply, financial close writes, authorized per-asset documents, route commit, Leaflet DOM construction, Full Snapshot capture and native persistence remain in main-thread owners.",
-    "Save Schema 2.0.0, Full Snapshot rollback and disabled live field journal remain required invariants.",
-    "Production approval remains closed."
+    "Build 341 must pass direct-source CI, browser, native storage, and unsigned iPhoneOS build gates.",
+    "Physical iPhone pressure testing at 4,300 and 20,000 assets is still required; this diagnostic recorded 2,160 assets.",
+    "Production approval remains closed pending performance, memory, and thermal review on device."
   ],
   "phase_status": {
     "build339_clean_source_baseline": "VERIFIED_LOCAL",
@@ -23,7 +20,7 @@
     "full_snapshot_fallback": "ON",
     "live_field_journal": "OFF",
     "save_schema": "2.0.0",
-    "build340_ci": "PASS_DIRECT_GIT_SOURCE_124_OF_124_GATES_ESLINT_CHROMIUM_WEBKIT_NATIVE_STORAGE_WKWEBVIEW_UNSIGNED_ARM64_APP_BUILD_UNSIGNED_TEST_IPA",
+    "build340_ci": "HOTPATH_DIAGNOSTICS_CURRENT_SOURCE_CI_PENDING",
     "simulation_asset_worker": "LOCAL_NODE_20K_PLAN_AND_ATOMIC_APPLY_PASS_CI_PENDING",
     "air_sea_route_worker": "LOCAL_NODE_4300_AND_20K_PLAN_PARITY_PASS_CI_PENDING",
     "procurement_batch_index": "LOCAL_NODE_20K_PARITY_ONE_INDEX_PASS_CI_PENDING",
@@ -32,15 +29,16 @@
     "finance_transfer_index": "LOCAL_NODE_20K_HISTORY_256_REAL_COLLECTION_BATCH_FULL_SNAPSHOT_PASS_CI_PENDING",
     "payroll_settlement_index": "LOCAL_NODE_20K_INVOICE_JOIN_PARITY_PASS_CI_PENDING",
     "route_center_revision_index": "LOCAL_NODE_20K_SINGLE_REVISION_PASS_CI_PENDING",
-    "hotpath_diagnostics": "LOCAL_SOURCE_FOCUSED_TESTS_PASS_DIRECT_CI_AND_IPHONE_PROFILE_PENDING"
+    "hotpath_diagnostics": "LOCAL_SOURCE_FOCUSED_TESTS_PASS_DIRECT_CI_AND_IPHONE_PROFILE_PENDING",
+    "build341_ci": "PENDING_DIRECT_SOURCE_CI"
   },
   "latest_direct_source_ci": {
-    "run_id": 36268965706,
-    "tested_commit_sha": "976c9aef615b5dd30c0967d8a81b63d96c374fc2",
+    "run_id": 36247000333,
+    "tested_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
     "result": "SUCCESS",
-    "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
+    "source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f",
     "source_mode": "direct_git_tracked_tree",
-    "source_gates": "124/124",
+    "source_gates": "123/123",
     "eslint": "PASS",
     "chromium_webkit": "PASS",
     "native_storage": "PASS",
@@ -48,15 +46,16 @@
     "unsigned_arm64_iphoneos_release_app": "PASS",
     "ipa_built": true,
     "test_ipa_name": "GlobalHoldings_BUILD340_unsigned_TEST.ipa",
-    "test_ipa_sha256": "70d07e00279b12b8d9e487590b1d76ccd75386b07cc88052ecb5326914000b8f",
-    "test_ipa_bytes": 13366460,
+    "test_ipa_sha256": "2a401f3936105849a44faf0d9b3196e29a8a6e9eebe7cebe6a417db3eac6219a",
+    "test_ipa_bytes": 13364410,
     "physical_iphone_tested": false
   },
   "source_tracking": {
     "mode": "direct_git_tracked_tree",
-    "branch": "build340-hotpath-diagnostics-20260926",
-    "tested_commit_sha": "976c9aef615b5dd30c0967d8a81b63d96c374fc2",
-    "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731"
+    "branch": "build341-hotpath-fix-20260926",
+    "base_branch": "build340-hotpath-diagnostics-20260926",
+    "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
+    "source_tree_sha256": "1dfac1c095542ea926b62728d75e6ac4f4d90318dd005dbc09b66283734001e9"
   },
-  "point": "Build 340 hot-path diagnostics candidate; manual-device profile required"
+  "point": "Build 341 HOTPATH_FIX: verified proof cache and financial-close subphase timing"
 }
