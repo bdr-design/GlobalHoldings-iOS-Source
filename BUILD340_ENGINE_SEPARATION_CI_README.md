@@ -1,15 +1,16 @@
 # Build 340 engine separation — direct-source verification
 
 Branch: build340-engine-separation-20260926
-Tested commit: bd6bbc25fe18529fe26c2723eeafe39f5e5b9463
-Direct-source CI run: 36232174407 — SUCCESS
+Tested commit: 73234985380abf3321fb181ba81ba2dcc4967635
+Direct-source CI run: 36247000333 — SUCCESS
 
 - Version: 3.0.0; Build: 340; Save Schema: 2.0.0.
 - The workflow checks out the complete source tree from Git and verifies it in place. It does not reconstruct archives or apply overlays.
-- Runtime tree SHA-256: 8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974.
+- Runtime tree SHA-256: 7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f.
 - Verified candidate ZIP that supplied the one-time source materialization: cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9.
-- Newly exported direct-source package SHA-256: 13fc29fb9d99f099441a60ff801c4286279f1eb57805d177b335323aeaf2acac (13697715 bytes; 742 files).
-- CI passed 109/109 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and a fresh unsigned arm64 iPhoneOS Release app build.
-- No IPA was built, and no physical iPhone pressure test was performed. The production gate remains closed.
+- Newly exported direct-source package SHA-256: 8118cb906415d1746a628f75a78c5dc3153a6194fcb14d874818dd984d141d48 (13753253 bytes; 760 files).
+- CI passed 123/123 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and a fresh unsigned arm64 iPhoneOS Release app build.
+- Unsigned test IPA: GlobalHoldings_BUILD340_unsigned_TEST.ipa (13364410 bytes; SHA-256 2a401f3936105849a44faf0d9b3196e29a8a6e9eebe7cebe6a417db3eac6219a).
+- CI assembled a fresh unsigned, source-bound Build 340 test IPA. No physical iPhone pressure test was performed; the production gate remains closed.
 
 The 4,300/20,000 asset Node tests are synthetic and do not prove iPhone responsiveness. Device performance, touch latency, thermal behavior, purchase/sale/finance/routes, and save/restore still require physical iPhone validation.

@@ -9,7 +9,7 @@
   "authorized_at": "2026-09-26",
   "user_request": "The user authorized an isolated internal repository branch and requested implementation of engine separation with repository/browser verification.",
   "purpose": "Internal experimental Build 340 verification for immutable-DTO simulation and route planning, indexed procurement, disposal and finance batches, route-center and finance read models, payroll settlement join, and bounded media decoding. Production approval and physical-device acceptance are not implied.",
-  "source_rule": "Develop from the complete Build 340 source tracked directly at the repository root on build340-engine-separation-20260926. Do not reconstruct or apply a source overlay in normal CI. Preserve Save Schema 2.0.0, Full Snapshot rollback and the disabled live field journal.",
+  "source_rule": "Use the complete Build 340 source tracked directly at the repository root on build340-engine-separation-20260926. Future development and normal CI must not use an IPA or apply a source overlay. Save Schema 2.0.0, Full Snapshot rollback, and disabled live field journal remain mandatory.",
   "rollback_and_ownership": {
     "save_schema_preserved": true,
     "authoritative_state_owner": "existing serialized app/domain transaction boundary",
@@ -25,6 +25,15 @@
     "Node tests use synthetic inputs and do not demonstrate iPhone frame rate, touch latency, memory, thermal behavior or long-session stability.",
     "Production stays blocked until current-source CI and the physical iPhone workload and frame/touch targets pass.",
     "Latest local code now includes transaction-scoped Finance indexes and one-time batch receivable compaction, linear payroll invoice joining, and a revision-keyed route-center index. Its real Finance-core Node fixture covers 256 collections against 20,000 prior invoices, receivables, and transfers and takes about 5.6 seconds including Full Snapshot capture and transaction audit; this is not an iPhone estimate or a 20,000-sale end-to-end result.",
-    "The current local source tree has not yet passed the new direct-source CI run. Physical-device pressure, latency, memory, thermal, and long-session evidence is still absent."
-  ]
+    "The current local source tree has not yet passed the new direct-source CI run. Physical-device pressure, latency, memory, thermal, and long-session evidence is still absent.",
+    "The direct Git-source CI run 36247000333 tested commit 73234985380abf3321fb181ba81ba2dcc4967635 and passed the 123/123 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it created a source-bound unsigned Build 340 test IPA but did not test a physical iPhone."
+  ],
+  "source_tracking": {
+    "mode": "direct_git_tracked_tree",
+    "branch": "build340-engine-separation-20260926",
+    "tested_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
+    "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
+    "normal_ci_uses_overlay": false,
+    "historical_import_note": "The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source."
+  }
 }
