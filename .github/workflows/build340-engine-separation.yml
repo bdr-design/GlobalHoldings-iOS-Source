@@ -168,6 +168,15 @@ jobs:
             DEVELOPMENT_TEAM="" \
             clean build 2>&1 | tee "$GITHUB_WORKSPACE/.ci-output/xcodebuild.log"
           test -d "$DERIVED_DATA/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          GENERATED_PLIST="$SOURCE_DIR/iOS/GlobalHoldings/Info.plist"
+          if [[ -e "$GENERATED_PLIST" ]]; then
+            if git -C "$SOURCE_DIR" ls-files --error-unmatch -- "iOS/GlobalHoldings/Info.plist" >/dev/null 2>&1; then
+              echo "Generated Info.plist path is tracked; preserve it and investigate the source manifest" >&2
+              exit 1
+            fi
+            rm -f "$GENERATED_PLIST"
+          fi
+          python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification-after-build.json"
           printf 'fresh_unsigned_arm64_iphoneos_release=PASS\n' | tee "$GITHUB_WORKSPACE/.ci-output/native-build-verification.txt"
 
       - name: Record direct-source CI evidence and re-export the source package
