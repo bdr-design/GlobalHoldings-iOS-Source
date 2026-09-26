@@ -22,6 +22,27 @@
     "full_snapshot_fallback": "ON",
     "live_field_journal": "OFF",
     "save_schema": "2.0.0",
-    "build340_ci": "PASS_109_GATES_ESLINT_CHROMIUM_WEBKIT_NATIVE_STORAGE_WKWEBVIEW_AND_UNSIGNED_ARM64_BUILD"
+    "build340_ci": "PASS_DIRECT_GIT_SOURCE_109_GATES_ESLINT_CHROMIUM_WEBKIT_NATIVE_STORAGE_WKWEBVIEW_UNSIGNED_ARM64_APP_BUILD"
+  },
+  "latest_direct_source_ci": {
+    "run_id": 36232174407,
+    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "result": "SUCCESS",
+    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+    "source_mode": "direct_git_tracked_tree",
+    "source_gates": "109/109",
+    "eslint": "PASS",
+    "chromium_webkit": "PASS",
+    "native_storage": "PASS",
+    "native_wkwebview": "PASS",
+    "unsigned_arm64_iphoneos_release_app": "PASS",
+    "ipa_built": false,
+    "physical_iphone_tested": false
+  },
+  "source_tracking": {
+    "mode": "direct_git_tracked_tree",
+    "branch": "build340-engine-separation-20260926",
+    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974"
   }
 }

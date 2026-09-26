@@ -4,7 +4,7 @@
   "build": 340,
   "save_schema": "2.0.0",
   "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
-  "source_archive_sha256": "41c79d819a3b013c540606dd7b86e7e5cfa7f3cc704365e1567b443b63e45003",
+  "source_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
   "baseline_source_tree_sha256": "f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5",
   "map_asset_query_engine": {
     "worker_file": "WebApp/map-asset-query-worker.js",
@@ -89,6 +89,31 @@
       "native_wkwebview": "PASS",
       "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
       "physical_iphone": "NOT_TESTED"
+    },
+    {
+      "run_id": 36228909590,
+      "commit": "80f697d36e8166cc9eecf69524d106991d6e8443",
+      "result": "SUCCESS_VERIFIED_ARCHIVE_RECONSTRUCTION_NOT_DIRECT_GIT_SOURCE",
+      "source_gates": "109/109",
+      "eslint": "PASS",
+      "chromium_webkit": "PASS",
+      "native_storage": "PASS",
+      "native_wkwebview": "PASS",
+      "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
+      "physical_iphone": "NOT_TESTED"
+    },
+    {
+      "run_id": 36232174407,
+      "commit": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+      "result": "SUCCESS_DIRECT_GIT_SOURCE",
+      "source_gates": "109/109",
+      "eslint": "PASS",
+      "chromium_webkit": "PASS",
+      "native_storage": "PASS",
+      "native_wkwebview": "PASS",
+      "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
+      "ipa_built": false,
+      "physical_iphone": "NOT_TESTED"
     }
   ],
   "main_thread_state_owner": {
@@ -151,20 +176,21 @@
     "native_img_fallback": true
   },
   "updated_branch_ci": {
-    "run_id": 36228574166,
-    "commit": "0befbf5937971f32020538729ef2c9357654cfe9",
-    "result": "SUCCESS",
+    "run_id": 36232174407,
+    "commit": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "result": "SUCCESS_DIRECT_GIT_SOURCE",
     "source_gates": "109/109",
     "eslint": "PASS",
     "chromium_webkit": "PASS",
     "native_storage": "PASS",
     "native_wkwebview": "PASS",
     "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
+    "ipa_built": false,
     "physical_iphone": "NOT_TESTED"
   },
   "verified_in_ci": {
-    "run_id": 36228574166,
-    "commit": "0befbf5937971f32020538729ef2c9357654cfe9",
+    "run_id": 36232174407,
+    "commit": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
     "source_gates": "109/109 PASS",
     "eslint": "PASS",
     "chromium_webkit_source_gates": "PASS",
@@ -173,5 +199,30 @@
     "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
     "ipa_built": false,
     "device_tested": false
+  },
+  "source_archive_sha256_kind": "verified Build 340 candidate input ZIP before direct Git-tree migration",
+  "repository_source_commit": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+  "source_tracking": {
+    "mode": "direct_git_tracked_tree",
+    "branch": "build340-engine-separation-20260926",
+    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "runtime_source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+    "candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
+    "normal_ci_uses_overlay": false
+  },
+  "latest_direct_source_ci": {
+    "run_id": 36232174407,
+    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "result": "SUCCESS",
+    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+    "source_mode": "direct_git_tracked_tree",
+    "source_gates": "109/109",
+    "eslint": "PASS",
+    "chromium_webkit": "PASS",
+    "native_storage": "PASS",
+    "native_wkwebview": "PASS",
+    "unsigned_arm64_iphoneos_release_app": "PASS",
+    "ipa_built": false,
+    "physical_iphone_tested": false
   }
 }

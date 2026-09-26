@@ -9,7 +9,7 @@
   "authorized_at": "2026-09-26",
   "user_request": "The user authorized an isolated internal repository branch and requested implementation of engine separation with repository/browser verification.",
   "purpose": "Internal experimental Build 340 verification for independent map presentation/query, finance read model, road route planning, media decoding and cooperative route fallback. Production approval and physical-device acceptance are not implied.",
-  "source_rule": "Start only from the hash-verified Build 339 clean-source archive; never develop from an IPA, overlay, older main branch, or unverified Build 342 work tree.",
+  "source_rule": "Use the complete Build 340 source tracked directly at the repository root on build340-engine-separation-20260926. Future development and normal CI must not use an IPA or apply a source overlay. Save Schema 2.0.0, Full Snapshot rollback, and disabled live field journal remain mandatory.",
   "rollback_and_ownership": {
     "save_schema_preserved": true,
     "authoritative_state_owner": "existing serialized app/domain transaction boundary",
@@ -19,9 +19,17 @@
     "live_field_journal": false
   },
   "known_limits": [
-    "CI run 36228574166 passed all 109 gates, ESLint, Chromium/WebKit checks, native save-vault and WKWebView smoke tests, and a fresh unsigned arm64 iPhoneOS Release build.",
     "Simulation progression, financial close writes, purchase publication, sale, route commit, transaction validation, Full Snapshot rollback and persistence remain in their existing main-thread owner.",
     "Node tests use synthetic 4,300/20,000 inputs and do not demonstrate device frame rate; no 20,000-asset iPhone performance claim is made.",
-    "Production stays blocked until the physical iPhone workload and frame/touch targets pass."
-  ]
+    "Production stays blocked until the physical iPhone workload and frame/touch targets pass.",
+    "The direct Git-source CI run 36232174407 tested commit bd6bbc25fe18529fe26c2723eeafe39f5e5b9463 and passed the 109 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it did not create an IPA or test a physical iPhone."
+  ],
+  "source_tracking": {
+    "mode": "direct_git_tracked_tree",
+    "branch": "build340-engine-separation-20260926",
+    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
+    "normal_ci_uses_overlay": false,
+    "historical_import_note": "The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source."
+  }
 }

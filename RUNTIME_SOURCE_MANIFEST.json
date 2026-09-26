@@ -2011,5 +2011,29 @@
     "dependency cycle integrity check no longer normalizes or writes dependencyGraph during read-only integrity-final checks",
     "steady owner writer proof records exact tested root writes for finance, corporate, operations, inactive mobility, and frozen-state integrity-final",
     "live simulation journal remains disabled pending 20k-scalable capture-on-first-write journal design"
-  ]
+  ],
+  "source_tracking": {
+    "mode": "direct_git_tracked_tree",
+    "repository_branch": "build340-engine-separation-20260926",
+    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
+    "runtime_source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+    "normal_ci_uses_overlay": false,
+    "historical_import_note": "One-time import materialized the byte-verified Build 340 candidate payload; the direct-source CI checks out these tracked files and does not apply patches or overlays."
+  },
+  "latest_direct_source_ci": {
+    "run_id": 36232174407,
+    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "result": "SUCCESS",
+    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+    "source_mode": "direct_git_tracked_tree",
+    "source_gates": "109/109",
+    "eslint": "PASS",
+    "chromium_webkit": "PASS",
+    "native_storage": "PASS",
+    "native_wkwebview": "PASS",
+    "unsigned_arm64_iphoneos_release_app": "PASS",
+    "ipa_built": false,
+    "physical_iphone_tested": false
+  }
 }
