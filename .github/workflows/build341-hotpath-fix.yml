@@ -52,7 +52,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification.json"
-          (cd "$SOURCE_DIR" && shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt) > "$GITHUB_WORKSPACE/.ci-output/source-package-integrity.log"
+          if ! (cd "$SOURCE_DIR" && shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt) > "$GITHUB_WORKSPACE/.ci-output/source-package-integrity.log" 2>&1; then
+            grep -v ': OK$' "$GITHUB_WORKSPACE/.ci-output/source-package-integrity.log" || true
+            exit 1
+          fi
           python3 - "$SOURCE_DIR" <<'PY'
           import json,sys
           from pathlib import Path
