@@ -7,5 +7,7 @@ assert(app.includes('maintenanceEveryHours:12'));
 assert(app.includes('fleetSize>3000)return 220'));
 assert(app.includes('mapStructureInterval=fleetSizeForMap>3000?30000'));
 assert(app.includes('movingAssetRenderGroups(nonHeroMoving'));
-assert(app.includes('presentationAssetLookup()'));assert(app.includes('mapStatusCache={at:0'));assert(app.includes('now-mapStatusCache.at>=1500'));
+assert(app.includes('presentationAssetLookup()'));
+assert(app.includes('let mapStatusCache={assetKey:'));
+assert(app.includes('if(mapStatusCache.assetKey!==assetKey)'));
 console.log(JSON.stringify({suite:'iphone-thermal-contract',passed:9,total:9},null,2));
