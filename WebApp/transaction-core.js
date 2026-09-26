@@ -32,6 +32,7 @@
   function jsonClone(value){if(value===undefined)return undefined;return JSON.parse(JSON.stringify(value));}
   function deepClone(value){if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
   function restoreValue(target,snapshot){
+    if(target&&typeof target==='object'&&Object.isFrozen(target))return deepClone(snapshot);
     if(Array.isArray(snapshot)){if(!Array.isArray(target))return deepClone(snapshot);target.length=snapshot.length;for(let i=0;i<snapshot.length;i++){const sv=snapshot[i],tv=target[i];target[i]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}return target;}
     if(snapshot&&typeof snapshot==='object'){if(!target||typeof target!=='object'||Array.isArray(target))target={};const existing=new Map(Object.keys(target).map(key=>[key,target[key]]));for(const key of Object.keys(target))delete target[key];for(const [key,sv] of Object.entries(snapshot)){const tv=existing.get(key);target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}return target;}
     return snapshot;

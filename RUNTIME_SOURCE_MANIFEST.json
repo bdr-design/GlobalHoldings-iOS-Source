@@ -1,11 +1,14 @@
 {
-  "point": "Build 341 hotpath proof verification cache and nested financial close profiling",
-  "version": "3.0.0",
   "build": 341,
-  "save_schema": "2.0.0",
-  "source_tree_sha256": "1dfac1c095542ea926b62728d75e6ac4f4d90318dd005dbc09b66283734001e9",
-  "webapp_tree_sha256": "46b35965642ec740e7aab88547db4b07439acd45315e9bd06f54d6aabc848690",
   "files": {
+    "BUILD": {
+      "bytes": 4,
+      "sha256": "75fa55306cb81a01b436fa14731c79e18036d89472e4280d44bc2776e8d3184b"
+    },
+    "VERSION": {
+      "bytes": 6,
+      "sha256": "2985be8b28d3ade858e8d8fb4bc22f565b1bf6020dff982dce141f7721b9999c"
+    },
     "WebApp/advanced-core.js": {
       "bytes": 231897,
       "sha256": "7bf5d7babc53eae9eb1687e26831c09704851b88aadab7134b078cdcb641edc4"
@@ -1891,8 +1894,8 @@
       "sha256": "2e69ee058343d89b2310384a46dcf75992e2376945fa153ce74786adaf30ce02"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 31895,
-      "sha256": "529c6a2caf6ad108c19ad96d511baf5cca2bc41595ba39c6afb163e2d6df1a50"
+      "bytes": 31988,
+      "sha256": "222a70718fbdc2dc062e3d4fbeb5e73b034ede474ff1bf8811e995852f435fe0"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -1976,16 +1979,14 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "be9b97c5bb3f55b27953a1c38a4a2f15f35bfb9a98d0538f3a1b0a72f7a4564b"
-    },
-    "BUILD": {
-      "bytes": 4,
-      "sha256": "75fa55306cb81a01b436fa14731c79e18036d89472e4280d44bc2776e8d3184b"
-    },
-    "VERSION": {
-      "bytes": 6,
-      "sha256": "2985be8b28d3ade858e8d8fb4bc22f565b1bf6020dff982dce141f7721b9999c"
+      "sha256": "d0fc3b8f1f2f76ba73879bf91a77485e1516c55e6ad90d731cde40ea71f2b1a1"
     }
+  },
+  "latest_direct_source_ci": {
+    "base_ci_run_id": 36247000333,
+    "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
+    "physical_iphone_tested": false,
+    "status": "PENDING"
   },
   "phase": "1C-B — writer proof / no live journal activation",
   "phase1a_contracts": [
@@ -2028,18 +2029,17 @@
     "steady owner writer proof records exact tested root writes for finance, corporate, operations, inactive mobility, and frozen-state integrity-final",
     "live simulation journal remains disabled pending 20k-scalable capture-on-first-write journal design"
   ],
+  "point": "Build 341 hotpath proof verification cache and nested financial close profiling",
+  "save_schema": "2.0.0",
   "source_tracking": {
-    "mode": "direct_git_tracked_tree",
-    "repository_branch": "build341-hotpath-fix-20260926",
     "base_branch": "build340-hotpath-diagnostics-20260926",
     "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
+    "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "runtime_source_tree_sha256": "1dfac1c095542ea926b62728d75e6ac4f4d90318dd005dbc09b66283734001e9"
+    "repository_branch": "build341-hotpath-fix-20260926",
+    "runtime_source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993"
   },
-  "latest_direct_source_ci": {
-    "status": "PENDING",
-    "base_ci_run_id": 36247000333,
-    "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
-    "physical_iphone_tested": false
-  }
+  "source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993",
+  "version": "3.0.0",
+  "webapp_tree_sha256": "98ea1165accf3540c9601d677eca545a2039c40fcc91521c50ea5e22423e50fb"
 }

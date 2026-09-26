@@ -1,39 +1,43 @@
 {
-  "format": "global-holdings-hotpath-fix-verification-v1",
-  "version": "3.0.0",
-  "build": 341,
-  "save_schema": "2.0.0",
-  "tag": "HOTPATH_FIX",
-  "branch": "build341-hotpath-fix-20260926",
   "base_branch": "build340-hotpath-diagnostics-20260926",
   "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
-  "source_tree_sha256": "1dfac1c095542ea926b62728d75e6ac4f4d90318dd005dbc09b66283734001e9",
-  "webapp_tree_sha256": "46b35965642ec740e7aab88547db4b07439acd45315e9bd06f54d6aabc848690",
+  "branch": "build341-hotpath-fix-20260926",
+  "build": 341,
   "diagnostic_input": {
-    "file": "GlobalHoldings_diagnostic_v3.0.0_1790456695006.ghdiagnostic",
-    "build": 340,
     "assets": 2160,
-    "simulated_hours": 1000.33,
-    "capture_duration_ms": 1582496
+    "build": 340,
+    "capture_duration_ms": 1582496,
+    "file": "GlobalHoldings_diagnostic_v3.0.0_1790456695006.ghdiagnostic",
+    "simulated_hours": 1000.33
   },
+  "direct_source_ci": "PENDING",
   "fixes": [
     "Reuse successful proof verification only for deeply frozen rows with matching dependency identities.",
     "Replace authorization seals and bound document-proof records copy-on-write.",
     "Keep full Save Schema validation, Full Snapshot rollback, Save Schema 2.0.0, and disabled live field journal.",
     "Pass simulation phase measurer into financial day close for nested profiling."
   ],
+  "format": "global-holdings-hotpath-fix-verification-v1",
   "local_tests": {
-    "build340_suite": "PASS",
-    "durable_authorization_cache_and_tamper_invalidation": "PASS",
-    "document_proof_v3_security": "PASS",
     "archive_integrity_r2": "PASS",
-    "r4_proof_archive": "PASS",
+    "build336_hour83_calendar_proof_rollback": "PASS",
+    "build339_architecture_bootstrap": "12/12 PASS",
     "build339_day_boundary_rollback": "PASS",
+    "build339_hour_boundary_rollback": "2/2 PASS",
     "build339_source_layout": "10/10 PASS",
-    "build339_architecture_bootstrap": "12/12 PASS"
+    "build339_time_golden": "PASS",
+    "build340_suite": "PASS",
+    "document_proof_v3_security": "PASS",
+    "durable_authorization_cache_and_tamper_invalidation": "PASS",
+    "frozen_snapshot_rollback": "PASS",
+    "r4_proof_archive": "PASS"
   },
-  "direct_source_ci": "PENDING",
-  "unsigned_ipa": "PENDING",
   "physical_iphone_tested": false,
-  "production_approved": false
+  "production_approved": false,
+  "save_schema": "2.0.0",
+  "source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993",
+  "tag": "HOTPATH_FIX",
+  "unsigned_ipa": "PENDING",
+  "version": "3.0.0",
+  "webapp_tree_sha256": "98ea1165accf3540c9601d677eca545a2039c40fcc91521c50ea5e22423e50fb"
 }

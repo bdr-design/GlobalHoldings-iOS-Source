@@ -1,33 +1,33 @@
 {
-  "test_build_authorized": true,
-  "production_approved": false,
-  "source_tree_sha256": "1dfac1c095542ea926b62728d75e6ac4f4d90318dd005dbc09b66283734001e9",
-  "minimum_acceptance_gates": 124,
-  "build": 341,
-  "version": "3.0.0",
-  "save_schema": "2.0.0",
   "authorized_at": "2026-09-26",
-  "user_request": "The user authorized an isolated internal repository branch and requested implementation of engine separation with repository/browser verification.",
-  "purpose": "Internal experimental Build 341 verification for identity-safe reuse of validated authorization and document-proof records, immutable copy-on-write owner updates, and nested financial close profiling. Production approval and physical-device acceptance are not implied.",
-  "source_rule": "Use the complete Build 341 source tracked directly at the repository root on build341-hotpath-fix-20260926. Test-only, Save Schema 2.0.0; Full Snapshot rollback remains required; live field journal remains disabled.",
-  "rollback_and_ownership": {
-    "save_schema_preserved": true,
-    "authoritative_state_owner": "existing serialized app/domain transaction boundary",
-    "worker_may_mutate_authoritative_state": false,
-    "worker_failure_fallback": "simulation, route, map and finance workers use validated cooperative or existing-owner fallback; workers never mutate authoritative state",
-    "full_snapshot_fallback": true,
-    "live_field_journal": false
-  },
+  "build": 341,
   "known_limits": [
     "The supplied Build 340 diagnostic recorded 2,160 assets, so it does not establish performance at 4,300 or 20,000 assets.",
     "The proof cache only reuses complete successful checks for deeply frozen rows and matching dependency identities; new, replaced, chained, or imported rows are verified in full.",
     "Build 341 has not yet passed direct-source CI or physical iPhone testing; production approval remains false."
   ],
+  "minimum_acceptance_gates": 124,
+  "production_approved": false,
+  "purpose": "Internal experimental Build 341 verification for identity-safe reuse of validated authorization and document-proof records, immutable copy-on-write owner updates, and nested financial close profiling. Production approval and physical-device acceptance are not implied.",
+  "rollback_and_ownership": {
+    "authoritative_state_owner": "existing serialized app/domain transaction boundary",
+    "full_snapshot_fallback": true,
+    "live_field_journal": false,
+    "save_schema_preserved": true,
+    "worker_failure_fallback": "simulation, route, map and finance workers use validated cooperative or existing-owner fallback; workers never mutate authoritative state",
+    "worker_may_mutate_authoritative_state": false
+  },
+  "save_schema": "2.0.0",
+  "source_rule": "Use the complete Build 341 source tracked directly at the repository root on build341-hotpath-fix-20260926. Test-only, Save Schema 2.0.0; Full Snapshot rollback remains required; live field journal remains disabled.",
   "source_tracking": {
-    "mode": "direct_git_tracked_tree",
-    "branch": "build341-hotpath-fix-20260926",
     "base_branch": "build340-hotpath-diagnostics-20260926",
     "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
+    "branch": "build341-hotpath-fix-20260926",
+    "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
-  }
+  },
+  "source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993",
+  "test_build_authorized": true,
+  "user_request": "The user authorized an isolated internal repository branch and requested implementation of engine separation with repository/browser verification.",
+  "version": "3.0.0"
 }
