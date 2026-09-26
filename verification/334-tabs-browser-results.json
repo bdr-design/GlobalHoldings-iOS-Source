@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "orientation": "landscape",
+      "kind": "companies",
+      "result": "passed",
+      "realPointerInput": true
+    },
+    {
+      "orientation": "landscape",
+      "kind": "labor",
+      "result": "passed",
+      "realPointerInput": true
+    },
+    {
+      "orientation": "portrait",
+      "kind": "companies",
+      "result": "passed",
+      "realPointerInput": true
+    },
+    {
+      "orientation": "portrait",
+      "kind": "labor",
+      "result": "passed",
+      "realPointerInput": true
+    }
+  ],
+  "errors": []
+}

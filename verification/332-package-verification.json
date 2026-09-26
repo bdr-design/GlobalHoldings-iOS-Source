@@ -1,0 +1,18 @@
+{
+  "ipa": "GlobalHoldings_v3_0_0_build332_unsigned.ipa",
+  "build": 332,
+  "sha256": "6153185acbd6c96282c4fe092c607c6a2fa92144b6393beccb05603c461064ee",
+  "bytes": 13093254,
+  "crcOK": true,
+  "unchangedNativeEntries": 8,
+  "plistChanges": [
+    "CFBundleVersion"
+  ],
+  "requiredRuntimeFiles": 447,
+  "sourceMatchesPackage": true,
+  "addedEntries": [
+    "Payload/GlobalHoldings.app/WebApp/interface-layout.css"
+  ],
+  "removedEntries": [],
+  "unsigned": true
+}

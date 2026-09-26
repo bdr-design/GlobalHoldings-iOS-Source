@@ -1,0 +1,55 @@
+{
+  "point": "ROOT_R3",
+  "version": "3.0.0",
+  "build": 334,
+  "save_schema": "2.0.0",
+  "runtime_source_tree_sha256": "69e5d88a2131887da803818f9cbf696a584bfb66629691c4714cc93bf860b3a5",
+  "runtime_files": 480,
+  "original_reference_sha256": "1c7a32a19156784a2ac12c4b35fe83f10c1c4d1b4211004653f7c96e48815581",
+  "full_declared_acceptance": {
+    "completed": true,
+    "passed": 73,
+    "total": 74,
+    "runtime_unchanged": true,
+    "failures": [
+      "tests/build334-proof-capacity-acceptance-r2.cjs"
+    ]
+  },
+  "node": "24.20.0",
+  "playwright": "1.55.1",
+  "chromium": "140.0.7339.186",
+  "eslint": "10.10.0",
+  "map_local_passed": true,
+  "native_bridge_contract": {
+    "passed": 23,
+    "total": 23,
+    "compiled_payload_from_unchanged_N1": true,
+    "fresh_Apple_execution": false
+  },
+  "syntax": {
+    "passed": 166,
+    "total": 166
+  },
+  "new_calendar_cases": {
+    "passed": 12,
+    "total": 12
+  },
+  "source_layout_cases": {
+    "passed": 10,
+    "total": 10
+  },
+  "release_approved": false,
+  "ipa_built": false,
+  "apple_native_integrated_build_tested": false,
+  "physical_device_tested": false,
+  "long_device_soak_tested": false,
+  "thermal_tested": false,
+  "identity_complete": false,
+  "blockers": [
+    "document-proof-store-full at 5000 retained document proofs",
+    "Remaining synchronous snapshot/commit/JSON and native bootstrap preparation cost",
+    "Trusted signed update end-to-end crash/retry recovery not verified",
+    "Integrated iPhone build and physical-device memory/thermal/long-play acceptance not performed"
+  ],
+  "performance_limit": "Creation and total synthetic slice medians decreased, but 5000-asset commit median increased from 157.15 to 188.30ms in these six samples. No overall iPhone performance approval."
+}

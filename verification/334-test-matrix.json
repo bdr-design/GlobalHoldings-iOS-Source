@@ -1,0 +1,306 @@
+{
+  "assertionProvenance": {
+    "authorizationEnvelopeVerified": [
+      "unit"
+    ],
+    "customIdentityPreserved": [
+      "review"
+    ],
+    "documentTamperingDetected": [
+      "unit"
+    ],
+    "durableAckPublishesOnce": [
+      "unit"
+    ],
+    "durableNackRollsBack": [
+      "unit",
+      "interface",
+      "god"
+    ],
+    "durableTimeoutRequiresReconciliation": [
+      "unit"
+    ],
+    "dynamicCompanyManifestOnly": [
+      "unit"
+    ],
+    "financeConservation": [
+      "unit",
+      "review"
+    ],
+    "logoAndMarkupXssRejected": [
+      "unit"
+    ],
+    "ownerCompanySeparatedFromSector": [
+      "unit"
+    ],
+    "permanentFinanceIdempotency": [
+      "unit"
+    ],
+    "saveSchema2Preserved": [
+      "unit",
+      "review"
+    ],
+    "signedDocumentsImmutable": [
+      "unit"
+    ],
+    "singleSimulationTimeAuthority": [
+      "unit",
+      "review"
+    ],
+    "unknownCompanyFailsClosed": [
+      "unit"
+    ],
+    "upgrade333To334PreservesBusinessState": [
+      "review"
+    ],
+    "versionedSignatureHistoryPreserved": [
+      "unit",
+      "review"
+    ]
+  },
+  "assertions": {
+    "authorizationEnvelopeVerified": true,
+    "customIdentityPreserved": true,
+    "documentTamperingDetected": true,
+    "durableAckPublishesOnce": true,
+    "durableNackRollsBack": true,
+    "durableTimeoutRequiresReconciliation": true,
+    "dynamicCompanyManifestOnly": true,
+    "financeConservation": true,
+    "logoAndMarkupXssRejected": true,
+    "ownerCompanySeparatedFromSector": true,
+    "permanentFinanceIdempotency": true,
+    "saveSchema2Preserved": true,
+    "signedDocumentsImmutable": true,
+    "singleSimulationTimeAuthority": true,
+    "unknownCompanyFailsClosed": true,
+    "upgrade333To334PreservesBusinessState": true,
+    "versionedSignatureHistoryPreserved": true
+  },
+  "browserErrors": [],
+  "build": 334,
+  "commands": [
+    {
+      "argv": [
+        "npm",
+        "test"
+      ],
+      "durationMs": 80744,
+      "exitCode": 0,
+      "id": "unit",
+      "log": "334-command-unit.log",
+      "logSha256": "ac8fc35670d50f6f3947b5b99986e4b08dc47a7f3e14801eb9eea685dbf77e34",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "test:interface"
+      ],
+      "durationMs": 24539,
+      "exitCode": 0,
+      "id": "interface",
+      "log": "334-command-interface.log",
+      "logSha256": "5012a36a82582cc832edafa6c231c4db50190e81a1786c92c51aad339e94c27d",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "test:god"
+      ],
+      "durationMs": 10840,
+      "exitCode": 0,
+      "id": "god",
+      "log": "334-command-god.log",
+      "logSha256": "46a05ec80d23aa3e4a5823c901c04ed416acf1980522d8e027af650643c6bc8f",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "test:review"
+      ],
+      "durationMs": 20353,
+      "exitCode": 0,
+      "id": "review",
+      "log": "334-command-review.log",
+      "logSha256": "4523fb0e564533d36a2097729196fa2fb862aaf90dcf5eea8d847cd1e8a668fc",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "test:browser"
+      ],
+      "durationMs": 100344,
+      "exitCode": 0,
+      "id": "browser",
+      "log": "334-command-browser.log",
+      "logSha256": "740fa443d68c9f6a67d507829a2800cacb4b6b9636f97bd6a97e0057a600d72c",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "npm",
+        "run",
+        "test:visual"
+      ],
+      "durationMs": 82648,
+      "exitCode": 0,
+      "id": "visual",
+      "log": "334-command-visual.log",
+      "logSha256": "22efa564d6644164e98e6ef65df5c6551427af976e4c1ca1d0c23dbd2204b51b",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "node",
+        "tests/conference-lifecycle-core.cjs"
+      ],
+      "durationMs": 289,
+      "exitCode": 0,
+      "id": "conference-lifecycle",
+      "log": "334-command-conference-lifecycle.log",
+      "logSha256": "c8fad0cf1db6ccdd8f376f7be6708504d5806ebfa3184313330e93fff2711b53",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "node",
+        "tests/conference-visual-build334.cjs"
+      ],
+      "durationMs": 26815,
+      "exitCode": 0,
+      "id": "conference-visual",
+      "log": "334-command-conference-visual.log",
+      "logSha256": "fb0d9d817d2a34ce99e8c5604cf544f8746be65c3359f85733fb47b3cb0d8ad6",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "node",
+        "tests/build334-future-company-hr.cjs"
+      ],
+      "durationMs": 48,
+      "exitCode": 0,
+      "id": "future-company-hr",
+      "log": "334-command-future-company-hr.log",
+      "logSha256": "bf60a6ff64942fb2a320d87743044d169f17202b2c04a120ef5f4f4ed5656583",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "node",
+        "tests/build334-provider-integration.cjs"
+      ],
+      "durationMs": 42,
+      "exitCode": 0,
+      "id": "provider-integration",
+      "log": "334-command-provider-integration.log",
+      "logSha256": "35e209948a8bf584a6ebafd842b575f3ae28b291decade9f7e21d444c4d10eb3",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "node",
+        "tests/build334-two-company-browser.cjs"
+      ],
+      "durationMs": 4052,
+      "exitCode": 0,
+      "id": "two-company-browser",
+      "log": "334-command-two-company-browser.log",
+      "logSha256": "ed9e5d3da89fd4f27c36b31b11fd20bd7478cd7bc91bf235023ddc1a3ef0568c",
+      "status": "passed"
+    },
+    {
+      "argv": [
+        "python3",
+        "tests/build334-packaging-tools-adversarial.py"
+      ],
+      "durationMs": 689,
+      "exitCode": 0,
+      "id": "packaging-adversarial",
+      "log": "334-command-packaging-adversarial.log",
+      "logSha256": "f07d9d923f1a2b14ee7381592b8cab9950bd5ea4240d5619d4917d369718c070",
+      "status": "passed"
+    }
+  ],
+  "evidenceFiles": {
+    "334-conference-integration-results.json": "ffe42be1be5046ad63bc4eaf87446d4b52e1fb54c526ed5be8f259f3ab45950a",
+    "334-finance-presentation-results.json": "51d71537fe4d11b9160cd5b2c9b4dc2024f86516e71ba68d925180f6283d55b9",
+    "334-flow-results.json": "5dbb35efee253266b4eef1dbd6ea9e14ba7eb67a1652454b5f83eb8cf418e86b",
+    "334-god-mode-results.json": "ba0db88a64d92f2034683e0eb057afafd1574eb9d7724d2cf593dd464ef4aad9",
+    "334-interface-results.json": "716ee96c4e5f503729b64b890a2bdc75c73d6042f85e344d79d6b2ca8177feba",
+    "334-theatre-results.json": "a6a21c2694839cd1bc2a7389474307f494bb9f5f86393d98dc1d20457e62f783",
+    "334-upgrade-results.json": "72cf48a1e23681010c81c19225e8f22ca2da4e39903a873d521f59df9f3fa2c1",
+    "334-visual-validation.json": "092d22aa1e3b3702aec1ad51a97ac2ee1693860537e2cf56c0ab4604df51bc53"
+  },
+  "format": "gh-build334-acceptance-v2",
+  "packageSha256": "cc6571b98557580e196a47d363196817999053699d38a9e2bedfabc3482913bd",
+  "previousBuild333WebAppManifestSha256": "5ffba445a125861ccbaebfc4467a7efb5451acd1258c038351dcdd946f6bb91d",
+  "result": "passed",
+  "runId": "f576c61507ea6a07370783d4fc7dc0bd6b10464cb74045215f57c735c4d000a7",
+  "schemaAssertions": {
+    "conferenceArchiveReload": true,
+    "conferenceContextRecovery": true,
+    "conferenceReplayReadOnly": true,
+    "conferenceWebGL2": true,
+    "financePersisted": true,
+    "fourSpeeds": true,
+    "godBulkDebtRollback": true,
+    "godSaveFailureRollback": true,
+    "managerPersistsReload": true,
+    "managerSaveFailureRollback": true,
+    "pauseResumesChosenSpeed": true,
+    "upgrade333To334": true,
+    "upgradeBusinessSnapshot": true,
+    "upgradeCustomIdentity": true,
+    "visualNoOverflow": true
+  },
+  "testsManifestSha256": "955b125d8716c187ee64087fa8c8ec8d0bb7063bde540c9eaf475642428294bd",
+  "toolchain": {
+    "node": "v24.20.0",
+    "npm": "11.19.0",
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+    "python": "3.13.5",
+    "zlib": "1.3.1"
+  },
+  "visualFiles": {
+    "334-conference-company-landscape.png": {
+      "height": 900,
+      "sha256": "8a4eb71c860360e61c9184cb2dcc3a1a9917e669f559343a9edbb2df65d50aaf",
+      "width": 1440
+    },
+    "334-conference-data-landscape.png": {
+      "height": 900,
+      "sha256": "ab33acfa0d0a0f3bfa891cb02619cd2fcede6a7a8ab91af0a7b59c6279842e63",
+      "width": 1440
+    },
+    "334-conference-data-portrait.png": {
+      "height": 844,
+      "sha256": "fe4d679d98e53140a05a5479041a497ab470d5db430b6d79bd9662024ca32e5e",
+      "width": 390
+    },
+    "334-conference-entry-landscape.png": {
+      "height": 900,
+      "sha256": "4b8c3fd79814369f990674f77aa2ebf3069663ad4ada1cfabf843bc44bd38261",
+      "width": 1440
+    },
+    "334-conference-hall-landscape.png": {
+      "height": 900,
+      "sha256": "2f11aee770f6289667c14480dab0951a4b2af5656ebcd8ebc0176e4f3349d842",
+      "width": 1440
+    },
+    "334-conference-hall-portrait.png": {
+      "height": 844,
+      "sha256": "a2a8223a5ccd4a18fcf57b4a6210c18040cce1b36acdbb587dee8353b7bf9838",
+      "width": 390
+    }
+  },
+  "webAppManifestSha256": "12356e3684ac28a3a29638b0eceb55a87b50835a11a6a8fb4d7a30eb93680727"
+}

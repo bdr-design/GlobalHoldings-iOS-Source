@@ -1,0 +1,24 @@
+{
+  "upgrade": "332 -> 333",
+  "businessSnapshotPreserved": true,
+  "customIdentityPreserved": true,
+  "loansRepaidExactly": true,
+  "poolConsolidatedInvariant": true,
+  "repeatedSweepNoDuplicate": true,
+  "calendarValidation": true,
+  "saveReload": true,
+  "identity": {
+    "groupName": "مجموعة الأفق القيادية",
+    "groupShort": "أفق",
+    "groupLogo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "airName": "أجنحة الأفق الدولية",
+    "airShort": "أجنحة",
+    "airLogo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+  },
+  "final": {
+    "consolidated": 1000250000,
+    "group": 949250000,
+    "air": 1000000
+  },
+  "errors": []
+}

@@ -1,0 +1,137 @@
+{
+  "point": "ROOT_R3",
+  "baseline_archive_sha256": "2b2b7510e5e03691644ca30f7ef5eed7036e1b67d16a9a11ac238acd1aae3a60",
+  "root_r2_kit_sha256": "c79012f2cc802bac5673b82e2f9c1bb4d94f081fc7ad40a5b7000435f8d2d150",
+  "changed": [
+    {
+      "path": "WebApp/realism-core.js",
+      "sha256": "8b464c0b4d085e51f328102890a08db59443a46140111cc091bf4ebfbb8e182f"
+    },
+    {
+      "path": "WebApp/app.js",
+      "sha256": "11808e307c60e2a6f451af7c2b0062916e3011d6b213a5f251a7df73cd55bfb9"
+    },
+    {
+      "path": "WebApp/simulation-core.js",
+      "sha256": "2484f7e6ba9501be4a798800ef6a9056ef774df3aa57100cd677a708c6c163a3"
+    },
+    {
+      "path": "tests/build334-durable-publication-recovery.cjs",
+      "sha256": "02723aef4413b803b7df791da611e2441c4da2355e1fb1583e5af440ca08f973"
+    },
+    {
+      "path": "tests/build334-deferred-save-lifecycle.cjs",
+      "sha256": "613a40c2ad94838c963acc5bb46e7e2c434c89248fed66c5ee3c9ef163a86201"
+    },
+    {
+      "path": "tools/run_acceptance.py",
+      "sha256": "b481b076e37e244eb3ff2b8cde61df0472cf77859d5352f3dcf457d564c7927b"
+    }
+  ],
+  "added": [
+    {
+      "path": "iOS/GlobalHoldings/LaunchScreen.storyboard",
+      "sha256": "fed5a53d38ed2667c3f609bd317c9f4fc30bf42feac87cfab56bd702b8879947"
+    },
+    {
+      "path": "iOS/GlobalHoldings/AppDelegate.swift",
+      "sha256": "ac85c6e05e16ee9e7ac927d2e46bd83c577c7d208bff503709decd1f3dd2421b"
+    },
+    {
+      "path": "iOS/GlobalHoldings/GlobalGameStorage.swift",
+      "sha256": "facdc70c3086f2bafb486b17a77db3e2472557cda3aef961b07555e4bb0792e5"
+    },
+    {
+      "path": "iOS/GlobalHoldings/GlobalSaveVault.swift",
+      "sha256": "d4755cf780a614b39482adf6377b485d7b7f0e392974375ac3f35b33739279b0"
+    },
+    {
+      "path": "iOS/GlobalHoldings/GameViewController.swift",
+      "sha256": "091872028d355a565cbe558710e90d86270d1e0f8c09d7db8758d62c2b9edecc"
+    },
+    {
+      "path": "iOS/GlobalHoldings/Assets.xcassets/Contents.json",
+      "sha256": "0fd49ba3c3585c709678e0046a821c3c60685ec7063720d30d3a3448be3a208b"
+    },
+    {
+      "path": "iOS/GlobalHoldings/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "sha256": "9cf2928dad89427abd581b6852db081352417f400afb65e60c479228cdc4f4da"
+    },
+    {
+      "path": "iOS/GlobalHoldings/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+      "sha256": "244d85af57978e32e98498da36a99ad8224e713bcceb5e9a3e0b82b935126e8c"
+    },
+    {
+      "path": "tests/build334-r2-deferred-persistence.cjs",
+      "sha256": "d928907ae60ca5b23364fa812afabca19758e36ddb1610d60dabb4933ad0b77e"
+    },
+    {
+      "path": "tests/build334-r2-map-local-dom.cjs",
+      "sha256": "ce000a6500ee676919a57675ca1855a572ed6079398c8cca2470f28bcae244ce"
+    },
+    {
+      "path": "tests/build334-r2-snapshot-budget.cjs",
+      "sha256": "702eff37ea4e0a3913c542dd8cd970c729fe17d49efcd0bb8f1038a05218781f"
+    },
+    {
+      "path": "tests/build334-r3-calendar-work.cjs",
+      "sha256": "89a160a82095cff2575287a4a507cc0c826722af63796435845acdfa696371d3"
+    },
+    {
+      "path": "tests/build334-source-layout.py",
+      "sha256": "c97bef27d52d143f3b80f474ac1956fd22bdb1ec35cf2354d66b00ffc56fd4d5"
+    },
+    {
+      "path": "tests/build334-r2-maintenance-atomic.cjs",
+      "sha256": "d712f40dfc6daca262a573660ee10f09df6c69d67a0b83c4b9c7c24af4b662fa"
+    },
+    {
+      "path": "tests/build334-r2-transaction-promotion.cjs",
+      "sha256": "aa304de1e3a28301af33ce49d0b1de6ce39368479dd2a51bf61d7efa1c56df4d"
+    },
+    {
+      "path": "tests/build334-r2-delivery-lazy-index.cjs",
+      "sha256": "9cb1e5c9f110dc29402c9cb5b791c44880cd60a0e3d6f47f50a0253f2a20c4a7"
+    },
+    {
+      "path": "tests/native/README_AR.md",
+      "sha256": "b2151cce7bd7c07b52faa44bbd6aa0f64e05b426849febd39e714ef99677904f"
+    },
+    {
+      "path": "tests/native/prepare_native_tests.py",
+      "sha256": "08bf883fe75f8a07c8a09cb7da191b0c748ff9a0222c3450e07a85c022f370ad"
+    },
+    {
+      "path": "tests/native/prepare_webkit_smoke.py",
+      "sha256": "b0c14d5566ac8533e7fae201b10b97b7960f61b870f2649ef8a3ab6e41e26f21"
+    },
+    {
+      "path": "tests/native/test_update_bridge.cjs",
+      "sha256": "23a51569b183718d5370810c6450eb141ba8f3bfe6b67009d2f96a694196ed71"
+    },
+    {
+      "path": "tools/verify_current_source.py",
+      "sha256": "071094d7caff9a8ac70946dc47d14e69cf0877af4117b49371837a36d92c7edb"
+    }
+  ],
+  "deleted": [
+    "tests/build334-packaging-tools-adversarial.py",
+    "tools/verify_build333.py",
+    "tools/build334_release_common.py",
+    "tools/verify_build334.py",
+    "tools/build_release_archives.py",
+    "tools/verify_release_archives.py",
+    "tools/set_build_metadata.py",
+    "tools/repack_ipa.py"
+  ],
+  "native_source_status": "N1 byte-identical; reconstructed native config explicitly set to 334; not a matched historical IPA",
+  "test_fixture_adaptations": [
+    "Durable publication test locates new split declaration and initializes existing guard flag in fixture",
+    "Deferred lifecycle test loads existing scheduling functions and resetEpoch fixture",
+    "Deferred R2 fixture includes durableCommandInProgress; four new behavior checks added",
+    "Maintenance failure injection moved from intentionally removed lossy payable merger to existing companyBook call; same late rollback requirement"
+  ],
+  "unchanged_game_identity": true,
+  "no_runtime_overlay_module": true,
+  "retired_tools": "provenance/retired-build-tools.json"
+}

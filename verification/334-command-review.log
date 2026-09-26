@@ -1,0 +1,6 @@
+
+> global-holdings-build334-webapp@3.0.0-build334 test:review
+> node tests/review-upgrade-browser.cjs && node tests/finance-presentation-browser.cjs
+
+PASS 333 -> 334 all player data; all stored identities; signature upgrade/resume; exact loan repayment; pool invariants; calendar validation/cancel; save/reload
+{"views":32,"chequeLayout":{"paperWidth":244,"viewportWidth":246,"paperHeight":167.30352783203125,"viewportHeight":168,"grids":["grid","grid","grid","grid"],"clipped":false},"counts":{"cheques":1,"transfers":12,"invoices":3,"balance":48385217},"persisted":true,"errors":[]}

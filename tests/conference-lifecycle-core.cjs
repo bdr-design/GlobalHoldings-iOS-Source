@@ -1,0 +1,13 @@
+'use strict';
+const assert=require('node:assert/strict'),path=require('node:path');
+const root=path.resolve(__dirname,'..');process.env.GH_TEST_SOURCE_DIR=root;
+const {scenario}=require('./helpers/business-scenario.js'),env=scenario(),{s,state,command}=env;
+env.load('arabic-copy-core');env.load('conference-model');env.load('conference-core');
+state.simSeconds=365*86400;s.GH_CONFERENCE.execute({state},'tick-day',{day:365});assert.equal(state.advanced.conference.pendingYear,2026);
+const cash=s.GH_FINANCE_CORE.operating(state,'group'),prepared=command('conference','prepare',{year:2026,packageId:'global'});assert.equal(prepared.lifecycle.state,'prepared');assert.equal(cash-s.GH_FINANCE_CORE.operating(state,'group'),8600000);assert(prepared.payments.every(row=>row.status==='مصروف'));
+const started=command('conference','start',{});assert.equal(started.lifecycle.state,'preflight');assert.equal(started.presentation.planHash.length,64);assert(s.GH_CONF_MODEL.validatePlanBundle(started.presentation.planBundle,started.snapshot));
+command('conference','presentation-state',{conferenceId:started.id,state:'opening',sceneId:'opening'});command('conference','presentation-state',{conferenceId:started.id,state:'presenting',sceneId:'opening'});const scene=started.presentation.planBundle.modes.manual[1];assert.equal(command('conference','presentation-progress',{conferenceId:started.id,mode:'manual',index:1,sceneId:scene.id}),true);assert.equal(state.advanced.conference.ui.resume.planHash,started.presentation.planHash);
+assert.throws(()=>command('conference','presentation-progress',{conferenceId:started.id,mode:'manual',index:2,sceneId:'not-in-plan'}),/conference-progress-scene-invalid/);
+command('conference','presentation-state',{conferenceId:started.id,state:'closing',sceneId:'closing'});const completed=command('conference','complete',{});assert.equal(completed.lifecycle.state,'completed');assert.equal(state.advanced.conference.current,null);assert.equal(state.advanced.conference.archive.length,1);const archived=state.advanced.conference.archive[0],exact=JSON.stringify(archived.presentation.planBundle);state.profile.name='اسم حي بعد الأرشفة';state.profile.reputation=1;assert.equal(JSON.stringify(archived.presentation.planBundle),exact);assert(s.GH_CONF_MODEL.validatePlanBundle(archived.presentation.planBundle,archived.snapshot));
+const duplicate=s.GH_CONFERENCE.execute({state},'ensure');assert.equal(duplicate.archive.length,1);
+console.log(JSON.stringify({ok:true,cost:8600000,lifecycle:archived.lifecycle.history.map(row=>row.state),planHash:archived.planHash,archiveExact:true},null,2));

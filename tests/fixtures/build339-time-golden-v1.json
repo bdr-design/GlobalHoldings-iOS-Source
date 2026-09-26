@@ -1,0 +1,31 @@
+{
+  "schema": "gh-build339-time-golden-v1",
+  "manualAdvance": {
+    "target": 90000,
+    "finalSimSeconds": 90000,
+    "committedSlices": 25,
+    "hourBoundaries": 25,
+    "dayBoundaries": 1,
+    "maintenanceHours": [11, 23],
+    "midnightBoundary": {"from": 82800, "to": 86400, "hour": 24, "day": 1},
+    "lastBoundary": "hour:25"
+  },
+  "liveBoundarySplit": {
+    "start": 3500,
+    "realDeltaSeconds": 1,
+    "speed": 600,
+    "finalSimSeconds": 4100,
+    "slices": [
+      {"from": 3500, "to": 3600, "hour": 1, "day": null},
+      {"from": 3600, "to": 4100, "hour": null, "day": null}
+    ]
+  },
+  "stallPolicy": {
+    "maxRealDelta": 3,
+    "stallSeconds": 5,
+    "finalSimSeconds": 0,
+    "droppedRealSeconds": 5,
+    "stallGaps": 1
+  },
+  "boundaryOrder": ["day", "hour"]
+}

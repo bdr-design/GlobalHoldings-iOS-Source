@@ -1,0 +1,9 @@
+'use strict';
+const assert=require('node:assert/strict');const {harness,minimal}=require('./helpers/core-harness');
+const {s}=harness(['authorization-core','document-proof-core','transaction-core']),state=minimal(),P=s.GH_DOCUMENT_PROOF;state.profile={name:'History capacity'};state.finance.auditArchive={records:{invoices:[]},digests:[]};
+for(let i=0;i<P.LIMITS.records;i++){const d={id:`CLOSED-${i}`,company:'group',counterparty:'Customer',amount:1,status:'محصلة'};P.sealDocument(state,d,{type:'audit-invoice',companyId:'group'});state.finance.auditArchive.records.invoices.push(d);}
+const before=JSON.stringify(state);let reason=null,committed=false;
+try{s.GH_TRANSACTION_CORE.execute(state,{label:'history-capacity-admission',apply:()=>{const d={id:'NEXT-NEW-INVOICE',company:'group',counterparty:'Customer',amount:1,status:'محصلة'};P.sealDocument(state,d,{type:'audit-invoice',companyId:'group'});state.finance.invoices.push(d);}});committed=true;}catch(error){reason=error.message;assert.equal(JSON.stringify(state),before,'capacity rejection must restore all state');}
+assert(P.verifyDocument(state,state.finance.auditArchive.records.invoices[0]).ok);assert(P.verifyDocument(state,state.finance.auditArchive.records.invoices.at(-1)).ok);
+console.log(JSON.stringify({suite:'build334-proof-capacity-acceptance-r2',environment:`Node ${process.version}; 5000 genuinely sealed closed documents; not an iPhone session`,archivedDocuments:5000,newDocumentAdmitted:committed,reason,historyIntegrityPreserved:true,atomicRejection:!committed,releaseAcceptance:committed,blockingIssue:'Continuing normal document issuance after retained history reaches the fixed proof-store limit remains unimplemented. Do not delete referenced proofs or increase caps arbitrarily.'},null,2));
+if(!committed)process.exitCode=1;

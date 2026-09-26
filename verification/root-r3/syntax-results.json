@@ -1,0 +1,837 @@
+{
+  "node": "v24.20.0",
+  "total": 166,
+  "passed": 166,
+  "rows": [
+    {
+      "file": "WebApp/advanced-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/app.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/arabic-copy-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/assets/conference/rocketbox-cast.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/authorization-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/banking-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/business-world-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/capability-registry-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/catalog.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/company-adapters-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/company-definitions.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/company-platform-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/conference-3d.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/conference-board.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/conference-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/conference-model.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/conference-world.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/contracts-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/control-plane-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/corporate-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/delivery-monitor-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/department-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/dependency-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/determinism-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/diagnostics-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/directory-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/document-proof-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/domain-command-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/economics-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/energy-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/event-ledger-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/facility-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/finance-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/finance-presentation.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/fleet-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/formation-engine.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/game-lifecycle-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/governance-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/hr-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/identity-system.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/integrity-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/interaction-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/interface-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/lifecycle-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/map-feature-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/map-labels.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/map-layer-registry.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/map-provider-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/market-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/migration-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/mobility-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/operations-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/persistence-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/policy-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/procurement-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/realism-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/road-planner.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/route-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/save-schema.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/signature-pad-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/simulation-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/strategy-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/transaction-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/ui-quality-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/workflow-core.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "WebApp/world-data.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build315-procurement-idempotency-test.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build317-finance-depth-test.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build333-identity-regressions.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-accrual-cash-separation-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-app-platform-authorization.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-archive-integrity-r2.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-archived-proof-retention-open.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-asset-route-hr-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-bank-balance-sheet.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-bank-energy-operating-costs.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-bank-fee-reporting.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-bank-projected-risk.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-bank-sector-concentration.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-bank-signed-income.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-calendar-advance-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-calendar-journey-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-calendar-local-dom.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-calendar-safety-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-company-adapters.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-company-platform-orphan-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-deferred-save-lifecycle.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-delivery-atomic-reconciliation.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-document-proof-v3-security.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-durable-authorization-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-durable-postcommit-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-durable-publication-recovery.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-dynamic-company-consumers.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-dynamic-finance-company-ids.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-energy-take-or-pay.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-finance-company-security-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-finance-settlement-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-future-company-hr.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-identity-regressions.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-iphone-thermal-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-late-frame-liveness.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-logistics-staged-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-long-session-pressure.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-map-identity-registry.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-map-pressure-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-market-discovery-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-market-discovery-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-native-snapshot-queue.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-open-invoice-retention.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-persistence-snapshot-consistency.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-presentation-work-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-procurement-pressure.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-proof-capacity-acceptance-r2.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-provider-integration.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-purchase-delivery-pressure.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-r2-deferred-persistence.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-r2-delivery-lazy-index.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-r2-maintenance-atomic.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-r2-map-local-dom.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-r2-snapshot-budget.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-r2-transaction-promotion.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-r3-calendar-work.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-scheduler-liveness.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-security-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-signature-pad.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-simulation-fault-isolation.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-simulation-slice-atomic.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-simulation-time-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-singleton-company-boundaries.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-tabs-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-tabs-component.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-tabs-contract.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-transaction-promotion-r2.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-two-company-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/build334-xss-logo-security.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/company-platform-regressions.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/conference-capability-core.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/conference-integration.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/conference-lifecycle-core.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/conference-visual-build334.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/core-regressions.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/finance-presentation-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/fleet-regressions.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/formation-engine-core.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/god-mode-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/helpers/browser-network.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/helpers/business-scenario.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/helpers/core-harness.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/helpers/local-dom-app.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/helpers/signature-input.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/helpers/web-server.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/interface-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/interface-flows.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/lint.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/native/test_update_bridge.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/persistence-pressure-and-native-build251-test.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/persistence-regressions.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/redesign-visual.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/review-regressions.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/review-upgrade-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/tax-reload-regressions.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tests/theatre-browser.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tools/cast/bake-cast.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tools/cast/convert-entry.js",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tools/cast/export-cast.cjs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "file": "tools/three-entry.js",
+      "exit_code": 0,
+      "output": ""
+    }
+  ]
+}

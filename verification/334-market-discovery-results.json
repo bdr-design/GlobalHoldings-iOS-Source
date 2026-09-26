@@ -1,0 +1,70 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "mode": "air",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "cards": 28
+    },
+    {
+      "mode": "sea",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "cards": 30
+    },
+    {
+      "mode": "road",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "cards": 30
+    },
+    {
+      "mode": "mobility",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "cards": 4
+    },
+    {
+      "mode": "air",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "cards": 28
+    },
+    {
+      "mode": "sea",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "cards": 30
+    },
+    {
+      "mode": "road",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "cards": 30
+    },
+    {
+      "mode": "mobility",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "cards": 4
+    }
+  ],
+  "errors": []
+}

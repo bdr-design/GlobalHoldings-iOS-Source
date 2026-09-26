@@ -1,0 +1,27 @@
+{
+  "approved": false,
+  "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+  "version": "3.0.0",
+  "build": 340,
+  "save_schema": "2.0.0",
+  "blocking_issues": [
+    "Physical iPhone pressure testing at 4,300 and 20,000 full assets with complete routes, procurement, sale, finance, save/restore and long-session interaction is required.",
+    "The agreed 90Hz/60Hz frame-time, touch-latency and no-50ms-main-thread-task targets have not been demonstrated on target iPhones.",
+    "Simulation asset advancement, financial close writes, procurement record creation, authorized commits, Leaflet marker construction and native persistence remain in their existing owners; each needs a separately proven plan/apply boundary before the old runtime can be reduced to coordination.",
+    "Save Schema 2.0.0, Full Snapshot rollback and disabled live field journal remain required invariants.",
+    "Production approval remains closed."
+  ],
+  "phase_status": {
+    "build339_clean_source_baseline": "VERIFIED_LOCAL",
+    "map_asset_query_worker": "FOCUSED_NODE_TESTS_PASS_BROWSER_AND_DEVICE_PENDING",
+    "map_presentation_worker": "FOCUSED_NODE_TESTS_PASS_BROWSER_AND_DEVICE_PENDING",
+    "finance_read_report_worker": "FOCUSED_NODE_PARITY_PASS_BROWSER_PENDING",
+    "road_route_planning_worker": "FOCUSED_NODE_PARITY_AND_CANCELLATION_PASS_BROWSER_PENDING",
+    "media_decode_engine": "FOCUSED_NODE_BOUNDS_PASS_WEBKIT_DEVICE_PENDING",
+    "simulation_and_domain_write_owner": "UNCHANGED_SERIALIZED_MAIN_OWNER",
+    "full_snapshot_fallback": "ON",
+    "live_field_journal": "OFF",
+    "save_schema": "2.0.0",
+    "build340_ci": "PASS_109_GATES_ESLINT_CHROMIUM_WEBKIT_NATIVE_STORAGE_WKWEBVIEW_AND_UNSIGNED_ARM64_BUILD"
+  }
+}

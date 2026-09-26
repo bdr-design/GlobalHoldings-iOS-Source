@@ -1,0 +1,65 @@
+{
+  "schema": "global-holdings-build339-phase1c-a-provenance-v1",
+  "recorded_at": "2026-09-24",
+  "version": "3.0.0",
+  "build": 339,
+  "save_schema": "2.0.0",
+  "phase": "1C-A — transaction journal foundation / tests-first, NOT simulation-activated",
+  "parent": {
+    "phase": "1B-B",
+    "runtime_source_tree_sha256": "6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54",
+    "webapp_tree_sha256": "ada2977ddadc0f6df1558acd0b4543de77163da5ae0bfa6b63eb087522a9489e",
+    "source_zip_sha256": "acd6cc9f324d6eb2975f74f076421f253e3cff5229104dc319f50a819b2fde77"
+  },
+  "runtime_source_tree_sha256": "1e158524e74d6360b334568af89f088e7fe65b22574a8de2ece49ab0de0c4779",
+  "webapp_tree_sha256": "fe2d7fc5e10b4695c9dec3feb9f0d0fe4be27cfa8cf08e8bb094d9a6206e5026",
+  "runtime_files": 482,
+  "old_ipa_used": false,
+  "production_approved": false,
+  "physical_device_tested": false,
+  "accepted_changes": [
+    "Added opt-in rollbackMode=journal to transaction-core only; default transaction behavior remains legacy snapshot/scoped unless explicitly requested",
+    "Added pre-execution Full Snapshot fallback for unproven writer contracts, structural writers, and unproven validation",
+    "Added conservative journal-to-full promotion before joined writers and mutating/unproven critical hooks",
+    "Added terminal irreversible critical ordering guard so persistence cannot execute before later rollback-capable critical work",
+    "Added primitive own-data asset field journal with descriptor restoration that preserves existing key order",
+    "Fixed scoped rollback root-order restoration to avoid accessor reads when root order is already unchanged",
+    "Added Phase1C adversarial 8-test contract and 600-asset full-vs-journal equivalence gate"
+  ],
+  "activation_state": {
+    "simulation_runtime_journal_enabled": false,
+    "hour_boundary_journal_enabled": false,
+    "day_boundary_journal_enabled": false,
+    "full_snapshot_fallback_enabled": true
+  },
+  "tests": {
+    "phase1c-adversarial-contract": "PASS 8/8",
+    "phase1c-equivalence-600-assets": "PASS; journalRecords=1202; wholeAssetCopies=0",
+    "build339-time-golden": "PASS",
+    "build339-phase1bb-pacing-separation": "PASS",
+    "build339-transaction-write-set-audit": "PASS 5/5",
+    "build339-simulation-write-set-contract": "PASS 2/2",
+    "hour-boundary-write-map": "PASS 2/2",
+    "day-boundary-write-map": "PASS 2/2",
+    "promotion-r2-a": "PASS 5/5",
+    "promotion-r2-b": "PASS 5/5",
+    "hour83": "PASS",
+    "finance-settlement": "PASS",
+    "delivery-atomic-reconciliation": "PASS",
+    "scheduler-liveness": "PASS 14/14",
+    "late-frame": "PASS 4/4",
+    "600-air-calendar": "PASS",
+    "persistence-snapshot-consistency": "PASS",
+    "persistence-root-coalescing": "PASS",
+    "deferred-save-lifecycle": "PASS",
+    "source-layout": "PASS 10/10"
+  },
+  "known_limits": [
+    "Journal is not yet wired into createSimulationSliceJob",
+    "Every join currently promotes a journal transaction to Full Snapshot; proven joined-writer admission is Phase1C-B work",
+    "Mutating/unproven critical hooks promote to Full Snapshot; only explicitly proven read-only critical hooks may remain journal-backed",
+    "Asset field journal accepts only pre-existing own primitive data properties declared by the caller",
+    "Node24/ESLint/full CI, Apple/WKWebView/native, and physical iPhone tests remain pending"
+  ],
+  "next": "Phase 1C-B: prove specific steady-slice joined writers and read-only integrity hooks, then wire journal only to steady non-boundary no-delivery slices; boundaries remain Full Snapshot"
+}

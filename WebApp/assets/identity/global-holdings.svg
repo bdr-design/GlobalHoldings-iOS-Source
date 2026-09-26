@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Global Holdings">
+  <defs><linearGradient id="a" x1="10" y1="6" x2="86" y2="90" gradientUnits="userSpaceOnUse"><stop stop-color="#1d5f81"/><stop offset="1" stop-color="#0b304b"/></linearGradient></defs>
+  <rect x="3" y="3" width="90" height="90" rx="25" fill="url(#a)"/>
+  <path d="M25 31c5-9 14-14 25-14 9 0 17 3 23 9l-9 9c-4-4-8-6-14-6-11 0-19 8-19 19s8 19 19 19c5 0 9-1 12-4v-8H48V43h28v25c-6 8-15 12-26 12-20 0-35-14-35-32 0-6 2-12 5-17z" fill="#f9fcfb"/>
+  <path d="M55 19h12v23H55zM55 54h12v24H55z" fill="#6fe0d2"/>
+  <circle cx="78" cy="18" r="5" fill="#e5c371"/>
+</svg>

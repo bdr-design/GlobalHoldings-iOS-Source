@@ -1,0 +1,7 @@
+Made with Natural Earth.
+Natural Earth II, 1:50m, Shaded Relief and Water, version 3.2.0.
+https://www.naturalearthdata.com/downloads/50m-raster-data/50m-natural-earth-2/
+https://naturalearth.s3.amazonaws.com/50m_raster/NE2_50M_SR_W.zip
+Public domain: https://www.naturalearthdata.com/about/terms-of-use/
+Country labels: Natural Earth ne_110m_admin_0_countries.
+Raster reprojected from geographic WGS84 to Web Mercator, z0-z4.

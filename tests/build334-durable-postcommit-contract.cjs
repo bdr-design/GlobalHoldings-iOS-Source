@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('assert'),fs=require('fs'),path=require('path');
+const app=fs.readFileSync(path.resolve(__dirname,'../WebApp/app.js'),'utf8');
+const start=app.indexOf('async function runDurableStateCommand');
+const end=app.indexOf('function authorizationIdempotencyKey',start);
+assert(start>=0&&end>start);
+const block=app.slice(start,end);
+assert(block.includes('DURABLE_COMMAND_COMMITTED'));
+assert(block.includes('DURABLE_COMMAND_PRESENTATION_FAILED'));
+assert(block.indexOf('committed=true')<block.indexOf('if(afterCommit)'));
+assert(/if\(afterCommit\)\{try\{await afterCommit\(value\);\}catch/.test(block));
+assert(block.includes("تم حفظ العملية بنجاح، لكن تعذر تحديث العرض"));
+assert(block.includes('if(committed){'));
+console.log(JSON.stringify({suite:'durable-postcommit-contract',passed:6,total:6},null,2));

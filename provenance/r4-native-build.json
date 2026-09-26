@@ -1,0 +1,20 @@
+{
+  "workflow_run": 35845606040,
+  "workflow_commit": "ff27fb2ca90df6d6616cc818357f90ec91ea518a",
+  "repository": "bdr-design/GlobalHoldings-iOS-Source",
+  "branch": "build335-persistence-root-20260923",
+  "artifact_id": 10742884226,
+  "artifact_sha256": "179d7d9d56a925b86b5f37dad4df7933bb730adb9dd4841d8aaaace56b606574",
+  "native_product_tar_sha256": "f5684405f9dc808f168b1e62194e0f650c04aa01b64a086f2c972f7c5ee8dc3e",
+  "native_reference": "5f9d195e4a23ccfa669eeb0e9f7e92acfb3ac01f",
+  "swift_sha256": {
+    "AppDelegate.swift": "ac85c6e05e16ee9e7ac927d2e46bd83c577c7d208bff503709decd1f3dd2421b",
+    "GlobalGameStorage.swift": "cee936612b3017c810e5c904b617d96091046077400c2f9e187b7a020b81a44a",
+    "GlobalSaveVault.swift": "71258a4fb4482d0a77e89bd532647ab6010b6b22f6def25f36bf79b431989b7b",
+    "GameViewController.swift": "329103397d05e60156fc33366159e475b0e63b2871dd08085c6e9d6a4b284643"
+  },
+  "webapp_tree_sha256": "699d467fdc3eee220980ae9ad304a1aa8e7f980aa707b61fb16f5d037e94712a",
+  "project_sha256": "8a48d2a686f75c1b2975c476bb3793fce086e997bac2d89009f30072edc7e864",
+  "old_ipa_used": false,
+  "native_intermediate_only": true
+}

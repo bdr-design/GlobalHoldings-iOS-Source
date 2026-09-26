@@ -1,0 +1,266 @@
+{
+  "description": "UNIFIED_R2 versus consolidated ROOT_R3; ABBA order, 6 measured samples per variant/size after warmups. Synthetic air assets across 100 routes, Chromium with memory storage, not iPhone. No fixed-hardware guarantees.",
+  "rows": [
+    {
+      "size": 100,
+      "baseline": {
+        "createMs": {
+          "median": 3.0999999998603016,
+          "min": 2.1000000000931323,
+          "max": 3.199999999953434
+        },
+        "chunkMs": {
+          "median": 1.2999999998137355,
+          "min": 1.0999999998603016,
+          "max": 1.9000000001396984
+        },
+        "maxChunkMs": {
+          "median": 0.5,
+          "min": 0.39999999990686774,
+          "max": 0.8000000000465661
+        },
+        "chunkCount": {
+          "median": 4.0,
+          "min": 4,
+          "max": 4
+        },
+        "finishMs": {
+          "median": 4.650000000023283,
+          "min": 3.800000000046566,
+          "max": 6.2000000001862645
+        },
+        "totalWorkMs": {
+          "median": 9.20000000006985,
+          "min": 8.099999999860302,
+          "max": 10.200000000186265
+        },
+        "createEventLoopDelayMs": {
+          "median": 3.099999999976717,
+          "min": 2.1000000000931323,
+          "max": 3.300000000046566
+        },
+        "finishEventLoopDelayMs": {
+          "median": 4.650000000023283,
+          "min": 3.9000000001396984,
+          "max": 6.400000000139698
+        }
+      },
+      "source": {
+        "createMs": {
+          "median": 1.1000000000931323,
+          "min": 1,
+          "max": 1.3999999999068677
+        },
+        "chunkMs": {
+          "median": 0.9000000001396984,
+          "min": 0.8999999999068677,
+          "max": 1.1000000000931323
+        },
+        "maxChunkMs": {
+          "median": 0.34999999997671694,
+          "min": 0.30000000004656613,
+          "max": 0.5
+        },
+        "chunkCount": {
+          "median": 4.0,
+          "min": 4,
+          "max": 4
+        },
+        "finishMs": {
+          "median": 4.549999999930151,
+          "min": 3.8999999999068677,
+          "max": 5.400000000139698
+        },
+        "totalWorkMs": {
+          "median": 6.749999999883585,
+          "min": 5.800000000046566,
+          "max": 7.400000000139698
+        },
+        "createEventLoopDelayMs": {
+          "median": 1.150000000023283,
+          "min": 1.1000000000931323,
+          "max": 1.3999999999068677
+        },
+        "finishEventLoopDelayMs": {
+          "median": 4.649999999906868,
+          "min": 3.8999999999068677,
+          "max": 5.400000000139698
+        }
+      }
+    },
+    {
+      "size": 1000,
+      "baseline": {
+        "createMs": {
+          "median": 22.75,
+          "min": 20.199999999953434,
+          "max": 38.10000000009313
+        },
+        "chunkMs": {
+          "median": 11.600000000093132,
+          "min": 10.200000000186265,
+          "max": 13
+        },
+        "maxChunkMs": {
+          "median": 0.8000000000465661,
+          "min": 0.5,
+          "max": 1.1999999999534339
+        },
+        "chunkCount": {
+          "median": 32.0,
+          "min": 32,
+          "max": 32
+        },
+        "finishMs": {
+          "median": 26.449999999953434,
+          "min": 25.4000000001397,
+          "max": 29.199999999953434
+        },
+        "totalWorkMs": {
+          "median": 61.550000000046566,
+          "min": 57.69999999948777,
+          "max": 76.7000000004191
+        },
+        "createEventLoopDelayMs": {
+          "median": 22.900000000023283,
+          "min": 20.299999999813735,
+          "max": 38.300000000046566
+        },
+        "finishEventLoopDelayMs": {
+          "median": 26.650000000023283,
+          "min": 25.600000000093132,
+          "max": 29.699999999953434
+        }
+      },
+      "source": {
+        "createMs": {
+          "median": 10.349999999976717,
+          "min": 9.5,
+          "max": 13.600000000093132
+        },
+        "chunkMs": {
+          "median": 9.149999999906868,
+          "min": 7.700000000419095,
+          "max": 10.999999999534339
+        },
+        "maxChunkMs": {
+          "median": 0.6499999999068677,
+          "min": 0.5,
+          "max": 0.9000000001396984
+        },
+        "chunkCount": {
+          "median": 32.0,
+          "min": 32,
+          "max": 32
+        },
+        "finishMs": {
+          "median": 28.29999999993015,
+          "min": 24.899999999906868,
+          "max": 33.60000000009313
+        },
+        "totalWorkMs": {
+          "median": 48.69999999948777,
+          "min": 42.40000000037253,
+          "max": 54.799999999580905
+        },
+        "createEventLoopDelayMs": {
+          "median": 10.449999999953434,
+          "min": 9.600000000093132,
+          "max": 13.699999999953434
+        },
+        "finishEventLoopDelayMs": {
+          "median": 28.599999999976717,
+          "min": 25.100000000093132,
+          "max": 33.800000000046566
+        }
+      }
+    },
+    {
+      "size": 5000,
+      "baseline": {
+        "createMs": {
+          "median": 119.5999999998603,
+          "min": 113.5,
+          "max": 143.30000000004657
+        },
+        "chunkMs": {
+          "median": 57.89999999944121,
+          "min": 51.70000000135042,
+          "max": 95.60000000172295
+        },
+        "maxChunkMs": {
+          "median": 2.300000000046566,
+          "min": 0.6999999999534339,
+          "max": 24.4000000001397
+        },
+        "chunkCount": {
+          "median": 157.0,
+          "min": 157,
+          "max": 158
+        },
+        "finishMs": {
+          "median": 157.14999999990687,
+          "min": 139,
+          "max": 189.80000000004657
+        },
+        "totalWorkMs": {
+          "median": 339.8500000004424,
+          "min": 323.3000000012107,
+          "max": 399.7000000018161
+        },
+        "createEventLoopDelayMs": {
+          "median": 120.04999999993015,
+          "min": 113.80000000004657,
+          "max": 145.0999999998603
+        },
+        "finishEventLoopDelayMs": {
+          "median": 157.84999999997672,
+          "min": 139.39999999990687,
+          "max": 192.0999999998603
+        }
+      },
+      "source": {
+        "createMs": {
+          "median": 45.45000000006985,
+          "min": 41.0999999998603,
+          "max": 74.89999999990687
+        },
+        "chunkMs": {
+          "median": 46.64999999967404,
+          "min": 42,
+          "max": 73.79999999911524
+        },
+        "maxChunkMs": {
+          "median": 1.5000000001164153,
+          "min": 1.1000000000931323,
+          "max": 5.899999999906868
+        },
+        "chunkCount": {
+          "median": 157.0,
+          "min": 157,
+          "max": 157
+        },
+        "finishMs": {
+          "median": 188.29999999993015,
+          "min": 133,
+          "max": 265.69999999995343
+        },
+        "totalWorkMs": {
+          "median": 291.3999999993248,
+          "min": 219.00000000023283,
+          "max": 385.0999999991618
+        },
+        "createEventLoopDelayMs": {
+          "median": 45.65000000002328,
+          "min": 41.5999999998603,
+          "max": 75
+        },
+        "finishEventLoopDelayMs": {
+          "median": 195.30000000004657,
+          "min": 133.4000000001397,
+          "max": 266.19999999995343
+        }
+      }
+    }
+  ]
+}

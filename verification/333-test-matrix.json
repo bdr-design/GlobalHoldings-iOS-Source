@@ -1,0 +1,48 @@
+{
+  "build": 333,
+  "date": "2026-09-20",
+  "environment": {
+    "browser": "Chromium via Playwright 1.55.1",
+    "physicalIPhone": false,
+    "wkWebViewInstall": false
+  },
+  "commands": [
+    {
+      "command": "npm test",
+      "status": "passed",
+      "coverage": "lint; identity; core; fleet; persistence; native ACK/NACK; procurement; finance depth; review; tax reload"
+    },
+    {
+      "command": "npm run test:interface",
+      "status": "passed",
+      "coverage": "32 panels; 66 destinations; four speeds; map retention; portrait/narrow; CEO cancellation, forced save failure rollback, persistence"
+    },
+    {
+      "command": "npm run test:god",
+      "status": "passed",
+      "coverage": "rules; liquidity; exact targets; budgets; debt; save and mid-command rollback; reload; five safe-inset layouts"
+    },
+    {
+      "command": "GH_PREVIOUS_WEBAPP=Build332/WebApp npm run test:review",
+      "status": "passed",
+      "coverage": "332 to 333 upgrade; custom identity; balances, records and time; 32 finance views across four viewport sizes"
+    },
+    {
+      "command": "npm run test:browser",
+      "status": "passed",
+      "coverage": "conference payments, resume, archive/reload, replay; WebGL2, context loss recovery, reduced motion, memory disposal"
+    },
+    {
+      "command": "npm run test:visual",
+      "status": "passed",
+      "coverage": "conference data, stage cameras, negative and empty states, phone portrait/landscape, late disposal"
+    },
+    {
+      "command": "python tools/verify_build333.py",
+      "status": "passed",
+      "coverage": "base identity; ZIP CRC; metadata; duplicate members; native preservation; exact WebApp match; runtime manifest; unsigned status; source diff; evidence assertions"
+    }
+  ],
+  "result": "passed",
+  "browserErrors": []
+}

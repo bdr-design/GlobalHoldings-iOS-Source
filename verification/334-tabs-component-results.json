@@ -1,0 +1,259 @@
+{
+  "scope": "isolated original tab renderer + original click bindings; no full app, storage, upgrade or iPhone execution",
+  "browser": "144.0.7559.96",
+  "rows": [
+    {
+      "panel": "companies",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "input": "mouse",
+      "buttonCount": 2,
+      "routeCalls": 2,
+      "ok": true,
+      "items": [
+        {
+          "label": "الشركة القابضة",
+          "id": "holding",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        },
+        {
+          "label": "الشركات التابعة",
+          "id": "subs",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "companies",
+          "arg": "holding"
+        },
+        {
+          "panel": "companies",
+          "arg": "subs"
+        }
+      ]
+    },
+    {
+      "panel": "labor",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "input": "mouse",
+      "buttonCount": 6,
+      "routeCalls": 6,
+      "ok": true,
+      "items": [
+        {
+          "label": "لوحة HR",
+          "id": "dashboard",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الوظائف والاحتياج",
+          "id": "jobs",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "مديرو الشركات",
+          "id": "managers",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الاستقطاب",
+          "id": "recruitment",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "العقود",
+          "id": "contracts",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الرواتب",
+          "id": "payroll",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "labor",
+          "arg": "dashboard"
+        },
+        {
+          "panel": "labor",
+          "arg": "jobs"
+        },
+        {
+          "panel": "labor",
+          "arg": "managers"
+        },
+        {
+          "panel": "labor",
+          "arg": "recruitment"
+        },
+        {
+          "panel": "labor",
+          "arg": "contracts"
+        },
+        {
+          "panel": "labor",
+          "arg": "payroll"
+        }
+      ]
+    },
+    {
+      "panel": "companies",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "input": "touch",
+      "buttonCount": 2,
+      "routeCalls": 2,
+      "ok": true,
+      "items": [
+        {
+          "label": "الشركة القابضة",
+          "id": "holding",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        },
+        {
+          "label": "الشركات التابعة",
+          "id": "subs",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "companies",
+          "arg": "holding"
+        },
+        {
+          "panel": "companies",
+          "arg": "subs"
+        }
+      ]
+    },
+    {
+      "panel": "labor",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "input": "touch",
+      "buttonCount": 6,
+      "routeCalls": 6,
+      "ok": true,
+      "items": [
+        {
+          "label": "لوحة HR",
+          "id": "dashboard",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الوظائف والاحتياج",
+          "id": "jobs",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "مديرو الشركات",
+          "id": "managers",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الاستقطاب",
+          "id": "recruitment",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "العقود",
+          "id": "contracts",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الرواتب",
+          "id": "payroll",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "labor",
+          "arg": "dashboard"
+        },
+        {
+          "panel": "labor",
+          "arg": "jobs"
+        },
+        {
+          "panel": "labor",
+          "arg": "managers"
+        },
+        {
+          "panel": "labor",
+          "arg": "recruitment"
+        },
+        {
+          "panel": "labor",
+          "arg": "contracts"
+        },
+        {
+          "panel": "labor",
+          "arg": "payroll"
+        }
+      ]
+    }
+  ],
+  "passed": true
+}

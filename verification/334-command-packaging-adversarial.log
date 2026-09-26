@@ -1,0 +1,25 @@
+test_empty_interface_and_god_reports_rejected (__main__.EvidenceAdversarialTests.test_empty_interface_and_god_reports_rejected) ... ok
+test_exact_command_matrix_accepts_only_exact_argv (__main__.EvidenceAdversarialTests.test_exact_command_matrix_accepts_only_exact_argv) ... ok
+test_missing_finance_counts_do_not_equal_success (__main__.EvidenceAdversarialTests.test_missing_finance_counts_do_not_equal_success) ... ok
+test_png_crc_and_trailing_data_are_rejected (__main__.EvidenceAdversarialTests.test_png_crc_and_trailing_data_are_rejected) ... ok
+test_valid_nonempty_schema_passes (__main__.EvidenceAdversarialTests.test_valid_nonempty_schema_passes) ... ok
+test_package_report_accepts_the_producer_json_integer (__main__.ReleaseArchiveAdversarialTests.test_package_report_accepts_the_producer_json_integer) ... ok
+test_package_report_build_rejects_wrong_values_and_types (__main__.ReleaseArchiveAdversarialTests.test_package_report_build_rejects_wrong_values_and_types) ... ok
+test_release_archive_content_substitution_rejected (__main__.ReleaseArchiveAdversarialTests.test_release_archive_content_substitution_rejected) ... ok
+test_release_archive_is_deterministic_and_exact (__main__.ReleaseArchiveAdversarialTests.test_release_archive_is_deterministic_and_exact) ... ok
+test_build333_upgrade_input_requires_exact_inventory (__main__.SourceInventoryAdversarialTests.test_build333_upgrade_input_requires_exact_inventory) ... ok
+test_python_cache_rejected (__main__.SourceInventoryAdversarialTests.test_python_cache_rejected) ... ok
+test_special_file_rejected (__main__.SourceInventoryAdversarialTests.test_special_file_rejected) ... ok
+test_canonical_regular_zip_passes (__main__.ZipAdversarialTests.test_canonical_regular_zip_passes) ... ok
+test_comment_rejected (__main__.ZipAdversarialTests.test_comment_rejected) ... ok
+test_directory_member_rejected (__main__.ZipAdversarialTests.test_directory_member_rejected) ... ok
+test_duplicate_and_casefold_collision_rejected (__main__.ZipAdversarialTests.test_duplicate_and_casefold_collision_rejected) ... ok
+test_metadata_changes_are_detectable (__main__.ZipAdversarialTests.test_metadata_changes_are_detectable) ... ok
+test_prefix_and_trailer_rejected (__main__.ZipAdversarialTests.test_prefix_and_trailer_rejected) ... ok
+test_symlink_member_rejected (__main__.ZipAdversarialTests.test_symlink_member_rejected) ... ok
+test_traversal_and_non_nfc_rejected (__main__.ZipAdversarialTests.test_traversal_and_non_nfc_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.008s
+
+OK

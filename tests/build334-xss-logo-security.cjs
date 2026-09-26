@@ -1,0 +1,113 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const {scenario}=require('./helpers/business-scenario');
+const {harness,minimal}=require('./helpers/core-harness');
+const root=path.resolve(__dirname,'..'),web=path.join(root,'WebApp');
+
+for(const key of ['GH_CAPABILITY_REGISTRY','GH_COMPANY_DEFINITIONS','GH_COMPANY_PLATFORM','GH_COMPANY_REGISTRY','GH_IDENTITY'])delete globalThis[key];
+require(path.join(web,'capability-registry-core.js'));
+require(path.join(web,'company-definitions.js'));
+require(path.join(web,'company-platform-core.js'));
+const identity=require(path.join(web,'identity-system.js'));
+const validPng='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+assert.equal(identity.validCustomLogo(validPng),true,'a decoder-produced PNG remains accepted');
+assert.equal(identity.inspectCustomLogo('data:image/png;base64,QUJD').reason,'logo-magic','declared PNG with non-image bytes fails closed');
+assert.equal(identity.inspectCustomLogo(validPng.replace('image/png','image/jpeg')).reason,'logo-magic','MIME and magic bytes must agree');
+assert.equal(identity.inspectCustomLogo('data:image/png;base64,'+'A'.repeat(280000)).reason,'logo-size','stored data URL has a hard cap');
+for(const payload of ['data:image/svg+xml,<svg onload=alert(1)>','data:text/html,<script>alert(1)</script>','data:image/png;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+','assets/../index.html','assets/index.html','assets/config.json'])assert.equal(identity.validCustomLogo(payload),false,`forbidden custom logo accepted: ${payload.slice(0,40)}`);
+const hugePng=new Uint8Array(24);hugePng.set([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a],0);hugePng.set([0x49,0x48,0x44,0x52],12);hugePng.set([0,0,0x13,0x88,0,0,0x13,0x88],16);
+assert.equal(identity.inspectImageBytes(hugePng,'image/png').reason,'logo-dimensions','oversized pixel surfaces are rejected from the header before decode');
+assert.equal(identity.inspectPlainText('<style>body{display:none}</style>',{maximum:60}).reason,'text-markup-or-control');
+assert.notEqual(identity.legalName({profile:{name:'<style>body{display:none}</style>'}},'group'),'<style>body{display:none}</style>','identity reads must fail back to a trusted default');
+
+const {s,state,command}=scenario(),originalName=state.companyRegistry.air.legalName,originalLogo=state.companyRegistry.air.logo||null;
+const foundingInput={mode:'sandbox',name:'Secure Holdings',founder:'Secure Founder',locationId:'RUH'};
+assert.throws(()=>s.GH_GAME_LIFECYCLE.prepareFounding({...foundingInput,logo:'data:image/png;base64,QUJD'}),/logo-magic/,'founding must use the same MIME/magic validator as later logo changes');
+assert.throws(()=>s.GH_GAME_LIFECYCLE.prepareFounding({...foundingInput,logo:'data:image/svg+xml,<svg onload=alert(1)>'}),/logo-data-url/,'founding must reject SVG logos');
+assert.equal(s.GH_GAME_LIFECYCLE.prepareFounding({...foundingInput,logo:validPng}).logo,validPng);
+assert.throws(()=>command('corporate','rename-company',{type:'air',legalName:'<style>body{display:none}</style>'}),/invalid-company-name/);
+assert.equal(state.companyRegistry.air.legalName,originalName,'rejected rename must not mutate state');
+assert.throws(()=>command('corporate','set-logo',{type:'air',logo:'data:image/png;base64,QUJD'}),/invalid-company-logo:logo-magic/);
+assert.throws(()=>command('corporate','set-logo',{type:'air',logo:'data:image/svg+xml,<svg onload=alert(1)>'}),/invalid-company-logo:logo-data-url/);
+assert.equal(state.companyRegistry.air.logo||null,originalLogo,'rejected logo must not mutate state');
+command('corporate','set-logo',{type:'air',logo:validPng});assert.equal(state.companyRegistry.air.logo,validPng);
+const closedValidation=s.GH_CORPORATE_CORE.validate({state},'open-company',{type:'sea',capital:500000000,legalName:'<button data-gh-action="audit-run">اعتماد</button>'});
+assert.equal(closedValidation.ok,false);assert.match(closedValidation.reason,/invalid-company-name/);
+
+state.companyRegistry.air.legalName='<style id="stored-css">body{display:none}</style>';
+state.companyRegistry.air.tradeName='<img src=x onerror=alert(1)>';
+state.companyRegistry.air.logo='data:image/png;base64,QUJD';
+state.companyRegistry['bad&quot; onclick=&quot;alert(1)']={legalName:'Bad'};
+state.openedCompanies.push('bad&quot; onclick=&quot;alert(1)');
+state.profile.identity={logos:{horizontal:'data:image/svg+xml,<svg onload=alert(1)>'}};
+state.simulationWorld={competitors:[{name:'<button data-gh-action="audit-run">اعتماد</button>'}],competitorAssets:[]};
+state.advanced.conference={archive:[{snapshot:{group:{brand:{logo:'data:image/png;base64,QUJD',variants:{mark:'data:image/svg+xml,<svg onload=alert(1)>'}}},companies:[],social:{comments:[{text:'<img src=x onerror=alert(1)>'}]}},presentation:{planBundle:{modes:{full:[{logo:'data:text/html,<script>alert(1)</script>',chartUnit:'<img src=x onerror=alert(1)>'}],brief:[],manual:[]}}}}]};
+const invalidSave=s.GH_SAVE_SCHEMA.validate(state);
+assert(invalidSave.errors.includes('identity-company-legalName:air'));
+assert(invalidSave.errors.includes('identity-company-tradeName:air'));
+assert(invalidSave.errors.some(error=>error.startsWith('identity-company-id:')));
+assert(invalidSave.errors.includes('identity-opened-companies'));
+assert(invalidSave.errors.includes('identity-company-logo:air'));
+assert(invalidSave.errors.includes('identity-profile-logo:horizontal'));
+assert(invalidSave.errors.includes('display-text-competitor-name'));
+assert(invalidSave.errors.some(error=>error.startsWith('identity-conference-logo:')),'archived conference brand logos must be validated');
+assert(invalidSave.errors.some(error=>error.startsWith('identity-conference-plan-logo:')),'persisted presentation-plan logos must be validated');
+assert(invalidSave.errors.some(error=>error.startsWith('identity-conference-text:')),'persisted conference snapshot and plan text must reject stored markup');
+
+const persistenceHarness=harness(['capability-registry-core','company-definitions','company-platform-core','identity-system','save-schema','persistence-core']),badStoredLogo='data:image/svg+xml,<svg onload=alert(1)>',badStoredState={...minimal(),profile:{name:'Safe Group',logo:badStoredLogo},companyRegistry:{}},badConferenceState={...minimal(),profile:{name:'Safe Group'},companyRegistry:{},advanced:{conference:{archive:[{snapshot:{group:{brand:{logo:badStoredLogo}},companies:[]}}]}}};
+assert.equal(persistenceHarness.s.GH_PERSISTENCE.writeState('malicious-save',badStoredState).ok,false,'malicious logo must be rejected before a save write');
+assert.equal(persistenceHarness.s.GH_PERSISTENCE.writeState('malicious-conference-save',badConferenceState).ok,false,'a malicious archived conference logo must be rejected before a save write');
+const priorState={...minimal(),profile:{name:'Safe Group'},companyRegistry:{}},priorJSON=JSON.stringify(priorState),slotEnvelope={format:persistenceHarness.s.GH_PERSISTENCE.SLOT_FORMAT,state:badStoredState,meta:{label:'tampered'}};
+persistenceHarness.data.set('main',priorJSON);persistenceHarness.data.set('global-holdings-save-slot-1',JSON.stringify(slotEnvelope));
+const rejectedRestore=persistenceHarness.s.GH_PERSISTENCE.loadSlot(0,{storageKey:'main'});assert.equal(rejectedRestore.ok,false,'a tampered slot logo must be rejected on restore');assert.equal(persistenceHarness.data.get('main'),priorJSON,'rejected restore must not overwrite the current save');
+const conferenceSlotEnvelope={format:persistenceHarness.s.GH_PERSISTENCE.SLOT_FORMAT,state:badConferenceState,meta:{label:'tampered-conference'}};persistenceHarness.data.set('global-holdings-save-slot-2',JSON.stringify(conferenceSlotEnvelope));const rejectedConferenceRestore=persistenceHarness.s.GH_PERSISTENCE.loadSlot(1,{storageKey:'main'});assert.equal(rejectedConferenceRestore.ok,false,'a tampered archived-conference logo must be rejected on restore');assert.equal(persistenceHarness.data.get('main'),priorJSON,'rejected conference restore must not overwrite the current save');
+
+const conferenceSource=fs.readFileSync(path.join(web,'conference-core.js'),'utf8'),boardSource=fs.readFileSync(path.join(web,'conference-board.js'),'utf8');assert(conferenceSource.includes("IDENTITY?.inspectCustomLogo"),'conference snapshots must use the central image validator');assert(boardSource.includes("GH_IDENTITY?.inspectCustomLogo"),'conference HTML/canvas logo rendering must fail closed through the central validator');
+const boardHarness=harness(['capability-registry-core','company-definitions','company-platform-core','identity-system','conference-model','conference-board']),boardElement={innerHTML:''},board=new boardHarness.s.GH_CONF_BOARD.Board(boardElement),boardSnapshot={year:2026,group:{name:'Safe Group'},companies:[],social:{}},boardScene={title:'Safe',headline:'Safe',subtitle:'Safe',metrics:[],caption:'Safe',kind:'statement',templateId:'statement',logo:'data:image/png;base64,QUJD'};
+board.update(boardSnapshot,boardScene);assert(!boardElement.innerHTML.includes('<img'),'the conference board must not render a fake-MIME logo');board.update(boardSnapshot,{...boardScene,logo:'data:image/svg+xml,<svg onload=alert(1)>'});assert(!boardElement.innerHTML.includes('<img'),'the conference board must not render SVG custom logos');board.update(boardSnapshot,{...boardScene,logo:validPng});assert(boardElement.innerHTML.includes('<img'),'the conference board must retain a validated PNG logo');
+const portfolioSnapshot={...boardSnapshot,companies:[{type:'air',legalName:'Safe Air',net:1,reportedDays:1,dataQuality:{status:'ok'}}]},chartUnitPayload='<img src=x onerror=alert(1)>';board.update(portfolioSnapshot,{...boardScene,kind:'portfolio',logo:'',chartUnit:chartUnitPayload});assert(!boardElement.innerHTML.includes(chartUnitPayload),'conference chart units from a persisted plan must never enter innerHTML raw');assert(boardElement.innerHTML.includes('&lt;img src=x onerror=alert(1)&gt;'));
+
+const advancedHarness=harness(['advanced-core']),advanced=advancedHarness.s.GH_ADVANCED;
+const malicious='<style id="stored-css">body{display:none}</style><button data-gh-action="audit-run">اعتماد</button>';
+const html=advanced.render('ma',null,{state:{simSeconds:0,advanced:{},treasury:{},stakes:{},maDeals:{}},competitors:[{id:'C1',name:malicious,sector:'<img src=x onerror=alert(1)>',hq:'X',strategy:'Y',price:1,ebitda:1,debt:0}],fmtMoney:String});
+assert(!html.includes('<style'),html);assert(!html.includes('<button data-gh-action="audit-run">'),html);assert(html.includes('&lt;style'),'stored markup must render as text');assert(!/onerror\s*=/.test(html),'event attributes must not survive rendering');
+const origin=/data-gh-action-origin="([a-f0-9]{32})"/.exec(advanced.actionAttributes('audit-run'))?.[1];assert(origin);
+const listeners=[];
+const trusted={tagName:'BUTTON',dataset:{ghAction:'audit-run',ghActionOrigin:origin},addEventListener:(name,fn)=>listeners.push([name,fn]),removeAttribute(){}};
+const forged={tagName:'BUTTON',dataset:{ghAction:'audit-run',ghActionOrigin:'forged'},addEventListener(){throw new Error('forged action was bound');},removeAttribute(name){if(name==='data-gh-action')delete this.dataset.ghAction;if(name==='data-gh-action-origin')delete this.dataset.ghActionOrigin;}};
+const missingOrigin={tagName:'BUTTON',dataset:{ghAction:'audit-run'},addEventListener(){throw new Error('originless action was bound');},removeAttribute(name){if(name==='data-gh-action')delete this.dataset.ghAction;if(name==='data-gh-action-origin')delete this.dataset.ghActionOrigin;}};
+const rootNode={querySelectorAll:selector=>selector==='[data-gh-action]'?[trusted,forged,missingOrigin]:[],querySelector:()=>null};
+advanced.bind(rootNode,{state:{},currentPanel:'audit'});assert.equal(listeners.length,1);assert.equal(forged.disabled,true);assert.equal(forged.dataset.ghAction,undefined);assert.equal(missingOrigin.disabled,true);assert.equal(missingOrigin.dataset.ghAction,undefined);
+
+const oversizedSource=new Uint8Array(identity.CUSTOM_LOGO_LIMITS.decodedBytes+1);oversizedSource.set(Buffer.from(validPng.split(',')[1],'base64'));
+let sourceReadCount=0;
+const oversizedFile={type:'image/png',size:oversizedSource.length,arrayBuffer:async()=>{sourceReadCount++;return oversizedSource.buffer;}};
+(async()=>{
+  let overSourceReads=0;const overSourceFile={type:'image/png',size:8*1024*1024+1,arrayBuffer:async()=>{overSourceReads++;throw new Error('must not read');}},overSourceResult=await identity.inspectLogoFile(overSourceFile,{allowTranscode:true});assert.equal(overSourceResult.ok,false);assert.equal(overSourceResult.reason,'logo-size');assert.equal(overSourceReads,0,'a source above 8MiB must fail before arrayBuffer/FileReader even when compression exists');
+  const withoutPipeline=await identity.inspectLogoFile(oversizedFile);
+  assert.equal(withoutPipeline.ok,false);assert.equal(withoutPipeline.reason,'logo-transcode-required');assert.equal(withoutPipeline.transcodeRequired,true);assert.equal(sourceReadCount,0,'an oversized stored payload must fail before FileReader/arrayBuffer when no compression pipeline was declared');
+  const withPipeline=await identity.inspectLogoFile(oversizedFile,{allowTranscode:true});
+  assert.equal(withPipeline.ok,true);assert.equal(withPipeline.transcodeRequired,true);assert.equal(sourceReadCount,1,'the explicit compression pipeline may inspect an otherwise valid source image');
+  const oversizedDataUrl=`data:image/png;base64,${Buffer.from(oversizedSource).toString('base64')}`;
+  assert.equal(identity.inspectCustomLogo(oversizedDataUrl).reason,'logo-size','the uncompressed source must never satisfy the persisted-logo contract');
+
+  const runtime=JSON.parse(fs.readFileSync(path.join(web,'runtime-required.json'),'utf8')),fileSizes=runtime.files.map(file=>fs.statSync(path.join(web,file)).size),unpackedBytes=fileSizes.reduce((sum,size)=>sum+size,0),base64Bytes=fileSizes.reduce((sum,size)=>sum+4*Math.ceil(size/3),0),indexEstimate=Buffer.byteLength(JSON.stringify(runtime.files.map((file,index)=>[file,'0'.repeat(64),fileSizes[index]]))),theoreticalOuterBytes=base64Bytes+indexEstimate+1024*1024;
+  assert(unpackedBytes<=advanced.UPDATE_LIMITS.unpackedBytes);assert(Math.max(...fileSizes)<=advanced.UPDATE_LIMITS.fileBytes);assert(runtime.files.length<=advanced.UPDATE_LIMITS.fileCount);assert(theoreticalOuterBytes>25*1024*1024,'the current clean snapshot proves the former 25MiB cap was too small');assert.equal(advanced.inspectUpdateFile({size:theoreticalOuterBytes}).ok,true,'the current theoretical clean snapshot must fit the 40MiB outer cap');assert.equal(advanced.inspectUpdateFile({size:advanced.UPDATE_LIMITS.outerBytes+1,text(){throw new Error('oversized update was read');}}).ok,false,'outer update size must fail before file.text/JSON.parse');
+  let atobCalls=0;advancedHarness.s.atob=()=>{atobCalls++;throw new Error('atob must not run for structural failures');};const digest='0'.repeat(64),updatePack=(files=[],manifest={})=>({format:'global-holdings-update',operationsJSON:'[]',files,manifest:{version:'3.0.1',build:335,signaturePayloadVersion:3,packageType:'full-web',installMode:'clean-snapshot-v1',fileCount:files.length,unpackedBytes:files.reduce((sum,file)=>sum+Number(file.size||0),0),operationsSha256:digest,filesIndexSha256:digest,...manifest}}),zeroFile=pathValue=>({path:pathValue,size:0,base64:'',sha256:digest});
+  await assert.rejects(advanced.validateUpdatePack(updatePack([],{unpackedBytes:advanced.UPDATE_LIMITS.unpackedBytes+1})),/32MiB/);
+  await assert.rejects(advanced.validateUpdatePack(updatePack([{path:'large.bin',size:advanced.UPDATE_LIMITS.fileBytes+1,base64:'',sha256:digest}])),/16MiB/);
+  await assert.rejects(advanced.validateUpdatePack(updatePack([{path:'bad.bin',size:4,base64:'AAAA',sha256:digest}])),/طول Base64/);
+  await assert.rejects(advanced.validateUpdatePack(updatePack([zeroFile('/absolute.bin')])),/مسار ملف غير آمن/);
+  await assert.rejects(advanced.validateUpdatePack(updatePack([zeroFile('assets/../escape.bin')])),/مسار ملف غير آمن/);
+  await assert.rejects(advanced.validateUpdatePack(updatePack([zeroFile(`assets/${'a'.repeat(241)}`)])),/مسار ملف غير آمن/);
+  await assert.rejects(advanced.validateUpdatePack(updatePack([zeroFile('assets/control\u0001.bin')])),/مسار ملف غير آمن/);
+  await assert.rejects(advanced.validateUpdatePack(updatePack([zeroFile('same.bin'),zeroFile('same.bin')])),/مسار مكرر/);
+  await assert.rejects(advanced.validateUpdatePack(updatePack([zeroFile('Case.js'),zeroFile('case.js')])),/مسار مكرر/);
+  await assert.rejects(advanced.validateUpdatePack(updatePack(Array.from({length:advanced.UPDATE_LIMITS.fileCount+1},(_,index)=>zeroFile(`f/${index}.bin`)))),/1024/);
+  const operationsOversize=updatePack([]);operationsOversize.operationsJSON=' '.repeat(advanced.UPDATE_LIMITS.operationsBytes+1);await assert.rejects(advanced.validateUpdatePack(operationsOversize),/2MiB/);assert.equal(atobCalls,0,'all over-limit/path/base64 metadata failures must occur before atob');
+  const advancedSource=fs.readFileSync(path.join(web,'advanced-core.js'),'utf8'),sizeGuardAt=advancedSource.indexOf('inspectUpdateFile(file)'),readAt=advancedSource.indexOf('JSON.parse(await file.text())');assert(sizeGuardAt>=0&&readAt>sizeGuardAt,'40MiB preflight must run before file.text/JSON.parse');assert(advancedSource.includes("window.webkit?.messageHandlers?.updateBridge")&&advancedSource.includes('لا يسمح بتطبيق حزمة دون التحقق Native'),'install must remain gated by the Native signature bridge');
+  console.log(JSON.stringify({passed:true,storedMarkupRejected:true,actionOriginGuard:true,logoMagic:true,logoDimensions:true,logoTranscodeContract:true,foundingLogoValidation:true,conferenceLogoValidation:true,saveSchema:true,saveRestoreTamperRejected:true,updateLimits:true,currentSnapshot:{files:runtime.files.length,unpackedBytes,theoreticalOuterBytes}},null,2));
+})().catch(error=>{console.error(error);process.exitCode=1;});

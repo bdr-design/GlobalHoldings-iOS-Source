@@ -1,0 +1,50 @@
+{
+  "build": 332,
+  "baseline": 331,
+  "changedWebAppFiles": [
+    "app.js",
+    "index.html",
+    "interface-core.js",
+    "interface-layout.css",
+    "runtime-required.json",
+    "styles.css"
+  ],
+  "fixes": [
+    "God Mode CSS grid compressed overflowing sections, hiding inputs and buttons. Replaced by four explicit tab panels and ordinary vertical scrolling.",
+    "One layout stylesheet owns floating HUD, dock and panels. Removed their old layout rules from styles.css. Map fills the entire viewport behind controls and safe insets.",
+    "God controls use one transaction including persistence; failed save or an intermediate multi-company command rolls back. Success feedback is shown only after success.",
+    "Added the opened mobility company to dynamic entity selectors; refreshes company names/balances on open. Removed duplicate workspaceBack ID.",
+    "Switching to another section closes God Mode, preventing hidden drawers underneath.",
+    "Automatic budget split now preserves the exact input total, assigning rounding remainder to the last category."
+  ],
+  "validation": {
+    "godModeFunctional": true,
+    "allGodControlsReachableInFivePhoneLayouts": true,
+    "saveFailureRollback": true,
+    "multiCompanyDebtFailureRollback": true,
+    "headerCssHeight": 32,
+    "dockCssWidth": 44,
+    "fourSpeeds": true,
+    "mapFillsViewport": true,
+    "existingInterfacePanels": 32,
+    "existingNavigationDestinations": 66,
+    "populatedFinanceViews": 32,
+    "upgrade": "331 -> 332",
+    "conferenceIntegrationPassed": true
+  },
+  "unchangedCores": [
+    "finance-core.js",
+    "transaction-core.js",
+    "simulation-core.js",
+    "save-schema.js",
+    "persistence-core.js",
+    "hr-core.js",
+    "conference-core.js",
+    "conference-3d.js"
+  ],
+  "limits": [
+    "Validated in Chromium, with emulated safe insets and multiple landscape sizes, plus portrait regression checks.",
+    "No physical iPhone/WKWebView/signing/install test.",
+    "Native binaries are reused from the verified 331 IPA; only CFBundleVersion changes outside WebApp."
+  ]
+}

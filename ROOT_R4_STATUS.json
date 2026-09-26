@@ -1,0 +1,63 @@
+{
+  "point": "Global Holdings Build334 ROOT_R4 experimental IPA",
+  "previous_point": "ROOT_R3",
+  "version": "3.0.0",
+  "build": 334,
+  "save_schema": "2.0.0",
+  "runtime_tree_sha256": "d687e0a448a52b2e76859b6dffc9e992560a882078c4eb33ac2ececa8bbd1e1b",
+  "webapp_tree_sha256": "8d01dac37feda0dca39ca72e88f0bc32043decf578e0e06208434eae619e4992",
+  "ipa_sha256": null,
+  "ipa_file": null,
+  "ipa_bytes": null,
+  "unsigned": true,
+  "experimental": true,
+  "production_approved": false,
+  "source_acceptance": {
+    "passed": 0,
+    "total": 0,
+    "runtime_unchanged": true
+  },
+  "native_tests": {
+    "passed": 36,
+    "total": 36,
+    "platform": "macOS real file IO, CryptoKit"
+  },
+  "webkit_tests": {
+    "passed": 11,
+    "total": 11,
+    "platform": "macOS real WKWebView, not full game"
+  },
+  "bundle_tests": {
+    "passed": 5,
+    "total": 5,
+    "platform": "macOS real storage/bundle"
+  },
+  "ipa_assembly_checks": {
+    "passed": 8,
+    "total": 8
+  },
+  "native_workflow_run": 35667920333,
+  "native_workflow_commit": "c9339d064e2d8e8faf11619f32dfa2129a5a2fac",
+  "native_executable_sha256": "5777a93fd9ca508d5594cdbd5c8e91c94683c04843d5713eef944b759455ba0d",
+  "native_compiled_from_source": true,
+  "old_ipa_used": false,
+  "physical_iphone_tested": false,
+  "production_changes": [
+    "WebApp/advanced-core.js",
+    "WebApp/app.js",
+    "WebApp/authorization-core.js",
+    "WebApp/document-proof-core.js",
+    "WebApp/domain-command-core.js",
+    "WebApp/save-schema.js",
+    "iOS/GlobalHoldings/GameViewController.swift",
+    "iOS/GlobalHoldings/GlobalGameStorage.swift",
+    "iOS/GlobalHoldings/GlobalSaveVault.swift",
+    "project.yml"
+  ],
+  "limits": [
+    "30 MiB native payload bound remains",
+    "Document cold proofs 16 MiB and authorization cold proofs 8 MiB; not unbounded retention",
+    "Device heat/memory/long-session and full trusted signed-update interruption matrix not accepted"
+  ],
+  "web_source_reference_sha256": "1c7a32a19156784a2ac12c4b35fe83f10c1c4d1b4211004653f7c96e48815581"
+}

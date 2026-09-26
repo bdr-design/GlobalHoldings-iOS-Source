@@ -1,0 +1,520 @@
+
+> global-holdings-build334-webapp@3.0.0-build334 test
+> node tests/lint.cjs && node tests/build334-tabs-contract.cjs && node tests/build334-identity-regressions.cjs && node tests/company-platform-regressions.cjs && node tests/build334-company-platform-orphan-contract.cjs && node tests/build334-company-adapters.cjs && node tests/build334-dynamic-company-consumers.cjs && node tests/build334-singleton-company-boundaries.cjs && node tests/build334-dynamic-finance-company-ids.cjs && node tests/build334-map-identity-registry.cjs && node tests/build334-security-contract.cjs && node tests/build334-xss-logo-security.cjs && node tests/build334-document-proof-v3-security.cjs && node tests/build334-signature-pad.cjs && node tests/formation-engine-core.cjs && node tests/conference-capability-core.cjs && node tests/build334-simulation-time-contract.cjs && node tests/build334-asset-route-hr-contract.cjs && node tests/build334-app-platform-authorization.cjs && node tests/build334-finance-settlement-contract.cjs && node tests/build334-finance-company-security-contract.cjs && node tests/build334-durable-authorization-contract.cjs && node tests/core-regressions.cjs && node tests/fleet-regressions.cjs && node tests/persistence-regressions.cjs && node tests/build315-procurement-idempotency-test.js && node tests/persistence-pressure-and-native-build251-test.js && node tests/build317-finance-depth-test.js && node tests/review-regressions.cjs && node tests/tax-reload-regressions.cjs && node tests/build334-tabs-browser.cjs && node tests/build334-tabs-component.cjs && node tests/build334-calendar-safety-contract.cjs && node tests/build334-calendar-advance-browser.cjs && node tests/build334-calendar-journey-browser.cjs && node tests/build334-market-discovery-contract.cjs && node tests/build334-market-discovery-browser.cjs
+
+[]
+{"result":"passed","registeredAttributes":10,"observedConsumers":["data-company-manage-tab","data-facility-tab","data-companytab","data-treasury-tab","data-energy-tab","data-bank-tab","data-business-tab","data-labortab"],"restrictedFallback":true,"escapedLabelsAndIds":true}
+PASS subsidiaries catalogue: no unfunded finance reads or phantom ownership; owner and capability boundaries retained
+PASS Build 334 central vector identity, six defaults, player customization precedence, runtime manifest and map colors
+PASS built-in definitions are centralized, valid, and separated by dimensions
+PASS migration is pure, byte-stable, schema-compatible, and removes speed level five
+PASS migration preserves player identity and writes canonical ownership without rewriting legacy aliases
+PASS canonical migration never recreates legacy route or facility aliases
+PASS unknown company is quarantined read-only without group fallback
+PASS unknown explicit definition never falls back to the built-in company id across save reload
+PASS root-singleton operation profiles fail closed while company-scoped fleet profiles remain multi-instance
+PASS unknown canonical asset, delivery, route, and facility owners fail validation closed
+PASS invalid aliases and failed manifest batches leave the registry unchanged
+PASS gh-hotels and a same-sector variant install from definitions only
+PASS business metric migration uses company instance ids and never creates sector books
+PASS two company instances can share one air sector and operation profile without route collision
+PASS corporate provisioning uses dynamic company id and fails closed for unknown definitions
+PASS sealed platform rejects late definitions and exposes deterministic snapshot
+PASS company platform 14/14
+{
+  "passed": true,
+  "defects": [],
+  "contracts": [
+    "EXPLICIT_UNKNOWN_DEFINITION_FAILS_CLOSED",
+    "CANONICAL_MIGRATION_DOES_NOT_WRITE_LEGACY_ALIASES"
+  ]
+}
+PASS all 56 built-in adapter references resolve to executable descriptors
+PASS future company reuses registered generic profiles without a consumer switch
+PASS platform seal fails closed on missing engines and seals capability and adapter registration
+PASS same-profile instances receive distinct legal, document, account, and runtime identities
+PASS directory and facility creation project the same physical sources into isolated company ownership
+PASS HR supports both dynamic instances without a company switch and keeps every contract owned
+PASS procurement emits canonical delivery and asset ownership for both instances
+PASS fleet staffing follows canonical owner rather than display company or shared asset mode
+PASS identical corridors coexist across owners while cross-owner fleet assignment fails atomically
+PASS banking discovers both finance-capable instances and values assets by canonical owner
+PASS business relationships remain separate and an unknown explicit company cannot charge the group
+PASS realism and company UI expose both same-sector instances independently
+PASS advanced manual manager commands require durable authorization and NACK is non-mutating
+PASS integrity sees dynamic books and rejects a cross-owner delivery destination
+PASS save, schema migration, reload, and business completion preserve both dynamic owners and metrics
+PASS dynamic company consumers 12/12
+{"passed":true,"canonicalOnly":["energy","bank","mobility"],"multiInstance":["fleet"],"mobilityJournalOwner":"mobility"}
+{
+  "suite": "build334-dynamic-finance-company-ids",
+  "passed": 14,
+  "total": 14,
+  "companies": [
+    "group",
+    "air",
+    "air-east"
+  ],
+  "sharedOperationProfile": "fleet-route-air-v1",
+  "isolatedClose": {
+    "air": 100,
+    "air-east": 300
+  }
+}
+{"pass":true,"fixtureCompany":"rail","markerZooms":25,"spatialFeatures":32000,"spatialReturned":2,"visitedCandidates":12,"indexMilliseconds":19.68,"queryMilliseconds":0.09,"rendered":7,"requestedBudget":4,"effectiveBudget":7}
+{
+  "passed": true,
+  "csp": true,
+  "localScripts": 67,
+  "runtimeFiles": 468,
+  "unsafeExecutors": 0,
+  "logoMimeAllowlist": true,
+  "nativeAckCorrelation": true
+}
+{
+  "passed": true,
+  "storedMarkupRejected": true,
+  "actionOriginGuard": true,
+  "logoMagic": true,
+  "logoDimensions": true,
+  "logoTranscodeContract": true,
+  "foundingLogoValidation": true,
+  "conferenceLogoValidation": true,
+  "saveSchema": true,
+  "saveRestoreTamperRejected": true,
+  "updateLimits": true,
+  "currentSnapshot": {
+    "files": 468,
+    "unpackedBytes": 23537881,
+    "theoreticalOuterBytes": 32481318
+  }
+}
+{
+  "suite": "build334-document-proof-v3-security",
+  "passed": true,
+  "types": 25,
+  "transitionChain": true,
+  "rollback": true
+}
+{"passed":true,"version":"1.0.0","metrics":{"strokes":1,"points":4,"length":1.2421,"width":0.64,"height":0.44,"valid":true}}
+{
+  "ok": true,
+  "planId": "FORM-C70EE3784519C652B1F2",
+  "nackRollback": true,
+  "timeoutRollback": true,
+  "durableAckGate": true
+}
+{
+  "ok": true,
+  "futureCompany": "orbital",
+  "contributors": [
+    "leadership",
+    "financial",
+    "safety",
+    "operations"
+  ],
+  "scenes": 12,
+  "planHash": "6e1359c582b70322170f3b535efa7c5bcbe45f9ab6e86fe255e63c878f1b69d7",
+  "arabicDual": true
+}
+{
+  "rateResults": {
+    "30": 30,
+    "120": 120,
+    "300": 300,
+    "600": 600
+  },
+  "exactDayAt600x": true,
+  "exactHourBoundaries": 24,
+  "visibleSpeedLevels": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "acceptedSpeedLevels": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "hiddenNonZeroLevels": [],
+  "schemaAllowsHiddenLevel": false,
+  "projectedSlicesFor365DaysAt600x": 52560
+}
+{
+  "passed": true,
+  "passCount": 6,
+  "passes": [
+    "FLEET_BATCH_VALIDATES_BEFORE_MUTATION",
+    "ROUTE_COMPANY_ISOLATION",
+    "ASSET_DEPARTURE_TIMESTAMP_DRIFTS_AFTER_MID_SLICE_ARRIVAL",
+    "ASSET_WITH_MISSING_ROUTE_FREEZES_SILENTLY",
+    "HR_MISSING_CANDIDATE_CATALOG_REPORTS_FALSE_COMPLETE",
+    "HR_SALARY_REFERENCE_CONFLICT_SILENT"
+  ],
+  "defectCount": 0,
+  "defects": []
+}
+PASS Build 334 app platform ownership, camera-stable filters, founder authorization, dynamic close/payroll, and document seal contract
+{
+  "passed": true,
+  "defectCount": 0,
+  "defects": []
+}
+{
+  "suite": "build334-finance-company-security",
+  "passed": 8,
+  "total": 8,
+  "companies": [
+    "group",
+    "air-east",
+    "sea-west"
+  ],
+  "systemAuthorization": "delegated-system",
+  "manualAuthorization": "stored-signature"
+}
+{
+  "suite": "build334-durable-authorization",
+  "passed": 5,
+  "total": 5
+}
+PASS Two same-second mobility purchases both debit cash
+PASS Payment retry is idempotent before invoice creation; conflicting key rolls back
+PASS Bounced payable reissue creates a payable cheque, then clears once
+PASS Intercompany repayment journal matches 110000 cash and 10000 interest
+PASS Financed asset principal is registered and repayable without extra cash
+PASS Annual totals survive daily pruning; same-day close replaces exactly once
+PASS Official CEO replaces legacy contract and payroll, and cannot be rehired
+PASS Expense-only loss is valid and snapshot identity never follows live logo changes
+PASS app shared-air route departure, staggered slots and save schema
+PASS legacy aviation transition does not block road departure
+PASS new duplicate air corridor remains blocked before mutation
+PASS real simulation slice retires route in state and runtime without fatal error
+PASS large native ACK followed by NACK cannot restore stale browser revision
+PASS manual load drains queued save then locks until reload; stale generation rejected
+PASS definite slot rejection unlocks unchanged world
+BUILD315 procurement idempotency: PASS (same retry is exactly-once; conflicting payload rejected)
+PASS small, medium, soft-warning and hard-limit preserve last good save
+PASS Unicode byte and UTF-16 accounting both enforced
+PASS quota, corruption read-back and serialization failure keep canonical snapshot
+PASS ACK requires exact correlation, action, hash, revision, epoch and monotonic generation
+PASS NACK does not count as a native commit
+PASS browser-only replacement keeps strict quota rollback
+PASS native authoritative replacement success
+PASS native authoritative replacement nack
+PASS native authoritative replacement timeout
+PASS native authoritative replacement quota
+PASS native authoritative replacement marker
+PASS native authoritative replacement apply-failure
+PASS native authoritative replacement compensation
+PASS queued native save failure restores browser snapshot and fails drain
+{"suite":"persistence-pressure-native","passed":14,"total":14}
+BUILD317 finance depth: PASS — issue-only cheques, cheque/transfer payable choice, transfer purpose audit, revenue/current-account trace
+PASS approved module versions, unexpected-version rejection, resolved history, unbound/disabled action detection
+PASS open VAT stays accrued on reload; single close/payment; actual legacy balance retained; mixed legacy/current balance separates correctly
+{
+  "results": [
+    {
+      "orientation": "landscape",
+      "kind": "companies",
+      "result": "passed",
+      "realPointerInput": true
+    },
+    {
+      "orientation": "landscape",
+      "kind": "labor",
+      "result": "passed",
+      "realPointerInput": true
+    },
+    {
+      "orientation": "portrait",
+      "kind": "companies",
+      "result": "passed",
+      "realPointerInput": true
+    },
+    {
+      "orientation": "portrait",
+      "kind": "labor",
+      "result": "passed",
+      "realPointerInput": true
+    }
+  ],
+  "errors": []
+}
+{
+  "scope": "isolated original tab renderer + original click bindings; no full app, storage, upgrade or iPhone execution",
+  "browser": "140.0.7339.186",
+  "rows": [
+    {
+      "panel": "companies",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "input": "mouse",
+      "buttonCount": 2,
+      "routeCalls": 2,
+      "ok": true,
+      "items": [
+        {
+          "label": "الشركة القابضة",
+          "id": "holding",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        },
+        {
+          "label": "الشركات التابعة",
+          "id": "subs",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "companies",
+          "arg": "holding"
+        },
+        {
+          "panel": "companies",
+          "arg": "subs"
+        }
+      ]
+    },
+    {
+      "panel": "labor",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "input": "mouse",
+      "buttonCount": 6,
+      "routeCalls": 6,
+      "ok": true,
+      "items": [
+        {
+          "label": "لوحة HR",
+          "id": "dashboard",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الوظائف والاحتياج",
+          "id": "jobs",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "مديرو الشركات",
+          "id": "managers",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الاستقطاب",
+          "id": "recruitment",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "العقود",
+          "id": "contracts",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الرواتب",
+          "id": "payroll",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "labor",
+          "arg": "dashboard"
+        },
+        {
+          "panel": "labor",
+          "arg": "jobs"
+        },
+        {
+          "panel": "labor",
+          "arg": "managers"
+        },
+        {
+          "panel": "labor",
+          "arg": "recruitment"
+        },
+        {
+          "panel": "labor",
+          "arg": "contracts"
+        },
+        {
+          "panel": "labor",
+          "arg": "payroll"
+        }
+      ]
+    },
+    {
+      "panel": "companies",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "input": "touch",
+      "buttonCount": 2,
+      "routeCalls": 2,
+      "ok": true,
+      "items": [
+        {
+          "label": "الشركة القابضة",
+          "id": "holding",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        },
+        {
+          "label": "الشركات التابعة",
+          "id": "subs",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "companies",
+          "arg": "holding"
+        },
+        {
+          "panel": "companies",
+          "arg": "subs"
+        }
+      ]
+    },
+    {
+      "panel": "labor",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "input": "touch",
+      "buttonCount": 6,
+      "routeCalls": 6,
+      "ok": true,
+      "items": [
+        {
+          "label": "لوحة HR",
+          "id": "dashboard",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الوظائف والاحتياج",
+          "id": "jobs",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "مديرو الشركات",
+          "id": "managers",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الاستقطاب",
+          "id": "recruitment",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "العقود",
+          "id": "contracts",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الرواتب",
+          "id": "payroll",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "labor",
+          "arg": "dashboard"
+        },
+        {
+          "panel": "labor",
+          "arg": "jobs"
+        },
+        {
+          "panel": "labor",
+          "arg": "managers"
+        },
+        {
+          "panel": "labor",
+          "arg": "recruitment"
+        },
+        {
+          "panel": "labor",
+          "arg": "contracts"
+        },
+        {
+          "panel": "labor",
+          "arg": "payroll"
+        }
+      ]
+    }
+  ],
+  "passed": true
+}
+PASS dormant unfounded prudential preview must not read or fabricate a bank book
+PASS non-dormant bank must still reject a missing finance book
+PASS daily dispatch skips unfounded catalog definitions and fleet-only groups
+PASS operational bank and energy retain their owners and one scheduled dispatch
+PASS held companies receive no daily operations; direct hook retains operational authorization
+PASS future registered operations hooks receive company context and roll back with enclosing day
+PASS existing simulation kernel reaches 365 and leap 366 days with exact ordered boundaries
+{"suite":"calendar-safety-contract","passed":7,"results":["dormant unfounded prudential preview must not read or fabricate a bank book","non-dormant bank must still reject a missing finance book","daily dispatch skips unfounded catalog definitions and fleet-only groups","operational bank and energy retain their owners and one scheduled dispatch","held companies receive no daily operations; direct hook retains operational authorization","future registered operations hooks receive company context and roll back with enclosing day","existing simulation kernel reaches 365 and leap 366 days with exact ordered boundaries"]}
+PASS actual calendar next day with no bank, no energy, no phantom books
+PASS no subsidiaries: seven days 604800
+PASS no subsidiaries: thirty more days across payroll and month end 3196800
+PASS all six founded companies: first day 86400
+PASS retry failed day succeeds without duplicate postings 172800
+PASS portrait full game day 259200
+{"suite":"market-discovery-contract","passed":4,"counts":{"air":{"new":28,"used":6},"sea":{"new":30,"used":6},"road":{"new":30,"used":6},"mobility":{"new":4,"used":0}},"readOnly":true}
+PASS unfounded fleet/mobility catalog tabs, landscape and portrait, zero business mutation

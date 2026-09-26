@@ -1,0 +1,41 @@
+--- before/tools/verify_release_archives.py
++++ after/tools/verify_release_archives.py
+@@ -64,6 +64,19 @@
+     return snapshot
+ 
+ 
++def validate_package_report_build(package_report: object) -> int:
++    """Validate the JSON integer boundary; BUILD stays a string for Info.plist."""
++    expected = int(BUILD)
++    if not isinstance(package_report, dict):
++        raise ValueError("package-report-build-mismatch")
++    reported = package_report.get("build")
++    # Reject coercible strings, floats, booleans and missing values, not merely
++    # different numbers. The independent package verifier emits a JSON integer.
++    if type(reported) is not int or reported != expected:
++        raise ValueError("package-report-build-mismatch")
++    return reported
++
++
+ def main() -> int:
+     parser = argparse.ArgumentParser()
+     parser.add_argument("--ipa", type=Path, required=True)
+@@ -110,8 +123,7 @@
+         package_report_path = root / "verification" / "334-package-verification.json"
+         require_regular_file(package_report_path)
+         package_report = json.loads(package_report_path.read_text(encoding="utf-8"))
+-        if package_report.get("build") != BUILD:
+-            raise ValueError("package-report-build-mismatch")
++        release_build = validate_package_report_build(package_report)
+         reported_ipa = package_report.get("ipa")
+         if not isinstance(reported_ipa, dict) or reported_ipa.get("sha256") != sha_file(ipa) or reported_ipa.get("bytes") != ipa.stat().st_size:
+             raise ValueError("ipa-does-not-match-package-report")
+@@ -126,7 +138,7 @@
+         manifest = {
+             "format": "gh-build334-release-v1",
+             "product": "Global Holdings",
+-            "build": BUILD,
++            "build": release_build,
+             "baseBuild333Sha256": BASE_SHA256,
+             "sourceTreeManifestSha256": manifest_digest(source),
+             "sourceArchiveManifestSha256": manifest_digest(full_source),

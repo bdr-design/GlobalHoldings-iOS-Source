@@ -1,0 +1,19 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const {ROOT}=require('./helpers/core-harness'),{scenario}=require('./helpers/business-scenario');
+const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8'),start=app.indexOf('  let durableCommandSettlement=')>=0?app.indexOf('  let durableCommandSettlement='):app.indexOf('  let durableCommandInProgress='),end=app.indexOf('  function authorizationIdempotencyKey',start);assert(start>=0&&end>start);
+function environment({failPublish=false,failPersist=false}={}){
+ const e=scenario();e.load('persistence-core');const key='audit-durable-world',events=[];assert.equal(e.s.GH_PERSISTENCE.commitState(e.state,{storageKey:key}).ok,true);
+ const persistence=e.s.GH_PERSISTENCE;
+ Object.assign(e.s,{state:e.state,hardResetInProgress:false,durableCommandInProgress:false,storageKey:key,APP_VERSION:'3.0.0',clone:structuredClone,routeRuntimeForState:()=>({}),replaceLiveState:draft=>{if(failPublish)throw new Error('audit-publication-failure');e.s.GH_TRANSACTION_CORE.restoreObject(e.state,draft);},diag:(type,detail)=>events.push({type,detail}),notice:()=>{},yieldForInteractivePaint:()=>Promise.resolve(),simulationEngine:{cancelAdvance:()=>{}},console:{...console,warn:()=>{},error:()=>{}}});
+ if(failPersist)e.s.GH_PERSISTENCE={...persistence,commitDurableState:async()=>{throw new Error('audit-persist-rejected');}};
+ vm.runInContext(app.slice(start,end),e.s);return {...e,key,events,persistence};
+}
+(async()=>{
+ const results=[];
+ {const e=environment({failPublish:true}),oldRevision=e.state.saveRevision;const out=await e.s.runDurableStateCommand('audit-publication',({state})=>{state.profile.name='Durably saved';return true;},{silent:true});
+ assert.equal(out,true,'the operation committed durably; it must not be reported rolled back');const stored=JSON.parse(e.storage.getItem(e.key));assert.equal(stored.saveRevision,oldRevision+1);assert.equal(stored.profile.name,'Durably saved');assert.equal(e.state.saveRevision,oldRevision);assert.equal(e.persistence.telemetry().recoveryRequired,true);assert.equal(e.persistence.isLocked(),true);assert.equal(await e.s.runDurableStateCommand('unsafe-retry',()=>{throw new Error('must-not-run');},{silent:true}),false);assert(!e.events.some(row=>row.type==='DURABLE_COMMAND_ROLLED_BACK'));results.push({name:'successful durable commit + failed publication locks recovery and forbids retry',ok:true});}
+ {const e=environment();const out=await e.s.runDurableStateCommand('audit-presentation',()=>true,{silent:true,afterCommit:()=>{throw new Error('audit-ui-only-failure');}});assert.equal(out,true);assert.equal(e.persistence.isLocked(),false);assert.equal(e.state.saveRevision,JSON.parse(e.storage.getItem(e.key)).saveRevision);assert(e.events.some(row=>row.type==='DURABLE_COMMAND_PRESENTATION_FAILED'));results.push({name:'UI-only failure after successful publication does not undo or lock a valid command',ok:true});}
+ {const e=environment({failPersist:true}),before=JSON.stringify(e.state),stored=e.storage.getItem(e.key);assert.equal(await e.s.runDurableStateCommand('audit-persist',({state})=>{state.profile.name='Must not publish';return true;},{silent:true}),false);assert.equal(JSON.stringify(e.state),before);assert.equal(e.storage.getItem(e.key),stored);assert.equal(e.persistence.isLocked(),false);results.push({name:'rejected persistence keeps live memory and durable snapshot unchanged',ok:true});}
+ console.log(JSON.stringify({suite:'build334-durable-publication-recovery',scope:'actual app durable command + persistence/schema/integrity/transaction owners; injected publication/storage errors',passed:results.length,total:results.length,results},null,2));
+})().catch(error=>{console.error(error);process.exitCode=1;});

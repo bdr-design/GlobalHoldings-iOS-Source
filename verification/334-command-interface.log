@@ -1,0 +1,294 @@
+
+> global-holdings-build334-webapp@3.0.0-build334 test:interface
+> node tests/interface-browser.cjs && node tests/interface-flows.cjs && node tests/build334-tabs-browser.cjs && node tests/build334-tabs-component.cjs
+
+{"panels":32,"manager":"ريم العتيبي","persisted":true,"saveFailureRollback":true,"errors":[]}
+{"destinations":66,"offlineTerrain":true,"portrait":{"mapHeight":224.234375,"mapBottom":382.234375,"drawerTop":388.234375,"overflow":false},"narrow":{"width":305,"overflow":false,"headerOverflow":false},"errors":[]}
+{
+  "results": [
+    {
+      "orientation": "landscape",
+      "kind": "companies",
+      "result": "passed",
+      "realPointerInput": true
+    },
+    {
+      "orientation": "landscape",
+      "kind": "labor",
+      "result": "passed",
+      "realPointerInput": true
+    },
+    {
+      "orientation": "portrait",
+      "kind": "companies",
+      "result": "passed",
+      "realPointerInput": true
+    },
+    {
+      "orientation": "portrait",
+      "kind": "labor",
+      "result": "passed",
+      "realPointerInput": true
+    }
+  ],
+  "errors": []
+}
+{
+  "scope": "isolated original tab renderer + original click bindings; no full app, storage, upgrade or iPhone execution",
+  "browser": "140.0.7339.186",
+  "rows": [
+    {
+      "panel": "companies",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "input": "mouse",
+      "buttonCount": 2,
+      "routeCalls": 2,
+      "ok": true,
+      "items": [
+        {
+          "label": "الشركة القابضة",
+          "id": "holding",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        },
+        {
+          "label": "الشركات التابعة",
+          "id": "subs",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "companies",
+          "arg": "holding"
+        },
+        {
+          "panel": "companies",
+          "arg": "subs"
+        }
+      ]
+    },
+    {
+      "panel": "labor",
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "input": "mouse",
+      "buttonCount": 6,
+      "routeCalls": 6,
+      "ok": true,
+      "items": [
+        {
+          "label": "لوحة HR",
+          "id": "dashboard",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الوظائف والاحتياج",
+          "id": "jobs",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "مديرو الشركات",
+          "id": "managers",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الاستقطاب",
+          "id": "recruitment",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "العقود",
+          "id": "contracts",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الرواتب",
+          "id": "payroll",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "labor",
+          "arg": "dashboard"
+        },
+        {
+          "panel": "labor",
+          "arg": "jobs"
+        },
+        {
+          "panel": "labor",
+          "arg": "managers"
+        },
+        {
+          "panel": "labor",
+          "arg": "recruitment"
+        },
+        {
+          "panel": "labor",
+          "arg": "contracts"
+        },
+        {
+          "panel": "labor",
+          "arg": "payroll"
+        }
+      ]
+    },
+    {
+      "panel": "companies",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "input": "touch",
+      "buttonCount": 2,
+      "routeCalls": 2,
+      "ok": true,
+      "items": [
+        {
+          "label": "الشركة القابضة",
+          "id": "holding",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        },
+        {
+          "label": "الشركات التابعة",
+          "id": "subs",
+          "attributes": [
+            "class",
+            "data-companytab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "companies",
+          "arg": "holding"
+        },
+        {
+          "panel": "companies",
+          "arg": "subs"
+        }
+      ]
+    },
+    {
+      "panel": "labor",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "input": "touch",
+      "buttonCount": 6,
+      "routeCalls": 6,
+      "ok": true,
+      "items": [
+        {
+          "label": "لوحة HR",
+          "id": "dashboard",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الوظائف والاحتياج",
+          "id": "jobs",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "مديرو الشركات",
+          "id": "managers",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الاستقطاب",
+          "id": "recruitment",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "العقود",
+          "id": "contracts",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        },
+        {
+          "label": "الرواتب",
+          "id": "payroll",
+          "attributes": [
+            "class",
+            "data-labortab"
+          ]
+        }
+      ],
+      "calls": [
+        {
+          "panel": "labor",
+          "arg": "dashboard"
+        },
+        {
+          "panel": "labor",
+          "arg": "jobs"
+        },
+        {
+          "panel": "labor",
+          "arg": "managers"
+        },
+        {
+          "panel": "labor",
+          "arg": "recruitment"
+        },
+        {
+          "panel": "labor",
+          "arg": "contracts"
+        },
+        {
+          "panel": "labor",
+          "arg": "payroll"
+        }
+      ]
+    }
+  ],
+  "passed": true
+}

@@ -1,0 +1,55 @@
+{
+  "ok": true,
+  "layout": {
+    "width": 390,
+    "height": 844,
+    "scrollWidth": 390,
+    "rootHeight": 844,
+    "header": {
+      "left": 8,
+      "right": 382,
+      "top": 8
+    },
+    "controls": {
+      "left": 5,
+      "right": 385,
+      "bottom": 836
+    },
+    "diagnostics": {
+      "engine": "GH-CONFERENCE-3D",
+      "version": "3.0.0",
+      "active": true,
+      "failed": false,
+      "phase": "presenting",
+      "planHash": "e192b95eb3a0396591423b295e72157e18c043597482509fb9908e9f6510851c",
+      "webgl2": true,
+      "chapter": "power-operations",
+      "chapters": 26,
+      "frames": 37,
+      "scheduledFrame": false,
+      "playing": false,
+      "camera": "screen",
+      "audience": 86,
+      "pixelRatio": 1,
+      "drawCalls": 61,
+      "triangles": 904827,
+      "geometries": 46,
+      "textures": 12,
+      "screenTexture": {
+        "width": 3840,
+        "height": 2160
+      },
+      "assetsReady": true,
+      "fontReady": true,
+      "error": null
+    }
+  },
+  "shots": [
+    "334-conference-entry-landscape.png",
+    "334-conference-data-landscape.png",
+    "334-conference-hall-landscape.png",
+    "334-conference-company-landscape.png",
+    "334-conference-hall-portrait.png",
+    "334-conference-data-portrait.png"
+  ]
+}

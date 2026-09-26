@@ -1,0 +1,48 @@
+{
+  "schema": "global-holdings-build339-phase1c-b-provenance-v1",
+  "recorded_at": "2026-09-24",
+  "version": "3.0.0",
+  "build": 339,
+  "save_schema": "2.0.0",
+  "phase": "1C-B — writer proof / transaction barrier hardening; NOT live simulation activated",
+  "parent": {
+    "phase": "1C-A",
+    "runtime_source_tree_sha256": "1e158524e74d6360b334568af89f088e7fe65b22574a8de2ece49ab0de0c4779",
+    "webapp_tree_sha256": "fe2d7fc5e10b4695c9dec3feb9f0d0fe4be27cfa8cf08e8bb094d9a6206e5026",
+    "source_zip_sha256": "574dbe1d213ba0b10d011c5e703a565107332c11f10ec82959848538fc47b7ea"
+  },
+  "runtime_source_tree_sha256": "8570d5d7c6b9add34196b564d7f4498648c719a397eb598a65b21b00c9ac9325",
+  "webapp_tree_sha256": "6f12bf6b4f76859229936d1f382d7865275c390e6eb6e7eb7aee9bc2591e91af",
+  "runtime_files": 482,
+  "old_ipa_used": false,
+  "production_approved": false,
+  "physical_device_tested": false,
+  "accepted_changes": [
+    "composite writers declaring mayJoin are admitted to Full Snapshot before apply; unexpected late join in journal mode is rejected",
+    "journal primitive fields are limited to pre-existing own data properties with null/string/boolean/finite-number values",
+    "nested-asset writers are not admitted to field journal and require broader fallback",
+    "write-set barrier executes before irreversible critical persistence",
+    "dependency cycle integrity check no longer normalizes or writes dependencyGraph during read-only integrity-final checks",
+    "steady owner writer proof records exact tested root writes for finance, corporate, operations, inactive mobility, and frozen-state integrity-final",
+    "live simulation journal remains disabled pending 20k-scalable capture-on-first-write journal design"
+  ],
+  "activation_state": {
+    "simulation_runtime_journal_enabled": false,
+    "hour_boundary_journal_enabled": false,
+    "day_boundary_journal_enabled": false,
+    "full_snapshot_fallback_enabled": true
+  },
+  "tests": {
+    "phase1cb-readiness": "PASS 7/7",
+    "phase1c-adversarial": "PASS 8/8",
+    "phase1c-equivalence-600-assets": "PASS; journalRecords=1202; wholeAssetCopies=0",
+    "phase1cb-writer-contract-proof": "PASS 6/6"
+  },
+  "known_limits": [
+    "Current journal is not yet allocation-bounded for 20k assets",
+    "Active mobility/helper branches are not blanket-proven",
+    "Node/architecture proof is not iPhone JavaScriptCore performance proof",
+    "Live simulation journal remains disabled"
+  ],
+  "next": "Phase1C-C: capture-on-first-write / flat-buffer journal architecture and active-owner proof before any live activation"
+}

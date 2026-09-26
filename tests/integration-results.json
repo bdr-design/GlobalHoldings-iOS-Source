@@ -1,0 +1,10 @@
+{
+  "previewFreezesSimulationWithoutChangingSpeed": true,
+  "vendorPayments": 4,
+  "exactConferenceCost": 8600000,
+  "chapterResume": true,
+  "completionArchiveOnce": true,
+  "archiveSurvivesReload": true,
+  "replayReadOnly": true,
+  "errors": []
+}

@@ -1,0 +1,77 @@
+{
+  "schema": "global-holdings-build339-phase1a-provenance-v1",
+  "recorded_at": "2026-09-24",
+  "version": "3.0.0",
+  "build": 339,
+  "save_schema": "2.0.0",
+  "phase": "1A — deterministic time contract + transaction write-set proof",
+  "parent": {
+    "phase": "0",
+    "runtime_source_tree_sha256": "8564b451e24df4935cec1e3e9bab95b135f05b73e3b99afb077b3b86bffb577a",
+    "webapp_tree_sha256": "06234729bd9a6395f23fc46c958b4ee8f7d5c9e99c66c93f5e1b1aea78ce1652"
+  },
+  "runtime_source_tree_sha256": "2d9773fcf2c042401fb7d3599b9eb720078215b6141c881a256450cf83fe9874",
+  "webapp_tree_sha256": "7cdb92260070495f8d3e842f4d35407eb4c21f5d5d3cd7414d1676051d8a6901",
+  "runtime_files": 481,
+  "old_ipa_used": false,
+  "production_approved": false,
+  "physical_device_tested": false,
+  "accepted_changes": [
+    "Extract exact hour/day boundary arithmetic into simulation-time-core while retaining one simulation owner and identical scheduler semantics",
+    "Pin manual advance, live boundary split, stall policy, and midnight day-before-hour ordering in a golden fixture",
+    "Add opt-in root write-set audit to the existing GH_TRANSACTION_CORE; disabled normal gameplay has no audit clone/compare cost",
+    "Allow enforceWriteRoots in architecture tests so undeclared authoritative root writes fail and rollback",
+    "Expose optional Build339 simulation boundary write audit without changing normal transaction scope",
+    "Capture a clean-source actual hourly market write-map and byte-equivalent late-failure rollback proof"
+  ],
+  "hourly_market_write_map": [
+    "advanced",
+    "controlPlane",
+    "deliveryClosure",
+    "domainRuntime",
+    "lastMarketHour",
+    "maPortfolio",
+    "portfolio",
+    "portfolioBook",
+    "realism",
+    "simulationWorld"
+  ],
+  "ordinary_slice_probe_mutated_roots": [
+    "assets",
+    "mobility",
+    "sectorProfitToday",
+    "simSeconds",
+    "simulationKernel",
+    "todayProfit"
+  ],
+  "explicit_non_changes": [
+    "No fullSnapshot removal yet",
+    "No Save Schema change",
+    "No persistence format change",
+    "No route/asset/render architecture change",
+    "No Build338 mutation"
+  ],
+  "tests": {
+    "build339-time-golden": "PASS",
+    "build339-architecture-bootstrap": "PASS 12/12",
+    "build339-transaction-write-set-audit": "PASS 5/5",
+    "build339-simulation-write-set-contract": "PASS 2/2",
+    "build339-hour-boundary-write-map": "PASS 2/2",
+    "build334-simulation-time-contract": "PASS",
+    "build334-calendar-owner-cadence": "PASS",
+    "build334-600-air-calendar-regression": "PASS",
+    "build334-calendar-safety-contract": "PASS 7/7",
+    "build334-scheduler-liveness": "PASS 14/14",
+    "build334-late-frame-liveness": "PASS 4/4",
+    "build336-hour83-calendar-proof-regression": "PASS",
+    "source-layout": "PASS 10/10",
+    "source-verifier": "PASS"
+  },
+  "pending": [
+    "Node 24 / ESLint / full source acceptance CI",
+    "Apple/WKWebView/native gates",
+    "Physical iPhone Phase1 diagnostic",
+    "Day-boundary dynamic write-map",
+    "Root-journal/copy-on-write rollback implementation"
+  ]
+}

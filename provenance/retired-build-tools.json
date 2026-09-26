@@ -1,0 +1,47 @@
+[
+  {
+    "path": "tools/set_build_metadata.py",
+    "sha256": "5004c8bbf7d541de068e7def22ff6bbc050645a9c8745fe3e130a415281a7844",
+    "reason": "historical IPA333-based build/verification; replaced by source-only acceptance/build configuration"
+  },
+  {
+    "path": "tools/run_acceptance.py",
+    "sha256": "ec1c9ac68bbbfea1e6c430915b1f0a134dfb5dbb5e95ad8924b292a8f9678479",
+    "reason": "historical IPA333-based build/verification; replaced by source-only acceptance/build configuration"
+  },
+  {
+    "path": "tools/verify_build334.py",
+    "sha256": "e8928c199ce92e99c43dc2eb70f1143ecfec8fa2a7af1985717da00dd3260a10",
+    "reason": "historical IPA333-based build/verification; replaced by source-only acceptance/build configuration"
+  },
+  {
+    "path": "tools/repack_ipa.py",
+    "sha256": "0414814006651b6b5b5d7b4d947ef074dfaabf85e00ea30e8346ba6ecd4a0da0",
+    "reason": "historical IPA333-based build/verification; replaced by source-only acceptance/build configuration"
+  },
+  {
+    "path": "tools/build_release_archives.py",
+    "sha256": "a0f5514f19cb826e8467f9960291d6a465b78f03da71af0495477f1170976ba6",
+    "reason": "historical IPA333-based build/verification; replaced by source-only acceptance/build configuration"
+  },
+  {
+    "path": "tools/build334_release_common.py",
+    "sha256": "80041213a314a961fc13ce9f77cdc4a7fdf70460834671b362c09299b5d88aae",
+    "reason": "historical IPA333-based build/verification; replaced by source-only acceptance/build configuration"
+  },
+  {
+    "path": "tools/verify_build333.py",
+    "sha256": "d7df66ad5226dd53720852afae2819c06887d5b5bbd1f6d66b92047133322728",
+    "reason": "historical IPA333-based build/verification; replaced by source-only acceptance/build configuration"
+  },
+  {
+    "path": "tools/verify_release_archives.py",
+    "sha256": "409c5c61d1851576e423f5dfb9d362d704b387b5bca34a748ec1abace0c0776b",
+    "reason": "historical IPA333-based build/verification; replaced by source-only acceptance/build configuration"
+  },
+  {
+    "path": "tests/build334-packaging-tools-adversarial.py",
+    "sha256": "5bb1d8cc0e787ded210816d87a33b2039e20ce0a0d7b9ba41048c878ddb889db",
+    "reason": "historical IPA333-based build/verification; replaced by source-only acceptance/build configuration"
+  }
+]

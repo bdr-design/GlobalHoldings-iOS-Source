@@ -1,0 +1,189 @@
+{
+  "passed": true,
+  "environment": "Chromium local DOM with original Leaflet; 100 synthetic route geometries; single air owner; real slice processor, not 5000 actual purchase commands; no map network, WebKit, native save or thermal test",
+  "results": [
+    {
+      "size": 1000,
+      "distinctRoutes": 100,
+      "simSeconds": 240,
+      "elapsedWorkMs": 1253.5,
+      "beforePosition": [
+        8,
+        -100
+      ],
+      "afterPosition": [
+        8.089255697555776,
+        -99.73223290733267
+      ],
+      "snapshots": [
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        }
+      ],
+      "allMoving": true,
+      "faults": [],
+      "assetCount": 1000
+    },
+    {
+      "size": 5000,
+      "distinctRoutes": 100,
+      "simSeconds": 240,
+      "elapsedWorkMs": 2786.100000000093,
+      "beforePosition": [
+        8,
+        -100
+      ],
+      "afterPosition": [
+        8.089255697555776,
+        -99.73223290733267
+      ],
+      "snapshots": [
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        },
+        {
+          "layers": 64,
+          "ownMarkers": 28,
+          "motionStates": 28,
+          "clusters": 4,
+          "individuals": 24,
+          "dom": 813
+        }
+      ],
+      "allMoving": true,
+      "faults": [],
+      "assetCount": 5000
+    }
+  ],
+  "errors": []
+}

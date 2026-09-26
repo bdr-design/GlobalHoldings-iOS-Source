@@ -1,0 +1,72 @@
+{
+  "layout": {
+    "width": 844,
+    "height": 390,
+    "contentHeight": 390,
+    "contentShare": 1,
+    "hasOverflow": false,
+    "font": true,
+    "chart": [
+      273750000,
+      175200000,
+      98550000
+    ],
+    "stats": "365الأيام المسجلةغير متاحنمو الإيرادات السنوي"
+  },
+  "dense": {
+    "headcount": "6",
+    "rows": [
+      {
+        "top": 70.203125,
+        "bottom": 99.203125
+      },
+      {
+        "top": 108.203125,
+        "bottom": 138.203125
+      },
+      {
+        "top": 145.203125,
+        "bottom": 175.203125
+      },
+      {
+        "top": 182.203125,
+        "bottom": 212.203125
+      },
+      {
+        "top": 219.203125,
+        "bottom": 249.203125
+      },
+      {
+        "top": 256.203125,
+        "bottom": 286.203125
+      },
+      {
+        "top": 293.203125,
+        "bottom": 323.203125
+      }
+    ],
+    "bounds": {
+      "top": 59,
+      "bottom": 370.40625
+    }
+  },
+  "loss": {
+    "values": [
+      1000000,
+      5200000,
+      -4200000
+    ],
+    "stats": "35الأيام المسجلةغير متاحنمو الإيرادات السنوي",
+    "negative": "44.6809%"
+  },
+  "late": {
+    "active": false,
+    "pool": 0,
+    "memory": {
+      "geometries": 0,
+      "textures": 0
+    }
+  },
+  "errors": [],
+  "fixture": "Synthetic QA state, closed with production finance core. Not embedded in the app."
+}

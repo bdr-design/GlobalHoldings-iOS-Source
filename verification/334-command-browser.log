@@ -1,0 +1,79 @@
+
+> global-holdings-build334-webapp@3.0.0-build334 test:browser
+> node tests/theatre-browser.cjs && node tests/conference-integration.cjs
+
+{
+  "first": {
+    "engine": "GH-CONFERENCE-3D",
+    "version": "3.0.0",
+    "active": true,
+    "failed": false,
+    "phase": "presenting",
+    "planHash": null,
+    "webgl2": true,
+    "chapter": "opening",
+    "chapters": 26,
+    "frames": 2,
+    "scheduledFrame": false,
+    "playing": false,
+    "camera": "screen",
+    "audience": 86,
+    "pixelRatio": 1,
+    "drawCalls": 49,
+    "triangles": 897390,
+    "geometries": 45,
+    "textures": 11,
+    "screenTexture": {
+      "width": 3840,
+      "height": 2160
+    },
+    "assetsReady": true,
+    "fontReady": true,
+    "error": null
+  },
+  "phone": {
+    "width": 390,
+    "scroll": 390,
+    "height": 844,
+    "rect": 844,
+    "diag": {
+      "engine": "GH-CONFERENCE-3D",
+      "version": "3.0.0",
+      "active": true,
+      "failed": false,
+      "phase": "presenting",
+      "planHash": null,
+      "webgl2": true,
+      "chapter": "bank-leadership",
+      "chapters": 26,
+      "frames": 76,
+      "scheduledFrame": false,
+      "playing": false,
+      "camera": "wide",
+      "audience": 86,
+      "pixelRatio": 1,
+      "drawCalls": 59,
+      "triangles": 904729,
+      "geometries": 46,
+      "textures": 12,
+      "screenTexture": {
+        "width": 3840,
+        "height": 2160
+      },
+      "assetsReady": true,
+      "fontReady": true,
+      "error": null
+    }
+  },
+  "errors": []
+}
+{
+  "previewFreezesSimulationWithoutChangingSpeed": true,
+  "vendorPayments": 4,
+  "exactConferenceCost": 8600000,
+  "chapterResume": true,
+  "completionArchiveOnce": true,
+  "archiveSurvivesReload": true,
+  "replayReadOnly": true,
+  "errors": []
+}

@@ -1,0 +1,29 @@
+{
+  "upgrade": "333 -> 334",
+  "allPlayerDataPreserved": true,
+  "allStoredIdentityFieldsPreserved": true,
+  "customIdentityPreserved": true,
+  "signatureRequiredOnUpgrade": true,
+  "resumedAfterSignature": true,
+  "signatureSaveFailureRollback": true,
+  "validMandateDoesNotReopen": true,
+  "loansRepaidExactly": true,
+  "poolConsolidatedInvariant": true,
+  "repeatedSweepNoDuplicate": true,
+  "calendarValidation": true,
+  "saveReload": true,
+  "identity": {
+    "groupName": "مجموعة الأفق القيادية",
+    "groupShort": "أفق",
+    "groupLogo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "airName": "أجنحة الأفق الدولية",
+    "airShort": "أجنحة",
+    "airLogo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+  },
+  "final": {
+    "consolidated": 1000250000,
+    "group": 879250000,
+    "air": 1000000
+  },
+  "errors": []
+}

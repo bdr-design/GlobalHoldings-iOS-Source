@@ -1,0 +1,17 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {harness,minimal}=require('./helpers/core-harness');
+const {s}=harness(['diagnostics-core']);
+const state=minimal();state.assets=[];state.sectorProfitToday={};state.tripRevenueAccrued={};state.speed=1;
+state.diagnostics={events:[],counters:{},activeIssues:{},resolvedIssues:[],lastHealth:null,faultRecorder:{version:1,active:true,samples:[{legacy:true}],events:[],counts:{}}};
+const adopted=s.GH_DIAGNOSTICS.recorderSnapshot(state);
+assert.equal(adopted?.active,true,'legacy Build335 recorder must be adopted into runtime');
+assert.equal(Object.prototype.hasOwnProperty.call(state.diagnostics,'faultRecorder'),false,'fault recorder must be removed from persistent state');
+assert.equal(JSON.stringify(state).includes('faultRecorder'),false,'serialized game state must not contain runtime recorder');
+const bundle=s.GH_DIAGNOSTICS.exportBundle(state,{appVersion:'3.0.0',saveSchemaVersion:'2.0.0',simulation:{}});
+assert.equal(bundle.faultRecorder?.active,true,'diagnostic export must still contain runtime recorder');
+assert.ok(Number.isFinite(bundle.stateByteProfile?.rootBytes),'diagnostic export must include exact root byte profile');
+assert.ok(Array.isArray(bundle.stateByteProfile?.rows),'diagnostic export must include subtree byte rows');
+s.GH_DIAGNOSTICS.clear(state);
+assert.equal(s.GH_DIAGNOSTICS.recorderSnapshot(state),null,'clear must remove runtime recorder');
+console.log('build336 diagnostics transient recorder: PASS');

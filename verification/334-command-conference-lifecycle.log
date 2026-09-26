@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "cost": 8600000,
+  "lifecycle": [
+    "prepared",
+    "preflight",
+    "opening",
+    "presenting",
+    "closing",
+    "completed"
+  ],
+  "planHash": "deeecbc60d3df8346eed04a80392fa0ccb93b50c4a645f4bbdddfad0f93e5e73",
+  "archiveExact": true
+}

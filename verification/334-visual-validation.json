@@ -1,0 +1,62 @@
+{
+  "layout": {
+    "width": 844,
+    "height": 390,
+    "contentHeight": 390,
+    "contentShare": 1,
+    "hasOverflow": false,
+    "font": true,
+    "chart": [
+      273750000,
+      175200000,
+      98550000
+    ],
+    "stats": "365الأيام المسجلةغير متاحنمو الإيرادات السنوي"
+  },
+  "dense": {
+    "stats": [
+      {
+        "value": "91%",
+        "label": "تفاعل إيجابي"
+      },
+      {
+        "value": "3,582",
+        "label": "الحضور"
+      },
+      {
+        "value": "629,537",
+        "label": "المشاهدات"
+      }
+    ],
+    "expectedAttendees": "3,582",
+    "rows": [
+      {
+        "top": 79,
+        "bottom": 104
+      }
+    ],
+    "bounds": {
+      "top": 64,
+      "bottom": 308.40625
+    }
+  },
+  "loss": {
+    "values": [
+      1000000,
+      5200000,
+      -4200000
+    ],
+    "stats": "35الأيام المسجلةغير متاحنمو الإيرادات السنوي",
+    "negative": "44.6809%"
+  },
+  "late": {
+    "active": false,
+    "pool": 0,
+    "memory": {
+      "geometries": 0,
+      "textures": 0
+    }
+  },
+  "errors": [],
+  "fixture": "Synthetic QA state, closed with production finance core. Not embedded in the app."
+}

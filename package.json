@@ -1,0 +1,46 @@
+{
+  "name": "global-holdings-build340-webapp",
+  "version": "3.0.0-build340",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "node tests/lint.cjs",
+    "test": "npm run test:r4 && npm run test:build335 && npm run test:build336 && npm run test:build337 && npm run test:build338 && npm run test:build339 && npm run test:build340 && npm run test:root-r3 && npm run test:audit334-r2 && npm run test:archive-r2 && npm run test:audit334 && node tests/lint.cjs && npm run test:staged-bank-energy && node tests/build334-tabs-contract.cjs && node tests/build334-identity-regressions.cjs && node tests/company-platform-regressions.cjs && node tests/build334-company-platform-orphan-contract.cjs && node tests/build334-company-adapters.cjs && node tests/build334-dynamic-company-consumers.cjs && node tests/build334-singleton-company-boundaries.cjs && node tests/build334-dynamic-finance-company-ids.cjs && node tests/build334-map-identity-registry.cjs && node tests/build334-security-contract.cjs && node tests/build334-xss-logo-security.cjs && node tests/build334-document-proof-v3-security.cjs && node tests/build334-signature-pad.cjs && node tests/formation-engine-core.cjs && node tests/conference-capability-core.cjs && node tests/build334-simulation-time-contract.cjs && npm run test:simulation-scale && node tests/build334-asset-route-hr-contract.cjs && node tests/build334-app-platform-authorization.cjs && node tests/build334-finance-settlement-contract.cjs && node tests/build334-finance-company-security-contract.cjs && node tests/build334-durable-authorization-contract.cjs && node tests/core-regressions.cjs && node tests/fleet-regressions.cjs && node tests/persistence-regressions.cjs && node tests/build315-procurement-idempotency-test.js && node tests/persistence-pressure-and-native-build251-test.js && node tests/build317-finance-depth-test.js && node tests/review-regressions.cjs && node tests/tax-reload-regressions.cjs && node tests/build334-tabs-browser.cjs && node tests/build334-tabs-component.cjs && node tests/build334-calendar-safety-contract.cjs && node tests/build334-calendar-advance-browser.cjs && node tests/build334-calendar-journey-browser.cjs && node tests/build334-market-discovery-contract.cjs && node tests/build334-market-discovery-browser.cjs && node tests/build334-accrual-cash-separation-contract.cjs && node tests/build334-bank-balance-sheet.cjs && node tests/build334-bank-energy-operating-costs.cjs && node tests/build334-bank-fee-reporting.cjs && node tests/build334-bank-projected-risk.cjs && node tests/build334-bank-sector-concentration.cjs && node tests/build334-bank-signed-income.cjs && node tests/build334-deferred-save-lifecycle.cjs && node tests/build334-durable-postcommit-contract.cjs && node tests/build334-energy-take-or-pay.cjs && node tests/build334-iphone-thermal-contract.cjs && node tests/build334-late-frame-liveness.cjs && node tests/build334-logistics-staged-contract.cjs && node tests/build334-long-session-pressure.cjs && node tests/build334-map-pressure-contract.cjs && node tests/build334-native-snapshot-queue.cjs && node tests/build334-open-invoice-retention.cjs && node tests/build334-presentation-work-contract.cjs && node tests/build334-procurement-pressure.cjs && node tests/build334-purchase-delivery-pressure.cjs && node tests/build334-scheduler-liveness.cjs && node tests/build334-simulation-fault-isolation.cjs && node tests/build334-archived-proof-retention-open.cjs && npm run test:capacity-acceptance",
+    "test:browser": "node tests/theatre-browser.cjs && node tests/conference-integration.cjs",
+    "build:three": "esbuild tools/three-entry.js --bundle --format=iife --global-name=GH_THREE --minify --legal-comments=inline --outfile=WebApp/vendor/three/three-0.180.0.min.js",
+    "test:visual": "node tests/redesign-visual.cjs",
+    "test:interface": "node tests/interface-browser.cjs && node tests/interface-flows.cjs && node tests/build334-tabs-browser.cjs && node tests/build334-tabs-component.cjs",
+    "test:review": "node tests/review-upgrade-browser.cjs && node tests/finance-presentation-browser.cjs",
+    "test:god": "node tests/god-mode-browser.cjs",
+    "test:calendar": "node tests/build334-calendar-safety-contract.cjs && node tests/build334-calendar-advance-browser.cjs && node tests/build334-calendar-journey-browser.cjs",
+    "test:procurement": "node tests/build334-market-discovery-contract.cjs && node tests/build334-market-discovery-browser.cjs",
+    "test:staged-bank-energy": "node tests/build334-scheduler-liveness.cjs && node tests/build334-bank-energy-operating-costs.cjs && node tests/build334-logistics-staged-contract.cjs && node tests/build334-bank-projected-risk.cjs && node tests/build334-bank-signed-income.cjs && node tests/build334-bank-balance-sheet.cjs && node tests/build334-bank-fee-reporting.cjs && node tests/build334-energy-take-or-pay.cjs && node tests/build334-procurement-pressure.cjs && node tests/build334-purchase-delivery-pressure.cjs && node tests/build334-long-session-pressure.cjs",
+    "test:audit334": "node tests/build334-persistence-snapshot-consistency.cjs && node tests/build334-delivery-atomic-reconciliation.cjs && node tests/build334-simulation-slice-atomic.cjs && node tests/build334-durable-publication-recovery.cjs",
+    "test:calendar-local": "node tests/build334-calendar-local-dom.cjs",
+    "test:runtime-review": "node tests/build334-native-snapshot-queue.cjs && node tests/build334-late-frame-liveness.cjs && node tests/build334-simulation-fault-isolation.cjs && node tests/build334-presentation-work-contract.cjs && node tests/build334-deferred-save-lifecycle.cjs && node tests/build334-open-invoice-retention.cjs",
+    "test:known-open": "node tests/build334-proof-capacity-acceptance-r2.cjs",
+    "test:archive-r2": "node tests/build334-archive-integrity-r2.cjs && node tests/build334-transaction-promotion-r2.cjs",
+    "test:capacity-acceptance": "node tests/build334-proof-capacity-acceptance-r2.cjs",
+    "test:audit334-r2": "node tests/build334-r2-transaction-promotion.cjs && node tests/build334-r2-snapshot-budget.cjs && node tests/build334-r2-maintenance-atomic.cjs && node tests/build334-r2-deferred-persistence.cjs && node tests/build334-r2-delivery-lazy-index.cjs",
+    "test:map-local": "node tests/build334-r2-map-local-dom.cjs",
+    "test:root-r3": "node tests/build334-r3-calendar-work.cjs && python3 tests/build334-source-layout.py",
+    "test:r4": "node tests/build334-r4-proof-archive.cjs && node tests/build334-r4-recovery-integration.cjs && node tests/build334-r4-recovery-browser.cjs",
+    "test:simulation-scale": "node tests/build334-600-air-calendar-regression.cjs && node tests/build334-calendar-owner-cadence.cjs",
+    "test:build335": "node tests/build335-persistence-root-coalescing.cjs && node tests/build335-compaction-v2-60day-pressure.cjs && node tests/build335-sea-facility-country-identity.cjs",
+    "test:build336": "node tests/build336-proof-ledger-compaction-regression.cjs && node tests/build336-real-proof-compaction-pressure.cjs && node tests/build336-diagnostics-transient.cjs && node tests/build336-hour83-calendar-proof-regression.cjs && node tests/build336-state-byte-attribution-pressure.cjs && node tests/build336-intercompany-ledger-projection.cjs",
+    "test:build337": "node tests/build337-instrumentation-baseline.cjs",
+    "test:build338": "node tests/build338-idempotency-save-lag-root.cjs",
+    "test:build339": "node tests/build339-architecture-bootstrap.cjs && node tests/build339-time-golden.cjs && node tests/build339-phase1bb-pacing-separation.cjs && node tests/build339-transaction-write-set-audit.cjs && node tests/build339-simulation-write-set-contract.cjs && node tests/build339-hour-boundary-write-map.cjs && node tests/build339-day-boundary-write-map.cjs && node tests/build339-phase1c-adversarial-contract.cjs && node tests/build339-phase1c-equivalence-gate.cjs && node tests/build339-phase1cb-readiness.cjs && node tests/build339-phase1cb-writer-contract-proof.cjs && node tests/build339-diagnostic-frame-trace.cjs && node tests/build339-accrued-obligation-cash-shortfall.cjs",
+    "test:build339:time-golden": "node tests/build339-time-golden.cjs",
+    "test:build340": "node tests/build340-map-asset-query.cjs && node tests/build340-map-presentation.cjs && node tests/build340-finance-report.cjs && node tests/build340-route-planner-cooperative.cjs && node tests/build340-route-planner-worker.cjs && node tests/build340-media-assets.cjs"
+  },
+  "devDependencies": {
+    "three": "0.180.0",
+    "esbuild": "0.25.10",
+    "playwright": "1.55.1",
+    "eslint": "10.10.0",
+    "leaflet": "1.9.4"
+  }
+}

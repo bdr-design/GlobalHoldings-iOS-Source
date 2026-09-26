@@ -1,0 +1,25 @@
+{
+  "upstream": {
+    "native_reference_commit": "5f9d195e4a23ccfa669eeb0e9f7e92acfb3ac01f",
+    "native_candidate_only": true,
+    "matched_installed334": false,
+    "ipa_built": false,
+    "files": {
+      "iOS/GlobalHoldings/AppDelegate.swift": "ac85c6e05e16ee9e7ac927d2e46bd83c577c7d208bff503709decd1f3dd2421b",
+      "iOS/GlobalHoldings/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png": "244d85af57978e32e98498da36a99ad8224e713bcceb5e9a3e0b82b935126e8c",
+      "iOS/GlobalHoldings/Assets.xcassets/AppIcon.appiconset/Contents.json": "9cf2928dad89427abd581b6852db081352417f400afb65e60c479228cdc4f4da",
+      "iOS/GlobalHoldings/Assets.xcassets/Contents.json": "0fd49ba3c3585c709678e0046a821c3c60685ec7063720d30d3a3448be3a208b",
+      "iOS/GlobalHoldings/GameViewController.swift": "091872028d355a565cbe558710e90d86270d1e0f8c09d7db8758d62c2b9edecc",
+      "iOS/GlobalHoldings/GlobalGameStorage.swift": "facdc70c3086f2bafb486b17a77db3e2472557cda3aef961b07555e4bb0792e5",
+      "iOS/GlobalHoldings/GlobalSaveVault.swift": "d4755cf780a614b39482adf6377b485d7b7f0e392974375ac3f35b33739279b0",
+      "iOS/GlobalHoldings/LaunchScreen.storyboard": "fed5a53d38ed2667c3f609bd317c9f4fc30bf42feac87cfab56bd702b8879947",
+      "project.yml": "d11178a47be453b0d55381638a3b82b9e9e92dc0c3684f91f961f6c3084fdb4b"
+    }
+  },
+  "integration": "native N1 source unchanged; project version explicitly adapted for reconstructed 334, not evidence of installed binary ancestry",
+  "swift_changed_in_r3": false,
+  "native_config_version": "3.0.0",
+  "native_config_build": 334,
+  "apple_typecheck_reexecuted_in_r3": false,
+  "ipa_built": false
+}

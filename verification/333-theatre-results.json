@@ -1,0 +1,71 @@
+{
+  "first": {
+    "engine": "GH-CONFERENCE-3D",
+    "version": "2.1.0",
+    "active": true,
+    "failed": false,
+    "webgl2": true,
+    "chapter": "opening",
+    "chapters": 26,
+    "frames": 2,
+    "scheduledFrame": false,
+    "playing": false,
+    "camera": "screen",
+    "audience": 86,
+    "pixelRatio": 1,
+    "drawCalls": 57,
+    "triangles": 904825,
+    "geometries": 45,
+    "textures": 11,
+    "screenTexture": {
+      "width": 3840,
+      "height": 2160
+    },
+    "assetsReady": true,
+    "fontReady": true,
+    "error": null
+  },
+  "phone": {
+    "width": 390,
+    "scroll": 390,
+    "height": 844,
+    "rect": 844,
+    "diag": {
+      "engine": "GH-CONFERENCE-3D",
+      "version": "2.1.0",
+      "active": true,
+      "failed": false,
+      "webgl2": true,
+      "chapter": "bank-leadership",
+      "chapters": 26,
+      "frames": 9,
+      "scheduledFrame": false,
+      "playing": false,
+      "camera": "wide",
+      "audience": 86,
+      "pixelRatio": 1,
+      "drawCalls": 55,
+      "triangles": 904633,
+      "geometries": 46,
+      "textures": 12,
+      "screenTexture": {
+        "width": 3840,
+        "height": 2160
+      },
+      "assetsReady": true,
+      "fontReady": true,
+      "error": null
+    }
+  },
+  "errors": [],
+  "idleFramesStable": true,
+  "reopenCycles": 3,
+  "contextLossRecovered": true,
+  "reducedMotionRespected": true,
+  "disposedMemory": {
+    "geometries": 0,
+    "textures": 0
+  },
+  "glError": 0,
+  "legacyIncompleteGrowthSuppressed": true
+}

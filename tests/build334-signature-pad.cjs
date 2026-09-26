@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('assert/strict');
+const fs=require('fs');
+const pad=require('../WebApp/signature-pad-core.js');
+const valid=[[{x:.08,y:.72,pressure:.4},{x:.25,y:.35,pressure:.6},{x:.46,y:.66,pressure:.7},{x:.72,y:.28,pressure:.5}]];
+assert.equal(pad.validate(valid).ok,true,'a real normalized stroke is accepted');
+assert.equal(pad.validate([[{x:.1,y:.1},{x:.101,y:.101}]]).ok,false,'tap-like strokes are rejected');
+assert.throws(()=>pad.normalize([[{x:-.1,y:.2},{x:.2,y:.2}]]),/out-of-range/);
+assert.throws(()=>pad.normalize(Array.from({length:65},()=>[{x:.1,y:.1},{x:.2,y:.2}])),/strokes-invalid/);
+const normalized=pad.normalize(valid);valid[0][0].x=.9;assert.equal(normalized[0][0].x,.08,'normalization does not retain caller objects');
+const svg=pad.svgMarkup(normalized,{ink:'#123248'});assert.match(svg,/^<svg/);assert.doesNotMatch(svg,/<script|onerror|javascript:/i);assert.match(svg,/polyline/);
+assert.equal(pad.safeInk('url(javascript:1)'),'#123248');
+const source=fs.readFileSync(require.resolve('../WebApp/signature-pad-core.js'),'utf8');
+assert.doesNotMatch(source,/active=\[coordinate\(event\)\];strokes\.push\(active\);draw\(\)/,'pointer-down must not publish a one-point stroke to strict rendering');
+assert.match(source,/active\.push\(point\);if\(active\.length===2\)strokes\.push\(active\)/,'a stroke becomes renderable only after its second point');
+console.log(JSON.stringify({passed:true,version:pad.VERSION,metrics:pad.metrics(normalized)}));

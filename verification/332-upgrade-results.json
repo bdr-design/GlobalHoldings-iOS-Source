@@ -1,0 +1,15 @@
+{
+  "upgrade": "331 -> 332",
+  "businessSnapshotPreserved": true,
+  "loansRepaidExactly": true,
+  "poolConsolidatedInvariant": true,
+  "repeatedSweepNoDuplicate": true,
+  "calendarValidation": true,
+  "saveReload": true,
+  "final": {
+    "consolidated": 1000250000,
+    "group": 949250000,
+    "air": 1000000
+  },
+  "errors": []
+}

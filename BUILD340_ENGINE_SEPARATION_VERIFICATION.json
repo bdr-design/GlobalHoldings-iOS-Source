@@ -1,0 +1,177 @@
+{
+  "format": "gh-build340-engine-separation-verification-v1",
+  "version": "3.0.0",
+  "build": 340,
+  "save_schema": "2.0.0",
+  "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+  "source_archive_sha256": "41c79d819a3b013c540606dd7b86e7e5cfa7f3cc704365e1567b443b63e45003",
+  "baseline_source_tree_sha256": "f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5",
+  "map_asset_query_engine": {
+    "worker_file": "WebApp/map-asset-query-worker.js",
+    "core_file": "WebApp/map-asset-query-core.js",
+    "authoritative_state_access": false,
+    "state_mutation": false,
+    "stable_source_row_order": true,
+    "worker_failure_fallback": true,
+    "save_schema_changed": false
+  },
+  "locally_tested_cases": {
+    "asset_rows_20000": true,
+    "asset_rows_4300": true,
+    "company_include_exclude_and_unknown_owner": true,
+    "stable_order_and_unique_indexes": true,
+    "stale_generation_and_source_replacement": true,
+    "worker_message_contract": true,
+    "worker_creation_failure_fallback": true,
+    "runtime_and_ios_resource_wiring": true,
+    "unordered_worker_result_is_rejected": true,
+    "map_presentation_4300_and_20000_parity": true,
+    "finance_report_10000_exact_parity": true,
+    "road_planner_worker_4300_and_20000_exact_assignment_parity": true,
+    "road_planner_worker_cancellation": true,
+    "media_decode_concurrency_dedupe_priority_and_bounds": true,
+    "worker_and_fallback_wiring": true
+  },
+  "not_yet_verified": [
+    "physical iPhone pressure testing at 4,300 and 20,000 full assets across purchase, sale, routes, finance, save/restore and long sessions",
+    "90Hz and 60Hz frame-time targets, 100ms touch P95 and no main-thread task at or above 50ms on target iPhones",
+    "worker-compatible simulation, procurement, sale and persistence plans that preserve atomic apply, rollback and data parity"
+  ],
+  "production_approved": false,
+  "ipa_built": false,
+  "device_tested": false,
+  "local_regressions": {
+    "build340_map_asset_query": "PASS_20000",
+    "build340_map_presentation": "PASS_4300_AND_20000",
+    "build340_finance_read_model": "PASS_10000_EXACT_PARITY",
+    "build340_route_planner_cooperative": "PASS_4300_AND_20000",
+    "build340_route_planner_worker": "PASS_4300_AND_20000_EXACT_PARITY_AND_CANCELLATION",
+    "build340_media_engine": "PASS_BOUNDS_PRIORITY_DEDUP_LRU",
+    "build339_transaction_and_rollback_regressions": "PASS_LOCAL",
+    "javascript_syntax": "PASS"
+  },
+  "observed_purchase_delivery_pressure": {
+    "quantity": 1000,
+    "total_ms": 93.08,
+    "environment": "Node 24.19.0 synchronous core only; no DOM, native persistence, or iPhone"
+  },
+  "repository_branch": "build340-engine-separation-20260926",
+  "repository_base_commit": "31b1e65758bb6f9d12260ce121d0526e23b1788b",
+  "repository_ci_runs": [
+    {
+      "run_id": 36224914503,
+      "commit": "f4ba6b6a292f126cf76b8c85b896cb96c2cd557e",
+      "result": "FAIL_AT_ESLINT",
+      "findings": [
+        "app.js filter was undefined after map render refactor",
+        "require global missing for simulation-core.js Node lint"
+      ],
+      "fixes_applied_to_source": true,
+      "rerun": "ESLint_AND_DEPENDENCIES_PASS"
+    },
+    {
+      "run_id": 36225246621,
+      "commit": "e0335a72fb11e00ab4a289c2489d032424b2ddb0",
+      "result": "FAIL_103_OF_104_ACCEPTANCE_GATES",
+      "finding": "tests/build334-source-layout.py retained a Build 339 fixture after the version bump",
+      "fixes_applied_to_source": true,
+      "local_regression": "10_OF_10_PASS",
+      "rerun": "pending"
+    },
+    {
+      "run_id": 36228574166,
+      "commit": "0befbf5937971f32020538729ef2c9357654cfe9",
+      "result": "SUCCESS",
+      "source_gates": "109/109",
+      "eslint": "PASS",
+      "chromium_webkit": "PASS",
+      "native_storage": "PASS",
+      "native_wkwebview": "PASS",
+      "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
+      "physical_iphone": "NOT_TESTED"
+    }
+  ],
+  "main_thread_state_owner": {
+    "authoritative_state_mutation": true,
+    "worker_state_mutation": false,
+    "save_schema_changed": false,
+    "full_snapshot_rollback": true,
+    "live_field_journal": false,
+    "remaining_main_thread_work": [
+      "simulation asset advancement",
+      "financial day/hour commits",
+      "procurement record generation/publication",
+      "sale and route authorized commits",
+      "Leaflet DOM markers",
+      "native persistence enqueue"
+    ]
+  },
+  "map_presentation_engine": {
+    "worker_file": "WebApp/map-presentation-worker.js",
+    "core_file": "WebApp/map-presentation-core.js",
+    "work_moved": [
+      "route interpolation",
+      "representative selection",
+      "asset grouping",
+      "moving cluster centroid math"
+    ],
+    "authoritative_state_access": false,
+    "worker_failure_fallback": true
+  },
+  "finance_read_engine": {
+    "worker_file": "WebApp/finance-report-worker.js",
+    "core_file": "WebApp/finance-report-core.js",
+    "work_moved": [
+      "monthly read aggregation from immutable report DTOs"
+    ],
+    "authoritative_state_access": false,
+    "finance_write_owner_changed": false,
+    "worker_failure_fallback": true
+  },
+  "road_route_planning_engine": {
+    "worker_file": "WebApp/road-planner-worker.js",
+    "core_file": "WebApp/road-planner-worker-core.js",
+    "work_moved": [
+      "road route candidate assignment and route-provider requests"
+    ],
+    "authoritative_state_access": false,
+    "main_thread_route_commit": true,
+    "cooperative_fallback": true,
+    "cancellation_supported": true
+  },
+  "media_asset_engine": {
+    "core_file": "WebApp/media-asset-core.js",
+    "work_moved": [
+      "bounded async image decode queue",
+      "decode deduplication and LRU bookkeeping"
+    ],
+    "concurrency_limit": 3,
+    "queue_limit": 48,
+    "cache_limit": 24,
+    "native_img_fallback": true
+  },
+  "updated_branch_ci": {
+    "run_id": 36228574166,
+    "commit": "0befbf5937971f32020538729ef2c9357654cfe9",
+    "result": "SUCCESS",
+    "source_gates": "109/109",
+    "eslint": "PASS",
+    "chromium_webkit": "PASS",
+    "native_storage": "PASS",
+    "native_wkwebview": "PASS",
+    "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
+    "physical_iphone": "NOT_TESTED"
+  },
+  "verified_in_ci": {
+    "run_id": 36228574166,
+    "commit": "0befbf5937971f32020538729ef2c9357654cfe9",
+    "source_gates": "109/109 PASS",
+    "eslint": "PASS",
+    "chromium_webkit_source_gates": "PASS",
+    "native_save_vault_tests": "PASS",
+    "native_wkwebview_origin_frame_smoke": "PASS",
+    "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
+    "ipa_built": false,
+    "device_tested": false
+  }
+}

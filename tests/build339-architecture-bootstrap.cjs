@@ -1,0 +1,41 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const ROOT=path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(ROOT,p),'utf8');
+
+assert.equal(read('BUILD').trim(),'340','Build 340 identity drifted');
+assert.equal(read('VERSION').trim(),'3.0.0','VERSION drifted');
+const project=read('project.yml');
+assert.match(project,/CURRENT_PROJECT_VERSION:\s*["']?340["']?/,'native project build drifted');
+assert.match(project,/CFBundleVersion:\s*["']?340["']?/,'native bundle build drifted');
+const app=read('WebApp/app.js');
+assert.match(app,/const RUNTIME_BUILD\s*=\s*340\s*;/,'WebApp runtime build drifted');
+assert.match(app,/const SAVE_SCHEMA_VERSION\s*=\s*['"]2\.0\.0['"]\s*;/,'Save Schema changed during bootstrap');
+const pkg=JSON.parse(read('package.json'));
+assert.equal(pkg.version,'3.0.0-build340','package build identity drifted');
+const gate=JSON.parse(read('RELEASE_GATE.json'));
+assert.equal(gate.build,340);assert.equal(gate.approved,false);assert.equal(gate.save_schema,'2.0.0');
+
+const sandbox={console,performance:{now:(()=>{let t=0;return()=>++t;})()},Date,structuredClone:global.structuredClone};
+sandbox.globalThis=sandbox;sandbox.window=sandbox;
+vm.createContext(sandbox);
+vm.runInContext(read('WebApp/transaction-core.js'),sandbox,{filename:'transaction-core.js'});
+const tx=sandbox.GH_TRANSACTION_CORE;
+assert.ok(tx?.telemetry,'transaction telemetry unavailable');
+const state={a:{value:1},b:{value:2}};
+const before=JSON.stringify(state);
+assert.throws(()=>tx.execute(state,{label:'build339-critical-rollback',apply(){state.a.value=99;tx.afterCommit(()=>{throw new Error('expected-critical-failure');},{critical:true,key:'bootstrap-critical',owner:'build339-test'});}}),/expected-critical-failure/);
+assert.equal(JSON.stringify(state),before,'critical post-commit failure did not fully rollback');
+const last=tx.telemetry().last;
+assert.equal(last.committed,false);
+assert.equal(last.postCommitCriticalTasks.length,1);
+assert.equal(last.postCommitCriticalTasks[0].key,'bootstrap-critical');
+assert.equal(last.postCommitCriticalTasks[0].owner,'build339-test');
+assert.equal(last.postCommitCriticalTasks[0].ok,false);
+assert.ok(last.postCommitCriticalTasks[0].durationMs>=0);
+assert.equal(JSON.stringify(state),before,'telemetry mutated transaction state');
+
+console.log(JSON.stringify({suite:'build339-architecture-bootstrap',passed:12,total:12,saveSchema:'2.0.0'}));

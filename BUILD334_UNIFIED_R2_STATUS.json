@@ -1,0 +1,75 @@
+{
+  "point": "Build 334 Unified R2",
+  "reviewDate": "2026-09-21",
+  "version": "3.0.0",
+  "build": 334,
+  "saveSchema": "2.0.0",
+  "reference": {
+    "name": "GlobalHoldings_BUILD334_TRIPLE_DEEP_AUDITED_SOURCE.zip",
+    "bytes": 132003290,
+    "sha256": "1c7a32a19156784a2ac12c4b35fe83f10c1c4d1b4211004653f7c96e48815581",
+    "source_prefix": "GlobalHoldings_BUILD334_Source/"
+  },
+  "releaseApproved": false,
+  "ipaBuilt": false,
+  "internalUpdateBuilt": false,
+  "nativeSourcePresent": false,
+  "physicalIPhoneTested": false,
+  "webKitTested": false,
+  "sourceBranchesConsolidated": [
+    "ROOT_AUDIT_R1",
+    "RUNTIME_REVIEW"
+  ],
+  "productionFilesChangedFromReference": [
+    "WebApp/app.js",
+    "WebApp/realism-core.js",
+    "WebApp/persistence-core.js",
+    "WebApp/simulation-core.js",
+    "WebApp/document-proof-core.js",
+    "WebApp/save-schema.js",
+    "WebApp/finance-core.js",
+    "WebApp/transaction-core.js"
+  ],
+  "tests": {
+    "node": "v24.11.1",
+    "nonBrowserSuites": 61,
+    "passed": 60,
+    "failed": 1,
+    "syntaxChecked": 160,
+    "syntaxPassed": 160,
+    "newRegressionCases": 20,
+    "newRegressionPassed": 20,
+    "newRegressionFailuresBeforeR2": 18,
+    "archiveBugPreviouslyFailingNowPasses": true,
+    "capacityAcceptance": "FAIL: document-proof-store-full",
+    "focusedLocalDom": "PASS",
+    "full37DayCalendarLocalDom": "PASS",
+    "originalNavigationAcceptance": "NOT COMPLETED: ERR_BLOCKED_BY_ADMINISTRATOR",
+    "eslint": "NOT COMPLETED: dependency not installed"
+  },
+  "knownBlockers": [
+    {
+      "id": "DOC-PROOF-CAPACITY",
+      "reproduced": true,
+      "description": "5000 genuinely sealed archived closed documents prevent the next document being issued. Failed transaction rolls back and existing history remains valid."
+    },
+    {
+      "id": "IPHONE-PERFORMANCE",
+      "reproduced": false,
+      "description": "Physical iPhone/WKWebView memory, heat, long-play and native save lifecycle have not been measured in this environment. Synchronous snapshot and JSON costs remain."
+    },
+    {
+      "id": "NATIVE-SOURCE",
+      "description": "No Swift/Objective-C/Xcode project in the selected reference. Do not build from an older IPA."
+    }
+  ],
+  "otherOpenWork": [
+    "Proof and authorization storage growth strategy",
+    "Idempotency and retrieval beyond retained full archive documents",
+    "End-to-end compaction/native save/acknowledgement/recovery lifecycle",
+    "Remaining synchronous simulation/snapshot/serialization work",
+    "Internal section identity"
+  ],
+  "historicalReports": "R1 and Runtime Review reports remain as historical evidence; this status and the R2 report govern the current point.",
+  "sourcePackaging": "Three unchanged original font files are not redistributed; the clean-source preparer reads them from the exact reference. All resulting source bytes are verified by the complete manifest."
+}

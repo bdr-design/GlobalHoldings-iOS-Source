@@ -1,0 +1,327 @@
+{
+  "review": "build334-runtime-review-20260921",
+  "releaseGate": false,
+  "version": "3.0.0",
+  "build": 334,
+  "saveSchema": "2.0.0",
+  "referenceArchive": "GlobalHoldings_BUILD334_TRIPLE_DEEP_AUDITED_SOURCE.zip",
+  "referenceSha256": "1c7a32a19156784a2ac12c4b35fe83f10c1c4d1b4211004653f7c96e48815581",
+  "productionHashes": {
+    "app.js": "30b71d7ede177aea55a674f2c2968b49fc894ff07d1d9c36bcf87328653988c7",
+    "simulation-core.js": "b835aa11ad4280412d1acb35f8df1a60d9ab9d92bf46932296dc23a9f7b12845",
+    "persistence-core.js": "a72cbe5907b046c2879fefa33b4371d561bc7fd054f89796ae58dcbd881d0ccc"
+  },
+  "nonBrowserSuites": {
+    "passed": 56,
+    "total": 57,
+    "failed": [
+      "build334-archived-proof-retention-open"
+    ]
+  },
+  "topLevelJavaScriptSyntax": {
+    "passed": 65,
+    "total": 65
+  },
+  "newFixedRegressionCases": 25,
+  "iPhoneTested": false,
+  "webkitTested": false,
+  "lintPassed": false,
+  "browserGatePassed": false,
+  "historicalVerificationReissued": false,
+  "ipaBuilt": false,
+  "openIssues": [
+    "archived-proof-retention",
+    "whole-state-snapshot-and-JSON-main-thread-cost",
+    "atomic-compaction-and-late-publication-failure-audit",
+    "other-history-buckets-and-idempotency-retention",
+    "native-source-unavailable-in-reference",
+    "real-iPhone-performance-and-long-session-gate"
+  ],
+  "tests": [
+    {
+      "suite": "build315-procurement-idempotency-test",
+      "exitCode": 0,
+      "seconds": 0.361
+    },
+    {
+      "suite": "build317-finance-depth-test",
+      "exitCode": 0,
+      "seconds": 0.107
+    },
+    {
+      "suite": "build334-accrual-cash-separation-contract",
+      "exitCode": 0,
+      "seconds": 0.059
+    },
+    {
+      "suite": "build334-app-platform-authorization",
+      "exitCode": 0,
+      "seconds": 0.058
+    },
+    {
+      "suite": "build334-asset-route-hr-contract",
+      "exitCode": 0,
+      "seconds": 0.083
+    },
+    {
+      "suite": "build334-bank-balance-sheet",
+      "exitCode": 0,
+      "seconds": 0.138
+    },
+    {
+      "suite": "build334-bank-energy-operating-costs",
+      "exitCode": 0,
+      "seconds": 0.174
+    },
+    {
+      "suite": "build334-bank-fee-reporting",
+      "exitCode": 0,
+      "seconds": 0.061
+    },
+    {
+      "suite": "build334-bank-projected-risk",
+      "exitCode": 0,
+      "seconds": 0.154
+    },
+    {
+      "suite": "build334-bank-sector-concentration",
+      "exitCode": 0,
+      "seconds": 0.056
+    },
+    {
+      "suite": "build334-bank-signed-income",
+      "exitCode": 0,
+      "seconds": 0.105
+    },
+    {
+      "suite": "build334-calendar-safety-contract",
+      "exitCode": 0,
+      "seconds": 0.919
+    },
+    {
+      "suite": "build334-company-adapters",
+      "exitCode": 0,
+      "seconds": 0.055
+    },
+    {
+      "suite": "build334-company-platform-orphan-contract",
+      "exitCode": 0,
+      "seconds": 0.055
+    },
+    {
+      "suite": "build334-document-proof-v3-security",
+      "exitCode": 0,
+      "seconds": 0.16
+    },
+    {
+      "suite": "build334-durable-authorization-contract",
+      "exitCode": 0,
+      "seconds": 0.137
+    },
+    {
+      "suite": "build334-durable-postcommit-contract",
+      "exitCode": 0,
+      "seconds": 0.037
+    },
+    {
+      "suite": "build334-dynamic-company-consumers",
+      "exitCode": 0,
+      "seconds": 0.208
+    },
+    {
+      "suite": "build334-dynamic-finance-company-ids",
+      "exitCode": 0,
+      "seconds": 0.103
+    },
+    {
+      "suite": "build334-energy-take-or-pay",
+      "exitCode": 0,
+      "seconds": 0.111
+    },
+    {
+      "suite": "build334-finance-company-security-contract",
+      "exitCode": 0,
+      "seconds": 0.135
+    },
+    {
+      "suite": "build334-finance-settlement-contract",
+      "exitCode": 0,
+      "seconds": 0.065
+    },
+    {
+      "suite": "build334-future-company-hr",
+      "exitCode": 0,
+      "seconds": 0.064
+    },
+    {
+      "suite": "build334-identity-regressions",
+      "exitCode": 0,
+      "seconds": 0.058
+    },
+    {
+      "suite": "build334-iphone-thermal-contract",
+      "exitCode": 0,
+      "seconds": 0.034
+    },
+    {
+      "suite": "build334-logistics-staged-contract",
+      "exitCode": 0,
+      "seconds": 0.593
+    },
+    {
+      "suite": "build334-long-session-pressure",
+      "exitCode": 0,
+      "seconds": 2.875
+    },
+    {
+      "suite": "build334-map-identity-registry",
+      "exitCode": 0,
+      "seconds": 0.175
+    },
+    {
+      "suite": "build334-map-pressure-contract",
+      "exitCode": 0,
+      "seconds": 0.033
+    },
+    {
+      "suite": "build334-market-discovery-contract",
+      "exitCode": 0,
+      "seconds": 0.133
+    },
+    {
+      "suite": "build334-procurement-pressure",
+      "exitCode": 0,
+      "seconds": 0.542
+    },
+    {
+      "suite": "build334-provider-integration",
+      "exitCode": 0,
+      "seconds": 0.054
+    },
+    {
+      "suite": "build334-purchase-delivery-pressure",
+      "exitCode": 0,
+      "seconds": 0.836
+    },
+    {
+      "suite": "build334-scheduler-liveness",
+      "exitCode": 0,
+      "seconds": 0.059
+    },
+    {
+      "suite": "build334-security-contract",
+      "exitCode": 0,
+      "seconds": 0.101
+    },
+    {
+      "suite": "build334-signature-pad",
+      "exitCode": 0,
+      "seconds": 0.036
+    },
+    {
+      "suite": "build334-simulation-time-contract",
+      "exitCode": 0,
+      "seconds": 0.085
+    },
+    {
+      "suite": "build334-singleton-company-boundaries",
+      "exitCode": 0,
+      "seconds": 0.292
+    },
+    {
+      "suite": "build334-tabs-contract",
+      "exitCode": 0,
+      "seconds": 0.044
+    },
+    {
+      "suite": "build334-xss-logo-security",
+      "exitCode": 0,
+      "seconds": 0.358
+    },
+    {
+      "suite": "company-platform-regressions",
+      "exitCode": 0,
+      "seconds": 0.095
+    },
+    {
+      "suite": "conference-capability-core",
+      "exitCode": 0,
+      "seconds": 0.111
+    },
+    {
+      "suite": "core-regressions",
+      "exitCode": 0,
+      "seconds": 0.57
+    },
+    {
+      "suite": "fleet-regressions",
+      "exitCode": 0,
+      "seconds": 0.084
+    },
+    {
+      "suite": "formation-engine-core",
+      "exitCode": 0,
+      "seconds": 0.323
+    },
+    {
+      "suite": "persistence-pressure-and-native-build251-test",
+      "exitCode": 0,
+      "seconds": 0.155
+    },
+    {
+      "suite": "persistence-regressions",
+      "exitCode": 0,
+      "seconds": 0.092
+    },
+    {
+      "suite": "review-regressions",
+      "exitCode": 0,
+      "seconds": 0.055
+    },
+    {
+      "suite": "tax-reload-regressions",
+      "exitCode": 0,
+      "seconds": 0.066
+    },
+    {
+      "suite": "build334-archived-proof-retention-open",
+      "exitCode": 1,
+      "seconds": 0.047
+    },
+    {
+      "suite": "build334-deferred-save-lifecycle",
+      "exitCode": 0,
+      "seconds": 0.038
+    },
+    {
+      "suite": "build334-late-frame-liveness",
+      "exitCode": 0,
+      "seconds": 0.037
+    },
+    {
+      "suite": "build334-native-snapshot-queue",
+      "exitCode": 0,
+      "seconds": 0.057
+    },
+    {
+      "suite": "build334-open-invoice-retention",
+      "exitCode": 0,
+      "seconds": 0.099
+    },
+    {
+      "suite": "build334-presentation-work-contract",
+      "exitCode": 0,
+      "seconds": 0.065
+    },
+    {
+      "suite": "build334-simulation-fault-isolation",
+      "exitCode": 0,
+      "seconds": 0.052
+    },
+    {
+      "suite": "conference-lifecycle-core",
+      "exitCode": 0,
+      "seconds": 0.402
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "results": [
+    {
+      "case": "unfounded-group-real-next-day",
+      "before": {
+        "time": 0,
+        "owners": [],
+        "books": [
+          "group"
+        ]
+      },
+      "after": {
+        "time": 86400,
+        "day": 1,
+        "hour": 24,
+        "kernel": {
+          "version": "3.0.0",
+          "frames": 97,
+          "slices": 144,
+          "chunks": 144,
+          "hours": 24,
+          "days": 1,
+          "conflicts": 0,
+          "cancels": 0,
+          "maxChunkMs": 0.10000000009313226,
+          "lastChunkMs": 0,
+          "longTasks": 1,
+          "hardTasks": 0,
+          "droppedRealSeconds": 0,
+          "backlogClamps": 0,
+          "maxCreateMs": 0.7000000001862645,
+          "lastCreateMs": 0,
+          "maxFinishMs": 29.600000000093132,
+          "lastFinishMs": 29.600000000093132,
+          "maxCycleMs": 29.600000000093132,
+          "lastCycleMs": 29.600000000093132,
+          "lastError": "",
+          "lastBoundary": "hour:24",
+          "lastSliceSeconds": 600,
+          "lastMaintenanceHour": 23,
+          "lastCancelReason": "",
+          "lastCommitReason": "committed",
+          "lastWorkStage": "finish",
+          "governor": "ORANGE",
+          "avgChunkMs": 0.013333333345750967,
+          "avgWorkMs": 1.3875000000174622,
+          "simSeconds": 86400,
+          "speed": 0,
+          "backlog": 0,
+          "jobActive": false,
+          "jobSlice": 0,
+          "jobSpeed": 0,
+          "hidden": false,
+          "manualAdvance": null,
+          "config": {
+            "allowedSpeeds": [
+              0,
+              30,
+              120,
+              300,
+              600
+            ],
+            "fallbackSpeed": 30,
+            "quantumRealSeconds": 1,
+            "maxRealDelta": 3,
+            "maxBacklogNormal": 12,
+            "maxBacklogFast": 96,
+            "frameBudgetMs": 4,
+            "chunkItems": 32,
+            "renderEveryNormalMs": 260,
+            "renderEveryFastMs": 650,
+            "persistEveryNormalMs": 20000,
+            "persistEveryFastMs": 45000,
+            "minRealSliceSeconds": 0.5,
+            "maintenanceEveryHours": 12,
+            "longTaskWarnMs": 28,
+            "hardTaskMs": 120,
+            "hardTaskLimit": 3,
+            "conflictLimit": 3
+          }
+        },
+        "owners": [],
+        "books": [
+          "group"
+        ]
+      }
+    }
+  ],
+  "errors": []
+}

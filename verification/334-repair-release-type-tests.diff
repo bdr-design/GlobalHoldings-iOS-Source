@@ -1,0 +1,33 @@
+--- before/tests/build334-packaging-tools-adversarial.py
++++ after/tests/build334-packaging-tools-adversarial.py
+@@ -31,7 +31,7 @@
+     zipinfo_semantics,
+ )
+ from build_release_archives import write_archive  # noqa: E402
+-from verify_release_archives import verify_archive  # noqa: E402
++from verify_release_archives import verify_archive, validate_package_report_build  # noqa: E402
+ 
+ 
+ def regular_info(name: str) -> zipfile.ZipInfo:
+@@ -210,6 +210,21 @@
+ 
+ 
+ class ReleaseArchiveAdversarialTests(unittest.TestCase):
++    def test_package_report_accepts_the_producer_json_integer(self):
++        # The production report uses an integer, unlike the native plist BUILD.
++        decoded = json.loads('{"product":"Global Holdings","build":334}')
++        build = validate_package_report_build(decoded)
++        self.assertIs(type(build), int)
++        self.assertEqual(build, 334)
++
++    def test_package_report_build_rejects_wrong_values_and_types(self):
++        for reported in (333, 335, "334", "0334", 334.0, True, False, None, [], {}):
++            with self.subTest(reported=reported), self.assertRaises(ValueError):
++                validate_package_report_build({"build": reported})
++        for invalid in ({}, None, [], "334", 334):
++            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
++                validate_package_report_build(invalid)
++
+     def test_release_archive_is_deterministic_and_exact(self):
+         with tempfile.TemporaryDirectory() as directory:
+             root = Path(directory)

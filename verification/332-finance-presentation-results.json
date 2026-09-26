@@ -1,0 +1,702 @@
+{
+  "chequeLayout": {
+    "paperWidth": 218,
+    "viewportWidth": 220,
+    "paperHeight": 128.08396911621094,
+    "viewportHeight": 129,
+    "grids": [
+      "grid",
+      "grid",
+      "grid",
+      "grid"
+    ],
+    "clipped": false
+  },
+  "budgets": {
+    "first": "budget-head",
+    "rows": [
+      [
+        {
+          "label": "الميزانية",
+          "text": "$900.0K",
+          "width": 90
+        },
+        {
+          "label": "الفعلي",
+          "text": "$310.0K",
+          "width": 90
+        },
+        {
+          "label": "المتوقع",
+          "text": "$740.0K",
+          "width": 90
+        },
+        {
+          "label": "الانحراف",
+          "text": "-$160.0K",
+          "width": 90
+        }
+      ],
+      [
+        {
+          "label": "الميزانية",
+          "text": "$1.8M",
+          "width": 90
+        },
+        {
+          "label": "الفعلي",
+          "text": "$620.0K",
+          "width": 90
+        },
+        {
+          "label": "المتوقع",
+          "text": "$1.5M",
+          "width": 90
+        },
+        {
+          "label": "الانحراف",
+          "text": "-$320.0K",
+          "width": 90
+        }
+      ],
+      [
+        {
+          "label": "الميزانية",
+          "text": "$2.7M",
+          "width": 90
+        },
+        {
+          "label": "الفعلي",
+          "text": "$930.0K",
+          "width": 90
+        },
+        {
+          "label": "المتوقع",
+          "text": "$2.2M",
+          "width": 90
+        },
+        {
+          "label": "الانحراف",
+          "text": "-$480.0K",
+          "width": 90
+        }
+      ],
+      [
+        {
+          "label": "الميزانية",
+          "text": "$3.6M",
+          "width": 90
+        },
+        {
+          "label": "الفعلي",
+          "text": "$1.2M",
+          "width": 90
+        },
+        {
+          "label": "المتوقع",
+          "text": "$3.0M",
+          "width": 90
+        },
+        {
+          "label": "الانحراف",
+          "text": "-$640.0K",
+          "width": 90
+        }
+      ],
+      [
+        {
+          "label": "الميزانية",
+          "text": "$4.5M",
+          "width": 90
+        },
+        {
+          "label": "الفعلي",
+          "text": "$1.6M",
+          "width": 90
+        },
+        {
+          "label": "المتوقع",
+          "text": "$3.7M",
+          "width": 90
+        },
+        {
+          "label": "الانحراف",
+          "text": "-$800.0K",
+          "width": 90
+        }
+      ],
+      [
+        {
+          "label": "الميزانية",
+          "text": "$5.4M",
+          "width": 90
+        },
+        {
+          "label": "الفعلي",
+          "text": "$1.9M",
+          "width": 90
+        },
+        {
+          "label": "المتوقع",
+          "text": "$4.4M",
+          "width": 90
+        },
+        {
+          "label": "الانحراف",
+          "text": "-$960.0K",
+          "width": 90
+        }
+      ],
+      [
+        {
+          "label": "الميزانية",
+          "text": "$6.3M",
+          "width": 90
+        },
+        {
+          "label": "الفعلي",
+          "text": "$2.2M",
+          "width": 90
+        },
+        {
+          "label": "المتوقع",
+          "text": "$5.2M",
+          "width": 90
+        },
+        {
+          "label": "الانحراف",
+          "text": "-$1.1M",
+          "width": 90
+        }
+      ]
+    ],
+    "grid": "grid"
+  },
+  "report": [
+    {
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "tab": "documents",
+      "view": "cheques",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 514,
+      "mapHeight": 340,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "mapBottom": 382,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "tab": "documents",
+      "view": "invoices",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 514,
+      "mapHeight": 340,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "mapBottom": 382,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "tab": "documents",
+      "view": "transfers",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 514,
+      "mapHeight": 340,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "mapBottom": 382,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "tab": "documents",
+      "view": "payroll",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 514,
+      "mapHeight": 340,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "mapBottom": 382,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "tab": "documents",
+      "view": "settlements",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 514,
+      "mapHeight": 340,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "mapBottom": 382,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "tab": "obligations",
+      "view": "taxes",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 514,
+      "mapHeight": 340,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "mapBottom": 382,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "tab": "obligations",
+      "view": "debts",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 514,
+      "mapHeight": 340,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "mapBottom": 382,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 844,
+        "height": 390
+      },
+      "tab": "profits",
+      "view": "",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 514,
+      "mapHeight": 340,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "mapBottom": 382,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 667,
+        "height": 375
+      },
+      "tab": "documents",
+      "view": "cheques",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 337,
+      "mapHeight": 325,
+      "mapRight": 345,
+      "drawerLeft": 351,
+      "mapBottom": 367,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 667,
+        "height": 375
+      },
+      "tab": "documents",
+      "view": "invoices",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 337,
+      "mapHeight": 325,
+      "mapRight": 345,
+      "drawerLeft": 351,
+      "mapBottom": 367,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 667,
+        "height": 375
+      },
+      "tab": "documents",
+      "view": "transfers",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 337,
+      "mapHeight": 325,
+      "mapRight": 345,
+      "drawerLeft": 351,
+      "mapBottom": 367,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 667,
+        "height": 375
+      },
+      "tab": "documents",
+      "view": "payroll",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 337,
+      "mapHeight": 325,
+      "mapRight": 345,
+      "drawerLeft": 351,
+      "mapBottom": 367,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 667,
+        "height": 375
+      },
+      "tab": "documents",
+      "view": "settlements",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 337,
+      "mapHeight": 325,
+      "mapRight": 345,
+      "drawerLeft": 351,
+      "mapBottom": 367,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 667,
+        "height": 375
+      },
+      "tab": "obligations",
+      "view": "taxes",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 337,
+      "mapHeight": 325,
+      "mapRight": 345,
+      "drawerLeft": 351,
+      "mapBottom": 367,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 667,
+        "height": 375
+      },
+      "tab": "obligations",
+      "view": "debts",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 337,
+      "mapHeight": 325,
+      "mapRight": 345,
+      "drawerLeft": 351,
+      "mapBottom": 367,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 667,
+        "height": 375
+      },
+      "tab": "profits",
+      "view": "",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 337,
+      "mapHeight": 325,
+      "mapRight": 345,
+      "drawerLeft": 351,
+      "mapBottom": 367,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "tab": "documents",
+      "view": "cheques",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 374,
+      "mapHeight": 276.109375,
+      "mapRight": 382,
+      "drawerLeft": 6,
+      "mapBottom": 399.109375,
+      "drawerTop": 405.109375
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "tab": "documents",
+      "view": "invoices",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 374,
+      "mapHeight": 276.109375,
+      "mapRight": 382,
+      "drawerLeft": 6,
+      "mapBottom": 399.109375,
+      "drawerTop": 405.109375
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "tab": "documents",
+      "view": "transfers",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 374,
+      "mapHeight": 276.109375,
+      "mapRight": 382,
+      "drawerLeft": 6,
+      "mapBottom": 399.109375,
+      "drawerTop": 405.109375
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "tab": "documents",
+      "view": "payroll",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 374,
+      "mapHeight": 276.109375,
+      "mapRight": 382,
+      "drawerLeft": 6,
+      "mapBottom": 399.109375,
+      "drawerTop": 405.109375
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "tab": "documents",
+      "view": "settlements",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 374,
+      "mapHeight": 276.109375,
+      "mapRight": 382,
+      "drawerLeft": 6,
+      "mapBottom": 399.109375,
+      "drawerTop": 405.109375
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "tab": "obligations",
+      "view": "taxes",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 374,
+      "mapHeight": 276.109375,
+      "mapRight": 382,
+      "drawerLeft": 6,
+      "mapBottom": 399.109375,
+      "drawerTop": 405.109375
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "tab": "obligations",
+      "view": "debts",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 374,
+      "mapHeight": 276.109375,
+      "mapRight": 382,
+      "drawerLeft": 6,
+      "mapBottom": 399.109375,
+      "drawerTop": 405.109375
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "tab": "profits",
+      "view": "",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 374,
+      "mapHeight": 276.109375,
+      "mapRight": 382,
+      "drawerLeft": 6,
+      "mapBottom": 399.109375,
+      "drawerTop": 405.109375
+    },
+    {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "tab": "documents",
+      "view": "cheques",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 936,
+      "mapHeight": 718,
+      "mapRight": 944,
+      "drawerLeft": 950,
+      "mapBottom": 760,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "tab": "documents",
+      "view": "invoices",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 936,
+      "mapHeight": 718,
+      "mapRight": 944,
+      "drawerLeft": 950,
+      "mapBottom": 760,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "tab": "documents",
+      "view": "transfers",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 936,
+      "mapHeight": 718,
+      "mapRight": 944,
+      "drawerLeft": 950,
+      "mapBottom": 760,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "tab": "documents",
+      "view": "payroll",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 936,
+      "mapHeight": 718,
+      "mapRight": 944,
+      "drawerLeft": 950,
+      "mapBottom": 760,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "tab": "documents",
+      "view": "settlements",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 936,
+      "mapHeight": 718,
+      "mapRight": 944,
+      "drawerLeft": 950,
+      "mapBottom": 760,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "tab": "obligations",
+      "view": "taxes",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 936,
+      "mapHeight": 718,
+      "mapRight": 944,
+      "drawerLeft": 950,
+      "mapBottom": 760,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "tab": "obligations",
+      "view": "debts",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 936,
+      "mapHeight": 718,
+      "mapRight": 944,
+      "drawerLeft": 950,
+      "mapBottom": 760,
+      "drawerTop": 42
+    },
+    {
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "tab": "profits",
+      "view": "",
+      "overflow": false,
+      "headerOverflow": false,
+      "mapWidth": 936,
+      "mapHeight": 718,
+      "mapRight": 944,
+      "drawerLeft": 950,
+      "mapBottom": 760,
+      "drawerTop": 42
+    }
+  ],
+  "counts": {
+    "cheques": 1,
+    "transfers": 6,
+    "invoices": 3,
+    "balance": 48385217
+  },
+  "restored": {
+    "cheques": 1,
+    "transfers": 6,
+    "invoices": 3,
+    "balance": 48385217
+  },
+  "errors": []
+}

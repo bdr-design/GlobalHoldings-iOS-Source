@@ -1,0 +1,85 @@
+{
+  "candidate": true,
+  "production_approved": false,
+  "ipa_created": false,
+  "unsigned_ipa_created": false,
+  "version": "3.0.0",
+  "build": 336,
+  "save_schema": "2.0.0",
+  "source_tree_sha256": "ff958436f71c14c4d311621270095d99afe2383b3ba39b1807b8be28c484420a",
+  "webapp_tree_sha256": "fe92da4835d1fa064e9e56098b40f5dc3aad120421674f191bf7cb15d9122fff",
+  "baseline_source_tree_sha256": "5c5750e07f92811e42d34edddec85551f69a1b81961da274a08ba398417103a5",
+  "baseline_webapp_tree_sha256": "699d467fdc3eee220980ae9ad304a1aa8e7f980aa707b61fb16f5d037e94712a",
+  "runtime_changed_files": [
+    "WebApp/app.js",
+    "WebApp/diagnostics-core.js",
+    "WebApp/document-proof-core.js",
+    "WebApp/finance-core.js",
+    "WebApp/save-schema.js"
+  ],
+  "simulation_core_changed": false,
+  "transaction_core_changed": false,
+  "persistence_core_changed": false,
+  "save_schema_version_changed": false,
+  "root_cause": "Build 335 company/treasury ledgers could retain protected document envelopes copied from canonical documents. Later authorization/presentation changes made those copies stale. The day-3/hour-83 compaction promoted old ledger rows into the audited archive, making GH_SAVE_SCHEMA/GH_DOCUMENT_PROOF verify the stale copy and raise document-proof-integrity.",
+  "resolution": [
+    "Canonical legal documents keep their full document proof envelope.",
+    "Company and treasury ledgers store gh-ledger-projection-v1 projections with source proof/document provenance but no legal security envelope.",
+    "Strict idempotent migration converts only provably equivalent Build 335 legacy ledger copies and fails closed on material tampering.",
+    "The fault recorder is runtime-only and removed from persisted state while remaining available in .ghdiagnostic exports.",
+    "Diagnostics export proof forensics and state byte attribution."
+  ],
+  "passed_gates": {
+    "source_verifier": "PASS (480 runtime/root files)",
+    "build335_persistence_coalescing": "2/2 PASS",
+    "build335_compaction_v2": "12/12 PASS",
+    "build335_sea_facility": "3/3 PASS",
+    "build336_proof_ledger_regression": "PASS",
+    "build336_real_proof_pressure_1220": "PASS",
+    "build336_diagnostics_transient": "PASS",
+    "build336_hour83_calendar_recovery": "PASS",
+    "build336_state_byte_attribution_1020_assets": "PASS",
+    "build336_intercompany_projection": "PASS",
+    "finance_company_security": "8/8 PASS",
+    "document_proof_v3_security": "PASS (25 types)",
+    "durable_authorization": "5/5 PASS",
+    "archive_integrity_r2": "15/15 PASS",
+    "transaction_promotion_r2": "5/5 PASS",
+    "audit334_r2": "PASS (5+5+4+11+3)",
+    "audit334": "PASS (2+5+9+3)",
+    "simulation_scale_600_air_full_day": "PASS; governor GREEN; conflicts=0; cancels=0",
+    "procurement_idempotency": "PASS",
+    "tax_reload_regressions": "PASS"
+  },
+  "measured_pressure": {
+    "real_1220_proofs": {
+      "before_bytes": 6005779,
+      "after_bytes": 4958538,
+      "reduction_pct": 17.44,
+      "documentProofs_bytes": 2893918,
+      "finance_bytes": 1342174,
+      "treasury_bytes": 718928
+    },
+    "1020_assets_1020_deliveries_240_events": {
+      "total_bytes": 2883899,
+      "assets_bytes": 1452562,
+      "realism_bytes": 801371,
+      "deliveries_bytes": 723222,
+      "businessLedger_bytes": 63148,
+      "documentProofs_bytes": 47113
+    }
+  },
+  "blocked_or_not_run": [
+    "Node 24.21.0 acceptance gate has not been rerun in this container (local Node is 22.16.0)",
+    "ESLint gate is not runnable locally because the pinned eslint package is unavailable in this container",
+    "Playwright / real browser recovery gate is not runnable locally because the pinned Node playwright package is unavailable",
+    "Fresh Apple iPhoneOS Release / WKWebView / Native CryptoKit gates have not yet been run for Build 336",
+    "Physical iPhone long-session validation from the migrated Build 335 save remains required",
+    "Production approval remains closed until all acceptance gates pass"
+  ],
+  "environment_notes": [
+    "Local Node is v22.16.0; package requires Node >=24.",
+    "Pinned Node Playwright and ESLint packages are not installed/cached in this container.",
+    "No Apple native build or physical-device claim is made for Build 336."
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "schema": "global-holdings-build339-accrued-obligation-fix-verification-v1",
+  "version": "3.0.0",
+  "build": 339,
+  "save_schema": "2.0.0",
+  "runtime_source_tree_sha256": "f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5",
+  "webapp_tree_sha256": "eaa9b81fd29d9df4533c31d9cfb564e993f4eb58f1cb7af2b33fc0e5ea56dfda",
+  "issue": {
+    "at_sim_seconds": 949800,
+    "failed_transition_to": 950400,
+    "function": "postAccruedExpense",
+    "error": "insufficient-budget"
+  },
+  "fix": {
+    "record_full_incurred_obligation": true,
+    "cash_created_or_debited_at_accrual": false,
+    "reserve_only_available_budget": true,
+    "record_unbudgeted_remainder": true,
+    "settlement_requires_cash": true,
+    "full_snapshot_rollback_preserved": true
+  },
+  "tests": {
+    "source_verifier": "PASS; 482 runtime files",
+    "test_build339": "PASS",
+    "frame_trace": "PASS; 28/28",
+    "accrued_obligation_regression": "PASS; 2/2",
+    "full_acceptance": "INCOMPLETE; first 2 gates passed, browser gate failed because Playwright Chromium is absent, run stopped before remaining gates",
+    "cross_build_finance_regressions": "PASS"
+  },
+  "ipa_built": false,
+  "physical_device_tested": false,
+  "fps_fix_proven": false,
+  "production_approved": false
+}

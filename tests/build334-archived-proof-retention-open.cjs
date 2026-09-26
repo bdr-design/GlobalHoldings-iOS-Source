@@ -1,0 +1,18 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const root=process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..');process.env.GH_TEST_SOURCE_DIR=root;
+const {harness,minimal}=require(path.join(root,'tests/helpers/core-harness'));
+const {s}=harness(['authorization-core','document-proof-core']),state=minimal(),Proof=s.GH_DOCUMENT_PROOF;
+state.profile={name:'Archive probe',founder:'Audit'};state.simSeconds=1;
+const archived={id:'ARCHIVED-1',number:'ARCHIVED-1',company:'group',counterparty:'Vendor',amount:100,status:'محصلة'};
+Proof.sealDocument(state,archived,{type:'audit-invoice',companyId:'group'});assert(Proof.verifyDocument(state,archived).ok);
+const live={id:'LIVE-1',company:'group',counterparty:'Vendor',amount:200,status:'محصلة'};
+Proof.sealDocument(state,live,{type:'audit-invoice',companyId:'group'});state.finance.invoices=[live,archived];
+s.state=state;s.clone=v=>JSON.parse(JSON.stringify(v));
+const app=fs.readFileSync(path.join(root,'WebApp/app.js'),'utf8'),start=app.indexOf('  function financeAuditArchive()'),end=app.indexOf('  function compactSimulationState(',start);
+assert(start>=0&&end>start);vm.runInContext(app.slice(start,end)+'\nglobalThis.archive=archiveTrim;',s);
+s.archive(state.finance.invoices,1,'invoices');const copy=state.finance.auditArchive.records.invoices[0];
+const before={documentStored:!!copy,verification:Proof.verifyDocument(state,copy).ok,locatable:!!Proof.locateDocument(state,copy.documentProofId)};
+const compaction=Proof.compact(state,0),after={verification:Proof.verifyDocument(state,copy),liveValid:Proof.verifyDocument(state,live).ok,documentStored:state.finance.auditArchive.records.invoices.length===1};
+console.log(JSON.stringify({suite:'archived-proof-retention-open',releaseGate:false,environment:'Node; actual archiveTrim and document-proof-core; explicit compact(target=0) exercises reachability policy, not a timed device playthrough',before,compaction,after,issueReproduced:before.verification&&!after.verification.ok&&after.liveValid},null,2));
+if(!before.locatable||!after.verification.ok)process.exitCode=1;

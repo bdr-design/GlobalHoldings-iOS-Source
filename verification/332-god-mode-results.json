@@ -1,0 +1,552 @@
+{
+  "investments": true,
+  "exactTarget": true,
+  "budgetDoesNotMintCash": true,
+  "saveFailureRollback": true,
+  "bulkDebtRollback": true,
+  "persisted": true,
+  "allControlsReachable": true,
+  "layouts": [
+    {
+      "config": {
+        "w": 932,
+        "h": 430,
+        "l": 44,
+        "r": 44,
+        "b": 21
+      },
+      "map": {
+        "x": 0,
+        "y": 0,
+        "w": 932,
+        "h": 430,
+        "right": 932,
+        "bottom": 430
+      },
+      "header": {
+        "x": 50,
+        "y": 4,
+        "w": 832,
+        "h": 32,
+        "right": 882,
+        "bottom": 36
+      },
+      "rail": {
+        "x": 838,
+        "y": 42,
+        "w": 44,
+        "h": 367,
+        "right": 882,
+        "bottom": 409
+      },
+      "panel": {
+        "x": 552.40625,
+        "y": 42,
+        "w": 279.59375,
+        "h": 367,
+        "right": 832,
+        "bottom": 409
+      },
+      "usable": {
+        "left": 52,
+        "top": 42,
+        "right": 546.40625,
+        "bottom": 401,
+        "width": 494.40625,
+        "height": 359
+      },
+      "overflow": false,
+      "speeds": [
+        {
+          "text": "30×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 131,
+            "y": 7.5,
+            "w": 25,
+            "h": 25,
+            "right": 156,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "120×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 157,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 187,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "300×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 188,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 218,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "600×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 219,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 249,
+            "bottom": 32.5
+          }
+        }
+      ]
+    },
+    {
+      "config": {
+        "w": 844,
+        "h": 390,
+        "l": 44,
+        "r": 0,
+        "b": 21
+      },
+      "map": {
+        "x": 0,
+        "y": 0,
+        "w": 844,
+        "h": 390,
+        "right": 844,
+        "bottom": 390
+      },
+      "header": {
+        "x": 50,
+        "y": 4,
+        "w": 788,
+        "h": 32,
+        "right": 838,
+        "bottom": 36
+      },
+      "rail": {
+        "x": 794,
+        "y": 42,
+        "w": 44,
+        "h": 327,
+        "right": 838,
+        "bottom": 369
+      },
+      "panel": {
+        "x": 528,
+        "y": 42,
+        "w": 260,
+        "h": 327,
+        "right": 788,
+        "bottom": 369
+      },
+      "usable": {
+        "left": 52,
+        "top": 42,
+        "right": 522,
+        "bottom": 361,
+        "width": 470,
+        "height": 319
+      },
+      "overflow": false,
+      "speeds": [
+        {
+          "text": "30×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 131,
+            "y": 7.5,
+            "w": 25,
+            "h": 25,
+            "right": 156,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "120×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 157,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 187,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "300×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 188,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 218,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "600×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 219,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 249,
+            "bottom": 32.5
+          }
+        }
+      ]
+    },
+    {
+      "config": {
+        "w": 844,
+        "h": 390,
+        "l": 0,
+        "r": 44,
+        "b": 21
+      },
+      "map": {
+        "x": 0,
+        "y": 0,
+        "w": 844,
+        "h": 390,
+        "right": 844,
+        "bottom": 390
+      },
+      "header": {
+        "x": 6,
+        "y": 4,
+        "w": 788,
+        "h": 32,
+        "right": 794,
+        "bottom": 36
+      },
+      "rail": {
+        "x": 750,
+        "y": 42,
+        "w": 44,
+        "h": 327,
+        "right": 794,
+        "bottom": 369
+      },
+      "panel": {
+        "x": 484,
+        "y": 42,
+        "w": 260,
+        "h": 327,
+        "right": 744,
+        "bottom": 369
+      },
+      "usable": {
+        "left": 8,
+        "top": 42,
+        "right": 478,
+        "bottom": 361,
+        "width": 470,
+        "height": 319
+      },
+      "overflow": false,
+      "speeds": [
+        {
+          "text": "30×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 87,
+            "y": 7.5,
+            "w": 25,
+            "h": 25,
+            "right": 112,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "120×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 113,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 143,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "300×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 144,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 174,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "600×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 175,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 205,
+            "bottom": 32.5
+          }
+        }
+      ]
+    },
+    {
+      "config": {
+        "w": 667,
+        "h": 375,
+        "l": 0,
+        "r": 0,
+        "b": 0
+      },
+      "map": {
+        "x": 0,
+        "y": 0,
+        "w": 667,
+        "h": 375,
+        "right": 667,
+        "bottom": 375
+      },
+      "header": {
+        "x": 6,
+        "y": 4,
+        "w": 655,
+        "h": 32,
+        "right": 661,
+        "bottom": 36
+      },
+      "rail": {
+        "x": 617,
+        "y": 42,
+        "w": 44,
+        "h": 327,
+        "right": 661,
+        "bottom": 369
+      },
+      "panel": {
+        "x": 351,
+        "y": 42,
+        "w": 260,
+        "h": 327,
+        "right": 611,
+        "bottom": 369
+      },
+      "usable": {
+        "left": 8,
+        "top": 42,
+        "right": 345,
+        "bottom": 367,
+        "width": 337,
+        "height": 325
+      },
+      "overflow": false,
+      "speeds": [
+        {
+          "text": "30×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 87,
+            "y": 7.5,
+            "w": 23,
+            "h": 25,
+            "right": 110,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "120×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 111,
+            "y": 7.5,
+            "w": 28,
+            "h": 25,
+            "right": 139,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "300×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 140,
+            "y": 7.5,
+            "w": 28,
+            "h": 25,
+            "right": 168,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "600×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 169,
+            "y": 7.5,
+            "w": 28,
+            "h": 25,
+            "right": 197,
+            "bottom": 32.5
+          }
+        }
+      ]
+    },
+    {
+      "config": {
+        "w": 1024,
+        "h": 470,
+        "l": 44,
+        "r": 44,
+        "b": 21
+      },
+      "map": {
+        "x": 0,
+        "y": 0,
+        "w": 1024,
+        "h": 470,
+        "right": 1024,
+        "bottom": 470
+      },
+      "header": {
+        "x": 50,
+        "y": 4,
+        "w": 924,
+        "h": 32,
+        "right": 974,
+        "bottom": 36
+      },
+      "rail": {
+        "x": 930,
+        "y": 42,
+        "w": 44,
+        "h": 407,
+        "right": 974,
+        "bottom": 449
+      },
+      "panel": {
+        "x": 624,
+        "y": 42,
+        "w": 300,
+        "h": 407,
+        "right": 924,
+        "bottom": 449
+      },
+      "usable": {
+        "left": 52,
+        "top": 42,
+        "right": 618,
+        "bottom": 441,
+        "width": 566,
+        "height": 399
+      },
+      "overflow": false,
+      "speeds": [
+        {
+          "text": "30×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 131.015625,
+            "y": 7.5,
+            "w": 25,
+            "h": 25,
+            "right": 156.015625,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "120×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 157.015625,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 187.015625,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "300×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 188.015625,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 218.015625,
+            "bottom": 32.5
+          }
+        },
+        {
+          "text": "600×",
+          "color": "rgb(23, 40, 63)",
+          "opacity": "1",
+          "visibility": "visible",
+          "rect": {
+            "x": 219.015625,
+            "y": 7.5,
+            "w": 30,
+            "h": 25,
+            "right": 249.015625,
+            "bottom": 32.5
+          }
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

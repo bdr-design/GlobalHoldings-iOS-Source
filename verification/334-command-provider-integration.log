@@ -1,0 +1,3 @@
+PASS provider batch preflight is atomic before capability-registry mutation
+PASS explicit provider ids reject duplicate, conflict, and unknown resolution fail-closed
+PASS future definition invokes its extension engine through controlled company context without core switches or recursion

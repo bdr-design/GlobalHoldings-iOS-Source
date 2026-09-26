@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('assert'),fs=require('fs'),path=require('path');
+const app=fs.readFileSync(path.resolve(__dirname,'../WebApp/app.js'),'utf8');
+const r0=app.indexOf('function renderMap()'),r1=app.indexOf('function updateMarkerPositions',r0),block=app.slice(r0,r1);
+assert(block.includes('movingAssetRenderGroups(nonHeroMoving'));
+assert(block.includes('movingFleetClusters.set('));
+assert(!/for\(const asset of movingAssets\)\{if\(movingHeroIds\.has\(asset\.id\)\)continue;[^}]*compactFleetMarker/.test(block));
+assert(app.includes('const assetIndex=presentationAssetLookup();'));
+assert(app.includes('Only the explicitly selected asset'));
+assert(app.includes('routeLayers.forEach'));
+console.log(JSON.stringify({suite:'map-pressure-contract',passed:6,total:6},null,2));

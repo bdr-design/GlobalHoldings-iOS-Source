@@ -1,0 +1,2015 @@
+{
+  "point": "Build 340 engine separation increment: map presentation, finance read model, route planning and media decode; transaction owner unchanged",
+  "version": "3.0.0",
+  "build": 340,
+  "save_schema": "2.0.0",
+  "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+  "webapp_tree_sha256": "db6d4d2b806dc82cb01bde905f2b2f9831d26089b337489cecfc13278b7ffe8b",
+  "files": {
+    "WebApp/advanced-core.js": {
+      "bytes": 231897,
+      "sha256": "7bf5d7babc53eae9eb1687e26831c09704851b88aadab7134b078cdcb641edc4"
+    },
+    "WebApp/app.js": {
+      "bytes": 624083,
+      "sha256": "e7a85306825105a52ce1cf79133dc8a63de88d3eef56b1d6076f10f8c08ba45a"
+    },
+    "WebApp/arabic-copy-core.js": {
+      "bytes": 3015,
+      "sha256": "55be89b2901fb7202785df3eec1bcd3cc32f7931ee0fbca11cee3a8de7f7dd1c"
+    },
+    "WebApp/assets/conference/PROVENANCE.json": {
+      "bytes": 1894,
+      "sha256": "01df825d52aab0fb204ad77b4386f0411bccaff5556c3d85b85786f76d542a8c"
+    },
+    "WebApp/assets/conference/ROCKETBOX-LICENSE.txt": {
+      "bytes": 1066,
+      "sha256": "17474e386e0b9e1a700cc3d06b2b0882a2c376d9c6b49c7f8274409b8f8d2352"
+    },
+    "WebApp/assets/conference/rocketbox-cast.js": {
+      "bytes": 13111765,
+      "sha256": "d901eae15284bb1af52e9715ea2448eb055ddefdee90977ae585462023d577aa"
+    },
+    "WebApp/assets/fonts/IBMPlexSansArabic-Medium.ttf": {
+      "bytes": 242100,
+      "sha256": "b8363ab9f733dfa4f8e96b8b2102c24b5cf4110fb96d1d3d9a9412f6fb49cf74"
+    },
+    "WebApp/assets/fonts/IBMPlexSansArabic-Regular.ttf": {
+      "bytes": 235924,
+      "sha256": "6f611412270a132bbac838da9259d4c68569b4175f3b3b8fa3fa36a30b56dab9"
+    },
+    "WebApp/assets/fonts/IBMPlexSansArabic-SemiBold.ttf": {
+      "bytes": 244616,
+      "sha256": "597bd5502e5997be4414e4c9c88834b30ff3784250c84f20bce2b20e53ebd467"
+    },
+    "WebApp/assets/fonts/OFL.txt": {
+      "bytes": 4456,
+      "sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da"
+    },
+    "WebApp/assets/identity/gh-air.svg": {
+      "bytes": 332,
+      "sha256": "fd39ba7bdd48538449703fedefc556b812ba1a82cd7e9ba9604baceba8bc0cd2"
+    },
+    "WebApp/assets/identity/gh-bank.svg": {
+      "bytes": 372,
+      "sha256": "58ec23c5574bc918ea54bf446184901cfb8e95b85883c93e385029550711a378"
+    },
+    "WebApp/assets/identity/gh-energy.svg": {
+      "bytes": 405,
+      "sha256": "dce6b645ce7e7264de83ea6d1aadcdf7a187a67fef3b3266f73c7de384d43b58"
+    },
+    "WebApp/assets/identity/gh-logistics.svg": {
+      "bytes": 450,
+      "sha256": "1fa3334aeb802056eac9e1ec48c1736e8291c04032052c81ba40384697339c4a"
+    },
+    "WebApp/assets/identity/gh-marine.svg": {
+      "bytes": 433,
+      "sha256": "9d469af0125e68cd689044da224a65653fb264d552aac70eeb3ebd5d015ee7f5"
+    },
+    "WebApp/assets/identity/gh-mobility.svg": {
+      "bytes": 522,
+      "sha256": "920227ca324f3ce9b1653de8654767ad18fc49c59e1b5eda1e208b590de1fc9e"
+    },
+    "WebApp/assets/identity/global-holdings.svg": {
+      "bytes": 661,
+      "sha256": "41e5dd7c0939f1013f0645dcc06bd1d3e62753468e4a214fdb317d804ad5d630"
+    },
+    "WebApp/assets/identity/group-default.svg": {
+      "bytes": 575,
+      "sha256": "e0e53ac868f0114331fbedc5dd8bc39d5c0904ea67c45fd7a0757e4fac91761e"
+    },
+    "WebApp/assets/images/air-cargo.webp": {
+      "bytes": 90932,
+      "sha256": "49152d4987ae1ad0cd3ac829375c5b9b347f44eca7604f2350f4ddd3e42095a6"
+    },
+    "WebApp/assets/images/air-executive.webp": {
+      "bytes": 72944,
+      "sha256": "9e904bac8fba064ffaa31378506405527844c145a48df63ee217124749274629"
+    },
+    "WebApp/assets/images/air-narrow.webp": {
+      "bytes": 48684,
+      "sha256": "2f5a5cf9a0ee586cbfe5813bbbbb31e4ed698d769929859acf36495a6963225c"
+    },
+    "WebApp/assets/images/air-regional.webp": {
+      "bytes": 43440,
+      "sha256": "18f3d8f4ffda796f7c71fa7e3356491683b325ea4d27710df34696df2fbf006a"
+    },
+    "WebApp/assets/images/air-widebody.webp": {
+      "bytes": 57474,
+      "sha256": "0d73669d15f67758d64931347794fb444e1f2b2c8022d0056108020813bc2d66"
+    },
+    "WebApp/assets/images/company-bank-v2.webp": {
+      "bytes": 113082,
+      "sha256": "7e3ad643e744a84678e77387b78e6e9ea098727de41adcb8aa03082f351f9d92"
+    },
+    "WebApp/assets/images/company-energy-v2.webp": {
+      "bytes": 122546,
+      "sha256": "4da6d61dd106807c15436cfee11a10013dfb9631391712b61d9fe046735bd359"
+    },
+    "WebApp/assets/images/company-hq-v2.webp": {
+      "bytes": 91836,
+      "sha256": "004c0797f79504aebb28f1408ed37e9360ae415c24864e61c65b1f3bac3374cf"
+    },
+    "WebApp/assets/images/company-system-v2.webp": {
+      "bytes": 89630,
+      "sha256": "05f406528436a9754d35e8bbf104ed145904b0322c78d72c879cc08436e02b1c"
+    },
+    "WebApp/assets/images/facility-airport-v2.webp": {
+      "bytes": 96508,
+      "sha256": "aaac24493ef6c1e68e794b4924f9b8e8696b4737ff722e8b08033bc3f5540a37"
+    },
+    "WebApp/assets/images/facility-logistics-v2.webp": {
+      "bytes": 160900,
+      "sha256": "c79d2a433501b02c97172d732d7fc670346f6e639dd95cd9427c01645c20b055"
+    },
+    "WebApp/assets/images/facility-port-v2.webp": {
+      "bytes": 160772,
+      "sha256": "eb09659ada23e391dd2d3e9193bf84bcacd541783bb0062f198228e72f72d637"
+    },
+    "WebApp/assets/images/map-aircraft-topdown.png": {
+      "bytes": 20593,
+      "sha256": "dabcf512d27d4e711a8d6321dbd3905e1df847aca5375a3a7054ced739e8e117"
+    },
+    "WebApp/assets/images/map-container-ship-topdown.png": {
+      "bytes": 27759,
+      "sha256": "e85818a6c6f3f09787a0c4aca46db2a85e1e9f759bfce440b8e04d8fc99be759"
+    },
+    "WebApp/assets/images/map-mobility-sedan-topdown.webp": {
+      "bytes": 4542,
+      "sha256": "2d0cfb24194f79c22196b9518a7e922d851abab15b51674ff778d1fde5bcf36c"
+    },
+    "WebApp/assets/images/map-truck-topdown.png": {
+      "bytes": 13203,
+      "sha256": "ef0884cf6bf78e6827688070941141fcbc7ee89aeb9147631ad99139f41f51f3"
+    },
+    "WebApp/assets/images/ship-bulk.webp": {
+      "bytes": 96118,
+      "sha256": "7baa81e9f75d8e0b98283b310ce9d0d5e8d9ba2fe1e71723134548aac2be5ec8"
+    },
+    "WebApp/assets/images/ship-container.webp": {
+      "bytes": 118444,
+      "sha256": "3b4d4c623abfe042b5ec59d397aa80e51a70e859bcf470299d344f3c05823f5f"
+    },
+    "WebApp/assets/images/ship-cruise.webp": {
+      "bytes": 73558,
+      "sha256": "fad601237abd0574807b065800e57776302faa5895bdef9cd4ba365d43ccf72e"
+    },
+    "WebApp/assets/images/ship-lng.webp": {
+      "bytes": 120208,
+      "sha256": "253e302ee5f663b3ec9c0e23b07877e7ebd66c5014ff89f7055b1ca2c5b64559"
+    },
+    "WebApp/assets/images/ship-roro.webp": {
+      "bytes": 53732,
+      "sha256": "27dd397a7764fbda0135e3708566a88a28951a906137dbdd58c84e49624b9693"
+    },
+    "WebApp/assets/images/ship-support.webp": {
+      "bytes": 123220,
+      "sha256": "d2c51a76bd2f3cd7c6db856529372dc1f79d81b4db926398913637c7ca6bf49e"
+    },
+    "WebApp/assets/images/ship-tanker.webp": {
+      "bytes": 113296,
+      "sha256": "68861d6287d2e48f147457a335d1554b4f04e2d708a16c9194a9d44d01a02c10"
+    },
+    "WebApp/assets/images/truck-container.webp": {
+      "bytes": 77254,
+      "sha256": "4cca4b3ee1deb74bece2e9b9fa9e0b1095a8f13f0acac53f3a2128ef7b3e593d"
+    },
+    "WebApp/assets/images/truck-electric.webp": {
+      "bytes": 48640,
+      "sha256": "befb9ac3486eff600c2c77e342179e1f64a76d69dfc1dbf60a8e6903602461c7"
+    },
+    "WebApp/assets/images/truck-longhaul-v2.webp": {
+      "bytes": 62290,
+      "sha256": "4d2337c8bd2a90023bb6fe57436d13c214c97499bf209c954a8efede9169013a"
+    },
+    "WebApp/assets/images/truck-reefer.webp": {
+      "bytes": 56238,
+      "sha256": "12278208b73363b1ffe68ba96895a52c5dfdd26c7da56868c161fe8a95a6f0e7"
+    },
+    "WebApp/assets/images/truck-tanker.webp": {
+      "bytes": 95558,
+      "sha256": "ff09bf6ca9a6fbb132f81ac4854200ba31430f018525fd93ec21226a21e6c4cb"
+    },
+    "WebApp/assets/images/truck-urban.webp": {
+      "bytes": 99800,
+      "sha256": "30ffea4f7a0c65fa8509b95eb16106a25ddbe504d3f2152e9a09807f22f44b5c"
+    },
+    "WebApp/assets/maps/ne2/0/0/0.webp": {
+      "bytes": 10074,
+      "sha256": "5f029a7dba1c54cb28125f31a81161be1460fb30898f7adce7be3b256d7f1c63"
+    },
+    "WebApp/assets/maps/ne2/1/0/0.webp": {
+      "bytes": 10180,
+      "sha256": "70f818f9d0439708e5cd24cbde190b2c5b9a3368f06c64d6e4d003af3fc00c85"
+    },
+    "WebApp/assets/maps/ne2/1/0/1.webp": {
+      "bytes": 5216,
+      "sha256": "70de65d51348d47735335b2f3970da9d8f67649d9f222e6669bf7f1f7e6bf504"
+    },
+    "WebApp/assets/maps/ne2/1/1/0.webp": {
+      "bytes": 9688,
+      "sha256": "19bd0c6370478fe819def6bc95f0df3f65d2c69498782ad7ffd3f14703b36f41"
+    },
+    "WebApp/assets/maps/ne2/1/1/1.webp": {
+      "bytes": 5496,
+      "sha256": "c7e41e5e3788bb2dedc3bce1316a6ed40447dc3bc6231d5e928a5b51facc5826"
+    },
+    "WebApp/assets/maps/ne2/2/0/0.webp": {
+      "bytes": 6364,
+      "sha256": "cb38dc6578ef5806f1d837221fb0fd523e01726c229e7ea5d2c0ddfc2451ef2d"
+    },
+    "WebApp/assets/maps/ne2/2/0/1.webp": {
+      "bytes": 7042,
+      "sha256": "edb3caa3cd8641855c94732087d784b0c230c1520ea277066ed567fbd9741eae"
+    },
+    "WebApp/assets/maps/ne2/2/0/2.webp": {
+      "bytes": 2382,
+      "sha256": "866085b2d9146b0ee5bceb7868323e46dba55a147271b2b7fd99d15b7f2cac2f"
+    },
+    "WebApp/assets/maps/ne2/2/0/3.webp": {
+      "bytes": 3680,
+      "sha256": "685117c255e62e7c65eba1589f05c28183842d34ad8e7f19269522978a2cd44f"
+    },
+    "WebApp/assets/maps/ne2/2/1/0.webp": {
+      "bytes": 9338,
+      "sha256": "35a8cb6690c234fe29ade181b529ca9a776a8fd8545f0b7c161efe29900155c2"
+    },
+    "WebApp/assets/maps/ne2/2/1/1.webp": {
+      "bytes": 8278,
+      "sha256": "4983d2a790f8e2c1864f51e320b2d9f6593bd7d56db568dca2f1cffdd96e9e9a"
+    },
+    "WebApp/assets/maps/ne2/2/1/2.webp": {
+      "bytes": 5964,
+      "sha256": "b18baaa08f150841582ed4000c0f53a844d29483102363c092d75282e4a24691"
+    },
+    "WebApp/assets/maps/ne2/2/1/3.webp": {
+      "bytes": 5322,
+      "sha256": "2fb3a3d4609eb22b8ba4f7a9d8505db5540650b4921e455510d12b502efb5389"
+    },
+    "WebApp/assets/maps/ne2/2/2/0.webp": {
+      "bytes": 5566,
+      "sha256": "1456e5f4b441119cec7f3209b7cdf8dcf6005b6062b5717cc831c253f6de8af7"
+    },
+    "WebApp/assets/maps/ne2/2/2/1.webp": {
+      "bytes": 10864,
+      "sha256": "1e87f4e167fd6d8c7ede60d3b2e1323536c70789bbfed3507403f18f5d09b04e"
+    },
+    "WebApp/assets/maps/ne2/2/2/2.webp": {
+      "bytes": 5536,
+      "sha256": "50fe3c8a3872d4a35772c17cdfe9562a2d2224169115baec7872a93a0da70fec"
+    },
+    "WebApp/assets/maps/ne2/2/2/3.webp": {
+      "bytes": 2754,
+      "sha256": "7c4b28f806237b99613527cd7356f0e209b29ee2fc5cbd0d6bf4bb1f00dce6ea"
+    },
+    "WebApp/assets/maps/ne2/2/3/0.webp": {
+      "bytes": 5020,
+      "sha256": "f4e808e597d932851a8dec4d051ff8115435da892626c699a3f47e2525c1b6df"
+    },
+    "WebApp/assets/maps/ne2/2/3/1.webp": {
+      "bytes": 11260,
+      "sha256": "60848e59c2ae11b55f3c59cd00d3c4b9ed323b536fec34b28b6679c2594769c1"
+    },
+    "WebApp/assets/maps/ne2/2/3/2.webp": {
+      "bytes": 6136,
+      "sha256": "5f2c660cfea06996a2eac081c1924c6005f52faddf4ad6362635c62307c652de"
+    },
+    "WebApp/assets/maps/ne2/2/3/3.webp": {
+      "bytes": 3920,
+      "sha256": "3a0bb51ac14a4584c67e53ae343e2bff73c43451bbeec6a365f82a62eb05f535"
+    },
+    "WebApp/assets/maps/ne2/3/0/0.webp": {
+      "bytes": 1730,
+      "sha256": "6188a77dc4bae304eb97416f57ad00f24d42d46b6169854ff1db60909c7abb17"
+    },
+    "WebApp/assets/maps/ne2/3/0/1.webp": {
+      "bytes": 3942,
+      "sha256": "bcdd65ba124b85206d80c361e833a295b30c87f344cbb998f18be081274bd94b"
+    },
+    "WebApp/assets/maps/ne2/3/0/2.webp": {
+      "bytes": 8224,
+      "sha256": "70c20cfdbbc13476953d52cd36c89cb2e3aef0d480567b0a4c9adb0b014ae63b"
+    },
+    "WebApp/assets/maps/ne2/3/0/3.webp": {
+      "bytes": 4160,
+      "sha256": "c28562c0aa53665ff8118a6f8825db59ce9e9165e3d06ec1eb2cd4c4e3a3bfa4"
+    },
+    "WebApp/assets/maps/ne2/3/0/4.webp": {
+      "bytes": 5486,
+      "sha256": "080e0fcf29a6fb56554fc64c21ff5549385b0b865b64097e0952f4519cbf710e"
+    },
+    "WebApp/assets/maps/ne2/3/0/5.webp": {
+      "bytes": 4112,
+      "sha256": "96edb2368cb79d0b2825d56892ecf632c66614d2c1ee46119f66d3f1ebaa7fa6"
+    },
+    "WebApp/assets/maps/ne2/3/0/6.webp": {
+      "bytes": 2890,
+      "sha256": "12b80fd963bf6d2e55cd0be4098efefd8f9b91ee0fc2afb41c001632beb70a44"
+    },
+    "WebApp/assets/maps/ne2/3/0/7.webp": {
+      "bytes": 1716,
+      "sha256": "fa17c9853205d247b5559756f2e972ca467ec24e1eca8a7d6f44914a36c2372f"
+    },
+    "WebApp/assets/maps/ne2/3/1/0.webp": {
+      "bytes": 2230,
+      "sha256": "ac3524379522296057876d365372a7c1e68475904aaa5c9c6d72c749a979cff2"
+    },
+    "WebApp/assets/maps/ne2/3/1/1.webp": {
+      "bytes": 8952,
+      "sha256": "5ec2e4a7adc1aba62787a272cb109a106364b6a1e5cb86f5154bd7a7a2cb12d9"
+    },
+    "WebApp/assets/maps/ne2/3/1/2.webp": {
+      "bytes": 10790,
+      "sha256": "76f0c69840b8a07171ced1764a571b469734f2618f5cac796a19f0b4d2b6e6c7"
+    },
+    "WebApp/assets/maps/ne2/3/1/3.webp": {
+      "bytes": 7218,
+      "sha256": "afbf29156a95c5b5a7fd4866cdbbcb5f3c7c46844c735f865415dd177906c353"
+    },
+    "WebApp/assets/maps/ne2/3/1/4.webp": {
+      "bytes": 2884,
+      "sha256": "2efef7908633b8c104630adc94d1ff4887f97efa4df9e6cb22f47273523f1a9c"
+    },
+    "WebApp/assets/maps/ne2/3/1/5.webp": {
+      "bytes": 2632,
+      "sha256": "14e9b47b6c31fc02e184a47785835a680d2c9e18d7bc0885ddf5a365520bd12f"
+    },
+    "WebApp/assets/maps/ne2/3/1/6.webp": {
+      "bytes": 3996,
+      "sha256": "1e7cd54c27c120675ac01cafcee45f8cafa191e325418dbaf39336ee2577a027"
+    },
+    "WebApp/assets/maps/ne2/3/1/7.webp": {
+      "bytes": 2590,
+      "sha256": "d7b0d4fd952faea0782a32944446c9ae7bf5df93a2b0d65cfdd0e4754e60c567"
+    },
+    "WebApp/assets/maps/ne2/3/2/0.webp": {
+      "bytes": 6200,
+      "sha256": "42c0d1240d13284f2b4e1db0134b45db51535151ea4330c43699794a8e396a16"
+    },
+    "WebApp/assets/maps/ne2/3/2/1.webp": {
+      "bytes": 9174,
+      "sha256": "57c71a8ab18c935a81d4ef3c447edd5c6e6350ddaf67004584c01fd4e696bbba"
+    },
+    "WebApp/assets/maps/ne2/3/2/2.webp": {
+      "bytes": 7974,
+      "sha256": "3f1c71f6a39d193dd3adf03dbf7fc881c907bcd34516ab709f4b744ad098d21d"
+    },
+    "WebApp/assets/maps/ne2/3/2/3.webp": {
+      "bytes": 8274,
+      "sha256": "71623e98cfdfbb0d44acd32c0283edb7388f37c7df787ed5e2d3357ee238fa0c"
+    },
+    "WebApp/assets/maps/ne2/3/2/4.webp": {
+      "bytes": 8392,
+      "sha256": "f95ecdba2b9a3b9f86cb8ddd808b1f24f37d66140d33b1ee236b0b08fe033927"
+    },
+    "WebApp/assets/maps/ne2/3/2/5.webp": {
+      "bytes": 6508,
+      "sha256": "3de4695eb3345461ed84d233214c7567a362fef701a8a3573399971cd4fba78f"
+    },
+    "WebApp/assets/maps/ne2/3/2/6.webp": {
+      "bytes": 4846,
+      "sha256": "36c32337d97c246361c6ba379f485c965154a0a8c9931a9bc2c1d0fd37ef3a86"
+    },
+    "WebApp/assets/maps/ne2/3/2/7.webp": {
+      "bytes": 3096,
+      "sha256": "da2361e2c423f6566d74fecc7fff0d9da84a3d9ebf154fcaa9e7c11b37365fa2"
+    },
+    "WebApp/assets/maps/ne2/3/3/0.webp": {
+      "bytes": 4468,
+      "sha256": "55a1e8337997dc1ba648011fe10f397889b29c08995321a192b83fcc868ee76e"
+    },
+    "WebApp/assets/maps/ne2/3/3/1.webp": {
+      "bytes": 5350,
+      "sha256": "ca4271777d1a1464fafd7e3b2188d30ba2fd0e241f0ec26e596ef2831832f000"
+    },
+    "WebApp/assets/maps/ne2/3/3/2.webp": {
+      "bytes": 6970,
+      "sha256": "ae147a675cb13558e90fa83c228a486aaa3dfed34e8bca62265ad1a16cb2fdd1"
+    },
+    "WebApp/assets/maps/ne2/3/3/3.webp": {
+      "bytes": 7314,
+      "sha256": "07c9c6e2a23e31548f0357f8f07c2c4c5494f6c34228287cafca99e02d227e10"
+    },
+    "WebApp/assets/maps/ne2/3/3/4.webp": {
+      "bytes": 6308,
+      "sha256": "630704de1b38079f5cdf389a1065a2eeb23a475b8dd95c74eb95dad9f4e50e5f"
+    },
+    "WebApp/assets/maps/ne2/3/3/5.webp": {
+      "bytes": 5438,
+      "sha256": "7dfd0a07c0adc68a60da6fb79d43ab781b911aed110db9167e5d6c3b0ec3af94"
+    },
+    "WebApp/assets/maps/ne2/3/3/6.webp": {
+      "bytes": 3428,
+      "sha256": "74545c9862c989ca08f457c624a777b89b0535991d6c673a8f4d3c10e339ddd7"
+    },
+    "WebApp/assets/maps/ne2/3/3/7.webp": {
+      "bytes": 4318,
+      "sha256": "398758e09fc0caa7946a49009d200fe0567980f683b9a2dfc545272cdb408032"
+    },
+    "WebApp/assets/maps/ne2/3/4/0.webp": {
+      "bytes": 2592,
+      "sha256": "de5bf9920ff1adfc232da302a27d19545c3602c9642a380cf289243460e29393"
+    },
+    "WebApp/assets/maps/ne2/3/4/1.webp": {
+      "bytes": 4658,
+      "sha256": "fa9bc32a89e2334af353e78c3009af43c1ec4961f1949a05bc4f7a639878e217"
+    },
+    "WebApp/assets/maps/ne2/3/4/2.webp": {
+      "bytes": 9308,
+      "sha256": "a71623c96b37d81e01bbe4e0a2db733443223ebd115096e7fe26d11ef78ed961"
+    },
+    "WebApp/assets/maps/ne2/3/4/3.webp": {
+      "bytes": 11462,
+      "sha256": "d842ec0f2f24c23f289b17abcd2cc04d6203e72f268c04ccaf52400945480f50"
+    },
+    "WebApp/assets/maps/ne2/3/4/4.webp": {
+      "bytes": 8006,
+      "sha256": "8ba39d2993dd143f10690575d38dfbf44a796b165451a9f0cb817885a8bd4b2e"
+    },
+    "WebApp/assets/maps/ne2/3/4/5.webp": {
+      "bytes": 5678,
+      "sha256": "4a490dcbb767aeaa589335786d355909607025d2041723e07e673f25df0d3008"
+    },
+    "WebApp/assets/maps/ne2/3/4/6.webp": {
+      "bytes": 3486,
+      "sha256": "707ea59c60fcfe3a3de6089f55fc8ad26e3ee86bf41280402547186ecb08a88e"
+    },
+    "WebApp/assets/maps/ne2/3/4/7.webp": {
+      "bytes": 1188,
+      "sha256": "0a9c6c9379bb616d9a30a4907d3104f00f5c798280c04604cc66c9e90dfbfe30"
+    },
+    "WebApp/assets/maps/ne2/3/5/0.webp": {
+      "bytes": 2262,
+      "sha256": "277667d211d3822a65613bd022581f3d215763fc106eed27bef109d76bcdd570"
+    },
+    "WebApp/assets/maps/ne2/3/5/1.webp": {
+      "bytes": 5026,
+      "sha256": "e51a4e29b28d04847014578dbfc2c351f9cdcb48c26fc3a81845cb1386475ab8"
+    },
+    "WebApp/assets/maps/ne2/3/5/2.webp": {
+      "bytes": 7274,
+      "sha256": "d859df8e34314a5596b6ade9ed8852ba94094f5c44f4570df58ddbaa72e53ae5"
+    },
+    "WebApp/assets/maps/ne2/3/5/3.webp": {
+      "bytes": 12580,
+      "sha256": "259972ecff79d950a888822adbca8e45d4a02a6476b7953a507c5d7701d590dd"
+    },
+    "WebApp/assets/maps/ne2/3/5/4.webp": {
+      "bytes": 7020,
+      "sha256": "e502bc2ec4cec7611c9e1b79bf0ec567d94aaed799b2521d0fb04be044b06b00"
+    },
+    "WebApp/assets/maps/ne2/3/5/5.webp": {
+      "bytes": 3252,
+      "sha256": "a8e0865aa678b0c35621fe957c2b894d565aa173b1d1e23148473c20836b0bba"
+    },
+    "WebApp/assets/maps/ne2/3/5/6.webp": {
+      "bytes": 3984,
+      "sha256": "06fa2f731192d273cf46ebcaa07af1ff1db8a1c93606253cb0df35a523717e21"
+    },
+    "WebApp/assets/maps/ne2/3/5/7.webp": {
+      "bytes": 960,
+      "sha256": "1592786ad9d63f1d318d8de4ba815d6dc71406df4ea7d27eb5baf240b209e707"
+    },
+    "WebApp/assets/maps/ne2/3/6/0.webp": {
+      "bytes": 2006,
+      "sha256": "09731026ef1460eba253f6ab947cc43c34e6a629cfa127627c3fc680c4249d2a"
+    },
+    "WebApp/assets/maps/ne2/3/6/1.webp": {
+      "bytes": 6544,
+      "sha256": "97b02aa0e219002a7d9623f328dd8f253b5c3967478f9aefc66e6a06969af67b"
+    },
+    "WebApp/assets/maps/ne2/3/6/2.webp": {
+      "bytes": 13728,
+      "sha256": "2daa7a5c4833d6f4eaae6649d58823cb1cfa0632d5abefb39782acef152e261e"
+    },
+    "WebApp/assets/maps/ne2/3/6/3.webp": {
+      "bytes": 14500,
+      "sha256": "13315550a53dd9adf839c315e07548219d388bc9021dc5fbe0569b1b5c1cf00b"
+    },
+    "WebApp/assets/maps/ne2/3/6/4.webp": {
+      "bytes": 7940,
+      "sha256": "c79af12db2920da2591be023495c14e11e9320aa42412cc5fded628d2f372b88"
+    },
+    "WebApp/assets/maps/ne2/3/6/5.webp": {
+      "bytes": 2968,
+      "sha256": "c78cec4af81bc481a357b0d0b9b26815741afa40bb195a19f6817d8d5bd74a4d"
+    },
+    "WebApp/assets/maps/ne2/3/6/6.webp": {
+      "bytes": 2086,
+      "sha256": "3890715760d9a33e49c242b71ad5dca718a879a40d6649a234c5ac0090b7aa57"
+    },
+    "WebApp/assets/maps/ne2/3/6/7.webp": {
+      "bytes": 2186,
+      "sha256": "48bdb737448e45c17069897feef701b8101e40def583494695788ed7dc98f26d"
+    },
+    "WebApp/assets/maps/ne2/3/7/0.webp": {
+      "bytes": 1530,
+      "sha256": "c0781524359cdf8699225da8660c62c25677a1ca2172963396e54714334bad69"
+    },
+    "WebApp/assets/maps/ne2/3/7/1.webp": {
+      "bytes": 4360,
+      "sha256": "c66d346f7c735702f08ed10310187ad3cb09729af05fe67c59227fe8114b3c00"
+    },
+    "WebApp/assets/maps/ne2/3/7/2.webp": {
+      "bytes": 11332,
+      "sha256": "57070827d5ecf8459fda52578c640dbd173a48213bdb87352729c553978479d7"
+    },
+    "WebApp/assets/maps/ne2/3/7/3.webp": {
+      "bytes": 7140,
+      "sha256": "c085fc7cd8509d6fa57a885d9f0f5c7560b74af6f68aaf27169177f326eb6908"
+    },
+    "WebApp/assets/maps/ne2/3/7/4.webp": {
+      "bytes": 8792,
+      "sha256": "263d6963a19dde4fbeb52d4b74a7f7e4bab054eee817f0a3c0750e77106c5d70"
+    },
+    "WebApp/assets/maps/ne2/3/7/5.webp": {
+      "bytes": 5214,
+      "sha256": "0b764d88310643eb637ab5dabc9b53cbe42f300f7ed894675418c013910bc270"
+    },
+    "WebApp/assets/maps/ne2/3/7/6.webp": {
+      "bytes": 4720,
+      "sha256": "a20fd77016e6cf4459efa2597ec851a17f16de72b7296f23086453bdfbd345d5"
+    },
+    "WebApp/assets/maps/ne2/3/7/7.webp": {
+      "bytes": 3394,
+      "sha256": "f519c0592417a938269ddc2cc2545b1079c792b3651dda17d3ddac47b6404aee"
+    },
+    "WebApp/assets/maps/ne2/4/0/0.webp": {
+      "bytes": 1278,
+      "sha256": "3191ca2d0c113f3f1ab4bffff8c194fe5ca0650127f33b630d0d9451cf8592f5"
+    },
+    "WebApp/assets/maps/ne2/4/0/1.webp": {
+      "bytes": 1310,
+      "sha256": "33ca0acbd8ed5305c6df021a123130ad3e28d7658e15dabc3bd487574d8f4615"
+    },
+    "WebApp/assets/maps/ne2/4/0/10.webp": {
+      "bytes": 3256,
+      "sha256": "b4705cdffa79e93eb60e7c298124afbb4195484c0a4888e1f435bcaca687c1b6"
+    },
+    "WebApp/assets/maps/ne2/4/0/11.webp": {
+      "bytes": 4014,
+      "sha256": "f88c38b8a1b4673ee93d066ef1d03c9215df4b46a3e0d4b11812b979c1f6bd6c"
+    },
+    "WebApp/assets/maps/ne2/4/0/12.webp": {
+      "bytes": 1508,
+      "sha256": "3430ae71060520e624dd605d7088b70eea1b6bf0dddcc081beb6dca59ec0ebc8"
+    },
+    "WebApp/assets/maps/ne2/4/0/13.webp": {
+      "bytes": 1476,
+      "sha256": "8febaf185e76433d0acd2e2b4fc057044ff061a08b65810321de0888a9ff31aa"
+    },
+    "WebApp/assets/maps/ne2/4/0/14.webp": {
+      "bytes": 324,
+      "sha256": "dbc8b00a74482212d042dd29b00c8a13c67bd109184684b9aefa00d657f9eb57"
+    },
+    "WebApp/assets/maps/ne2/4/0/15.webp": {
+      "bytes": 1440,
+      "sha256": "35353840b5d7cc017172c593bf01ef0a3fc08cc94f366410211bd49c740d0257"
+    },
+    "WebApp/assets/maps/ne2/4/0/2.webp": {
+      "bytes": 1906,
+      "sha256": "8976914e9cbb0fb73cbeaedacd45a38635c7bd3b7bacf598e562d9295a882bd4"
+    },
+    "WebApp/assets/maps/ne2/4/0/3.webp": {
+      "bytes": 2780,
+      "sha256": "72803264041a2a55f7ff8f4a07ac4763112ffb26e4f7f7282219e0d36beeef4b"
+    },
+    "WebApp/assets/maps/ne2/4/0/4.webp": {
+      "bytes": 5664,
+      "sha256": "149c43c8693e764147e475ece8532a9e0e032c8842c41e4b86f406427cbff91d"
+    },
+    "WebApp/assets/maps/ne2/4/0/5.webp": {
+      "bytes": 4564,
+      "sha256": "e062d9644941ba679803e5c86a0d89968cf91e67ba279724b9ede5e05d845b51"
+    },
+    "WebApp/assets/maps/ne2/4/0/6.webp": {
+      "bytes": 4882,
+      "sha256": "f08018dfebeb8e230a70fbdc5c80c2c71e2bf0762ca4b6cd25a3bf27193aa8f3"
+    },
+    "WebApp/assets/maps/ne2/4/0/7.webp": {
+      "bytes": 7130,
+      "sha256": "9137de3cd0c3fdfe0a8e01e0624c7cd7d44b22133a62118c5f15cfcfd8dc0b5c"
+    },
+    "WebApp/assets/maps/ne2/4/0/8.webp": {
+      "bytes": 8066,
+      "sha256": "f7e8a12f0fce656dd4aa435ec6a925314a67344eb2abd6bb6dad1ae9fd8d29e9"
+    },
+    "WebApp/assets/maps/ne2/4/0/9.webp": {
+      "bytes": 6286,
+      "sha256": "d25ff38e75e7e02e4b8728ca574b60abd5a084a192b321088343d09576188e4f"
+    },
+    "WebApp/assets/maps/ne2/4/1/0.webp": {
+      "bytes": 1072,
+      "sha256": "9ceb5a9c28c9d54dfbb67eb1741569b810fb85f34c07da4565c6b1867b64cb73"
+    },
+    "WebApp/assets/maps/ne2/4/1/1.webp": {
+      "bytes": 814,
+      "sha256": "0914844f85ccac30fcdd9ba3c6602949aa0a42520bd2069dc8029df579db1f6c"
+    },
+    "WebApp/assets/maps/ne2/4/1/10.webp": {
+      "bytes": 4738,
+      "sha256": "aea13d6190b181d1c84a67173e880513ce2f386fdd74e0e34afdf7e2f7ad5928"
+    },
+    "WebApp/assets/maps/ne2/4/1/11.webp": {
+      "bytes": 3142,
+      "sha256": "4c391d27a4b7220ae85681e714f9abe93f5bd789c65e67ad55c9c570dc113e5f"
+    },
+    "WebApp/assets/maps/ne2/4/1/12.webp": {
+      "bytes": 1058,
+      "sha256": "455922f4445c783f499dd8efa96b78079477a2e6d61750b6ada65ca52540f0d2"
+    },
+    "WebApp/assets/maps/ne2/4/1/13.webp": {
+      "bytes": 3942,
+      "sha256": "7cd6e025054a1f4a23b91b1d0301d69d7be48d60f6523144fa50be4e39f628b5"
+    },
+    "WebApp/assets/maps/ne2/4/1/14.webp": {
+      "bytes": 1414,
+      "sha256": "d605b4ba2c198f2801d74d3b3ac650522d09c00cbc37893a36fdc54964bf9fe6"
+    },
+    "WebApp/assets/maps/ne2/4/1/15.webp": {
+      "bytes": 1620,
+      "sha256": "39dc6d2020ad0f597e0be6d51e635e4ce01a8aa4d73d6c9a44e1c1f3051e5b81"
+    },
+    "WebApp/assets/maps/ne2/4/1/2.webp": {
+      "bytes": 888,
+      "sha256": "f7b2f99baaa355ba14bd22cc3424374db95f1581f432a03f0fb938eca5912d64"
+    },
+    "WebApp/assets/maps/ne2/4/1/3.webp": {
+      "bytes": 5636,
+      "sha256": "f2b41ffa96fca97fb51c4a385734ba3c341c886fad31cec08ce8a95165b50bc8"
+    },
+    "WebApp/assets/maps/ne2/4/1/4.webp": {
+      "bytes": 13892,
+      "sha256": "d70e37502efc52f17011bcb00af3cb22e3b7e90b49b199bd3c1789e0309306e4"
+    },
+    "WebApp/assets/maps/ne2/4/1/5.webp": {
+      "bytes": 2780,
+      "sha256": "8345f79ca3e546d2fabfa0470df55a7f46b73f35d087e505b1c2c86ebc943aee"
+    },
+    "WebApp/assets/maps/ne2/4/1/6.webp": {
+      "bytes": 3728,
+      "sha256": "b047f24c35846dc0445b36cbad4ac5af3337759bc36cfc7de7858c8b4de17791"
+    },
+    "WebApp/assets/maps/ne2/4/1/7.webp": {
+      "bytes": 3296,
+      "sha256": "38a2f41f4125c9e0b56edb346ad3cf1998eda5132f5da901cacdd2ab74b087b2"
+    },
+    "WebApp/assets/maps/ne2/4/1/8.webp": {
+      "bytes": 6920,
+      "sha256": "cbfa88257fb416994c26dae9c9867a922947b56b11813b0f4fecbea7b6b3a521"
+    },
+    "WebApp/assets/maps/ne2/4/1/9.webp": {
+      "bytes": 5234,
+      "sha256": "6a4d6161b9061792bc66defc0a6fc8f29f29ea8d560e6adc7b439259c676ba94"
+    },
+    "WebApp/assets/maps/ne2/4/10/0.webp": {
+      "bytes": 574,
+      "sha256": "b4ada3415b24b0e9722e0fa23076d0cd8a4b519ef6fc7f24fba0e84a5d42f393"
+    },
+    "WebApp/assets/maps/ne2/4/10/1.webp": {
+      "bytes": 3504,
+      "sha256": "02c8892fd4e33f71eba3af33f01390f458057c89c4f1903efb15fc9dcf5f90ea"
+    },
+    "WebApp/assets/maps/ne2/4/10/10.webp": {
+      "bytes": 3752,
+      "sha256": "d31b94619895d7d0b5e6d9e3cdd4f4c22be3031e32cac9fe5167bed21470b9ac"
+    },
+    "WebApp/assets/maps/ne2/4/10/11.webp": {
+      "bytes": 2102,
+      "sha256": "69f9280dd14267bcbbe2a8457d57d6bed303a0f79331c6454d9cee3515f413ed"
+    },
+    "WebApp/assets/maps/ne2/4/10/12.webp": {
+      "bytes": 4400,
+      "sha256": "02c49f2560562ee4dd2c9492f9e307782d4305bc1f9162bdd001315d66e61dd3"
+    },
+    "WebApp/assets/maps/ne2/4/10/13.webp": {
+      "bytes": 2178,
+      "sha256": "a4110ca64451ac0f68f9a86d1767afda193f961fed944c90f458563efa626904"
+    },
+    "WebApp/assets/maps/ne2/4/10/14.webp": {
+      "bytes": 840,
+      "sha256": "5a7cff921f4bdad017ea2e9ab0a7e6c2b8bccb3e6d2b90d6b7444e8c15871dcb"
+    },
+    "WebApp/assets/maps/ne2/4/10/15.webp": {
+      "bytes": 830,
+      "sha256": "94f7888def3e4f17bc8bfe01303f58ed1fac340e9c21ef5e89d2d19fee7d6abc"
+    },
+    "WebApp/assets/maps/ne2/4/10/2.webp": {
+      "bytes": 2050,
+      "sha256": "f4f5aa358528d723470728da1a79bfb3f1e20158066ddd90bebe49032cc24ff0"
+    },
+    "WebApp/assets/maps/ne2/4/10/3.webp": {
+      "bytes": 4368,
+      "sha256": "2dbc350b599b3aa2e5da7209330ba2005ca12f06c094a506a51ab4a62ae65c4e"
+    },
+    "WebApp/assets/maps/ne2/4/10/4.webp": {
+      "bytes": 5956,
+      "sha256": "781409e7d7258bf037a259ffa63dbaeb6291c0b5ef5d293164969adc2e99b265"
+    },
+    "WebApp/assets/maps/ne2/4/10/5.webp": {
+      "bytes": 5546,
+      "sha256": "54149caaaf10f1fb2ef4d3ecb2c7ba9e60516d89aac98391c5c6ce2235fdd540"
+    },
+    "WebApp/assets/maps/ne2/4/10/6.webp": {
+      "bytes": 14266,
+      "sha256": "10dbcb356d36d4cc5cfab8a9ba727be32e60ce04f564bbbd8d983ae58add1c83"
+    },
+    "WebApp/assets/maps/ne2/4/10/7.webp": {
+      "bytes": 7674,
+      "sha256": "c6d4a6a3c55b94bddd25880e79c3ec735052db7bcd58351e522343d1c1aa78c9"
+    },
+    "WebApp/assets/maps/ne2/4/10/8.webp": {
+      "bytes": 8800,
+      "sha256": "ba15cb49083376cf8d9c7cb73ad26d86f09d618bd1e61161999521d35ad7bbb7"
+    },
+    "WebApp/assets/maps/ne2/4/10/9.webp": {
+      "bytes": 8298,
+      "sha256": "8a9301809168bee10782e7de840ee2f14e3f03849a0a68e331a849e582411909"
+    },
+    "WebApp/assets/maps/ne2/4/11/0.webp": {
+      "bytes": 544,
+      "sha256": "61cc33d6ee16af428c56dbe423d8eb1102db109924c9d60ea71b656ce2f91858"
+    },
+    "WebApp/assets/maps/ne2/4/11/1.webp": {
+      "bytes": 952,
+      "sha256": "1dd9377145ab1105fdd447c344b0a6a9daa4cb29013c1e1c19fe36e56ab98bbc"
+    },
+    "WebApp/assets/maps/ne2/4/11/10.webp": {
+      "bytes": 3382,
+      "sha256": "8640ccc44591c4d51e5a1b84c979a7178f44d129fa79ad5e259d353d020fb14e"
+    },
+    "WebApp/assets/maps/ne2/4/11/11.webp": {
+      "bytes": 2200,
+      "sha256": "731335a35baec5731456b050e11a5040022455913a52953081e6297049c33ebb"
+    },
+    "WebApp/assets/maps/ne2/4/11/12.webp": {
+      "bytes": 4226,
+      "sha256": "f65267f60bdb462121e572afbb3b6ddfc56a770dc2ed16a7c0b4b5264ffcf698"
+    },
+    "WebApp/assets/maps/ne2/4/11/13.webp": {
+      "bytes": 3178,
+      "sha256": "5bb08b505908c27d7dd2a04557ff7461e91d01fe3867fdf1a3f5600fde9a2935"
+    },
+    "WebApp/assets/maps/ne2/4/11/14.webp": {
+      "bytes": 884,
+      "sha256": "c9611344ee53b1c5f9ae3ee8d348efbd1a44021149dc7c017bc571f59c0646a9"
+    },
+    "WebApp/assets/maps/ne2/4/11/15.webp": {
+      "bytes": 776,
+      "sha256": "d9c8b0d7ebbb3e4eb90defbcb8037a54770755e2355592d0cf3b9c4889f32745"
+    },
+    "WebApp/assets/maps/ne2/4/11/2.webp": {
+      "bytes": 1146,
+      "sha256": "45403af7c31488a15831f7f0b1ea553d8a1ba1e4f514c02cfb7567ce61f6cf29"
+    },
+    "WebApp/assets/maps/ne2/4/11/3.webp": {
+      "bytes": 5436,
+      "sha256": "06e51fcd48bae2d9b2de17cb99d306f0ee88f48a3a46a3b60bc827eb528231d7"
+    },
+    "WebApp/assets/maps/ne2/4/11/4.webp": {
+      "bytes": 4252,
+      "sha256": "c824119c82895112dd421221cd3a0a2591b004af098cf4074008fe74cf5dd9e5"
+    },
+    "WebApp/assets/maps/ne2/4/11/5.webp": {
+      "bytes": 10234,
+      "sha256": "1c1743f2bc9aad749bc73a9fa14601cd6c4f5a18eb5400dc8974d6f590a460d5"
+    },
+    "WebApp/assets/maps/ne2/4/11/6.webp": {
+      "bytes": 16400,
+      "sha256": "3185ca715457829ee889b8b757b9de80e5ad0d3d8d58190ccb166fc0a2e83556"
+    },
+    "WebApp/assets/maps/ne2/4/11/7.webp": {
+      "bytes": 6002,
+      "sha256": "68c0a80eba8f6c98de42f60320a8cd57e024d56b6020adde1a9a910c318395dd"
+    },
+    "WebApp/assets/maps/ne2/4/11/8.webp": {
+      "bytes": 6576,
+      "sha256": "32c387d4ce1595a817d850b145726cb5d25f765d63c3bfb9a6ac83a770215cb9"
+    },
+    "WebApp/assets/maps/ne2/4/11/9.webp": {
+      "bytes": 6678,
+      "sha256": "85b494a875558fb7d1842c206a7b37705189a8624904a9693c623a969116f984"
+    },
+    "WebApp/assets/maps/ne2/4/12/0.webp": {
+      "bytes": 962,
+      "sha256": "a93a2d387c5e7b43d24a7b2115d195d14fb72f7d61b9188823bd7b18c8e3027a"
+    },
+    "WebApp/assets/maps/ne2/4/12/1.webp": {
+      "bytes": 2392,
+      "sha256": "c9bc5a86501d420bb4658e1d7d39aa0ea4f05ff73735d6d79c947b81cd24ba99"
+    },
+    "WebApp/assets/maps/ne2/4/12/10.webp": {
+      "bytes": 3040,
+      "sha256": "cef79af56ed1f39ee07604ed82eb3e862b9439408e830a3fcce322b488bda11b"
+    },
+    "WebApp/assets/maps/ne2/4/12/11.webp": {
+      "bytes": 2608,
+      "sha256": "7688d23220b2ac17a2e90a7291b1ecec6e445339bebce497c672eb55a790cd24"
+    },
+    "WebApp/assets/maps/ne2/4/12/12.webp": {
+      "bytes": 2340,
+      "sha256": "78335766404a5eb94eae65a6450e9e107fbade6c77eb680c096f03e66a897b32"
+    },
+    "WebApp/assets/maps/ne2/4/12/13.webp": {
+      "bytes": 1108,
+      "sha256": "f907958a7d1a7b6934900e5beeada1830d9394e4eb12d67bf1f9fe09aad73dde"
+    },
+    "WebApp/assets/maps/ne2/4/12/14.webp": {
+      "bytes": 1306,
+      "sha256": "3198d758f37fac08ecb98fcd43719f146517b3bef6ea72669b83d98ba1293316"
+    },
+    "WebApp/assets/maps/ne2/4/12/15.webp": {
+      "bytes": 1398,
+      "sha256": "f9cf7543627b44e3c91988e17405ff89d8a97e4fbcfdf09cc2087d28698d9e20"
+    },
+    "WebApp/assets/maps/ne2/4/12/2.webp": {
+      "bytes": 4810,
+      "sha256": "cf1c32149901fc25afcf9b68d31f0d9a4d5dbf66a7d64a9d818019177f935f7f"
+    },
+    "WebApp/assets/maps/ne2/4/12/3.webp": {
+      "bytes": 7274,
+      "sha256": "4c4aac0aba89c4e9f6b9ab84c6be85c22c69b9e92c943e618d611688821c2912"
+    },
+    "WebApp/assets/maps/ne2/4/12/4.webp": {
+      "bytes": 10038,
+      "sha256": "6a85fcce4bd68c45d3f8819bac19f55df754ad5cdde283462b6fb972bbf9abc3"
+    },
+    "WebApp/assets/maps/ne2/4/12/5.webp": {
+      "bytes": 16416,
+      "sha256": "a8b8eb8cd82a83021508eb15175c814f6f189aa412d172caf54b07e4ab5e7d7e"
+    },
+    "WebApp/assets/maps/ne2/4/12/6.webp": {
+      "bytes": 21684,
+      "sha256": "570d7a2270996c7f1a86f828a27ac1fe2b003ef257eb34092e23c64950d78177"
+    },
+    "WebApp/assets/maps/ne2/4/12/7.webp": {
+      "bytes": 10110,
+      "sha256": "98818ec0d48a66329cd679c658975432eee086a84eed595ae5733582aa417371"
+    },
+    "WebApp/assets/maps/ne2/4/12/8.webp": {
+      "bytes": 8426,
+      "sha256": "7faa81fc610a330bab4759076fcd90f6d788acdf40622576a21e689bf85883d6"
+    },
+    "WebApp/assets/maps/ne2/4/12/9.webp": {
+      "bytes": 5292,
+      "sha256": "3f1b60f00365554e47c156aedc327b55201a0a4af09f44c4137a82625dae08cb"
+    },
+    "WebApp/assets/maps/ne2/4/13/0.webp": {
+      "bytes": 862,
+      "sha256": "619baa25b21acee85380327b3e7314bf54fd41f2e99e21feceb52768b8bf8053"
+    },
+    "WebApp/assets/maps/ne2/4/13/1.webp": {
+      "bytes": 768,
+      "sha256": "e527c16ee91c2460b847d22144d92c3fe0a0ebebc7ad679d2501af6ffe76d800"
+    },
+    "WebApp/assets/maps/ne2/4/13/10.webp": {
+      "bytes": 4112,
+      "sha256": "1851335709c3f80fb87ac6fe822da8b6ba0a5f276f2a832e9edd73bb44dbd44f"
+    },
+    "WebApp/assets/maps/ne2/4/13/11.webp": {
+      "bytes": 1714,
+      "sha256": "5444257130016f13055cbac5cabc63fdb7b9581f7a291a970313d68c9ad28ac2"
+    },
+    "WebApp/assets/maps/ne2/4/13/12.webp": {
+      "bytes": 2156,
+      "sha256": "b68bf94820b770bc043c224e686d190a6e7f87f3f42dd3a9b9c6005276f1dba7"
+    },
+    "WebApp/assets/maps/ne2/4/13/13.webp": {
+      "bytes": 1568,
+      "sha256": "b481f669662a84d6b414f3cafcf8fc664b8bebd16dd76e83812fcc9603ddb8e9"
+    },
+    "WebApp/assets/maps/ne2/4/13/14.webp": {
+      "bytes": 2028,
+      "sha256": "6826a76a18f249d018ee5ebb17b01e3b3285a4c4a1ef4dd16da58a2a64ae9da6"
+    },
+    "WebApp/assets/maps/ne2/4/13/15.webp": {
+      "bytes": 1838,
+      "sha256": "2c7832bf58f278227cbc4f9e467587bbea7ed8ae6062fdcab4a235318d11dd88"
+    },
+    "WebApp/assets/maps/ne2/4/13/2.webp": {
+      "bytes": 1006,
+      "sha256": "3a86f4b952d029c7f5656b6e55f8ca22c21f904e5fe42e98c049b94b32952d48"
+    },
+    "WebApp/assets/maps/ne2/4/13/3.webp": {
+      "bytes": 6534,
+      "sha256": "d7891bdfab8097baeb54192a11b4f6b5b31b1492e1deb42f13b5c1c2aed5bf61"
+    },
+    "WebApp/assets/maps/ne2/4/13/4.webp": {
+      "bytes": 10782,
+      "sha256": "6d77fbbdead850a4e4b1ee9a76a1708b9bb9b2ffe85b3b23779c709a4cdfac52"
+    },
+    "WebApp/assets/maps/ne2/4/13/5.webp": {
+      "bytes": 12296,
+      "sha256": "dfbddecf9ea353c2a0377e61246a49be5b601b869b6083c97cbdef85d636918e"
+    },
+    "WebApp/assets/maps/ne2/4/13/6.webp": {
+      "bytes": 10870,
+      "sha256": "1dd22b69ec2f834b687ef7eb073a5ada29213f24011ae3fa066a2ff9eb287636"
+    },
+    "WebApp/assets/maps/ne2/4/13/7.webp": {
+      "bytes": 12236,
+      "sha256": "2a031579bfc936ea24350b081d39967c2e37b77c41e108f50fe3b279507a6aa4"
+    },
+    "WebApp/assets/maps/ne2/4/13/8.webp": {
+      "bytes": 10714,
+      "sha256": "89b690d920e6f77423b335cf219f894e795a121b70cad60882621ff22d87ddfe"
+    },
+    "WebApp/assets/maps/ne2/4/13/9.webp": {
+      "bytes": 6338,
+      "sha256": "6bac02d57f3e2c473e3ddf5b851d95ad2a7222bdd1674775309a24090f35dfd6"
+    },
+    "WebApp/assets/maps/ne2/4/14/0.webp": {
+      "bytes": 1312,
+      "sha256": "cd2da566d2883dc73e2b0f57dc27717024a64d4242b6b9c4485ef24811959025"
+    },
+    "WebApp/assets/maps/ne2/4/14/1.webp": {
+      "bytes": 1106,
+      "sha256": "eaf8bb375747009ee69714a5c3aaa593a120b7c21851998fb9d815c8f8885dd7"
+    },
+    "WebApp/assets/maps/ne2/4/14/10.webp": {
+      "bytes": 4766,
+      "sha256": "5a51bd894cb24c1a9023c16dcd0633f108c26f3eede0af5f553786b7efbc3f9e"
+    },
+    "WebApp/assets/maps/ne2/4/14/11.webp": {
+      "bytes": 2812,
+      "sha256": "fb31515d0ec014bc400d3a45140f84e8f43ccec698cb5c7f05f742c8c283500f"
+    },
+    "WebApp/assets/maps/ne2/4/14/12.webp": {
+      "bytes": 2808,
+      "sha256": "731fc6041f95049e642894648d06dc397cc5ac78be199f3658b329525b3e7f9d"
+    },
+    "WebApp/assets/maps/ne2/4/14/13.webp": {
+      "bytes": 2198,
+      "sha256": "7d37935e59f3da89d67184e272c9b13be99a8a5aac6f514e34a00bbd74dfd3dd"
+    },
+    "WebApp/assets/maps/ne2/4/14/14.webp": {
+      "bytes": 2660,
+      "sha256": "327c333727a7138d8eff554909fa054c52df893726eade620123398153e41c4c"
+    },
+    "WebApp/assets/maps/ne2/4/14/15.webp": {
+      "bytes": 1442,
+      "sha256": "a1d02ab0bad22ad4aaa91f1b027598000877d29ead19c019c841f50cf1ae02ef"
+    },
+    "WebApp/assets/maps/ne2/4/14/2.webp": {
+      "bytes": 1572,
+      "sha256": "1a02fc706dd20453d5cb806cace25b166b6775489e48d4be77a034ec3173d7fb"
+    },
+    "WebApp/assets/maps/ne2/4/14/3.webp": {
+      "bytes": 5144,
+      "sha256": "77a81c014c09fffa43cd3ba9baa65bdc2861abbf956bcf47f6c1da1db72cb127"
+    },
+    "WebApp/assets/maps/ne2/4/14/4.webp": {
+      "bytes": 12492,
+      "sha256": "531563ff5737e4092816014b2c4a26e9777722ba94b3ac46ada1a4645afbcb10"
+    },
+    "WebApp/assets/maps/ne2/4/14/5.webp": {
+      "bytes": 7776,
+      "sha256": "f5c92856326bc74bd03a910ed2e6562ddc17033be85f461d63e6d5c1ee7b468b"
+    },
+    "WebApp/assets/maps/ne2/4/14/6.webp": {
+      "bytes": 6952,
+      "sha256": "d2aa7d21b26f15ae2136feba214e6ab558006e5c7d73923870cb24ad8ecb0ee3"
+    },
+    "WebApp/assets/maps/ne2/4/14/7.webp": {
+      "bytes": 8882,
+      "sha256": "554431145f3a28a9ee2d9165799a1eb27c80c329d9e435ee132ee7886a658eed"
+    },
+    "WebApp/assets/maps/ne2/4/14/8.webp": {
+      "bytes": 9584,
+      "sha256": "e60d9c89c09e04a404d1ac3929a0c72d064dc6a8c47286e469981d3ab80b6d84"
+    },
+    "WebApp/assets/maps/ne2/4/14/9.webp": {
+      "bytes": 7356,
+      "sha256": "c2502edd9467cb8543a1a1c9adcdbed6709b13aa4128ea432c3d4e5169d210e7"
+    },
+    "WebApp/assets/maps/ne2/4/15/0.webp": {
+      "bytes": 928,
+      "sha256": "1d43acbe5afbf7c406e4c31e999cc1c15ae2b1f2f7c5d2d0a793508aa0056435"
+    },
+    "WebApp/assets/maps/ne2/4/15/1.webp": {
+      "bytes": 854,
+      "sha256": "05021e3368f3b646224ddbc4250c63cd6970d14f0ec66350e93b3bd4d7ae6e3e"
+    },
+    "WebApp/assets/maps/ne2/4/15/10.webp": {
+      "bytes": 5680,
+      "sha256": "c2a6b7174df3cfa91ab2b27a43d3afbab25bc6e0d886936f4dc0adf051737ae4"
+    },
+    "WebApp/assets/maps/ne2/4/15/11.webp": {
+      "bytes": 4146,
+      "sha256": "9ec83c95c9d6bd1bce284782e691462f5a12e420ca760274a07af458f6c4b84b"
+    },
+    "WebApp/assets/maps/ne2/4/15/12.webp": {
+      "bytes": 5158,
+      "sha256": "6e025cd311400e85f3fd5c2812183bb75f4c8106e0d37111cce74ccb968ce126"
+    },
+    "WebApp/assets/maps/ne2/4/15/13.webp": {
+      "bytes": 3464,
+      "sha256": "7388b7db737e89f72cf9550806bd8922e736a7f66dddf0c3ffc48308873824d8"
+    },
+    "WebApp/assets/maps/ne2/4/15/14.webp": {
+      "bytes": 1328,
+      "sha256": "d4497697809da36725ef446d8a7d04125b97a8b77b7071d7d67583e5fdf86fb0"
+    },
+    "WebApp/assets/maps/ne2/4/15/15.webp": {
+      "bytes": 3874,
+      "sha256": "5ac44b7b5629700bbcc7e5b8974f1dfceb0bffeddb9351a0c3831a7206e09aa8"
+    },
+    "WebApp/assets/maps/ne2/4/15/2.webp": {
+      "bytes": 540,
+      "sha256": "80b77d69574b9653ce96c7202acd1ded64f23b8934ac7ce10451b9c88b49291e"
+    },
+    "WebApp/assets/maps/ne2/4/15/3.webp": {
+      "bytes": 4632,
+      "sha256": "dbe2fbd2a8e1b9f7eb8816271f3466bbad92a2bbbb060f0987ae46b914801b17"
+    },
+    "WebApp/assets/maps/ne2/4/15/4.webp": {
+      "bytes": 9912,
+      "sha256": "c215172623a48fb0b9258869f0904d0d825f43be67ccb3425bd1693683b14b43"
+    },
+    "WebApp/assets/maps/ne2/4/15/5.webp": {
+      "bytes": 6216,
+      "sha256": "7c489970da746732c781a5e7f08ac7bd461a95e5307943dd52da5229b9bc1da6"
+    },
+    "WebApp/assets/maps/ne2/4/15/6.webp": {
+      "bytes": 5264,
+      "sha256": "4d65b0e65e9c2a695a661b59aecdff7cc80280e1dd6e5c59bbefa268294a39aa"
+    },
+    "WebApp/assets/maps/ne2/4/15/7.webp": {
+      "bytes": 7290,
+      "sha256": "c0e8ed44ebce729827e7ef2ac8ab5ddf1930b171ff7418899258be078a8e6be5"
+    },
+    "WebApp/assets/maps/ne2/4/15/8.webp": {
+      "bytes": 8660,
+      "sha256": "592c2599d4f9731344a0affdc8536460757f075817e93c20c07f7d5b411c756c"
+    },
+    "WebApp/assets/maps/ne2/4/15/9.webp": {
+      "bytes": 6212,
+      "sha256": "6bc2c51ecc991753758a4c8a16003818f6f4cc020edc38619cfc6a93ad188500"
+    },
+    "WebApp/assets/maps/ne2/4/2/0.webp": {
+      "bytes": 892,
+      "sha256": "e5d31219c5cc6ce510b166a6daf246eb08de750806719ad9b5c940edcfac74c4"
+    },
+    "WebApp/assets/maps/ne2/4/2/1.webp": {
+      "bytes": 1068,
+      "sha256": "f917717a4ab0e54bbb7390a07308ff4559bfaff58498fcf1c57804ea55ff5a27"
+    },
+    "WebApp/assets/maps/ne2/4/2/10.webp": {
+      "bytes": 3352,
+      "sha256": "7be54836b0409542b6dfcc17bca07f9d173eac48b6ad47f3b19f9249614066a9"
+    },
+    "WebApp/assets/maps/ne2/4/2/11.webp": {
+      "bytes": 2646,
+      "sha256": "dc3aa0246602313105f6811bb4f5554c5c341ec17f4d334b5d78c49beaa4dfa0"
+    },
+    "WebApp/assets/maps/ne2/4/2/12.webp": {
+      "bytes": 1882,
+      "sha256": "d62013f36bc7eb92c2ace421ae4e1f483c2367f80c2f1bdef6e280401d271ca7"
+    },
+    "WebApp/assets/maps/ne2/4/2/13.webp": {
+      "bytes": 3784,
+      "sha256": "e9271fc5ae0f57afdd27319d3f5b5b58102dcd6cb9f0226389f0a9e03f8f3f91"
+    },
+    "WebApp/assets/maps/ne2/4/2/14.webp": {
+      "bytes": 2422,
+      "sha256": "688182c7c263d29d6b5d91e3ad730b21ec8d031841b6ed85e8ea384edca32368"
+    },
+    "WebApp/assets/maps/ne2/4/2/15.webp": {
+      "bytes": 1908,
+      "sha256": "712d4da526fdb5e85b2bb70c9e911766cb3b4f79780c70324b03b354a86eda5a"
+    },
+    "WebApp/assets/maps/ne2/4/2/2.webp": {
+      "bytes": 3192,
+      "sha256": "f3806d5b79683c82628d7d6f61947a054c4bd5adbe72a0b6be5baf39e91cc907"
+    },
+    "WebApp/assets/maps/ne2/4/2/3.webp": {
+      "bytes": 5578,
+      "sha256": "effde07d8f9bdb0f24be95c8cb5008d53ac18dda3bdbae9bcc98498b5ecd3ec7"
+    },
+    "WebApp/assets/maps/ne2/4/2/4.webp": {
+      "bytes": 13592,
+      "sha256": "7b37756c6710972cabcd031df2eb18280c9c7b4d534d4ec43df6c1b3299d5d70"
+    },
+    "WebApp/assets/maps/ne2/4/2/5.webp": {
+      "bytes": 15628,
+      "sha256": "d08f55dbacefdcc00b38d7531c2454dd20c26b9bbbab61d94f2935181cd8740e"
+    },
+    "WebApp/assets/maps/ne2/4/2/6.webp": {
+      "bytes": 9192,
+      "sha256": "2944c1b338165f7b3fc29e6832820245dedf7013f255338c45b16592bba254f5"
+    },
+    "WebApp/assets/maps/ne2/4/2/7.webp": {
+      "bytes": 2648,
+      "sha256": "32068dc2f1917199c51d54ae0863ffb50c9caa8684a622be3768138165c19708"
+    },
+    "WebApp/assets/maps/ne2/4/2/8.webp": {
+      "bytes": 2994,
+      "sha256": "ca41fa66ffb9912193bac74b7815563c124afa036cee2259b8cf7dd6b16499c8"
+    },
+    "WebApp/assets/maps/ne2/4/2/9.webp": {
+      "bytes": 6422,
+      "sha256": "54dd151be31d284a9aa595794152f072bd001cfb2c89f601ce13ef1a3200e02c"
+    },
+    "WebApp/assets/maps/ne2/4/3/0.webp": {
+      "bytes": 1178,
+      "sha256": "f23489e5adc0f76cb7552728d9511f2c06202827b14984603ea0df56dd35dc25"
+    },
+    "WebApp/assets/maps/ne2/4/3/1.webp": {
+      "bytes": 2598,
+      "sha256": "408cdb1f4221db0d3e1d9303af73ba356933d408714a213d4078b12507089ec6"
+    },
+    "WebApp/assets/maps/ne2/4/3/10.webp": {
+      "bytes": 3378,
+      "sha256": "f679177edff44860b430bee885ae7c0763ece5d1fad39ac38f924215ffad1443"
+    },
+    "WebApp/assets/maps/ne2/4/3/11.webp": {
+      "bytes": 1816,
+      "sha256": "28a92a46d88d8a7c82df40bc6e731adec1bbdaf089ae1343d2ef1e22eb1f5744"
+    },
+    "WebApp/assets/maps/ne2/4/3/12.webp": {
+      "bytes": 2486,
+      "sha256": "2ca5a94f9659c875252b626795f21606db71977bfa97431750e6ed16d67d395c"
+    },
+    "WebApp/assets/maps/ne2/4/3/13.webp": {
+      "bytes": 3350,
+      "sha256": "157ad2c8a084853de2f1322576d860d1530c6562ba1f366bb43de0a8ee8f4512"
+    },
+    "WebApp/assets/maps/ne2/4/3/14.webp": {
+      "bytes": 2006,
+      "sha256": "82df3db8acaab63f266bee2509d7b9598baf102c5614c1a06e7c862b6bbfea56"
+    },
+    "WebApp/assets/maps/ne2/4/3/15.webp": {
+      "bytes": 2088,
+      "sha256": "c4ac3b8fb3b94f8cd564e06e982a4739e8b6e78f89e331f16fb3f693a7b51625"
+    },
+    "WebApp/assets/maps/ne2/4/3/2.webp": {
+      "bytes": 5888,
+      "sha256": "047067ba1ea9bd2c344bc9cce3efe9bc7fa577226f54f48904871871d58a67eb"
+    },
+    "WebApp/assets/maps/ne2/4/3/3.webp": {
+      "bytes": 6796,
+      "sha256": "04895e8b1ba6295450061e95b559d4c656e13ef9a592817e0ad51b8e91562a6f"
+    },
+    "WebApp/assets/maps/ne2/4/3/4.webp": {
+      "bytes": 4282,
+      "sha256": "a3e676edb5a6ab1551478183fc0c841c5b64bc7a72a7ebb20db48b5d26acfc18"
+    },
+    "WebApp/assets/maps/ne2/4/3/5.webp": {
+      "bytes": 5924,
+      "sha256": "e74f09a88fcf70b4d7ee0efd5e378f1c49b89ba268ba717390d7e310f7d629f2"
+    },
+    "WebApp/assets/maps/ne2/4/3/6.webp": {
+      "bytes": 11720,
+      "sha256": "3cfcaf34c53563bb364fbd44ad30caeee9b6cdc0359d17d0c3958c602c109446"
+    },
+    "WebApp/assets/maps/ne2/4/3/7.webp": {
+      "bytes": 7906,
+      "sha256": "5264302a8b946973bbb43c0f2afcb99c4c545eb7a6bbf8b8b8ec9946fc8432be"
+    },
+    "WebApp/assets/maps/ne2/4/3/8.webp": {
+      "bytes": 4170,
+      "sha256": "3e8304fa2239fc56c86352bb1221d8fa36133cebda94ad58f1eb909326015ca5"
+    },
+    "WebApp/assets/maps/ne2/4/3/9.webp": {
+      "bytes": 6402,
+      "sha256": "62ac1ce582eb4cc9d8a749ac2fa6461046f600c6c96b23b6212b871b8039b283"
+    },
+    "WebApp/assets/maps/ne2/4/4/0.webp": {
+      "bytes": 1814,
+      "sha256": "14e3290f62b7b41aad339b49d85297c422e89a9afd7fba7d2ca1b74cca2f56f0"
+    },
+    "WebApp/assets/maps/ne2/4/4/1.webp": {
+      "bytes": 8400,
+      "sha256": "4c631a3e942328c8ef90eed82699a330b20943bf226099b349fbc940adbb9e17"
+    },
+    "WebApp/assets/maps/ne2/4/4/10.webp": {
+      "bytes": 9054,
+      "sha256": "ef16e0615cadc083c309237ff3394ebae0d2d88408ed45e7c918bd9d9adbb736"
+    },
+    "WebApp/assets/maps/ne2/4/4/11.webp": {
+      "bytes": 2470,
+      "sha256": "7e4a65b687492e71c783d5b47a631cb4a6d6d6397c7fff2aa8960ea979e28fea"
+    },
+    "WebApp/assets/maps/ne2/4/4/12.webp": {
+      "bytes": 4572,
+      "sha256": "6db8b2f2ef516c32434230e696d171b8843473148e33ef6344bef153fb9f0ccd"
+    },
+    "WebApp/assets/maps/ne2/4/4/13.webp": {
+      "bytes": 3578,
+      "sha256": "5d5dbada551278a2aaa6576b86118199598819fc27e8049ce3156ee0e7314c2e"
+    },
+    "WebApp/assets/maps/ne2/4/4/14.webp": {
+      "bytes": 2412,
+      "sha256": "00529c867695ab2bb9e024b7b3208afff16489287467536f458d1d9131588f72"
+    },
+    "WebApp/assets/maps/ne2/4/4/15.webp": {
+      "bytes": 1672,
+      "sha256": "310711a1f9b596b27d702a853e66d8ae03e1a60cb11c250df81c7a92d2cacf28"
+    },
+    "WebApp/assets/maps/ne2/4/4/2.webp": {
+      "bytes": 6902,
+      "sha256": "ba31ce06e73c36e33239b6f6b9a19039ef7d398fa7a88b678617decac7051d5f"
+    },
+    "WebApp/assets/maps/ne2/4/4/3.webp": {
+      "bytes": 8508,
+      "sha256": "cb8f152e1148f61bf0aa94f058371bcaccdeac639ef4dc31250f8ccd6e32c397"
+    },
+    "WebApp/assets/maps/ne2/4/4/4.webp": {
+      "bytes": 5512,
+      "sha256": "28f4e177723692bf5e6de3c2a1eafb63d8e257ae8261445ff84369bfc0ac7cb9"
+    },
+    "WebApp/assets/maps/ne2/4/4/5.webp": {
+      "bytes": 7182,
+      "sha256": "665b6a2ec01fdcb81e1b15c626b746f5427e9b8b2612c65683e7c2c29fa5620f"
+    },
+    "WebApp/assets/maps/ne2/4/4/6.webp": {
+      "bytes": 5174,
+      "sha256": "612530457a8892fcaeb267267d899de3ddc484e70a36e16c7c138dfb750a840f"
+    },
+    "WebApp/assets/maps/ne2/4/4/7.webp": {
+      "bytes": 12516,
+      "sha256": "4a6ea2d21da2a2441f638012d4bda94a77a639de8e8d9e147ea13c2e1e379ad1"
+    },
+    "WebApp/assets/maps/ne2/4/4/8.webp": {
+      "bytes": 9358,
+      "sha256": "206508d7bc66fb778b533d0d6692c33a26f27d31d27d073d24f90d3087b32ee6"
+    },
+    "WebApp/assets/maps/ne2/4/4/9.webp": {
+      "bytes": 9918,
+      "sha256": "21d214be783a252fdd7f3f7a239cd73b986f5d86387ebeccadc4dc19d8e130cd"
+    },
+    "WebApp/assets/maps/ne2/4/5/0.webp": {
+      "bytes": 1180,
+      "sha256": "ae8b286fefc1e508d7debd0de647d6a1e30876af31d57015c018cb42b1c852e9"
+    },
+    "WebApp/assets/maps/ne2/4/5/1.webp": {
+      "bytes": 4438,
+      "sha256": "ffa7fcb035f9c0b7b4da338d9877a7150e332e81aa21d3d442dd5bb39a26d257"
+    },
+    "WebApp/assets/maps/ne2/4/5/10.webp": {
+      "bytes": 3690,
+      "sha256": "99311a688ac72dff378dcf1c69f703c04f381b22df104e1ed01fde8d5b066e1a"
+    },
+    "WebApp/assets/maps/ne2/4/5/11.webp": {
+      "bytes": 5958,
+      "sha256": "675095e4c8424e4addc130cc34c2f352280e6046b7c65924a16cfa9c0002d6a9"
+    },
+    "WebApp/assets/maps/ne2/4/5/12.webp": {
+      "bytes": 3216,
+      "sha256": "c6b963f1b263e6757e707894ecb07d9e77330e941730f823323105cf4965ac3d"
+    },
+    "WebApp/assets/maps/ne2/4/5/13.webp": {
+      "bytes": 1570,
+      "sha256": "d08c62df7ed22766710c36fc6e8002a020b1f471fb67969699c5dd5b799887e5"
+    },
+    "WebApp/assets/maps/ne2/4/5/14.webp": {
+      "bytes": 1274,
+      "sha256": "691c065595a837509f2ea528998eb6c5873ed546292b05e0de17089ef6640a5d"
+    },
+    "WebApp/assets/maps/ne2/4/5/15.webp": {
+      "bytes": 3230,
+      "sha256": "d90e7def03476f73feb715f6cdd4166316949115bb48fd5a96da3b63a1d45f0c"
+    },
+    "WebApp/assets/maps/ne2/4/5/2.webp": {
+      "bytes": 2422,
+      "sha256": "f124e776de438b44dabef09608a9fb5fc333885e8d51c17da12073e78f328529"
+    },
+    "WebApp/assets/maps/ne2/4/5/3.webp": {
+      "bytes": 5094,
+      "sha256": "5a0fb4f0f504eae75805d2816305f34c479b1029bc13404bdf347b9eb6e59864"
+    },
+    "WebApp/assets/maps/ne2/4/5/4.webp": {
+      "bytes": 5318,
+      "sha256": "a56f70a1b667fbdc6c2110b8dee728676b6d189662e30a8533089a71ce41dc83"
+    },
+    "WebApp/assets/maps/ne2/4/5/5.webp": {
+      "bytes": 6276,
+      "sha256": "2d77869281437ef324325019a10023158a7a36e99ca2217b99a51f8042fc0ff1"
+    },
+    "WebApp/assets/maps/ne2/4/5/6.webp": {
+      "bytes": 5990,
+      "sha256": "237c97195e02d5dc3613af9bbc318d8ead7e52c6f28b0cad62ae389fe74d920a"
+    },
+    "WebApp/assets/maps/ne2/4/5/7.webp": {
+      "bytes": 8540,
+      "sha256": "4e57943892a87686d1b29fd4d61661874fba36d2ef0e9065d41a674e7dcf0d3d"
+    },
+    "WebApp/assets/maps/ne2/4/5/8.webp": {
+      "bytes": 7968,
+      "sha256": "14681d9bdd4bc451539d4a69c0b9d13d118b2928c8d02fb5fb469c11efd71000"
+    },
+    "WebApp/assets/maps/ne2/4/5/9.webp": {
+      "bytes": 6970,
+      "sha256": "8078dcef2ef432d6f0d64ccaf16c8fd01a3f6332d607880b79cdf67d4e6a791b"
+    },
+    "WebApp/assets/maps/ne2/4/6/0.webp": {
+      "bytes": 2622,
+      "sha256": "36304bc948579c2066451df2ca89cdd3636d8196b45d2077f8fb573eb0ec7a28"
+    },
+    "WebApp/assets/maps/ne2/4/6/1.webp": {
+      "bytes": 3144,
+      "sha256": "1395a07a42404eaa26886b53420ba60a0e79dd8956ea0f986dc19fb51f6ed103"
+    },
+    "WebApp/assets/maps/ne2/4/6/10.webp": {
+      "bytes": 3870,
+      "sha256": "84424933fe0b0f8b9b302cdd3261a6e11d2f92ad7d8b6d0732112285afa2c64e"
+    },
+    "WebApp/assets/maps/ne2/4/6/11.webp": {
+      "bytes": 4432,
+      "sha256": "06c5ab5f132718869f1a568fb168430c327db2338ed06a556eb76a1e734cda9c"
+    },
+    "WebApp/assets/maps/ne2/4/6/12.webp": {
+      "bytes": 872,
+      "sha256": "ee90b233f2f29364990cc763c8ce4fde20071bed011af506b817421b678371cc"
+    },
+    "WebApp/assets/maps/ne2/4/6/13.webp": {
+      "bytes": 2346,
+      "sha256": "044224a184af697bfb4cd20c3465440ebb81cf8e73df046bd550f906571c959a"
+    },
+    "WebApp/assets/maps/ne2/4/6/14.webp": {
+      "bytes": 2690,
+      "sha256": "8299a87d42a5cada3a65eff8f267efb1c5fd426b57c005b74ca37d787faab12b"
+    },
+    "WebApp/assets/maps/ne2/4/6/15.webp": {
+      "bytes": 2212,
+      "sha256": "a4a138565b7ce493daef584a510cb10c86c8298419e022f358f95f2233332906"
+    },
+    "WebApp/assets/maps/ne2/4/6/2.webp": {
+      "bytes": 1672,
+      "sha256": "7d676f7f6ae4617a3fa3f413260382ed313e775426227108b5c4831e0bac0083"
+    },
+    "WebApp/assets/maps/ne2/4/6/3.webp": {
+      "bytes": 5576,
+      "sha256": "c9c0a4698bfa0954b60cf94183c16972b6732f9b3f36d5d7b155bd174613ab1c"
+    },
+    "WebApp/assets/maps/ne2/4/6/4.webp": {
+      "bytes": 4640,
+      "sha256": "f8e35d47683cc5bb3c2c1971bcf767808da4efe76b1200054fa0353026da1a05"
+    },
+    "WebApp/assets/maps/ne2/4/6/5.webp": {
+      "bytes": 4942,
+      "sha256": "4d11ca0548d4791b6b0b9ad1981f381fa0d6fb5e424c589ead4e469c712b2cd9"
+    },
+    "WebApp/assets/maps/ne2/4/6/6.webp": {
+      "bytes": 8236,
+      "sha256": "a6a56c5ae2db2c850efd065ca5706dd4ba003fff4c69a213a4b8bc7aa887174d"
+    },
+    "WebApp/assets/maps/ne2/4/6/7.webp": {
+      "bytes": 7686,
+      "sha256": "eea7835798feb4cece7aa0cf5d9155f5bb6d8932ab7a191e8522f8b8325409de"
+    },
+    "WebApp/assets/maps/ne2/4/6/8.webp": {
+      "bytes": 8698,
+      "sha256": "63f16f2085da4e12da3a0489e8012d611b167d7d508c9039d53cf36afab38849"
+    },
+    "WebApp/assets/maps/ne2/4/6/9.webp": {
+      "bytes": 4710,
+      "sha256": "19ab02a32b1850058df1c4cb3cc40a30eb6a75e29450d0f449247615d9ac21b6"
+    },
+    "WebApp/assets/maps/ne2/4/7/0.webp": {
+      "bytes": 1628,
+      "sha256": "404adaee3df6837359e2010822eea98d761ba22977d4fd9415ae8103cb9fdc24"
+    },
+    "WebApp/assets/maps/ne2/4/7/1.webp": {
+      "bytes": 3072,
+      "sha256": "cab423277ae74f394966c708ba9938ef3e899dab451ebe487f84041096d80311"
+    },
+    "WebApp/assets/maps/ne2/4/7/10.webp": {
+      "bytes": 5622,
+      "sha256": "dec29b77e8e134041e5f081cbd19a1eb13b2bb1cea132e48fece8876614a7ecd"
+    },
+    "WebApp/assets/maps/ne2/4/7/11.webp": {
+      "bytes": 3652,
+      "sha256": "caca29b3faacfe2a20f14b32dbb43d59598e9e89be47f586fadddae4ba3c526c"
+    },
+    "WebApp/assets/maps/ne2/4/7/12.webp": {
+      "bytes": 3020,
+      "sha256": "fcb4dd32f411824b8eeb96a03c468d74b4bf5933329a25aa7d629a7047ad3cea"
+    },
+    "WebApp/assets/maps/ne2/4/7/13.webp": {
+      "bytes": 3112,
+      "sha256": "a1a7c3aa9c51e97d5473dd9ca743f9fa7e26a1738271b19218b27963442bf5b4"
+    },
+    "WebApp/assets/maps/ne2/4/7/14.webp": {
+      "bytes": 3674,
+      "sha256": "400892b9f692fe9a0007a3b5fa899de3bbf680e6e3bb4c43000f5cfdce7246ca"
+    },
+    "WebApp/assets/maps/ne2/4/7/15.webp": {
+      "bytes": 3062,
+      "sha256": "fbed2207b83db657dadbe523985b4e8eb1e4be6878f999bc32ceb58495e3f1ef"
+    },
+    "WebApp/assets/maps/ne2/4/7/2.webp": {
+      "bytes": 2972,
+      "sha256": "ab558e37f628e6f9ea065e409d364dbdd9272b99c433b2c2452904fb4b85ade3"
+    },
+    "WebApp/assets/maps/ne2/4/7/3.webp": {
+      "bytes": 3196,
+      "sha256": "eb6df379875acdd05c7c3b691ba54f5b1113ed1fdfa5fbe51ce717d9385f8ee3"
+    },
+    "WebApp/assets/maps/ne2/4/7/4.webp": {
+      "bytes": 4806,
+      "sha256": "a56a5a8f640c25dc19958231167f772a557abaf0d64ffdc4271c85e8b8978b42"
+    },
+    "WebApp/assets/maps/ne2/4/7/5.webp": {
+      "bytes": 7016,
+      "sha256": "637712f7f69d5526bd79994fb48380baa1fe292f1284d8b3fe78e056eeba3962"
+    },
+    "WebApp/assets/maps/ne2/4/7/6.webp": {
+      "bytes": 8884,
+      "sha256": "3c834d0f3f91860de5d9105997f06994fb2a0e92598c4ee8d6853ad627f16e0c"
+    },
+    "WebApp/assets/maps/ne2/4/7/7.webp": {
+      "bytes": 5942,
+      "sha256": "c65cda97c64aa4b06154474904c706908357b7529051689a094f8d0fed29c24a"
+    },
+    "WebApp/assets/maps/ne2/4/7/8.webp": {
+      "bytes": 10186,
+      "sha256": "fb9738bb3266c9606ff99ce00be5096017d1ff5491710617386d4be3532ddc76"
+    },
+    "WebApp/assets/maps/ne2/4/7/9.webp": {
+      "bytes": 7866,
+      "sha256": "373e769d0003a2b18a6489860d4c7834915ac8503ac5d08feaf84e4aa2c7edf2"
+    },
+    "WebApp/assets/maps/ne2/4/8/0.webp": {
+      "bytes": 1440,
+      "sha256": "af361bcaaf0f40f51955d2f7a7c7556bdacf6a3ab1371a70cea98eedcb6d794e"
+    },
+    "WebApp/assets/maps/ne2/4/8/1.webp": {
+      "bytes": 2906,
+      "sha256": "7e661f2cbb7d294bc39d77f74f961981395d475c22f524860fa0559d0505568c"
+    },
+    "WebApp/assets/maps/ne2/4/8/10.webp": {
+      "bytes": 6946,
+      "sha256": "57cae1aa894200c00513bc259e7831ff867dd4caaadb0f78a1f092bb5d715b8d"
+    },
+    "WebApp/assets/maps/ne2/4/8/11.webp": {
+      "bytes": 3622,
+      "sha256": "bf89d58a6fc84ff18c01b0a11b975f2ebd960e0e06885627023a1baa1bb3d45f"
+    },
+    "WebApp/assets/maps/ne2/4/8/12.webp": {
+      "bytes": 3716,
+      "sha256": "9ff7556fbef2508495acb3a3af42ab12c358fcbd91be8c4d0d44d36e38378d34"
+    },
+    "WebApp/assets/maps/ne2/4/8/13.webp": {
+      "bytes": 1958,
+      "sha256": "97eeacc78b7bf30d22f93a919377f3c5433c55ebeb51299ccca17bf9b0119037"
+    },
+    "WebApp/assets/maps/ne2/4/8/14.webp": {
+      "bytes": 1718,
+      "sha256": "553258099d123ae5ed0470f6cb0f11c8f14af0269c1683c0f5e9ffc059dbfdef"
+    },
+    "WebApp/assets/maps/ne2/4/8/15.webp": {
+      "bytes": 850,
+      "sha256": "dae2b9e6de6a612111cb2208695ca0fa49e8e4837865e58aaa3575b7ae9faef2"
+    },
+    "WebApp/assets/maps/ne2/4/8/2.webp": {
+      "bytes": 4108,
+      "sha256": "4f6c6574445716213a1281a3322ff25cbad65ad965e1d3259ce0494aec6d877f"
+    },
+    "WebApp/assets/maps/ne2/4/8/3.webp": {
+      "bytes": 4076,
+      "sha256": "71279a73055cef560b8ce79a6fa0e50232efb9c8220ebdec963eb475eb5a2d2d"
+    },
+    "WebApp/assets/maps/ne2/4/8/4.webp": {
+      "bytes": 7604,
+      "sha256": "60fe229fd0394d0c87b662f59cf91491ee28d070715b99768c88ae6a933bbb82"
+    },
+    "WebApp/assets/maps/ne2/4/8/5.webp": {
+      "bytes": 10966,
+      "sha256": "6e4f342e6e9eceb9c96b2ddb18910e808be93d7e1a93670b3f82300ef868edcb"
+    },
+    "WebApp/assets/maps/ne2/4/8/6.webp": {
+      "bytes": 9206,
+      "sha256": "ad3be535463845a951e61057328589cc8b29b507fa8a2ed12ec0631729f4c84f"
+    },
+    "WebApp/assets/maps/ne2/4/8/7.webp": {
+      "bytes": 6370,
+      "sha256": "67dddee9903f2fa649b1aa96617897fc3636a302188b430b3c6cee1b732d1661"
+    },
+    "WebApp/assets/maps/ne2/4/8/8.webp": {
+      "bytes": 6938,
+      "sha256": "5712f76e90669d09fec67178f0c96f0cc074417bdcf1e29e882ab1643d3a625b"
+    },
+    "WebApp/assets/maps/ne2/4/8/9.webp": {
+      "bytes": 5264,
+      "sha256": "98f310e5a4039c9be9997b761e42b4cb34b00ba87a0905f1f000c3fa8f543e10"
+    },
+    "WebApp/assets/maps/ne2/4/9/0.webp": {
+      "bytes": 538,
+      "sha256": "fd00010ca7f726e865903d19548b7779e9a2dec8311e1e593f9501a022ffe2de"
+    },
+    "WebApp/assets/maps/ne2/4/9/1.webp": {
+      "bytes": 1558,
+      "sha256": "1a0733247df9473e16324de0fd21898c6bb01506c24a71940b5bafb6c4d28d3e"
+    },
+    "WebApp/assets/maps/ne2/4/9/10.webp": {
+      "bytes": 6224,
+      "sha256": "238bf38fbf5fd1f0a5e195dfbb373140cae83311c506bc02cbe1361c72c5d108"
+    },
+    "WebApp/assets/maps/ne2/4/9/11.webp": {
+      "bytes": 1380,
+      "sha256": "9248908602dbd7871d017920acb289c9d92d2a56c70ca5d6aa7a23073b521278"
+    },
+    "WebApp/assets/maps/ne2/4/9/12.webp": {
+      "bytes": 4062,
+      "sha256": "da4e848fa31acd84da21e111df7cea2c885fde7e56cb1e6fff835301ad612ab1"
+    },
+    "WebApp/assets/maps/ne2/4/9/13.webp": {
+      "bytes": 1370,
+      "sha256": "f8e2ae90ccb1b6444b2a381480aa7447dcf2a6d784021eaa76314da5fd12e694"
+    },
+    "WebApp/assets/maps/ne2/4/9/14.webp": {
+      "bytes": 610,
+      "sha256": "23c28362f639cc044d9d5b0aba9738e7ec9583a26c35dd4a962fe22ca0d56454"
+    },
+    "WebApp/assets/maps/ne2/4/9/15.webp": {
+      "bytes": 722,
+      "sha256": "56045a4f699a71fc3dc795116fdc6eec96cf0d199dd6ce874a53cca9efd87abb"
+    },
+    "WebApp/assets/maps/ne2/4/9/2.webp": {
+      "bytes": 986,
+      "sha256": "5b2818725db63700f6ece67e0140acab09f31fefa65a3013e2ce62c93613b012"
+    },
+    "WebApp/assets/maps/ne2/4/9/3.webp": {
+      "bytes": 3894,
+      "sha256": "1c36bd364aa7c091c73b43067f8188effe807f016fb8db708e45eb9622428ae7"
+    },
+    "WebApp/assets/maps/ne2/4/9/4.webp": {
+      "bytes": 4904,
+      "sha256": "47b7b6caca32f7429cd2f3acbc542f96a5ca863d8629e33f711643cf5a6edc48"
+    },
+    "WebApp/assets/maps/ne2/4/9/5.webp": {
+      "bytes": 7248,
+      "sha256": "01374a1e6ea0478984b73f31db3f5b2233796c4ded644c6a7bc91e27b4be6a1d"
+    },
+    "WebApp/assets/maps/ne2/4/9/6.webp": {
+      "bytes": 12892,
+      "sha256": "6ad92715f3cc7c47597c91ad29933248e45bb4b54e6c687eae7fed0a7e0d4333"
+    },
+    "WebApp/assets/maps/ne2/4/9/7.webp": {
+      "bytes": 11360,
+      "sha256": "37f5586a152ebbf8337ef1d4a51923492343b5edf1952065e1118a4443141369"
+    },
+    "WebApp/assets/maps/ne2/4/9/8.webp": {
+      "bytes": 10004,
+      "sha256": "22d8070a817428fb85ec548831a59ad0af36142e24aab0d299fd8da88bd3436a"
+    },
+    "WebApp/assets/maps/ne2/4/9/9.webp": {
+      "bytes": 6940,
+      "sha256": "1bb9e8df1ae0f477b27cb810928c5e55354c5c52dd4c48b6dbad2e507e10dee4"
+    },
+    "WebApp/assets/maps/ne2/SOURCE.txt": {
+      "bytes": 426,
+      "sha256": "2f02bf651a4a44927949147c2a1e8fb5c51b56602d39c16daf208b78afdd4a61"
+    },
+    "WebApp/authorization-core.js": {
+      "bytes": 37123,
+      "sha256": "141ff536408f163349cf6411a6e8b17f8160e8f17112089ebaff108d532d51f5"
+    },
+    "WebApp/authorization-ui.css": {
+      "bytes": 2714,
+      "sha256": "86b590bc471b1193dd64d339ab358e19f3eab30625c2e79d7ad8b28e5b461455"
+    },
+    "WebApp/banking-core.js": {
+      "bytes": 51730,
+      "sha256": "4a5ba790f3ea4381133fb717560e9b0bd1a508f7c374403440f9c9e688d4a11e"
+    },
+    "WebApp/business-world-core.js": {
+      "bytes": 22351,
+      "sha256": "07dba154f589a84fe38461d242dd5412b700ab7b7147c07b9d99958801ddadfa"
+    },
+    "WebApp/capability-registry-core.js": {
+      "bytes": 9603,
+      "sha256": "14291806b8569125f4723d393bce606d4266ed3b5808265614ec420d6c2beec6"
+    },
+    "WebApp/catalog.js": {
+      "bytes": 21091,
+      "sha256": "93ed7a974472b80f80543dd8e08d93f995656f51d6fe019a1f1e84a144620ffa"
+    },
+    "WebApp/company-adapters-core.js": {
+      "bytes": 13412,
+      "sha256": "a4ecdc3b2d812227bc6779159af31216710d8ec48d80ad64da641b9b0e1ecb0b"
+    },
+    "WebApp/company-definitions.js": {
+      "bytes": 15140,
+      "sha256": "0ebf4aa8dff87e5aceaeec19011d149d8183159d0f74bdd39b43e4e3c45f2019"
+    },
+    "WebApp/company-platform-core.js": {
+      "bytes": 40659,
+      "sha256": "85aa08346cf03637dbb30fe834bca9383f081fbe0109ded7de7c1b53bea4e644"
+    },
+    "WebApp/conference-3d.css": {
+      "bytes": 22790,
+      "sha256": "05de1188761a3905761c261d3c9d84b09b535d8203896010619ed17639622d9d"
+    },
+    "WebApp/conference-3d.js": {
+      "bytes": 18638,
+      "sha256": "d79035973bcbe02c4ee60700a32b3b530516a4faa0ea78ee9442c309e3db17a2"
+    },
+    "WebApp/conference-board.js": {
+      "bytes": 13383,
+      "sha256": "648eb23c9fbc86cb86adc32f8907a068f003790a36d9f6b0acaee6033c5027b5"
+    },
+    "WebApp/conference-core.js": {
+      "bytes": 76422,
+      "sha256": "0f39b16d5d908b0fc317dc78c165f96ea2bcdbd82a10d3c888e6069d5dc40f5e"
+    },
+    "WebApp/conference-model.js": {
+      "bytes": 13677,
+      "sha256": "a272040d477b148daab01bc5af2643db271726a2ddb71a8780a259a55315a27b"
+    },
+    "WebApp/conference-world.js": {
+      "bytes": 11257,
+      "sha256": "5ac9fce38ef060767ea9dd45efa17344e330b26e27510aae21c205cee5f38f81"
+    },
+    "WebApp/contracts-core.js": {
+      "bytes": 5335,
+      "sha256": "a0d207bf3511ea0db3f249526f115595297eded7d3b9b01dcdfda9401f10baaf"
+    },
+    "WebApp/control-plane-core.js": {
+      "bytes": 31907,
+      "sha256": "db1d1a3af239c53832a292b319c97e55dd3443188404b08aa4017b8bed735363"
+    },
+    "WebApp/corporate-core.js": {
+      "bytes": 19068,
+      "sha256": "98675a89d2505086eb9766df04e11ca1174489d52c7581257347f5692d827558"
+    },
+    "WebApp/delivery-monitor-core.js": {
+      "bytes": 1442,
+      "sha256": "7fe8caafade0a21c20113db65766e179d16f031e15f90a9a3e18da8278c16581"
+    },
+    "WebApp/department-core.js": {
+      "bytes": 30448,
+      "sha256": "f09e52c5ac5f99eaa5c825754d36c26c4898a24469ee780037c9a68219c61b7b"
+    },
+    "WebApp/dependency-core.js": {
+      "bytes": 2549,
+      "sha256": "3f14c2d85d64000c8df57a43234b90233f1911528c653916375a9e99b18ccf8f"
+    },
+    "WebApp/determinism-core.js": {
+      "bytes": 1728,
+      "sha256": "11650b4b91eebd66bf301e2f4682b07696618001760c7f7c074ff597f089469a"
+    },
+    "WebApp/diagnostics-core.js": {
+      "bytes": 51505,
+      "sha256": "9a4b1e2ec72a51830672e75e8d9d570800f71280ad3ad202acf92b41a44d1c35"
+    },
+    "WebApp/directory-core.js": {
+      "bytes": 16330,
+      "sha256": "eb16acce22f285faec535d82b74620eb26bd0adfa1aa2ce9f05bc37fb7584a8b"
+    },
+    "WebApp/document-proof-core.js": {
+      "bytes": 42597,
+      "sha256": "1a36112586987a6a3bf60f03ce74ae2e25543a41875534b24e860bd1e396d2cf"
+    },
+    "WebApp/domain-command-core.js": {
+      "bytes": 20621,
+      "sha256": "fe20b8a48148ee0510cc052dd5aceadff0850688af23cf016754e7c529955f3f"
+    },
+    "WebApp/economics-core.js": {
+      "bytes": 8403,
+      "sha256": "06065ebdca6171b86c514442d63dde8c33be5bb205a70d4acb076bc440be6189"
+    },
+    "WebApp/energy-core.js": {
+      "bytes": 33810,
+      "sha256": "f9d28d853400a3e4bbd167537137789ff697e99c06b4fd91685e8d1cca6147c2"
+    },
+    "WebApp/event-ledger-core.js": {
+      "bytes": 1851,
+      "sha256": "254287d4b246a95a46f7661707ea2979b2062e66cfaab9259b812f049ee80603"
+    },
+    "WebApp/facility-core.js": {
+      "bytes": 22318,
+      "sha256": "6f6a2b651d960a5c0359eabc718d67998674efb0a54433d827a196a726ef9313"
+    },
+    "WebApp/finance-core.js": {
+      "bytes": 111699,
+      "sha256": "574d0487f02e8c7552ea343a794fa62d6a4b19a251a7dc55e138851fde147c3b"
+    },
+    "WebApp/finance-presentation.css": {
+      "bytes": 35222,
+      "sha256": "091bb3763412df0efac5a5a18977662c7520cff18cde8e401bc3b70bf4463ec2"
+    },
+    "WebApp/finance-presentation.js": {
+      "bytes": 4496,
+      "sha256": "256e6f7640200b9c085e9d9e2bf523a92a26fb03ee22e9adf3067184b7faeee5"
+    },
+    "WebApp/finance-report-core.js": {
+      "bytes": 6112,
+      "sha256": "78008d63af38b670abede7918342ffeba8ad0cea539931ba1a6807dda85ec20c"
+    },
+    "WebApp/finance-report-worker.js": {
+      "bytes": 743,
+      "sha256": "2185b66024aa817032cbe2dcdaf804178962f05a552cf1b2230deb3725cd6a6e"
+    },
+    "WebApp/fleet-core.js": {
+      "bytes": 36239,
+      "sha256": "53044be2bd9139ac67bc6ae4c1717257874a350d26f04701fbb01891f3ef249e"
+    },
+    "WebApp/formation-engine.js": {
+      "bytes": 10555,
+      "sha256": "bea329c7bf28faf22e4ef745203064eb38e8e3f331892865f5a628a633d0fb6b"
+    },
+    "WebApp/founding.css": {
+      "bytes": 9305,
+      "sha256": "a1cdf2800218b05b88f41b6f747b25ac9429dc16f41ea4f2595d65ea142e8ca3"
+    },
+    "WebApp/game-lifecycle-core.js": {
+      "bytes": 12379,
+      "sha256": "b1583c3c692066b5b7ed194c39ce6ad703d89fd6d46e6df03fa3af9ec251b7e1"
+    },
+    "WebApp/governance-core.js": {
+      "bytes": 13340,
+      "sha256": "12dc3f44344669ac119f1a444d62d8acc199d8da410a5a2770b431e5d1b79de8"
+    },
+    "WebApp/hr-core.js": {
+      "bytes": 31274,
+      "sha256": "5d6e4d77907fe3f000a30c95c706a40e955d43e2dd3a071f09aac410ecbd241b"
+    },
+    "WebApp/identity-system.js": {
+      "bytes": 23478,
+      "sha256": "03898d1c92402ea437c53996c7c5341f7be4afb7fc0a58dc5d460c0fa8c0cadc"
+    },
+    "WebApp/index.html": {
+      "bytes": 32444,
+      "sha256": "c0804faadc97c8d90531ba1050fcc2923da4a54d6919a4bca70bf9ec9f94befa"
+    },
+    "WebApp/integrity-core.js": {
+      "bytes": 24272,
+      "sha256": "0fc7d4cfcb2e1dd55994e9fdcf7634dae84e47ffceef49d2c62a4525377dd107"
+    },
+    "WebApp/interaction-core.js": {
+      "bytes": 4264,
+      "sha256": "d957ba7a734611f982c281904da93f0d5b952ec57bf9e86981b59d6d36baaab6"
+    },
+    "WebApp/interface-core.js": {
+      "bytes": 17863,
+      "sha256": "322ceabd6dd9a511bf2cb65a3b7437aa89ef509026f44d50352b9d553ccef55e"
+    },
+    "WebApp/interface-layout.css": {
+      "bytes": 12821,
+      "sha256": "b5d93bbe265471a6fb1961a3f6cd0f3bfacf74c4779799b395288c35b76fb133"
+    },
+    "WebApp/lifecycle-core.js": {
+      "bytes": 1576,
+      "sha256": "b1f725d30a28a6f8f4a66ce3b410c179cd84bdac83bc85117fe10810770a109a"
+    },
+    "WebApp/map-asset-query-core.js": {
+      "bytes": 7455,
+      "sha256": "22358ba0f4994de9bfd220c0f7096a3b5be132673e1242a99c65c9ccfac5c9f7"
+    },
+    "WebApp/map-asset-query-worker.js": {
+      "bytes": 1330,
+      "sha256": "dfb3ff3a140a40e4a0961fd4a6f8ac291135606fecf4740044b41d6e424c7dc4"
+    },
+    "WebApp/map-feature-core.js": {
+      "bytes": 15467,
+      "sha256": "76d6743316e28a70a7e0581af325a69dec92dd83d8eb7fbb43a8e764403f5fbe"
+    },
+    "WebApp/map-labels.js": {
+      "bytes": 14354,
+      "sha256": "c569692bfe4014170fe0250debf3068056e5e4f5f7565de044365bff3f0ad8f2"
+    },
+    "WebApp/map-layer-registry.js": {
+      "bytes": 17300,
+      "sha256": "ccfc75ea172fd45dd43afd2ff9a28647ee02870bb373470365de625c69503d50"
+    },
+    "WebApp/map-presentation-core.js": {
+      "bytes": 13744,
+      "sha256": "a64645b296afaeedb308c75180d094316ef95581a5220caf69500d50d7ffcb10"
+    },
+    "WebApp/map-presentation-worker.js": {
+      "bytes": 1644,
+      "sha256": "8bd6daba72d70169773d0d0ce9e0d6e396d37a70e11347f6f887ac115639336e"
+    },
+    "WebApp/map-provider-core.js": {
+      "bytes": 6151,
+      "sha256": "290d8b5d2621ba725a848e9fff9970c22a83f59912468d556f5d94c832e4cfe3"
+    },
+    "WebApp/market-core.js": {
+      "bytes": 4277,
+      "sha256": "75844088dff49d26ef49bd022929c95b0358e15da4ebdf3f371d964a27025336"
+    },
+    "WebApp/media-asset-core.js": {
+      "bytes": 4302,
+      "sha256": "766809780c747b3a896cdb04764c42a5349ce857953c338e8e0b7a0aeffab0c5"
+    },
+    "WebApp/migration-core.js": {
+      "bytes": 11649,
+      "sha256": "d80e1c99edd4dfa4208997c854fda5ef53ab66cbd0f40251630a5b6416b58ad3"
+    },
+    "WebApp/mobility-core.js": {
+      "bytes": 63449,
+      "sha256": "96905ee54f12415c68b7385ac2a98a5b11542127a9f148f20f86f9735ab4d828"
+    },
+    "WebApp/operations-core.js": {
+      "bytes": 1716,
+      "sha256": "a60a12c745e33195b2eeb998a6118f9eae056e67c837eec672f42778181a75f4"
+    },
+    "WebApp/persistence-core.js": {
+      "bytes": 30352,
+      "sha256": "2d2fb367c729efbf93ced0328b7a70506750bbf70f5447753105af3c66c3a1a4"
+    },
+    "WebApp/policy-core.js": {
+      "bytes": 1915,
+      "sha256": "c4533a1e53328a2ddbda2bd064974d44cbea90bc46745c97b794d4b85b70574e"
+    },
+    "WebApp/procurement-core.js": {
+      "bytes": 11756,
+      "sha256": "e14ad8b930d28e27355353d00622e480bc71a732efcb4fff60b0ed073122117f"
+    },
+    "WebApp/realism-core.js": {
+      "bytes": 68906,
+      "sha256": "59f087fc8229ddb42a3941af0803d4f495aba82d167b097f711330aa554a8555"
+    },
+    "WebApp/road-planner-worker-core.js": {
+      "bytes": 3528,
+      "sha256": "6b8d2a50f8b476af83c4f2c8dcdb04712323699bff260dcd082aa8a90c1c58e0"
+    },
+    "WebApp/road-planner-worker.js": {
+      "bytes": 1014,
+      "sha256": "03e51074e618c3ccb6bb1cfc5ed83863ff22151a12a48723fce43f8a7622102e"
+    },
+    "WebApp/road-planner.js": {
+      "bytes": 8502,
+      "sha256": "2bcd60ac70033ae90c2c106a164c641dc1459ac99a5fabf428193cdad017af91"
+    },
+    "WebApp/route-core.js": {
+      "bytes": 15030,
+      "sha256": "8b868b4b48bb852dec8a7e700d22f57b9b87b1807edb7ca04146bf338bdbcc65"
+    },
+    "WebApp/runtime-required.json": {
+      "bytes": 16365,
+      "sha256": "d542a6e6e08f91c5c06c2c370a3217f2dc390f8b5e10e9440c5186340d16ed36"
+    },
+    "WebApp/save-schema.js": {
+      "bytes": 58073,
+      "sha256": "f98c1bf2d99a0cf1fa10f04d94965dc0b36180d71ed22ebcc2ed0e812f773d66"
+    },
+    "WebApp/section-identities.css": {
+      "bytes": 2444,
+      "sha256": "2c333d2517d2faad5b516b28bbd5fdcf0f8d4019ce596846b0564890318e143d"
+    },
+    "WebApp/signature-pad-core.js": {
+      "bytes": 9095,
+      "sha256": "a232973e5a74617d48f52b20e0eb9ec2a96583bfb6741400641eb118eb705182"
+    },
+    "WebApp/simulation-core.js": {
+      "bytes": 23904,
+      "sha256": "dce2134c1306b33625557b3e6831907c8fd2ae7459b6271281156220daa0c2e8"
+    },
+    "WebApp/simulation-pacing-core.js": {
+      "bytes": 4459,
+      "sha256": "db3c337434812cae7b2f2d033f00b1cf6629418bdfbee0aaba5fa4f8ab35dad1"
+    },
+    "WebApp/simulation-time-core.js": {
+      "bytes": 2145,
+      "sha256": "7fba65430a479155bf423b5adca04c620bff3948b3da2c1bdab09927aecf6c15"
+    },
+    "WebApp/strategy-core.js": {
+      "bytes": 4799,
+      "sha256": "edacf776f6832178ea0e7678e0180b9381b56a3d6aeb57fff33165e24df554d9"
+    },
+    "WebApp/styles.css": {
+      "bytes": 38948,
+      "sha256": "2e69ee058343d89b2310384a46dcf75992e2376945fa153ce74786adaf30ce02"
+    },
+    "WebApp/transaction-core.js": {
+      "bytes": 28671,
+      "sha256": "bf6f57f5baf843362fe3fe3e4acae94b7275727ab68af67afa0739847b15e083"
+    },
+    "WebApp/ui-quality-core.js": {
+      "bytes": 5957,
+      "sha256": "61cb4a633e4f13e95652632b8587c56bc3c548512181cb52319a02a78f72ee6a"
+    },
+    "WebApp/vendor/leaflet/images/layers-2x.png": {
+      "bytes": 1259,
+      "sha256": "066daca850d8ffbef007af00b06eac0015728dee279c51f3cb6c716df7c42edf"
+    },
+    "WebApp/vendor/leaflet/images/layers.png": {
+      "bytes": 696,
+      "sha256": "1dbbe9d028e292f36fcba8f8b3a28d5e8932754fc2215b9ac69e4cdecf5107c6"
+    },
+    "WebApp/vendor/leaflet/images/marker-icon-2x.png": {
+      "bytes": 2464,
+      "sha256": "00179c4c1ee830d3a108412ae0d294f55776cfeb085c60129a39aa6fc4ae2528"
+    },
+    "WebApp/vendor/leaflet/images/marker-icon.png": {
+      "bytes": 1466,
+      "sha256": "574c3a5cca85f4114085b6841596d62f00d7c892c7b03f28cbfa301deb1dc437"
+    },
+    "WebApp/vendor/leaflet/images/marker-shadow.png": {
+      "bytes": 618,
+      "sha256": "264f5c640339f042dd729062cfc04c17f8ea0f29882b538e3848ed8f10edb4da"
+    },
+    "WebApp/vendor/leaflet/leaflet.css": {
+      "bytes": 14145,
+      "sha256": "337bfca5cabd03b39815b2700febe2b3b7edf55921c59cd49f88ecb328212303"
+    },
+    "WebApp/vendor/leaflet/leaflet.js": {
+      "bytes": 147552,
+      "sha256": "db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a"
+    },
+    "WebApp/vendor/three/LICENSE.txt": {
+      "bytes": 1081,
+      "sha256": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601"
+    },
+    "WebApp/vendor/three/three-0.180.0.min.js": {
+      "bytes": 580810,
+      "sha256": "5bf9eda1089c0466f73dcc7887b5c3b34491be3e0499ee66c0f4c5fd554da683"
+    },
+    "WebApp/workflow-core.js": {
+      "bytes": 6115,
+      "sha256": "ffb21ac7833b2fc13600cb07ac1e4ec5606707d8593d1d0c5c804a99f7397727"
+    },
+    "WebApp/world-data.js": {
+      "bytes": 2683464,
+      "sha256": "6ff201b1b90f4bf22202c041d36c1a5c14503c4847e9c61f08e871384812c2c6"
+    },
+    "iOS/GlobalHoldings/AppDelegate.swift": {
+      "bytes": 1444,
+      "sha256": "ac85c6e05e16ee9e7ac927d2e46bd83c577c7d208bff503709decd1f3dd2421b"
+    },
+    "iOS/GlobalHoldings/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png": {
+      "bytes": 119091,
+      "sha256": "244d85af57978e32e98498da36a99ad8224e713bcceb5e9a3e0b82b935126e8c"
+    },
+    "iOS/GlobalHoldings/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+      "bytes": 216,
+      "sha256": "9cf2928dad89427abd581b6852db081352417f400afb65e60c479228cdc4f4da"
+    },
+    "iOS/GlobalHoldings/Assets.xcassets/Contents.json": {
+      "bytes": 63,
+      "sha256": "0fd49ba3c3585c709678e0046a821c3c60685ec7063720d30d3a3448be3a208b"
+    },
+    "iOS/GlobalHoldings/GameViewController.swift": {
+      "bytes": 53691,
+      "sha256": "457557de23c61b7297518786372fcdb741453e7f094f0a42df9c74df5a567839"
+    },
+    "iOS/GlobalHoldings/GlobalGameStorage.swift": {
+      "bytes": 66640,
+      "sha256": "cee936612b3017c810e5c904b617d96091046077400c2f9e187b7a020b81a44a"
+    },
+    "iOS/GlobalHoldings/GlobalSaveVault.swift": {
+      "bytes": 33365,
+      "sha256": "71258a4fb4482d0a77e89bd532647ab6010b6b22f6def25f36bf79b431989b7b"
+    },
+    "iOS/GlobalHoldings/LaunchScreen.storyboard": {
+      "bytes": 1728,
+      "sha256": "fed5a53d38ed2667c3f609bd317c9f4fc30bf42feac87cfab56bd702b8879947"
+    },
+    "project.yml": {
+      "bytes": 2423,
+      "sha256": "27c4d39a1c456befc58e10f9cb922bb7c1a9402432ef3a6a1542245954f1416d"
+    },
+    "BUILD": {
+      "bytes": 4,
+      "sha256": "d909e88e7fa0c6e79055b361c918d4801bc157a1b9b680b4041f7f1c7a4590ba"
+    },
+    "VERSION": {
+      "bytes": 6,
+      "sha256": "2985be8b28d3ade858e8d8fb4bc22f565b1bf6020dff982dce141f7721b9999c"
+    }
+  },
+  "phase": "1C-B — writer proof / no live journal activation",
+  "phase1a_contracts": [
+    "simulation-time boundary math extracted without changing scheduler semantics",
+    "golden time fixture pins manual advance, live boundary split, stall policy and day-before-hour midnight order",
+    "transaction write-set audit is opt-in and zero-cost when disabled",
+    "enforced write declarations rollback undeclared mutations",
+    "actual hourly market root write map captured from clean-source owners"
+  ],
+  "phase1b_a_contracts": [
+    "actual day-close root write maps pinned for normal, payroll and month-end days",
+    "month-end critical failure restores state to byte-equivalent JSON serialization",
+    "plain-object rollback restores snapshot key order while preserving reusable object identities",
+    "scoped-to-full promotion preserves original top-level root order in the promoted snapshot",
+    "full hour/day rollback snapshots remain enabled"
+  ],
+  "phase1b_b_contracts": [
+    "wall-clock pacing, backlog accumulation, execution budget and render/persist cadence are owned by runtime-only simulation-pacing-core.js",
+    "state.simSeconds remains the sole authoritative committed economic time source",
+    "variable deterministic 30/120/300/600 slices and exact hour/day boundary clamping remain unchanged",
+    "midnight ordering remains Day then Hour",
+    "manual advance remains target-driven and refreshes the wall-clock anchor so manual wall duration cannot leak into live catch-up",
+    "hidden/background duration is never replayed as authoritative simulation catch-up",
+    "simulation render cadence no longer copies scheduler snapshots into persisted simulationKernel",
+    "save normalization removes legacy scheduler/pacing snapshot residue while preserving semantic simulation audit fields",
+    "full hour/day rollback snapshots remain enabled; root-journal/COW remains Phase1C"
+  ],
+  "phase1c_a_contracts": [
+    "transaction journal foundation is opt-in; live simulation does not request journal mode",
+    "unproven, structural, mutating validation and mutating critical paths fall back to Full Snapshot before execution",
+    "byte-equivalent rollback and 600-asset full-vs-journal equivalence are proven in Node architecture tests",
+    "Full Snapshot fallback remains enabled and Hour/Day boundaries remain unmodified"
+  ],
+  "phase1c_b_contracts": [
+    "composite writers declaring mayJoin are admitted to Full Snapshot before apply; unexpected late join in journal mode is rejected",
+    "journal primitive fields are limited to pre-existing own data properties with null/string/boolean/finite-number values",
+    "nested-asset writers are not admitted to field journal and require broader fallback",
+    "write-set barrier executes before irreversible critical persistence",
+    "dependency cycle integrity check no longer normalizes or writes dependencyGraph during read-only integrity-final checks",
+    "steady owner writer proof records exact tested root writes for finance, corporate, operations, inactive mobility, and frozen-state integrity-final",
+    "live simulation journal remains disabled pending 20k-scalable capture-on-first-write journal design"
+  ]
+}

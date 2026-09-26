@@ -1,0 +1,73 @@
+{
+  "schema": "global-holdings-build339-phase1b-b-provenance-v1",
+  "recorded_at": "2026-09-24",
+  "version": "3.0.0",
+  "build": 339,
+  "save_schema": "2.0.0",
+  "phase": "1B-B — pacing/backlog/execution/render cadence separation",
+  "parent": {
+    "phase": "1B-A",
+    "runtime_source_tree_sha256": "835709c802e82d968a259224563dda0a3c7e242f21ac322bc09703e1226f6cb8",
+    "webapp_tree_sha256": "3bdd4ae860baee183dc54715a9bb0d4298cd9073371f9d2eee60508c6cb33338",
+    "source_zip_sha256": "c3c747a187ecee6def4fe94125205f5ea0ff61015ec2be5b05e7cfd63909f1ee"
+  },
+  "runtime_source_tree_sha256": "6c90897d15f1b2736a48233bf29a629ea5976987f4cd9cd5efdea5fcefbe8f54",
+  "webapp_tree_sha256": "ada2977ddadc0f6df1558acd0b4543de77163da5ae0bfa6b63eb087522a9489e",
+  "runtime_files": 482,
+  "old_ipa_used": false,
+  "production_approved": false,
+  "physical_device_tested": false,
+  "accepted_changes": [
+    "Created runtime-only simulation-pacing-core.js for wall-clock pacing, backlog, execution deadline and render/persist cadence",
+    "Kept state.simSeconds as the sole authoritative committed economic time source",
+    "Preserved variable deterministic 30/120/300/600 slices and exact Hour/Day boundary clamping",
+    "Preserved Day then Hour midnight ordering",
+    "Anchored manual calendar advance to wall clock each frame without deriving economic time from wall duration",
+    "Prevented hidden/background duration from being replayed as live economic catch-up",
+    "Stopped render cadence from persisting simulationEngine.snapshot() into simulationKernel",
+    "Normalized legacy simulationKernel runtime snapshot residue out of saved state while retaining semantic audit fields",
+    "Kept full rollback snapshots active"
+  ],
+  "tests": {
+    "build339-architecture-bootstrap": "PASS 12/12",
+    "build339-time-golden": "PASS",
+    "build339-phase1bb-pacing-separation": "PASS",
+    "build339-transaction-write-set-audit": "PASS 5/5",
+    "build339-simulation-write-set-contract": "PASS 2/2",
+    "build339-hour-boundary-write-map": "PASS 2/2",
+    "build339-day-boundary-write-map": "PASS 2/2",
+    "build334-simulation-time-contract": "PASS exact 30/120/300/600",
+    "scheduler-liveness": "PASS 14/14",
+    "late-frame": "PASS 4/4",
+    "r3-calendar-work": "PASS 13/13",
+    "calendar-owner-cadence": "PASS",
+    "hour83": "PASS",
+    "durable-postcommit": "PASS 6/6",
+    "finance-settlement": "PASS",
+    "document-proof-v3": "PASS",
+    "durable-authorization": "PASS 5/5",
+    "600-air-calendar": "PASS",
+    "deferred-save-lifecycle": "PASS",
+    "persistence-snapshot-consistency": "PASS",
+    "persistence-root-coalescing": "PASS",
+    "build338-root-contract": "PASS",
+    "source-layout": "PASS 10/10",
+    "source-verifier": "PASS"
+  },
+  "local_environment_limitations": [
+    "Local Node is v22.16.0; mandatory Node24/full CI remains pending",
+    "ESLint package is absent locally so npm run lint could not start; no package was injected into the clean source",
+    "Apple/WKWebView/native gates remain pending",
+    "Physical iPhone Phase1B-B diagnostic remains pending"
+  ],
+  "explicit_non_changes": [
+    "No fullSnapshot removal",
+    "No root-journal/COW activation",
+    "No Save Schema change",
+    "No Day/Hour ordering change",
+    "No persistence export/import redesign",
+    "No route/asset/render migration",
+    "No Build338 runtime mutation"
+  ],
+  "next": "Phase 1C root-journal/COW with automatic full-snapshot fallback for unproven writers"
+}

@@ -1,0 +1,68 @@
+{
+  "schema": "global-holdings-build339-diagnostic-frame-trace-candidate-v1",
+  "recorded_at": "2026-09-25",
+  "version": "3.0.0",
+  "build": 339,
+  "save_schema": "2.0.0",
+  "candidate_status": "diagnostic source candidate with accrued-obligation fix; not an IPA/device/production-approved release",
+  "parent": {
+    "phase": "1C-B locked clean source",
+    "runtime_source_tree_sha256": "8570d5d7c6b9add34196b564d7f4498648c719a397eb598a65b21b00c9ac9325",
+    "webapp_tree_sha256": "6f12bf6b4f76859229936d1f382d7865275c390e6eb6e7eb7aee9bc2591e91af",
+    "source_zip_sha256": "27c1b52295f1adee6629ab2c7b69653b075262d500e07e4ca256f6a642734a5a"
+  },
+  "runtime_source_tree_sha256": "f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5",
+  "webapp_tree_sha256": "eaa9b81fd29d9df4533c31d9cfb564e993f4eb58f1cb7af2b33fc0e5ea56dfda",
+  "runtime_files": 482,
+  "old_ipa_used": false,
+  "ipa_built": false,
+  "physical_device_tested": false,
+  "production_approved": false,
+  "changes": [
+    "runtime-only requestAnimationFrame frame trace while fault recorder is active",
+    "visible-interval FPS, frame-jank, callback-delay, app-stage and recorder-overhead metrics",
+    "bounded 240-row trace, whole-recording P50/P95 histograms capped at 1000ms, and full bounded recorder export",
+    "PerformanceLongTaskTiming trace with supported attribution",
+    "transaction evidence includes timestamp and is labelled correlated only inside a dropped-frame window",
+    "lifecycle-lock, conference and recovery callbacks are captured during recording",
+    "simulation-pacing-core.js is included in runtime-required.json",
+    "accrued operating obligations are now recorded even when cash or remaining budget is insufficient; settlement remains cash-gated and budget reservations are capped"
+  ],
+  "unchanged_runtime_owners": [
+    "WebApp/simulation-core.js",
+    "WebApp/transaction-core.js"
+  ],
+  "verification": {
+    "node": "v24.19.0",
+    "source_verification": "PASS; 482 runtime files; runtime SHA-256 f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5",
+    "build339_regressions": "PASS; npm run test:build339, including frame-trace 28/28 and accrued-obligation 2/2",
+    "build336_337_338_regressions": "PASS",
+    "full_acceptance": {
+      "completed": false,
+      "passed_before_stop": 2,
+      "total_gates": 103,
+      "all_tests_passed": false,
+      "blockers": [
+        "Playwright Chromium executable is absent; browser gate failed",
+        "Acceptance run stopped before remaining gates"
+      ]
+    },
+    "cross_build_finance_regressions": "PASS; core-regressions, Build317 finance-depth, Build334 settlement/accrual/bank-energy, Build338 idempotency-save-lag",
+    "apple_build": "NOT RUN; xcodebuild is unavailable in the current Linux environment",
+    "fps_fix": "NOT PROVEN; physical iPhone/WKWebView measurement remains required"
+  },
+  "activation_state": {
+    "simulation_runtime_journal_enabled": false,
+    "hour_boundary_journal_enabled": false,
+    "day_boundary_journal_enabled": false,
+    "full_snapshot_fallback_enabled": true
+  },
+  "accrued_obligation_fix": {
+    "status": "implemented; local regression passed",
+    "failure": "949800 to 950400 simulation advance rejected at postAccruedExpense with insufficient-budget",
+    "cash_shortfall_behavior": "record full liability without inventing or debiting cash",
+    "budget_cap_behavior": "reserve available budget only and expose uncovered remainder on the payable",
+    "settlement_behavior": "require actual cash; release/consume only the reserved budget portion",
+    "save_schema": "2.0.0 preserved"
+  }
+}

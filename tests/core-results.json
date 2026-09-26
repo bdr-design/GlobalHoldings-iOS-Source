@@ -1,0 +1,34 @@
+[
+  {
+    "name": "Two same-second mobility purchases both debit cash",
+    "ok": true
+  },
+  {
+    "name": "Payment retry is idempotent before invoice creation; conflicting key rolls back",
+    "ok": true
+  },
+  {
+    "name": "Bounced payable reissue creates a payable cheque, then clears once",
+    "ok": true
+  },
+  {
+    "name": "Intercompany repayment journal matches 110000 cash and 10000 interest",
+    "ok": true
+  },
+  {
+    "name": "Financed asset principal is registered and repayable without extra cash",
+    "ok": true
+  },
+  {
+    "name": "Annual totals survive daily pruning; same-day close replaces exactly once",
+    "ok": true
+  },
+  {
+    "name": "Official CEO replaces legacy contract and payroll, and cannot be rehired",
+    "ok": true
+  },
+  {
+    "name": "Expense-only loss is valid and snapshot identity never follows live logo changes",
+    "ok": true
+  }
+]

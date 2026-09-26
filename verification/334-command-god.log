@@ -1,0 +1,5 @@
+
+> global-holdings-build334-webapp@3.0.0-build334 test:god
+> node tests/god-mode-browser.cjs
+
+PASS God Mode cash, target, switches, budget, debt, injected-failure rollback, reload, all controls and 5 landscape/safe-inset configurations

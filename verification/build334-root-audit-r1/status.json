@@ -1,0 +1,59 @@
+{
+  "auditPoint": "BUILD334_ROOT_AUDIT_R1",
+  "version": "3.0.0",
+  "build": 334,
+  "saveSchema": "2.0.0",
+  "referenceArchive": "GlobalHoldings_BUILD334_TRIPLE_DEEP_AUDITED_SOURCE.zip",
+  "referenceSha256": "1c7a32a19156784a2ac12c4b35fe83f10c1c4d1b4211004653f7c96e48815581",
+  "baselineFileCount": 737,
+  "productionFilesChanged": [
+    "WebApp/app.js",
+    "WebApp/persistence-core.js",
+    "WebApp/realism-core.js"
+  ],
+  "releaseGate": {
+    "ipaBuilt": false,
+    "readyForIpa": false,
+    "iPhoneVerified": false,
+    "webKitVerified": false,
+    "nativeVaultVerified": false,
+    "thermalVerified": false,
+    "longSessionAccepted": false
+  },
+  "verification": {
+    "originalSuitesPassed": 49,
+    "originalSuitesRun": 49,
+    "newSuitesPassed": 4,
+    "newBehavioralCasesPassed": 19,
+    "newSuitesRejectOriginalSource": 4,
+    "javascriptSyntaxPassed": 150,
+    "javascriptSyntaxChecked": 150,
+    "eslintRun": false,
+    "originalBrowserAcceptanceRun": false,
+    "focusedLocalDomCompanyRollbackStorageReplayPassed": true,
+    "focusedLongCalendarSectionSkipped": true,
+    "sevenDayUiRepeatCompleted": true,
+    "thirtyAdditionalDayJourneyCompleted": false
+  },
+  "environment": {
+    "node": "24.11.1",
+    "chromium": "144.0.7559.96",
+    "playwrightDriver": "1.57.0-beta-1764944708000",
+    "projectPinnedPlaywright": "1.55.1",
+    "network": "administratively blocked; policy unchanged",
+    "browserStorage": "in-memory test fixture; replay in fresh page",
+    "physicalDevice": false
+  },
+  "openItems": [
+    "Synchronous slice construction and atomic snapshot/commit exceed frame budget at scale",
+    "Full-state cloning, JSON allocation and journal hashing remain costly",
+    "Long calendar journey exceeded its 120-second wait; not proven frozen and not accepted",
+    "No iPhone/WebKit memory, thermal, native storage or multi-hour play measurement",
+    "No Swift/pbxproj/xcodeproj files found in extracted reference",
+    "Pending-not-due delivery polling needs large-queue profiling after transaction expansion",
+    "Higher marker interpolation cadence needs device thermal validation",
+    "Maintenance/compaction and deferred save callback ownership need further audit",
+    "Identity phase one remains unchanged and incomplete"
+  ],
+  "evidence": "See companion evidence archive. Static contract tests are not device performance tests."
+}

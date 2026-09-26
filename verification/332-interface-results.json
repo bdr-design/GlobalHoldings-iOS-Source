@@ -1,0 +1,263 @@
+{
+  "report": [
+    {
+      "panel": "companies",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 365
+    },
+    {
+      "panel": "leadershipHub",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 278
+    },
+    {
+      "panel": "control",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 960
+    },
+    {
+      "panel": "peopleHub",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 217
+    },
+    {
+      "panel": "finance",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 2898
+    },
+    {
+      "panel": "workspaceHub",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 163
+    },
+    {
+      "panel": "governanceHub",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 313
+    },
+    {
+      "panel": "systemHub",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 478
+    },
+    {
+      "panel": "settings",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 609
+    },
+    {
+      "panel": "network",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 11469
+    },
+    {
+      "panel": "routes",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 368
+    },
+    {
+      "panel": "assets",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 434
+    },
+    {
+      "panel": "assetMarket",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 14250
+    },
+    {
+      "panel": "companyManage",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 381
+    },
+    {
+      "panel": "labor",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 420
+    },
+    {
+      "panel": "invoices",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 471
+    },
+    {
+      "panel": "monthlyFinance",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 502
+    },
+    {
+      "panel": "treasury",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 1126
+    },
+    {
+      "panel": "energy",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 420
+    },
+    {
+      "panel": "bank",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 1108
+    },
+    {
+      "panel": "businessWorld",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 431
+    },
+    {
+      "panel": "news",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 282
+    },
+    {
+      "panel": "procurement",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 285
+    },
+    {
+      "panel": "conference",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 649
+    },
+    {
+      "panel": "audit",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 839
+    },
+    {
+      "panel": "legal",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 814
+    },
+    {
+      "panel": "insurance",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 1382
+    },
+    {
+      "panel": "research",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 1120
+    },
+    {
+      "panel": "esg",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 1959
+    },
+    {
+      "panel": "career",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 112
+    },
+    {
+      "panel": "diagnostics",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 1105
+    },
+    {
+      "panel": "controlPlane",
+      "mapWidth": 514,
+      "mapRight": 522,
+      "drawerLeft": 528,
+      "overflow": false,
+      "text": 2140
+    }
+  ],
+  "manager": "ريم العتيبي",
+  "persisted": true,
+  "errors": []
+}

@@ -1,0 +1,27 @@
+{
+  "test_build_authorized": true,
+  "production_approved": false,
+  "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+  "minimum_acceptance_gates": 109,
+  "build": 340,
+  "version": "3.0.0",
+  "save_schema": "2.0.0",
+  "authorized_at": "2026-09-26",
+  "user_request": "The user authorized an isolated internal repository branch and requested implementation of engine separation with repository/browser verification.",
+  "purpose": "Internal experimental Build 340 verification for independent map presentation/query, finance read model, road route planning, media decoding and cooperative route fallback. Production approval and physical-device acceptance are not implied.",
+  "source_rule": "Start only from the hash-verified Build 339 clean-source archive; never develop from an IPA, overlay, older main branch, or unverified Build 342 work tree.",
+  "rollback_and_ownership": {
+    "save_schema_preserved": true,
+    "authoritative_state_owner": "existing serialized app/domain transaction boundary",
+    "worker_may_mutate_authoritative_state": false,
+    "worker_failure_fallback": "map query/presentation and finance use synchronous owners; route startup failure uses cooperative main-thread planner; image rendering keeps native async img fallback",
+    "full_snapshot_fallback": true,
+    "live_field_journal": false
+  },
+  "known_limits": [
+    "CI run 36228574166 passed all 109 gates, ESLint, Chromium/WebKit checks, native save-vault and WKWebView smoke tests, and a fresh unsigned arm64 iPhoneOS Release build.",
+    "Simulation progression, financial close writes, purchase publication, sale, route commit, transaction validation, Full Snapshot rollback and persistence remain in their existing main-thread owner.",
+    "Node tests use synthetic 4,300/20,000 inputs and do not demonstrate device frame rate; no 20,000-asset iPhone performance claim is made.",
+    "Production stays blocked until the physical iPhone workload and frame/touch targets pass."
+  ]
+}

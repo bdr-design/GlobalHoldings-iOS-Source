@@ -1,0 +1,15 @@
+process.env.GH_TEST_SOURCE_DIR=require('path').resolve(__dirname,'..');
+'use strict';
+const assert=require('assert');
+const {harness,minimal}=require('./helpers/core-harness');
+const {s}=harness(['capability-registry-core','company-definitions','company-platform-core','finance-core','banking-core']);
+const state={...minimal(),profile:{name:'Sector'},openedCompanies:['bank','air','sea','road'],bank:{},companyRegistry:{bank:{operational:true},air:{operational:true},sea:{operational:true},road:{operational:true}}};
+const F=s.GH_FINANCE_CORE;F.ensure(state);for(const id of state.openedCompanies)F.book(state,id).accounts[0].balance=500e6;
+const B=s.GH_BANKING_CORE,b=B.ensure(state);b.deposits=1e9;b.branchNetwork=[{id:'BR',facilityId:'BR',servicesActive:true,deposits:1e9,loans:0,retailCustomers:0,businessCustomers:0,depositMix:{sight:450e6,savings:350e6,term:200e6}}];B.execute({state},'sync-corporate-clients',{names:{}},F);
+assert.strictEqual(b.corporateClients.air.sector,'air');assert.strictEqual(b.corporateClients.sea.sector,'sea');
+b.riskPolicy.sectorConcentration=60;
+let p=B.creditRiskPreview(state,{cashDelta:-10e6,loanDelta:10e6,sector:'air'});assert.strictEqual(p.concentration.status,'enforced');assert.strictEqual(p.violations.some(v=>v.metric==='sectorConcentration'),false);
+b.loanPortfolios.push({id:'SEA-EXIST',sector:'sea',outstanding:50e6,status:'نشطة',pd:.01,lgd:.3,provisionRate:.01,rsfFactor:.85});b.loans=50e6;
+p=B.creditRiskPreview(state,{cashDelta:-100e6,loanDelta:100e6,sector:'air'});assert.strictEqual(p.concentration.status,'enforced');assert(p.violations.some(v=>v.metric==='sectorConcentration'));
+const missing=B.creditRiskPreview(state,{cashDelta:-1e6,loanDelta:1e6});assert.strictEqual(missing.concentration.status,'not-enforced-missing-sector-classification');
+console.log(JSON.stringify({suite:'bank-sector-concentration',passed:6,total:6,rejectedProjection:p.concentration},null,2));

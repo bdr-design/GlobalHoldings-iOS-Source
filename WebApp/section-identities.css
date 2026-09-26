@@ -1,0 +1,24 @@
+/* Build 334 — presentation-only section identities.
+   No data-* hooks, command owners, ids, or business state are defined here. */
+#drawer[data-panel="bank"],#drawer[data-panel="banking"]{--section-accent:#2f9b78;--section-accent-soft:rgba(47,155,120,.14);--section-image:url("assets/images/company-bank-v2.webp")}
+#drawer[data-panel="energy"],#drawer[data-panel="power"]{--section-accent:#d79b35;--section-accent-soft:rgba(215,155,53,.14);--section-image:url("assets/images/company-energy-v2.webp")}
+#drawer[data-panel="assets"],#drawer[data-panel="assetMarket"],#drawer[data-panel="operations"]{--section-accent:#458fcb;--section-accent-soft:rgba(69,143,203,.14)}
+#drawer[data-panel="facilities"],#drawer[data-panel="facility"]{--section-accent:#8b78d0;--section-accent-soft:rgba(139,120,208,.14)}
+#drawer[data-panel="labor"],#drawer[data-panel="hr"]{--section-accent:#b66e9f;--section-accent-soft:rgba(182,110,159,.14)}
+#drawer[data-panel="finance"],#drawer[data-panel="invoices"],#drawer[data-panel="cheques"],#drawer[data-panel="transfers"]{--section-accent:#39a89b;--section-accent-soft:rgba(57,168,155,.12)}
+#drawer[data-panel="ai"],#drawer[data-panel="aiRequests"]{--section-accent:#7d8de3;--section-accent-soft:rgba(125,141,227,.13)}
+#drawer[data-panel="sustainability"]{--section-accent:#63a36c;--section-accent-soft:rgba(99,163,108,.13)}
+#drawer[data-panel="market"],#drawer[data-panel="ma"],#drawer[data-panel="competitors"]{--section-accent:#c67b55;--section-accent-soft:rgba(198,123,85,.13)}
+#drawer[data-panel] .drawer-title,
+#drawer[data-panel] .list-item-head h3{letter-spacing:-.012em}
+#drawer[data-panel] .list-item{border-color:color-mix(in srgb,var(--section-accent,#607d9b) 18%,rgba(255,255,255,.08))}
+#drawer[data-panel] .list-item-head{position:relative}
+#drawer[data-panel] .list-item-head::after{content:"";position:absolute;inset-inline-start:0;bottom:-8px;width:42px;height:2px;border-radius:2px;background:var(--section-accent,#607d9b);opacity:.82}
+#drawer[data-panel] .tag{border-color:color-mix(in srgb,var(--section-accent,#607d9b) 32%,rgba(255,255,255,.1));background:var(--section-accent-soft,rgba(96,125,155,.12))}
+#drawer[data-panel] .metric-row>div{min-width:0}
+#drawer[data-panel] .metric-row b{font-variant-numeric:tabular-nums}
+@media(max-width:720px){
+ #drawer[data-panel] .list-item{border-radius:16px}
+ #drawer[data-panel] .metric-row{gap:8px}
+ #drawer[data-panel] .metric-row>div{padding:10px}
+}

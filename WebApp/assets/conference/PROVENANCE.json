@@ -1,0 +1,29 @@
+{
+  "source": "https://github.com/microsoft/Microsoft-Rocketbox",
+  "source_tree": "18a36378abdf8dbb7614cf7cd20ce111d8b5f7b3",
+  "license": "MIT",
+  "models": [
+    "Business_Male_01",
+    "Business_Male_07",
+    "Business_Female_02"
+  ],
+  "conversion": "FBX parsed by Three.js r180, bones posed, static world vertices baked in meters, embedded glTF 2.0. Runtime uses instanced seated meshes.",
+  "textures": "Color textures resampled to <=1024 px; opaque textures embedded as JPEG; alpha textures remain PNG.",
+  "input_sha256": {
+    "f015_head_color.tga": "0df4e3f107cb1b06576894617121e53642e5b2d480b88c2a321ba2c4632a1014",
+    "f015_body_color.tga": "60b84f3ba5315a76d324569e4ebee6d6bd7a461344158e5b0ef782d667db8285",
+    "f015_opacity_color.tga": "15cff3cd49521da8679ee0087c8aa2b8414c2b3a0cc9ec775c5225ef1dec6b81",
+    "m005_body_color.tga": "d60e18359910606900af6a5eff1aeb46b7e4dcbe981964af53be4a9342e17c14",
+    "m018_head_color.tga": "2e25f8fd67c914a5c01ace3768b78584a778344793ac63982b33ac6e86f1eff2",
+    "f015_glasses_opacity_color.tga": "f9ece0a65d4771eaf9b6db864bb5898519f84fc23345ad0fa05b9dadb47d3555",
+    "m005_opacity_color.tga": "7793ea45a31c2153cf1ef7319ce67c60fd6c84d59767ceb3e9f7f88160a720d9",
+    "Business_Male_07.fbx": "efe9d0cda6fa6f9c8365e026d9cda1dbbd8903b624b56fee77027efcd3c9ad5b",
+    "m018_body_color.tga": "e95d6b706c641e72f45ab02191e8edc1af6b25839ae6362762b39d0958e4cea0",
+    "Business_Male_01.fbx": "c39987e44c031674946c2a6929abceb99b21ef3322023bbf2e31bd1705e8a130",
+    "Business_Female_02.fbx": "0819b017327f4293d522fea3f2dba94d1d8b2d408ec9253fb89f530523e24671",
+    "m005_head_color.tga": "a0f95b2f4b17b92c6c0bd21c2a76ae7e2b561f6623c33ef3e83c35dba75d210a"
+  },
+  "font_license": "SIL Open Font License 1.1",
+  "font_source": "https://github.com/google/fonts/tree/main/ofl/ibmplexsansarabic",
+  "source_commit": "0943055db6ec570bcef9f2c8b41c9e5467c808f9"
+}

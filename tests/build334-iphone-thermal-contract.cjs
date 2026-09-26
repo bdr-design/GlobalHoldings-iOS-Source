@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('assert'),fs=require('fs'),path=require('path');
+const app=fs.readFileSync(path.resolve(__dirname,'../WebApp/app.js'),'utf8');
+assert(app.includes('frameBudgetMs:4,manualFrameBudgetMs:10,chunkItems:32,manualChunkItems:64'));
+assert(app.includes('persistEveryNormalMs:20000,persistEveryFastMs:45000'));
+assert(app.includes('maintenanceEveryHours:12'));
+assert(app.includes('fleetSize>3000)return 220'));
+assert(app.includes('mapStructureInterval=fleetSizeForMap>3000?30000'));
+assert(app.includes('movingAssetRenderGroups(nonHeroMoving'));
+assert(app.includes('presentationAssetLookup()'));assert(app.includes('mapStatusCache={at:0'));assert(app.includes('now-mapStatusCache.at>=1500'));
+console.log(JSON.stringify({suite:'iphone-thermal-contract',passed:9,total:9},null,2));
