@@ -27,57 +27,22 @@ jobs:
         with:
           node-version: "24.19.0"
 
-      - name: Use direct tracked source or materialize the verified candidate once
+      - name: Require direct Git-tracked source
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/.ci-output"
           SOURCE_DIR="$GITHUB_WORKSPACE"
-          if [[ -s "$SOURCE_DIR/project.yml" ]]; then
-            echo "source_mode=direct_git_tree" | tee "$GITHUB_WORKSPACE/.ci-output/source-mode.txt"
-          else
-            echo "source_mode=one_time_verified_materialization" | tee "$GITHUB_WORKSPACE/.ci-output/source-mode.txt"
-            ARCHIVE="$RUNNER_TEMP/GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip"
-            cat candidate-parts/GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip.part-* > "$ARCHIVE"
-            ARCHIVE_ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
-            test "$ARCHIVE_ACTUAL" = "fb7a6885a254198bdad177c4ad696a925144a37941be691fe2bd9f2d82229629"
-            unzip -t "$ARCHIVE" >/dev/null
-            SOURCE_DIR="$RUNNER_TEMP/build340-engine-separation-source"
-            mkdir -p "$SOURCE_DIR"
-            unzip -q "$ARCHIVE" -d "$SOURCE_DIR"
-            OVERLAY="$RUNNER_TEMP/build340-engine-separation-overlay.zip"
-            python3 - "$GITHUB_WORKSPACE/candidate-patches/overlay-base64" "$OVERLAY" <<'PY'
-          import base64,sys
-          from pathlib import Path
-          parts=sorted(Path(sys.argv[1]).glob('part-*'))
-          if not parts: raise SystemExit('Build 340 candidate transport is incomplete')
-          encoded=''.join(path.read_text(encoding='ascii').strip() for path in parts)
-          Path(sys.argv[2]).write_bytes(base64.b64decode(encoded,validate=True))
-          PY
-            OVERLAY_ACTUAL="$(shasum -a 256 "$OVERLAY" | awk '{print $1}')"
-            test "$OVERLAY_ACTUAL" = "805644e2487d6402599a1896660e51aa0717cf7a19140f9347cdb93b4a36eb0e"
-            unzip -t "$OVERLAY" >/dev/null
-            unzip -oq "$OVERLAY" -d "$SOURCE_DIR"
-            FILES="$(find "$SOURCE_DIR" -type f | wc -l | tr -d ' ')"
-            test "$FILES" = "742"
-            python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification-before-materialization.json"
-            (cd "$SOURCE_DIR" && shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt) > "$GITHUB_WORKSPACE/.ci-output/source-package-integrity.log"
-            cp -a "$SOURCE_DIR/." "$GITHUB_WORKSPACE/"
-            rm -rf "$GITHUB_WORKSPACE/candidate-parts" "$GITHUB_WORKSPACE/candidate-patches"
-            SOURCE_DIR="$GITHUB_WORKSPACE"
-            python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification-after-materialization.json"
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -A -- . ':(exclude).ci-output' ':(exclude).ci-output/**'
-            if git diff --cached --quiet; then
-              echo "Direct source materialization produced no Git changes" >&2
-              exit 1
-            fi
-            git commit -m "build340: track verified clean source tree directly"
-            git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
-            printf 'materialized_source_commit=%s\n' "$(git rev-parse HEAD)" | tee "$GITHUB_WORKSPACE/.ci-output/direct-source-commit.txt"
-            printf 'materialized_source_tree_sha256=8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974\n' | tee -a "$GITHUB_WORKSPACE/.ci-output/direct-source-commit.txt"
+          mkdir -p "$SOURCE_DIR/.ci-output"
+          test -s "$SOURCE_DIR/project.yml"
+          test -s "$SOURCE_DIR/BUILD"
+          test -s "$SOURCE_DIR/VERSION"
+          test -d "$SOURCE_DIR/WebApp"
+          test -d "$SOURCE_DIR/iOS"
+          if [[ -e "$SOURCE_DIR/candidate-parts" || -e "$SOURCE_DIR/candidate-patches" ]]; then
+            echo "Legacy candidate transport or overlay directory found in the direct-source branch" >&2
+            exit 1
           fi
+          printf 'source_mode=direct_git_tree\n' | tee "$GITHUB_WORKSPACE/.ci-output/source-mode.txt"
           python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification.json"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
           printf 'checkout_sha=%s\n' "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)" | tee -a "$GITHUB_WORKSPACE/.ci-output/source-mode.txt"
@@ -225,8 +190,18 @@ jobs:
           candidate_sha="cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9"
           expected_tree="8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974"
           evidence={"run_id":run_id,"tested_commit_sha":tested_commit,"result":"SUCCESS","source_tree_sha256":expected_tree,"source_mode":"direct_git_tracked_tree","source_gates":"109/109","eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release_app":"PASS","ipa_built":False,"physical_iphone_tested":False}
-          check=subprocess.run([sys.executable,str(root/"tools/verify_current_source.py"),"--root",str(root)],check=True,capture_output=True,text=True)
-          verified=json.loads(check.stdout)
+          def run_source_verify(phase):
+              check=subprocess.run([sys.executable,str(root/"tools/verify_current_source.py"),"--root",str(root)],capture_output=True,text=True)
+              if check.returncode!=0:
+                  status=subprocess.run(["git","status","--short"],cwd=root,capture_output=True,text=True)
+                  diagnostic="phase="+phase+"\nstdout:\n"+check.stdout+"\nstderr:\n"+check.stderr+"\ngit status --short:\n"+status.stdout
+                  outdir=root/".ci-output"
+                  outdir.mkdir(exist_ok=True)
+                  (outdir/(phase+"-source-verification-failure.txt")).write_text(diagnostic,encoding="utf-8")
+                  print(diagnostic,file=sys.stderr)
+                  raise SystemExit("Source verification failed at "+phase)
+              return json.loads(check.stdout)
+          verified=run_source_verify("post_tests")
           if verified.get("source_tree_sha256")!=expected_tree or verified.get("files")!=491:
               raise SystemExit("Direct source tree fingerprint mismatch after tests")
           def read_json(name):
@@ -338,8 +313,7 @@ jobs:
           The 4,300/20,000 asset Node tests are synthetic and do not prove iPhone responsiveness. Device performance, touch latency, thermal behavior, purchase/sale/finance/routes, and save/restore still require physical iPhone validation.
           """.format(branch,tested_commit,run_id,expected_tree,candidate_sha,archive_sha,archive_bytes)
           (root/"BUILD340_ENGINE_SEPARATION_CI_README.md").write_text(ci_readme,encoding="utf-8")
-          check=subprocess.run([sys.executable,str(root/"tools/verify_current_source.py"),"--root",str(root)],check=True,capture_output=True,text=True)
-          verified=json.loads(check.stdout)
+          verified=run_source_verify("post_evidence")
           if verified.get("source_tree_sha256")!=expected_tree or verified.get("files")!=491:
               raise SystemExit("Runtime source tree changed while recording CI evidence")
           subprocess.run(["shasum","-a","256","-c","SOURCE_INTEGRITY_SHA256.txt"],cwd=root,check=True,stdout=subprocess.DEVNULL)
