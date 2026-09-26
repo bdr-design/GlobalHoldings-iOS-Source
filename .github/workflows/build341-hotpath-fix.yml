@@ -99,8 +99,25 @@ jobs:
         run: |
           set -euo pipefail
           ACCEPTANCE_DIR="$RUNNER_TEMP/build340-source-acceptance"
+          set +e
           python3 "$SOURCE_DIR/tools/run_acceptance.py" --output "$ACCEPTANCE_DIR" --timeout 300 | tee "$GITHUB_WORKSPACE/.ci-output/source-acceptance.log"
-          cp "$ACCEPTANCE_DIR/results.json" "$GITHUB_WORKSPACE/.ci-output/source-acceptance-results.json"
+          ACCEPTANCE_STATUS=${PIPESTATUS[0]}
+          set -e
+          if [[ -f "$ACCEPTANCE_DIR/results.json" ]]; then
+            cp "$ACCEPTANCE_DIR/results.json" "$GITHUB_WORKSPACE/.ci-output/source-acceptance-results.json"
+          fi
+          if [[ "$ACCEPTANCE_STATUS" -ne 0 ]]; then
+            python3 - "$ACCEPTANCE_DIR" <<'PY'
+          import json,sys
+          from pathlib import Path
+          out=Path(sys.argv[1]); result=json.loads((out/'results.json').read_text())
+          for row in result.get('tests',[]):
+              if row.get('exit_code') != 0:
+                  log=out/row['log']; print('FAILED TEST:',row['argv'][1],'exit=',row['exit_code'])
+                  if log.exists(): print(''.join(log.read_text(errors='replace').splitlines(True)[-160:]))
+          PY
+            exit "$ACCEPTANCE_STATUS"
+          fi
           python3 - "$SOURCE_DIR" "$ACCEPTANCE_DIR/results.json" <<'PY'
           import json,sys
           from pathlib import Path
