@@ -51,7 +51,7 @@ jobs:
           Path(sys.argv[2]).write_bytes(base64.b64decode(encoded,validate=True))
           PY
           OVERLAY_ACTUAL="$(shasum -a 256 "$OVERLAY" | awk '{print $1}')"
-          OVERLAY_EXPECTED="9b6ed63c1ac5c56471a92a074a215296290ee9a2667feff240504261c87122ca"
+          OVERLAY_EXPECTED="805644e2487d6402599a1896660e51aa0717cf7a19140f9347cdb93b4a36eb0e"
           test "$OVERLAY_ACTUAL" = "$OVERLAY_EXPECTED"
           unzip -t "$OVERLAY" >/dev/null
           unzip -oq "$OVERLAY" -d "$SOURCE_DIR"
