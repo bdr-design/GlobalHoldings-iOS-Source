@@ -65,7 +65,7 @@ jobs:
           gate=json.loads((root/'RELEASE_GATE.json').read_text())
           if manifest.get('source_tree_sha256')!=expected: raise SystemExit('Build 340 source fingerprint mismatch')
           if authorization.get('test_build_authorized') is not True or authorization.get('production_approved') is not False: raise SystemExit('Experimental authorization mismatch')
-          if authorization.get('minimum_acceptance_gates',0)<123: raise SystemExit('Acceptance floor is below 123')
+          if authorization.get('minimum_acceptance_gates',0)<124: raise SystemExit('Acceptance floor is below 124')
           if result.get('source_tree_sha256')!=expected or result.get('build')!=340: raise SystemExit('Build 340 verification is bound to another source')
           if gate.get('approved') is not False or gate.get('save_schema')!='2.0.0': raise SystemExit('Release gate must remain closed on Save Schema 2.0.0')
           if authorization.get('rollback_and_ownership',{}).get('full_snapshot_fallback') is not True: raise SystemExit('Full Snapshot rollback fallback must remain enabled')
@@ -255,7 +255,7 @@ jobs:
           tested_commit=sys.argv[3]
           branch=sys.argv[4]
           candidate_sha="cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9"
-          expected_tree="7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f"
+          expected_tree="0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731"
           acceptance=json.loads((root/".ci-output/source-acceptance-results.json").read_text(encoding="utf-8"))
           ipa_record=json.loads((root/".ci-output/test-ipa-verification.json").read_text(encoding="utf-8"))
           if ipa_record.get("ipa_created") is not True or ipa_record.get("source_tree_sha256")!=expected_tree or ipa_record.get("workflow_commit")!=tested_commit: raise SystemExit("Unsigned test IPA is missing or bound to another source")
@@ -287,7 +287,7 @@ jobs:
           manifest["latest_direct_source_ci"]=evidence
           write_json("RUNTIME_SOURCE_MANIFEST.json",manifest)
           auth=read_json("EXPERIMENTAL_BUILD_AUTHORIZATION.json")
-          auth["source_rule"]="Use the complete Build 340 source tracked directly at the repository root on build340-engine-separation-20260926. Future development and normal CI must not use an IPA or apply a source overlay. Save Schema 2.0.0, Full Snapshot rollback, and disabled live field journal remain mandatory."
+          auth["source_rule"]="Use the complete Build 340 source tracked directly at the repository root on "+branch+". Future development and normal CI must not use an IPA or apply a source overlay. Save Schema 2.0.0, Full Snapshot rollback, and disabled live field journal remain mandatory."
           auth["source_tracking"]={"mode":"direct_git_tracked_tree","branch":branch,"tested_commit_sha":tested_commit,"verified_candidate_archive_sha256":candidate_sha,"normal_ci_uses_overlay":False,"historical_import_note":"The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source."}
           auth["known_limits"]=[x for x in auth.get("known_limits",[]) if not x.startswith("CI run 36228574166")]
           auth["known_limits"].append("The direct Git-source CI run {0} tested commit {1} and passed the {2} declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it created a source-bound unsigned Build 340 test IPA but did not test a physical iPhone.".format(run_id,tested_commit,gate_count))
@@ -324,7 +324,7 @@ jobs:
           if start<0: raise SystemExit("Build 340 report Git/CI section heading missing")
           end=report.find("\n## ",start+len(heading))
           if end<0: end=len(report)
-          previous="آخر تشغيل CI مباشر متحقق قبل هذه الدفعة هو 36232174407 على commit bd6bbc25fe18529fe26c2723eeafe39f5e5b9463، وبصمة المصدر 8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974؛ لا ينسب نجاحه إلى هذه الدفعة."
+          previous="آخر CI سابق للمرشح الحالي هو التشغيل المباشر 36247000333 على commit 73234985380abf3321fb181ba81ba2dcc4967635 وبصمة المصدر 7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f؛ لا يختبر هذا التشغيل تعديلات تشخيص المسارات الجديدة."
           current="اجتاز التشغيل "+str(run_id)+" على commit "+tick+tested_commit+tick+" عدد "+gate_count+" من بوابات المصدر، وESLint وChromium/WebKit واختبارات التخزين وWKWebView وبناء تطبيق Release غير موقع لـarm64."
           device="يتتبع CI ملفات المصدر من جذر Git مباشرة دون overlay. بصمة الشجرة الحالية "+tick+expected_tree+tick+". أُنشئ IPA اختباري غير موقع ومطابق للمصدر؛ لم يجر اختبار iPhone فعلي وتبقى بوابة الإصدار مغلقة."
           report=report[:start]+heading+"\n\n"+previous+"\n\n"+current+"\n\n"+device+"\n"+report[end:]
@@ -355,7 +355,7 @@ jobs:
                   raise SystemExit("Tracked source package file missing: "+rel)
               paths.append(rel)
           if len(set(paths))!=761:
-              raise SystemExit("Expected 759 files in existing full-source checksum inventory")
+              raise SystemExit("Expected 761 files in existing full-source checksum inventory")
           if "BUILD340_ENGINE_SEPARATION_CI_README.md" in paths or ".github/workflows/build340-engine-separation.yml" in paths:
               raise SystemExit("Repository workflow/readme unexpectedly appears in source ZIP inventory")
           lines=[]
@@ -365,7 +365,7 @@ jobs:
           integrity.write_text("\n".join(lines)+"\n",encoding="utf-8")
           package_paths=paths+["SOURCE_INTEGRITY_SHA256.txt"]
           if len(package_paths)!=762:
-              raise SystemExit("Expected 760 files in direct source export")
+              raise SystemExit("Expected 762 files in direct source export")
           outdir=root/".ci-output"
           outdir.mkdir(exist_ok=True)
           archive=outdir/"GlobalHoldings_BUILD340_DIRECT_SOURCE_CI_VERIFIED.zip"
