@@ -7,7 +7,7 @@ function environment(count=1){
  const e=scenario();e.manualPurchase(1);e.s.GH_REALISM.onSimulationTime(e.state,60);const seed=structuredClone(e.state.assets[0]);
  e.state.assets=Array.from({length:count},(_,i)=>({...structuredClone(seed),id:`AUDIT-${i}`,routeId:'AUDIT-R',phase:'moving',progress:0}));e.state.speed=0;e.state.todayProfit=0;
  const route={id:'AUDIT-R',type:'air',routeMode:'air',ownerCompanyId:'air',route:[[24.7,46.7],[25,47]],tripSeconds:1000,distanceKm:100};
- Object.assign(e.s,{state:e.state,COMPANY_PLATFORM:e.s.GH_COMPANY_PLATFORM,routeTemplates:{'AUDIT-R':route},competitorAssets:[],BASE_ROUTE_IDS:new Set(['AUDIT-R']),clone:value=>value===undefined?undefined:JSON.parse(JSON.stringify(value)),routeDistance:()=>1000,queueAssetSaleFinalize:()=>{},processFinancialDay:()=>{},processMarket:()=>{},processAssetDraft:(asset)=>{asset.progress=.1;},diag:(type,detail)=>{e.state.diagnostics??={events:[]};e.state.diagnostics.events??=[];e.state.diagnostics.events.push({type,detail});}});
+ Object.assign(e.s,{state:e.state,COMPANY_PLATFORM:e.s.GH_COMPANY_PLATFORM,SIMULATION_ASSET_ENGINE:require('../WebApp/simulation-asset-core.js'),simulationAssetRuntimeContext:()=>({workerCompatible:false}),routeTemplates:{'AUDIT-R':route},competitorAssets:[],BASE_ROUTE_IDS:new Set(['AUDIT-R']),clone:value=>value===undefined?undefined:JSON.parse(JSON.stringify(value)),routeDistance:()=>1000,queueAssetSaleFinalize:()=>{},processFinancialDay:()=>{},processMarket:()=>{},processAssetDraft:(asset)=>{asset.progress=.1;},diag:(type,detail)=>{e.state.diagnostics??={events:[]};e.state.diagnostics.events??=[];e.state.diagnostics.events.push({type,detail});}});
  vm.runInContext(fragment('  function makeSimulationEffects()', '  // Pure simulation draft:'),e.s);
  vm.runInContext(fragment('  const SIMULATION_TRANSACTION_SCOPE=', "  if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core compatibility"),e.s);
  return {...e,route,job:meta=>e.s.createSimulationSliceJob(30,{from:e.state.simSeconds,to:e.state.simSeconds+30,speed:30,...meta})};
@@ -33,7 +33,7 @@ test('late daily-boundary exception restores every state root',()=>{
  const before=JSON.stringify(e.state),job=complete(e.job({boundary:{day:1,hour:24}}));assert.throws(()=>job.finish(),/audit-boundary-fault/);assert.equal(JSON.stringify(e.state),before);
 });
 test('chunk deadline is observed between assets without starving the first item',()=>{
- const e=environment(50);let clock=0,processed=0;e.s.performance={now:()=>clock};e.s.processAssetDraft=()=>{processed++;clock+=5;};const job=e.job();assert.equal(job.runChunk(32,{deadline:4}),false);assert.equal(processed,1);job.cancel();assert.equal(e.state.simSeconds,0);
+ const e=environment(50);let clock=0,processed=0;e.s.performance={now:()=>clock};e.s.processAssetDraft=()=>{processed++;clock+=5;};const job=e.job();assert.equal(job.runChunk(32,{deadline:4}),false);assert.equal(processed,0,'the bounded source snapshot yields before planning');assert.equal(job.runChunk(32,{deadline:4}),false);assert.equal(processed,1,'the first actual asset plan runs, then the frame deadline is observed');job.cancel();assert.equal(e.state.simSeconds,0);
 });
 test('shared route geometry is serialized once at snapshot and once at validation',()=>{
  const e=environment(100);let reads=0;const points=e.route.route;Object.defineProperty(e.route,'route',{enumerable:true,get(){reads++;return points;}});assert.equal(complete(e.job()).finish().committed,true);assert.equal(reads,2);

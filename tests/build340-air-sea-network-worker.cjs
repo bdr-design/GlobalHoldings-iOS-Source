@@ -1,0 +1,21 @@
+'use strict';
+
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const Core=require('../WebApp/air-sea-network-core.js');
+const workerSource=fs.readFileSync(path.join(__dirname,'../WebApp/air-sea-network-worker.js'),'utf8');
+const input={targetLoad:2,routeCapacity:100,assets:[{id:'A2',originId:'O',rangeKm:500},{id:'A1',originId:'O',rangeKm:1000},{id:'A3',originId:'O',rangeKm:200}],routes:[{id:'R1',fromFacility:'O',toFacility:'D',legKm:400}],originRoutes:[{originId:'O',routeIds:['R1']}],initialLoads:{R1:1}};
+const destinationInput={originCoords:[0,0],rangeKm:5000,samples:[{sampleIndex:0,worldIndex:10,key:'air:AAA',coords:[0,1]},{sampleIndex:1,worldIndex:11,key:'air:BBB',coords:[0,2]},{sampleIndex:2,worldIndex:12,key:'air:CCC',coords:[0,3]}],ledger:{destinations:[['air:AAA',2]],sectors:[],bands:[],coords:[[1,1]]}};
+let listener=null;const posted=[];
+const context={self:{GH_AIR_SEA_NETWORK_CORE:Core,addEventListener:(name,fn)=>{assert.equal(name,'message');listener=fn;},postMessage:message=>posted.push(message)},importScripts:(...names)=>assert.deepEqual(names,['air-sea-network-core.js'])};
+vm.runInNewContext(workerSource,context,{filename:'air-sea-network-worker.js'});
+assert.equal(typeof listener,'function');listener({data:{type:'plan',requestId:71,input}});
+assert.equal(posted.length,1);assert.equal(posted[0].type,'result');assert.equal(posted[0].requestId,71);assert.equal(posted[0].version,Core.VERSION);assert.equal(Core.validatePlan(input,posted[0].plan),true);
+assert.deepEqual(posted[0].plan.assignments,[{assetId:'A2',routeId:'R1'}]);assert.deepEqual(posted[0].plan.waitingGroups,[{originId:'O',assetIds:['A3','A1']}]);
+listener({data:{type:'rank-destinations',requestId:72,input:destinationInput}});assert.equal(posted[1].type,'result');assert.equal(posted[1].requestId,72);assert.equal(Core.validateDestinationPlan(destinationInput,posted[1].plan),true);
+listener({data:{type:'plan',requestId:73,input:{...input,targetLoad:0}}});assert.equal(posted[2].type,'error');assert.equal(posted[2].requestId,73);
+const app=fs.readFileSync(path.join(__dirname,'../WebApp/app.js'),'utf8'),html=fs.readFileSync(path.join(__dirname,'../WebApp/index.html'),'utf8'),required=JSON.parse(fs.readFileSync(path.join(__dirname,'../WebApp/runtime-required.json'),'utf8'));
+assert.match(app,/new Worker\('air-sea-network-worker\.js'\)/);assert.match(app,/rankDestinations/);assert.match(app,/assign-routes-batch/);assert.match(app,/depart-batch/);assert.match(html,/<script src="air-sea-network-core\.js"><\/script>/);assert(required.files.includes('air-sea-network-core.js')&&required.files.includes('air-sea-network-worker.js'));
+console.log('PASS air/sea network assignment and destination-ranking Worker contract, validation, error response, app owner integration, runtime and iOS resource wiring');

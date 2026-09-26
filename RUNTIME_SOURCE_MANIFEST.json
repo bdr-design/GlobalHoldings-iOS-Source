@@ -1,18 +1,26 @@
 {
-  "point": "Build 340 engine separation increment: map presentation, finance read model, route planning and media decode; transaction owner unchanged",
+  "point": "Build 340 engine separation: immutable simulation and route plans, indexed procurement/disposal and finance batches, route-center read model, and payroll invoice join",
   "version": "3.0.0",
   "build": 340,
   "save_schema": "2.0.0",
-  "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
-  "webapp_tree_sha256": "db6d4d2b806dc82cb01bde905f2b2f9831d26089b337489cecfc13278b7ffe8b",
+  "source_tree_sha256": "d2014b4a0d560f2a8c6012be9059ab213b30bba6b6c5ddc774debfbd093b92fa",
+  "webapp_tree_sha256": "dd51380843599fe8b3399058150a624b891215f9ff24688e55a71d453b462d1d",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 231897,
       "sha256": "7bf5d7babc53eae9eb1687e26831c09704851b88aadab7134b078cdcb641edc4"
     },
+    "WebApp/air-sea-network-core.js": {
+      "bytes": 10998,
+      "sha256": "dddeb8df45dcd260d75bc2d78214ea938068c4bf7ee3f50490c3084893fd5640"
+    },
+    "WebApp/air-sea-network-worker.js": {
+      "bytes": 639,
+      "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
+    },
     "WebApp/app.js": {
-      "bytes": 624083,
-      "sha256": "e7a85306825105a52ce1cf79133dc8a63de88d3eef56b1d6076f10f8c08ba45a"
+      "bytes": 644988,
+      "sha256": "23e63b0d07a8d568ce80a095d592b537f772f0f65bda18456a8e29d73a54b6a1"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1683,8 +1691,8 @@
       "sha256": "6f6a2b651d960a5c0359eabc718d67998674efb0a54433d827a196a726ef9313"
     },
     "WebApp/finance-core.js": {
-      "bytes": 111699,
-      "sha256": "574d0487f02e8c7552ea343a794fa62d6a4b19a251a7dc55e138851fde147c3b"
+      "bytes": 118264,
+      "sha256": "ebb489a6365a2c560097850d9ee6c9291274e2e8b28ec5f46bc584af31f0960d"
     },
     "WebApp/finance-presentation.css": {
       "bytes": 35222,
@@ -1703,8 +1711,8 @@
       "sha256": "2185b66024aa817032cbe2dcdaf804178962f05a552cf1b2230deb3725cd6a6e"
     },
     "WebApp/fleet-core.js": {
-      "bytes": 36239,
-      "sha256": "53044be2bd9139ac67bc6ae4c1717257874a350d26f04701fbb01891f3ef249e"
+      "bytes": 38565,
+      "sha256": "d238822e97c098886b9f9a809eeee60a59c58a461b9992612486c1403bfa2e4e"
     },
     "WebApp/formation-engine.js": {
       "bytes": 10555,
@@ -1731,8 +1739,8 @@
       "sha256": "03898d1c92402ea437c53996c7c5341f7be4afb7fc0a58dc5d460c0fa8c0cadc"
     },
     "WebApp/index.html": {
-      "bytes": 32444,
-      "sha256": "c0804faadc97c8d90531ba1050fcc2923da4a54d6919a4bca70bf9ec9f94befa"
+      "bytes": 32545,
+      "sha256": "290c1e559eb77b045e621b7be5929874e11a197c7cd85ba473ff1c7728446494"
     },
     "WebApp/integrity-core.js": {
       "bytes": 24272,
@@ -1755,8 +1763,8 @@
       "sha256": "b1f725d30a28a6f8f4a66ce3b410c179cd84bdac83bc85117fe10810770a109a"
     },
     "WebApp/map-asset-query-core.js": {
-      "bytes": 7455,
-      "sha256": "22358ba0f4994de9bfd220c0f7096a3b5be132673e1242a99c65c9ccfac5c9f7"
+      "bytes": 7759,
+      "sha256": "080b6873f3bd5754b10d415ae7312c783fd904706d84d7abace7ae8e7c253a92"
     },
     "WebApp/map-asset-query-worker.js": {
       "bytes": 1330,
@@ -1799,8 +1807,8 @@
       "sha256": "d80e1c99edd4dfa4208997c854fda5ef53ab66cbd0f40251630a5b6416b58ad3"
     },
     "WebApp/mobility-core.js": {
-      "bytes": 63449,
-      "sha256": "96905ee54f12415c68b7385ac2a98a5b11542127a9f148f20f86f9735ab4d828"
+      "bytes": 63761,
+      "sha256": "7d417dc741c0c040e389332e26c25384fb69593d398fe54ea832eec2cfbad2cb"
     },
     "WebApp/operations-core.js": {
       "bytes": 1716,
@@ -1815,8 +1823,8 @@
       "sha256": "c4533a1e53328a2ddbda2bd064974d44cbea90bc46745c97b794d4b85b70574e"
     },
     "WebApp/procurement-core.js": {
-      "bytes": 11756,
-      "sha256": "e14ad8b930d28e27355353d00622e480bc71a732efcb4fff60b0ed073122117f"
+      "bytes": 13876,
+      "sha256": "2f7a77b0906f10a4bf571c73953855c567f2a19c122d9e8c8ef625ba9ed6f970"
     },
     "WebApp/realism-core.js": {
       "bytes": 68906,
@@ -1839,8 +1847,8 @@
       "sha256": "8b868b4b48bb852dec8a7e700d22f57b9b87b1807edb7ca04146bf338bdbcc65"
     },
     "WebApp/runtime-required.json": {
-      "bytes": 16365,
-      "sha256": "d542a6e6e08f91c5c06c2c370a3217f2dc390f8b5e10e9440c5186340d16ed36"
+      "bytes": 16495,
+      "sha256": "27dc9fcc5dcd52094376f7fb1cb2e21ff418a407116b7017bda1b091a0751fe8"
     },
     "WebApp/save-schema.js": {
       "bytes": 58073,
@@ -1854,9 +1862,17 @@
       "bytes": 9095,
       "sha256": "a232973e5a74617d48f52b20e0eb9ec2a96583bfb6741400641eb118eb705182"
     },
+    "WebApp/simulation-asset-core.js": {
+      "bytes": 19086,
+      "sha256": "8c8f2695ea8cbd3e0118ee150475384f40d9500b651b766a0dcc821048936502"
+    },
+    "WebApp/simulation-asset-worker.js": {
+      "bytes": 1677,
+      "sha256": "0e3f6cece32b6c12432a0d4ec77926f812b0417e5c3a7c357604b659a2ff7ed8"
+    },
     "WebApp/simulation-core.js": {
-      "bytes": 23904,
-      "sha256": "dce2134c1306b33625557b3e6831907c8fd2ae7459b6271281156220daa0c2e8"
+      "bytes": 24265,
+      "sha256": "6558c7c53bb4ae64fc04c632ed49236c1b8895978390db2ff12e9b3b8e519a22"
     },
     "WebApp/simulation-pacing-core.js": {
       "bytes": 4459,
@@ -1875,8 +1891,8 @@
       "sha256": "2e69ee058343d89b2310384a46dcf75992e2376945fa153ce74786adaf30ce02"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 28671,
-      "sha256": "bf6f57f5baf843362fe3fe3e4acae94b7275727ab68af67afa0739847b15e083"
+      "bytes": 29319,
+      "sha256": "a68414b90b8b0c0009b031fee462c4f7b95e42a1936b4aa8fc23a4eba1763255"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -1960,7 +1976,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "27c4d39a1c456befc58e10f9cb922bb7c1a9402432ef3a6a1542245954f1416d"
+      "sha256": "037b92a91748810ec2567051c3b8d56b24a147b6e513aeeeaa00996eccb75439"
     },
     "BUILD": {
       "bytes": 4,
@@ -2011,29 +2027,5 @@
     "dependency cycle integrity check no longer normalizes or writes dependencyGraph during read-only integrity-final checks",
     "steady owner writer proof records exact tested root writes for finance, corporate, operations, inactive mobility, and frozen-state integrity-final",
     "live simulation journal remains disabled pending 20k-scalable capture-on-first-write journal design"
-  ],
-  "source_tracking": {
-    "mode": "direct_git_tracked_tree",
-    "repository_branch": "build340-engine-separation-20260926",
-    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
-    "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
-    "runtime_source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
-    "normal_ci_uses_overlay": false,
-    "historical_import_note": "One-time import materialized the byte-verified Build 340 candidate payload; the direct-source CI checks out these tracked files and does not apply patches or overlays."
-  },
-  "latest_direct_source_ci": {
-    "run_id": 36232174407,
-    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
-    "result": "SUCCESS",
-    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
-    "source_mode": "direct_git_tracked_tree",
-    "source_gates": "109/109",
-    "eslint": "PASS",
-    "chromium_webkit": "PASS",
-    "native_storage": "PASS",
-    "native_wkwebview": "PASS",
-    "unsigned_arm64_iphoneos_release_app": "PASS",
-    "ipa_built": false,
-    "physical_iphone_tested": false
-  }
+  ]
 }

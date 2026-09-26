@@ -5,14 +5,14 @@ const ROOT=process.env.GH_TEST_SOURCE_DIR;
 const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario'));
 const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8');
 function fragment(start,end){const a=app.indexOf(start),b=app.indexOf(end,a);assert(a>=0&&b>a,`${start} -> ${end}`);return app.slice(a,b);}
-const e=scenario();e.load('simulation-core');
+const e=scenario();e.load('simulation-core');e.load('simulation-asset-core');
 const orderId=e.manualPurchase(1);
 const pending=e.state.realism.procurement.deliveries.find(row=>row.id===orderId);assert(pending&&pending.status==='pending');assert.equal(e.s.GH_REALISM.simulationSliceLimit(e.state),600,'pending delivery owner must preserve the former <=600 second calendar cadence');
 assert.equal(e.s.GH_MOBILITY_CORE.simulationSliceLimit(e.state),3600,'inactive mobility must not constrain unrelated fleet simulation');
 e.state.simSeconds=0;e.state.lastFinancialDay=0;e.state.lastMarketHour=0;e.state.speed=0;
 let wall=0,marketCalls=0,commitCount=0;const intervals=[];
 e.s.performance={now:()=>wall};
-Object.assign(e.s,{state:e.state,COMPANY_PLATFORM:e.s.GH_COMPANY_PLATFORM,routeTemplates:{},competitorAssets:[],BASE_ROUTE_IDS:new Set(),clone:v=>v===undefined?undefined:structuredClone(v),routeDistance:()=>0,queueAssetSaleFinalize:()=>{},diag:()=>{},processFinancialDay(day){e.state.lastFinancialDay=day;},processMarket(hour){assert.equal(hour,e.state.lastMarketHour+1);e.state.lastMarketHour=hour;marketCalls++;},processAssetDraft(){}});
+Object.assign(e.s,{state:e.state,COMPANY_PLATFORM:e.s.GH_COMPANY_PLATFORM,SIMULATION_ASSET_ENGINE:e.s.GH_SIMULATION_ASSET_CORE,simulationAssetRuntimeContext:()=>({workerCompatible:false}),routeTemplates:{},competitorAssets:[],BASE_ROUTE_IDS:new Set(),clone:v=>v===undefined?undefined:structuredClone(v),routeDistance:()=>0,queueAssetSaleFinalize:()=>{},diag:()=>{},processFinancialDay(day){e.state.lastFinancialDay=day;},processMarket(hour){assert.equal(hour,e.state.lastMarketHour+1);e.state.lastMarketHour=hour;marketCalls++;},processAssetDraft(){}});
 vm.runInContext(fragment('  function makeSimulationEffects()', '  // Pure simulation draft:'),e.s);
 vm.runInContext(fragment('  const SIMULATION_TRANSACTION_SCOPE=', "  if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core compatibility"),e.s);
 const advanceEvents=[];const engine=e.s.GH_SIMULATION_CORE.create({

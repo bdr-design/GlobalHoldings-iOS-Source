@@ -24,7 +24,7 @@ const asset = id => ({
   departureScheduled: false, staffing: {mode: 'automatic-fixed', ready: true, roles: [], total: 1, monthlyPayroll: 1}
 });
 
-const {s: fleetBox} = harness(['route-core', 'fleet-core']);
+const {s: fleetBox} = harness(['route-core', 'fleet-core', 'simulation-asset-core']);
 const first = asset('B334-A1');
 const second = asset('B334-A2');
 const fleetState = {...minimal(), assets: [first, second], customRoutes: [route]};
@@ -46,6 +46,7 @@ check(isolationRejected, 'ROUTE_COMPANY_ISOLATION', {isolationRejected});
 const moving = {...asset('B334-MOVING'), routeId: route.id, phase: 'moving', progress: 0.5, routeSlot: 0};
 const simulationState = {...minimal(), simSeconds: 0, assets: [moving]};
 Object.assign(fleetBox, {
+  SIMULATION_ASSET_ENGINE: fleetBox.GH_SIMULATION_ASSET_CORE,
   state: simulationState,
   routeTemplates: {[route.id]: route},
   clone: structuredClone,

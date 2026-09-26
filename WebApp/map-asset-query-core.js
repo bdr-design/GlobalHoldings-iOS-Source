@@ -20,14 +20,14 @@
     if(!Array.isArray(assets))throw new TypeError('map-assets-invalid');
     const ownerOf=typeof options.ownerOf==='function'?options.ownerOf:asset=>asset?.ownerCompanyId||asset?.companyId||'',
       isKnownOwner=typeof options.isKnownOwner==='function'?options.isKnownOwner:()=>true,
-      companyIds=[''],companyCodes=new Map([['',0]]),knownCodes=new Uint8Array(assets.length+1),ownerCodes=new Uint32Array(assets.length);
+      companyIds=[''],companyCodes=new Map([['',0]]),knownCodes=new Uint8Array(assets.length+1),ownerCodes=new Uint32Array(assets.length);let allKnown=true;
     for(let index=0;index<assets.length;index++){
-      const owner=String(ownerOf(assets[index],index)||'').trim();if(!owner)continue;
+      const owner=String(ownerOf(assets[index],index)||'').trim();if(!owner){allKnown=false;continue;}
       let code=companyCodes.get(owner);
-      if(code===undefined){code=companyIds.length;companyCodes.set(owner,code);companyIds.push(owner);knownCodes[code]=isKnownOwner(owner)?1:0;}
+      if(code===undefined){code=companyIds.length;companyCodes.set(owner,code);companyIds.push(owner);knownCodes[code]=isKnownOwner(owner)?1:0;if(knownCodes[code]!==1)allKnown=false;}
       ownerCodes[index]=code;
     }
-    return {ownerCodes,companyIds,knownCodes:knownCodes.slice(0,companyIds.length)};
+    return {ownerCodes,companyIds,knownCodes:knownCodes.slice(0,companyIds.length),allKnown};
   }
   function filterVisibleIndices(snapshot,filterInput={}){
     const owners=snapshot?.ownerCodes,companyIds=snapshot?.companyIds,knownCodes=snapshot?.knownCodes;
@@ -74,27 +74,26 @@
     function request(input={}){
       const assets=input.assets,revision=Number(input.revision)||0,filter=normalizeFilter(input.filter),key=filterKey(filter);
       if(!Array.isArray(assets))return {indices:null,ready:false,worker:false,reason:'assets-invalid'};
-      const active=ensureWorker();if(!active)return {indices:null,ready:false,worker:false,reason:'worker-disabled'};
       if(!source||source.assets!==assets||source.revision!==revision||source.length!==assets.length){
         clearPending();cache=null;generation++;
         let snapshot;
         try{snapshot=buildOwnershipIndex(assets,{ownerOf:input.ownerOf,isKnownOwner:input.isKnownOwner});}
         catch(error){disable(error);return {indices:null,ready:false,worker:false,reason:'snapshot-invalid'};}
-        source={assets,revision,length:assets.length,generation,snapshot,fallbacks:new Map()};
-        try{
-          const ownerCodes=snapshot.ownerCodes.slice(),knownCodes=snapshot.knownCodes.slice();
-          active.postMessage({type:'index',generation,ownerCodes,companyIds:snapshot.companyIds,knownCodes},[ownerCodes.buffer,knownCodes.buffer]);
-        }
-        catch(error){disable(error);return {indices:null,ready:false,worker:false,reason:'index-post-failed'};}
+        source={assets,revision,length:assets.length,generation,snapshot,fallbacks:new Map(),workerIndexed:false};
       }
+      let active=ensureWorker();
+      if(active&&!source.workerIndexed){try{const ownerCodes=source.snapshot.ownerCodes.slice(),knownCodes=source.snapshot.knownCodes.slice();active.postMessage({type:'index',generation,ownerCodes,companyIds:source.snapshot.companyIds,knownCodes},[ownerCodes.buffer,knownCodes.buffer]);source.workerIndexed=true;}catch(error){disable(error);active=null;}}
+      const allVisible=source.snapshot.allKnown&&filter.mode==='all'&&!filter.included.length&&!filter.excluded.length;
+      if(allVisible)return {indices:null,allVisible:true,ready:true,worker:!!active,generation};
       if(cache?.generation===generation&&cache.key===key)return {indices:cache.indices,ready:true,worker:true,generation};
-      if(pending?.generation===generation&&pending.key===key)return {indices:source.fallbacks.get(key)||null,ready:false,worker:true,pending:true,generation};
+      let fallbackIndices=source.fallbacks.get(key);
+      if(!fallbackIndices){try{fallbackIndices=filterVisibleIndices(source.snapshot,filter);source.fallbacks.set(key,fallbackIndices);}catch(error){disable(error);return {indices:null,ready:false,worker:false,reason:'fallback-index-invalid'};}}
+      if(!active)return {indices:fallbackIndices,ready:true,worker:false,generation};
+      if(pending?.generation===generation&&pending.key===key)return {indices:fallbackIndices,ready:false,worker:true,pending:true,generation};
       clearPending();const requestId=++nextRequestId,request={requestId,generation,key,timer:null};pending=request;
       request.timer=setTimeout(()=>disable(new Error('map-worker-timeout')),timeoutMs);
       try{active.postMessage({type:'query',requestId,generation,filter});}
-      catch(error){disable(error);return {indices:null,ready:false,worker:false,reason:'query-post-failed'};}
-      let fallbackIndices=source.fallbacks.get(key);
-      if(!fallbackIndices){try{fallbackIndices=filterVisibleIndices(source.snapshot,filter);source.fallbacks.set(key,fallbackIndices);}catch(error){disable(error);return {indices:null,ready:false,worker:false,reason:'fallback-index-invalid'};}}
+      catch(error){disable(error);return {indices:fallbackIndices,ready:true,worker:false,reason:'query-post-failed',generation};}
       return {indices:fallbackIndices,ready:false,worker:true,pending:true,generation};
     }
     return Object.freeze({request,disable:()=>disable(new Error('map-worker-disabled')),isDisabled:()=>disabled,version:VERSION});

@@ -74,7 +74,32 @@
     return `${prefix}-${String(state.sequences[key]).padStart(7,'0')}`;
   }
   function ensure(state){state.assets=Array.isArray(state.assets)?state.assets:[];return state.assets;}
-  function find(state,id){return ensure(state).find(asset=>asset.id===id)||null;}
+  const disposalBatches=new WeakMap();
+  function find(state,id){const batch=disposalBatches.get(state);return batch?(batch.assetById.get(id)||null):(ensure(state).find(asset=>asset.id===id)||null);}
+  function removeAsset(state,asset){
+    const batch=disposalBatches.get(state);
+    if(batch){if(batch.assetById.get(asset?.id)!==asset)return false;batch.assetById.delete(asset.id);batch.removed.add(asset.id);return true;}
+    const assets=ensure(state),index=assets.findIndex(row=>row.id===asset?.id);if(index<0)return false;assets.splice(index,1);return true;
+  }
+  function removeLeasedAsset(state,assetId){
+    const batch=disposalBatches.get(state);
+    if(batch){batch.leasedRemoved.add(assetId);return;}
+    state.leasedAssets=Array.isArray(state.leasedAssets)?state.leasedAssets.filter(id=>id!==assetId):[];
+  }
+  function withDisposalBatch(state,apply){
+    if(!state||typeof state!=='object'||typeof apply!=='function')throw new TypeError('fleet-disposal-batch-invalid');
+    if(!globalThis.GH_TRANSACTION_CORE?.isActive?.())throw new Error('fleet-disposal-batch-requires-full-transaction');
+    const active=disposalBatches.get(state);
+    if(active){active.depth++;try{const value=apply();if(value?.then)throw new Error('fleet-disposal-batch-must-be-synchronous');return value;}finally{active.depth--;}}
+    const assets=ensure(state),batch={depth:1,assetById:new Map(assets.map(asset=>[asset.id,asset])),removed:new Set(),leasedRemoved:new Set(),contractById:null,crewDirty:false};disposalBatches.set(state,batch);
+    try{const value=apply();if(value?.then)throw new Error('fleet-disposal-batch-must-be-synchronous');return value;}
+    finally{
+      disposalBatches.delete(state);
+      if(batch.removed.size)state.assets=ensure(state).filter(asset=>!batch.removed.has(asset.id));
+      if(batch.leasedRemoved.size)state.leasedAssets=(Array.isArray(state.leasedAssets)?state.leasedAssets:[]).filter(id=>!batch.leasedRemoved.has(id));
+      if(batch.crewDirty)synchronizeCrew(state);
+    }
+  }
   function routeSignature(route){
     if(!globalThis.GH_ROUTE_CORE?.signature)throw new Error('route-owner-unavailable');
     return globalThis.GH_ROUTE_CORE.signature(route);
@@ -265,10 +290,11 @@
     state.leasedAssets=[...leased];provisionStaffingBatch(state,deliveredRows);return deliveredRows.map(row=>row.asset);
   }
   function releaseStaffing(state,asset,reason){
-    const contract=laborLedger(state).employmentContracts.find(row=>row.id===asset?.staffing?.contractId);
+    const batch=disposalBatches.get(state);if(batch&&!batch.contractById)batch.contractById=new Map(laborLedger(state).employmentContracts.map(row=>[row.id,row]));
+    const contractId=asset?.staffing?.contractId,contract=batch?.contractById?(batch.contractById.get(contractId)||null):laborLedger(state).employmentContracts.find(row=>row.id===contractId);
     if(contract&&contract.status==='ساري'){contract.status='منتهي';contract.endedDay=simDay(state);contract.endReason=reason||'خروج الأصل من الملكية';}
     if(asset?.staffing){asset.staffing.ready=false;asset.staffing.releasedAt=Number(state.simSeconds)||0;}
-    synchronizeCrew(state);
+    if(batch)batch.crewDirty=true;else synchronizeCrew(state);
   }
   function reconcileStaffing(state,facilityResolver){
     const assets=ensure(state),assetById=new Map(assets.map(asset=>[asset.id,asset]));
@@ -287,11 +313,21 @@
     synchronizeCrew(state);
     return provisioned;
   }
+  function payrollSummary(state){
+    const totals=Object.create(null);
+    for(const asset of ensure(state)){
+      if(asset.staffing?.ready!==true)continue;
+      const company=assetOwnerCompanyId(asset);if(!company)continue;
+      const row=totals[company]||(totals[company]={amount:0,headcount:0});
+      row.amount+=Number(asset.staffing.monthlyPayroll)||0;row.headcount+=Number(asset.staffing.total)||0;
+    }
+    return totals;
+  }
   function monthlyPayroll(state,company='all'){
-    return ensure(state).filter(asset=>asset.staffing?.ready===true&&(company==='all'||assetOwnerCompanyId(asset)===company)).reduce((sum,asset)=>sum+(Number(asset.staffing.monthlyPayroll)||0),0);
+    const summary=payrollSummary(state);return company==='all'?Object.values(summary).reduce((sum,row)=>sum+row.amount,0):Number(summary[company]?.amount)||0;
   }
   function headcount(state,company='all'){
-    return ensure(state).filter(asset=>asset.staffing?.ready===true&&(company==='all'||assetOwnerCompanyId(asset)===company)).reduce((sum,asset)=>sum+(Number(asset.staffing.total)||0),0);
+    const summary=payrollSummary(state);return company==='all'?Object.values(summary).reduce((sum,row)=>sum+row.headcount,0):Number(summary[company]?.headcount)||0;
   }
 
   function normalizeAsset(asset,context={}){
@@ -374,18 +410,18 @@
       return asset;
     }
     if(cmd==='finalize-sale'){
-      if(asset.phase==='moving')throw new Error('asset-moving');const idx=state.assets.findIndex(row=>row.id===asset.id);if(idx<0)return false;state.assets.splice(idx,1);releaseStaffing(state,asset,'بيع الأصل');return asset;
+      if(asset.phase==='moving')throw new Error('asset-moving');if(!removeAsset(state,asset))return false;releaseStaffing(state,asset,'بيع الأصل');return asset;
     }
     if(cmd==='return-lease'){
       if(asset.phase==='moving')throw new Error('asset-moving');const owner=requireFleetAsset(state,asset),fee=Math.max(0,Number(p.fee)||0);if(fee&&!globalThis.GH_FINANCE_CORE?.execute)throw new Error('finance-core-missing');
       if(fee)globalThis.GH_FINANCE_CORE.execute({state},'spend',{company:owner.companyId,amount:fee,note:`رسوم إنهاء تأجير ${asset.name}`,method:'تحويل بنكي',taxable:false,line:'capex'});
-      state.leasedAssets=Array.isArray(state.leasedAssets)?state.leasedAssets:[];state.leasedAssets=state.leasedAssets.filter(id=>id!==asset.id);
-      const idx=state.assets.findIndex(row=>row.id===asset.id);if(idx<0)throw new Error('asset-not-found');state.assets.splice(idx,1);releaseStaffing(state,asset,'إعادة أصل مؤجر');return {asset,fee};
+      removeLeasedAsset(state,asset.id);
+      if(!removeAsset(state,asset))throw new Error('asset-not-found');releaseStaffing(state,asset,'إعادة أصل مؤجر');return {asset,fee};
     }
     if(cmd==='sell'){
       if(asset.phase==='moving')throw new Error('asset-moving');const owner=requireFleetAsset(state,asset),proceeds=Math.max(0,Number(p.proceeds)||0);if(proceeds<=0)throw new Error('invalid-sale-proceeds');if(!globalThis.GH_FINANCE_CORE?.execute)throw new Error('finance-core-missing');
       globalThis.GH_FINANCE_CORE.execute({state},'credit',{company:owner.companyId,amount:proceeds,note:`بيع أصل ${asset.name}`,method:'تحويل مشتري',taxable:false,counterparty:p.buyer||'مشتري أصل'});
-      const idx=state.assets.findIndex(row=>row.id===asset.id);if(idx<0)throw new Error('asset-not-found');state.assets.splice(idx,1);releaseStaffing(state,asset,'بيع الأصل');
+      if(!removeAsset(state,asset))throw new Error('asset-not-found');releaseStaffing(state,asset,'بيع الأصل');
       const corporate=globalThis.GH_CORPORATE_CORE;if(!corporate?.execute)throw new Error('corporate-core-missing');corporate.execute({state},'adjust-group-value',{delta:-proceeds*.18});return {asset,proceeds};
     }
     if(cmd==='dispose'){
@@ -400,6 +436,6 @@
     if(cmd==='reconcile-staffing')return reconcileStaffing(state,p.facilityResolver);
     throw new Error(`Unknown fleet command: ${cmd}`);
   }
-  const API={VERSION,purchaseCatalogs,ROLE_DEFAULTS,ROUTE_FLEET_CAPACITY,ROUTE_DEPARTURE_INTERVAL_SECONDS,AUTOMATIC_ROUTE_DENSITY,assetMode,assetOwnerCompanyId,routeMode,routeOwnerCompanyId,requireFleetAsset,requireFleetRoute,normalizeAsset,departDraft,departureDelay,routeCapacity,automaticRouteTargetLoad,routeSignature,routeConflict,routeConflicts,assignRoutesBatch,departBatch,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,monthlyPayroll,headcount,recordDeliveryBatch};
+  const API={VERSION,purchaseCatalogs,ROLE_DEFAULTS,ROUTE_FLEET_CAPACITY,ROUTE_DEPARTURE_INTERVAL_SECONDS,AUTOMATIC_ROUTE_DENSITY,assetMode,assetOwnerCompanyId,routeMode,routeOwnerCompanyId,requireFleetAsset,requireFleetRoute,normalizeAsset,departDraft,departureDelay,routeCapacity,automaticRouteTargetLoad,routeSignature,routeConflict,routeConflicts,assignRoutesBatch,departBatch,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,payrollSummary,monthlyPayroll,headcount,recordDeliveryBatch,withDisposalBatch};
   globalThis.GH_FLEET_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('fleet',API);if(globalThis.window&&window!==globalThis)window.GH_FLEET_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

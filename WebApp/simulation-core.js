@@ -243,15 +243,22 @@
           continue;
         }
         if(clock()>=deadline)break;
-        const chunkStart=clock();let done=false;
+        const chunkStart=clock();let done=false,pending=false;
         const chunkItems=manualAdvance?cfg.manualChunkItems:cfg.chunkItems;
-        try{done=!!job.runChunk(chunkItems,{deadline,speed,fast:fast(speed)});}catch(error){if(manualAdvance)failManualAdvance('chunk-error',{stage:'chunk',from:jobStart,to:jobStart+jobSlice,error});report('sliceChunk',error,true);cancelJob('chunk-error');pacing.clearBacklog();return;}
+        try{
+          const result=job.runChunk(chunkItems,{deadline,speed,fast:fast(speed)});
+          pending=result?.pending===true;done=result===true||result?.done===true;
+        }catch(error){if(manualAdvance)failManualAdvance('chunk-error',{stage:'chunk',from:jobStart,to:jobStart+jobSlice,error});report('sliceChunk',error,true);cancelJob('chunk-error');pacing.clearBacklog();return;}
         const took=clock()-chunkStart;
         jobWorkMs+=Math.max(0,took);
         health.chunks++;health.lastChunkMs=took;health.maxChunkMs=Math.max(health.maxChunkMs,took);
         durationSamples.push(took);if(durationSamples.length>30)durationSamples.shift();health.avgChunkMs=durationSamples.reduce((a,b)=>a+b,0)/Math.max(1,durationSamples.length);
         if(done)jobReadyToFinish=true;
         observeWork('chunk',took,speed);
+        // An asynchronous planner has yielded its work to a Worker. Stop this
+        // frame here instead of spinning until the deadline; RAF will resume
+        // the same atomic job when the result arrives.
+        if(pending)break;
         if(throttlePending){consumeThrottlePending();break;}
         if(jobReadyToFinish&&clock()<deadline){const outcome=finishJob(speed);if(outcome.breakFrame)break;}
         if(throttlePending){consumeThrottlePending();break;}

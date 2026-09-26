@@ -3,7 +3,7 @@
   "version": "3.0.0",
   "build": 340,
   "save_schema": "2.0.0",
-  "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+  "source_tree_sha256": "d2014b4a0d560f2a8c6012be9059ab213b30bba6b6c5ddc774debfbd093b92fa",
   "source_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
   "baseline_source_tree_sha256": "f47eca7a668f2c9b2ea3d41d1463033c11573e4530cc751a39dbd4cba9ec38b5",
   "map_asset_query_engine": {
@@ -13,7 +13,8 @@
     "state_mutation": false,
     "stable_source_row_order": true,
     "worker_failure_fallback": true,
-    "save_schema_changed": false
+    "save_schema_changed": false,
+    "map_status_refresh": "owner revision cache; simulation phase summary avoids recurring fleet scan"
   },
   "locally_tested_cases": {
     "asset_rows_20000": true,
@@ -30,30 +31,53 @@
     "road_planner_worker_4300_and_20000_exact_assignment_parity": true,
     "road_planner_worker_cancellation": true,
     "media_decode_concurrency_dedupe_priority_and_bounds": true,
-    "worker_and_fallback_wiring": true
+    "worker_and_fallback_wiring": true,
+    "simulation_worker_20000_chunked_plan_atomic_apply": true,
+    "air_sea_route_plan_4300_and_20000": true,
+    "purchase_multi_base_index_20000_exact_parity": true,
+    "bulk_sale_20000_full_snapshot_and_rollback": true,
+    "map_status_20000_no_repeated_poll_scan": true,
+    "fleet_payroll_20000_single_scan": true,
+    "finance_transfer_reference_index_20000_history": true,
+    "finance_collection_batch_compaction_once": true,
+    "finance_full_snapshot_rollback_after_partial_collection": true,
+    "payroll_settlement_20000_invoice_join": true,
+    "route_center_revision_index_20000": true,
+    "finance_command_ensure_once": true
   },
   "not_yet_verified": [
-    "physical iPhone pressure testing at 4,300 and 20,000 full assets across purchase, sale, routes, finance, save/restore and long sessions",
-    "90Hz and 60Hz frame-time targets, 100ms touch P95 and no main-thread task at or above 50ms on target iPhones",
-    "worker-compatible simulation, procurement, sale and persistence plans that preserve atomic apply, rollback and data parity"
+    "physical iPhone pressure testing at 4,300 and 20,000 across purchase, delivery, sale, routes, finance, save/restore and long sessions",
+    "90Hz/60Hz frame-time targets, touch P95, task-at-least-50ms target, memory and thermal targets on iPhone",
+    "current local candidate passing direct-source CI, browser/WKWebView and native storage/build gates",
+    "full durable 20,000-asset workload with realistic invoices, cheques, proofs, long-session persistence and restore on a physical device"
   ],
   "production_approved": false,
   "ipa_built": false,
   "device_tested": false,
   "local_regressions": {
     "build340_map_asset_query": "PASS_20000",
-    "build340_map_presentation": "PASS_4300_AND_20000",
+    "build340_map_structure_revision": "PASS_NO_ASSET_SCAN",
+    "build340_map_status_cache": "PASS_REPEATED_HUD_O1_20000",
+    "build340_map_presentation": "PASS_4300_AND_20000_PARITY",
     "build340_finance_read_model": "PASS_10000_EXACT_PARITY",
-    "build340_route_planner_cooperative": "PASS_4300_AND_20000",
-    "build340_route_planner_worker": "PASS_4300_AND_20000_EXACT_PARITY_AND_CANCELLATION",
+    "build340_route_planners": "PASS_4300_AND_20000_PARITY_AND_CANCELLATION",
+    "build340_air_sea_network_worker": "PASS_4300_AND_20000_PLAN_AND_DESTINATION_RANKING",
     "build340_media_engine": "PASS_BOUNDS_PRIORITY_DEDUP_LRU",
-    "build339_transaction_and_rollback_regressions": "PASS_LOCAL",
-    "javascript_syntax": "PASS"
+    "build340_procurement_batch": "PASS_20K_FOUR_BASES_ONE_ASSET_AND_DELIVERY_INDEX_PARITY",
+    "build340_fleet_payroll_summary": "PASS_20000_SINGLE_SCAN",
+    "build340_fleet_disposal_batch": "PASS_20000_FULL_SNAPSHOT_PER_ASSET_FINANCE_AND_ROLLBACK",
+    "build340_simulation_worker": "PASS_20000_79_BATCHES_PLAN_AND_ATOMIC_APPLY",
+    "build334_purchase_delivery_pressure": "PASS_10_100_500_1000_NODE_SYNTHETIC",
+    "build334_simulation_and_rollback_regressions": "PASS_LOCAL",
+    "javascript_syntax": "PASS_LOCAL_NODE_CHECK",
+    "build340_payroll_settlement_index": "PASS_20000_INVOICES_AND_PAYABLES_ONE_NUMBER_READ_PER_INVOICE",
+    "build340_finance_transaction_index": "PASS_20000_OPEN_RECEIVABLES_AND_TRANSFERS_256_REAL_FINANCE_COLLECTIONS_ONE_COMPACTION_AND_FULL_SNAPSHOT_ROLLBACK",
+    "build340_route_center_index": "PASS_20000_SINGLE_REVISION_PASS_OWNER_ROUTE_AND_FACILITY_PARITY"
   },
   "observed_purchase_delivery_pressure": {
     "quantity": 1000,
-    "total_ms": 93.08,
-    "environment": "Node 24.19.0 synchronous core only; no DOM, native persistence, or iPhone"
+    "total_ms": 94.02,
+    "environment": "Node 24.19.0 synchronous core test; synthetic state; no native persistence, DOM or iPhone; not a device estimate"
   },
   "repository_branch": "build340-engine-separation-20260926",
   "repository_base_commit": "31b1e65758bb6f9d12260ce121d0526e23b1788b",
@@ -89,31 +113,6 @@
       "native_wkwebview": "PASS",
       "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
       "physical_iphone": "NOT_TESTED"
-    },
-    {
-      "run_id": 36228909590,
-      "commit": "80f697d36e8166cc9eecf69524d106991d6e8443",
-      "result": "SUCCESS_VERIFIED_ARCHIVE_RECONSTRUCTION_NOT_DIRECT_GIT_SOURCE",
-      "source_gates": "109/109",
-      "eslint": "PASS",
-      "chromium_webkit": "PASS",
-      "native_storage": "PASS",
-      "native_wkwebview": "PASS",
-      "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
-      "physical_iphone": "NOT_TESTED"
-    },
-    {
-      "run_id": 36232174407,
-      "commit": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
-      "result": "SUCCESS_DIRECT_GIT_SOURCE",
-      "source_gates": "109/109",
-      "eslint": "PASS",
-      "chromium_webkit": "PASS",
-      "native_storage": "PASS",
-      "native_wkwebview": "PASS",
-      "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
-      "ipa_built": false,
-      "physical_iphone": "NOT_TESTED"
     }
   ],
   "main_thread_state_owner": {
@@ -122,13 +121,20 @@
     "save_schema_changed": false,
     "full_snapshot_rollback": true,
     "live_field_journal": false,
+    "workers": [
+      "simulation asset planning",
+      "air/sea assignment and destination ranking",
+      "map query/presentation",
+      "finance report aggregation",
+      "road route planning"
+    ],
     "remaining_main_thread_work": [
-      "simulation asset advancement",
-      "financial day/hour commits",
-      "procurement record generation/publication",
-      "sale and route authorized commits",
-      "Leaflet DOM markers",
-      "native persistence enqueue"
+      "plan validation and state apply",
+      "daily/hourly financial close and authorized per-asset money/proof writes",
+      "route geometry and conflict/final commit",
+      "Leaflet DOM marker creation and map rendering",
+      "Full Snapshot capture and validation",
+      "JSON serialization and native persistence enqueue"
     ]
   },
   "map_presentation_engine": {
@@ -178,7 +184,8 @@
   "updated_branch_ci": {
     "run_id": 36232174407,
     "commit": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
-    "result": "SUCCESS_DIRECT_GIT_SOURCE",
+    "result": "SUCCESS_DIRECT_GIT_SOURCE_PREVIOUS_CANDIDATE",
+    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
     "source_gates": "109/109",
     "eslint": "PASS",
     "chromium_webkit": "PASS",
@@ -186,11 +193,13 @@
     "native_wkwebview": "PASS",
     "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
     "ipa_built": false,
-    "physical_iphone": "NOT_TESTED"
+    "physical_iphone": "NOT_TESTED",
+    "current_candidate": "NOT_TESTED_PENDING_NEW_CI"
   },
   "verified_in_ci": {
     "run_id": 36232174407,
     "commit": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
     "source_gates": "109/109 PASS",
     "eslint": "PASS",
     "chromium_webkit_source_gates": "PASS",
@@ -198,31 +207,115 @@
     "native_wkwebview_origin_frame_smoke": "PASS",
     "unsigned_arm64_iphoneos_release": "BUILD_SUCCEEDED",
     "ipa_built": false,
-    "device_tested": false
+    "device_tested": false,
+    "applies_to_current_local_candidate": false
   },
-  "source_archive_sha256_kind": "verified Build 340 candidate input ZIP before direct Git-tree migration",
-  "repository_source_commit": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+  "source_archive_sha256_kind": "verified candidate input ZIP before direct Git-tree migration; new local source revision has not yet been exported by CI",
+  "repository_source_commit": null,
   "source_tracking": {
     "mode": "direct_git_tracked_tree",
     "branch": "build340-engine-separation-20260926",
-    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
-    "runtime_source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
-    "candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
-    "normal_ci_uses_overlay": false
+    "last_tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
+    "last_tested_runtime_source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+    "normal_ci_uses_overlay": false,
+    "current_candidate_ci": "PENDING"
   },
-  "latest_direct_source_ci": {
-    "run_id": 36232174407,
-    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
-    "result": "SUCCESS",
-    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
-    "source_mode": "direct_git_tracked_tree",
-    "source_gates": "109/109",
-    "eslint": "PASS",
-    "chromium_webkit": "PASS",
-    "native_storage": "PASS",
-    "native_wkwebview": "PASS",
-    "unsigned_arm64_iphoneos_release_app": "PASS",
-    "ipa_built": false,
-    "physical_iphone_tested": false
+  "simulation_asset_engine": {
+    "worker_file": "WebApp/simulation-asset-worker.js",
+    "core_file": "WebApp/simulation-asset-core.js",
+    "input": "immutable slice snapshot in bounded batches up to 256 assets",
+    "output": "derived asset patches and effects",
+    "worker_authoritative_state_access": false,
+    "worker_state_mutation": false,
+    "main_owner_revalidates_and_applies": true,
+    "full_snapshot_rollback": true,
+    "node_synthetic_20000": {
+      "batches": 79,
+      "app_transaction_elapsed_ms": 1075.43,
+      "device_performance_claim": false
+    }
+  },
+  "air_sea_route_planning_engine": {
+    "worker_file": "WebApp/air-sea-network-worker.js",
+    "core_file": "WebApp/air-sea-network-core.js",
+    "input": "immutable asset, facility, route and world DTOs",
+    "output": "route assignment and destination ranking plan",
+    "worker_authoritative_state_access": false,
+    "main_owner_revalidates_and_commits": true,
+    "synthetic_node_planning_ms": {
+      "4300_assets": 9.36,
+      "20000_assets": 13.18
+    }
+  },
+  "procurement_batch_engine": {
+    "type": "transaction-scoped runtime owner index",
+    "work_moved": [
+      "asset serial counts",
+      "delivery serial counts",
+      "facility occupancy counts"
+    ],
+    "asset_and_delivery_full_scans_per_four_base_batch": 1,
+    "legacy_scans_per_four_allocation_batch": 8,
+    "finance_documents_and_per_asset_proofs_preserved": true,
+    "worker_writes_state": false,
+    "save_schema_changed": false
+  },
+  "bulk_disposal_engine": {
+    "type": "transaction-scoped Fleet owner index and deferred structural removal",
+    "work_moved": [
+      "asset lookup",
+      "staffing contract lookup",
+      "single array compaction"
+    ],
+    "finance_documents_per_asset_preserved": true,
+    "full_snapshot_rollback": true,
+    "synthetic_node_20000_ms": 153.88,
+    "device_performance_claim": false
+  },
+  "map_status_read_model": {
+    "type": "revision-keyed runtime cache",
+    "asset_status_scans_on_unchanged_HUD_refresh": 0,
+    "simulation_phase_counts": "computed while applying the already validated asset plan",
+    "Leaflet_DOM_creation_on_main_thread": true
+  },
+  "local_candidate": {
+    "source_tree_sha256": "d2014b4a0d560f2a8c6012be9059ab213b30bba6b6c5ddc774debfbd093b92fa",
+    "runtime_files": 495,
+    "status": "LOCAL_NODE_ACCEPTANCE_123_GATES_PENDING_DIRECT_SOURCE_CI",
+    "save_schema": "2.0.0",
+    "full_snapshot_rollback": true,
+    "live_field_journal": false,
+    "production_approved": false
+  },
+  "finance_transaction_batch_engine": {
+    "type": "transaction-scoped transfer and invoice/receivable indexes with deferred open-receivable compaction",
+    "synthetic_fixture": {
+      "preexisting_invoices": 20000,
+      "preexisting_open_receivables": 20000,
+      "preexisting_transfers": 20000,
+      "real_finance_core_collections": 256,
+      "transfer_array_find_calls": 0,
+      "receivable_compactions": 1
+    },
+    "full_snapshot_rollback": true,
+    "per_asset_invoice_transfer_journal_and_proof_writes_remain_authoritative": true,
+    "observed_node_elapsed_ms": 5576.87,
+    "elapsed_scope": "Full Snapshot capture, 256 synchronous real Finance-core collections, transaction validation and audit on a synthetic Node fixture; not a device estimate",
+    "device_performance_claim": false
+  },
+  "payroll_settlement_join": {
+    "invoice_count": 20000,
+    "payable_count": 20000,
+    "invoice_number_reads": 20000,
+    "due_order_preserved": true,
+    "owner_write_moved_to_worker": false
+  },
+  "route_center_read_model": {
+    "asset_count": 20000,
+    "companies": 5,
+    "full_asset_passes_per_transaction_revision": 1,
+    "owner_and_route_source_order_preserved": true,
+    "route_dom_still_main_thread": true,
+    "device_performance_claim": false
   }
 }

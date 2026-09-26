@@ -10,7 +10,7 @@ function run({faultAt=1,lateFailure=false}={}){
   const asset=id=>({id,name:id,type:'air',assetMode:'air',ownerCompanyId:'air',phase:'moving',progress:0,fuel:100,condition:100,tripSeconds:60,routeId:'R',dwellRemaining:0,staffing:{mode:'automatic-fixed',ready:true},specs:{seats:1}});
   state.assets=[asset('faulted'),asset('healthy')];const before=structuredClone(state),calls={};
   Object.assign(s,{state,clone:v=>v===undefined?undefined:JSON.parse(JSON.stringify(v)),routeTemplates:{R:{tripSeconds:60,dwellHours:0,fromFacility:'A',toFacility:'B'}},competitorAssets:state.simulationWorld.competitorAssets,
-    COMPANY_PLATFORM:{listInstances:()=>[]},normalizeAsset:()=>{},clamp:(n,a,b)=>Math.max(a,Math.min(b,n)),assetOwnerCompanyId:a=>a.ownerCompanyId,
+    COMPANY_PLATFORM:{listInstances:()=>[]},SIMULATION_ASSET_ENGINE:require('../WebApp/simulation-asset-core.js'),simulationAssetRuntimeContext:()=>({workerCompatible:false}),normalizeAsset:()=>{},clamp:(n,a,b)=>Math.max(a,Math.min(b,n)),assetOwnerCompanyId:a=>a.ownerCompanyId,
     computeTripEconomics:a=>{calls[a.id]=(calls[a.id]||0)+1;if(a.id==='faulted'&&calls[a.id]===faultAt)throw new Error('injected-trip-failure');return {revenue:10,fuelCost:1,maintReserve:1,crewCost:1,margin:7,cashContribution:8};},
     diag:()=>{},fmtMoney:String,formatDuration:String,routeDistance:()=>1,routeMatchingFacility:()=>({}),loadLabel:()=>'',findFacility:()=>({owned:true}),BASE_ROUTE_IDS:new Set(['R']),queueAssetSaleFinalize:()=>{},
     processFinancialDay:()=>{throw new Error('unexpected-boundary');},processMarket:()=>{throw new Error('unexpected-boundary');}

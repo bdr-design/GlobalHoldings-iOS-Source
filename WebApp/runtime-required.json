@@ -3,6 +3,8 @@
   "saveSchemaVersion": "2.0.0",
   "files": [
     "advanced-core.js",
+    "air-sea-network-core.js",
+    "air-sea-network-worker.js",
     "app.js",
     "arabic-copy-core.js",
     "assets/conference/PROVENANCE.json",
@@ -464,6 +466,8 @@
     "save-schema.js",
     "section-identities.css",
     "signature-pad-core.js",
+    "simulation-asset-core.js",
+    "simulation-asset-worker.js",
     "simulation-core.js",
     "simulation-pacing-core.js",
     "simulation-time-core.js",

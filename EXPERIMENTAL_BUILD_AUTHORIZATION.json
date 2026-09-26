@@ -1,35 +1,30 @@
 {
   "test_build_authorized": true,
   "production_approved": false,
-  "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
-  "minimum_acceptance_gates": 109,
+  "source_tree_sha256": "d2014b4a0d560f2a8c6012be9059ab213b30bba6b6c5ddc774debfbd093b92fa",
+  "minimum_acceptance_gates": 123,
   "build": 340,
   "version": "3.0.0",
   "save_schema": "2.0.0",
   "authorized_at": "2026-09-26",
   "user_request": "The user authorized an isolated internal repository branch and requested implementation of engine separation with repository/browser verification.",
-  "purpose": "Internal experimental Build 340 verification for independent map presentation/query, finance read model, road route planning, media decoding and cooperative route fallback. Production approval and physical-device acceptance are not implied.",
-  "source_rule": "Use the complete Build 340 source tracked directly at the repository root on build340-engine-separation-20260926. Future development and normal CI must not use an IPA or apply a source overlay. Save Schema 2.0.0, Full Snapshot rollback, and disabled live field journal remain mandatory.",
+  "purpose": "Internal experimental Build 340 verification for immutable-DTO simulation and route planning, indexed procurement, disposal and finance batches, route-center and finance read models, payroll settlement join, and bounded media decoding. Production approval and physical-device acceptance are not implied.",
+  "source_rule": "Develop from the complete Build 340 source tracked directly at the repository root on build340-engine-separation-20260926. Do not reconstruct or apply a source overlay in normal CI. Preserve Save Schema 2.0.0, Full Snapshot rollback and the disabled live field journal.",
   "rollback_and_ownership": {
     "save_schema_preserved": true,
     "authoritative_state_owner": "existing serialized app/domain transaction boundary",
     "worker_may_mutate_authoritative_state": false,
-    "worker_failure_fallback": "map query/presentation and finance use synchronous owners; route startup failure uses cooperative main-thread planner; image rendering keeps native async img fallback",
+    "worker_failure_fallback": "simulation, route, map and finance workers use validated cooperative or existing-owner fallback; workers never mutate authoritative state",
     "full_snapshot_fallback": true,
     "live_field_journal": false
   },
   "known_limits": [
-    "Simulation progression, financial close writes, purchase publication, sale, route commit, transaction validation, Full Snapshot rollback and persistence remain in their existing main-thread owner.",
-    "Node tests use synthetic 4,300/20,000 inputs and do not demonstrate device frame rate; no 20,000-asset iPhone performance claim is made.",
-    "Production stays blocked until the physical iPhone workload and frame/touch targets pass.",
-    "The direct Git-source CI run 36232174407 tested commit bd6bbc25fe18529fe26c2723eeafe39f5e5b9463 and passed the 109 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it did not create an IPA or test a physical iPhone."
-  ],
-  "source_tracking": {
-    "mode": "direct_git_tracked_tree",
-    "branch": "build340-engine-separation-20260926",
-    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
-    "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
-    "normal_ci_uses_overlay": false,
-    "historical_import_note": "The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source."
-  }
+    "Prior direct-source CI run 36232174407 tested commit bd6bbc25fe18529fe26c2723eeafe39f5e5b9463 and source hash 8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974; it does not verify the current local candidate.",
+    "The current local candidate passes the declared Node Build 340 suites; direct-source CI, browser/WKWebView and native gates are pending on the new commit.",
+    "Simulation and route plans are worker-derived, but validation, state apply, financial writes, authorization proofs, map DOM, snapshot creation and persistence remain in their authoritative owners.",
+    "Node tests use synthetic inputs and do not demonstrate iPhone frame rate, touch latency, memory, thermal behavior or long-session stability.",
+    "Production stays blocked until current-source CI and the physical iPhone workload and frame/touch targets pass.",
+    "Latest local code now includes transaction-scoped Finance indexes and one-time batch receivable compaction, linear payroll invoice joining, and a revision-keyed route-center index. Its real Finance-core Node fixture covers 256 collections against 20,000 prior invoices, receivables, and transfers and takes about 5.6 seconds including Full Snapshot capture and transaction audit; this is not an iPhone estimate or a 20,000-sale end-to-end result.",
+    "The current local source tree has not yet passed the new direct-source CI run. Physical-device pressure, latency, memory, thermal, and long-session evidence is still absent."
+  ]
 }

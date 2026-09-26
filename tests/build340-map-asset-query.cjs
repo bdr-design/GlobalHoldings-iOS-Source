@@ -75,7 +75,10 @@ async function testFallback(){
   let failures=0;
   const engine=core.create({workerFactory:()=>{throw new Error('worker-not-supported');},onFailure:()=>failures++});
   const result=engine.request({assets:rows,revision:1,filter:{mode:'include',included:['air']},ownerOf:row=>row.ownerCompanyId,isKnownOwner:owner=>known.has(owner)});
-  assert.equal(result.indices,null,'unavailable worker asks caller to use its tested main-thread fallback');
+  assert(result.indices instanceof Uint32Array,'unavailable worker uses the cached indexed fallback owned by the query engine');
+  assert.deepEqual([...result.indices],expectedIncluded);
+  assert.equal(result.ready,true,'local fallback is returned as a completed read-only result');
+  assert.equal(engine.request({assets:rows,revision:1,filter:{mode:'include',included:['air']},ownerOf:row=>row.ownerCompanyId,isKnownOwner:owner=>known.has(owner)}).indices,result.indices,'repeat fallback requests reuse the same indexed result');
   assert.equal(engine.isDisabled(),true,'a worker creation failure disables retries for this session');
   assert.equal(failures,1,'worker failure is reported once');
 
@@ -86,6 +89,15 @@ async function testFallback(){
   await wait(10);
   assert.equal(invalidEngine.isDisabled(),true,'unordered worker indexes disable the worker before rendering corrupted rows');
   assert.equal(invalidFailures,1,'invalid worker output triggers fallback exactly once');
+}
+
+function testAllKnownShortcut(){
+  const allKnownRows=Array.from({length:20000},(_,index)=>({id:`known-${index}`,ownerCompanyId:index%2?'air':'sea'})),messages=[],worker={postMessage(message){messages.push(message);},terminate(){}};
+  const engine=core.create({workerFactory:()=>worker}),result=engine.request({assets:allKnownRows,revision:1,filter:{mode:'all'},ownerOf:row=>row.ownerCompanyId,isKnownOwner:owner=>known.has(owner)});
+  assert.equal(result.allVisible,true,'all known owned assets can be returned without allocating 20k indices');assert.equal(result.indices,null);assert.equal(result.ready,true);
+  assert.deepEqual(messages.map(message=>message.type),['index'],'all-visible render does not schedule an unnecessary Worker filtering query');
+  const filtered=engine.request({assets:allKnownRows,revision:1,filter:{mode:'include',included:['air']},ownerOf:row=>row.ownerCompanyId,isKnownOwner:owner=>known.has(owner)});
+  assert(filtered.indices instanceof Uint32Array);assert.equal(filtered.indices.length,10000);assert.deepEqual(messages.map(message=>message.type),['index','query'],'the retained Worker index serves later company filters');
 }
 
 function testWorkerMessageContract(){
@@ -115,12 +127,14 @@ function testRuntimeWiring(){
   assert.match(app,/new Worker\('map-asset-query-worker\.js'\)/,'app creates a same-origin worker');
   assert.match(app,/function mapVisibleAssetRows\(filterState\)/,'map asset queries cross the separate engine boundary');
   assert.match(app,/mapAssetQueryEngine\.request\(/,'map render submits a worker query');
+  assert.match(app,/if\(indexed\.allVisible\)return assets/,'the common all-known map view avoids a 20k-index allocation');
   assert.ok(runtime.files.includes('map-asset-query-core.js')&&runtime.files.includes('map-asset-query-worker.js'),'native staged runtime requires both worker files');
 }
 
 (async()=>{
   await testAsyncLifecycle();
   await testFallback();
+  testAllKnownShortcut();
   testWorkerMessageContract();
   testRuntimeWiring();
   console.log('Build 340 map asset query: 20k ownership/filter, 4.3k source replacement, stable order, worker contract, stale response rejection, and fallback PASS');

@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   source-browser-native:
-    name: 109 source gates, browsers, and unsigned iPhoneOS Release build
+    name: source acceptance gates, browsers, and unsigned iPhoneOS Release build
     runs-on: macos-15
     timeout-minutes: 180
     steps:
@@ -57,14 +57,14 @@ jobs:
           import json,sys
           from pathlib import Path
           root=Path(sys.argv[1])
-          expected='8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974'
+          expected='d2014b4a0d560f2a8c6012be9059ab213b30bba6b6c5ddc774debfbd093b92fa'
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
           authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
           result=json.loads((root/'BUILD340_ENGINE_SEPARATION_VERIFICATION.json').read_text())
           gate=json.loads((root/'RELEASE_GATE.json').read_text())
           if manifest.get('source_tree_sha256')!=expected: raise SystemExit('Build 340 source fingerprint mismatch')
           if authorization.get('test_build_authorized') is not True or authorization.get('production_approved') is not False: raise SystemExit('Experimental authorization mismatch')
-          if authorization.get('minimum_acceptance_gates',0)<109: raise SystemExit('Acceptance floor is below 109')
+          if authorization.get('minimum_acceptance_gates',0)<123: raise SystemExit('Acceptance floor is below 123')
           if result.get('source_tree_sha256')!=expected or result.get('build')!=340: raise SystemExit('Build 340 verification is bound to another source')
           if gate.get('approved') is not False or gate.get('save_schema')!='2.0.0': raise SystemExit('Release gate must remain closed on Save Schema 2.0.0')
           if authorization.get('rollback_and_ownership',{}).get('full_snapshot_fallback') is not True: raise SystemExit('Full Snapshot rollback fallback must remain enabled')
@@ -197,8 +197,13 @@ jobs:
           tested_commit=sys.argv[3]
           branch=sys.argv[4]
           candidate_sha="cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9"
-          expected_tree="8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974"
-          evidence={"run_id":run_id,"tested_commit_sha":tested_commit,"result":"SUCCESS","source_tree_sha256":expected_tree,"source_mode":"direct_git_tracked_tree","source_gates":"109/109","eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release_app":"PASS","ipa_built":False,"physical_iphone_tested":False}
+          expected_tree="d2014b4a0d560f2a8c6012be9059ab213b30bba6b6c5ddc774debfbd093b92fa"
+          acceptance=json.loads((root/".ci-output/source-acceptance-results.json").read_text(encoding="utf-8"))
+          minimum=json.loads((root/"EXPERIMENTAL_BUILD_AUTHORIZATION.json").read_text(encoding="utf-8")).get("minimum_acceptance_gates",0)
+          if acceptance.get("completed") is not True or acceptance.get("all_tests_passed") is not True or acceptance.get("runtime_unchanged") is not True: raise SystemExit("Acceptance evidence is incomplete or failed")
+          if acceptance.get("passed")!=acceptance.get("total") or acceptance.get("total",0)<minimum: raise SystemExit("Acceptance evidence is below the declared gate floor")
+          gate_count=str(acceptance["passed"])+"/"+str(acceptance["total"])
+          evidence={"run_id":run_id,"tested_commit_sha":tested_commit,"result":"SUCCESS","source_tree_sha256":expected_tree,"source_mode":"direct_git_tracked_tree","source_gates":gate_count,"eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release_app":"PASS","ipa_built":False,"physical_iphone_tested":False}
           def run_source_verify(phase):
               check=subprocess.run([sys.executable,str(root/"tools/verify_current_source.py"),"--root",str(root)],capture_output=True,text=True)
               if check.returncode!=0:
@@ -211,7 +216,7 @@ jobs:
                   raise SystemExit("Source verification failed at "+phase)
               return json.loads(check.stdout)
           verified=run_source_verify("post_tests")
-          if verified.get("source_tree_sha256")!=expected_tree or verified.get("files")!=491:
+          if verified.get("source_tree_sha256")!=expected_tree or verified.get("files")!=495:
               raise SystemExit("Direct source tree fingerprint mismatch after tests")
           def read_json(name):
               return json.loads((root/name).read_text(encoding="utf-8"))
@@ -225,10 +230,10 @@ jobs:
           auth["source_rule"]="Use the complete Build 340 source tracked directly at the repository root on build340-engine-separation-20260926. Future development and normal CI must not use an IPA or apply a source overlay. Save Schema 2.0.0, Full Snapshot rollback, and disabled live field journal remain mandatory."
           auth["source_tracking"]={"mode":"direct_git_tracked_tree","branch":branch,"tested_commit_sha":tested_commit,"verified_candidate_archive_sha256":candidate_sha,"normal_ci_uses_overlay":False,"historical_import_note":"The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source."}
           auth["known_limits"]=[x for x in auth.get("known_limits",[]) if not x.startswith("CI run 36228574166")]
-          auth["known_limits"].append("The direct Git-source CI run {0} tested commit {1} and passed the 109 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it did not create an IPA or test a physical iPhone.".format(run_id,tested_commit))
+          auth["known_limits"].append("The direct Git-source CI run {0} tested commit {1} and passed the {2} declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it did not create an IPA or test a physical iPhone.".format(run_id,tested_commit,gate_count))
           write_json("EXPERIMENTAL_BUILD_AUTHORIZATION.json",auth)
           gate=read_json("RELEASE_GATE.json")
-          gate["phase_status"]["build340_ci"]="PASS_DIRECT_GIT_SOURCE_109_GATES_ESLINT_CHROMIUM_WEBKIT_NATIVE_STORAGE_WKWEBVIEW_UNSIGNED_ARM64_APP_BUILD"
+          gate["phase_status"]["build340_ci"]="PASS_DIRECT_GIT_SOURCE_"+str(acceptance["passed"])+"_OF_"+str(acceptance["total"])+"_GATES_ESLINT_CHROMIUM_WEBKIT_NATIVE_STORAGE_WKWEBVIEW_UNSIGNED_ARM64_APP_BUILD"
           gate["latest_direct_source_ci"]=evidence
           gate["source_tracking"]={"mode":"direct_git_tracked_tree","branch":branch,"tested_commit_sha":tested_commit,"source_tree_sha256":expected_tree}
           gate["approved"]=False
@@ -243,20 +248,26 @@ jobs:
           if not any(x.get("run_id")==legacy_id for x in runs):
               runs.append({"run_id":legacy_id,"commit":"80f697d36e8166cc9eecf69524d106991d6e8443","result":"SUCCESS_VERIFIED_ARCHIVE_RECONSTRUCTION_NOT_DIRECT_GIT_SOURCE","source_gates":"109/109","eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","physical_iphone":"NOT_TESTED"})
           if not any(x.get("run_id")==run_id for x in runs):
-              runs.append({"run_id":run_id,"commit":tested_commit,"result":"SUCCESS_DIRECT_GIT_SOURCE","source_gates":"109/109","eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","ipa_built":False,"physical_iphone":"NOT_TESTED"})
+              runs.append({"run_id":run_id,"commit":tested_commit,"result":"SUCCESS_DIRECT_GIT_SOURCE","source_gates":gate_count,"eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","ipa_built":False,"physical_iphone":"NOT_TESTED"})
+          if isinstance(verification.get("local_candidate"),dict): verification["local_candidate"]["status"]="DIRECT_GIT_CI_VERIFIED_PENDING_PHYSICAL_IPHONE"
           verification["latest_direct_source_ci"]=evidence
-          verification["updated_branch_ci"]={"run_id":run_id,"commit":tested_commit,"result":"SUCCESS_DIRECT_GIT_SOURCE","source_gates":"109/109","eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","ipa_built":False,"physical_iphone":"NOT_TESTED"}
-          verification["verified_in_ci"]={"run_id":run_id,"commit":tested_commit,"source_gates":"109/109 PASS","eslint":"PASS","chromium_webkit_source_gates":"PASS","native_save_vault_tests":"PASS","native_wkwebview_origin_frame_smoke":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","ipa_built":False,"device_tested":False}
+          verification["updated_branch_ci"]={"run_id":run_id,"commit":tested_commit,"result":"SUCCESS_DIRECT_GIT_SOURCE","source_gates":gate_count,"eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","ipa_built":False,"physical_iphone":"NOT_TESTED"}
+          verification["verified_in_ci"]={"run_id":run_id,"commit":tested_commit,"source_gates":gate_count+" PASS","eslint":"PASS","chromium_webkit_source_gates":"PASS","native_save_vault_tests":"PASS","native_wkwebview_origin_frame_smoke":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","ipa_built":False,"device_tested":False}
           write_json("BUILD340_ENGINE_SEPARATION_VERIFICATION.json",verification)
           report_path=root/"BUILD340_ENGINE_SEPARATION_REPORT_AR.md"
           report=report_path.read_text(encoding="utf-8")
           tick=chr(96)
-          old_start="نجح CI رقم "+tick+"36228574166"+tick+" عند commit "+tick+"0befbf5937971f32020538729ef2c9357654cfe9"+tick+":"
-          if old_start not in report:
-              raise SystemExit("Expected legacy CI passage was not found in the Build 340 report")
-          sentence_end=report.index("غير الموقع.",report.index(old_start))+len("غير الموقع.")
-          report=report[:report.index(old_start)]+"قبل التحويل إلى الشجرة المباشرة، نجح CI رقم "+tick+"36228909590"+tick+" على commit "+tick+"80f697d36e8166cc9eecf69524d106991d6e8443"+tick+" في بناء المحتوى المعاد تركيبه؛ لكنه لا يثبت تتبع المصدر مباشرة. بعد التحويل، اجتاز CI رقم "+tick+str(run_id)+tick+" على commit "+tick+tested_commit+tick+" بوابات المصدر 109/109 وESLint وChromium/WebKit واختبارات التخزين وWKWebView وبناء تطبيق Release غير موقع لـarm64. لم يُنشئ هذا التشغيل IPA ولم يختبر iPhone فعليًا."+report[sentence_end:]
-          report+="\n\n## مصدر Git المباشر\n\nالـworkflow يتحقق الآن من ملفات المصدر الموجودة في جذر الفرع مباشرة. بصمة شجرة التشغيل: "+tick+expected_tree+tick+". بقيت بوابة الإصدار مغلقة حتى اختبار الضغط واللمس والإطارات على iPhone فعلي عند 4,300 و20,000 أصل.\n"
+          heading="## مصدر Git وCI"
+          direct_heading="\n## مصدر Git المباشر"
+          if direct_heading in report: report=report[:report.index(direct_heading)]+"\n"
+          start=report.find(heading)
+          if start<0: raise SystemExit("Build 340 report Git/CI section heading missing")
+          end=report.find("\n## ",start+len(heading))
+          if end<0: end=len(report)
+          previous="آخر تشغيل CI مباشر متحقق قبل هذه الدفعة هو 36232174407 على commit bd6bbc25fe18529fe26c2723eeafe39f5e5b9463، وبصمة المصدر 8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974؛ لا ينسب نجاحه إلى هذه الدفعة."
+          current="اجتاز التشغيل "+str(run_id)+" على commit "+tick+tested_commit+tick+" عدد "+gate_count+" من بوابات المصدر، وESLint وChromium/WebKit واختبارات التخزين وWKWebView وبناء تطبيق Release غير موقع لـarm64."
+          device="يتتبع CI ملفات المصدر من جذر Git مباشرة دون overlay. بصمة الشجرة الحالية "+tick+expected_tree+tick+". لا IPA ولا اختبار iPhone فعلي؛ تبقى بوابة الإصدار مغلقة."
+          report=report[:start]+heading+"\n\n"+previous+"\n\n"+current+"\n\n"+device+"\n"+report[end:]
           report_path.write_text(report,encoding="utf-8")
           readme="""# Global Holdings — Build 340 engine separation candidate
           
@@ -264,12 +275,12 @@ jobs:
           
           The complete Build 340 source is tracked directly at the repository root. CI checks out and verifies this tree; normal builds do not reconstruct a prior archive or apply a source overlay. The content descends from the verified candidate ZIP {0}; the runtime source tree SHA-256 remains {1}.
           
-          Build 340 separates map asset queries and presentation, finance read aggregation, road route planning, and bounded media decoding. The simulation, finance writes, fleet and route commits, persistence, authorization, and transaction owners remain on the serialized authoritative state boundary. This source does not activate the experimental field journal or modify Save Schema 2.0.0.
+          Build 340 uses immutable Worker plans for simulation and air/sea and road routing; indexed procurement, disposal, finance and payroll batches; map read models; and bounded media decoding. The simulation, finance writes, fleet and route commits, persistence, authorization, and transaction owners remain on the serialized authoritative state boundary. This source does not activate the experimental field journal or modify Save Schema 2.0.0.
           
-          Direct-source CI run {2} tested commit {3} and passed the 109 declared source gates, lint, browser checks, native storage and WKWebView checks, and a fresh unsigned arm64 iPhoneOS Release app build. This did not create an IPA or test a physical iPhone. Node tests with synthetic 4,300/20,000 inputs do not establish iPhone performance.
+          Direct-source CI run {2} tested commit {3} and passed the {4} declared source gates, lint, browser checks, native storage and WKWebView checks, and a fresh unsigned arm64 iPhoneOS Release app build. This did not create an IPA or test a physical iPhone. Node tests with synthetic 4,300/20,000 inputs do not establish iPhone performance.
           
           The release gate remains closed until purchase, delivery, sale, routes, finance, save/restore, and long-session interaction pass on physical iPhones at 4,300 and 20,000 assets, including the agreed frame-time, touch-latency, memory, and thermal measurements.
-          """.format(candidate_sha,expected_tree,run_id,tested_commit)
+          """.format(candidate_sha,expected_tree,run_id,tested_commit,gate_count)
           (root/"README.md").write_text(readme,encoding="utf-8")
           integrity=root/"SOURCE_INTEGRITY_SHA256.txt"
           old_lines=integrity.read_text(encoding="utf-8").splitlines()
@@ -283,8 +294,8 @@ jobs:
               if not (root/rel).is_file():
                   raise SystemExit("Tracked source package file missing: "+rel)
               paths.append(rel)
-          if len(set(paths))!=741:
-              raise SystemExit("Expected 741 files in existing full-source checksum inventory")
+          if len(set(paths))!=759:
+              raise SystemExit("Expected 759 files in existing full-source checksum inventory")
           if "BUILD340_ENGINE_SEPARATION_CI_README.md" in paths or ".github/workflows/build340-engine-separation.yml" in paths:
               raise SystemExit("Repository workflow/readme unexpectedly appears in source ZIP inventory")
           lines=[]
@@ -293,8 +304,8 @@ jobs:
               lines.append(h+"  "+rel)
           integrity.write_text("\n".join(lines)+"\n",encoding="utf-8")
           package_paths=paths+["SOURCE_INTEGRITY_SHA256.txt"]
-          if len(package_paths)!=742:
-              raise SystemExit("Expected 742 files in direct source export")
+          if len(package_paths)!=760:
+              raise SystemExit("Expected 760 files in direct source export")
           outdir=root/".ci-output"
           outdir.mkdir(exist_ok=True)
           archive=outdir/"GlobalHoldings_BUILD340_DIRECT_SOURCE_CI_VERIFIED.zip"
@@ -315,15 +326,15 @@ jobs:
           - The workflow checks out the complete source tree from Git and verifies it in place. It does not reconstruct archives or apply overlays.
           - Runtime tree SHA-256: {3}.
           - Verified candidate ZIP that supplied the one-time source materialization: {4}.
-          - Newly exported direct-source package SHA-256: {5} ({6} bytes; 742 files).
-          - CI passed 109/109 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and a fresh unsigned arm64 iPhoneOS Release app build.
+          - Newly exported direct-source package SHA-256: {5} ({6} bytes; {7} files).
+          - CI passed {8} declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and a fresh unsigned arm64 iPhoneOS Release app build.
           - No IPA was built, and no physical iPhone pressure test was performed. The production gate remains closed.
           
           The 4,300/20,000 asset Node tests are synthetic and do not prove iPhone responsiveness. Device performance, touch latency, thermal behavior, purchase/sale/finance/routes, and save/restore still require physical iPhone validation.
-          """.format(branch,tested_commit,run_id,expected_tree,candidate_sha,archive_sha,archive_bytes)
+          """.format(branch,tested_commit,run_id,expected_tree,candidate_sha,archive_sha,archive_bytes,len(package_paths),gate_count)
           (root/"BUILD340_ENGINE_SEPARATION_CI_README.md").write_text(ci_readme,encoding="utf-8")
           verified=run_source_verify("post_evidence")
-          if verified.get("source_tree_sha256")!=expected_tree or verified.get("files")!=491:
+          if verified.get("source_tree_sha256")!=expected_tree or verified.get("files")!=495:
               raise SystemExit("Runtime source tree changed while recording CI evidence")
           subprocess.run(["shasum","-a","256","-c","SOURCE_INTEGRITY_SHA256.txt"],cwd=root,check=True,stdout=subprocess.DEVNULL)
           print(json.dumps(result,ensure_ascii=False))

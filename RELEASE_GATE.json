@@ -1,13 +1,14 @@
 {
   "approved": false,
-  "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
+  "source_tree_sha256": "d2014b4a0d560f2a8c6012be9059ab213b30bba6b6c5ddc774debfbd093b92fa",
   "version": "3.0.0",
   "build": 340,
   "save_schema": "2.0.0",
   "blocking_issues": [
-    "Physical iPhone pressure testing at 4,300 and 20,000 full assets with complete routes, procurement, sale, finance, save/restore and long-session interaction is required.",
-    "The agreed 90Hz/60Hz frame-time, touch-latency and no-50ms-main-thread-task targets have not been demonstrated on target iPhones.",
-    "Simulation asset advancement, financial close writes, procurement record creation, authorized commits, Leaflet marker construction and native persistence remain in their existing owners; each needs a separately proven plan/apply boundary before the old runtime can be reduced to coordination.",
+    "The current local source revision must be committed to the direct-Git branch and pass the full CI verification before it is treated as a verified candidate.",
+    "Physical iPhone pressure testing at 4,300 and 20,000 full assets with routes, purchase, delivery, sale, finance, save/restore and long-session interaction is required.",
+    "90Hz/60Hz frame-time, touch-latency, task-at-least-50ms, memory and thermal targets have not been demonstrated on target iPhones.",
+    "Plan validation and state apply, financial close writes, authorized per-asset documents, route commit, Leaflet DOM construction, Full Snapshot capture and native persistence remain in main-thread owners.",
     "Save Schema 2.0.0, Full Snapshot rollback and disabled live field journal remain required invariants.",
     "Production approval remains closed."
   ],
@@ -22,27 +23,14 @@
     "full_snapshot_fallback": "ON",
     "live_field_journal": "OFF",
     "save_schema": "2.0.0",
-    "build340_ci": "PASS_DIRECT_GIT_SOURCE_109_GATES_ESLINT_CHROMIUM_WEBKIT_NATIVE_STORAGE_WKWEBVIEW_UNSIGNED_ARM64_APP_BUILD"
-  },
-  "latest_direct_source_ci": {
-    "run_id": 36232174407,
-    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
-    "result": "SUCCESS",
-    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974",
-    "source_mode": "direct_git_tracked_tree",
-    "source_gates": "109/109",
-    "eslint": "PASS",
-    "chromium_webkit": "PASS",
-    "native_storage": "PASS",
-    "native_wkwebview": "PASS",
-    "unsigned_arm64_iphoneos_release_app": "PASS",
-    "ipa_built": false,
-    "physical_iphone_tested": false
-  },
-  "source_tracking": {
-    "mode": "direct_git_tracked_tree",
-    "branch": "build340-engine-separation-20260926",
-    "tested_commit_sha": "bd6bbc25fe18529fe26c2723eeafe39f5e5b9463",
-    "source_tree_sha256": "8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974"
+    "build340_ci": "CURRENT_CANDIDATE_DIRECT_SOURCE_CI_PENDING",
+    "simulation_asset_worker": "LOCAL_NODE_20K_PLAN_AND_ATOMIC_APPLY_PASS_CI_PENDING",
+    "air_sea_route_worker": "LOCAL_NODE_4300_AND_20K_PLAN_PARITY_PASS_CI_PENDING",
+    "procurement_batch_index": "LOCAL_NODE_20K_PARITY_ONE_INDEX_PASS_CI_PENDING",
+    "fleet_disposal_batch": "LOCAL_NODE_20K_FULL_SNAPSHOT_ROLLBACK_PASS_CI_PENDING",
+    "map_status_read_model": "LOCAL_NODE_20K_NO_REPEAT_SCAN_PASS_CI_PENDING",
+    "finance_transfer_index": "LOCAL_NODE_20K_HISTORY_256_REAL_COLLECTION_BATCH_FULL_SNAPSHOT_PASS_CI_PENDING",
+    "payroll_settlement_index": "LOCAL_NODE_20K_INVOICE_JOIN_PARITY_PASS_CI_PENDING",
+    "route_center_revision_index": "LOCAL_NODE_20K_SINGLE_REVISION_PASS_CI_PENDING"
   }
 }
