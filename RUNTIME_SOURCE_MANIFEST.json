@@ -2031,19 +2031,19 @@
   "source_tracking": {
     "mode": "direct_git_tracked_tree",
     "repository_branch": "build340-hotpath-diagnostics-20260926",
+    "tested_commit_sha": "976c9aef615b5dd30c0967d8a81b63d96c374fc2",
     "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
     "runtime_source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
     "normal_ci_uses_overlay": false,
-    "historical_import_note": "One-time import materialized the byte-verified Build 340 candidate payload; the direct-source CI checks out these tracked files and does not apply patches or overlays.",
-    "base_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635"
+    "historical_import_note": "One-time import materialized the byte-verified Build 340 candidate payload; the direct-source CI checks out these tracked files and does not apply patches or overlays."
   },
   "latest_direct_source_ci": {
-    "run_id": 36247000333,
-    "tested_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
+    "run_id": 36268965706,
+    "tested_commit_sha": "976c9aef615b5dd30c0967d8a81b63d96c374fc2",
     "result": "SUCCESS",
-    "source_tree_sha256": "7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f",
+    "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
     "source_mode": "direct_git_tracked_tree",
-    "source_gates": "123/123",
+    "source_gates": "124/124",
     "eslint": "PASS",
     "chromium_webkit": "PASS",
     "native_storage": "PASS",
@@ -2051,8 +2051,8 @@
     "unsigned_arm64_iphoneos_release_app": "PASS",
     "ipa_built": true,
     "test_ipa_name": "GlobalHoldings_BUILD340_unsigned_TEST.ipa",
-    "test_ipa_sha256": "2a401f3936105849a44faf0d9b3196e29a8a6e9eebe7cebe6a417db3eac6219a",
-    "test_ipa_bytes": 13364410,
+    "test_ipa_sha256": "70d07e00279b12b8d9e487590b1d76ccd75386b07cc88052ecb5326914000b8f",
+    "test_ipa_bytes": 13366460,
     "physical_iphone_tested": false
   }
 }

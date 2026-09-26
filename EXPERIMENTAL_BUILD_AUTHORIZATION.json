@@ -26,15 +26,15 @@
     "Production stays blocked until current-source CI and the physical iPhone workload and frame/touch targets pass.",
     "Latest local code now includes transaction-scoped Finance indexes and one-time batch receivable compaction, linear payroll invoice joining, and a revision-keyed route-center index. Its real Finance-core Node fixture covers 256 collections against 20,000 prior invoices, receivables, and transfers and takes about 5.6 seconds including Full Snapshot capture and transaction audit; this is not an iPhone estimate or a 20,000-sale end-to-end result.",
     "The current local source tree has not yet passed the new direct-source CI run. Physical-device pressure, latency, memory, thermal, and long-session evidence is still absent.",
-    "The direct Git-source CI run 36247000333 tested commit 73234985380abf3321fb181ba81ba2dcc4967635 and passed the 123/123 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it created a source-bound unsigned Build 340 test IPA but did not test a physical iPhone."
+    "The direct Git-source CI run 36247000333 tested commit 73234985380abf3321fb181ba81ba2dcc4967635 and passed the 123/123 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it created a source-bound unsigned Build 340 test IPA but did not test a physical iPhone.",
+    "The direct Git-source CI run 36268965706 tested commit 976c9aef615b5dd30c0967d8a81b63d96c374fc2 and passed the 124/124 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it created a source-bound unsigned Build 340 test IPA but did not test a physical iPhone."
   ],
   "source_tracking": {
     "mode": "direct_git_tracked_tree",
     "branch": "build340-hotpath-diagnostics-20260926",
+    "tested_commit_sha": "976c9aef615b5dd30c0967d8a81b63d96c374fc2",
     "verified_candidate_archive_sha256": "cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9",
     "normal_ci_uses_overlay": false,
-    "historical_import_note": "The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source.",
-    "base_commit_sha": "73234985380abf3321fb181ba81ba2dcc4967635",
-    "runtime_source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731"
+    "historical_import_note": "The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source."
   }
 }
