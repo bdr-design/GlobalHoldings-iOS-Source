@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   source-browser-native:
-    name: 104 source gates, browsers, and unsigned iPhoneOS Release build
+    name: 109 source gates, browsers, and unsigned iPhoneOS Release build
     runs-on: macos-15
     timeout-minutes: 180
     steps:
@@ -41,10 +41,25 @@ jobs:
           SOURCE_DIR="$RUNNER_TEMP/build340-engine-separation-source"
           mkdir -p "$SOURCE_DIR"
           unzip -q "$ARCHIVE" -d "$SOURCE_DIR"
+          OVERLAY="$RUNNER_TEMP/build340-engine-separation-overlay.zip"
+          python3 - "$GITHUB_WORKSPACE/candidate-patches/overlay-base64" "$OVERLAY" <<'PY'
+          import base64,sys
+          from pathlib import Path
+          parts=sorted(Path(sys.argv[1]).glob('part-*'))
+          if not parts: raise SystemExit('Build 340 source overlay parts are missing')
+          encoded=''.join(path.read_text(encoding='ascii').strip() for path in parts)
+          Path(sys.argv[2]).write_bytes(base64.b64decode(encoded,validate=True))
+          PY
+          OVERLAY_ACTUAL="$(shasum -a 256 "$OVERLAY" | awk '{print $1}')"
+          OVERLAY_EXPECTED="9b6ed63c1ac5c56471a92a074a215296290ee9a2667feff240504261c87122ca"
+          test "$OVERLAY_ACTUAL" = "$OVERLAY_EXPECTED"
+          unzip -t "$OVERLAY" >/dev/null
+          unzip -q "$OVERLAY" -d "$SOURCE_DIR"
+          printf 'overlay_sha256=%s\n' "$OVERLAY_ACTUAL" | tee -a "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
           test -s "$SOURCE_DIR/project.yml"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
           echo "SOURCE_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
-          printf 'archive_sha256=%s\n' "$ACTUAL" | tee "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
+          printf 'archive_sha256=%s\n' "$ACTUAL" | tee -a "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
           printf 'archive_bytes=%s\n' "$(wc -c < "$ARCHIVE" | tr -d ' ')" | tee -a "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
           printf 'archive_parts=%s\n' "$(find candidate-parts -type f -name 'GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip.part-*' | wc -l | tr -d ' ')" | tee -a "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
 
@@ -58,14 +73,14 @@ jobs:
           import json,sys
           from pathlib import Path
           root=Path(sys.argv[1])
-          expected='c71617a61ca3a22e07560b04dd9488096f127a76a6a7e022ffc3e48b2f06eded'
+          expected='8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974'
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
           authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
           result=json.loads((root/'BUILD340_ENGINE_SEPARATION_VERIFICATION.json').read_text())
           gate=json.loads((root/'RELEASE_GATE.json').read_text())
           if manifest.get('source_tree_sha256')!=expected: raise SystemExit('Build 340 source fingerprint mismatch')
           if authorization.get('test_build_authorized') is not True or authorization.get('production_approved') is not False: raise SystemExit('Experimental authorization mismatch')
-          if authorization.get('minimum_acceptance_gates',0)<104: raise SystemExit('Acceptance floor is below 104')
+          if authorization.get('minimum_acceptance_gates',0)<109: raise SystemExit('Acceptance floor is below 109')
           if result.get('source_tree_sha256')!=expected or result.get('build')!=340: raise SystemExit('Build 340 verification is bound to another source')
           if gate.get('approved') is not False or gate.get('save_schema')!='2.0.0': raise SystemExit('Release gate must remain closed on Save Schema 2.0.0')
           if authorization.get('rollback_and_ownership',{}).get('full_snapshot_fallback') is not True: raise SystemExit('Full Snapshot rollback fallback must remain enabled')

@@ -1,11 +1,12 @@
-# Build 340 map asset query worker candidate
+# Build 340 engine separation candidate
 
 Branch: `build340-engine-separation-20260926`
 
-- Clean source: Version `3.0.0`, Build `340`, Save Schema `2.0.0`.
-- Candidate archive SHA-256: `fb7a6885a254198bdad177c4ad696a925144a37941be691fe2bd9f2d82229629`.
-- Runtime source SHA-256: `c71617a61ca3a22e07560b04dd9488096f127a76a6a7e022ffc3e48b2f06eded`.
-- CI reconstructs the exact archive, checks the source and package hashes, installs Chromium/WebKit, runs the declared acceptance suite, executes native save-vault and WebKit smoke checks, and builds an unsigned arm64 iPhoneOS Release app.
-- The release gate stays closed. This worker handles map asset ownership filtering only; the workflow does not claim 20,000-asset iPhone performance or produce a production IPA.
+- Runtime: Version `3.0.0`, Build `340`, Save Schema `2.0.0`.
+- The workflow reconstructs the hash-pinned Build 339-derived source archive, reconstructs and checks the base64-split Build 340 engine-separation overlay, applies it, then verifies the exact runtime and full source-package digests.
+- Base archive SHA-256: `fb7a6885a254198bdad177c4ad696a925144a37941be691fe2bd9f2d82229629`.
+- Overlay SHA-256: `9b6ed63c1ac5c56471a92a074a215296290ee9a2667feff240504261c87122ca`.
+- Runtime source SHA-256 after overlay: `8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974`.
+- CI runs the 109 declared source gates, ESLint, Chromium/WebKit checks, native save-vault and WKWebView checks, and a fresh unsigned arm64 iPhoneOS Release build.
 
-The physical iPhone test still needs to cover the full 4,300/20,000 asset purchase, routes, finance, invoices, save/restore, and long-session interaction, with the agreed frame-time and touch-latency limits.
+The update separates map query/presentation, finance read aggregation, road route planning and bounded image decoding. Simulation progression, financial and procurement writes, route commits, Leaflet DOM construction and native persistence remain under their existing state owners. The release gate remains closed until CI and physical iPhone testing at 4,300/20,000 assets demonstrates the agreed frame-time and touch targets.
