@@ -205,6 +205,155 @@ jobs:
           test -d "$DERIVED_DATA/Build/Products/Release-iphoneos/GlobalHoldings.app"
           printf 'fresh_unsigned_arm64_iphoneos_release=PASS\n' | tee "$GITHUB_WORKSPACE/.ci-output/native-build-verification.txt"
 
+      - name: Record direct-source CI evidence and re-export the source package
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$SOURCE_DIR" "$GITHUB_RUN_ID" "$GITHUB_SHA" "$GITHUB_REF_NAME" <<'PY'
+          import hashlib
+          import json
+          import subprocess
+          import sys
+          import zipfile
+          from pathlib import Path
+          
+          root=Path(sys.argv[1])
+          run_id=int(sys.argv[2])
+          tested_commit=sys.argv[3]
+          branch=sys.argv[4]
+          candidate_sha="cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9"
+          expected_tree="8db8634d642ed777808160222ab5bac2efad07c75116fa4f49adb6a0c9ed3974"
+          evidence={"run_id":run_id,"tested_commit_sha":tested_commit,"result":"SUCCESS","source_tree_sha256":expected_tree,"source_mode":"direct_git_tracked_tree","source_gates":"109/109","eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release_app":"PASS","ipa_built":False,"physical_iphone_tested":False}
+          check=subprocess.run([sys.executable,str(root/"tools/verify_current_source.py"),"--root",str(root)],check=True,capture_output=True,text=True)
+          verified=json.loads(check.stdout)
+          if verified.get("source_tree_sha256")!=expected_tree or verified.get("files")!=491:
+              raise SystemExit("Direct source tree fingerprint mismatch after tests")
+          def read_json(name):
+              return json.loads((root/name).read_text(encoding="utf-8"))
+          def write_json(name,value):
+              (root/name).write_text(json.dumps(value,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          manifest=read_json("RUNTIME_SOURCE_MANIFEST.json")
+          manifest["source_tracking"]={"mode":"direct_git_tracked_tree","repository_branch":branch,"tested_commit_sha":tested_commit,"verified_candidate_archive_sha256":candidate_sha,"runtime_source_tree_sha256":expected_tree,"normal_ci_uses_overlay":False,"historical_import_note":"One-time import materialized the byte-verified Build 340 candidate payload; the direct-source CI checks out these tracked files and does not apply patches or overlays."}
+          manifest["latest_direct_source_ci"]=evidence
+          write_json("RUNTIME_SOURCE_MANIFEST.json",manifest)
+          auth=read_json("EXPERIMENTAL_BUILD_AUTHORIZATION.json")
+          auth["source_rule"]="Use the complete Build 340 source tracked directly at the repository root on build340-engine-separation-20260926. Future development and normal CI must not use an IPA or apply a source overlay. Save Schema 2.0.0, Full Snapshot rollback, and disabled live field journal remain mandatory."
+          auth["source_tracking"]={"mode":"direct_git_tracked_tree","branch":branch,"tested_commit_sha":tested_commit,"verified_candidate_archive_sha256":candidate_sha,"normal_ci_uses_overlay":False,"historical_import_note":"The one-time source materialization used the pinned transport payload. Its 742 files matched the verified candidate ZIP byte-for-byte in the pre-migration comparison; the new direct CI no longer reconstructs or overlays source."}
+          auth["known_limits"]=[x for x in auth.get("known_limits",[]) if not x.startswith("CI run 36228574166")]
+          auth["known_limits"].append("The direct Git-source CI run {0} tested commit {1} and passed the 109 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and unsigned arm64 iPhoneOS Release app build; it did not create an IPA or test a physical iPhone.".format(run_id,tested_commit))
+          write_json("EXPERIMENTAL_BUILD_AUTHORIZATION.json",auth)
+          gate=read_json("RELEASE_GATE.json")
+          gate["phase_status"]["build340_ci"]="PASS_DIRECT_GIT_SOURCE_109_GATES_ESLINT_CHROMIUM_WEBKIT_NATIVE_STORAGE_WKWEBVIEW_UNSIGNED_ARM64_APP_BUILD"
+          gate["latest_direct_source_ci"]=evidence
+          gate["source_tracking"]={"mode":"direct_git_tracked_tree","branch":branch,"tested_commit_sha":tested_commit,"source_tree_sha256":expected_tree}
+          gate["approved"]=False
+          write_json("RELEASE_GATE.json",gate)
+          verification=read_json("BUILD340_ENGINE_SEPARATION_VERIFICATION.json")
+          verification["source_archive_sha256"]=candidate_sha
+          verification["source_archive_sha256_kind"]="verified Build 340 candidate input ZIP before direct Git-tree migration"
+          verification["repository_source_commit"]=tested_commit
+          verification["source_tracking"]={"mode":"direct_git_tracked_tree","branch":branch,"tested_commit_sha":tested_commit,"runtime_source_tree_sha256":expected_tree,"candidate_archive_sha256":candidate_sha,"normal_ci_uses_overlay":False}
+          runs=verification.setdefault("repository_ci_runs",[])
+          legacy_id=36228909590
+          if not any(x.get("run_id")==legacy_id for x in runs):
+              runs.append({"run_id":legacy_id,"commit":"80f697d36e8166cc9eecf69524d106991d6e8443","result":"SUCCESS_VERIFIED_ARCHIVE_RECONSTRUCTION_NOT_DIRECT_GIT_SOURCE","source_gates":"109/109","eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","physical_iphone":"NOT_TESTED"})
+          if not any(x.get("run_id")==run_id for x in runs):
+              runs.append({"run_id":run_id,"commit":tested_commit,"result":"SUCCESS_DIRECT_GIT_SOURCE","source_gates":"109/109","eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","ipa_built":False,"physical_iphone":"NOT_TESTED"})
+          verification["latest_direct_source_ci"]=evidence
+          verification["updated_branch_ci"]={"run_id":run_id,"commit":tested_commit,"result":"SUCCESS_DIRECT_GIT_SOURCE","source_gates":"109/109","eslint":"PASS","chromium_webkit":"PASS","native_storage":"PASS","native_wkwebview":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","ipa_built":False,"physical_iphone":"NOT_TESTED"}
+          verification["verified_in_ci"]={"run_id":run_id,"commit":tested_commit,"source_gates":"109/109 PASS","eslint":"PASS","chromium_webkit_source_gates":"PASS","native_save_vault_tests":"PASS","native_wkwebview_origin_frame_smoke":"PASS","unsigned_arm64_iphoneos_release":"BUILD_SUCCEEDED","ipa_built":False,"device_tested":False}
+          write_json("BUILD340_ENGINE_SEPARATION_VERIFICATION.json",verification)
+          report_path=root/"BUILD340_ENGINE_SEPARATION_REPORT_AR.md"
+          report=report_path.read_text(encoding="utf-8")
+          tick=chr(96)
+          old_start="نجح CI رقم "+tick+"36228574166"+tick+" عند commit "+tick+"0befbf5937971f32020538729ef2c9357654cfe9"+tick+":"
+          if old_start not in report:
+              raise SystemExit("Expected legacy CI passage was not found in the Build 340 report")
+          sentence_end=report.index("غير الموقع.",report.index(old_start))+len("غير الموقع.")
+          report=report[:report.index(old_start)]+"قبل التحويل إلى الشجرة المباشرة، نجح CI رقم "+tick+"36228909590"+tick+" على commit "+tick+"80f697d36e8166cc9eecf69524d106991d6e8443"+tick+" في بناء المحتوى المعاد تركيبه؛ لكنه لا يثبت تتبع المصدر مباشرة. بعد التحويل، اجتاز CI رقم "+tick+str(run_id)+tick+" على commit "+tick+tested_commit+tick+" بوابات المصدر 109/109 وESLint وChromium/WebKit واختبارات التخزين وWKWebView وبناء تطبيق Release غير موقع لـarm64. لم يُنشئ هذا التشغيل IPA ولم يختبر iPhone فعليًا."+report[sentence_end:]
+          report+="\n\n## مصدر Git المباشر\n\nالـworkflow يتحقق الآن من ملفات المصدر الموجودة في جذر الفرع مباشرة. بصمة شجرة التشغيل: "+tick+expected_tree+tick+". بقيت بوابة الإصدار مغلقة حتى اختبار الضغط واللمس والإطارات على iPhone فعلي عند 4,300 و20,000 أصل.\n"
+          report_path.write_text(report,encoding="utf-8")
+          readme="""# Global Holdings — Build 340 engine separation candidate
+          
+          Version 3.0.0 · Build 340 · Save Schema 2.0.0. This is an experimental clean-source candidate. Production approval remains closed.
+          
+          The complete Build 340 source is tracked directly at the repository root. CI checks out and verifies this tree; normal builds do not reconstruct a prior archive or apply a source overlay. The content descends from the verified candidate ZIP {0}; the runtime source tree SHA-256 remains {1}.
+          
+          Build 340 separates map asset queries and presentation, finance read aggregation, road route planning, and bounded media decoding. The simulation, finance writes, fleet and route commits, persistence, authorization, and transaction owners remain on the serialized authoritative state boundary. This source does not activate the experimental field journal or modify Save Schema 2.0.0.
+          
+          Direct-source CI run {2} tested commit {3} and passed the 109 declared source gates, lint, browser checks, native storage and WKWebView checks, and a fresh unsigned arm64 iPhoneOS Release app build. This did not create an IPA or test a physical iPhone. Node tests with synthetic 4,300/20,000 inputs do not establish iPhone performance.
+          
+          The release gate remains closed until purchase, delivery, sale, routes, finance, save/restore, and long-session interaction pass on physical iPhones at 4,300 and 20,000 assets, including the agreed frame-time, touch-latency, memory, and thermal measurements.
+          """.format(candidate_sha,expected_tree,run_id,tested_commit)
+          (root/"README.md").write_text(readme,encoding="utf-8")
+          integrity=root/"SOURCE_INTEGRITY_SHA256.txt"
+          old_lines=integrity.read_text(encoding="utf-8").splitlines()
+          paths=[]
+          for line in old_lines:
+              if len(line)<67 or line[64:66]!="  ":
+                  raise SystemExit("Unexpected SOURCE_INTEGRITY_SHA256.txt line format")
+              rel=line[66:]
+              if rel=="SOURCE_INTEGRITY_SHA256.txt":
+                  continue
+              if not (root/rel).is_file():
+                  raise SystemExit("Tracked source package file missing: "+rel)
+              paths.append(rel)
+          if len(set(paths))!=741:
+              raise SystemExit("Expected 741 files in existing full-source checksum inventory")
+          if "BUILD340_ENGINE_SEPARATION_CI_README.md" in paths or ".github/workflows/build340-engine-separation.yml" in paths:
+              raise SystemExit("Repository workflow/readme unexpectedly appears in source ZIP inventory")
+          lines=[]
+          for rel in paths:
+              h=hashlib.sha256((root/rel).read_bytes()).hexdigest()
+              lines.append(h+"  "+rel)
+          integrity.write_text("\n".join(lines)+"\n",encoding="utf-8")
+          package_paths=paths+["SOURCE_INTEGRITY_SHA256.txt"]
+          if len(package_paths)!=742:
+              raise SystemExit("Expected 742 files in direct source export")
+          outdir=root/".ci-output"
+          outdir.mkdir(exist_ok=True)
+          archive=outdir/"GlobalHoldings_BUILD340_DIRECT_SOURCE_CI_VERIFIED.zip"
+          with zipfile.ZipFile(archive,"w",compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              for rel in package_paths:
+                  z.write(root/rel,arcname=rel)
+          archive_sha=hashlib.sha256(archive.read_bytes()).hexdigest()
+          archive_bytes=archive.stat().st_size
+          result={"version":"3.0.0","build":340,"save_schema":"2.0.0","repository_branch":branch,"tested_commit_sha":tested_commit,"ci_run_id":run_id,"direct_git_source":True,"source_tree_sha256":expected_tree,"verified_candidate_input_zip_sha256":candidate_sha,"exported_source_zip_sha256":archive_sha,"exported_source_zip_bytes":archive_bytes,"source_files":len(package_paths),"ipa_built":False,"physical_iphone_tested":False}
+          (outdir/"direct-source-package-verification.json").write_text(json.dumps(result,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
+          ci_readme="""# Build 340 engine separation — direct-source verification
+          
+          Branch: {0}
+          Tested commit: {1}
+          Direct-source CI run: {2} — SUCCESS
+          
+          - Version: 3.0.0; Build: 340; Save Schema: 2.0.0.
+          - The workflow checks out the complete source tree from Git and verifies it in place. It does not reconstruct archives or apply overlays.
+          - Runtime tree SHA-256: {3}.
+          - Verified candidate ZIP that supplied the one-time source materialization: {4}.
+          - Newly exported direct-source package SHA-256: {5} ({6} bytes; 742 files).
+          - CI passed 109/109 declared source gates, ESLint, Chromium/WebKit, native save-vault, native WKWebView, and a fresh unsigned arm64 iPhoneOS Release app build.
+          - No IPA was built, and no physical iPhone pressure test was performed. The production gate remains closed.
+          
+          The 4,300/20,000 asset Node tests are synthetic and do not prove iPhone responsiveness. Device performance, touch latency, thermal behavior, purchase/sale/finance/routes, and save/restore still require physical iPhone validation.
+          """.format(branch,tested_commit,run_id,expected_tree,candidate_sha,archive_sha,archive_bytes)
+          (root/"BUILD340_ENGINE_SEPARATION_CI_README.md").write_text(ci_readme,encoding="utf-8")
+          check=subprocess.run([sys.executable,str(root/"tools/verify_current_source.py"),"--root",str(root)],check=True,capture_output=True,text=True)
+          verified=json.loads(check.stdout)
+          if verified.get("source_tree_sha256")!=expected_tree or verified.get("files")!=491:
+              raise SystemExit("Runtime source tree changed while recording CI evidence")
+          subprocess.run(["shasum","-a","256","-c","SOURCE_INTEGRITY_SHA256.txt"],cwd=root,check=True,stdout=subprocess.DEVNULL)
+          print(json.dumps(result,ensure_ascii=False))
+          
+          PY
+          git add BUILD340_ENGINE_SEPARATION_REPORT_AR.md BUILD340_ENGINE_SEPARATION_VERIFICATION.json RELEASE_GATE.json EXPERIMENTAL_BUILD_AUTHORIZATION.json RUNTIME_SOURCE_MANIFEST.json SOURCE_INTEGRITY_SHA256.txt README.md BUILD340_ENGINE_SEPARATION_CI_README.md
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "build340: record direct-source CI verification"
+            git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+          fi
+
       - name: Preserve verification logs
         if: always()
         uses: actions/upload-artifact@v4
