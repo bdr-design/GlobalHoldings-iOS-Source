@@ -57,7 +57,7 @@ jobs:
           import json,sys
           from pathlib import Path
           root=Path(sys.argv[1])
-          expected='d2014b4a0d560f2a8c6012be9059ab213b30bba6b6c5ddc774debfbd093b92fa'
+          expected='7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f'
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
           authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
           result=json.loads((root/'BUILD340_ENGINE_SEPARATION_VERIFICATION.json').read_text())
@@ -254,7 +254,7 @@ jobs:
           tested_commit=sys.argv[3]
           branch=sys.argv[4]
           candidate_sha="cfe2982624211a292ea5f520141848ca43f52b222ede6e07eab1bd82fb25c5c9"
-          expected_tree="d2014b4a0d560f2a8c6012be9059ab213b30bba6b6c5ddc774debfbd093b92fa"
+          expected_tree="7f74cc211b192d9dc05db6d11d81ac852205e1f5039e49c0eabbbe6e839df20f"
           acceptance=json.loads((root/".ci-output/source-acceptance-results.json").read_text(encoding="utf-8"))
           ipa_record=json.loads((root/".ci-output/test-ipa-verification.json").read_text(encoding="utf-8"))
           if ipa_record.get("ipa_created") is not True or ipa_record.get("source_tree_sha256")!=expected_tree or ipa_record.get("workflow_commit")!=tested_commit: raise SystemExit("Unsigned test IPA is missing or bound to another source")
