@@ -54,7 +54,7 @@ jobs:
           OVERLAY_EXPECTED="9b6ed63c1ac5c56471a92a074a215296290ee9a2667feff240504261c87122ca"
           test "$OVERLAY_ACTUAL" = "$OVERLAY_EXPECTED"
           unzip -t "$OVERLAY" >/dev/null
-          unzip -q "$OVERLAY" -d "$SOURCE_DIR"
+          unzip -oq "$OVERLAY" -d "$SOURCE_DIR"
           printf 'overlay_sha256=%s\n' "$OVERLAY_ACTUAL" | tee -a "$GITHUB_WORKSPACE/.ci-output/archive-verification.txt"
           test -s "$SOURCE_DIR/project.yml"
           echo "SOURCE_DIR=$SOURCE_DIR" >> "$GITHUB_ENV"
