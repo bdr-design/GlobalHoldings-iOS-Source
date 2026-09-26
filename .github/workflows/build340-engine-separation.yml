@@ -35,7 +35,7 @@ jobs:
           ARCHIVE="$RUNNER_TEMP/GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip"
           cat candidate-parts/GlobalHoldings_BUILD340_ENGINE_SEPARATION_CANDIDATE.zip.part-* > "$ARCHIVE"
           ACTUAL="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
-          EXPECTED="cd3a8fcf6967d3560954f2780746b39a178208c6d9ec03b14388e2a3177d536e"
+          EXPECTED="b81585d50900c6caf8efa3901ed3c25a17236ea12b772967ea1a1e1f45417866"
           test "$ACTUAL" = "$EXPECTED"
           unzip -t "$ARCHIVE" >/dev/null
           SOURCE_DIR="$RUNNER_TEMP/build340-engine-separation-source"
@@ -58,7 +58,7 @@ jobs:
           import json,sys
           from pathlib import Path
           root=Path(sys.argv[1])
-          expected='d794261ef39c376af9bd96a4fac2c5dc49bf49af06e7e3b99b420f557441547f'
+          expected='c71617a61ca3a22e07560b04dd9488096f127a76a6a7e022ffc3e48b2f06eded'
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
           authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
           result=json.loads((root/'BUILD340_ENGINE_SEPARATION_VERIFICATION.json').read_text())
