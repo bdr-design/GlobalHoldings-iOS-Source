@@ -19,7 +19,7 @@
     AAA:{pd:.001,lgd:.20},AA:{pd:.002,lgd:.24},A:{pd:.004,lgd:.28},BBB:{pd:.012,lgd:.35},BB:{pd:.035,lgd:.42},B:{pd:.08,lgd:.52},C:{pd:.18,lgd:.65}
   });
   const ASF_WHOLESALE=.50;
-  const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
+  const clone=value=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number(value)||0));
   const companyPlatform=()=>globalThis.GH_COMPANY_PLATFORM||null;
   function canonicalOwnerCompanyId(row){return String(row?.ownerCompanyId||row?.companyId||'').trim();}
