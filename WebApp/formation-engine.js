@@ -1,7 +1,7 @@
 (()=>{'use strict';
 const VERSION='1.0.0',SCHEMA='gh-formation-plan-v1',ALLOWED_ENTITY_KINDS=new Set(['group','company']);
 const FORBIDDEN_EFFECTS=new Set(['grant-asset','grant-assets','grant-facility','grant-facilities','seed-fleet','seed-route','credit-unfunded']);
-const clone=value=>value===undefined?undefined:(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
+const clone=value=>value===undefined?undefined:(typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value))));
 const deepFreeze=value=>{if(value&&typeof value==='object'&&!Object.isFrozen(value)){Object.freeze(value);for(const child of Object.values(value))deepFreeze(child);}return value;};
 const clean=(value,max=180)=>{const text=String(value??'').trim().replace(/\s+/g,' ');if(/[\u0000-\u001f\u007f<>]/.test(text))throw new Error('formation-text-invalid');return text.slice(0,max);};
 const positive=value=>{const n=Number(value);if(!Number.isFinite(n)||n<=0||!Number.isSafeInteger(Math.round(n)))throw new Error('formation-capital-invalid');return Math.round(n);};
