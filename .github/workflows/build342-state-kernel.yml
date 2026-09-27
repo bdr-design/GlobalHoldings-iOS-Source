@@ -62,7 +62,7 @@ jobs:
           import json,sys
           from pathlib import Path
           root=Path(sys.argv[1])
-          expected='a5b05fedb713ecfcd885128014faeb40a4e489dc2ec67ec19905a2847ffd4d62'
+          expected='15f1beaa80a306b3eef2868faf3d447024edd9cdb97f4fd62b13231302faf5d3'
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
           authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
           result=json.loads((root/'BUILD342_STATE_KERNEL_VERIFICATION.json').read_text())
@@ -186,17 +186,7 @@ jobs:
           set -euo pipefail
           TEST_DIR="$RUNNER_TEMP/build342-webkit-smoke"
           mkdir -p "$TEST_DIR"
-          WEBKIT_HELPER="$RUNNER_TEMP/prepare_webkit_smoke.py"
-          python3 - "$SOURCE_DIR/tests/native/prepare_webkit_smoke.py" "$WEBKIT_HELPER" <<'PY'
-          import sys
-          from pathlib import Path
-          source=Path(sys.argv[1]).read_text()
-          old="assert gate in text"
-          new="assert gate.replace('guard ', '', 1) in text"
-          if source.count(old)!=1: raise SystemExit('Expected one WKWebView frame/origin guard anchor')
-          Path(sys.argv[2]).write_text(source.replace(old,new,1))
-          PY
-          python3 "$WEBKIT_HELPER" "$SOURCE_DIR" "$TEST_DIR"
+          python3 "$SOURCE_DIR/tests/native/prepare_webkit_smoke.py" "$SOURCE_DIR" "$TEST_DIR"
           xcrun swiftc -framework AppKit -framework WebKit "$TEST_DIR/main.swift" -o "$TEST_DIR/webkit-smoke"
           cd "$TEST_DIR"
           ./webkit-smoke | tee "$GITHUB_WORKSPACE/.ci-output/webkit-smoke.log"
@@ -293,12 +283,17 @@ jobs:
           print(json.dumps(result,ensure_ascii=False))
           PY
 
-      - name: Upload unsigned Build 342 STATE_KERNEL test IPA and verification logs
-        if: success()
+      # The seven-stage release gate remains closed until device acceptance.
+      # Keep the generated IPA on the runner; only diagnostic evidence leaves CI.
+      - name: Upload macOS verification logs without the test IPA
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST_ipa
-          path: .ci-output
-          if-no-files-found: error
+          name: GlobalHoldings_BUILD342_STATE_KERNEL_macOS_verification
+          path: |
+            .ci-output/*.json
+            .ci-output/*.txt
+            .ci-output/*.log
+          if-no-files-found: warn
           retention-days: 30
           include-hidden-files: true

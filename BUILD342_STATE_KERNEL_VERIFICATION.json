@@ -13,19 +13,19 @@
   },
   "stages": {
     "0": {
-      "status": "LOCAL_FOCUSED_GATES_PASS_NATIVE_COMMIT_GATE_PENDING_MACOS",
+      "status": "MACOS_SOURCE_NATIVE_GATE_PASS_PHYSICAL_IPHONE_TIMING_PENDING",
       "gates": {
         "record_alert_p95_ms": 0.521,
         "record_alert_max_ms": 2.883,
         "record_alert_samples": 120,
-        "nativeVaultCommitMs_under_2000": "PASS_SINGLE_SAMPLE_MACOS_CI_RUN_36304534035_EXACT_NUMBER_IN_NEXT_RUN_LOG",
+        "nativeVaultCommitMs_under_2000": "PASS_SINGLE_SAMPLE_MACOS_306.466041_MS_CI_RUN_36305122789_IPHONE_PENDING",
         "finish_during_map_drag": "PASS_BUILD342_NODE_GATE",
         "manualFailures_equals_CALENDAR_ADVANCE_FAILED": "PASS_BUILD342_NODE_GATE",
         "map_bounds_and_bounded_rendering": "PASS_BUILD342_NODE_GATE"
       }
     },
     "1": {
-      "status": "PASS_EXACT_BUILD341_ACCEPTANCE_CI_RUN_36285862018",
+      "status": "PASS_EXACT_BUILD341_124_OF_124_UNCHANGED_CI_RUN_36305122789",
       "local_build341_acceptance": {
         "completed": false,
         "executed": 107,
@@ -33,7 +33,7 @@
         "blocked_or_failed": 4,
         "reason": "Local attempt stopped before the full exact-source suite because Chromium/ESLint are unavailable; macOS CI will run the unchanged verified source."
       },
-      "ci_gate": "Exact source Build341 baseline passed unchanged in macOS CI run 36285862018; Build342 source acceptance must rerun after the startup initialization fix."
+      "ci_gate": "Exact verified Build341 source acceptance passed 124/124 unchanged on macOS CI run 36305122789."
     },
     "2": {
       "status": "APP_SLICE_SHADOW_PARITY_PASS_KERNEL_NOT_AUTHORITATIVE",
@@ -50,7 +50,7 @@
       "limit": "The app transaction still owns each mutation and refreshes the shadow mirror from its committed write roots; this is not independent kernel-side business simulation. The finance-day and market-hour callbacks are controlled fixtures. Kernel promotion and the normal-slice <30 ms gate remain unproven."
     },
     "3": {
-      "status": "PARTIAL_NATIVE_COMPILE_AND_IDLE_AUDIT_INTEGRATION_PENDING",
+      "status": "NATIVE_41_OF_41_PASS_BROADER_DELTA_AND_IDLE_AUDIT_PENDING",
       "implemented": [
         "bounded record-alert delta validation",
         "content-addressed native sections",
@@ -59,7 +59,7 @@
         "old inline Save Schema 2.0.0 compatibility",
         "post-publication garbage-collection failure cannot misreport a durable save as failed"
       ],
-      "limit": "macOS CI run 36304534035 compiled and passed 40/41 Native tests, including reset rollback and 28 MiB <2-second commit. Legacy inline save test fixture omitted its directory after reset; corrected fixture requires fresh Native run. Broader domain delta validators, scheduled idle full audit, production incremental-save timing remain pending."
+      "limit": "Swift compiled, legacy Save Schema 2.0.0 migration and 41/41 Native real-file tests passed macOS CI run 36305122789. A 28 MiB native commit took 306.466041 ms on one macOS sample; no iPhone result. Broader domain delta validators, scheduled idle full audit and production incremental-save timing remain pending."
     },
     "4": {
       "status": "CORE_FIXTURE_ONLY_PRODUCTION_COLD_ARCHIVE_PENDING",
@@ -90,7 +90,7 @@
       "limit": "Authoritative app simulation remains in the main-thread owner; 10-minute iPhone frame/task gates are pending."
     },
     "6": {
-      "status": "20K_TYPED_COLUMN_WORKER_FIXTURE_PASS_LIVE_APPLICATION_MIGRATION_PENDING",
+      "status": "20K_TYPED_COLUMN_AND_INCREMENTAL_FINGERPRINT_LOCAL_PASS_LIVE_MIGRATION_PENDING",
       "scenario": {
         "synthetic_assets": 20000,
         "column_types": [
@@ -101,31 +101,31 @@
         "worker_bulk_row_patches": 1000,
         "worker_base_snapshot_bytes_upper_bound": 1024
       },
-      "limit": "Registered 20,000-asset section releases duplicated base rows; actual app still holds legacy object rows. Live app migration, oldest-supported-iPhone memory ceiling, FPS and thermal tests are pending."
+      "limit": "Registered 20,000-asset section releases duplicated base rows; bounded chunk fingerprints locally rehash one of 79 chunks per row update with inverse rollback and lazy audit DTOs. Actual app still holds legacy object rows. Live migration and oldest-supported-iPhone memory, FPS and thermal gates are pending; latest source needs CI rerun."
     }
   },
   "acceptance": {
-    "build342_local_focused_tests": "PASS_13_OF_13_BUILD342_TEST_PROGRAMS",
+    "build342_local_focused_tests": "PASS_14_OF_14_BUILD342_TEST_PROGRAMS",
     "build340_local_suite": "PASS",
     "recovery_integration": "PASS_8_OF_8",
     "full_build342_acceptance": {
       "completed": false,
       "previous_run": {
-        "id": "36304534035",
+        "id": "36305122789",
         "result": "PASS_137_OF_137",
         "runtime_unchanged": true
       },
-      "current_source": "PENDING_MACOS_RERUN_AFTER_KERNEL_BASE_RELEASE_AND_CHUNKED_SAVE_FIX"
+      "current_source": "PENDING_MACOS_RERUN_AFTER_WEBAPP_DIGEST_AND_INCREMENTAL_FINGERPRINT"
     },
-    "swift_compile_and_native_tests": "SWIFT_COMPILED_40_OF_41_NATIVE_PASS_RUN_36304534035_LEGACY_TEST_DIRECTORY_FIX_PENDING_RERUN",
-    "unsigned_ipa": "NOT_BUILT_NATIVE_TEST_FIX_PENDING_RERUN",
+    "swift_compile_and_native_tests": "PASS_41_OF_41_CI_RUN_36305122789",
+    "unsigned_ipa": "IPHONEOS_RELEASE_APP_BUILT_IPA_PACKAGE_GATE_FAILED_STALE_WEBAPP_DIGEST_CI_RUN_36305122789_FIXED_IN_CURRENT_SOURCE_PENDING_RERUN",
     "physical_iphone": "NOT_TESTED",
     "deferred_persistence_regression": "PASS_12_OF_12_INCLUDING_MAP_GESTURE_DEFER",
     "build342_macOS_ci_previous_run": {
-      "run_id": "36304534035",
-      "result": "PASS_137_OF_137_SOURCE_ACCEPTANCE_NATIVE_40_OF_41",
-      "cause": "Legacy inline A/B migration fixture removed the vault folder and attempted to write save-A.json before creating it. Other 40 Native tests, including 28 MiB under 2 seconds, passed on macOS.",
-      "fix": "Create the disposable vault directory before writing the legacy inline A/B header; rerun the exact source acceptance and Native gate."
+      "run_id": "36305122789",
+      "result": "PASS_137_OF_137_SOURCE_PASS_41_OF_41_NATIVE_WEBKIT_5_OF_5_XCODE_BUILD_PASS_IPA_PACKAGING_FAILED",
+      "cause": "Project GHSourceSnapshotSHA256 was stale, so the Info.plist did not match the exact WebApp source digest at packaging.",
+      "fix": "Bind project GHSourceSnapshotSHA256 to exact WebApp source digest and assert it at source verification before building."
     },
     "build342_app_shadow_10day": {
       "result": "PASS_LOCAL",
@@ -138,6 +138,6 @@
       "boundary_callbacks": "controlled fixtures"
     }
   },
-  "source_tree_sha256": "a5b05fedb713ecfcd885128014faeb40a4e489dc2ec67ec19905a2847ffd4d62",
-  "webapp_tree_sha256": "b15ec0e8249be7ef04afa12cf0c5cbd448035d951f08e515add1f4b92e279e11"
+  "source_tree_sha256": "15f1beaa80a306b3eef2868faf3d447024edd9cdb97f4fd62b13231302faf5d3",
+  "webapp_tree_sha256": "8a462c6ff5a946691b3488485942255d22e249d866e79763a460c9c74675097f"
 }

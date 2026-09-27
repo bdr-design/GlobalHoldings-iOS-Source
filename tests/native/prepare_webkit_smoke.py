@@ -4,7 +4,7 @@ src=Path(sys.argv[1]);out=Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True
 text=(src/'iOS/GlobalHoldings/GameViewController.swift').read_text()
 start=text.index('    private func isTrustedGameDocument(');end=text.index('\n    }',start)+6
 helper=text[start:end]
-gate='guard message.webView === webView, message.frameInfo.isMainFrame,\n              isTrustedGameDocument(message.frameInfo.request.url) else { return }'
+gate='guard !navigationPreparing, message.webView === webView, message.frameInfo.isMainFrame,\n              isTrustedGameDocument(message.frameInfo.request.url) else { return }'
 assert gate in text
 code=r'''import Foundation
 import AppKit
@@ -24,6 +24,7 @@ final class Scheme:NSObject,WKURLSchemeHandler {
 }
 final class Probe:NSObject,WKScriptMessageHandler {
  var webView:WKWebView!
+ var navigationPreparing=false
  var rows:[[String:Any]]=[]
  var phase=""
 __HELPER__
@@ -59,12 +60,17 @@ probe.phase="blank-document"
 primary.loadHTMLString("<script>window.webkit.messageHandlers.saveBridge.postMessage({tag:'blank'})</script>",baseURL:nil);waitRows(4)
 probe.phase="other-webview"
 let other=view();other.load(URLRequest(url:URL(string:"gh://app/other.html")!));waitRows(5)
+probe.phase="navigation-preparing"
+probe.navigationPreparing=true
+primary.load(URLRequest(url:URL(string:"gh://app/index.html")!));waitRows(7)
+probe.navigationPreparing=false
 let cases:[[String:Any]]=[
  ["name":"custom-scheme main document allowed","ok":probe.rows.contains{($0["phase"] as? String)=="local-main-and-subframe" && ($0["isMainFrame"] as? Bool)==true && ($0["accepted"] as? Bool)==true}],
  ["name":"same-origin subframe denied","ok":probe.rows.contains{($0["phase"] as? String)=="local-main-and-subframe" && ($0["isMainFrame"] as? Bool)==false && ($0["accepted"] as? Bool)==false}],
  ["name":"wrong local host denied","ok":probe.rows.contains{($0["phase"] as? String)=="wrong-host" && ($0["accepted"] as? Bool)==false}],
  ["name":"about blank denied","ok":probe.rows.contains{($0["phase"] as? String)=="blank-document" && ($0["accepted"] as? Bool)==false}],
- ["name":"different webview denied","ok":probe.rows.contains{($0["phase"] as? String)=="other-webview" && ($0["accepted"] as? Bool)==false}]
+ ["name":"different webview denied","ok":probe.rows.contains{($0["phase"] as? String)=="other-webview" && ($0["accepted"] as? Bool)==false}],
+ ["name":"navigation preparation denies local main document","ok":probe.rows.contains{($0["phase"] as? String)=="navigation-preparing" && ($0["isMainFrame"] as? Bool)==true && ($0["accepted"] as? Bool)==false}]
 ]
 let failed=cases.filter{($0["ok"] as? Bool) != true}.count
 let report:[String:Any]=["cases":cases,"messages":probe.rows,"passed":cases.count-failed,"total":cases.count,"failed":failed,"realWKWebView":true,"platform":"macOS","iphone_test":false,"full_game_test":false]

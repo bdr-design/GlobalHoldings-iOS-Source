@@ -53,7 +53,7 @@
   function create(options={}){
     const schemaVersion=String(options.schemaVersion||'2.0.0');
     if(schemaVersion!=='2.0.0')throw new Error('kernel-save-schema-must-remain-2.0.0');
-    const contracts=new Map(),revisions=new Map(),auditors=new Map(),fingerprints=new Map(),idempotency=new Map(),afterCommitErrors=[];
+    const contracts=new Map(),revisions=new Map(),auditors=new Map(),fingerprints=new Map(),chunkFingerprints=new Map(),idempotency=new Map(),afterCommitErrors=[];
     let base=options.legacyState&&typeof options.legacyState==='object'?clone(options.legacyState):{};
     let sequence=0;
     const hot=new Map();
@@ -104,7 +104,7 @@
         const rows=Array.isArray(legacyValue)?clone(legacyValue):[];
         contract.data=contract.legacyOrder==='newest-first'?rows.reverse():rows;
       }else contract.data=clone(legacyValue);
-      contracts.set(name,contract);revisions.set(name,0);fingerprints.delete(name);
+      contracts.set(name,contract);revisions.set(name,0);fingerprints.delete(name);chunkFingerprints.delete(name);
       if(kind==='ledger')for(let index=0;index<contract.data.length;index++){
         const row=contract.data[index],key=String(row?.idempotencyKey||'');if(key){const fp=fingerprint(row);idempotency.set(`${name}:${key}`,{fingerprint:fp,row:clone(row),index});}
       }
@@ -130,6 +130,27 @@
     }
     function columnDTO(section){return section.data.rows.map((_,index)=>columnRow(section,index));}
     function sectionFingerprint(name){const section=ensure(name);if(!fingerprints.has(name))fingerprints.set(name,fingerprint(expose(section)));return fingerprints.get(name);}
+    // A section digest is a tree of bounded chunks. Column updates invalidate
+    // one chunk; appends invalidate only the last chunk unless a cap shifts rows.
+    // Full legacy fingerprints remain available for parity and export checks.
+    const FINGERPRINT_CHUNK_ROWS=256;
+    let fingerprintChunkCalculations=0;
+    function incrementalFingerprint(name){
+      const section=ensure(name),cached=chunkFingerprints.get(section.name)||new Map();
+      if(!chunkFingerprints.has(section.name))chunkFingerprints.set(section.name,cached);
+      const rows=section.kind==='columns'?section.data.rows:(section.kind==='ledger'||section.kind==='append-only')?section.data:null;
+      if(!rows){if(!cached.has(0)){cached.set(0,fingerprint(section.present?section.data:null));fingerprintChunkCalculations++;}return fingerprint({kind:section.kind,present:section.present,chunks:[cached.get(0)]});}
+      const count=Math.ceil(rows.length/FINGERPRINT_CHUNK_ROWS),hashes=[];
+      for(let index=0;index<count;index++){
+        if(!cached.has(index)){
+          const start=index*FINGERPRINT_CHUNK_ROWS,end=Math.min(rows.length,start+FINGERPRINT_CHUNK_ROWS);
+          const values=section.kind==='columns'?Array.from({length:end-start},(_,offset)=>columnRow(section,start+offset)):rows.slice(start,end);
+          cached.set(index,fingerprint(values));fingerprintChunkCalculations++;
+        }
+        hashes.push(cached.get(index));
+      }
+      return fingerprint({kind:section.kind,present:section.present,legacyOrder:section.legacyOrder,length:rows.length,chunks:hashes});
+    }
     function legacyState(){const out=clone(base);for(const section of contracts.values())if(section.present)pathWrite(out,section.path,expose(section));else pathDelete(out,section.path);return out;}
     function tx(spec,apply){
       if(!spec||typeof spec!=='object')throw new TypeError('kernel-tx-spec-required');
@@ -139,7 +160,18 @@
       for(const name of writeNames)ensure(name);
       for(const [name,expected] of Object.entries(spec.reads||{})){ensure(name);if(Number(expected)!==revisions.get(name))throw new Error(`kernel-section-revision-conflict:${name}:${expected}:${revisions.get(name)}`);}
       const undo=[],dirty=new Set(),changes=new Map(),hooks=[];let closed=false;
-      function mark(name,change){dirty.add(name);fingerprints.delete(name);if(!changes.has(name))changes.set(name,[]);changes.get(name).push(change);}
+      function mark(name,change){
+        dirty.add(name);fingerprints.delete(name);
+        const cached=chunkFingerprints.get(name);
+        if(cached){
+          const section=ensure(name),rows=section.kind==='columns'?section.data.rows:(section.kind==='ledger'||section.kind==='append-only')?section.data:null;
+          const index=Number.isInteger(change.index)?Math.floor(change.index/FINGERPRINT_CHUNK_ROWS):rows&&['append','post'].includes(change.kind)&&!change.trimmed?Math.floor((rows.length-1)/FINGERPRINT_CHUNK_ROWS):null;
+          const invalidated=index===null?[...cached.entries()]:cached.has(index)?[[index,cached.get(index)]]:[];
+          if(index===null)cached.clear();else cached.delete(index);
+          if(invalidated.length)undo.push(()=>{for(const [chunk,digest] of invalidated)cached.set(chunk,digest);});
+        }
+        if(!changes.has(name))changes.set(name,[]);changes.get(name).push(change);
+      }
       function log(fn){undo.push(fn);}
       const writerAPI={
         get(name){const section=ensure(name);return expose(section);},
@@ -154,7 +186,12 @@
       const started=globalThis.performance?.now?.()??Date.now();
       try{
         const value=apply(writerAPI);
-        for(const name of dirty){const section=ensure(name);for(const validator of auditors.get(name)||[]){const result=validator({section:name,revision:revisions.get(name),changes:clone(changes.get(name)||[]),value:expose(section)});if(result===false||result?.ok===false)throw new Error(result?.reason||`kernel-audit-failed:${name}`);}}
+        for(const name of dirty){const section=ensure(name);for(const validator of auditors.get(name)||[]){
+          // Validators receive the changed records. A full section is exposed
+          // only if an auditor expressly requests it (for an idle full audit).
+          const delta={section:name,revision:revisions.get(name),changes:clone(changes.get(name)||[]),get value(){return expose(section);},getRow(index){if(section.kind!=='columns')throw new Error('kernel-audit-row-kind');if(!Number.isInteger(index)||index<0||index>=section.data.rows.length)throw new RangeError('kernel-audit-row-index');return columnRow(section,index);}};
+          const result=validator(delta);if(result===false||result?.ok===false)throw new Error(result?.reason||`kernel-audit-failed:${name}`);
+        }}
         for(const name of dirty)revisions.set(name,revisions.get(name)+1);
         closed=true;
         const hooksErrors=[];for(const hook of hooks)try{hook({label:String(spec.label||''),dirty:[...dirty],revisions:Object.fromEntries([...dirty].map(name=>[name,revisions.get(name)]))});}catch(error){hooksErrors.push(String(error?.message||error));}
@@ -167,7 +204,7 @@
     function addAuditor(name,validator){ensure(name);if(typeof validator!=='function')throw new TypeError('kernel-auditor-required');if(!auditors.has(name))auditors.set(name,[]);auditors.get(name).push(validator);return ()=>{const rows=auditors.get(name)||[],index=rows.indexOf(validator);if(index>=0)rows.splice(index,1);};}
     function compareLegacy(candidate){const expected=legacyState(),path=firstDifference(expected,candidate);return {ok:path===null,path,fingerprints:{kernel:fingerprint(expected),legacy:fingerprint(candidate)}};}
     function snapshot(){const sections={};for(const name of contracts.keys())sections[name]={revision:revisions.get(name),fingerprint:sectionFingerprint(name),value:expose(ensure(name))};return {schemaVersion,revision:sequence,sections};}
-    const api={VERSION,schemaVersion,register,releaseRegisteredBase,tx,read(name){return expose(ensure(name));},columnSnapshot(name,columnName){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const column=section.data.columns[String(columnName)];if(!column)throw new Error(`kernel-column-unregistered:${name}.${columnName}`);return {type:column.type,data:new column.data.constructor(column.data),presence:new Uint8Array(column.presence),enumValues:clone(column.enumValues)};},revision(name){return revisions.get(String(name))??null;},fingerprint:sectionFingerprint,addAuditor,compareLegacy,legacyState,snapshot,contracts(){return [...contracts.values()].map(({data,...row})=>clone(row));},baseStorageBytes(){return new TextEncoder().encode(JSON.stringify(base)).byteLength;},typedArrayBytes(){let bytes=0;for(const section of contracts.values())if(section.kind==='columns')for(const column of Object.values(section.data.columns))bytes+=column.data.byteLength+column.presence.byteLength;return bytes;}};
+    const api={VERSION,schemaVersion,register,releaseRegisteredBase,tx,read(name){return expose(ensure(name));},columnSnapshot(name,columnName){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const column=section.data.columns[String(columnName)];if(!column)throw new Error(`kernel-column-unregistered:${name}.${columnName}`);return {type:column.type,data:new column.data.constructor(column.data),presence:new Uint8Array(column.presence),enumValues:clone(column.enumValues)};},revision(name){return revisions.get(String(name))??null;},fingerprint:sectionFingerprint,incrementalFingerprint,fingerprintChunkCalculations:()=>fingerprintChunkCalculations,addAuditor,compareLegacy,legacyState,snapshot,contracts(){return [...contracts.values()].map(({data,...row})=>clone(row));},baseStorageBytes(){return new TextEncoder().encode(JSON.stringify(base)).byteLength;},typedArrayBytes(){let bytes=0;for(const section of contracts.values())if(section.kind==='columns')for(const column of Object.values(section.data.columns))bytes+=column.data.byteLength+column.presence.byteLength;return bytes;}};
     return Object.freeze(api);
   }
   function fromLegacyState(legacy,contracts,options={}){
