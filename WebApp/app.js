@@ -4232,11 +4232,21 @@
   // A Clean Atomic update is not considered booted until every core above, the
   // save migration, map initialization and simulation scheduler reached here.
   // Native keeps the previous WebApp until this confirmation succeeds.
+  let idleProofAudit=null;
   setTimeout(()=>{
     try{
       const schema=window.GH_SAVE_SCHEMA?.validate?.(state),integrity=window.GH_INTEGRITY_CORE?.check?.(state);
       if(schema&&!schema.ok){state.speed=0;diag('UPDATE_BOOT_SCHEMA_REJECTED',{version:APP_VERSION,errors:schema.errors},'critical');return;}
       if(integrity?.critical?.length){state.speed=0;diag('UPDATE_BOOT_INTEGRITY_REJECTED',{version:APP_VERSION,issues:integrity.critical.map(x=>x.id||x.code||x.title)},'critical');return;}
+      if(!idleProofAudit&&window.GH_SAVE_SCHEMA?.createIdleProofAudit){
+        idleProofAudit=window.GH_SAVE_SCHEMA.createIdleProofAudit(state,{visible:()=>!document.hidden&&!mapInteractionActive&&!hardResetInProgress&&!durableCommandInProgress,onIssue:issue=>{
+          state.speed=0;simulationEngine.cancelAdvance?.('document-proof-idle-audit-failed');
+          window.GH_PERSISTENCE?.markRecoveryRequired?.('document-proof-idle-audit-failed');
+          diag('DOCUMENT_PROOF_IDLE_AUDIT_FAILED',issue,'critical');updateKpis();
+        }});
+        window.GH_IDLE_PROOF_AUDIT_METRICS=Object.freeze({snapshot:()=>idleProofAudit.status()});
+        idleProofAudit.start();
+      }
       const bridge=window.webkit?.messageHandlers?.updateBridge;
       if(bridge){diag('UPDATE_BOOT_CONFIRM_REQUEST',{version:APP_VERSION,build:RUNTIME_BUILD});bridge.postMessage({action:'confirmUpdateBoot',version:APP_VERSION,build:RUNTIME_BUILD});}
     }catch(error){state.speed=0;diag('UPDATE_BOOT_CONFIRM_BRIDGE_FAILED',{version:APP_VERSION,message:String(error?.message||error)},'critical');console.error('Native update boot confirmation failed',error);}

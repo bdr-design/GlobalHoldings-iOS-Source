@@ -1,0 +1,27 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {harness,minimal}=require('./helpers/core-harness');
+const {s}=harness(['authorization-core','document-proof-core','save-schema']);
+const state=minimal();state.profile={name:'Global Holdings',founder:'Founder'};
+const document={id:'B342-PAYABLE',number:'B342-PAYABLE',company:'group',counterparty:'Supplier',amount:125,subtotal:125,tax:0,total:125,status:'open'};
+s.GH_DOCUMENT_PROOF.sealDocument(state,document,{type:'invoice-payable',companyId:'group'});
+state.finance.invoices.push(document);
+const firstId=document.documentProofId;
+s.GH_DOCUMENT_PROOF.amendDocument(state,document,{transition:'invoice-payable-settled',mutate:row=>{row.status='settled';row.settledAt=10;}});
+assert.notEqual(document.documentProofId,firstId);
+let result=s.GH_SAVE_SCHEMA.validate(state,{lockVerifiedProofs:true});
+assert.equal(result.ok,true,`full validation must pass before any record can enter the cache: ${result.errors}`);
+result=s.GH_SAVE_SCHEMA.validate(state,{lockVerifiedProofs:true});
+assert.equal(result.ok,true);
+const metrics=s.GH_SAVE_SCHEMA.telemetry().lastValidation;
+assert.equal(metrics.documentRecordCacheHits,2,'both root and chained proof must reuse the verified immutable record');
+
+const previous=state.documentProofs.recordsById[firstId];
+state.documentProofs.recordsById[firstId]={...previous,contentDigest:'f'.repeat(64)};
+result=s.GH_SAVE_SCHEMA.validate(state,{lockVerifiedProofs:true});
+assert.equal(result.ok,false,'changing the predecessor must invalidate the chained cache');
+assert.ok(result.errors.includes('document-proof-record-integrity'),'the verifier must reject a replaced predecessor');
+assert.equal(s.GH_SAVE_SCHEMA.telemetry().lastValidation.documentRecordCacheHits,0,'no chained hit may survive a changed ancestor');
+state.documentProofs.recordsById[firstId]=previous;
+assert.equal(s.GH_SAVE_SCHEMA.validate(state,{lockVerifiedProofs:true}).ok,true);
+console.log('Build342 document proof cache: full initial verification, chained and root reuse, ancestor replacement invalidation PASS');

@@ -2,14 +2,14 @@
   "authorized_at": "2026-09-26",
   "build": 342,
   "known_limits": [
-    "Exact Build341 124/124, Build342 137/137, Native Swift 41/41, WKWebView 5/5, and arm64 iPhoneOS Release build passed macOS CI run 36305122789; IPA packaging failed on stale project WebApp digest, corrected in current source. New source needs exact CI rerun.",
+    "CI run 36306109946 passed unchanged Build341 124/124 and 137/138 Build342 cases; only the synthetic source-layout fixture was missing the new WebApp project digest and is corrected with 11/11 local checks. Native 41/41 and arm64 Xcode build remain proven only on older run 36305122789; current source needs full rerun before IPA assembly.",
     "The ten-day app slice shadow gate now runs the production createSimulationSliceJob and GH_SIMULATION_ASSET_CORE over 3,380 assets. It mirrors committed legacy transaction roots; independent kernel-side business simulation and promotion remain gated, and day/hour callbacks are controlled fixtures.",
-    "Native SaveVault storageVersion 2 chunking, A/B head publication, legacy Save Schema 2.0.0 migration and 41/41 macOS real-file cases pass. A 28 MiB commit took 306.466041 ms on one macOS sample; physical iPhone timing remains pending.",
+    "Native SaveVault storageVersion 2, A/B head, legacy Save Schema 2.0.0 and 41/41 macOS real-file tests pass. An idle document proof audit and safe cached chain verification now run locally; broader state audit and physical iPhone timing remain pending.",
     "Cold archive is core-fixture-only; production lazy financial-history lookup and the <12 MB hot-state ceiling at 3,380 assets remain unproven.",
     "The app simulation still uses the existing transaction owner. Worker protocol and 20,000-asset typed-column tests do not prove authoritative Worker ownership or live column migration.",
     "Physical iPhone testing must establish continuous 600x/drag FPS, main-thread task/drop limits, hot/process memory on the oldest supported device and thermal stability."
   ],
-  "minimum_acceptance_gates": 138,
+  "minimum_acceptance_gates": 140,
   "production_approved": false,
   "purpose": "Internal experimental Build 342 verification for bounded map interaction work, transactional state-kernel shadowing, independent storageVersion 2 with Save Schema 2.0.0, and staged Worker/typed-column research. This authorization does not imply production approval or device acceptance.",
   "rollback_and_ownership": {
@@ -30,7 +30,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "15f1beaa80a306b3eef2868faf3d447024edd9cdb97f4fd62b13231302faf5d3",
+  "source_tree_sha256": "650a2a5d7ed8341523d4287348c8d0074ebd01786fa4d7da9086e9fa7d698ce3",
   "test_build_authorized": true,
   "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
   "version": "3.0.0"

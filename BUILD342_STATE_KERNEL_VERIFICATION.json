@@ -50,16 +50,18 @@
       "limit": "The app transaction still owns each mutation and refreshes the shadow mirror from its committed write roots; this is not independent kernel-side business simulation. The finance-day and market-hour callbacks are controlled fixtures. Kernel promotion and the normal-slice <30 ms gate remain unproven."
     },
     "3": {
-      "status": "NATIVE_41_OF_41_PASS_BROADER_DELTA_AND_IDLE_AUDIT_PENDING",
+      "status": "NATIVE_STORAGE_41_OF_41_PASS_IDLE_PROOF_AUDIT_BOUNDED_LOCAL_PASS_FULL_DOMAIN_AUDIT_PENDING",
       "implemented": [
         "bounded record-alert delta validation",
         "content-addressed native sections",
         "independent storageVersion 2",
         "A/B save-head pointer",
         "old inline Save Schema 2.0.0 compatibility",
-        "post-publication garbage-collection failure cannot misreport a durable save as failed"
+        "post-publication garbage-collection failure cannot misreport a durable save as failed",
+        "immutable verified chained and legacy document proof cache with ancestor invalidation",
+        "application idle document proof audit, at most 20 top-level records per tick, paused during drag and durable commands"
       ],
-      "limit": "Swift compiled, legacy Save Schema 2.0.0 migration and 41/41 Native real-file tests passed macOS CI run 36305122789. A 28 MiB native commit took 306.466041 ms on one macOS sample; no iPhone result. Broader domain delta validators, scheduled idle full audit and production incremental-save timing remain pending."
+      "limit": "Native Swift compiled and 41/41 storage tests passed macOS CI run 36305122789, including 28 MiB commit in 306.466041 ms on one macOS sample. The application now schedules bounded idle document proof verification and caches verified immutable chains, but comprehensive domain validators, full idle state audit and production hour/day/save timing are pending."
     },
     "4": {
       "status": "CORE_FIXTURE_ONLY_PRODUCTION_COLD_ARCHIVE_PENDING",
@@ -105,27 +107,27 @@
     }
   },
   "acceptance": {
-    "build342_local_focused_tests": "PASS_14_OF_14_BUILD342_TEST_PROGRAMS",
+    "build342_local_focused_tests": "PASS_16_OF_16_BUILD342_TEST_PROGRAMS_AFTER_FULL_LOCAL_RERUN",
     "build340_local_suite": "PASS",
     "recovery_integration": "PASS_8_OF_8",
     "full_build342_acceptance": {
       "completed": false,
       "previous_run": {
-        "id": "36305122789",
-        "result": "PASS_137_OF_137",
+        "id": "36306109946",
+        "result": "FAIL_137_OF_138_SOURCE_LAYOUT_FIXTURE",
         "runtime_unchanged": true
       },
-      "current_source": "PENDING_MACOS_RERUN_AFTER_WEBAPP_DIGEST_AND_INCREMENTAL_FINGERPRINT"
+      "current_source": "FIXTURE_CORRECTED_11_OF_11_LOCAL_PENDING_FULL_MACOS_RERUN"
     },
     "swift_compile_and_native_tests": "PASS_41_OF_41_CI_RUN_36305122789",
-    "unsigned_ipa": "IPHONEOS_RELEASE_APP_BUILT_IPA_PACKAGE_GATE_FAILED_STALE_WEBAPP_DIGEST_CI_RUN_36305122789_FIXED_IN_CURRENT_SOURCE_PENDING_RERUN",
+    "unsigned_ipa": "NO_IPA_THIS_COMMIT_SOURCE_LAYOUT_FIXTURE_GATE_FAILED_PRIOR_XCODE_APP_BUILD_PASS_36305122789",
     "physical_iphone": "NOT_TESTED",
     "deferred_persistence_regression": "PASS_12_OF_12_INCLUDING_MAP_GESTURE_DEFER",
     "build342_macOS_ci_previous_run": {
-      "run_id": "36305122789",
-      "result": "PASS_137_OF_137_SOURCE_PASS_41_OF_41_NATIVE_WEBKIT_5_OF_5_XCODE_BUILD_PASS_IPA_PACKAGING_FAILED",
-      "cause": "Project GHSourceSnapshotSHA256 was stale, so the Info.plist did not match the exact WebApp source digest at packaging.",
-      "fix": "Bind project GHSourceSnapshotSHA256 to exact WebApp source digest and assert it at source verification before building."
+      "run_id": "36306109946",
+      "result": "FAIL_137_OF_138_SOURCE_ACCEPTANCE_NATIVE_AND_IPA_SKIPPED",
+      "cause": "Synthetic source-layout fixture did not populate webapp_tree_sha256 or project GHSourceSnapshotSHA256 after source verifier gained an exact Info.plist binding guard.",
+      "fix": "Fixture now supplies both matching values; 11/11 verifier cases pass locally, including a tampered native project digest rejection."
     },
     "build342_app_shadow_10day": {
       "result": "PASS_LOCAL",
@@ -138,6 +140,6 @@
       "boundary_callbacks": "controlled fixtures"
     }
   },
-  "source_tree_sha256": "15f1beaa80a306b3eef2868faf3d447024edd9cdb97f4fd62b13231302faf5d3",
-  "webapp_tree_sha256": "8a462c6ff5a946691b3488485942255d22e249d866e79763a460c9c74675097f"
+  "source_tree_sha256": "650a2a5d7ed8341523d4287348c8d0074ebd01786fa4d7da9086e9fa7d698ce3",
+  "webapp_tree_sha256": "1320b3716f1138cfa6c586c09d718eef3d746d11f66ab6df9e55948381788f47"
 }

@@ -16,8 +16,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 653630,
-      "sha256": "ee089878faa610af335409b34d50ee65f9fe090327cea5a0b192e5bb41020c38"
+      "bytes": 654340,
+      "sha256": "7bbe605d96f90aca7be93bd368192015f5bab1dc2a319aafc61a193bd0e5d1e5"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1868,8 +1868,8 @@
       "sha256": "b071e0705229517f4be91a905d4ed2185eaa4963f72080876fad85431ae57825"
     },
     "WebApp/save-schema.js": {
-      "bytes": 61524,
-      "sha256": "16a6b054e9831dbd5dfe1b9361a41f02bee104550e987e6b458bf313d0f26536"
+      "bytes": 66261,
+      "sha256": "59a744391a40735682265db814b887321529c197bc01a6cd08ea3c76422309e9"
     },
     "WebApp/section-identities.css": {
       "bytes": 2444,
@@ -1993,7 +1993,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "98184c87af203eb59f763674c9b7a4c7838d51c66ddbf30a2b7df0ed37a836af"
+      "sha256": "afc32600aaace5fb39e38d32070855a19bd8442a537c38831f849b7a80c1ed11"
     },
     "BUILD": {
       "bytes": 4,
@@ -2058,6 +2058,6 @@
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "remote_branch_created_from_verified_base": true
   },
-  "source_tree_sha256": "15f1beaa80a306b3eef2868faf3d447024edd9cdb97f4fd62b13231302faf5d3",
-  "webapp_tree_sha256": "8a462c6ff5a946691b3488485942255d22e249d866e79763a460c9c74675097f"
+  "source_tree_sha256": "650a2a5d7ed8341523d4287348c8d0074ebd01786fa4d7da9086e9fa7d698ce3",
+  "webapp_tree_sha256": "1320b3716f1138cfa6c586c09d718eef3d746d11f66ab6df9e55948381788f47"
 }

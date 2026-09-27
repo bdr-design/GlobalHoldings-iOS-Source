@@ -33,10 +33,21 @@
     const cached=verifiedAuthorizationProofs.get(row);
     return cached&&cached.seal===seal&&cached.mandate===mandate?cached:null;
   }
-  function documentRecordCacheEntry(row,authorizationProof){
-    if(!Object.isFrozen(row)||(authorizationProof&&!Object.isFrozen(authorizationProof))||Number(row?.version)!==3||Number(row?.chainDepth||0)!==0||row?.previousProofId)return null;
-    const cached=verifiedDocumentRecords.get(row);
-    return cached&&cached.authorizationProof===authorizationProof?cached:null;
+  function documentRecordCacheEntry(row,authorizationProof,records,authorization){
+    // A successful full check locks every proof, including chained and legacy
+    // records. Reuse it only while the entire predecessor and authorization
+    // identity chain remains the same. Replaced imports cannot reuse this cache.
+    const first=verifiedDocumentRecords.get(row),seen=new Set();let current=row;
+    while(current){
+      if(!Object.isFrozen(current)||seen.has(current)||seen.size>64)return null;
+      seen.add(current);
+      const verified=verifiedDocumentRecords.get(current),proofId=current.authorizationProofId;
+      const currentAuthorization=proofId?(authorization?.proofsById?.[proofId]||authorization?.proofArchiveById?.[proofId]||null):null;
+      const parent=current.previousProofId?records[current.previousProofId]:null;
+      if(!verified||verified.authorizationProof!==currentAuthorization||verified.predecessor!==parent||proofId&&!currentAuthorization||current.previousProofId&&!parent)return null;
+      current=parent;
+    }
+    return first?.authorizationProof===authorizationProof?first.result:null;
   }
   function cacheVerifiedProofState(state){
     const auth=state?.authorization||{},seals=object(auth.visualSealAssetsById)?auth.visualSealAssetsById:(auth.signatureAssetsById||{}),mandates=auth.mandatesById||{},proofs={...(auth.proofArchiveById||{}),...(auth.proofsById||{})};
@@ -49,10 +60,11 @@
       freezeProofValue(row);verifiedAuthorizationProofs.set(row,{seal,mandate});
     }
     const store=state?.documentProofs||{};
-    for(const row of [...Object.values(store.recordsById||{}),...Object.values(store.archiveById||{})]){
+    const records={...(store.archiveById||{}),...(store.recordsById||{})};
+    for(const row of Object.values(records)){
       const authorizationProof=row?.authorizationProofId?(auth.proofsById?.[row.authorizationProofId]||auth.proofArchiveById?.[row.authorizationProofId]||null):null;
       freezeProofValue(row);
-      if(Number(row?.version)===3&&Number(row?.chainDepth||0)===0&&!row?.previousProofId)verifiedDocumentRecords.set(row,{authorizationProof});
+      verifiedDocumentRecords.set(row,{authorizationProof,predecessor:row?.previousProofId?records[row.previousProofId]||null:null,result:Number(row?.version)===2?{ok:false,legacy:true,readOnly:true,recordIntegrity:true,modern:false,reason:'document-proof-v2-legacy-read-only',record:row}:{ok:true,modern:true,record:row}});
     }
   }
   function finite(v){return v!==null&&v!==''&&typeof v!=='boolean'&&Number.isFinite(Number(v));}
@@ -268,9 +280,11 @@
     const documentOwner=globalThis.GH_DOCUMENT_PROOF;if(typeof documentOwner?.stateDocuments!=='function'){errors.push('document-proof-owner-unavailable');return;}
     const documentCollectionStart=metric?metricClock():0,documents=documentOwner.stateDocuments(s);if(metric)metric.documentCollectionMs+=Math.max(0,metricClock()-documentCollectionStart);
     const verifier=globalThis.GH_DOCUMENT_PROOF?.verifyDocument,recordVerifier=globalThis.GH_DOCUMENT_PROOF?.verifyRecord,verificationState=typeof verifier==='function'?{...s,authorization:s.authorization?{...s.authorization}:s.authorization,documentProofs:store}:null,documentCache=verificationCache?.documents;
+    if(Object.keys(records).length&&(!verificationState||typeof recordVerifier!=='function')){errors.push('document-proof-verifier-unavailable');return;}
     if(documentCache){documentCache.sharedRecordView=true;for(const [id,row] of Object.entries(records)){
       const authorizationProof=row?.authorizationProofId?(s.authorization?.proofsById?.[row.authorizationProofId]||s.authorization?.proofArchiveById?.[row.authorizationProofId]||null):null;
-      if(documentRecordCacheEntry(row,authorizationProof)){documentCache.records.set(id,{ok:true,modern:true,record:row});if(metric)metric.documentRecordCacheHits++;}
+      const verified=documentRecordCacheEntry(row,authorizationProof,records,s.authorization);
+      if(verified){documentCache.records.set(id,verified);if(metric)metric.documentRecordCacheHits++;}
     }}
     const recordVerificationStart=metric?metricClock():0;if(verificationState&&typeof recordVerifier==='function')for(const id of Object.keys(records)){const check=recordVerifier(verificationState,id,new Set(),documentCache),acceptedLegacy=check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true;if(!check?.ok&&!acceptedLegacy)errors.push('document-proof-record-integrity');}if(metric)metric.documentRecordVerifyMs+=Math.max(0,metricClock()-recordVerificationStart);
     const documentVerificationStart=metric?metricClock():0;for(const document of documents)if(document?.documentProofId){if(!records[document.documentProofId]||document.contentDigest!==records[document.documentProofId].contentDigest)errors.push('document-proof-reference');else if(!verificationState)errors.push('document-proof-integrity');else{const verification=verifier(verificationState,document,verificationCache?.documents),acceptedLegacy=verification?.legacy===true&&verification?.readOnly===true&&verification?.recordIntegrity===true;if(!verification?.ok&&!acceptedLegacy)errors.push('document-proof-integrity');}}if(metric)metric.documentVerifyMs+=Math.max(0,metricClock()-documentVerificationStart);
@@ -331,5 +345,50 @@
     metric.totalMs=Math.max(0,metricClock()-validationStart);metric.errors=result.errors.length;metric.otherMs=Math.max(0,metric.totalMs-metric.authorizationMs-metric.documentProofMs-metric.companyPlatformMs);publishValidationMetric(metric);
     return result;
   }
-  const API=Object.freeze({VERSION,SAVE_SCHEMA_VERSION,STATE_LIMITS,ROUTE_FLEET_CAPACITY,normalize,validate,migrateLegacy,telemetry:()=>JSON.parse(JSON.stringify(runtimeTelemetry))});globalThis.GH_SAVE_SCHEMA=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_SAVE_SCHEMA=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  function createIdleProofAudit(state,options={}){
+    if(!object(state))throw new TypeError('idle-proof-audit-state-required');
+    const clock=options.clock||(()=>globalThis.performance?.now?.()??Date.now());
+    const schedule=options.schedule||((run)=>typeof globalThis.requestIdleCallback==='function'?globalThis.requestIdleCallback(run,{timeout:2000}):setTimeout(()=>run({timeRemaining:()=>0}),0));
+    const cancel=options.cancel||((handle)=>typeof globalThis.cancelIdleCallback==='function'?globalThis.cancelIdleCallback(handle):clearTimeout(handle));
+    const timer=options.timer||((run,delay)=>setTimeout(run,delay)),cancelTimer=options.cancelTimer||clearTimeout;
+    const intervalMs=Math.max(1000,Number(options.intervalMs)||60000),visible=options.visible||(()=>!globalThis.document?.hidden);
+    let active=false,handle=null,repeat=null,ids=null,cursor=0,cycles=0,visited=0,maxBatch=0,failed=null,lastCompleted=null,verificationCache=null,cycleRevision=null,cycleEpoch=null;
+    const status=()=>({active,cycles,visited,maxBatch,failed,lastCompleted,cursor,total:ids?.length??0});
+    function clearPending(){if(handle!==null){cancel(handle);handle=null;}if(repeat!==null){cancelTimer(repeat);repeat=null;}}
+    function stop(){active=false;clearPending();return status();}
+    function queue(){if(active&&handle===null&&repeat===null)handle=schedule(tick);}
+    function tick(deadline){
+      if(!active)return;handle=null;
+      if(!visible()){repeat=timer(()=>{repeat=null;queue();},1000);return;}
+      if(ids!==null&&cycleEpoch!==state.resetEpoch){ids=null;verificationCache=null;}
+      if(ids===null){
+        const store=state.documentProofs||{};
+        ids=[...new Set([...Object.keys(store.archiveById||{}),...Object.keys(store.recordsById||{})])];
+        cursor=0;cycleRevision=state.saveRevision;cycleEpoch=state.resetEpoch;
+      }
+      // A record may be replaced between idle callbacks. Never reuse a proof
+      // verification result from an earlier turn of the event loop.
+      verificationCache={records:new Map(),signedContentStable:new Map(),authorization:{proofs:new Map(),sealDigests:new Map(),mandateDigests:new Map()},sharedRecordView:true};
+      const started=clock(),revision=state.saveRevision,batchStart=cursor;
+      while(cursor<ids.length&&cursor-batchStart<20){
+        if(cursor>batchStart&&(clock()-started>=4||typeof deadline?.timeRemaining==='function'&&deadline.timeRemaining()<=1))break;
+        const id=ids[cursor];let check;
+        try{check=(options.verify||((key)=>globalThis.GH_DOCUMENT_PROOF?.verifyRecord?.(state,key,new Set(),verificationCache)))(id);}
+        catch(error){check={ok:false,reason:String(error?.message||error)};}
+        if(!check?.ok&&!(check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true)){
+          failed={id,reason:String(check?.reason||'verifier-unavailable'),revision};
+          stop();try{options.onIssue?.({...failed});}catch(error){globalThis.console?.error?.('Idle proof audit issue callback failed',error);}return;
+        }
+        cursor++;visited++;
+      }
+      maxBatch=Math.max(maxBatch,cursor-batchStart);
+      if(cursor<ids.length){queue();return;}
+      cycles++;lastCompleted={revision:state.saveRevision,stableRevision:state.saveRevision===cycleRevision,records:ids.length,at:Date.now()};
+      ids=null;verificationCache=null;
+      if(options.once===true){stop();return;}
+      repeat=timer(()=>{repeat=null;queue();},intervalMs);
+    }
+    return Object.freeze({start(){if(!active){active=true;queue();}return status();},stop,status});
+  }
+  const API=Object.freeze({VERSION,SAVE_SCHEMA_VERSION,STATE_LIMITS,ROUTE_FLEET_CAPACITY,normalize,validate,migrateLegacy,createIdleProofAudit,telemetry:()=>JSON.parse(JSON.stringify(runtimeTelemetry))});globalThis.GH_SAVE_SCHEMA=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_SAVE_SCHEMA=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
