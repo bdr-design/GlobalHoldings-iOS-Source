@@ -36,7 +36,7 @@ const VENDOR_META={
  'Saudi Airlines Catering Company':{country:'السعودية',city:'جدة',industry:'تموين وضيافة ومرافق'},
  'Saudi Research and Media Group (SRMG)':{country:'السعودية',city:'الرياض',industry:'إعلام ومحتوى'}
 };
-const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+const clone=v=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(v):(globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v)));
 const actionAttr=id=>{try{return globalThis.GH_ADVANCED?.actionAttributes?.(id)||'disabled';}catch(_error){return 'disabled';}};
 const num=v=>Number.isFinite(Number(v))?Number(v):0, pos=v=>Math.max(0,num(v)), clamp=(v,a,b)=>Math.max(a,Math.min(b,num(v)));
 const now=s=>Number(s?.simSeconds)||0, day=s=>Math.max(0,Math.floor(now(s)/86400));
