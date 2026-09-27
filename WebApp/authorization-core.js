@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
   const VERSION='1.0.0',SCHEMA='gh-authorization-v1',MAX_SIGNATURE_BYTES=32768,LIMITS=Object.freeze({people:64,visualSeals:256,visualSealsPerPerson:32,mandates:512,proofs:4000,archiveBytes:8*1024*1024});
-  const clone=value=>value===undefined?undefined:(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
+  const clone=value=>value===undefined?undefined:(typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value))));
   const clean=(value,max=160)=>String(value??'').trim().slice(0,max);
   const now=state=>Math.max(0,Number(state?.simSeconds)||0);
   function stable(value){
