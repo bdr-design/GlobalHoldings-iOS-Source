@@ -1,6 +1,6 @@
 (()=>{'use strict';
   const VERSION='3.0.0';
-  const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+  const clone=v=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(v):(globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v)));
   function migrateCompanyPlatform(input){
     if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('MIGRATION_COMPANY_STATE_INVALID');
     const platform=globalThis.GH_COMPANY_PLATFORM;if(!platform?.migrateState)return {state:clone(input),changed:false,errors:[],warnings:['company-platform-unavailable']};
