@@ -2,7 +2,7 @@
   "authorized_at": "2026-09-26",
   "build": 342,
   "known_limits": [
-    "The latest direct macOS CI attempt 36320128185 passed the unchanged Build341 baseline 124/124 and all 143 Build342 source gates, then failed Native 42/43 because the A/B recovery fixture did not inherit the current resetEpoch. The fixture is corrected locally; current-source CI is pending.",
+    "Latest direct-source CI run 36324859161 passed the unchanged Build341 baseline 124/124 but failed six Build342 application integration paths due to Proxy cloning and rollback key ordering. The corrected candidate is pending CI; native, WKWebView, unsigned IPA and physical device stages were not reached.",
     "The 10-day, 600x, 3,380-asset parity test compares the legacy application transaction path and uses controlled finance/market callbacks. Live kernel ownership is separately checked for one 3,380-asset commit and 24 commits across a financial-day boundary at 128 assets; full independent finance/market kernel promotion remains incomplete.",
     "The normalized live save is now kernel-owned immediately after migration and before diagnostic/control-plane bootstrap. Nine hot asset values live only in Float64Array columns; rare fields remain in row objects, and Save Schema 2.0.0 JSON property order remains byte-compatible.",
     "Native storageVersion 2 and Save Schema 2.0.0 passed 41/41 on the earlier macOS source. The 773.430958 ms sample is macOS-only; the corrected current-source Swift tests and iPhone timing are pending.",
@@ -31,11 +31,13 @@
     "base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
     "branch": "build342-state-kernel-20260927",
     "mode": "direct_git_tracked_tree",
-    "normal_ci_uses_overlay": false
+    "normal_ci_uses_overlay": false,
+    "current_candidate_source_tree_sha256": "ed34b264b683bb41a021574e905f8b5de2eaf6a4302c93c8494e0eb2e14699ff",
+    "current_candidate_webapp_tree_sha256": "d87bfffc01520631b0e36348a7e61e869179eced31977d242556097a03177685"
   },
-  "source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
+  "source_tree_sha256": "ed34b264b683bb41a021574e905f8b5de2eaf6a4302c93c8494e0eb2e14699ff",
   "test_build_authorized": true,
   "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
   "version": "3.0.0",
-  "webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
+  "webapp_tree_sha256": "d87bfffc01520631b0e36348a7e61e869179eced31977d242556097a03177685"
 }
