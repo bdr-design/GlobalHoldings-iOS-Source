@@ -18,14 +18,14 @@
         "record_alert_p95_ms": 0.521,
         "record_alert_max_ms": 2.883,
         "record_alert_samples": 120,
-        "nativeVaultCommitMs_under_2000": "PASS_SINGLE_SAMPLE_MACOS_355.630709_MS_CI_RUN_36306707904_IPHONE_PENDING",
+        "nativeVaultCommitMs_under_2000": "PASS_SINGLE_SAMPLE_MACOS_275.981417_MS_CI_RUN_36307934626_IPHONE_PENDING",
         "finish_during_map_drag": "PASS_BUILD342_NODE_GATE",
         "manualFailures_equals_CALENDAR_ADVANCE_FAILED": "PASS_BUILD342_NODE_GATE",
         "map_bounds_and_bounded_rendering": "PASS_BUILD342_NODE_GATE"
       }
     },
     "1": {
-      "status": "PASS_EXACT_BUILD341_124_OF_124_UNCHANGED_CI_RUN_36306707904",
+      "status": "PASS_EXACT_BUILD341_124_OF_124_UNCHANGED_CI_RUN_36307934626",
       "local_build341_acceptance": {
         "completed": false,
         "executed": 107,
@@ -33,7 +33,7 @@
         "blocked_or_failed": 4,
         "reason": "Local attempt stopped before the full exact-source suite because Chromium/ESLint are unavailable; macOS CI will run the unchanged verified source."
       },
-      "ci_gate": "Exact verified Build341 source acceptance passed 124/124 unchanged on macOS CI run 36306707904."
+      "ci_gate": "Exact verified Build341 source acceptance passed 124/124 unchanged on macOS CI run 36307934626."
     },
     "2": {
       "status": "APP_SLICE_SHADOW_PARITY_PASS_KERNEL_NOT_AUTHORITATIVE",
@@ -61,7 +61,7 @@
         "immutable verified chained and legacy document proof cache with ancestor invalidation",
         "application idle document proof audit, at most 20 top-level records per tick, paused during drag and durable commands"
       ],
-      "limit": "Native Swift compiled and 41/41 storage tests passed macOS CI run 36306707904, including a 28 MiB commit in 355.630709 ms on one macOS sample. Application idle proof validation is bounded, but comprehensive domain validators, full idle state audit and production hour/day/save timing are pending."
+      "limit": "Native Swift compiled and 41/41 storage tests passed macOS CI run 36307934626, including a 28 MiB commit in 275.981417 ms on one macOS sample. Comprehensive domain delta validators, full idle state audit and production hour/day/save timing remain pending."
     },
     "4": {
       "status": "CORE_FIXTURE_ONLY_PRODUCTION_COLD_ARCHIVE_PENDING",
@@ -114,23 +114,35 @@
     "build340_local_suite": "PASS",
     "recovery_integration": "PASS_8_OF_8",
     "full_build342_acceptance": {
-      "completed": false,
+      "completed": true,
       "most_recent_completed_run": {
-        "id": "36306707904",
-        "commit": "2e003e361d2bca17619f6f462c42fbbc15206d65",
-        "result": "PASS_140_OF_140_BUILD342_124_OF_124_BUILD341_NATIVE_41_OF_41_WKWEBVIEW_6_OF_6_IPA_ASSEMBLED_NOT_PUBLISHED"
+        "id": "36307934626",
+        "commit": "580eff4b802e12e788f472a9bfeba5227338410f",
+        "result": "PASS_140_OF_140_BUILD342_124_OF_124_BUILD341_NATIVE_41_OF_41_WKWEBVIEW_6_OF_6_UNSIGNED_IPA_BUILT_AND_SOURCE_VERIFIED_NOT_PUBLISHED"
       },
-      "current_source": "WORKER_REPLAY_COLD_ORDER_AND_INCREMENTAL_WORKER_ACK_LOCAL_PASS_NEW_MACOS_CI_REQUIRED"
+      "current_source": "PASS_EXACT_RUNTIME_SOURCE_CI"
     },
-    "swift_compile_and_native_tests": "PASS_41_OF_41_PRIOR_SOURCE_CI_RUN_36306707904",
-    "unsigned_ipa": "BUILT_AND_SOURCE_VERIFIED_PRIOR_SOURCE_CI_RUN_36306707904_NOT_UPLOADED_OR_DELIVERED_DEVICE_AND_ARCHITECTURE_GATES_OPEN",
+    "swift_compile_and_native_tests": "PASS_41_OF_41_CI_RUN_36307934626",
+    "unsigned_ipa": {
+      "status": "BUILT_AND_SOURCE_VERIFIED_NOT_UPLOADED_OR_DELIVERED",
+      "run_id": "36307934626",
+      "commit": "580eff4b802e12e788f472a9bfeba5227338410f",
+      "bytes": 13445005,
+      "sha256": "2a7ab65be7c0b702456aaa100875f71a30f63dffb8d1277c7c92e47e3b846df7",
+      "verification_artifact_id": "10928023748",
+      "device_tested": false
+    },
     "physical_iphone": "NOT_TESTED",
     "deferred_persistence_regression": "PASS_12_OF_12_INCLUDING_MAP_GESTURE_DEFER",
     "build342_macOS_ci_previous_run": {
-      "run_id": "36306707904",
-      "commit": "2e003e361d2bca17619f6f462c42fbbc15206d65",
-      "result": "PASS_BUILD341_124_OF_124_BUILD342_140_OF_140_NATIVE_41_OF_41_WEBKIT_6_OF_6_UNSIGNED_IPA_BUILT_NOT_DELIVERED",
-      "source_before_latest_worker_replay_and_archive_order_changes": true
+      "run_id": "36307934626",
+      "commit": "580eff4b802e12e788f472a9bfeba5227338410f",
+      "result": "PASS_BUILD341_124_OF_124_BUILD342_140_OF_140_NATIVE_41_OF_41_WEBKIT_6_OF_6_UNSIGNED_IPA_BUILT_AND_SOURCE_VERIFIED_NOT_DELIVERED",
+      "nativeVaultCommitMs": 275.981417,
+      "ipa_sha256": "2a7ab65be7c0b702456aaa100875f71a30f63dffb8d1277c7c92e47e3b846df7",
+      "ipa_bytes": 13445005,
+      "verification_artifact_id": "10928023748",
+      "physical_iphone_tested": false
     },
     "build342_app_shadow_10day": {
       "result": "PASS_LOCAL",

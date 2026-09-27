@@ -2,12 +2,12 @@
   "authorized_at": "2026-09-26",
   "build": 342,
   "known_limits": [
-    "macOS CI run 36306707904 passed exact Build341 124/124, Build342 140/140, Native 41/41, WKWebView 6/6 and compiled/verified an unsigned IPA for source commit 2e003e361d2bca17619f6f462c42fbbc15206d65. Worker replay retention and multi-generation cold ordering changed after this run; latest source requires a new CI run.",
+    "macOS CI run 36307934626 on commit 580eff4b802e12e788f472a9bfeba5227338410f passed exact Build341 124/124, Build342 140/140, Native 41/41, WKWebView 6/6, and built and source-verified an unsigned IPA (SHA256 2a7ab65be7c0b702456aaa100875f71a30f63dffb8d1277c7c92e47e3b846df7); only verification logs were uploaded. Physical iPhone and architecture stage gates remain open.",
     "The ten-day app slice shadow gate now runs the production createSimulationSliceJob and GH_SIMULATION_ASSET_CORE over 3,380 assets. It mirrors committed legacy transaction roots; independent kernel-side business simulation and promotion remain gated, and day/hour callbacks are controlled fixtures.",
     "Native SaveVault storageVersion 2, A/B head, legacy Save Schema 2.0.0 and 41/41 macOS real-file tests pass. An idle document proof audit and safe cached chain verification now run locally; broader state audit and physical iPhone timing remain pending.",
     "Cold archive is core-fixture-only; production lazy financial-history lookup and the <12 MB hot-state ceiling at 3,380 assets remain unproven.",
     "The app simulation still uses its original transaction owner. Worker command/request replay identities survive a 512-reply cache rollover, with fail-closed session limits; its 20,000-asset responses use bounded incremental section fingerprints. Core tests do not prove authoritative Worker ownership, production archive integration or live column migration.",
-    "Physical iPhone testing must establish continuous 600x/drag FPS, main-thread task/drop limits, hot/process memory on the oldest supported device and thermal stability."
+    "Physical iPhone acceptance must establish continuous 600x/drag FPS, main-thread task/drop limits, hot/process memory at 3,380 assets and thermal stability on the oldest supported device with 20,000 assets."
   ],
   "minimum_acceptance_gates": 140,
   "production_approved": false,
