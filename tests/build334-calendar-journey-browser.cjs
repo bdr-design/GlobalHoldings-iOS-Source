@@ -6,7 +6,30 @@ function ledgerSnapshot(){const s=__GH_STATE__;return JSON.parse(JSON.stringify(
 async function installContext(page){await page.evaluate(()=>{const prepare=GH_INTERFACE.prepare;window.GH_INTERFACE={...GH_INTERFACE,prepare(root,panel,arg,ctx){window.qaContext=ctx;return prepare(root,panel,arg,ctx);}};});await page.locator('.side-nav [data-panel=companies]').click();}
 async function calendar(page){if(await page.locator('#drawer.open').count())await page.locator('#drawerClose').click();if(!await page.locator('#simCalendarPanel').isVisible())await page.locator('#simCalendarToggle').click();}
 async function advance(page,selector,target,name){await calendar(page);const began=Date.now();await page.locator(selector).click();await page.waitForFunction(t=>__GH_STATE__.simSeconds>=t||(!GH_SIM_KERNEL.snapshot().manualAdvance&&__GH_STATE__.simSeconds<t),target,{timeout:120000});const actual=await page.evaluate(()=>({time:__GH_STATE__.simSeconds,day:__GH_STATE__.lastFinancialDay,hour:__GH_STATE__.lastMarketHour,kernel:GH_SIM_KERNEL.snapshot(),schemaFailure:window.__GH_SCHEMA_FAILURE__||null}));assert.equal(actual.time,target,`${name}: ${actual.kernel.lastError}; schema=${JSON.stringify(actual.schemaFailure)}`);assert.equal(actual.day,Math.floor(target/86400));assert.equal(actual.hour,Math.floor(target/3600));assert.equal(actual.kernel.manualAdvance,null);results.push({name,seconds:(Date.now()-began)/1000,time:actual.time,days:actual.day,hours:actual.hour});console.log('PASS',name,actual.time);return actual;}
-async function waitForCompactionAt(page,target){try{await page.waitForFunction(t=>__GH_STATE__.simSeconds===t&&!GH_SIM_KERNEL.snapshot().manualAdvance&&Number(__GH_STATE__.simulationKernel?.lastCompactDay)===Math.floor(t/86400)&&window.__GH_APP_RUNTIME_INSTRUMENTATION__?.pendingCompaction==null,target,{timeout:120000});}catch(error){const diagnostic=await page.evaluate(t=>({time:__GH_STATE__.simSeconds,target:t,manualAdvance:GH_SIM_KERNEL.snapshot().manualAdvance,lastCompactDay:__GH_STATE__.simulationKernel?.lastCompactDay,lastCompaction:window.__GH_APP_RUNTIME_INSTRUMENTATION__?.lastCompaction,pendingCompaction:window.__GH_APP_RUNTIME_INSTRUMENTATION__?.pendingCompaction,saveRevision:__GH_STATE__.saveRevision}),target);throw new Error(`${error.message}; persistence=${JSON.stringify(diagnostic)}`);}}
+async function waitForPersistenceIdleAt(page,target){
+  const snapshot=()=>page.evaluate(()=>({
+    time:__GH_STATE__.simSeconds,
+    manualAdvance:GH_SIM_KERNEL.snapshot().manualAdvance,
+    lastCompactDay:__GH_STATE__.simulationKernel?.lastCompactDay,
+    lastCompaction:window.__GH_APP_RUNTIME_INSTRUMENTATION__?.lastCompaction?.simSeconds??null,
+    pendingCompaction:window.__GH_APP_RUNTIME_INSTRUMENTATION__?.pendingCompaction??null,
+    saveRevision:__GH_STATE__.saveRevision
+  }));
+  await page.waitForFunction(t=>__GH_STATE__.simSeconds===t&&!GH_SIM_KERNEL.snapshot().manualAdvance,target,{timeout:15000});
+  let previous=await snapshot();
+  // An idle persistence callback has a 1500 ms deadline; compaction can be a no-op
+  // when no old history needs pruning, so lastCompactDay need not reach the target.
+  for(let attempt=0;attempt<4;attempt++){
+    await page.waitForTimeout(1800);
+    const current=await snapshot();
+    if(current.time===target&&!current.manualAdvance&&current.pendingCompaction==null&&
+       current.lastCompactDay===previous.lastCompactDay&&
+       current.lastCompaction===previous.lastCompaction&&
+       current.saveRevision===previous.saveRevision)return;
+    previous=current;
+  }
+  throw new Error(`Persistence did not settle at ${target}: ${JSON.stringify(previous)}`);
+}
 (async()=>{
  const server=await serve(path.resolve(__dirname,'../WebApp')),browser=await chromium.launch({headless:true});const errors=[];
  async function boot(){const page=await browser.newPage({viewport:{width:844,height:390}});page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(15000);await page.route(/https:\/\/(tile\.openstreetmap\.org|server\.arcgisonline\.com)\//,r=>r.abort());await page.goto(server.baseURL);await page.selectOption('#founderMode','sandbox');await page.click('#founderReview');await drawFounderSignature(page);await page.locator('#founderForm button[type=submit]').click();await page.waitForFunction(()=>__GH_STATE__?.onboardingComplete);await page.evaluate(()=>{const schema=window.GH_SAVE_SCHEMA,validate=schema.validate;window.__GH_SCHEMA_FAILURE__=null;window.GH_SAVE_SCHEMA={...schema,validate(state,...args){const result=validate.call(schema,state,...args);if(result?.ok===false){const invalid=[],journalEntries=state?.finance?.journalEntries||[];let journalCount=0;for(const row of journalEntries){journalCount++;let debit=0,credit=0;const lines=[];for(const line of (Array.isArray(row?.lines)?row.lines:[])){const dr=Number(line?.debit)||0,cr=Number(line?.credit)||0;debit+=dr;credit+=cr;lines.push({account:line?.account,debit:dr,credit:cr});}if(!lines.length||Math.abs(debit-credit)>.02)invalid.push({id:row?.id,company:row?.company,description:row?.description,at:row?.at,lines,debit,credit});}window.__GH_SCHEMA_FAILURE__={errors:result.errors,journalCount,unbalancedJournals:invalid};}return result;}};});if(await page.evaluate(()=>__GH_STATE__.speed>0))await page.click('#speedToggle');await installContext(page);return page;}
@@ -18,7 +41,7 @@ async function waitForCompactionAt(page,target){try{await page.waitForFunction(t
   const closed=await page.evaluate(()=>({days:__GH_STATE__.finance.dailyCompanyReports.map(r=>r.day).sort((a,b)=>a-b),payroll:__GH_STATE__.finance.payrollReports.map(r=>({id:r.id,date:r.calendarDate})),owners:__GH_STATE__.openedCompanies,books:Object.keys(__GH_STATE__.companyFinance),error:GH_SIM_KERNEL.snapshot().lastError}));
   assert.deepEqual(closed.days,Array.from({length:37},(_,i)=>i+1));assert.deepEqual(closed.owners,[]);assert.deepEqual(closed.books,['group']);assert.equal(closed.payroll.filter(r=>r.id==='PAYROLL-2026-01').length,1);assert.equal(closed.error,'');results.push({name:'exactly-once daily and January payroll reports',...closed});
   // Selecting a date is presentation only; the real confirm button owns advancement.
-  await calendar(page);await waitForCompactionAt(page,37*86400);const unchanged=await page.evaluate(ledgerSnapshot);
+  await calendar(page);await waitForPersistenceIdleAt(page,37*86400);const unchanged=await page.evaluate(ledgerSnapshot);
   const selected=page.locator('.sim-cal-day:not(.is-today):not([disabled])').first();await selected.click();assert.deepEqual(await page.evaluate(ledgerSnapshot),unchanged);await page.locator('#simCalendarGo').click();await page.waitForFunction(()=>!GH_SIM_KERNEL.snapshot().manualAdvance,{timeout:30000});const picked=await page.evaluate(()=>__GH_STATE__.simSeconds);assert(picked>unchanged.time);results.push({name:'custom date selection read-only and actual confirm completes',time:picked});
   // Full game: start the year request and cancel it through the same button, without tampering with the timer.
   await calendar(page);await page.locator('[data-calendar-advance="year"]').click();await page.waitForFunction(t=>__GH_STATE__.simSeconds>t&&GH_SIM_KERNEL.snapshot().manualAdvance,picked);const target=await page.evaluate(()=>GH_SIM_KERNEL.snapshot().manualAdvance.target);assert(target-picked>=365*86400-86400);await page.locator('#simNextDay').click();const cancelled=await page.evaluate(ledgerSnapshot);assert.equal(await page.evaluate(()=>GH_SIM_KERNEL.snapshot().manualAdvance),null);assert.equal(await page.evaluate(()=>__GH_STATE__.speed),0);await page.waitForTimeout(180);assert.deepEqual(await page.evaluate(ledgerSnapshot),cancelled);results.push({name:'year request advances and cancels safely in full game',requested:target,committed:cancelled.time});
