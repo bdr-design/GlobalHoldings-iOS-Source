@@ -41,7 +41,7 @@
     const plan=engine.prepare({entityKind:'group',companyId:'group',name:prepared.name,legalName:prepared.name,displayName:prepared.name,shortName:prepared.shortName,englishName:prepared.englishName,founder:prepared.founder,location:{id:prepared.locationId,city:prepared.city,country:prepared.country},capital:prepared.capital,currency:prepared.currency,riskAppetite:prepared.riskAppetite,procurementPolicy:prepared.procurementPolicy,signingAuthority:prepared.signingAuthority,signatureRef,signatureVersion,createdAt:Math.max(0,Number(options.createdAt)||0),identity:{logo:prepared.logo,logoStyle:prepared.logoStyle,legalForm:prepared.legalForm,fiscalYear:prepared.fiscalYear,mode:prepared.mode}});
     engine.validatePlan(plan);return plan;
   }
-  const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+  const clone=v=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(v):(globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v)));
   const bankZero=defaults=>({...clone(defaults.bank),branches:0,deposits:0,loans:0,hqla:0,stableFunding:0,requiredStableFunding:0,wholesaleFunding:0,offBalance:0,feeIncomeYTD:0,provisions:0,corporateClients:{},creditFacilities:[],lettersOfCredit:[],guarantees:[],cashSweeps:[],tradeFinance:[],riskReviews:[]});
   function pristine(defaultState,resetEpoch=Date.now()){
     const s=clone(defaultState);
