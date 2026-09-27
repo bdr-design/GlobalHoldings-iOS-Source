@@ -34,8 +34,8 @@
     "ipa_built": false,
     "ipa_uploaded_or_delivered": false,
     "device_tested": false,
-    "tested_source_tree_sha256": "prior candidate; see run provenance",
-    "tested_webapp_tree_sha256": "prior candidate; see run provenance",
+    "tested_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
+    "tested_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada",
     "corrected_current_source_ci": "PENDING"
   },
   "phase_status": {
