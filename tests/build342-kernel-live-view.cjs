@@ -27,6 +27,12 @@ assert.equal(kernel.legacyState().finance.accounts.operating,875,'out-of-transac
 assert.equal(kernel.read('assets')[0].fuel,70,'nested hot-path writes publish to kernel storage');
 assert.equal(kernel.revision('finance'),1,'each direct write advances its owning section once');
 
+const staleFinanceSection=state.finance;
+state.finance={accounts:{operating:0},ledger:[]};
+state.finance=staleFinanceSection;
+assert.equal(kernel.legacyState().finance.accounts.operating,875,'reassigning a stale same-path live proxy is not incorrectly skipped');
+assert.deepEqual(kernel.legacyState().finance.ledger,seed.finance.ledger,'stale proxy restoration preserves the original section value');
+
 const before=kernel.legacyState(),beforeFingerprint=GH_KERNEL.fingerprint(before);
 assert.throws(()=>kernel.tx({label:'fault-after-multiple-domains',owner:'transaction-core',writes:kernel.sectionNames()},()=>{
   state.cash=12;
@@ -120,6 +126,21 @@ const restored={...ownerBefore,cash:500};TRANSACTION.restoreObject(applicationSt
 assert.deepEqual(JSON.parse(JSON.stringify(applicationState)),restored,'load/reset publication replaces the kernel state in one transaction');
 assert.equal(TRANSACTION.revision(applicationState),appRevision+3,'direct writes and atomic state publication advance only their committed revisions');
 assert.equal(applicationState.saveVersion,'2.0.0');
+
+const compactKernel=GH_KERNEL.create({schemaVersion:'2.0.0',legacyState:{finance:{journalEntries:[
+  {id:'KEEP-PREFIX',at:900,lines:[{account:'cash',debit:1,credit:0},{account:'equity',debit:0,credit:1}]},
+  {id:'ARCHIVE-OLD',at:100,lines:[{account:'cash',debit:1,credit:0},{account:'equity',debit:0,credit:1}]},
+  {id:'KEEP-SUFFIX',at:950,lines:[{account:'cash',debit:1,credit:0},{account:'equity',debit:0,credit:1}]}
+]}}});
+compactKernel.register('finance',{owner:'transaction-core',kind:'object',path:['finance']});compactKernel.releaseRegisteredBase();
+const compactState=compactKernel.stateView();
+compactKernel.tx({label:'journal-compaction-retain-rows',owner:'transaction-core',writes:['finance']},()=>{
+  const rows=compactState.finance.journalEntries,retained=[];for(const row of rows)if(row.at>=800)retained.push(row);
+  rows.length=0;for(const row of retained)rows.push(row);
+});
+const compactedJournals=compactKernel.legacyState().finance.journalEntries;
+assert.deepEqual(compactedJournals.map(row=>row?.id),['KEEP-PREFIX','KEEP-SUFFIX'],'compaction must restore a retained row even when its original array index is reused');
+assert(compactedJournals.every(row=>Array.isArray(row.lines)&&row.lines.length===2),'compaction retains each complete balanced journal row');
 
 const orderedLegacy={saveVersion:'2.0.0',assets:[{id:'ORDER-1',fuel:40,rareA:'a',progress:.25,condition:null,rareB:'b'}]};
 const orderedKernel=GH_KERNEL.create({schemaVersion:'2.0.0',legacyState:orderedLegacy});

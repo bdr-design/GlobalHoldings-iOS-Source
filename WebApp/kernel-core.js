@@ -323,11 +323,11 @@
             const section=contracts.get(name);if(section?.kind==='columns'&&path.length===1&&typeof prop==='string'&&own(section.data.columns,prop)){const column=section.data.columns[prop];if(column.presence[Number(path[0])]===0)return undefined;return {configurable:true,enumerable:true,writable:true,value:columnValue(section,prop,Number(path[0]))};}
             return Reflect.getOwnPropertyDescriptor(target,prop);
           }
-        });paths.set(key,proxy);proxyRefs.set(proxy,{name,path});return proxy;
+        });paths.set(key,proxy);proxyRefs.set(proxy,{name,path,raw});return proxy;
       };
       function write(name,path,action,value){
         const reference=action==='set'&&value&&typeof value==='object'?proxyRefs.get(value):null;
-        if(reference&&reference.name===name&&reference.path.length===path.length&&reference.path.every((part,index)=>part===path[index]))return;
+        if(reference&&reference.name===name&&reference.path.length===path.length&&reference.path.every((part,index)=>part===path[index])&&rawAt(name,path)===reference.raw)return;
         if(!contracts.has(name)){if(activeWriter)activeWriter.addRoot(name);else register(name,{owner:'transaction-core',kind:'object',path:[name]});}
         if(activeWriter){activeWriter.patch(name,path,action,value);return;}
         if(transactionOpen)throw new Error('kernel-state-write-outside-apply');
