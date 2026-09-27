@@ -10,8 +10,9 @@
     "verified_base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
     "branch": "build342-state-kernel-20260927",
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
-    "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
-    "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
+    "current_candidate_source_tree_sha256": "ed34b264b683bb41a021574e905f8b5de2eaf6a4302c93c8494e0eb2e14699ff",
+    "current_candidate_webapp_tree_sha256": "d87bfffc01520631b0e36348a7e61e869179eced31977d242556097a03177685",
+    "latest_candidate_ci_run": "36324859161"
   },
   "stages": {
     "0": {
@@ -140,13 +141,13 @@
     "full_build342_acceptance": {
       "completed": false,
       "most_recent_completed_run": {
-        "id": "36315061990",
-        "commit": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
-        "result": "PASS_140_OF_140_BUILD342_124_OF_124_BUILD341_NATIVE_41_OF_41_WKWEBVIEW_6_OF_6_UNSIGNED_IPA_BUILT_AND_SOURCE_VERIFIED_NOT_PUBLISHED",
-        "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
-        "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988"
+        "id": "36324859161",
+        "commit": "6ac36ff4c239e97601f3edf182af1a46f7f18afa",
+        "result": "FAILED_BUILD342_SOURCE_ACCEPTANCE_SIX_INTEGRATION_PATHS; NATIVE_AND_WKWEBVIEW_NOT_REACHED",
+        "source_tree_sha256": "prior candidate; recorded in workflow provenance",
+        "webapp_tree_sha256": "prior candidate; recorded in workflow provenance"
       },
-      "current_source": "PENDING_CURRENT_SOURCE_MACOS_CI_AFTER_RESET_EPOCH_FIX_AND_KERNEL_OWNER_REPLACEMENT"
+      "current_source": "PENDING_CI_AFTER_PROXY_CLONE_AND_KERNEL_ROLLBACK_ORDER_FIXES"
     },
     "swift_compile_and_native_tests": "LATEST_ATTEMPT_42_OF_43_FIXTURE_RESET_EPOCH_FAILED; FIXTURE_CORRECTED_LOCALLY; CURRENT_SOURCE_MACOS_CI_PENDING",
     "unsigned_ipa": {
@@ -184,34 +185,38 @@
       "worker_asset_kernel_integration": "PASS_LOCAL_WORKER_KERNEL_READBACK_CONFIRM_ROLLBACK_AND_CHUNKED_BOOTSTRAP_TESTS"
     },
     "build342_local_final_run": {
-      "result": "PASS_20_OF_20_BUILD342_TEST_PROGRAMS",
+      "result": "PASS_20_OF_20_BUILD342_PROGRAMS; BUILD340_PASS; BUILD339_PASS; AUTH_PROXY_5_OF_5; RECOVERY_INTEGRATION_8_OF_8",
       "programs": 20,
       "command": "npm run test:build342",
       "completed_at": "2026-09-27",
-      "includes_production_mobility_archive_integration": true,
-      "includes_archive_segment_rollover": true,
-      "includes_kernel_owned_startup_recovery_reset_paths": true,
-      "includes_zero_duplicate_hot_object_fields": true
+      "scope": "Linux Node.js source tests; does not include macOS native/WKWebView or physical iPhone gates"
     },
     "build342_macOS_ci_run": {
-      "run_id": "36320128185",
-      "commit_sha": "ecd8c17adfc5339610c414fc88da232109a5dba2",
-      "result": "FAILED_NATIVE_TEST_42_OF_43_AFTER_BUILD341_124_OF_124_AND_BUILD342_SOURCE_143_OF_143",
-      "failure": "The compact A/B recovery fixture created its next save with resetEpoch 0 instead of inheriting the active baseline resetEpoch; native test reported Stale native save rejected.",
-      "native_fixture_fix": "prepare_native_tests.py now copies resetEpoch from the verified current baseline object before incrementing saveRevision.",
-      "wkwebview_tests": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
-      "unsigned_iphoneos_release_app": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+      "run_id": "36324859161",
+      "commit_sha": "6ac36ff4c239e97601f3edf182af1a46f7f18afa",
+      "status": "FAILED_BUILD342_SOURCE_ACCEPTANCE_INTEGRATION_FIXES_PENDING_CI",
+      "source_mode": "direct_git_tree_from_verified_build341_commit",
+      "result": "BUILD341_BASELINE_PASS_BUILD342_SOURCE_ACCEPTANCE_FAILED_ON_SIX_INTEGRATION_PATHS",
+      "failure_paths": [
+        "tests/build334-r4-recovery-browser.cjs: recovery did not reach a valid browser state before timeout",
+        "tests/build339-day-boundary-write-map.cjs: month-end rollback JSON differed after key delete/re-add",
+        "tests/build339-phase1c-adversarial-contract.cjs: structural rollback restored the wrong property order",
+        "tests/build334-tabs-browser.cjs: visible tab selection did not persist through the save owner",
+        "tests/build334-calendar-advance-browser.cjs: DataCloneError while cloning Proxy-backed authorization state",
+        "tests/build334-calendar-journey-browser.cjs: same DataCloneError blocked calendar advance"
+      ],
+      "root_cause": "Live kernel Proxy state was passed to module-local structuredClone, and full-snapshot rollback changed object property order after delete/re-add. The current candidate routes snapshot copies through the Proxy-safe shared clone and keeps the live kernel publication path identity-stable.",
+      "build341_baseline": "PASS_124_OF_124_UNCHANGED",
+      "build342_source_gates": "FAILED_INTEGRATION_REGRESSIONS; CORRECTED_CANDIDATE_PENDING_CI",
+      "native_tests": "NOT_REACHED",
+      "wkwebview_tests": "NOT_REACHED",
+      "unsigned_iphoneos_release_app": "NOT_REACHED",
       "ipa_built": false,
       "ipa_uploaded_or_delivered": false,
       "device_tested": false,
-      "tested_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
-      "tested_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
-      "build341_baseline": "PASS_124_OF_124",
-      "build342_source_gates": "PASS_143_OF_143",
-      "native_storage": "FAIL_42_OF_43_FIXTURE_RESET_EPOCH",
-      "corrected_native_fixture_in_candidate": true,
-      "corrected_current_source_ci": "PENDING",
-      "physical_iphone_tested": false
+      "tested_source_tree_sha256": "prior candidate; see run provenance",
+      "tested_webapp_tree_sha256": "prior candidate; see run provenance",
+      "corrected_current_source_ci": "PENDING"
     },
     "new_source_regression": {
       "change": "Kernel ownership now starts immediately after Save Schema normalization and structural migration; nine app live hot asset fields are removed from row-object backing storage; key-order-compatible JSON is preserved; state load, recovery, durable publish and hard-reset paths are checked.",
@@ -239,26 +244,35 @@
       "source": "npm run test:build342 on Node; not iPhone"
     },
     "latest_ci_attempt": {
-      "run_id": "36320128185",
-      "commit_sha": "ecd8c17adfc5339610c414fc88da232109a5dba2",
-      "result": "FAILED_NATIVE_TEST_42_OF_43_AFTER_BUILD341_124_OF_124_AND_BUILD342_SOURCE_143_OF_143",
-      "failure": "The compact A/B recovery fixture created its next save with resetEpoch 0 instead of inheriting the active baseline resetEpoch; native test reported Stale native save rejected.",
-      "native_fixture_fix": "prepare_native_tests.py now copies resetEpoch from the verified current baseline object before incrementing saveRevision.",
-      "wkwebview_tests": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
-      "unsigned_iphoneos_release_app": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+      "run_id": "36324859161",
+      "commit_sha": "6ac36ff4c239e97601f3edf182af1a46f7f18afa",
+      "status": "FAILED_BUILD342_SOURCE_ACCEPTANCE_INTEGRATION_FIXES_PENDING_CI",
+      "source_mode": "direct_git_tree_from_verified_build341_commit",
+      "result": "BUILD341_BASELINE_PASS_BUILD342_SOURCE_ACCEPTANCE_FAILED_ON_SIX_INTEGRATION_PATHS",
+      "failure_paths": [
+        "tests/build334-r4-recovery-browser.cjs: recovery did not reach a valid browser state before timeout",
+        "tests/build339-day-boundary-write-map.cjs: month-end rollback JSON differed after key delete/re-add",
+        "tests/build339-phase1c-adversarial-contract.cjs: structural rollback restored the wrong property order",
+        "tests/build334-tabs-browser.cjs: visible tab selection did not persist through the save owner",
+        "tests/build334-calendar-advance-browser.cjs: DataCloneError while cloning Proxy-backed authorization state",
+        "tests/build334-calendar-journey-browser.cjs: same DataCloneError blocked calendar advance"
+      ],
+      "root_cause": "Live kernel Proxy state was passed to module-local structuredClone, and full-snapshot rollback changed object property order after delete/re-add. The current candidate routes snapshot copies through the Proxy-safe shared clone and keeps the live kernel publication path identity-stable.",
+      "build341_baseline": "PASS_124_OF_124_UNCHANGED",
+      "build342_source_gates": "FAILED_INTEGRATION_REGRESSIONS; CORRECTED_CANDIDATE_PENDING_CI",
+      "native_tests": "NOT_REACHED",
+      "wkwebview_tests": "NOT_REACHED",
+      "unsigned_iphoneos_release_app": "NOT_REACHED",
       "ipa_built": false,
       "ipa_uploaded_or_delivered": false,
       "device_tested": false,
-      "tested_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
-      "tested_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
-      "build341_baseline": "PASS_124_OF_124",
-      "build342_source_gates": "PASS_143_OF_143",
-      "native_storage": "FAIL_42_OF_43_FIXTURE_RESET_EPOCH",
-      "corrected_current_source": "PENDING"
+      "tested_source_tree_sha256": "prior candidate; see run provenance",
+      "tested_webapp_tree_sha256": "prior candidate; see run provenance",
+      "corrected_current_source_ci": "PENDING"
     }
   },
-  "source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
-  "webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada",
+  "source_tree_sha256": "ed34b264b683bb41a021574e905f8b5de2eaf6a4302c93c8494e0eb2e14699ff",
+  "webapp_tree_sha256": "d87bfffc01520631b0e36348a7e61e869179eced31977d242556097a03177685",
   "physical_device_evidence": {
     "available_device": "iPhone 17 Pro Max (user-reported only; no device connection in this session)",
     "provided_reference_artifact_build": 341,
