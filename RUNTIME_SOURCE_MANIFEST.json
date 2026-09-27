@@ -1596,8 +1596,8 @@
       "sha256": "26fdadeae781f2a441d9dda4b79d974310da6908b9c8e56c459db8dcdfcf549f"
     },
     "WebApp/cold-archive-core.js": {
-      "bytes": 5662,
-      "sha256": "84dc579e9f1393aadcdc9c360827c736a8d23831d2ce4ca7da514f6428d5b2a7"
+      "bytes": 6151,
+      "sha256": "8e6e3fc31428aafe30cccf527c0b235c2e2da590e11848eb657e00cd5fe06477"
     },
     "WebApp/company-adapters-core.js": {
       "bytes": 13412,
@@ -1768,8 +1768,8 @@
       "sha256": "2e0ad00a7e3db1ec288a0bb00a753cd397b6a2be7272629062ac3d924a5e490f"
     },
     "WebApp/kernel-worker-core.js": {
-      "bytes": 9249,
-      "sha256": "dd5b1815eb40119b35e57ba32b33803a70866ce394339552729efa9db5d08479"
+      "bytes": 10185,
+      "sha256": "9668e0d16bbfd5b960bea58cd4373b5b61ce63eeb7e8083f1a37d462246b2f52"
     },
     "WebApp/kernel-worker.js": {
       "bytes": 334,
@@ -1993,7 +1993,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "afc32600aaace5fb39e38d32070855a19bd8442a537c38831f849b7a80c1ed11"
+      "sha256": "cf080a01077750943dddaf7d92328e9d5c993167491a47a7c0aefeecd88c4b04"
     },
     "BUILD": {
       "bytes": 4,
@@ -2058,6 +2058,6 @@
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "remote_branch_created_from_verified_base": true
   },
-  "source_tree_sha256": "650a2a5d7ed8341523d4287348c8d0074ebd01786fa4d7da9086e9fa7d698ce3",
-  "webapp_tree_sha256": "1320b3716f1138cfa6c586c09d718eef3d746d11f66ab6df9e55948381788f47"
+  "source_tree_sha256": "fd375c140c998847088a8725104ba69ed6f4cb23e3bac2b84b7803c58611fdfb",
+  "webapp_tree_sha256": "372958fcfb42cf7a068f46444ca21d5302c560a9cd39842f9d64040e2ef76d84"
 }

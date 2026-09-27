@@ -8,8 +8,18 @@
   const clone=value=>typeof globalThis.structuredClone==='function'?globalThis.structuredClone(value):JSON.parse(JSON.stringify(value));
   function createHost(kernelFactory=GH_KERNEL){
     if(!kernelFactory?.fromLegacyState)throw new Error('kernel-worker-core-unavailable');
-    let kernel=null,requestSequence=0;const requestCache=new Map(),idempotency=new Map();
-    const remember=(key,fingerprint,value)=>{requestCache.set(key,{fingerprint,message:clone(value)});while(requestCache.size>512)requestCache.delete(requestCache.keys().next().value);};
+    let kernel=null;const requestCache=new Map(),requestFingerprints=new Map(),idempotency=new Map();
+    // A reply may leave the small cache, but its request ID and every committed
+    // idempotency key remain reserved for this worker session. Evicting either
+    // one could apply a delayed command twice. Stop accepting new commands at
+    // the ceiling instead of silently weakening the replay guarantee.
+    const MAX_REPLAY_KEYS=100000;
+    const remember=(key,fingerprint,value)=>{
+      if(!requestFingerprints.has(key)&&requestFingerprints.size>=MAX_REPLAY_KEYS)throw new Error('kernel-worker-request-history-full');
+      requestFingerprints.set(key,fingerprint);
+      requestCache.set(key,{fingerprint,message:clone(value)});
+      while(requestCache.size>512)requestCache.delete(requestCache.keys().next().value);
+    };
     function response(request,body,transfer=[]){return {message:{protocol:PROTOCOL,requestId:request.requestId,ok:true,...body},transfer};}
     function fail(request,error){return {message:{protocol:PROTOCOL,requestId:request?.requestId||'',ok:false,error:String(error?.message||error).slice(0,240),code:String(error?.code||'KERNEL_WORKER_ERROR')},transfer:[]};}
     function applyOperation(writer,operation){
@@ -26,7 +36,9 @@
       const cacheable=request.type!=='frame';
       try{
         const requestFingerprint=cacheable?kernelFactory.fingerprint(request):null,cached=cacheable?requestCache.get(request.requestId):null;
+        if(cacheable&&requestFingerprints.has(request.requestId)&&requestFingerprints.get(request.requestId)!==requestFingerprint)throw new Error('kernel-worker-request-id-conflict');
         if(cached){if(cached.fingerprint!==requestFingerprint)throw new Error('kernel-worker-request-id-conflict');return {message:clone(cached.message),transfer:[]};}
+        if(cacheable&&!requestFingerprints.has(request.requestId)&&requestFingerprints.size>=MAX_REPLAY_KEYS)throw new Error('kernel-worker-request-history-full');
         if(request.type==='init'){
           if(kernel)throw new Error('kernel-worker-already-initialized');
           kernel=kernelFactory.fromLegacyState(request.state,request.contracts,{schemaVersion:'2.0.0'});const body={schemaVersion:kernel.schemaVersion,sections:kernel.contracts().map(section=>({name:section.name,revision:kernel.revision(section.name)})),initialized:true};const result=response(request,body);remember(request.requestId,requestFingerprint,result.message);return result;
@@ -37,8 +49,9 @@
           const idempotencyKey=String(request.idempotencyKey||'').trim();if(!idempotencyKey||idempotencyKey.length>200)throw new Error('kernel-worker-idempotency-key-required');
           const payload={owner:request.owner,writes:request.writes,reads:request.reads||{},operations:request.operations},fingerprint=kernelFactory.fingerprint(payload),prior=idempotency.get(idempotencyKey);
           if(prior){if(prior.fingerprint!==fingerprint)throw new Error('kernel-worker-idempotency-conflict');const result=response(request,{...clone(prior.result),idempotent:true});remember(request.requestId,requestFingerprint,result.message);return result;}
+          if(idempotency.size>=MAX_REPLAY_KEYS)throw new Error('kernel-worker-idempotency-history-full');
           const result=kernel.tx({label:String(request.label||'worker-command'),owner:String(request.owner||''),owners:request.owners,writes:request.writes,reads:request.reads||{}},writer=>request.operations.map(operation=>applyOperation(writer,operation)));
-          const body={committed:true,revision:result.revision,dirty:result.dirty,sectionRevisions:result.sectionRevisions,undoRecords:result.undoRecords,ms:result.ms,fingerprints:Object.fromEntries(result.dirty.map(name=>[name,kernel.fingerprint(name)]))};idempotency.set(idempotencyKey,{fingerprint,result:body});while(idempotency.size>512)idempotency.delete(idempotency.keys().next().value);
+          const body={committed:true,revision:result.revision,dirty:result.dirty,sectionRevisions:result.sectionRevisions,undoRecords:result.undoRecords,ms:result.ms,fingerprints:Object.fromEntries(result.dirty.map(name=>[name,kernel.fingerprint(name)]))};idempotency.set(idempotencyKey,{fingerprint,result:body});
           const out=response(request,body);remember(request.requestId,requestFingerprint,out.message);return out;
         }
         if(request.type==='query'){

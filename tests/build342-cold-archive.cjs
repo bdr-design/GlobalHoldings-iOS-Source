@@ -23,5 +23,13 @@ class MemoryArchive{
   adapter.failKey='gh-cold-trip-receipts-B.json';
   await assert.rejects(()=>archive.append([{id:'TRIP-NEW',at:0,receipt:'new'}]),/archive-index-failure/);
   assert.equal((await archive.metadata()).count,436,'index failure leaves the previous archive committed');
-  console.log('Build342 cold archive: stable IDs/digests, bounded hot window, lazy verified lookup, legacy order and atomic append PASS');
+  const nextRows=Array.from({length:50},(_,index)=>({id:`NEXT-${index}`,at:550-index,receipt:'new'}));
+  const grown=[...nextRows,...first.hot],next=await archive.offloadNewestFirst(grown,64);
+  assert.equal(next.archived,50);
+  assert.equal((await archive.metadata()).count,486);
+  assert.deepEqual(await archive.rehydrateNewestFirst(next.hot),[...nextRows,...rows],'later offloads must precede the older immutable receipts in the legacy export');
+  const again=await archive.offloadNewestFirst(grown,64);
+  assert.equal(again.idempotent,true);
+  assert.deepEqual(await archive.rehydrateNewestFirst(again.hot),[...nextRows,...rows]);
+  console.log('Build342 cold archive: stable IDs/digests, bounded hot window, multi-generation legacy ordering and atomic append PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

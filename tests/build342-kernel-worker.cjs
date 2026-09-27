@@ -46,5 +46,21 @@ class LoopbackWorker{
   assert.equal(host.snapshot().sections.assets.revision,3,'conflicting request ID cannot commit another write');
   assert.equal(host.legacyState().assets[42].progress,.7);
   client.close();
-  console.log('Build342 kernel worker: worker-owned typed state, 1,000 row patches across 20,000 assets, revision conflict, command idempotency, bounded query and transferable frame buffers PASS');
+  const replayHost=PROTOCOL.createHost(GH_KERNEL);
+  const init=replayHost.handle({protocol:PROTOCOL.PROTOCOL,requestId:'REPLAY-INIT',type:'init',state:{saveVersion:'2.0.0',counter:0},contracts:[{name:'counter',path:'counter',owner:'player',kind:'object'}]});
+  assert.equal(init.message.ok,true);
+  let oldest=null;
+  for(let index=0;index<520;index++){
+    const row={protocol:PROTOCOL.PROTOCOL,requestId:`REPLAY-${index}`,type:'command',owner:'player',writes:['counter'],reads:{counter:index},idempotencyKey:`COUNTER-${index}`,operations:[{type:'set',section:'counter',value:index+1}]};
+    if(index===0)oldest=row;
+    const ack=replayHost.handle(row);assert.equal(ack.message.ok,true,`command ${index} committed`);
+  }
+  assert.equal(replayHost.snapshot().sections.counter.revision,520);
+  assert.equal(replayHost.handle(oldest).message.idempotent,true,'a delayed command remains idempotent after 512 later acknowledgements');
+  assert.equal(replayHost.handle({...oldest,requestId:'REPLAY-OLD-KEY'}).message.idempotent,true,'idempotency key survives reply cache eviction');
+  const reusedId=replayHost.handle({...oldest,idempotencyKey:'ANOTHER-KEY',reads:{counter:520},operations:[{type:'set',section:'counter',value:999}]});
+  assert.equal(reusedId.message.ok,false);assert.match(reusedId.message.error,/request-id-conflict/);
+  assert.equal(replayHost.snapshot().sections.counter.revision,520,'no delayed retry or changed request ID can apply twice');
+  assert.equal(replayHost.legacyState().counter,520);
+  console.log('Build342 kernel worker: worker-owned typed state, 1,000 row patches across 20,000 assets, stale replay after 512 acknowledgements, bounded query and transferable frame buffers PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
