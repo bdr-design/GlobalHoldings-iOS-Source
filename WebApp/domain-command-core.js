@@ -5,7 +5,7 @@
     'banking-read-model','conference-finance','conference-presentation','conference-reputation','delivery-engine','finance-scheduler','financial-close','legacy-migration','payroll-scheduler','project-commissioning','simulation','simulation-core','simulation-finance','simulation-market','simulation-scheduler','system-fleet-auto-disposal','system-mobility-routing-provider','system-route-maintenance','system-routing-provider','system-ui-notification'
   ]);
   let securityPolicySealed=false,activePlayerApprovalDepth=0;
-  const clone=value=>value===undefined?undefined:(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
+  const clone=value=>value===undefined?undefined:(typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value))));
   const now=state=>Number(state?.simSeconds)||0;
   const fallbackStable=value=>Array.isArray(value)?`[${value.map(fallbackStable).join(',')}]`:value&&typeof value==='object'?`{${Object.keys(value).filter(key=>value[key]!==undefined).sort().map(key=>`${JSON.stringify(key)}:${fallbackStable(value[key])}`).join(',')}}`:JSON.stringify(value);
   const stable=value=>globalThis.GH_AUTHORIZATION?.stable?.(value)??fallbackStable(value);
