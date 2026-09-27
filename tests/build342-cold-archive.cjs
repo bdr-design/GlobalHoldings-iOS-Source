@@ -31,5 +31,22 @@ class MemoryArchive{
   const again=await archive.offloadNewestFirst(grown,64);
   assert.equal(again.idempotent,true);
   assert.deepEqual(await archive.rehydrateNewestFirst(again.hot),[...nextRows,...rows]);
-  console.log('Build342 cold archive: stable IDs/digests, bounded hot window, multi-generation legacy ordering and atomic append PASS');
+  const newestIndex=JSON.parse(adapter.data.get('gh-cold-trip-receipts-B.json'));
+  const damaged=newestIndex.items.find(row=>row.id===rows[14].id);
+  adapter.data.set(damaged.file,'corrupt-after-commit');
+  const recovered=COLD.create({adapter,bucket:'trip-receipts'});
+  assert.deepEqual(await recovered.readAll(),rows.slice(64),'a damaged latest generation falls back to the previous complete A/B index');
+  assert.equal((await recovered.metadata()).generation,1);
+  assert.deepEqual(await recovered.peek(rows[64].id),rows[64],'records present in the previous generation remain readable');
+  await assert.rejects(()=>recovered.peek(rows[14].id),/cold-archive-record-corrupt/,'a corrupt record unique to the damaged generation fails closed');
+  const resumed=await recovered.append([{id:'TRIP-RECOVERED',at:900,receipt:'recovered'}]);
+  assert.equal(resumed.generation,3,'recovery advances past a corrupt but structurally valid generation');
+  assert.equal((await recovered.metadata()).count,437);
+  const concurrentAdapter=new MemoryArchive(),concurrent=COLD.create({adapter:concurrentAdapter,bucket:'concurrent-trips'}),concurrentPeer=COLD.create({adapter:concurrentAdapter,bucket:'concurrent-trips'});
+  await Promise.all([
+    concurrent.append([{id:'TRIP-A',at:1}],{newestFirst:true}),
+    concurrentPeer.append([{id:'TRIP-B',at:2}],{newestFirst:true})
+  ]);
+  assert.deepEqual((await concurrent.readAll()).map(row=>row.id),['TRIP-B','TRIP-A'],'concurrent instances serialize instead of overwriting an index generation');
+  console.log('Build342 cold archive: stable IDs/digests, bounded hot window, atomic append, corruption recovery and shared-writer serialization PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

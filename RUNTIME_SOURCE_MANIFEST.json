@@ -1596,8 +1596,8 @@
       "sha256": "26fdadeae781f2a441d9dda4b79d974310da6908b9c8e56c459db8dcdfcf549f"
     },
     "WebApp/cold-archive-core.js": {
-      "bytes": 6151,
-      "sha256": "8e6e3fc31428aafe30cccf527c0b235c2e2da590e11848eb657e00cd5fe06477"
+      "bytes": 9065,
+      "sha256": "69c1642e5c2f3db1c28b992ec07f34a2f48667d4908d823d8a03aad201a121ca"
     },
     "WebApp/company-adapters-core.js": {
       "bytes": 13412,
@@ -1993,7 +1993,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "7aac8015089499e9a71d1d922d4c2b4117aa5b7bcb0796cc6aed9e2862c1a028"
+      "sha256": "0dddc8f481db3bc1d9fa370551915bb2120cb055e219c2f372159a426db9daf9"
     },
     "BUILD": {
       "bytes": 4,
@@ -2005,14 +2005,18 @@
     }
   },
   "latest_direct_source_ci": {
-    "status": "PENDING_MACOS_RERUN_AFTER_STARTUP_FIX",
-    "tested_commit_sha": null,
-    "build341_baseline": "PASS_RUN_36285862018",
-    "source_gates": "PENDING",
-    "chromium_webkit": "PENDING",
-    "native_storage": "PENDING",
-    "unsigned_iphoneos_release_app": "NOT_BUILT",
-    "ipa_built": false,
+    "status": "PENDING_MACOS_CI_AFTER_COLD_ARCHIVE_RECOVERY_AND_SHARED_WRITER_FIX",
+    "source_mode": "direct_git_tree_from_verified_build341_commit",
+    "expected_source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
+    "parent_remote_commit_sha": "af09f9862d4d1953ea89a5bba083230e309e39f0",
+    "previous_passed_run_id": "36307934626",
+    "previous_passed_commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",
+    "previous_passed_source_tree_sha256": "1a95fc47734dc88981f7b483db2aad8f2082139826cbaac18b1bfffa05e5b44e",
+    "build341_baseline": "PENDING_CURRENT_SOURCE_CI",
+    "source_gates": "PENDING_CURRENT_SOURCE_CI",
+    "native_storage": "PENDING_CURRENT_SOURCE_CI",
+    "unsigned_iphoneos_release_app": "NOT_BUILT_FOR_CURRENT_SOURCE_YET",
+    "ipa_uploaded_or_delivered": false,
     "physical_iphone_tested": false
   },
   "phase": "Build 342 — seven-stage state kernel and lag-root verification",
@@ -2058,6 +2062,6 @@
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "remote_branch_created_from_verified_base": true
   },
-  "source_tree_sha256": "1a95fc47734dc88981f7b483db2aad8f2082139826cbaac18b1bfffa05e5b44e",
-  "webapp_tree_sha256": "889c4865371acde996eb363cc68e1e20cdc40bb57c9354c1793f2eeef2d93650"
+  "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
+  "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988"
 }
