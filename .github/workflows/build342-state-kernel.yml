@@ -284,8 +284,7 @@ jobs:
           PY
 
       # The seven-stage release gate remains closed until device acceptance.
-      # Keep the generated IPA on the runner; only diagnostic evidence leaves CI.
-      - name: Upload macOS verification logs without the test IPA
+      - name: Upload macOS verification logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -297,3 +296,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
           include-hidden-files: true
+
+      - name: Upload unsigned Build 342 test IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST_ipa
+          path: |
+            .ci-output/GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST.ipa
+            .ci-output/test-ipa-verification.json
+          if-no-files-found: error
+          retention-days: 30
