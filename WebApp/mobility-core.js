@@ -220,7 +220,7 @@
     {id:'INU',country:'ناورو',city:'يارين',coords:[-0.5477,166.9209]},
     {id:'FUN',country:'توفالو',city:'فونافوتي',coords:[-8.5199,179.1979]}
   ]);
-  const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+  const clone=v=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(v):(globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v)));
   const now=s=>Math.max(0,Number(s.simSeconds)||0);
   const platform=()=>globalThis.GH_COMPANY_PLATFORM||null;
   const facilityOwnerCompanyId=facility=>String(facility?.ownerCompanyId||facility?.companyId||facility?.company||'').trim();
