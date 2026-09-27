@@ -5,7 +5,7 @@
 })(typeof globalThis!=='undefined'?globalThis:this,(GH_KERNEL)=>{
   'use strict';
   const VERSION='GH-KERNEL-WORKER-1.0.0',PROTOCOL='gh-kernel-message-v1';
-  const clone=value=>typeof globalThis.structuredClone==='function'?globalThis.structuredClone(value):JSON.parse(JSON.stringify(value));
+  const clone=value=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(typeof globalThis.structuredClone==='function'?globalThis.structuredClone(value):JSON.parse(JSON.stringify(value)));
   function createHost(kernelFactory=GH_KERNEL){
     if(!kernelFactory?.fromLegacyState)throw new Error('kernel-worker-core-unavailable');
     let kernel=null;const requestCache=new Map(),requestFingerprints=new Map(),idempotency=new Map();
