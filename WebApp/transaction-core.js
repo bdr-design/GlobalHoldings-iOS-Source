@@ -33,20 +33,25 @@
     return out;
   }
   function jsonClone(value){if(value===undefined)return undefined;return JSON.parse(JSON.stringify(value));}
-  function deepClone(value){if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
-  function restoreValue(target,snapshot){
+  function deepClone(value){if(typeof globalThis.GH_CLONE_CORE?.clone==='function')return globalThis.GH_CLONE_CORE.clone(value);if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
+  function restoreValue(target,snapshot,reorderKeys=true){
     if(target&&typeof target==='object'&&Object.isFrozen(target))return deepClone(snapshot);
     if(Array.isArray(snapshot)){
       if(!Array.isArray(target))return deepClone(snapshot);
       const oldLength=target.length,existing=new Map(Array.from({length:oldLength},(_,index)=>[index,target[index]]));
-      for(let i=0;i<snapshot.length;i++){const sv=snapshot[i],tv=existing.get(i);target[i]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}
+      for(let i=0;i<snapshot.length;i++){const sv=snapshot[i],tv=existing.get(i);target[i]=sv&&typeof sv==='object'?restoreValue(tv,sv,reorderKeys):sv;}
       for(let i=snapshot.length;i<oldLength;i++)delete target[i];target.length=snapshot.length;return target;
     }
     if(snapshot&&typeof snapshot==='object'){
       if(!target||typeof target!=='object'||Array.isArray(target))target={};
-      const keys=new Set(Object.keys(snapshot)),existing=new Map(Object.keys(target).map(key=>[key,target[key]]));
-      for(const [key,sv] of Object.entries(snapshot)){const tv=existing.get(key);target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}
-      for(const key of Object.keys(target))if(!keys.has(key))delete target[key];return target;
+      const existing=new Map(Object.keys(target).map(key=>[key,target[key]])),restored=[];
+      for(const [key,sv] of Object.entries(snapshot)){const tv=existing.get(key);restored.push([key,sv&&typeof sv==='object'?restoreValue(tv,sv,reorderKeys):sv]);}
+      // Delete and restore in snapshot order. Assigning into an existing object
+      // does not restore its property order after a failed delete/re-add.
+      if(reorderKeys)for(const key of Object.keys(target))delete target[key];
+      else for(const key of Object.keys(target))if(!Object.prototype.hasOwnProperty.call(snapshot,key))delete target[key];
+      for(const [key,value] of restored)target[key]=value;
+      return target;
     }
     return snapshot;
   }
@@ -63,7 +68,7 @@
           if(['__proto__','constructor','prototype'].includes(key))throw new Error(`transaction-root-key-invalid:${key}`);
           const value=snapshot[key];
           const current=target[key];
-          if(value&&typeof value==='object'&&current&&typeof current==='object'&&Array.isArray(value)===Array.isArray(current))restoreValue(current,value);
+          if(value&&typeof value==='object'&&current&&typeof current==='object'&&Array.isArray(value)===Array.isArray(current))restoreValue(current,value,false);
           else target[key]=deepClone(value);
         }
         for(const key of Object.keys(target))if(!Object.prototype.hasOwnProperty.call(snapshot,key))delete target[key];
