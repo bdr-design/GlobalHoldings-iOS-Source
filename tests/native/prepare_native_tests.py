@@ -41,8 +41,9 @@ __PROBES__
 let probe = ControllerProbe()
 let fm=FileManager.default
 let folder=fm.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("GlobalHoldingsSaveVault")
+let coldFolder=fm.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("GlobalHoldingsColdArchive")
 // On an ephemeral CI runner only. Never delete a pre-existing save directory.
-guard ProcessInfo.processInfo.environment["GH_NATIVE_AUDIT_EPHEMERAL"] == "1", !fm.fileExists(atPath:folder.path) else { fatalError("Fresh disposable test directory required") }
+guard ProcessInfo.processInfo.environment["GH_NATIVE_AUDIT_EPHEMERAL"] == "1", !fm.fileExists(atPath:folder.path), !fm.fileExists(atPath:coldFolder.path) else { fatalError("Fresh disposable test directory required") }
 let vault=GlobalSaveVault.shared
 var rows:[[String:Any]]=[]
 func check(_ value:Bool,_ message:String) throws {if !value {throw TestFailure(message:message)}}
@@ -124,6 +125,25 @@ func reject(_ name:String, json:String, payload:[String:Any]) {
     }
 }
 let first=try makeJSON(1)
+test("native cold archive uses validated names, atomic writes, readback and remove") {
+    let key="gh-cold-mobility-trip-receipts-e9-A.json",value="{\"generation\":1,\"items\":[]}"
+    let _:Void=try wait { vault.writeColdArchiveAsync(key,value:value,completion:$0) }
+    let loaded:String?=try wait { vault.readColdArchiveAsync(key,completion:$0) }
+    try check(loaded==value,"Cold archive readback mismatch")
+    let keys:[String]=try wait { vault.coldArchiveKeysAsync(completion:$0) }
+    try check(keys.contains(key),"Cold archive key missing from native inventory")
+    let longBucket=String(repeating:"b",count:80),longKey="gh-cold-\\(longBucket)-item-"+String(repeating:"a",count:64)+".json"
+    let _:Void=try wait { vault.writeColdArchiveAsync(longKey,value:value,completion:$0) }
+    let longLoaded:String?=try wait { vault.readColdArchiveAsync(longKey,completion:$0) }
+    try check(longLoaded==value,"Maximum-length content-addressed cold archive name was rejected")
+    var rejected=false
+    do { let _:Void=try wait { vault.writeColdArchiveAsync("../../escape.json",value:value,completion:$0) } } catch { rejected=true }
+    try check(rejected,"Invalid archive path was accepted")
+    let _:Void=try wait { vault.removeColdArchiveAsync(key,completion:$0) }
+    let _:Void=try wait { vault.removeColdArchiveAsync(longKey,completion:$0) }
+    let removed:String?=try wait { vault.readColdArchiveAsync(key,completion:$0) }
+    try check(removed==nil,"Cold archive remove did not remove the verified file")
+}
 test("real UTF8 save, content-addressed sections and compact atomic manifest pointer") {let gen:Int=try wait {commit(first,try! envelope(first),$0)};try check(gen==1 && vault.currentSave()==first,"Native roundtrip mismatch");let header=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-A.json"))) as! [String:Any];try check(header["payload"]==nil && header["payloadFile"]==nil,"New header still embeds the full payload");try check(header["storageVersion"] as? Int==2,"Physical storage version is not independent V2");guard let manifestName=header["manifestFile"] as? String,let manifestData=try? Data(contentsOf:folder.appendingPathComponent(manifestName)),let manifest=try JSONSerialization.jsonObject(with:manifestData) as? [String:Any],let sections=manifest["sections"] as? [[String:Any]] else {throw TestFailure(message:"Chunked manifest missing")};try check(manifest["schemaVersion"] as? String=="2.0.0" && manifest["storageVersion"] as? Int==2,"Manifest changed logical schema or storage version");try check(manifest["saveRevision"] as? Int==1 && manifest["resetEpoch"] as? Double==0,"Manifest omitted save revision/reset epoch");try check(try materializedPayload(header)==first,"Manifest sections did not reconstruct the logical Save Schema")}
 test("uncommitted higher A/B header cannot overtake atomic save-head") {let staged=try makeJSON(99);let stagedHash=hash(staged),stagedName="save-payload-B-g99-"+stagedHash+".bin",stagedData=Data(staged.utf8);try stagedData.write(to:folder.appendingPathComponent(stagedName),options:.atomic);let stagedHeader:[String:Any] = ["generation":99,"slot":"B","schemaVersion":"2.0.0","runtimeVersion":"3.0.0","simSeconds":5940,"saveRevision":99,"resetEpoch":0,"savedAt":99,"sha256":stagedHash,"payloadFile":stagedName];try JSONSerialization.data(withJSONObject:stagedHeader).write(to:folder.appendingPathComponent("save-B.json"),options:.atomic);try check(vault.currentSave()==first && vault.currentGeneration()==1,"Staged slot displaced the committed head");let committed=try makeJSON(2);let gen:Int=try wait{commit(committed,try! envelope(committed),$0)};try check(gen==2 && vault.currentSave()==committed,"Next commit did not replace staged slot at the next generation")}
 test("root and nested append-only arrays split into 1000-row content-addressed sections") {var root=try JSONSerialization.jsonObject(with:Data(try makeJSON(3).utf8)) as! [String:Any];root["eventLog"]=(0..<2501).map{["id":"E-"+String($0),"at":$0] as [String:Any]};var finance=root["finance"] as? [String:Any] ?? [:];finance["ledger"]=(0..<2201).map{["id":"L-"+String($0),"debit":1,"credit":1] as [String:Any]};root["finance"]=finance;root["مفتاح.بمسافة "]=["ر" as Any];let json=String(data:try JSONSerialization.data(withJSONObject:root,options:[.sortedKeys]),encoding:.utf8)!;let gen:Int=try wait{commit(json,try! envelope(json),$0)};try check(gen==3,"Chunked save generation mismatch");let header=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-A.json"))) as! [String:Any],manifestData=try Data(contentsOf:folder.appendingPathComponent(header["manifestFile"] as! String)),manifest=try JSONSerialization.jsonObject(with:manifestData) as! [String:Any],sections=manifest["sections"] as! [[String:Any]],log=sections.first{$0["key"] as? String=="eventLog"}!,chunks=log["chunks"] as! [[String:Any]],ledger=sections.first{$0["key"] as? String=="finance.ledger"}!,ledgerChunks=ledger["chunks"] as! [[String:Any]];try check(chunks.count==3 && log["itemCount"] as? Int==2501,"Root append-only array was not chunked");try check(ledgerChunks.count==3 && ledger["itemCount"] as? Int==2201,"Nested finance ledger was not chunked");try check(sections.contains{$0["key"] as? String=="%D9%85%D9%81%D8%AA%D8%A7%D8%AD%2E%D8%A8%D9%85%D8%B3%D8%A7%D9%81%D8%A9%20"},"UTF-8 or dotted section key was not encoded safely");try check(try materializedPayload(header)==json,"Chunked append-only sections changed logical JSON")}
@@ -233,7 +253,7 @@ while !perfDone && Date()<deadline {RunLoop.current.run(until:Date().addingTimeI
 let totalMS=Double(DispatchTime.now().uptimeNanoseconds-begin)/1e6
 let performance:[String:Any]=["bytes":perf.utf8.count,"handler_validation_and_enqueue_ms":dispatchMS,"completed_ms":totalMS,"nativeVaultCommitMs":totalMS,"success":perfSuccess,"single_sample":true,"iphone_measurement":false,"includes_bootstrap_refresh":false]
 try JSONSerialization.data(withJSONObject:performance,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"save-enqueue-measurement.json"))
-print("NATIVE_COMMIT_MS \(totalMS)")
+print("NATIVE_COMMIT_MS \\(totalMS)")
 test("28 MiB native vault commit meets the 2s macOS acceptance limit") {try check(perfSuccess,"Native vault commit failed");try check(totalMS<2000,"nativeVaultCommitMs must be below 2000 ms, got "+String(totalMS)+" ms")}
 vault.reset()
 let failed=rows.filter{($0["ok"] as? Bool) != true}.count

@@ -5,7 +5,7 @@
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const clock=()=>globalThis.performance?.now?.()??Date.now();
-  const pending=new Map(), slotPending=new Map(), samples=[],timingSamples=[];
+  const pending=new Map(), slotPending=new Map(), archivePending=new Map(), samples=[],timingSamples=[];
   let lastSaveBreakdown=null,lastNativeAck=null;
   function rememberTiming(row){const value={...row,recordedAtMs:Date.now()};timingSamples.push(value);if(timingSamples.length>24)timingSamples.shift();return value;}
   let sequence=0,slotSequence=0,generation=0,locked=false,durableLocked=false,recoveryRequired=false,ordinaryInFlight=null,ordinaryDirty=false,ordinaryDirtyState=null,ordinaryDirtyOptions=null,ordinaryError=null;
@@ -103,7 +103,36 @@
     }else{const error=new Error(detail.message||'native-slot-nack');error.code='NATIVE_SLOT_NACK';row.reject(error);}
     return true;
   }
+  function receiveArchiveAck(detail={}){
+    const row=archivePending.get(detail.requestId);if(!row)return false;
+    if(detail.action!==row.action||detail.key!==row.key||typeof detail.success!=='boolean')return false;
+    clearTimeout(row.timer);archivePending.delete(detail.requestId);
+    if(!detail.success){const error=new Error(detail.message||'native-cold-archive-failed');error.code='NATIVE_ARCHIVE_NACK';row.reject(error);return true;}
+    row.resolve(detail.value??null);return true;
+  }
   globalThis.addEventListener?.('gh-native-slot-ack',e=>receiveSlotAck(e.detail));
+  globalThis.addEventListener?.('gh-native-archive-ack',e=>receiveArchiveAck(e.detail));
+  function createColdArchiveAdapter(){
+    const prefix='gh-cold-archive-local:',bridge=globalThis.webkit?.messageHandlers?.saveBridge;
+    function native(action,key,value){
+      const requestId=`cold-archive-${Date.now()}-${++sequence}`,cleanKey=String(key||'');
+      if(!bridge)return Promise.reject(new Error('native-cold-archive-bridge-unavailable'));
+      return new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>{archivePending.delete(requestId);const error=new Error('native-cold-archive-ack-timeout');error.code='ACK_TIMEOUT';reject(error);},PERSISTENCE_LIMITS.ackTimeoutMs);
+        archivePending.set(requestId,{action,key:cleanKey,timer,resolve,reject});
+        try{bridge.postMessage({action,requestId,key:cleanKey,...(value!==undefined?{value}: {})});}
+        catch(error){clearTimeout(timer);archivePending.delete(requestId);reject(error);}
+      });
+    }
+    function localKey(key){const value=String(key||'');if(!/^gh-cold-[A-Za-z0-9._-]{1,80}-(?:[AB]\.json|item-[a-f0-9]{64}\.json)$/.test(value))throw new Error('cold-archive-key-invalid');return `${prefix}${value}`;}
+    return Object.freeze({
+      read(key){if(bridge)return native('coldArchiveRead',key);try{return Promise.resolve(localStorage.getItem(localKey(key)));}catch(error){return Promise.reject(error);}},
+      writeAtomic(key,value){if(typeof value!=='string')return Promise.reject(new TypeError('cold-archive-value-string-required'));if(bridge)return native('coldArchiveWrite',key,value);try{const target=localKey(key),prior=localStorage.getItem(target);localStorage.setItem(target,value);if(localStorage.getItem(target)!==value){if(prior===null)localStorage.removeItem(target);else localStorage.setItem(target,prior);throw new Error('cold-archive-local-write-verification-failed');}return Promise.resolve();}catch(error){return Promise.reject(error);}},
+      remove(key){if(bridge)return native('coldArchiveRemove',key);try{localStorage.removeItem(localKey(key));return Promise.resolve();}catch(error){return Promise.reject(error);}},
+      keys(){if(bridge)return native('coldArchiveKeys','').then(value=>Array.isArray(value)?value:[]);try{const keys=[];for(let index=0;index<(localStorage.length||0);index++){const key=localStorage.key(index);if(String(key||'').startsWith(prefix))keys.push(String(key).slice(prefix.length));}return Promise.resolve(keys);}catch(error){return Promise.reject(error);}},
+      native:!!bridge
+    });
+  }
   function requestManualSlot(action,index,state=null,meta={}){
     index=Number(index);if(!Number.isInteger(index)||index<0||index>2)return Promise.reject(new Error('invalid-save-slot'));
     const bridge=bridgeFor('commitSave');if(!bridge)return Promise.reject(new Error('native-slot-bridge-unavailable'));
@@ -284,6 +313,6 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:'2.0.0',saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
+  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,receiveArchiveAck,createColdArchiveAdapter,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,archivePending:archivePending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

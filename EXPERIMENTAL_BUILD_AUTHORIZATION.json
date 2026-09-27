@@ -2,25 +2,23 @@
   "authorized_at": "2026-09-26",
   "build": 342,
   "known_limits": [
-    "macOS CI run 36315061990 on commit 3f4feb10ac8b1e6049be7f6b40704e2a70532090 passed exact Build341 124/124, Build342 140/140, Native 41/41, WKWebView 6/6, and built/source-verified an unsigned IPA (SHA256 284250c85768bc0fa7c4378fd1e6ffb252472a23ee3db02ed8b3c03695c016f7); only verification logs were uploaded. Physical iPhone and architecture stage gates remain open.",
-    "The ten-day app slice shadow test passes full-root comparison after 240 commits, but mirrors legacy transaction writes and uses controlled finance-day/market-hour fixtures; independent kernel business execution and promotion remain gated.",
-    "Native SaveVault storageVersion 2, A/B head and legacy Save Schema 2.0.0 passed 41/41 on macOS CI run 36315061990; the 773.430958 ms 29360245-byte sample is macOS-only. An idle document proof audit runs locally; broader state audit and iPhone timing remain pending.",
-    "Cold archive is core-fixture-only; production lazy financial-history lookup and the <12 MB hot-state ceiling at 3,380 assets remain unproven.",
-    "The app simulation still uses its original transaction owner. Worker command/request replay identities survive a 512-reply cache rollover, with fail-closed session limits; its 20,000-asset responses use bounded incremental section fingerprints. Core tests do not prove authoritative Worker ownership, production archive integration or live column migration.",
-    "Physical iPhone acceptance must establish continuous 600x/drag FPS, main-thread task/drop limits, hot/process memory at 3,380 assets and thermal stability on the oldest supported device with 20,000 assets.",
-    "The cold archive now recovers to the last complete A/B generation and serializes writers sharing an adapter/bucket; focused Build342 tests pass 16/16 locally, but current-source macOS CI and production archive integration remain pending.",
-    "The provided device reference belongs to Build 341. An iPhone 17 Pro Max is available, but this Build342 source has no physical-device measurements; the oldest supported iPhone is not specified.",
-    "SaveVault recovery for a corrupt A/B pointer now selects and repairs the highest fully verified slot; this source change awaits native macOS CI."
+    "The most recent macOS CI run 36315061990 passed the earlier source tree on commit 3f4feb10ac8b1e6049be7f6b40704e2a70532090; current-source CI is pending after A/B save-head recovery, native archive bridge integration, and Worker changes.",
+    "The ten-day app shadow still compares the application-owned transaction writes; Worker asset kernel output is now integrated into the production simulation path, but full independent finance/market simulation and promotion are not established.",
+    "Native storageVersion 2 and Save Schema 2.0.0 compatibility passed 41/41 on the prior macOS source. The 773.430958 ms save sample is macOS-only; current-source native CI and iPhone timing are pending.",
+    "Mobility receipt overflow now uses the production app transaction and native archive bridge with stable-ID retry, segmented A/B indexes and verified readback. The under-12-MB device hot-state target remains unmeasured.",
+    "The simulation Worker now owns tentative typed asset state and returns its committed-kernel patch; the cross-domain application transaction and financial/calendar callbacks remain on the main thread.",
+    "Float64Array columns cover nine hot simulation fields while compatibility object rows remain in the app. The iPhone 17 Pro Max has not been measured for this source, and the oldest supported iPhone is unspecified.",
+    "Physical acceptance must establish ten minutes at 600x with continuous drag, at least 58 FPS, under 1% frame drops, no main-thread task over 50 ms, under 12 MB hot state at 3,380 assets, and memory/thermal behavior at 20,000 assets on the oldest supported iPhone."
   ],
   "minimum_acceptance_gates": 140,
   "production_approved": false,
-  "purpose": "Internal experimental Build 342 verification for bounded map interaction work, transactional state-kernel shadowing, independent storageVersion 2 with Save Schema 2.0.0, and staged Worker/typed-column research. This authorization does not imply production approval or device acceptance.",
+  "purpose": "Internal experimental Build 342 verification for bounded map interaction, transactional state-kernel adoption, Save Schema 2.0.0 with independent storageVersion 2, production Mobility cold archiving, and Worker-owned typed asset simulation. Device and cross-domain kernel promotion gates remain closed.",
   "rollback_and_ownership": {
-    "authoritative_state_owner": "existing serialized app/domain transaction boundary",
+    "authoritative_state_owner": "The app transaction owns cross-domain publication; the simulation Worker owns tentative typed asset-kernel state and confirms or restores it after the app transaction.",
     "full_snapshot_fallback": true,
     "live_field_journal": false,
     "save_schema_preserved": true,
-    "worker_failure_fallback": "existing authoritative main-thread and cooperative worker fallback remains in control",
+    "worker_failure_fallback": "Worker failure uses the existing main-thread compatibility path; the cross-domain transaction retains full-snapshot rollback.",
     "worker_may_mutate_authoritative_state": false
   },
   "save_schema": "2.0.0",
@@ -33,9 +31,9 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
+  "source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
   "test_build_authorized": true,
   "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
   "version": "3.0.0",
-  "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988"
+  "webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3"
 }

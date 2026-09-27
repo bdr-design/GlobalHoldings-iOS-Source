@@ -173,6 +173,10 @@ final class GlobalSaveVault {
         fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("GlobalHoldingsSaveVault", isDirectory: true)
     }
+    private var coldArchiveFolder: URL {
+        fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("GlobalHoldingsColdArchive", isDirectory: true)
+    }
     private func url(_ slot: String) -> URL { folder.appendingPathComponent("save-\(slot).json") }
     private func manifestURL(_ name: String) -> URL? {
         guard name.hasPrefix("save-manifest-"), name.hasSuffix(".json"),
@@ -199,6 +203,69 @@ final class GlobalSaveVault {
 
     private func payloadFileName(generation: Int, slot: String, sha256: String) -> String {
         "save-payload-\(slot)-g\(generation)-\(sha256).bin"
+    }
+
+    private func coldArchiveURL(_ name: String) -> URL? {
+        guard name.utf8.count <= 180,
+              name.range(of: "^gh-cold-[A-Za-z0-9._-]{1,80}-(?:[AB]\\.json|item-[a-f0-9]{64}\\.json)$", options: .regularExpression) != nil,
+              !name.contains("/"), !name.contains("\\") else { return nil }
+        return coldArchiveFolder.appendingPathComponent(name, isDirectory: false)
+    }
+
+    func readColdArchiveAsync(_ name: String, completion: ((Result<String?, Error>) -> Void)? = nil) {
+        queue.async {
+            let result = Result<String?, Error> {
+                guard let file = self.coldArchiveURL(name) else { throw VaultError.message("Invalid cold archive path.") }
+                guard self.fm.fileExists(atPath: file.path) else { return nil }
+                let data = try Data(contentsOf: file, options: .mappedIfSafe)
+                guard data.count <= 16 * 1024 * 1024, let text = String(data: data, encoding: .utf8) else {
+                    throw VaultError.message("Cold archive record is too large or is not UTF-8.")
+                }
+                return text
+            }
+            if let completion { DispatchQueue.main.async { completion(result) } }
+        }
+    }
+
+    func writeColdArchiveAsync(_ name: String, value: String, completion: ((Result<Void, Error>) -> Void)? = nil) {
+        queue.async {
+            let result = Result<Void, Error> {
+                guard let file = self.coldArchiveURL(name), let data = value.data(using: .utf8),
+                      data.count <= 16 * 1024 * 1024,
+                      (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil else {
+                    throw VaultError.message("Invalid cold archive write.")
+                }
+                try self.fm.createDirectory(at: self.coldArchiveFolder, withIntermediateDirectories: true,
+                    attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+                try data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                guard let verified = try? Data(contentsOf: file, options: .mappedIfSafe), verified == data else {
+                    throw VaultError.message("Cold archive write verification failed.")
+                }
+            }
+            if let completion { DispatchQueue.main.async { completion(result) } }
+        }
+    }
+
+    func removeColdArchiveAsync(_ name: String, completion: ((Result<Void, Error>) -> Void)? = nil) {
+        queue.async {
+            let result = Result<Void, Error> {
+                guard let file = self.coldArchiveURL(name) else { throw VaultError.message("Invalid cold archive path.") }
+                if self.fm.fileExists(atPath: file.path) { try self.fm.removeItem(at: file) }
+                guard !self.fm.fileExists(atPath: file.path) else { throw VaultError.message("Cold archive removal verification failed.") }
+            }
+            if let completion { DispatchQueue.main.async { completion(result) } }
+        }
+    }
+
+    func coldArchiveKeysAsync(completion: ((Result<[String], Error>) -> Void)? = nil) {
+        queue.async {
+            let result = Result<[String], Error> {
+                guard self.fm.fileExists(atPath: self.coldArchiveFolder.path) else { return [] }
+                return try self.fm.contentsOfDirectory(at: self.coldArchiveFolder, includingPropertiesForKeys: nil)
+                    .map(\.lastPathComponent).filter { self.coldArchiveURL($0) != nil }.sorted()
+            }
+            if let completion { DispatchQueue.main.async { completion(result) } }
+        }
     }
 
     private func validatedManualSlotIndex(_ index: Int) throws -> Int {

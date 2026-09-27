@@ -13,12 +13,12 @@
   },
   "stages": {
     "0": {
-      "status": "MACOS_SOURCE_NATIVE_GATE_PASS_PHYSICAL_IPHONE_TIMING_PENDING",
+      "status": "LOCAL_BUILD342_GATES_PASS_CURRENT_MACOS_AND_IPHONE_TIMING_PENDING",
       "gates": {
-        "record_alert_p95_ms": 0.221,
-        "record_alert_max_ms": 0.487,
+        "record_alert_p95_ms": 0.26,
+        "record_alert_max_ms": 0.621,
         "record_alert_samples": 120,
-        "nativeVaultCommitMs_under_2000": "PASS_SINGLE_SAMPLE_MACOS_773.430958_MS_CI_RUN_36315061990_IPHONE_PENDING",
+        "nativeVaultCommitMs_under_2000": "PRIOR_MACOS_SAMPLE_773.430958_MS_ONLY_CURRENT_SOURCE_CI_PENDING_IPHONE_PENDING",
         "finish_during_map_drag": "PASS_BUILD342_NODE_GATE",
         "manualFailures_equals_CALENDAR_ADVANCE_FAILED": "PASS_BUILD342_NODE_GATE",
         "map_bounds_and_bounded_rendering": "PASS_BUILD342_NODE_GATE",
@@ -37,7 +37,7 @@
       "ci_gate": "Exact verified Build341 source acceptance passed 124/124 unchanged on macOS CI run 36315061990."
     },
     "2": {
-      "status": "APP_SLICE_SHADOW_PARITY_PASS_KERNEL_NOT_AUTHORITATIVE",
+      "status": "APP_ROOT_PARITY_PASS_ASSET_KERNEL_WORKER_INTEGRATED_FULL_APP_OWNER_PENDING",
       "scenario": {
         "simulated_days": 10,
         "speed_x": 600,
@@ -48,10 +48,10 @@
         "boundary_fixture": "controlled deterministic processFinancialDay/processMarket callbacks",
         "local_gate": "PASS"
       },
-      "limit": "The app transaction still owns each mutation and refreshes the shadow mirror from its committed write roots; this is not independent kernel-side business simulation. The finance-day and market-hour callbacks are controlled fixtures. Kernel promotion and the normal-slice <30 ms gate remain unproven."
+      "limit": "The 240-slice test remains an app-owned shadow with controlled finance/market callbacks. The live simulation Worker now synchronizes, processes and commits assets through its typed kernel, and the app publishes patches read back from that kernel; finance/time/domain publication remains app-owned and <30 ms on iPhone is unproven."
     },
     "3": {
-      "status": "NATIVE_STORAGE_41_OF_41_PASS_MACOS_773.430958_MS_IPHONE_PENDING_FULL_DOMAIN_AUDIT_PENDING",
+      "status": "NATIVE_CHUNKED_AB_STORAGE_AND_RECOVERY_IMPLEMENTED_CURRENT_SOURCE_MACOS_CI_PENDING_DOMAIN_AUDIT_AND_DEVICE_TIMING_PENDING",
       "implemented": [
         "bounded record-alert delta validation",
         "content-addressed native sections",
@@ -60,21 +60,26 @@
         "old inline Save Schema 2.0.0 compatibility",
         "post-publication garbage-collection failure cannot misreport a durable save as failed",
         "immutable verified chained and legacy document proof cache with ancestor invalidation",
-        "application idle document proof audit, at most 20 top-level records per tick, paused during drag and durable commands"
+        "application idle document proof audit, at most 20 top-level records per tick, paused during drag and durable commands",
+        "production Native cold-archive bridge with correlated asynchronous acknowledgements, validated paths, atomic writes and readback verification",
+        "Save Schema 2.0.0 remains unchanged; internal storageVersion remains independent at 2"
       ],
-      "limit": "Native Swift compiled and 41/41 storage tests passed macOS CI run 36315061990, including one 29360245-byte commit in 773.430958 ms on macOS. This is not an iPhone measurement; comprehensive domain delta validators, full idle state audit and production hour/day/save timing remain pending."
+      "limit": "The prior source passed 41/41 Native storage tests on macOS. Current Swift changes await macOS compile/tests; comprehensive domain delta validators, full idle-state audit and production hour/day/save timing remain pending."
     },
     "4": {
-      "status": "CORE_FIXTURE_ONLY_PRODUCTION_COLD_ARCHIVE_PENDING",
+      "status": "PRODUCTION_MOBILITY_ARCHIVE_PATH_AND_SEGMENTED_INDEXES_IMPLEMENTED_HOT_STATE_DEVICE_GATE_PENDING",
       "implemented": [
         "cold archive core",
         "chunked save core",
         "atomic index and lazy verified lookup test",
         "multi-generation newest-first archive order preserved in export and covered by local regression",
         "verified fallback to the last complete A/B generation when the newest generation has a corrupt record",
-        "per-adapter, per-bucket append serialization shared across archive instances to prevent lost concurrent updates"
+        "per-adapter, per-bucket append serialization shared across archive instances to prevent lost concurrent updates",
+        "Mobility trip completion and legacy hot-window displacement enqueue stable-ID receipts for bounded production archive flushes",
+        "hot pending rows are removed only after native archive durability and scoped transaction commit; failure/retry and readback are integration-tested",
+        "per-epoch archive indexes roll over at 4,096 receipts and verified reads merge all segments"
       ],
-      "limit": "Production archive integration and <12 MB hot-state measurement at 3,380 assets are pending.",
+      "limit": "App and Native bridge integration passes local adapter/application tests. The actual iPhone archive path, 3,380-asset under-12-MB hot-state gate and storage growth under long sessions remain unmeasured.",
       "controlled_app_hot_state_sample": {
         "simulated_days": 10,
         "speed_x": 600,
@@ -84,21 +89,24 @@
         "asset_json_bytes": 5794577,
         "scope": "Production app simulation-slice path with controlled finance-day and market-hour callbacks; no production cold archive, device memory or thermal measurement",
         "target_proven": false
-      }
+      },
+      "post_integration_hot_state_measurement": "PENDING_PHYSICAL_IPHONE_17_PRO_MAX"
     },
     "5": {
-      "status": "WORKER_PROTOCOL_AND_EXISTING_ASSET_WORKER_PASS_KERNEL_SIMULATION_OWNERSHIP_PENDING",
+      "status": "SIMULATION_ASSET_WORKER_KERNEL_INTEGRATED_CROSS_DOMAIN_WORKER_OWNERSHIP_AND_DEVICE_GATE_PENDING",
       "implemented": [
         "worker transaction/query/frame protocol",
         "stale generation and idempotency tests",
         "worker request-ID replay payload conflict rejection",
         "Worker command/request replay identity survives a 512-reply cache rollover; new keys fail closed at the 100,000-key session ceiling",
-        "worker command and query fingerprints use the kernel incremental section digest"
+        "worker command and query fingerprints use the kernel incremental section digest",
+        "live simulation asset Worker owns typed kernel state, resynchronizes current app rows, publishes kernel-readback patches, and uses confirm/rollback after the outer transaction",
+        "Worker initialization sends at most 128 assets per event-loop turn; 20,000-row app integration and failed outer-transaction compensation pass locally"
       ],
-      "limit": "Authoritative app simulation remains in the main-thread owner; 10-minute iPhone frame/task gates are pending."
+      "limit": "The cross-domain transaction, financial boundaries, calendar and market callbacks remain on the app thread. Ten-minute iPhone 17 Pro Max continuous-drag FPS/drop/task acceptance is pending."
     },
     "6": {
-      "status": "20K_TYPED_COLUMN_AND_INCREMENTAL_FINGERPRINT_LOCAL_PASS_LIVE_MIGRATION_PENDING",
+      "status": "LIVE_SIMULATION_WORKER_FLOAT64_COLUMNS_INTEGRATED_COMPATIBILITY_ROWS_AND_DEVICE_MEMORY_GATE_PENDING",
       "scenario": {
         "synthetic_assets": 20000,
         "column_types": [
@@ -109,7 +117,12 @@
         "worker_bulk_row_patches": 1000,
         "worker_base_snapshot_bytes_upper_bound": 1024
       },
-      "limit": "Registered 20,000-asset section releases duplicated base rows; one-row patches rehash only one of 79 chunks and Worker command/query acknowledgements reuse this bounded fingerprint. Actual app still holds legacy object rows. Live migration and oldest-supported-iPhone memory, FPS and thermal gates remain pending."
+      "limit": "The app still publishes object-row compatibility state for renderers and other domain writers. iPhone memory/thermal validation at 20,000 assets on the oldest supported model is pending; that model is not identified.",
+      "implemented": [
+        "the live simulation Worker stores progress, fuel, condition, dwellRemaining, simCarrySeconds, tripSeconds, effectiveSpeedKmh, lat and lng in Float64Array columns with presence bytes",
+        "3,380-row production-path initialization and 20,000-row typed-kernel fixtures pass locally; patches are read back from the Worker kernel",
+        "Worker kernel releases its duplicate registered base snapshot after column initialization"
+      ]
     }
   },
   "acceptance": {
@@ -125,11 +138,11 @@
         "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
         "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988"
       },
-      "current_source": "PENDING_MACOS_CI_AFTER_A_B_HEAD_RECOVERY_REGRESSION"
+      "current_source": "PENDING_MACOS_CI_AFTER_WORKER_ARCHIVE_AND_SOURCE_MANIFEST_REFRESH"
     },
-    "swift_compile_and_native_tests": "PASS_41_OF_41_CI_RUN_36315061990",
+    "swift_compile_and_native_tests": "PRIOR_SOURCE_PASS_41_OF_41_CI_RUN_36315061990_CURRENT_SOURCE_MACOS_COMPILE_AND_TEST_PENDING",
     "unsigned_ipa": {
-      "status": "BUILT_AND_SOURCE_VERIFIED_NOT_UPLOADED_OR_DELIVERED",
+      "status": "PRIOR_SOURCE_IPA_BUILT_ON_CI_NOT_CURRENT_SOURCE_NOT_UPLOADED_OR_DELIVERED",
       "run_id": "36315061990",
       "commit": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
       "bytes": 13445716,
@@ -159,14 +172,16 @@
       "first_difference": "none after every application slice",
       "independent_kernel_execution": false,
       "boundary_callbacks": "controlled fixtures",
-      "current_source_ci": "PASS_BUILD342_SOURCE_CI_RUN_36315061990"
+      "current_source_ci": "PASS_BUILD342_SOURCE_CI_RUN_36315061990",
+      "worker_asset_kernel_integration": "PASS_LOCAL_WORKER_KERNEL_READBACK_CONFIRM_ROLLBACK_AND_CHUNKED_BOOTSTRAP_TESTS"
     },
     "build342_local_final_run": {
-      "result": "PASS",
-      "programs": 16,
+      "result": "PASS_19_OF_19_BUILD342_TEST_PROGRAMS",
+      "programs": 19,
       "command": "npm run test:build342",
       "completed_at": "2026-09-27",
-      "includes_shared_writer_serialization_regression": true
+      "includes_production_mobility_archive_integration": true,
+      "includes_archive_segment_rollover": true
     },
     "build342_macOS_ci_run": {
       "run_id": "36315061990",
@@ -181,15 +196,27 @@
       "physical_iphone_tested": false
     },
     "new_source_regression": {
-      "change": "Corrupt or unreadable A/B save-head now recovers the highest fully verified slot and repairs the pointer; a valid pointer still blocks promotion of an uncommitted higher slot.",
-      "previous_verified_source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
-      "pending_source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
+      "change": "Production Mobility cold archive with durable acknowledgement, 4,096-record segment rollover and verified multi-segment reads; simulation Worker typed kernel now supplies asset patches with confirm/rollback; bootstrap yields in 128-row chunks.",
+      "previous_source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
+      "pending_source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
+      "pending_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
+      "local_tests": "PASS_19_OF_19_BUILD342_AND_21_OF_21_BUILD340_PROGRAMS",
       "local_swift_toolchain": "UNAVAILABLE",
-      "native_macos_ci": "PENDING"
-    }
+      "native_macos_ci": "PENDING",
+      "physical_iphone": "PENDING"
+    },
+    "build340_local_final_run": {
+      "result": "PASS_21_OF_21_BUILD340_TEST_PROGRAMS",
+      "programs": 21,
+      "command": "npm run test:build340",
+      "completed_at": "2026-09-27",
+      "includes_worker_typed_kernel_and_rollback_integration": true
+    },
+    "local_lint": "BLOCKED_LOCAL_ESLINT_PACKAGE_MISSING_CI_INSTALLS_PINNED_DEPENDENCIES",
+    "local_native_compile": "BLOCKED_SWIFT_TOOLCHAIN_UNAVAILABLE_NATIVE_TEST_SOURCE_GENERATION_PASS_CI_COMPILE_PENDING"
   },
-  "source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
-  "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
+  "source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
+  "webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
   "physical_device_evidence": {
     "available_device": "iPhone 17 Pro Max (user-reported)",
     "provided_reference_artifact_build": 341,

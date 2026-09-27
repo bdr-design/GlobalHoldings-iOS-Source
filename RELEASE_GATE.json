@@ -1,18 +1,18 @@
 {
   "approved": false,
   "blocking_issues": [
-    "The last verified source tree 84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e passed macOS CI run 36315061990 on commit 3f4feb10ac8b1e6049be7f6b40704e2a70532090. Current source adds corrupt save-head recovery and repair; native CI for this change is pending. The IPA remains on the CI runner and release approval stays closed.",
-    "Native SaveVault measured 773.430958 ms for a 29360245-byte commit on one macOS CI sample (run 36315061990); this is not an iPhone measurement. The actual iPhone <2-second gate remains unmeasured.",
-    "The 10-day, 600x, 3,380-asset app slice shadow test now passes full-root comparison after 240 commits. The shadow mirrors legacy transaction writes, and finance-day/market-hour callbacks are controlled fixtures; independent kernel business execution, promotion and the <30 ms normal-slice gate are not established.",
-    "Document proof cache now covers verified immutable chains with ancestor invalidation, and application idle document proof audit processes at most 20 top-level records per tick, but complete domain delta validators and an idle full-state audit remain pending.",
-    "Controlled 10-day app slice at 600x and 3,380 assets yielded 5,952,155 logical JSON bytes with stubbed finance/market boundary callbacks and no production trip archive; cold archive production integration and the <12 MB production hot-state and device-memory targets remain unproven.",
-    "The application still uses its existing simulation transaction owner. Current-source tests pass, but authoritative Worker simulation and live asset-column migration are not integrated.",
-    "Physical iPhone tests are required for ten minutes at 600x with continuous drag, >=58 FPS, <1% frame drops, no main-thread tasks over 50 ms, <12 MB hot-state at 3,380 assets and oldest-supported-iPhone 20,000-asset memory/thermal acceptance.",
-    "The supplied device reference is Build 341. The user has an iPhone 17 Pro Max, but Build342 physical measurements are absent and the oldest supported iPhone has not been specified."
+    "The latest verified macOS CI run 36315061990 tested an earlier source commit. This source adds Native archive transport, segmented Mobility archival, Worker-owned typed asset updates and chunked bootstrap; current-source macOS acceptance is pending.",
+    "Save Schema remains 2.0.0 with storageVersion 2. Prior Native measurement was 773.430958 ms for 29,360,245 bytes on macOS; it is not an iPhone 17 Pro Max measurement.",
+    "The 10-day, 600x, 3,380-asset app shadow passes 240 full-root comparisons, but it still mirrors app transaction writes and uses controlled finance/market callbacks. Cross-domain independent kernel execution and promotion remain incomplete.",
+    "Mobility cold trip history now flushes through the app and Native archive bridge with stable-ID retries and 4,096-record A/B segments. The physical under-12-MB hot-state target and long-session Native archive behavior remain unmeasured.",
+    "The simulation Worker now owns tentative typed asset-kernel updates and the app publishes patches read back from that kernel. Finance, calendar and market callbacks and the cross-domain transaction still run on the app thread.",
+    "Nine simulation asset hot fields use Float64Array columns inside the production Worker, while compatibility object rows remain in the app. Oldest-supported-iPhone 20,000-asset memory/thermal testing remains pending.",
+    "Physical iPhone acceptance still needs ten minutes at 600x with continuous drag, at least 58 FPS, under 1% frame drops, and no main-thread task over 50 ms on the available iPhone 17 Pro Max. No device run has been recorded.",
+    "The oldest supported iPhone is not identified; the 20,000-asset oldest-device memory and thermal gate cannot be closed until that model is established."
   ],
   "build": 342,
   "latest_direct_source_ci": {
-    "status": "PENDING_MACOS_CI_AFTER_A_B_HEAD_RECOVERY",
+    "status": "PENDING_CURRENT_SOURCE_MACOS_CI",
     "source_mode": "direct_git_tree_from_verified_build341_commit",
     "tested_commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
     "run_id": "36315061990",
@@ -32,16 +32,17 @@
     "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
     "ipa_uploaded_or_delivered": false,
     "physical_iphone_tested": false,
-    "pending_source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c"
+    "pending_source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
+    "pending_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3"
   },
   "phase_status": {
-    "stage0_urgent_build342": "MACOS_SOURCE_NATIVE_PASS_PHYSICAL_IPHONE_TIMING_PENDING",
-    "stage1_build341_baseline": "PASS_EXACT_SOURCE_124_OF_124_CI_RUN_36307934626",
-    "stage2_shadow_state_kernel": "APP_SLICE_SHADOW_PARITY_PASS_KERNEL_NOT_AUTHORITATIVE_FINANCIAL_AND_MARKET_BOUNDARIES_FIXTURED",
-    "stage3_delta_validation_and_incremental_storage": "NATIVE_41_OF_41_PASS_DOCUMENT_PROOF_IDLE_AUDIT_LOCAL_PASS_FULL_DOMAIN_AUDIT_AND_TIMING_PENDING",
-    "stage4_cold_archive": "CORE_FIXTURE_PASS_PRODUCTION_COLD_ARCHIVE_AND_HOT_STATE_BUDGET_PENDING",
-    "stage5_worker": "ASSET_WORKER_AND_KERNEL_PROTOCOL_FIXTURES_PASS_AUTHORITATIVE_KERNEL_SIMULATION_WORKER_PENDING",
-    "stage6_typed_asset_columns": "20K_TYPED_COLUMN_FIXTURE_PASS_LIVE_APP_MIGRATION_AND_DEVICE_MEMORY_PENDING",
+    "stage0_urgent_build342": "LOCAL_SOURCE_GATES_PASS_CURRENT_SOURCE_MACOS_CI_AND_IPHONE_TIMING_PENDING",
+    "stage1_build341_baseline": "PASS_EXACT_SOURCE_124_OF_124_PRIOR_MACOS_CI",
+    "stage2_shadow_state_kernel": "APP_PARITY_PASS_ASSET_KERNEL_WORKER_INTEGRATED_CROSS_DOMAIN_KERNEL_PROMOTION_PENDING",
+    "stage3_delta_validation_and_incremental_storage": "A_B_STORAGE_AND_LEGACY_COMPATIBILITY_IMPLEMENTED_CURRENT_SWIFT_CI_AND_FULL_DOMAIN_AUDIT_PENDING",
+    "stage4_cold_archive": "PRODUCTION_MOBILITY_ARCHIVE_AND_SEGMENT_ROLLOVER_IMPLEMENTED_DEVICE_HOT_STATE_GATE_PENDING",
+    "stage5_worker": "TYPED_ASSET_WORKER_KERNEL_INTEGRATED_CROSS_DOMAIN_CALLBACKS_AND_DEVICE_GATE_PENDING",
+    "stage6_typed_asset_columns": "NINE_LIVE_WORKER_COLUMNS_INTEGRATED_OBJECT_COMPATIBILITY_AND_OLDEST_DEVICE_MEMORY_PENDING",
     "full_snapshot_fallback": "ON",
     "save_schema": "2.0.0",
     "production_approved": false
@@ -56,9 +57,9 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
+  "source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
   "version": "3.0.0",
-  "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
+  "webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
   "previous_passed_source_ci": {
     "run_id": "36307934626",
     "commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",

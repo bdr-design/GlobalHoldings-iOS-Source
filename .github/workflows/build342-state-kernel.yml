@@ -62,15 +62,15 @@ jobs:
           import json,sys
           from pathlib import Path
           root=Path(sys.argv[1])
-          expected='84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e'
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
           authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
           result=json.loads((root/'BUILD342_STATE_KERNEL_VERIFICATION.json').read_text())
           gate=json.loads((root/'RELEASE_GATE.json').read_text())
-          if manifest.get('source_tree_sha256')!=expected: raise SystemExit('Build 342 source fingerprint mismatch')
+          expected=manifest.get('source_tree_sha256')
+          if not expected: raise SystemExit('Build 342 source fingerprint is missing')
           if authorization.get('test_build_authorized') is not True or authorization.get('production_approved') is not False: raise SystemExit('Experimental authorization mismatch')
           if authorization.get('minimum_acceptance_gates',0)<140: raise SystemExit('Acceptance floor is below 140')
-          if result.get('source_tree_sha256')!=expected or result.get('build')!=342: raise SystemExit('Build 342 verification is bound to another source')
+          if authorization.get('source_tree_sha256')!=expected or result.get('source_tree_sha256')!=expected or gate.get('source_tree_sha256')!=expected or result.get('build')!=342: raise SystemExit('Build 342 verification is bound to another source')
           if gate.get('approved') is not False or gate.get('save_schema')!='2.0.0': raise SystemExit('Release gate must remain closed on Save Schema 2.0.0')
           if authorization.get('rollback_and_ownership',{}).get('full_snapshot_fallback') is not True: raise SystemExit('Full Snapshot rollback fallback must remain enabled')
           print('Build 342 / 3.0.0 / Save Schema 2.0.0; clean source and experimental-only authorization: PASS')

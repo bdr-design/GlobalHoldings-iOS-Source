@@ -537,6 +537,33 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                         self?.reportManualSlotAck(payload: payload, success: false, message: error.localizedDescription)
                     }
                 }
+            case "coldArchiveRead", "coldArchiveWrite", "coldArchiveRemove", "coldArchiveKeys":
+                guard let requestId = payload["requestId"] as? String, !requestId.isEmpty, requestId.count <= 200,
+                      let key = payload["key"] as? String else { return }
+                let reply: (Bool, Any?, String?) -> Void = { [weak self] success, value, error in
+                    guard self?.isCurrentDocument(requestDocument) == true else { return }
+                    self?.reportColdArchiveAck(requestId: requestId, action: action, key: key,
+                        success: success, value: value, message: error)
+                }
+                switch action {
+                case "coldArchiveRead":
+                    GlobalSaveVault.shared.readColdArchiveAsync(key) { result in
+                        switch result { case .success(let value): reply(true, value as Any? ?? NSNull(), nil); case .failure(let error): reply(false, nil, error.localizedDescription) }
+                    }
+                case "coldArchiveWrite":
+                    guard let value = payload["value"] as? String else { reply(false, nil, "Invalid cold archive value."); return }
+                    GlobalSaveVault.shared.writeColdArchiveAsync(key, value: value) { result in
+                        switch result { case .success: reply(true, NSNull(), nil); case .failure(let error): reply(false, nil, error.localizedDescription) }
+                    }
+                case "coldArchiveRemove":
+                    GlobalSaveVault.shared.removeColdArchiveAsync(key) { result in
+                        switch result { case .success: reply(true, NSNull(), nil); case .failure(let error): reply(false, nil, error.localizedDescription) }
+                    }
+                default:
+                    GlobalSaveVault.shared.coldArchiveKeysAsync { result in
+                        switch result { case .success(let keys): reply(true, keys, nil); case .failure(let error): reply(false, nil, error.localizedDescription) }
+                    }
+                }
             default:
                 break
             }
@@ -862,6 +889,14 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         if let nativeVaultCommitMs, nativeVaultCommitMs.isFinite { detail["nativeVaultCommitMs"] = nativeVaultCommitMs }
         let event = payload["action"] as? String == "resetGameSave" ? "gh-native-reset-ack" : "gh-native-save-ack"
         reportBridgeEvent(event, detail: detail)
+    }
+
+    private func reportColdArchiveAck(requestId: String, action: String, key: String,
+                                      success: Bool, value: Any?, message: String?) {
+        var detail: [String: Any] = ["requestId": requestId, "action": action, "key": key,
+                                     "success": success, "message": message ?? ""]
+        if let value { detail["value"] = value }
+        reportBridgeEvent("gh-native-archive-ack", detail: detail)
     }
 
     private func reportToWeb(success: Bool, message: String) {

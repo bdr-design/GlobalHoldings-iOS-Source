@@ -33,7 +33,7 @@ function setup({assetCount=1}={}){
   const workers=[],workerMessages=[];
   s.Worker=class MockSimulationWorker{
     constructor(){this.terminated=false;workers.push(this);}
-    postMessage(message){workerMessages.push(message);setTimeout(()=>{if(this.terminated)return;const records=Core.processBatch(message);this.onmessage?.({data:{type:'result',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',coreVersion:Core.VERSION,records}});},5);}
+    postMessage(message){workerMessages.push(message);setTimeout(()=>{if(this.terminated)return;if(message.type==='init-start'){this.initAssets=new Array(message.assetCount);this.initCursor=0;return;}if(message.type==='init-chunk'){assert.equal(message.offset,this.initCursor);for(const row of message.assets)this.initAssets[this.initCursor++]=row;return;}if(message.type==='init-end'){assert.equal(this.initCursor,message.assetCount);this.onmessage?.({data:{type:'initialized',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',assets:this.initAssets.length,typedArrayBytes:this.initAssets.length*81,fingerprint:'test-initial-fingerprint'}});return;}if(message.type==='init'){this.onmessage?.({data:{type:'initialized',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',assets:message.assets.length,typedArrayBytes:message.assets.length*81,fingerprint:'test-initial-fingerprint'}});return;}if(message.type!=='process')return;const records=Core.processBatch(message);this.onmessage?.({data:{type:'result',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',coreVersion:Core.VERSION,records,kernelState:{revision:message.requestId,fingerprint:'test-kernel-fingerprint',typedArrayBytes:message.assetCount*81,commitMs:1}}});},5);}
     terminate(){this.terminated=true;}
   };
   vm.runInContext(SUPPORT,s,{filename:'build340-simulation-worker-support.js'});
@@ -75,12 +75,13 @@ async function run(){
     assert(snapshotReads>0&&snapshotReads<32*40,'the first chunk reads only its bounded portion of the fleet');assert.equal(x.workerMessages.length,0,'the worker starts only after a complete immutable input snapshot exists');
     await prepareFully(job);assert.equal(x.asset.progress,.1,'no live asset changes before the owner transaction');
     x.e.load('diagnostics-core');x.s.GH_DIAGNOSTICS.recorderStart(x.state,{speed:30},{nowMs:1000000000000,performanceNowMs:performance.now()});
-    const result=job.finish();assert.equal(result.committed,true);assert(x.asset.progress>.1);assert.equal(x.state.simSeconds,7230);assert.equal(x.state.simulationKernel.lastAtomicCommit.assets,20000);assert.equal(x.workerMessages.length,79,'20,000 assets stay within the 256-row Worker batch limit');
+    const result=job.finish();assert.equal(result.committed,true);assert(x.asset.progress>.1);assert.equal(x.state.simSeconds,7230);assert.equal(x.state.simulationKernel.lastAtomicCommit.assets,20000);assert.equal(x.workerMessages.filter(message=>message.type==='process').length,79,'20,000 assets stay within the 256-row Worker batch limit');
+    const seedChunks=x.workerMessages.filter(message=>message.type==='init-chunk');assert(seedChunks.length>1,'large asset state is seeded over multiple event-loop turns');assert(Math.max(...seedChunks.map(message=>message.assets.length))<=128,'Worker bootstrap message copies are bounded to 128 rows');
     const profiled=x.s.GH_TRANSACTION_CORE.telemetry().profiledSamples.find(row=>row.label==='simulation:7200->7230');
     assert.equal(profiled.profileContext.kind,'simulation-slice');assert.equal(profiled.profileContext.assetCount,20000);
     assert(profiled.phaseBreakdown.some(row=>row.name==='simulation.validate.asset-index'));
     assert(profiled.phaseBreakdown.some(row=>row.name==='simulation.apply.asset-patches'));
-    console.log(JSON.stringify({suite:'build340-simulation-app-worker-20k',assets:20000,workerBatches:x.workerMessages.length,nodeElapsedMs:+(performance.now()-started).toFixed(2),environment:`Node ${process.version}; app owner transaction integration; synthetic state only; no DOM, native persistence or iPhone`}));
+    console.log(JSON.stringify({suite:'build340-simulation-app-worker-20k',assets:20000,workerBatches:x.workerMessages.filter(message=>message.type==='process').length,nodeElapsedMs:+(performance.now()-started).toFixed(2),environment:`Node ${process.version}; app owner transaction integration; synthetic state only; no DOM, native persistence or iPhone`}));
   }
   {
     const x=setup(),job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});await prepare(job);
@@ -89,6 +90,7 @@ async function run(){
     const result=job.finish();assert.equal(result.committed,true);assert(x.asset.progress>.1);assert.equal(x.state.simSeconds,7230);assert.equal(x.workers.length,1);
     assert.equal(x.s.GH_TRANSACTION_CORE.revision(x.state),revisionBefore+1,'only the atomic owner commit advances the runtime target revision');
     assert.equal(x.state.simulationKernel.lastAtomicCommit.assets,1);
+    assert(x.workerMessages.some(message=>message.type==='confirm'&&message.requestIds.includes(1)),'successful application publication confirms the Worker kernel transaction');
     console.log('PASS worker plan crosses the existing validation and atomic simulation transaction before asset/time writes');
   }
   {
@@ -107,7 +109,14 @@ async function run(){
     x.s.GH_FINANCE_CORE.execute=(ctx,command,...args)=>{if(command==='apply-simulation-journal')throw new Error('injected-finance-owner-failure');return execute(ctx,command,...args);};
     let failure;try{job.finish();}catch(error){failure=error;}finally{x.s.GH_FINANCE_CORE.execute=execute;}
     assert.match(String(failure?.message||failure),/injected-finance-owner-failure/);assert.equal(JSON.stringify(x.state),before,'a failed finance owner rolls the whole simulation transaction back byte-for-byte');
+    assert(x.workerMessages.some(message=>message.type==='rollback'&&message.requestIds.includes(1)),'failed finance publication compensates the Worker-owned typed state');
     console.log('PASS worker-derived asset plan retains full transaction rollback when downstream finance application fails');
+  }
+  {
+    const x=setup(),job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});await prepare(job);
+    x.asset.condition-=.25;const result=job.finish();assert.equal(result.committed,false);assert.equal(result.reason,'asset-conflict');assert.equal(x.state.simSeconds,7200);assert.equal(x.asset.condition,98.75);
+    assert(x.workerMessages.some(message=>message.type==='rollback'&&message.requestIds.includes(1)),'stale input rejection rolls back the tentative Worker state');
+    console.log('PASS asset guard conflict rejects time and compensates the prepared Worker kernel batch');
   }
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

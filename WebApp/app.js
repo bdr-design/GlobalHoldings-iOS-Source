@@ -788,6 +788,66 @@
     if(tx.isActive()){tx.afterCommit(()=>persistStateNow({throwOnError:true}),{critical:true,priority:100,key:'save'});return true;}
     return persistStateNow();
   }
+  const coldMobilityArchiveAdapter=window.GH_PERSISTENCE.createColdArchiveAdapter?.()||null;
+  let coldMobilityArchiveFlush=null,coldMobilityArchiveRetry=null;
+  const coldMobilityArchives=new Map();
+  const MOBILITY_ARCHIVE_SEGMENT_LIMIT=4096;
+  function mobilityArchiveBucket(epoch=state.resetEpoch,segment=state.mobility?.tripArchiveSegment??0){
+    const normalizedEpoch=Math.max(0,Math.floor(Number(epoch)||0)),normalizedSegment=Number(segment);
+    if(!Number.isSafeInteger(normalizedSegment)||normalizedSegment<0||normalizedSegment>999999999)throw new Error('mobility-cold-archive-segment-invalid');
+    return `mobility-trip-receipts-e${normalizedEpoch}-s${String(normalizedSegment).padStart(6,'0')}`;
+  }
+  function mobilityArchiveFor(epoch=state.resetEpoch,segment=state.mobility?.tripArchiveSegment??0){
+    if(!coldMobilityArchiveAdapter||!window.GH_COLD_ARCHIVE?.create)return null;
+    const bucket=mobilityArchiveBucket(epoch,segment);if(coldMobilityArchives.has(bucket))return coldMobilityArchives.get(bucket);
+    const archive=window.GH_COLD_ARCHIVE.create({adapter:coldMobilityArchiveAdapter,bucket,idFor:row=>row?.id});coldMobilityArchives.set(bucket,archive);
+    while(coldMobilityArchives.size>4)coldMobilityArchives.delete(coldMobilityArchives.keys().next().value);
+    return archive;
+  }
+  async function flushColdMobilityTripArchive(){
+    if(coldMobilityArchiveFlush)return coldMobilityArchiveFlush;
+    const epoch=Number(state.resetEpoch)||0,source=state.mobility?.tripArchivePending;
+    if(!Array.isArray(source)||!source.length)return {ok:true,empty:true};
+    const rows=clone(source.slice(0,128)),ids=new Set(rows.map(row=>String(row?.id||'')).filter(Boolean));
+    if(!rows.length||ids.size!==rows.length)throw new Error('mobility-cold-archive-trip-id-invalid');
+    const currentSegment=Math.max(0,Math.floor(Number(state.mobility?.tripArchiveSegment)||0)),currentArchive=mobilityArchiveFor(epoch,currentSegment);if(!currentArchive)throw new Error('mobility-cold-archive-unavailable');
+    const work=(async()=>{
+      const currentMetadata=await currentArchive.metadata(),targetSegment=Number(currentMetadata.count)+rows.length>MOBILITY_ARCHIVE_SEGMENT_LIMIT?currentSegment+1:currentSegment,
+        archive=targetSegment===currentSegment?currentArchive:mobilityArchiveFor(epoch,targetSegment);
+      if(!archive)throw new Error('mobility-cold-archive-unavailable');
+      await archive.append(rows);
+      if(Number(state.resetEpoch)!==epoch)return {ok:true,archived:rows.length,staleEpoch:true};
+      const tx=window.GH_TRANSACTION_CORE,result=tx.execute(state,{
+        label:'mobility:cold-trip-archive-ack',scope:['mobility'],
+        validate:()=>Number(state.resetEpoch)===epoch&&Array.isArray(state.mobility?.tripArchivePending),
+        apply:()=>{state.mobility.tripArchivePending=state.mobility.tripArchivePending.filter(row=>!ids.has(String(row?.id||'')));state.mobility.tripArchiveSegment=Math.max(currentSegment,Number(state.mobility.tripArchiveSegment)||0,targetSegment);return true;}
+      });
+      if(!result.committed)throw new Error(result.reason||'mobility-cold-archive-ack-rejected');
+      const remaining=state.mobility.tripArchivePending.length;
+      if(rows.length)save();
+      if(remaining)setTimeout(()=>{flushColdMobilityTripArchive().catch(error=>console.warn('تعذر متابعة أرشيف رحلات Mobility البارد',error));},0);
+      return {ok:true,archived:rows.length,remaining};
+    })();
+    coldMobilityArchiveFlush=work.catch(error=>{
+      console.warn('تعذر تثبيت أرشيف رحلات Mobility البارد؛ بقيت السجلات في الحفظ الساخن لإعادة المحاولة.',error);
+      if(coldMobilityArchiveRetry)clearTimeout(coldMobilityArchiveRetry);
+      coldMobilityArchiveRetry=setTimeout(()=>{coldMobilityArchiveRetry=null;flushColdMobilityTripArchive().catch(()=>{});},5000);
+      return {ok:false,reason:String(error?.message||error),retained:Array.isArray(state.mobility?.tripArchivePending)?state.mobility.tripArchivePending.length:0};
+    }).finally(()=>{coldMobilityArchiveFlush=null;});
+    return coldMobilityArchiveFlush;
+  }
+  window.GH_MOBILITY_ARCHIVE=Object.freeze({flush:flushColdMobilityTripArchive,readAll:async()=>{
+    if(!coldMobilityArchiveAdapter)return [];const epoch=Math.max(0,Math.floor(Number(state.resetEpoch)||0)),keys=await coldMobilityArchiveAdapter.keys(),prefix=`gh-cold-mobility-trip-receipts-e${epoch}-s`,segments=new Set([Math.max(0,Math.floor(Number(state.mobility?.tripArchiveSegment)||0)),0]);
+    const pattern=new RegExp(`^${prefix}(\\d+)-[AB]\\.json$`);for(const key of keys){const match=pattern.exec(String(key));if(match)segments.add(Number(match[1]));}
+    const ids=new Map();for(const segment of [...segments].sort((a,b)=>a-b)){const archive=mobilityArchiveFor(epoch,segment);if(!archive)continue;for(const row of await archive.readAll()){const id=String(row?.id||'');if(!id)throw new Error('mobility-cold-archive-trip-id-invalid');const prior=ids.get(id);if(prior&&JSON.stringify(prior)!==JSON.stringify(row))throw new Error(`mobility-cold-archive-id-conflict:${id}`);if(!prior)ids.set(id,row);}}
+    return [...ids.values()];
+  },metadata:async()=>{
+    if(!coldMobilityArchiveAdapter)return {generation:0,count:0,segments:0};const epoch=Math.max(0,Math.floor(Number(state.resetEpoch)||0)),keys=await coldMobilityArchiveAdapter.keys(),prefix=`gh-cold-mobility-trip-receipts-e${epoch}-s`,segments=new Set([Math.max(0,Math.floor(Number(state.mobility?.tripArchiveSegment)||0)),0]);
+    const pattern=new RegExp(`^${prefix}(\\d+)-[AB]\\.json$`);for(const key of keys){const match=pattern.exec(String(key));if(match)segments.add(Number(match[1]));}
+    let count=0,generation=0,latestSlot=null;for(const segment of segments){const archive=mobilityArchiveFor(epoch,segment);if(!archive)continue;const row=await archive.metadata();count+=row.count;generation=Math.max(generation,row.generation);if(row.generation===generation)latestSlot=row.slot;}
+    return {generation,count,segments:segments.size,slot:latestSlot};
+  }});
+  if(Array.isArray(state.mobility?.tripArchivePending)&&state.mobility.tripArchivePending.length)setTimeout(()=>{flushColdMobilityTripArchive().catch(()=>{});},0);
   if(startupLoadMeta?.source==='native'&&startupLoadMeta.needsCanonicalPersist){
     setTimeout(()=>{try{persistStateNow({throwOnError:true});}catch(error){console.warn('تعذر تثبيت Migration الحفظ Native بعد الإقلاع',error);}},0);
   }
@@ -2082,10 +2142,44 @@
 
   const SIMULATION_ASSET_ENGINE=window.GH_SIMULATION_ASSET_CORE;
   if(!SIMULATION_ASSET_ENGINE?.processRow||!Array.isArray(SIMULATION_ASSET_ENGINE.WRITE_FIELDS))throw new Error('Simulation Asset Core failed to load before app.js');
-  let simulationAssetWorker=null,simulationAssetWorkerFailed=false,simulationAssetWorkerPending=null,simulationAssetWorkerRequestId=0;
+  let simulationAssetWorker=null,simulationAssetWorkerFailed=false,simulationAssetWorkerPending=null,simulationAssetWorkerRequestId=0,simulationAssetWorkerAssetCount=-1,
+    simulationAssetWorkerReady=false,simulationAssetWorkerSeedTimer=null,simulationAssetWorkerInitState=null,simulationAssetWorkerQueuedProcess=null;
+  const SIMULATION_WORKER_SEED_CHUNK=128;
   function disableSimulationAssetWorker(error){
     simulationAssetWorkerFailed=true;try{simulationAssetWorker?.terminate?.();}catch{}simulationAssetWorker=null;
+    simulationAssetWorkerAssetCount=-1;simulationAssetWorkerReady=false;simulationAssetWorkerInitState=null;simulationAssetWorkerQueuedProcess=null;
+    if(simulationAssetWorkerSeedTimer!==null)clearTimeout(simulationAssetWorkerSeedTimer);simulationAssetWorkerSeedTimer=null;
     const pending=simulationAssetWorkerPending;if(pending&&pending.status==='pending'){pending.status='error';pending.error=String(error?.message||error||'simulation-asset-worker-failed');clearTimeout(pending.timer);}
+  }
+  function postQueuedSimulationAssetBatch(){
+    const batch=simulationAssetWorkerQueuedProcess;if(!batch||batch.pending.status!=='pending'||!simulationAssetWorkerReady||!simulationAssetWorker)return false;
+    simulationAssetWorkerQueuedProcess=null;
+    try{simulationAssetWorker.postMessage({type:'process',requestId:batch.pending.requestId,assetCount:batch.assetCount,rows:batch.rows.map(({id,index,asset,route,catalogSpecs,departureDelay})=>({id,assetIndex:index,asset,route,catalogSpecs,departureDelay})),context:batch.context,simAdvance:batch.simAdvance,simMeta:batch.simMeta});return true;}
+    catch(error){disableSimulationAssetWorker(error);return false;}
+  }
+  function startSimulationAssetWorkerBootstrap(worker,assets){
+    if(worker!==simulationAssetWorker||simulationAssetWorkerFailed)return false;
+    const source=Array.isArray(assets)?assets:[],revision=window.GH_TRANSACTION_CORE?.revision?.(state)??null;
+    const init={source,revision,cursor:0,count:source.length};simulationAssetWorkerInitState=init;simulationAssetWorkerReady=false;simulationAssetWorkerAssetCount=source.length;
+    try{worker.postMessage({type:'init-start',requestId:0,assetCount:init.count});}
+    catch(error){disableSimulationAssetWorker(error);return false;}
+    const pump=()=>{
+      simulationAssetWorkerSeedTimer=null;
+      if(worker!==simulationAssetWorker||simulationAssetWorkerFailed||simulationAssetWorkerInitState!==init)return;
+      const currentRevision=window.GH_TRANSACTION_CORE?.revision?.(state)??null;
+      if(state.assets!==source||(Array.isArray(state.assets)?state.assets.length:0)!==init.count||(revision!==null&&currentRevision!==revision)){
+        startSimulationAssetWorkerBootstrap(worker,state.assets||[]);return;
+      }
+      try{
+        if(init.cursor<init.count){
+          const offset=init.cursor,end=Math.min(init.count,offset+SIMULATION_WORKER_SEED_CHUNK),rows=source.slice(offset,end).map(row=>row&&typeof row==='object'?clone(row):row);
+          worker.postMessage({type:'init-chunk',requestId:0,offset,assets:rows});init.cursor=end;
+          simulationAssetWorkerSeedTimer=setTimeout(pump,0);return;
+        }
+        worker.postMessage({type:'init-end',requestId:0,assetCount:init.count});
+      }catch(error){disableSimulationAssetWorker(error);}
+    };
+    simulationAssetWorkerSeedTimer=setTimeout(pump,0);return true;
   }
   function ensureSimulationAssetWorker(){
     if(simulationAssetWorkerFailed||typeof Worker!=='function')return null;
@@ -2093,7 +2187,16 @@
     try{
       const worker=new Worker('simulation-asset-worker.js');simulationAssetWorker=worker;
       worker.onmessage=event=>{
-        const pending=simulationAssetWorkerPending,message=event?.data||{};
+        const message=event?.data||{};
+        if(message.type==='initialized'&&message.version==='GH-SIMULATION-ASSET-WORKER-340.1.0'){
+          const init=simulationAssetWorkerInitState;
+          if(!init||Number(message.assets)!==init.count||typeof message.fingerprint!=='string'||!Number.isSafeInteger(message.typedArrayBytes)){disableSimulationAssetWorker(new Error('simulation-asset-worker-bootstrap-result-invalid'));return;}
+          const currentRevision=window.GH_TRANSACTION_CORE?.revision?.(state)??null;
+          if(state.assets!==init.source||(init.revision!==null&&currentRevision!==init.revision)){startSimulationAssetWorkerBootstrap(worker,state.assets||[]);return;}
+          simulationAssetWorkerInitState=null;simulationAssetWorkerReady=true;postQueuedSimulationAssetBatch();return;
+        }
+        if(message.type==='error'&&message.requestId===0&&simulationAssetWorkerInitState){disableSimulationAssetWorker(new Error(String(message.error||'simulation-asset-worker-bootstrap-failed')));return;}
+        const pending=simulationAssetWorkerPending;
         if(!pending||pending.status!=='pending'||message.requestId!==pending.requestId)return;
         clearTimeout(pending.timer);
         if(message.type==='result'&&message.version==='GH-SIMULATION-ASSET-WORKER-340.1.0'&&message.coreVersion===SIMULATION_ASSET_ENGINE.VERSION){pending.status='done';pending.message=message;}
@@ -2101,20 +2204,28 @@
       };
       worker.onerror=event=>disableSimulationAssetWorker(event?.error||new Error(event?.message||'simulation-asset-worker-error'));
       worker.onmessageerror=()=>disableSimulationAssetWorker(new Error('simulation-asset-worker-message-error'));
+      startSimulationAssetWorkerBootstrap(worker,state.assets||[]);
       return worker;
     }catch(error){disableSimulationAssetWorker(error);return null;}
   }
   function submitSimulationAssetBatch(rows,context,simAdvance,simMeta){
     const worker=ensureSimulationAssetWorker();if(!worker||simulationAssetWorkerPending)return null;
+    const assetCount=state.assets?.length||0;
+    if(simulationAssetWorkerAssetCount!==assetCount||!simulationAssetWorkerInitState&&!simulationAssetWorkerReady)startSimulationAssetWorkerBootstrap(worker,state.assets||[]);
     const requestId=++simulationAssetWorkerRequestId,pending={requestId,status:'pending',timer:null,message:null,error:null};simulationAssetWorkerPending=pending;
     pending.timer=setTimeout(()=>disableSimulationAssetWorker(new Error('simulation-asset-worker-timeout')),15000);
-    try{worker.postMessage({type:'process',requestId,rows:rows.map(({id,asset,route,catalogSpecs,departureDelay})=>({id,asset,route,catalogSpecs,departureDelay})),context,simAdvance,simMeta});}
-    catch(error){disableSimulationAssetWorker(error);}
-    return pending;
+    const batch={pending,assetCount,rows,context,simAdvance,simMeta};simulationAssetWorkerQueuedProcess=batch;
+    if(simulationAssetWorkerReady)postQueuedSimulationAssetBatch();
+      return pending;
+  }
+  function settleSimulationAssetWorker(type,requestIds){
+    const ids=[...new Set((requestIds||[]).filter(Number.isSafeInteger))];if(!ids.length||!simulationAssetWorker||simulationAssetWorkerFailed)return false;
+    try{simulationAssetWorker.postMessage({type,requestId:++simulationAssetWorkerRequestId,requestIds:ids});return true;}
+    catch(error){disableSimulationAssetWorker(error);return false;}
   }
   function releaseSimulationAssetBatch(pending,{cancel=false}={}){
     if(!pending)return;
-    if(cancel&&simulationAssetWorkerPending===pending){try{simulationAssetWorker?.postMessage?.({type:'cancel',requestId:pending.requestId});}catch{}try{simulationAssetWorker?.terminate?.();}catch{}simulationAssetWorker=null;simulationAssetWorkerPending=null;clearTimeout(pending.timer);pending.status='cancelled';return;}
+    if(cancel&&simulationAssetWorkerPending===pending){try{simulationAssetWorker?.postMessage?.({type:'cancel',requestId:pending.requestId});}catch{}try{simulationAssetWorker?.terminate?.();}catch{}simulationAssetWorker=null;simulationAssetWorkerAssetCount=-1;simulationAssetWorkerReady=false;simulationAssetWorkerInitState=null;simulationAssetWorkerQueuedProcess=null;simulationAssetWorkerPending=null;if(simulationAssetWorkerSeedTimer!==null)clearTimeout(simulationAssetWorkerSeedTimer);simulationAssetWorkerSeedTimer=null;clearTimeout(pending.timer);pending.status='cancelled';return;}
     if(simulationAssetWorkerPending===pending)simulationAssetWorkerPending=null;clearTimeout(pending.timer);
   }
   function simulationAssetRuntimeContext(){
@@ -2485,12 +2596,14 @@
     const simMeta={speed,from:Number(meta.from)||state.simSeconds,to:Number(meta.to)||(state.simSeconds+sliceSeconds),infiniteMoney:!!(state.godMoney&&state.infiniteMoney)};
     const boundary=meta.boundary||{};
     let snapshotCursor=0,assetCursor=0,competitorCursor=0,finished=false,cancelled=false,staleReason=null,activeWorkerBatch=null,localFallbackRows=null,localFallbackCursor=0;
+    const workerCommitIds=[];
     const pendingAssetRows=[];
     const workerBatchSize=SIMULATION_ASSET_ENGINE.MAX_BATCH_ITEMS;
     function sourceStillCurrent(){return state.assets===sourceAssets&&(Array.isArray(sourceAssets)?sourceAssets.length:0)===snapshotAssetCount&&(sourceRevision===null||tx.revision(state)===sourceRevision);}
+    function settleWorker(type){const ids=workerCommitIds.splice(0);return ids.length&&typeof settleSimulationAssetWorker==='function'?settleSimulationAssetWorker(type,ids):false;}
     function invalidateStaleSource(){
       staleReason='simulation-source-revision-conflict';finished=true;
-      if(activeWorkerBatch){releaseSimulationAssetBatch(activeWorkerBatch.pending,{cancel:true});activeWorkerBatch=null;}
+      if(activeWorkerBatch){releaseSimulationAssetBatch(activeWorkerBatch.pending,{cancel:true});activeWorkerBatch=null;workerCommitIds.length=0;}else settleWorker('rollback');
       pendingAssetRows.length=0;localFallbackRows=null;localFallbackCursor=0;records.length=0;
       return true;
     }
@@ -2507,11 +2620,14 @@
     function workerRow(seed){
       const asset=simulationAssetSnapshot(seed,seed.guard);asset.ownerCompanyId=assetOwnerCompanyId(asset);
       const catalogSpecs=asset.specs?null:catalogItem(asset.type,asset.catalogId)?.specs||null;
-      return {id:seed.id,guard:seed.guard,asset,route:simulationRouteForAsset(asset,routePlanCache),catalogSpecs,departureDelay:window.GH_FLEET_CORE.departureDelay(asset)};
+      return {id:seed.id,index:seed.index,guard:seed.guard,asset,route:simulationRouteForAsset(asset,routePlanCache),catalogSpecs,departureDelay:window.GH_FLEET_CORE.departureDelay(asset)};
     }
     function workerOutputReady(batch){
       const message=batch.pending.message,results=message?.records;
-      if(batch.pending.status==='done'&&message?.version==='GH-SIMULATION-ASSET-WORKER-340.1.0'&&message?.coreVersion===SIMULATION_ASSET_ENGINE.VERSION&&SIMULATION_ASSET_ENGINE.validateResults(batch.rows,results)){
+      const workerKernel=message?.kernelState;
+      if(batch.pending.status==='done'&&message?.version==='GH-SIMULATION-ASSET-WORKER-340.1.0'&&message?.coreVersion===SIMULATION_ASSET_ENGINE.VERSION&&Number.isSafeInteger(workerKernel?.revision)&&Number.isSafeInteger(workerKernel?.typedArrayBytes)&&typeof workerKernel?.fingerprint==='string'&&SIMULATION_ASSET_ENGINE.validateResults(batch.rows,results)){
+        window.__GH_SIMULATION_WORKER_KERNEL__={revision:workerKernel.revision,typedArrayBytes:workerKernel.typedArrayBytes,fingerprint:workerKernel.fingerprint,commitMs:workerKernel.commitMs||0};
+        workerCommitIds.push(batch.pending.requestId);
         for(let index=0;index<results.length;index++)records.push({id:batch.rows[index].id,guard:batch.rows[index].guard,patch:results[index].patch,effects:results[index].effects});
         releaseSimulationAssetBatch(batch.pending);activeWorkerBatch=null;return true;
       }
@@ -2530,7 +2646,7 @@
         while(snapshotCursor<snapshotAssetCount&&count<max&&withinBudget()){
           const asset=snapshotAssets[snapshotCursor++];
           if(asset?.routeId&&!routeGuards.has(asset.routeId))routeGuards.set(asset.routeId,JSON.stringify(routeTemplates[asset.routeId]||null));
-          assetSeeds.push({id:asset?.id,guard:simulationAssetGuard(asset,false)});count++;
+          assetSeeds.push({id:asset?.id,index:snapshotCursor-1,guard:simulationAssetGuard(asset,false)});count++;
         }
         if(snapshotCursor<snapshotAssetCount)return false;
         if(!sourceStillCurrent())return invalidateStaleSource();
@@ -2568,7 +2684,7 @@
       },
       finish(info={}){
         if(cancelled||!finished)return {committed:false,reason:'job-not-finished'};
-        if(staleReason)return {committed:false,retry:true,reason:staleReason};
+        if(staleReason){settleWorker('rollback');return {committed:false,retry:true,reason:staleReason};}
         // Validation and application are synchronous inside the same transaction;
         // build one authoritative index and validate each input exactly once.
         let outcome,commitAssets,mapStructureChanged=false,movingAssetCount=0,idleAssetCount=0,turnaroundAssetCount=0;
@@ -2580,7 +2696,7 @@
         const deliveryWorkPending=hasBoundary?true:(window.GH_REALISM?.hasPendingDeliveries?.(state)!==false);
         const declaredWriteRoots=hasBoundary?null:(deliveryWorkPending?SIMULATION_TRANSACTION_SCOPE:SIMULATION_STEADY_TRANSACTION_SCOPE),writeAudit=globalThis.__GH_BUILD339_WRITE_AUDIT__===true;
         const profileActive=window.GH_DIAGNOSTICS?.recorderIsActive?.(state)===true;
-        outcome=tx.execute(state,{
+        try{outcome=tx.execute(state,{
             label:`simulation:${simMeta.from}->${simMeta.to}`,
             profile:profileActive,
             profileContext:profileActive?{kind:'simulation-slice',from:Number(simMeta.from),to:Number(simMeta.to),speed:Number(speed),dayBoundary:boundary.day??null,hourBoundary:boundary.hour??null,assetCount:assetSeeds.length,plannedAssets:records.length,competitorCount:competitorSeeds.length,routeGuardCount:routeGuards.size,invoiceCount:state.finance?.invoices?.length||0,receivableCount:state.finance?.receivables?.length||0,payableCount:state.finance?.payables?.length||0,transferCount:state.finance?.transfers?.length||0,pendingDeliveryCount:state.realism?.procurement?.pendingDeliveryCount||0,hasBoundary,deliveryWorkPending,rollbackScope:declaredWriteRoots?declaredWriteRoots.length:'full-snapshot'}:null,
@@ -2640,15 +2756,17 @@
               state.simulationKernel.lastAtomicCommit={from:simMeta.from,to:simMeta.to,assets:records.length,day:boundary.day??null,hour:boundary.hour??null,at:state.simSeconds,core:'2.4.1'};
               return true;
             }
-          });
-        if(!outcome.committed)return {committed:false,retry:true,reason:outcome.reason||'transaction-rejected'};
+          });}catch(error){settleWorker('rollback');throw error;}
+        if(!outcome.committed){settleWorker('rollback');return {committed:false,retry:true,reason:outcome.reason||'transaction-rejected'};}
+        settleWorker('confirm');
         if(mapStructureChanged){const mapRevision=((Number(window.GH_MAP_STRUCTURE_REVISION)||0)+1)>>>0;window.GH_MAP_STRUCTURE_REVISION=mapRevision;window.GH_MAP_ASSET_STATUS_SUMMARY=Object.freeze({saveRevision:Number(state.saveRevision)||0,mapRevision,assetCount:state.assets.length,moving:movingAssetCount,idle:idleAssetCount,turn:turnaroundAssetCount});}
         for(const routeId of new Set(journal.retiredRouteIds))if(!BASE_ROUTE_IDS.has(routeId)&&!(state.customRoutes||[]).some(route=>route.id===routeId))delete routeTemplates[routeId];
         for(const id of new Set(journal.saleIds))queueAssetSaleFinalize(id);
+        if(state.mobility?.tripArchivePending?.length)setTimeout(()=>{flushColdMobilityTripArchive().catch(error=>console.warn('تعذر تثبيت أرشيف الرحلات البارد',error));},0);
         return {committed:true,boundary:{day:boundary.day??null,hour:boundary.hour??null}};
       },
       cancel(info={}){
-        cancelled=true;if(activeWorkerBatch)releaseSimulationAssetBatch(activeWorkerBatch.pending,{cancel:true});activeWorkerBatch=null;pendingAssetRows.length=0;localFallbackRows=null;localFallbackCursor=0;records.length=0;journal.alerts.length=0;journal.saleIds.length=0;journal.retiredRouteIds.length=0;
+        cancelled=true;if(activeWorkerBatch){releaseSimulationAssetBatch(activeWorkerBatch.pending,{cancel:true});workerCommitIds.length=0;}else settleWorker('rollback');activeWorkerBatch=null;pendingAssetRows.length=0;localFallbackRows=null;localFallbackCursor=0;records.length=0;journal.alerts.length=0;journal.saleIds.length=0;journal.retiredRouteIds.length=0;
         state.simulationKernel=state.simulationKernel||{};
         state.simulationKernel.lastAtomicCancel={reason:info.reason||'cancelled',from:simMeta.from,to:simMeta.to,at:state.simSeconds};
       }

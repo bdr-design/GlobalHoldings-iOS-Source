@@ -16,8 +16,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 654340,
-      "sha256": "7bbe605d96f90aca7be93bd368192015f5bab1dc2a319aafc61a193bd0e5d1e5"
+      "bytes": 666521,
+      "sha256": "eadafdcd8941599527b50aa0d7cd4248fec15a6f1b4a206401ce48ae3097e746"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1764,8 +1764,8 @@
       "sha256": "b5d93bbe265471a6fb1961a3f6cd0f3bfacf74c4779799b395288c35b76fb133"
     },
     "WebApp/kernel-core.js": {
-      "bytes": 22019,
-      "sha256": "2e0ad00a7e3db1ec288a0bb00a753cd397b6a2be7272629062ac3d924a5e490f"
+      "bytes": 24031,
+      "sha256": "1469d3b104d0a95d54deea20fdc74e9450f8fa0eb7636fd41f22e612c30ad338"
     },
     "WebApp/kernel-worker-core.js": {
       "bytes": 10280,
@@ -1824,16 +1824,16 @@
       "sha256": "d80e1c99edd4dfa4208997c854fda5ef53ab66cbd0f40251630a5b6416b58ad3"
     },
     "WebApp/mobility-core.js": {
-      "bytes": 63761,
-      "sha256": "7d417dc741c0c040e389332e26c25384fb69593d398fe54ea832eec2cfbad2cb"
+      "bytes": 64221,
+      "sha256": "57b3c38e41e55a4659e1e69e50ba0a4223a3f1fe13e22fafb5a6d2a87463e058"
     },
     "WebApp/operations-core.js": {
       "bytes": 1688,
       "sha256": "d60c6da5cd6212abde476caa392977f3a9cfd8fd1ccd1126fbdb0ca200f4f531"
     },
     "WebApp/persistence-core.js": {
-      "bytes": 30352,
-      "sha256": "2d2fb367c729efbf93ced0328b7a70506750bbf70f5447753105af3c66c3a1a4"
+      "bytes": 33491,
+      "sha256": "d3159e76a040a678f4c192bc7f08571e5e22eba3d32998b9afd028acec036c13"
     },
     "WebApp/policy-core.js": {
       "bytes": 1915,
@@ -1884,8 +1884,8 @@
       "sha256": "8c8f2695ea8cbd3e0118ee150475384f40d9500b651b766a0dcc821048936502"
     },
     "WebApp/simulation-asset-worker.js": {
-      "bytes": 1677,
-      "sha256": "0e3f6cece32b6c12432a0d4ec77926f812b0417e5c3a7c357604b659a2ff7ed8"
+      "bytes": 9139,
+      "sha256": "2343daef4f682b9e2e0b62167966e7a53205f0888448c61f496f51aedc2fbc83"
     },
     "WebApp/simulation-core.js": {
       "bytes": 24692,
@@ -1976,24 +1976,24 @@
       "sha256": "0fd49ba3c3585c709678e0046a821c3c60685ec7063720d30d3a3448be3a208b"
     },
     "iOS/GlobalHoldings/GameViewController.swift": {
-      "bytes": 53691,
-      "sha256": "457557de23c61b7297518786372fcdb741453e7f094f0a42df9c74df5a567839"
+      "bytes": 56235,
+      "sha256": "7a163837698018e46232be9809fbb5a503f6254bb926042c81f7971706103f2d"
     },
     "iOS/GlobalHoldings/GlobalGameStorage.swift": {
       "bytes": 66640,
       "sha256": "cee936612b3017c810e5c904b617d96091046077400c2f9e187b7a020b81a44a"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
-      "bytes": 62047,
-      "sha256": "25797f0ac24d1c2f9cca574709743ebf8523e55adb03950f7c9610b63f70963f"
+      "bytes": 65906,
+      "sha256": "f32f42f625ae6f5dec885481a114e2691fc7afc00d57605eace49c7b292a6455"
     },
     "iOS/GlobalHoldings/LaunchScreen.storyboard": {
       "bytes": 1728,
       "sha256": "fed5a53d38ed2667c3f609bd317c9f4fc30bf42feac87cfab56bd702b8879947"
     },
     "project.yml": {
-      "bytes": 2423,
-      "sha256": "0dddc8f481db3bc1d9fa370551915bb2120cb055e219c2f372159a426db9daf9"
+      "bytes": 2421,
+      "sha256": "0c094b6e7c0121027bd1894674a60fe14bafd9e28440a5eadb7e68caa741e9cd"
     },
     "BUILD": {
       "bytes": 4,
@@ -2005,7 +2005,7 @@
     }
   },
   "latest_direct_source_ci": {
-    "status": "PASS_CURRENT_SOURCE_MACOS_GATES_DEVICE_GATES_OPEN",
+    "status": "PENDING_CURRENT_SOURCE_MACOS_CI",
     "source_mode": "direct_git_tree_from_verified_build341_commit",
     "tested_commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
     "run_id": "36315061990",
@@ -2024,7 +2024,9 @@
     "verification_artifact_id": "10931010204",
     "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
     "ipa_uploaded_or_delivered": false,
-    "physical_iphone_tested": false
+    "physical_iphone_tested": false,
+    "pending_source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
+    "pending_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3"
   },
   "phase": "Build 342 — seven-stage state kernel and lag-root verification",
   "stage0_contracts": [
@@ -2038,8 +2040,9 @@
     "Build 342 retains and extends the declared acceptance set without replacing the baseline run"
   ],
   "stage2_contracts": [
-    "kernel shadow compares complete synthetic state after every hourly commit for ten simulated days at 600x and 3380 assets",
-    "kernel remains a non-authoritative mirror until full application-domain parity is independently established"
+    "the ten-day 600x 3,380-asset application shadow still checks full-root equality after each of 240 commits",
+    "the live simulation asset Worker now reads and writes nine hot fields through its typed state kernel and returns patches read back from that kernel",
+    "the application transaction remains the cross-domain owner; independent finance/market kernel execution and full kernel promotion remain pending"
   ],
   "stage3_contracts": [
     "Save Schema remains 2.0.0 while native physical storage uses independent storageVersion 2",
@@ -2047,16 +2050,19 @@
     "legacy inline Save Schema 2.0.0 payload remains readable and rollback uses the retained full snapshot fallback"
   ],
   "stage4_contracts": [
-    "cold-archive core supports stable IDs, digests, atomic index generations, bounded hot windows, and lazy verification",
-    "production cold-archive integration and under-12-MB hot-state device acceptance remain gated"
+    "Mobility trip overflow is written through the production app path to the native A/B cold archive after each bounded 128-record flush",
+    "archive acknowledgements remove pending hot receipts only in a scoped atomic transaction; write or acknowledgement failure retains them for idempotent retry",
+    "archive indexes roll over at 4,096 receipts and historical reads merge verified segments; the under-12-MB hot-state and device gates remain pending"
   ],
   "stage5_contracts": [
-    "kernel Worker protocol supports bounded commands, revisions, idempotency, conflicting request-ID rejection, query, transferable visible frames, and stale-generation rejection",
-    "authoritative application simulation migration and physical frame/task acceptance remain gated"
+    "the simulation asset Worker owns tentative kernel transactions, returns patches read back from its typed kernel, and confirms or restores them after the application transaction",
+    "Worker bootstrap yields between at-most-128-row messages; Worker failure retains the existing main-thread fallback and full-snapshot outer rollback",
+    "finance, calendar and other domain callbacks still commit on the application thread; ten-minute physical frame/task acceptance remains pending"
   ],
   "stage6_contracts": [
-    "kernel supports Float64Array hot columns, 20000-asset Worker fixture, and releases duplicated registered asset arrays from its base snapshot",
-    "live application migration and oldest-supported-iPhone memory/FPS/thermal acceptance remain gated"
+    "the production simulation Worker registers nine hot numeric asset fields in Float64Array columns with presence bytes and operates on the live 3,380-asset app path",
+    "the separate 20,000-row typed-kernel fixture and app transaction integration tests pass on Node",
+    "the application still publishes compatibility object rows; oldest-supported-iPhone memory, FPS and thermal acceptance remain pending"
   ],
   "source_tracking": {
     "repository": "bdr-design/GlobalHoldings-iOS-Source",
@@ -2069,8 +2075,8 @@
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "remote_branch_created_from_verified_base": true
   },
-  "source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
-  "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
+  "source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
+  "webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
   "previous_passed_direct_source_ci": {
     "run_id": "36307934626",
     "commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",
