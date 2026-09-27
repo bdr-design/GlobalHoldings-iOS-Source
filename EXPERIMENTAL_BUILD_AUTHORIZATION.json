@@ -11,7 +11,8 @@
     "The app kernel stores nine hot asset columns without duplicate numeric fields in row objects. Synthetic 20,000-row Worker/kernel tests pass, but the app still exposes compatibility row views; iPhone 17 Pro Max FPS, task duration, memory and thermal measurements remain pending.",
     "Physical acceptance still needs ten minutes at 600x with continuous drag: at least 58 FPS, under 1% frame drops, no main-thread task over 50 ms, under 12 MB hot state at 3,380 assets, and memory/thermal behavior at 20,000 assets on the oldest supported iPhone. The user reports iPhone 17 Pro Max as the only available device; the oldest supported model is unspecified.",
     "The current local candidate updates live Proxy identity tracking so journal compaction can restore a retained row after array-index reuse. Its targeted regression passes locally; exact-current-source macOS acceptance and iPhone 17 Pro Max timing remain pending.",
-    "Run 36351219317 on commit 3e32f4d1ea679440cf10df5247904926c7cdb14a passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The live-proxy identity fix cleared journal-unbalanced at hour 83 and the calendar journey reached days 7 and 37. The remaining failure was the UI-only date-selection snapshot racing a deferred idle compaction that moved day-34 records into the verified audit digest. The acceptance helper now waits for that persistence work to settle before asserting read-only selection. Swift, WKWebView and current-source iOS build were not reached."
+    "Run 36351219317 on commit 3e32f4d1ea679440cf10df5247904926c7cdb14a passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The live-proxy identity fix cleared journal-unbalanced at hour 83 and the calendar journey reached days 7 and 37. The remaining failure was the UI-only date-selection snapshot racing a deferred idle compaction that moved day-34 records into the verified audit digest. The acceptance helper now waits for that persistence work to settle before asserting read-only selection. Swift, WKWebView and current-source iOS build were not reached.",
+    "Run 36352181861 on commit 56643f2fc57338fc97d66e3cc0b0d640f93ef495 passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The calendar journey stopped while waiting for deferred compaction to settle: its test synchronization predicate timed out after 30 seconds before the calendar parity assertions, with no schema or journal-integrity error. The journal-unbalanced failure at hour 83 was cleared in run 36351219317. The candidate helper now waits on the authoritative simulationKernel.lastCompactDay marker and includes predicate state in any timeout diagnostic. Swift, WKWebView and current-source iOS build were not reached."
   ],
   "minimum_acceptance_gates": 140,
   "production_approved": false,
@@ -36,8 +37,8 @@
     "normal_ci_uses_overlay": false,
     "current_candidate_source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
     "current_candidate_webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
-    "latest_candidate_ci_run": "36351219317",
-    "current_candidate_ci_status": "PENDING_AFTER_CALENDAR_PERSISTENCE_QUIESCENCE_FIX"
+    "latest_candidate_ci_run": "36352181861",
+    "current_candidate_ci_status": "PENDING_AFTER_AUTHORITATIVE_COMPACTION_MARKER_WAIT_FIX"
   },
   "source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
   "test_build_authorized": true,

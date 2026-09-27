@@ -1,7 +1,7 @@
 {
   "approved": false,
   "blocking_issues": [
-    "Run 36351219317 on commit 3e32f4d1ea679440cf10df5247904926c7cdb14a passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The live-proxy identity fix cleared journal-unbalanced at hour 83 and the calendar journey reached days 7 and 37. The remaining failure was the UI-only date-selection snapshot racing a deferred idle compaction that moved day-34 records into the verified audit digest. The acceptance helper now waits for that persistence work to settle before asserting read-only selection. Swift, WKWebView and current-source iOS build were not reached.",
+    "Run 36352181861 on commit 56643f2fc57338fc97d66e3cc0b0d640f93ef495 passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The calendar journey stopped while waiting for deferred compaction to settle: its test synchronization predicate timed out after 30 seconds before the calendar parity assertions, with no schema or journal-integrity error. The journal-unbalanced failure at hour 83 was cleared in run 36351219317. The candidate helper now waits on the authoritative simulationKernel.lastCompactDay marker and includes predicate state in any timeout diagnostic. Swift, WKWebView and current-source iOS build were not reached.",
     "Save Schema remains 2.0.0 with storageVersion 2. The prior 773.430958 ms save sample measured 29,360,245 bytes on macOS only; it is not an iPhone 17 Pro Max measurement.",
     "The 10-day, 600x, 3,380-asset legacy shadow passes 240 full-root comparisons using controlled finance/market callbacks. Live-owner parity is tested for one commit at 3,380 assets and 24 commits across a financial-day boundary at 128 assets; full independent cross-domain kernel promotion remains incomplete.",
     "Mobility cold-trip receipts use the production app and Native archive bridge with stable-ID retry and 4,096-record segments. Live hot asset rows now contain zero duplicate copies of nine typed fields, but whole hot-state size below 12 MB and long-session device behavior remain unmeasured.",
@@ -9,20 +9,20 @@
     "Nine live app hot fields use Float64Array columns and synthetic 20,000-row Worker/kernel tests pass. App behavior at 20,000 rows, physical memory/thermal behavior and the oldest-supported iPhone remain untested.",
     "Physical iPhone acceptance still needs ten minutes at 600x with continuous drag, at least 58 FPS, under 1% frame drops, no main-thread task over 50 ms, and under 12 MB hot state at 3,380 assets on the available iPhone 17 Pro Max.",
     "The oldest supported iPhone is not identified; the 20,000-asset oldest-device memory and thermal gate cannot close until that model is established.",
-    "The latest candidate waits for deferred persistence/compaction before the calendar read-only assertion; exact-current-source macOS CI, Swift/WKWebView checks and device performance remain pending."
+    "The authoritative compaction-marker wait is under re-test; current-source macOS CI, Swift/WKWebView checks and physical iPhone performance remain pending."
   ],
   "build": 342,
   "latest_direct_source_ci": {
-    "run_id": "36351219317",
-    "commit_sha": "3e32f4d1ea679440cf10df5247904926c7cdb14a",
-    "status": "FAILED_BUILD342_ACCEPTANCE_143_OF_144; HOUR83_JOURNAL_UNBALANCED_CLEARED; CALENDAR_SELECTION_SNAPSHOT_RACED_DEFERRED_COMPACTION",
+    "run_id": "36352181861",
+    "commit_sha": "56643f2fc57338fc97d66e3cc0b0d640f93ef495",
+    "status": "FAILED_BUILD342_ACCEPTANCE_143_OF_144_CALENDAR_COMPACTION_WAIT_TIMEOUT; PRIOR_HOUR83_JOURNAL_REPAIR_CONFIRMED",
     "source_mode": "direct_git_tree_from_verified_build341_commit",
-    "result": "BUILD341_BASELINE_PASS_124_OF_124; BUILD342_ACCEPTANCE_143_OF_144; JOURNAL_REPAIR_CONFIRMED; LATE_CALENDAR_SNAPSHOT_RACE",
+    "result": "BUILD341_BASELINE_PASS_124_OF_124; BUILD342_ACCEPTANCE_143_OF_144; CALENDAR_QUIESCENCE_TEST_WAIT_TIMED_OUT; NO_SCHEMA_FAILURE_RECORDED",
     "failure_paths": [
-      "Run 36351219317 on commit 3e32f4d1ea679440cf10df5247904926c7cdb14a passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The live-proxy identity fix cleared journal-unbalanced at hour 83 and the calendar journey reached days 7 and 37. The remaining failure was the UI-only date-selection snapshot racing a deferred idle compaction that moved day-34 records into the verified audit digest. The acceptance helper now waits for that persistence work to settle before asserting read-only selection. Swift, WKWebView and current-source iOS build were not reached."
+      "Run 36352181861 on commit 56643f2fc57338fc97d66e3cc0b0d640f93ef495 passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The calendar journey stopped while waiting for deferred compaction to settle: its test synchronization predicate timed out after 30 seconds before the calendar parity assertions, with no schema or journal-integrity error. The journal-unbalanced failure at hour 83 was cleared in run 36351219317. The candidate helper now waits on the authoritative simulationKernel.lastCompactDay marker and includes predicate state in any timeout diagnostic. Swift, WKWebView and current-source iOS build were not reached."
     ],
     "build341_baseline": "PASS_124_OF_124_UNCHANGED",
-    "build342_source_gates": "FAILED_1_OF_144_CALENDAR_SELECTION_SNAPSHOT_RACE",
+    "build342_source_gates": "FAILED_1_OF_144_CALENDAR_COMPACTION_WAIT_TIMEOUT",
     "native_tests": "NOT_REACHED",
     "wkwebview_tests": "NOT_REACHED",
     "unsigned_iphoneos_release_app": "NOT_REACHED",
@@ -31,7 +31,7 @@
     "device_tested": false,
     "tested_source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
     "tested_webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
-    "corrected_current_source_ci": "PENDING_AFTER_CALENDAR_PERSISTENCE_QUIESCENCE_FIX"
+    "corrected_current_source_ci": "PENDING_AFTER_AUTHORITATIVE_COMPACTION_MARKER_WAIT_FIX"
   },
   "phase_status": {
     "stage0_urgent_build342": "LOCAL_SOURCE_GATES_PASS_NATIVE_CURRENT_CI_AND_IPHONE_TIMING_PENDING",
@@ -56,8 +56,8 @@
     "normal_ci_uses_overlay": false,
     "current_candidate_source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
     "current_candidate_webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
-    "latest_candidate_ci_run": "36351219317",
-    "current_candidate_ci_status": "PENDING_AFTER_CALENDAR_PERSISTENCE_QUIESCENCE_FIX"
+    "latest_candidate_ci_run": "36352181861",
+    "current_candidate_ci_status": "PENDING_AFTER_AUTHORITATIVE_COMPACTION_MARKER_WAIT_FIX"
   },
   "source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
   "version": "3.0.0",
