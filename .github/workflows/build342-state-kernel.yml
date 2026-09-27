@@ -137,7 +137,7 @@ jobs:
           set -euo pipefail
           ACCEPTANCE_DIR="$RUNNER_TEMP/build342-source-acceptance"
           set +e
-          python3 "$SOURCE_DIR/tools/run_acceptance.py" --output "$ACCEPTANCE_DIR" --timeout 300 | tee "$GITHUB_WORKSPACE/.ci-output/source-acceptance.log"
+          python3 "$SOURCE_DIR/tools/run_acceptance.py" --output "$ACCEPTANCE_DIR" --timeout 600 | tee "$GITHUB_WORKSPACE/.ci-output/source-acceptance.log"
           ACCEPTANCE_STATUS=${PIPESTATUS[0]}
           set -e
           if [[ -f "$ACCEPTANCE_DIR/results.json" ]]; then

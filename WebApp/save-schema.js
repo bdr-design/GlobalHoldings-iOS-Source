@@ -8,6 +8,7 @@
   const metricClock=()=>globalThis.performance?.now?.()??Date.now();
   const runtimeTelemetry={lastValidation:null,samples:[]};
   const verifiedAuthorizationProofs=new WeakMap(),verifiedAuthorizationSeals=new WeakSet(),verifiedDocumentRecords=new WeakMap();
+  const verifiedProofStates=new WeakMap();
   // Phase 1B-B: wall-clock pacing/scheduler telemetry is runtime-only. Older
   // Build 339 saves may still contain the former simulationEngine.snapshot()
   // payload inside simulationKernel; retain only semantic/audit fields there.
@@ -26,7 +27,14 @@
   function freezeProofValue(value,seen=new WeakSet()){
     if(!value||typeof value!=='object'||seen.has(value))return value;
     seen.add(value);for(const child of Object.values(value))freezeProofValue(child,seen);
-    return Object.freeze(value);
+    // Kernel state views deliberately reject preventExtensions/Object.freeze.
+    // Their section revision digest below supplies safe cache invalidation.
+    try{return Object.freeze(value);}catch(_error){return value;}
+  }
+  function proofValidationCacheKey(state){
+    const digest=globalThis.GH_TRANSACTION_CORE?.kernelOwnerProofRevisionDigest?.(state);
+    if(typeof digest!=='string'||!digest)return null;
+    return `${Number(state?.saveRevision)||0}:${Number(state?.resetEpoch)||0}:${digest}`;
   }
   function authorizationProofCacheEntry(row,seal,mandate){
     if(!Object.isFrozen(row)||!Object.isFrozen(seal)||!Object.isFrozen(mandate))return null;
@@ -290,7 +298,7 @@
     const documentVerificationStart=metric?metricClock():0;for(const document of documents)if(document?.documentProofId){if(!records[document.documentProofId]||document.contentDigest!==records[document.documentProofId].contentDigest)errors.push('document-proof-reference');else if(!verificationState)errors.push('document-proof-integrity');else{const verification=verifier(verificationState,document,verificationCache?.documents),acceptedLegacy=verification?.legacy===true&&verification?.readOnly===true&&verification?.recordIntegrity===true;if(!verification?.ok&&!acceptedLegacy)errors.push('document-proof-integrity');}}if(metric)metric.documentVerifyMs+=Math.max(0,metricClock()-documentVerificationStart);
   }
   function validate(s,options={}){
-    const validationStart=metricClock(),metric={totalMs:0,authorizationMs:0,authorizationSealCacheHits:0,authorizationProofVerifyMs:0,authorizationProofCacheHits:0,documentProofMs:0,documentCollectionMs:0,documentRecordVerifyMs:0,documentRecordCacheHits:0,documentVerifyMs:0,companyPlatformMs:0,otherMs:0,errors:0};
+    const validationStart=metricClock(),proofCacheKey=proofValidationCacheKey(s),metric={totalMs:0,authorizationMs:0,authorizationSealCacheHits:0,authorizationProofVerifyMs:0,authorizationProofCacheHits:0,documentProofMs:0,documentCollectionMs:0,documentRecordVerifyMs:0,documentRecordCacheHits:0,documentVerifyMs:0,proofStateCacheHits:0,companyPlatformMs:0,otherMs:0,errors:0};
     const verificationCache={authorization:{proofs:new Map(),sealDigests:new Map(),mandateDigests:new Map()},documents:{records:new Map(),signedContentStable:new Map()}};verificationCache.documents.authorization=verificationCache.authorization;
     const errors=[];if(!object(s))errors.push('root-not-object');if(String(s?.saveVersion||'')!==SAVE_SCHEMA_VERSION)errors.push('save-version');if(s?.saveRevision!==undefined&&(!finite(s.saveRevision)||Number(s.saveRevision)<0||!Number.isSafeInteger(Number(s.saveRevision))))errors.push('save-revision');if(s?.resetEpoch!==undefined&&(!finite(s.resetEpoch)||!Number.isSafeInteger(Number(s.resetEpoch))||Number(s.resetEpoch)<0))errors.push('reset-epoch');if(!finite(s?.simSeconds)||Number(s.simSeconds)<0)errors.push('sim-seconds');
     validateIdentityState(s,errors);validateConferenceLogoState(s,errors);validatePresentationTextState(s,errors);
@@ -337,11 +345,16 @@
     const cp=s?.controlPlane;if(cp!==undefined){if(!object(cp)||String(cp.schema||'')!=='gh-control-plane-v1'||!Array.isArray(cp.events)||!Array.isArray(cp.commands)||!Array.isArray(cp.incidents)||!Array.isArray(cp.outbox)||!Array.isArray(cp.blackBox)||!object(cp.registry)||!object(cp.registry.engines)||!Array.isArray(cp.registry.links))errors.push('control-plane-shape');else{if(cp.events.length>STATE_LIMITS.controlEvents||cp.commands.length>STATE_LIMITS.controlCommands||cp.incidents.length>STATE_LIMITS.controlIncidents||cp.outbox.length>STATE_LIMITS.controlOutbox||cp.blackBox.length>STATE_LIMITS.controlBlackBox)errors.push('control-plane-capacity');for(const key of ['revision','commandSequence','eventSequence','incidentSequence','outboxSequence'])if(!finite(cp[key])||Number(cp[key])<0||!Number.isInteger(Number(cp[key])))errors.push('control-plane-sequence');if(!/^[a-f0-9]{64}$/i.test(String(cp.journalHeadHash||'')))errors.push('control-plane-journal-head');if(duplicateIds(cp.events,x=>x?.id)||duplicateIds(cp.commands,x=>x?.id)||duplicateIds(cp.incidents,x=>x?.id)||duplicateIds(cp.outbox,x=>x?.id))errors.push('control-plane-id');for(const e of cp.events){if(!Number.isInteger(Number(e?.sequence))||Number(e.sequence)<=0||!/^[a-f0-9]{64}$/i.test(String(e?.hash||''))||!/^[a-f0-9]{64}$/i.test(String(e?.previousHash||'')))errors.push('control-plane-event');}const eventIds=new Set(cp.events.map(x=>x?.id));for(const row of cp.outbox)if(row?.delivered!==true&&!eventIds.has(row?.eventId)&&row?.payload?.id!==row?.eventId)errors.push('control-plane-outbox-reference');}}
     if(Array.isArray(s?.domainRuntime?.commands)&&s.domainRuntime.commands.length>STATE_LIMITS.domainCommands)errors.push('domain-command-capacity');if(Array.isArray(s?.businessLedger?.events)&&s.businessLedger.events.length>STATE_LIMITS.businessEvents)errors.push('business-event-capacity');
     const bw=s?.businessWorld;if(bw!==undefined){if(!object(bw)||!object(bw.parties)||!object(bw.relationships)||!Number.isInteger(Number(bw.sequence))||Number(bw.sequence)<0)errors.push('business-world-shape');else{const caps={events:STATE_LIMITS.businessWorldEvents,opportunities:STATE_LIMITS.businessWorldOpportunities,sponsorships:STATE_LIMITS.businessWorldSponsorships,campaigns:STATE_LIMITS.businessWorldCampaigns,competitorActivity:STATE_LIMITS.businessWorldCompetitorActivity};for(const [key,limit] of Object.entries(caps)){const rows=bw[key];if(!Array.isArray(rows))errors.push('business-world-'+key+'-shape');else{if(rows.length>limit)errors.push('business-world-'+key+'-capacity');if(duplicateIds(rows,x=>x?.id))errors.push('business-world-'+key+'-id');}}if(Object.keys(bw.parties).length>STATE_LIMITS.businessWorldParties)errors.push('business-world-party-capacity');if(Object.keys(bw.relationships).length>STATE_LIMITS.businessWorldRelationships)errors.push('business-world-relationship-capacity');for(const [id,p] of Object.entries(bw.parties))if(!id||!object(p)||p.id!==id||!String(p.legalName||p.displayName||'').trim()||!Array.isArray(p.roles)||!Array.isArray(p.sectors))errors.push('business-world-party');for(const [id,r] of Object.entries(bw.relationships))if(!id||!object(r)||r.id!==id||!bw.parties[r.partyId]||!String(r.company||'').trim()||!Array.isArray(r.roles))errors.push('business-world-relationship');}}
-    let started=metricClock();validateAuthorizationState(s,errors,verificationCache,metric);metric.authorizationMs=Math.max(0,metricClock()-started);
-    started=metricClock();validateDocumentProofState(s,errors,verificationCache,metric);metric.documentProofMs=Math.max(0,metricClock()-started);
+    const cachedProofKey=proofCacheKey?verifiedProofStates.get(s):null;
+    let started=metricClock();
+    if(proofCacheKey&&cachedProofKey===proofCacheKey){metric.proofStateCacheHits=1;}
+    else{
+      started=metricClock();validateAuthorizationState(s,errors,verificationCache,metric);metric.authorizationMs=Math.max(0,metricClock()-started);
+      started=metricClock();validateDocumentProofState(s,errors,verificationCache,metric);metric.documentProofMs=Math.max(0,metricClock()-started);
+    }
     started=metricClock();const companyValidation=globalThis.GH_COMPANY_PLATFORM?.validateState?.(s);metric.companyPlatformMs=Math.max(0,metricClock()-started);if(companyValidation&&!companyValidation.ok)errors.push(...companyValidation.errors.map(error=>`company-platform:${error}`));
     const result={ok:errors.length===0,errors:[...new Set(errors)]};
-    if(result.ok&&options.lockVerifiedProofs===true)cacheVerifiedProofState(s);
+    if(result.ok&&options.lockVerifiedProofs===true){cacheVerifiedProofState(s);if(proofCacheKey)verifiedProofStates.set(s,proofCacheKey);}
     metric.totalMs=Math.max(0,metricClock()-validationStart);metric.errors=result.errors.length;metric.otherMs=Math.max(0,metric.totalMs-metric.authorizationMs-metric.documentProofMs-metric.companyPlatformMs);publishValidationMetric(metric);
     return result;
   }

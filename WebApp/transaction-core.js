@@ -142,6 +142,15 @@
     const columns=owner.kernel.contracts().filter(section=>section.kind==='columns');
     return {enabled:true,schemaVersion:owner.kernel.schemaVersion,sections:owner.kernel.sectionNames().length,columnSections:columns.map(section=>({name:section.name,fields:Object.keys(section.columns),...owner.kernel.columnStorageReport(section.name)})),typedArrayBytes:owner.kernel.typedArrayBytes(),transactions:owner.transactions,rollbacks:owner.rollbacks,revision:owner.kernel.revision(),lastCommit:owner.lastCommit?deepClone(owner.lastCommit):null};
   }
+  function kernelOwnerProofRevisionDigest(target){
+    const owner=kernelOwners.get(target);if(!owner)return null;
+    // These roots cover every input used by authorization and document-proof
+    // validation. Kernel section revisions change on every committed mutation,
+    // so the exact revision tuple is a cheap, collision-free in-memory digest.
+    const roots=['authorization','documentProofs','finance','contractRegistry'];
+    const tuple=JSON.stringify(roots.map(name=>[name,owner.kernel.revision(name)]));
+    return `gh-proof-revisions-v1:${globalThis.GH_KERNEL.fingerprint(tuple)}:${tuple}`;
+  }
   function kernelOwnerState(target){const owner=kernelOwners.get(target);if(!owner)throw new Error('kernel-owner-not-enabled');return owner.kernel.legacyState();}
   function disableKernelShadow(target){const shadow=kernelShadows.get(target);if(!shadow)return false;shadow.enabled=false;kernelShadows.delete(target);return true;}
   function kernelShadowStatus(target){const shadow=kernelShadows.get(target);return shadow?{enabled:shadow.enabled,checks:shadow.checks,revision:shadow.revision,sections:shadow.registered.size,last:shadow.last?deepClone(shadow.last):null}: {enabled:false,checks:0,revision:0,sections:0,last:null};}
@@ -435,5 +444,5 @@
       throw error;
     }finally{if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,sectionRevision,enableKernelOwner,kernelOwnerStatus,kernelOwnerState,enableKernelShadow,disableKernelShadow,kernelShadowStatus:target=>kernelShadowStatus(target),afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,sectionRevision,enableKernelOwner,kernelOwnerStatus,kernelOwnerProofRevisionDigest,kernelOwnerState,enableKernelShadow,disableKernelShadow,kernelShadowStatus:target=>kernelShadowStatus(target),afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
