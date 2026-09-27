@@ -7,7 +7,7 @@ process.env.GH_TEST_SOURCE_DIR = path.resolve(__dirname, '..');
 const {harness, minimal} = require('./helpers/core-harness');
 
 function authorizationHarness() {
-  const h = harness(['save-schema', 'authorization-core', 'document-proof-core', 'transaction-core', 'domain-command-core']);
+  const h = harness(['clone-core', 'kernel-core', 'save-schema', 'authorization-core', 'document-proof-core', 'transaction-core', 'domain-command-core']);
   const {s} = h;
   const state = minimal();
   state.profile = {name: 'Audit Holdings', founder: 'Audit Founder'};
@@ -79,6 +79,9 @@ async function testAuthorizationAndIdempotency() {
   assert.equal(document.signatureSnapshot.visualSealVersion, 1);
   assert.equal(s.GH_DOCUMENT_PROOF.verifyDocument(state, document).ok, true);
   assert.equal(Auth.verifyProof(state, first.authorizationProofId).ok, true);
+  const liveState=s.GH_TRANSACTION_CORE.enableKernelOwner(state);
+  assert.throws(()=>structuredClone(liveState),error=>error?.name==='DataCloneError','the integrated live state is a Proxy that native structuredClone rejects');
+  assert.equal(Auth.verifyProof(liveState,first.authorizationProofId).ok,true,'proof verification clones mandate arrays through the Proxy-safe shared clone');
   const sealedValidation = s.GH_SAVE_SCHEMA.validate(state);
   assert.equal(sealedValidation.ok, true, `sealed state must validate against Schema 2.0.0: ${sealedValidation.errors.join(',')}`);
 
