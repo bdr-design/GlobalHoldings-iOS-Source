@@ -4,7 +4,7 @@
   const ROUTE_TYPES=Object.freeze(['air','sea','road']);
   const LIMITS=Object.freeze({routes:240,endpoints:360,cacheEntries:160,pointsPerRoute:2048,routeBytes:256*1024,cacheBytes:512*1024});
   const NEAR_DUPLICATE=Object.freeze({sampleCount:33,endpointKm:2.5,meanKm:1.25,maxKm:3,lengthRatio:1.04});
-  const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
+  const clone=value=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
   const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
   const finite=value=>typeof value==='number'&&Number.isFinite(value);
   const text=(value,max=120)=>String(value??'').trim().slice(0,max);
