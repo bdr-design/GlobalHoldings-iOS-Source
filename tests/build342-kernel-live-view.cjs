@@ -2,6 +2,8 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const CLONE_CORE=require('../WebApp/clone-core.js');
+global.GH_CLONE_CORE=CLONE_CORE;
 const GH_KERNEL=require('../WebApp/kernel-core.js');
 global.GH_KERNEL=GH_KERNEL;
 const TRANSACTION=require('../WebApp/transaction-core.js');
@@ -74,6 +76,10 @@ assert.equal(applicationState.assets[0].fuel,53);assert.equal(applicationState.a
 assert.equal(Object.keys(applicationState.assets[0]).includes('fuel'),true,'typed hot fields remain enumerable in the Save Schema view');
 applicationState.assets[0].departureScheduledAt=undefined;
 assert.equal(Object.hasOwn(applicationState.assets[0],'departureScheduledAt'),true,'typed presence tags preserve an explicit undefined property');
+assert.throws(()=>structuredClone(applicationState),error=>error?.name==='DataCloneError','the fixture is a real Proxy that native structuredClone cannot copy');
+const clonedProxy=CLONE_CORE.clone(applicationState);
+assert.equal(Object.hasOwn(clonedProxy.assets[0],'departureScheduledAt'),true,'shared clone fallback preserves explicit undefined values in a live Proxy');
+assert.deepEqual(Object.keys(clonedProxy.assets[0]),Object.keys(applicationState.assets[0]),'shared clone fallback preserves Save Schema row key order');
 assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(applicationState)).assets[0],'departureScheduledAt'),false,'JSON still omits explicit undefined values as Save Schema 2.0.0 requires');
 delete applicationState.assets[0].departureScheduledAt;
 assert.equal(Object.hasOwn(applicationState.assets[0],'departureScheduledAt'),false,'delete remains distinct from an explicit undefined property in a typed column');
@@ -143,7 +149,9 @@ assert.equal(TRANSACTION.revision(applicationState),revisionBeforeBadRestore,'fa
 const appSource=fs.readFileSync(path.join(__dirname,'../WebApp/app.js'),'utf8');
 const transactionSource=fs.readFileSync(path.join(__dirname,'../WebApp/transaction-core.js'),'utf8');
 const persistenceSource=fs.readFileSync(path.join(__dirname,'../WebApp/persistence-core.js'),'utf8');
+const authorizationSource=fs.readFileSync(path.join(__dirname,'../WebApp/authorization-core.js'),'utf8');
 const lifecycleSource=fs.readFileSync(path.join(__dirname,'../WebApp/game-lifecycle-core.js'),'utf8');
+const htmlSource=fs.readFileSync(path.join(__dirname,'../WebApp/index.html'),'utf8');
 const kernelBootstrap=appSource.indexOf('state=window.GH_TRANSACTION_CORE.enableKernelOwner(state);');
 assert(appSource.indexOf('GH_MIGRATION_CORE.load(')<appSource.indexOf('GH_SAVE_SCHEMA.normalize(state,defaultState)'),'disk and native load migration finish before state ownership is installed');
 assert(appSource.indexOf('GH_MIGRATION_CORE.structural(state,defaultState)')<kernelBootstrap,'structural migration runs before the new owner imports the complete logical save');
@@ -170,6 +178,8 @@ assert(persistenceSource.includes('if(apply)apply(next);')&&persistenceSource.in
 assert(appSource.includes('tx.execute(state,{')&&appSource.includes('label:`simulation:${simMeta.from}->${simMeta.to}`'),'live simulation slices pass through the same kernel-backed transaction wrapper');
 assert(appSource.includes('window.GH_TRANSACTION_CORE.execute(state,{label:`boundary-recovery:'),'hour/day recovery transactions also use the same owner');
 assert(/const SAVE_SCHEMA_VERSION\s*=\s*'2\.0\.0'/.test(appSource),'runtime Save Schema remains 2.0.0');
+assert(htmlSource.indexOf('src="clone-core.js"')<htmlSource.indexOf('src="authorization-core.js"'),'Proxy-safe clone runtime loads before proof verification');
+assert(authorizationSource.includes('GH_CLONE_CORE.clone(value)'),'authorization snapshots use the Proxy-safe clone path');
 
 (async()=>{
   const beforeDurable=JSON.parse(JSON.stringify(applicationState)),revisionBeforeDurable=TRANSACTION.revision(applicationState);
