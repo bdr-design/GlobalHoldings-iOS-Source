@@ -17,7 +17,7 @@
     'vat-assessment-paid','cheque-request-linked','cheque-cancelled','cheque-cleared','cheque-returned',
     'debt-repayment-applied','debt-balance-adjusted','contract-expired'
   ]),TRANSITION_SET=new Set(TRANSITIONS),TRANSITION_ID=/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-  const clone=value=>value===undefined?undefined:(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
+  const clone=value=>value===undefined?undefined:(typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value))));
   const clean=(value,max=240)=>String(value??'').trim().slice(0,max);
   const stable=value=>globalThis.GH_AUTHORIZATION?.stable?.(value)??JSON.stringify(value);
   const digest=value=>globalThis.GH_AUTHORIZATION?.digest?.(value)??globalThis.GH_CONTROL_PLANE?.sha256?.(typeof value==='string'?value:stable(value));
