@@ -5,7 +5,7 @@ function setup(idle=true){
  const {s}=harness(['transaction-core']);const tasks=new Map(),stats={writes:0,compactions:0,prunes:0,reconciles:0},state={saveRevision:1,resetEpoch:0};let seq=0,locked=false;
  Object.assign(s,{state,hardResetInProgress:false,durableCommandInProgress:false,startupLoadMeta:null,storageKey:'test',APP_VERSION:'3.0.0',diag:()=>{},pruneRouteCache:()=>stats.prunes++,reconcileConsolidatedCash:()=>stats.reconciles++,compactSimulationState:()=>stats.compactions++,setTimeout:fn=>{const id=++seq;tasks.set(id,fn);return id;},clearTimeout:id=>tasks.delete(id)});
  if(idle){s.requestIdleCallback=fn=>{const id=++seq;tasks.set(id,fn);return id;};s.cancelIdleCallback=id=>tasks.delete(id);}
- vm.runInContext('let mapInteractionActive=false;globalThis.setMapInteractionActive=value=>{mapInteractionActive=!!value};',s);
+ vm.runInContext('let mapInteractionActive=false,mapSavePending=false,mapSaveFlushTask=null;globalThis.setMapInteractionActive=value=>{mapInteractionActive=!!value};',s);
  s.GH_INTEGRITY_CORE={check:()=>({issues:[],critical:[]})};s.GH_PERSISTENCE={isLocked:()=>locked,commitState:()=>{stats.writes++;return {ok:true,utf8Bytes:1};}};
  let start=app.indexOf('  let simulationPersistenceTask=');if(start<0)start=app.indexOf('  function persistStateNow(');const end=app.indexOf('  function routeRuntimeForState(',start);vm.runInContext(app.slice(start,end),s);
  vm.runInContext('globalThis.flushDeferredMapSave=()=>flushMapDeferredSave();globalThis.mapSaveIsPending=()=>mapSavePending;',s);
