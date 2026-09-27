@@ -243,7 +243,7 @@ test("AppliedUpdate preserves exact operationsJSON and no mirror"){
 }
 test("chunked envelope verifies payload digest metadata before A/B selection") {
     guard let baseline=vault.currentSave(),let baselineObject=try JSONSerialization.jsonObject(with:Data(baseline.utf8)) as? [String:Any] else {throw TestFailure(message:"Verified baseline save missing")}
-    let next=try makeJSON((baselineObject["saveRevision"] as? Int ?? 0)+1)
+    let next=try makeJSON((baselineObject["saveRevision"] as? Int ?? 0)+1,baselineObject["resetEpoch"] as? Int ?? 0)
     let generation:Int=try wait { commit(next,try! envelope(next),$0) }
     let head=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-head.json"))) as! [String:Any]
     guard head["generation"] as? Int==generation,let slot=head["slot"] as? String,["A","B"].contains(slot) else {throw TestFailure(message:"Current A/B pointer missing")}

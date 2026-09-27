@@ -6,6 +6,7 @@
   const targetSectionRevisions=new WeakMap();
   const durableTargets=new WeakSet();
   const kernelShadows=new WeakMap();
+  const kernelOwners=new WeakMap();
   const runtimeTelemetry={last:null,lastSimulation:null,samples:[],profiledSamples:[],profiledCount:0};
   const runtimeClock=()=>globalThis.performance?.now?.()??Date.now();
   function publishRuntimeMetric(row){
@@ -35,11 +36,42 @@
   function deepClone(value){if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
   function restoreValue(target,snapshot){
     if(target&&typeof target==='object'&&Object.isFrozen(target))return deepClone(snapshot);
-    if(Array.isArray(snapshot)){if(!Array.isArray(target))return deepClone(snapshot);target.length=snapshot.length;for(let i=0;i<snapshot.length;i++){const sv=snapshot[i],tv=target[i];target[i]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}return target;}
-    if(snapshot&&typeof snapshot==='object'){if(!target||typeof target!=='object'||Array.isArray(target))target={};const existing=new Map(Object.keys(target).map(key=>[key,target[key]]));for(const key of Object.keys(target))delete target[key];for(const [key,sv] of Object.entries(snapshot)){const tv=existing.get(key);target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}return target;}
+    if(Array.isArray(snapshot)){
+      if(!Array.isArray(target))return deepClone(snapshot);
+      const oldLength=target.length,existing=new Map(Array.from({length:oldLength},(_,index)=>[index,target[index]]));
+      for(let i=0;i<snapshot.length;i++){const sv=snapshot[i],tv=existing.get(i);target[i]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}
+      for(let i=snapshot.length;i<oldLength;i++)delete target[i];target.length=snapshot.length;return target;
+    }
+    if(snapshot&&typeof snapshot==='object'){
+      if(!target||typeof target!=='object'||Array.isArray(target))target={};
+      const keys=new Set(Object.keys(snapshot)),existing=new Map(Object.keys(target).map(key=>[key,target[key]]));
+      for(const [key,sv] of Object.entries(snapshot)){const tv=existing.get(key);target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}
+      for(const key of Object.keys(target))if(!keys.has(key))delete target[key];return target;
+    }
     return snapshot;
   }
-  function restoreObject(target,snapshot){if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw new TypeError('Transaction snapshot must be an object');return restoreValue(target,snapshot);}
+  function restoreObjectCore(target,snapshot){if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw new TypeError('Transaction snapshot must be an object');return restoreValue(target,snapshot);}
+  function restoreObject(target,snapshot){
+    const owner=kernelOwners.get(target);if(!owner||owner.transactionDepth>0)return restoreObjectCore(target,snapshot);
+    const result=owner.kernel.tx({label:'state-owner:atomic-replace',owner:'transaction-core',writes:owner.kernel.sectionNames()},()=>{
+      owner.transactionDepth++;
+      try{
+        // Keep registered root sections alive while nested values are restored.
+        // Clearing the proxy root first unregisters each path from the live view,
+        // so later writes cannot resolve their parent and rollback loses them.
+        for(const key of Object.keys(snapshot)){
+          if(['__proto__','constructor','prototype'].includes(key))throw new Error(`transaction-root-key-invalid:${key}`);
+          const value=snapshot[key];
+          const current=target[key];
+          if(value&&typeof value==='object'&&current&&typeof current==='object'&&Array.isArray(value)===Array.isArray(current))restoreValue(current,value);
+          else target[key]=deepClone(value);
+        }
+        for(const key of Object.keys(target))if(!Object.prototype.hasOwnProperty.call(snapshot,key))delete target[key];
+        return target;
+      }finally{owner.transactionDepth--;}
+    });
+    owner.transactions++;owner.lastCommit={label:'state-owner:atomic-replace',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};advanceSectionRevisions(target,result.dirty.length?result.dirty:['*']);advanceRevision(target);return target;
+  }
   function sameOrder(keys,expected){return keys.length===expected.length&&keys.every((key,index)=>key===expected[index]);}
   function restoreRootOrder(target,rootOrder){
     if(!Array.isArray(rootOrder)||!rootOrder.length)return target;
@@ -85,6 +117,27 @@
     if(!result.ok){kernelShadows.delete(target);throw new Error(`state-kernel-shadow-bootstrap-mismatch:${result.path||'$'}`);}
     return kernelShadowStatus(target);
   }
+  function enableKernelOwner(target){
+    if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('kernel-owner-target-required');
+    if(kernelOwners.has(target))return target;
+    const factory=globalThis.GH_KERNEL;if(!factory?.create)throw new Error('state-kernel-unavailable');
+    const kernel=factory.create({schemaVersion:'2.0.0',legacyState:target});
+    const assetColumns=Object.freeze({progress:'f64',fuel:'f64',condition:'f64',dwellRemaining:'f64',tripSeconds:'f64',simCarrySeconds:'f64',departureScheduledAt:'f64',distanceKm:'f64',effectiveSpeedKmh:'f64'});
+    for(const name of Object.keys(target))if(!['__proto__','constructor','prototype'].includes(name)){
+      if(name==='assets'&&Array.isArray(target.assets))kernel.register(name,{owner:'transaction-core',kind:'columns',path:[name],columns:assetColumns});
+      else kernel.register(name,{owner:'transaction-core',kind:'object',path:[name]});
+    }
+    kernel.releaseRegisteredBase();const initial=kernel.compareLegacy(target);if(!initial.ok)throw new Error(`state-kernel-owner-bootstrap-mismatch:${initial.path||'$'}`);
+    let state;const owner={kernel,transactionDepth:0,transactions:0,rollbacks:0,lastCommit:null};
+    state=kernel.stateView({onCommit:result=>{owner.transactions++;owner.lastCommit={label:'state-view:single-write',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};advanceSectionRevisions(state,result.dirty.length?result.dirty:['*']);advanceRevision(state);}});
+    kernelOwners.set(state,owner);targetRevisions.set(state,0);targetSectionRevisions.set(state,new Map());return state;
+  }
+  function kernelOwnerStatus(target){
+    const owner=kernelOwners.get(target);if(!owner)return {enabled:false,sections:0,transactions:0,rollbacks:0,lastCommit:null};
+    const columns=owner.kernel.contracts().filter(section=>section.kind==='columns');
+    return {enabled:true,schemaVersion:owner.kernel.schemaVersion,sections:owner.kernel.sectionNames().length,columnSections:columns.map(section=>({name:section.name,fields:Object.keys(section.columns),...owner.kernel.columnStorageReport(section.name)})),typedArrayBytes:owner.kernel.typedArrayBytes(),transactions:owner.transactions,rollbacks:owner.rollbacks,revision:owner.kernel.revision(),lastCommit:owner.lastCommit?deepClone(owner.lastCommit):null};
+  }
+  function kernelOwnerState(target){const owner=kernelOwners.get(target);if(!owner)throw new Error('kernel-owner-not-enabled');return owner.kernel.legacyState();}
   function disableKernelShadow(target){const shadow=kernelShadows.get(target);if(!shadow)return false;shadow.enabled=false;kernelShadows.delete(target);return true;}
   function kernelShadowStatus(target){const shadow=kernelShadows.get(target);return shadow?{enabled:shadow.enabled,checks:shadow.checks,revision:shadow.revision,sections:shadow.registered.size,last:shadow.last?deepClone(shadow.last):null}: {enabled:false,checks:0,revision:0,sections:0,last:null};}
   function transactionMemo(key,factory){if(!activeContext)return typeof factory==='function'?factory():undefined;key=String(key||'');if(activeContext.memo.has(key))return activeContext.memo.get(key);const value=typeof factory==='function'?factory():factory;activeContext.memo.set(key,value);return value;}
@@ -245,13 +298,13 @@
       return {committed:true,value,label:ctx.label,joined:true};
     }catch(error){ctx.failure=error;throw error;}
   }
-  function execute(target,options={}){
+  function executeCore(target,options={}){
     if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');
     if(typeof options.apply!=='function')throw new TypeError('Transaction apply callback is required');
     if(activeContext)throw new Error('Nested state transactions are forbidden; domain commands must join their owner');
-    const label=String(options.label||'transaction'),scope=normalizeScope(options.scope),declaredWriteRoots=normalizeWriteRoots(options.writeRoots),writerContracts=normalizeWriterContracts(options.writerContracts),auditWrites=options.auditWrites===true||options.enforceWriteRoots===true,totalStart=runtimeClock(),requestedJournal=options.rollbackMode==='journal',profiled=options.profile===true||(options.profile!==false&&globalThis.GH_DIAGNOSTICS?.recorderIsActive?.(target)===true),phaseBreakdown=profiled?[]:null;
+    const label=String(options.label||'transaction'),scope=normalizeScope(options.scope),declaredWriteRoots=normalizeWriteRoots(options.writeRoots),writerContracts=normalizeWriterContracts(options.writerContracts),auditWrites=options.auditWrites===true||options.enforceWriteRoots===true,totalStart=runtimeClock(),requestedJournal=options.rollbackMode==='journal',kernelManaged=options.kernelManaged===true&&kernelOwners.has(target),profiled=options.profile===true||(options.profile!==false&&globalThis.GH_DIAGNOSTICS?.recorderIsActive?.(target)===true),phaseBreakdown=profiled?[]:null;
     for(const [section,expected] of Object.entries(options.readRevisions||{})){const actual=sectionRevision(target,section);if(Number(expected)!==actual){const error=new Error(`transaction-section-revision-conflict:${section}:${expected}:${actual}`);error.code='TRANSACTION_SECTION_REVISION_CONFLICT';error.transactionLabel=label;error.transactionStage='admission';throw error;}}
-    let fallbackReason=journalAdmissionReason(options,scope,writerContracts),rollbackStorage='legacy-scoped',snapshot=null,journal=null;
+    let fallbackReason=kernelManaged?null:journalAdmissionReason(options,scope,writerContracts),rollbackStorage=kernelManaged?'kernel-journal':'legacy-scoped',snapshot=null,journal=null;
     const shadow=kernelShadows.get(target),shadowRoots=declaredWriteRoots||scope;
     let phaseDepth=0;
     const measure=(name,work)=>{
@@ -264,21 +317,22 @@
     const derivedProfileContext=profiled?{kind:label.startsWith('simulation:')?'simulation-slice':label.startsWith('boundary-recovery:')?'boundary-recovery':'state-transaction',assetCount:Array.isArray(target.assets)?target.assets.length:null,invoiceCount:Array.isArray(target.finance?.invoices)?target.finance.invoices.length:null,receivableCount:Array.isArray(target.finance?.receivables)?target.finance.receivables.length:null,payableCount:Array.isArray(target.finance?.payables)?target.finance.payables.length:null}:null;
     const timing={label,profiled,profileContext:profiled?compactProfileContext(options.profileContext||derivedProfileContext):null,phaseBreakdown,scopeSize:scope?scope.length:null,fullSnapshot:false,fullSnapshotFallback:false,fallbackReason:null,rollbackStorage:null,journalRecords:0,snapshotMs:0,validateMs:0,applyMs:0,postCommitCriticalMs:0,postCommitNonCriticalMs:0,postCommitCriticalTasks:[],postCommitNonCriticalTasks:[],writeAudit:auditWrites?{enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots:[],undeclaredRoots:[],declaredButUnchanged:[],stage:'pending'}:null,rollbackMs:0,totalMs:0,committed:false,stage:'snapshot'};
     const snapshotStart=runtimeClock();
-    if(shadow?.enabled){snapshot=deepClone(target);rollbackStorage='full-snapshot';fallbackReason=fallbackReason||'kernel-shadow-audit-mode';}
+    if(kernelManaged){timing.journalRecords=0;}
+    else if(shadow?.enabled){snapshot=deepClone(target);rollbackStorage='full-snapshot';fallbackReason=fallbackReason||'kernel-shadow-audit-mode';}
     else if(requestedJournal&&!fallbackReason){
       const captured=captureJournal(target,scope,writerContracts);
       if(captured.ok){journal=captured;rollbackStorage='journal';timing.journalRecords=captured.records;}
       else fallbackReason=captured.reason;
     }
-    if(!shadow?.enabled&&requestedJournal&&fallbackReason){snapshot=deepClone(target);rollbackStorage='full-snapshot';}
-    else if(!shadow?.enabled&&!requestedJournal){snapshot=scope?captureScoped(target,scope):deepClone(target);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
+    if(!kernelManaged&&!shadow?.enabled&&requestedJournal&&fallbackReason){snapshot=deepClone(target);rollbackStorage='full-snapshot';}
+    else if(!kernelManaged&&!shadow?.enabled&&!requestedJournal){snapshot=scope?captureScoped(target,scope):deepClone(target);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
     timing.snapshotMs=Math.max(0,runtimeClock()-snapshotStart);timing.rollbackStorage=rollbackStorage;timing.fullSnapshot=rollbackStorage==='full-snapshot';timing.fullSnapshotFallback=requestedJournal&&rollbackStorage==='full-snapshot';timing.fallbackReason=timing.fullSnapshotFallback?fallbackReason:null;
     // Write auditing is an architecture-development proof tool. Full transactions reuse
     // their rollback snapshot; scoped/journal transactions take an extra full baseline only when
     // audit/enforcement is explicitly requested. Normal gameplay pays no audit cost.
-    const auditBaseline=auditWrites?((rollbackStorage==='full-snapshot')?snapshot:deepClone(target)):null;
+    const auditBaseline=auditWrites?(kernelManaged?kernelOwners.get(target).kernel.legacyState():((rollbackStorage==='full-snapshot')?snapshot:deepClone(target))):null;
     const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null,shadowRoots};
-    const rollback=()=>{if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot);};
+    const rollback=()=>{if(kernelManaged)return target;if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot);};
     let phase='validate';activeContext=context;
     try{
       const validateStart=runtimeClock();let validation;
@@ -310,7 +364,7 @@
         phase='post-commit-irreversible';runCritical(irreversibleCritical);
       }finally{timing.postCommitCriticalMs=Math.max(0,runtimeClock()-criticalStart);}
       const nonCriticalStart=runtimeClock();for(const task of context.postCommit.filter(x=>!x.critical)){const taskStart=runtimeClock(),row={key:task.key||null,owner:task.owner||null,priority:task.priority,durationMs:0,ok:false};try{task.fn();row.ok=true;}catch(error){row.error=String(error?.message||error).slice(0,240);globalThis.console?.warn?.(`${label}: non-critical post-commit side effect failed`,error);}finally{row.durationMs=Math.max(0,runtimeClock()-taskStart);timing.postCommitNonCriticalTasks.push(row);}}timing.postCommitNonCriticalMs=Math.max(0,runtimeClock()-nonCriticalStart);
-      advanceSectionRevisions(target,declaredWriteRoots||scope||['*']);advanceRevision(target);timing.committed=true;timing.stage='committed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);
+      if(!kernelManaged){advanceSectionRevisions(target,declaredWriteRoots||scope||['*']);advanceRevision(target);}timing.committed=true;timing.stage='committed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);
       return {committed:true,value,label,scope:context.scope?[...context.scope]:null};
     }catch(error){
       activeContext=null;context.postCommit.length=0;
@@ -320,6 +374,26 @@
       if(shadow?.enabled)reconcileKernelShadow(target);
       timing.stage=phase;timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);error.transactionLabel=label;error.transactionStage=phase;throw error;
     }finally{activeContext=null;}
+  }
+  class KernelTransactionRejected extends Error{constructor(result){super(result?.reason||'kernel-transaction-rejected');this.result=result;}}
+  function execute(target,options={}){
+    const owner=kernelOwners.get(target);if(!owner)return executeCore(target,options);
+    if(owner.transactionDepth>0)return executeCore(target,{...options,kernelManaged:true});
+    const label=String(options.label||'transaction');let outcome=null,kernelCommit=null;
+    try{
+      kernelCommit=owner.kernel.tx({label,owner:'transaction-core',writes:owner.kernel.sectionNames()},()=>{
+        owner.transactionDepth++;
+        try{outcome=executeCore(target,{...options,kernelManaged:true});if(!outcome?.committed)throw new KernelTransactionRejected(outcome);return outcome;}
+        finally{owner.transactionDepth--;}
+      });
+      owner.transactions++;owner.lastCommit={label,revision:kernelCommit.revision,undoRecords:kernelCommit.undoRecords,ms:kernelCommit.ms,dirty:kernelCommit.dirty};advanceSectionRevisions(target,normalizeWriteRoots(options.writeRoots)||normalizeScope(options.scope)||kernelCommit.dirty||['*']);advanceRevision(target);
+      const metric=runtimeTelemetry.last;if(metric?.label===label){Object.assign(metric,{rollbackStorage:'kernel-journal',fullSnapshot:false,fullSnapshotFallback:false,snapshotMs:0,kernelCommitMs:kernelCommit.ms,kernelUndoRecords:kernelCommit.undoRecords,kernelDirtySections:kernelCommit.dirty});}
+      return outcome;
+    }catch(error){
+      owner.transactions++;owner.rollbacks++;
+      if(error instanceof KernelTransactionRejected){owner.lastCommit={label,revision:owner.kernel.snapshot().revision,undoRecords:0,ms:0,dirty:[]};return error.result;}
+      error.transactionLabel=error.transactionLabel||label;error.transactionStage=error.transactionStage||'kernel-commit';throw error;
+    }
   }
   function resetProfileTelemetry(){runtimeTelemetry.profiledSamples.length=0;runtimeTelemetry.profiledCount=0;runtimeTelemetry.lastSimulation=null;return true;}
   function telemetrySnapshot(){const out=deepClone(runtimeTelemetry);if(activeContext)out.active={label:activeContext.label,rollbackStorage:activeContext.rollbackStorage,fullSnapshot:activeContext.rollbackStorage==='full-snapshot',fallbackReason:activeContext.timing?.fallbackReason||null,journalRecords:activeContext.timing?.journalRecords||0,profiled:activeContext.timing?.profiled===true,phaseBreakdown:activeContext.timing?.phaseBreakdown?deepClone(activeContext.timing.phaseBreakdown):null};return out;}
@@ -349,12 +423,12 @@
       phase='publish';if(typeof options.publish==='function')await options.publish(liveState,draft,context);else restoreObject(liveState,draft);
       for(const task of afterPublishTasks)try{await task(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-publish side effect failed`,error);}
       if(typeof options.afterCommit==='function')try{await options.afterCommit(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-commit side effect failed`,error);}
-      advanceSectionRevisions(liveState,normalizeWriteRoots(options.writeRoots)||['*']);advanceRevision(liveState);return {committed:true,durable:true,transactionId,label,saveRevision:Number(liveState.saveRevision)||0,value,persistence:persisted};
+      if(!kernelOwners.has(liveState)||typeof options.publish==='function'){advanceSectionRevisions(liveState,normalizeWriteRoots(options.writeRoots)||['*']);advanceRevision(liveState);}return {committed:true,durable:true,transactionId,label,saveRevision:Number(liveState.saveRevision)||0,value,persistence:persisted};
     }catch(error){
       error.transactionLabel=error.transactionLabel||label;error.transactionStage=error.transactionStage||phase;error.durableCommitted=durableCommitted;
       if(durableCommitted){error.critical=true;globalThis.GH_PERSISTENCE?.markRecoveryRequired?.('durable-publish-failed');}
       throw error;
     }finally{if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,sectionRevision,enableKernelShadow,disableKernelShadow,kernelShadowStatus:target=>kernelShadowStatus(target),afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,sectionRevision,enableKernelOwner,kernelOwnerStatus,kernelOwnerState,enableKernelShadow,disableKernelShadow,kernelShadowStatus:target=>kernelShadowStatus(target),afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

@@ -540,6 +540,12 @@
   if(!window.GH_SAVE_SCHEMA?.normalize)throw new Error('Save Schema Core failed to load before app.js');
   state=window.GH_SAVE_SCHEMA.normalize(state,defaultState);
   state=window.GH_MIGRATION_CORE.structural(state,defaultState);
+  if(!window.GH_TRANSACTION_CORE?.enableKernelOwner||!window.GH_TRANSACTION_CORE?.kernelOwnerStatus)throw new Error('State Kernel owner failed to load before application startup');
+  state=window.GH_TRANSACTION_CORE.enableKernelOwner(state);
+  window.__GH_STATE__=state;
+  const bootstrapKernelStatus=window.GH_TRANSACTION_CORE.kernelOwnerStatus(state);
+  if(!bootstrapKernelStatus.enabled||bootstrapKernelStatus.schemaVersion!==SAVE_SCHEMA_VERSION)throw new Error('State Kernel could not take ownership of the current save');
+  window.GH_STATE_KERNEL=Object.freeze({version:window.GH_KERNEL.VERSION,status:()=>window.GH_TRANSACTION_CORE.kernelOwnerStatus(state),exportLegacyState:()=>window.GH_TRANSACTION_CORE.kernelOwnerState(state)});
   let startupSignatureRequired=false,startupSignatureResumeSpeed=0;
   if(state.onboardingComplete){
     const auth=window.GH_AUTHORIZATION,store=auth?.ensure?.(state),person=store?.peopleById?.[FOUNDER_PRINCIPAL_ID],signatureId=store?.activeSignatureByPerson?.[FOUNDER_PRINCIPAL_ID],signature=signatureId?store.signatureAssetsById?.[signatureId]:null,mandate=Object.values(store?.mandatesById||{}).find(row=>row?.principalId===FOUNDER_PRINCIPAL_ID&&row.status==='active'&&(row.companyIds||[]).includes('*')&&(row.scopes||[]).includes('*'));
@@ -552,7 +558,6 @@
   window.GH_DIAGNOSTICS.ensure(state);
   if(!window.GH_CONTROL_PLANE?.bootstrap)throw new Error('Central Control Plane failed to load before app.js');
   if(!window.GH_PERSISTENCE?.saveSlot||!window.GH_WORKFLOW?.run||!window.GH_EVENT_LEDGER?.ensure||!window.GH_DEPENDENCY_CORE?.ensure||!window.GH_POLICY_CORE?.evaluate||!window.GH_LIFECYCLE_CORE?.transition||!window.GH_DELIVERY_MONITOR?.ensure||!window.GH_INTEGRITY_CORE?.check)throw new Error('Business Lifecycle cores failed to load before app.js');
-  window.__GH_STATE__=state;
   window.GH_CONTROL_PLANE.bootstrap(state,{
     simulation:{version:window.GH_SIMULATION_CORE?.VERSION||APP_VERSION,role:'Single owner of simulation time'},
     businessWorld:{version:window.GH_BUSINESS_WORLD?.VERSION||APP_VERSION,role:'External party identity, commercial relationships and market events'},
@@ -4314,10 +4319,7 @@
     catch(error){ state.lastPanel=null;state.lastPanelArg=null;diag('RESTORE_LAST_PANEL_FAILED',{message:String(error?.message||error)},'warning'); }
   }
 
-  // Shadow mode is explicitly opt-in for deterministic development/TestFlight
-  // parity runs; production gameplay stays on the existing state owner until the
-  // ten-day golden equivalence gate has passed.
-  if(globalThis.__GH_ENABLE_STATE_KERNEL_SHADOW__===true)window.GH_TRANSACTION_CORE?.enableKernelShadow?.(state);
+  if(!window.GH_STATE_KERNEL?.status?.().enabled)throw new Error('The live application is not owned by the State Kernel');
 
   let lastMapRenderAt=0,lastPresentationPaintAt=0,lastMarkerAnimationAt=0,lastLoopRafTimestamp=null;
   const latestSimulationTransaction=()=>window.GH_TRANSACTION_CORE?.telemetry?.()?.lastSimulation||null;

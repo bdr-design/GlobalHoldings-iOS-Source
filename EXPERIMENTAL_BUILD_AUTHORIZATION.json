@@ -2,24 +2,26 @@
   "authorized_at": "2026-09-26",
   "build": 342,
   "known_limits": [
-    "The most recent macOS CI run 36315061990 passed the earlier source tree on commit 3f4feb10ac8b1e6049be7f6b40704e2a70532090; current-source CI is pending after A/B save-head recovery, native archive bridge integration, and Worker changes.",
-    "The ten-day app shadow still compares the application-owned transaction writes; Worker asset kernel output is now integrated into the production simulation path, but full independent finance/market simulation and promotion are not established.",
-    "Native storageVersion 2 and Save Schema 2.0.0 compatibility passed 41/41 on the prior macOS source. The 773.430958 ms save sample is macOS-only; current-source native CI and iPhone timing are pending.",
-    "Mobility receipt overflow now uses the production app transaction and native archive bridge with stable-ID retry, segmented A/B indexes and verified readback. The under-12-MB device hot-state target remains unmeasured.",
-    "The simulation Worker now owns tentative typed asset state and returns its committed-kernel patch; the cross-domain application transaction and financial/calendar callbacks remain on the main thread.",
-    "Float64Array columns cover nine hot simulation fields while compatibility object rows remain in the app. The iPhone 17 Pro Max has not been measured for this source, and the oldest supported iPhone is unspecified.",
-    "Physical acceptance must establish ten minutes at 600x with continuous drag, at least 58 FPS, under 1% frame drops, no main-thread task over 50 ms, under 12 MB hot state at 3,380 assets, and memory/thermal behavior at 20,000 assets on the oldest supported iPhone."
+    "The latest direct macOS CI attempt 36320128185 passed the unchanged Build341 baseline 124/124 and all 143 Build342 source gates, then failed Native 42/43 because the A/B recovery fixture did not inherit the current resetEpoch. The fixture is corrected locally; current-source CI is pending.",
+    "The 10-day, 600x, 3,380-asset parity test compares the legacy application transaction path and uses controlled finance/market callbacks. Live kernel ownership is separately checked for one 3,380-asset commit and 24 commits across a financial-day boundary at 128 assets; full independent finance/market kernel promotion remains incomplete.",
+    "The normalized live save is now kernel-owned immediately after migration and before diagnostic/control-plane bootstrap. Nine hot asset values live only in Float64Array columns; rare fields remain in row objects, and Save Schema 2.0.0 JSON property order remains byte-compatible.",
+    "Native storageVersion 2 and Save Schema 2.0.0 passed 41/41 on the earlier macOS source. The 773.430958 ms sample is macOS-only; the corrected current-source Swift tests and iPhone timing are pending.",
+    "Mobility cold receipt archival is integrated through the app transaction and Native bridge with stable-ID retry and segmented A/B indexes. The under-12-MB physical hot-state target and long-session archive behavior remain unmeasured.",
+    "The simulation asset Worker owns tentative typed asset state and returns its kernel-readback patches; the full app transaction, state reads, finance, calendar and market callbacks remain on the main thread. The separate general kernel Worker protocol is not wired as the application state owner.",
+    "The app kernel stores nine hot asset columns without duplicate numeric fields in row objects. Synthetic 20,000-row Worker/kernel tests pass, but the app still exposes compatibility row views; iPhone 17 Pro Max FPS, task duration, memory and thermal measurements remain pending.",
+    "Physical acceptance still needs ten minutes at 600x with continuous drag: at least 58 FPS, under 1% frame drops, no main-thread task over 50 ms, under 12 MB hot state at 3,380 assets, and memory/thermal behavior at 20,000 assets on the oldest supported iPhone. The user reports iPhone 17 Pro Max as the only available device; the oldest supported model is unspecified."
   ],
   "minimum_acceptance_gates": 140,
   "production_approved": false,
-  "purpose": "Internal experimental Build 342 verification for bounded map interaction, transactional state-kernel adoption, Save Schema 2.0.0 with independent storageVersion 2, production Mobility cold archiving, and Worker-owned typed asset simulation. Device and cross-domain kernel promotion gates remain closed.",
+  "purpose": "Internal experimental Build 342 verification for kernel-owned live state, delta rollback, Save Schema 2.0.0 with storageVersion 2, production Mobility cold archiving, and Worker-owned tentative typed asset simulation. Cross-domain Worker promotion and device acceptance gates remain closed.",
   "rollback_and_ownership": {
-    "authoritative_state_owner": "The app transaction owns cross-domain publication; the simulation Worker owns tentative typed asset-kernel state and confirms or restores it after the app transaction.",
+    "authoritative_state_owner": "The kernel owns normalized live application state after migration; the app transaction wrapper coordinates cross-domain publication, while the simulation Worker owns tentative typed asset updates.",
     "full_snapshot_fallback": true,
-    "live_field_journal": false,
+    "live_field_journal": true,
     "save_schema_preserved": true,
-    "worker_failure_fallback": "Worker failure uses the existing main-thread compatibility path; the cross-domain transaction retains full-snapshot rollback.",
-    "worker_may_mutate_authoritative_state": false
+    "worker_failure_fallback": "Worker failure uses the existing main-thread compatibility path; cross-domain legacy transactions retain full-snapshot rollback.",
+    "worker_may_mutate_authoritative_state": false,
+    "kernel_reverse_write_log": true
   },
   "save_schema": "2.0.0",
   "source_rule": "Build 342 starts from the exact verified Build 341 source commit 1cd0a914cf54a0db88c360e650242cc60618eb01. Preserve Save Schema 2.0.0, full-snapshot rollback fallback, legacy save compatibility, and closed release approval.",
@@ -31,9 +33,9 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
+  "source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
   "test_build_authorized": true,
   "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
   "version": "3.0.0",
-  "webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3"
+  "webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
 }

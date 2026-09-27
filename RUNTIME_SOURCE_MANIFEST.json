@@ -16,8 +16,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 666521,
-      "sha256": "eadafdcd8941599527b50aa0d7cd4248fec15a6f1b4a206401ce48ae3097e746"
+      "bytes": 667030,
+      "sha256": "9e0371030a4583586b798c385bc2d286ba7eb315e7f79999619c9aa8cf7c0d91"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1764,8 +1764,8 @@
       "sha256": "b5d93bbe265471a6fb1961a3f6cd0f3bfacf74c4779799b395288c35b76fb133"
     },
     "WebApp/kernel-core.js": {
-      "bytes": 24031,
-      "sha256": "1469d3b104d0a95d54deea20fdc74e9450f8fa0eb7636fd41f22e612c30ad338"
+      "bytes": 39668,
+      "sha256": "65d567f0374db0775a187d58dc094ed8d9737b63b09721be9a60673debc3ad02"
     },
     "WebApp/kernel-worker-core.js": {
       "bytes": 10280,
@@ -1908,8 +1908,8 @@
       "sha256": "73be32015076bdad2a6ab26066ddd5f71aee1048613d8a10a381bc02eec314fd"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 39060,
-      "sha256": "d141953bb59ce217fd8f28060b624c847a47ba9326387441e427b5cf42074990"
+      "bytes": 45709,
+      "sha256": "264eaaca3aea6ae5e1e9e004da4aca74f8be3c6fa60ec1e90b1b036e90e8aecd"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -1993,7 +1993,7 @@
     },
     "project.yml": {
       "bytes": 2421,
-      "sha256": "0c094b6e7c0121027bd1894674a60fe14bafd9e28440a5eadb7e68caa741e9cd"
+      "sha256": "23769d62b64481a2ca4ff0ae09ec3a345a581c612e32f1d4b3bb7f0ab48412f4"
     },
     "BUILD": {
       "bytes": 4,
@@ -2005,28 +2005,24 @@
     }
   },
   "latest_direct_source_ci": {
-    "status": "PENDING_CURRENT_SOURCE_MACOS_CI",
+    "status": "FAILED_NATIVE_FIXTURE_ONLY_CURRENT_CANDIDATE_PENDING_CI",
     "source_mode": "direct_git_tree_from_verified_build341_commit",
-    "tested_commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
-    "run_id": "36315061990",
-    "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
-    "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
-    "build341_baseline": "PASS_124_OF_124_UNCHANGED",
-    "source_gates": "PASS_140_OF_140",
-    "chromium_webkit": "SOURCE_BROWSER_AND_WKWEBVIEW_6_OF_6_PASS",
-    "native_storage": "PASS_41_OF_41",
-    "nativeVaultCommitMs_macos_single_sample": 773.430958,
-    "nativeVaultCommitBytes": 29360245,
-    "unsigned_iphoneos_release_app": "BUILT_AND_VERIFIED",
-    "ipa_built": true,
-    "ipa_sha256": "284250c85768bc0fa7c4378fd1e6ffb252472a23ee3db02ed8b3c03695c016f7",
-    "ipa_bytes": 13445716,
-    "verification_artifact_id": "10931010204",
-    "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
+    "run_id": "36320128185",
+    "commit_sha": "ecd8c17adfc5339610c414fc88da232109a5dba2",
+    "result": "FAILED_NATIVE_TEST_42_OF_43_AFTER_BUILD341_124_OF_124_AND_BUILD342_SOURCE_143_OF_143",
+    "failure": "The compact A/B recovery fixture created its next save with resetEpoch 0 instead of inheriting the active baseline resetEpoch; native test reported Stale native save rejected.",
+    "native_fixture_fix": "prepare_native_tests.py now copies resetEpoch from the verified current baseline object before incrementing saveRevision.",
+    "wkwebview_tests": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+    "unsigned_iphoneos_release_app": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+    "ipa_built": false,
     "ipa_uploaded_or_delivered": false,
-    "physical_iphone_tested": false,
-    "pending_source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
-    "pending_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3"
+    "device_tested": false,
+    "tested_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
+    "tested_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
+    "build341_baseline": "PASS_124_OF_124_UNCHANGED",
+    "build342_source_gates": "PASS_143_OF_143",
+    "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
+    "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
   },
   "phase": "Build 342 — seven-stage state kernel and lag-root verification",
   "stage0_contracts": [
@@ -2042,12 +2038,14 @@
   "stage2_contracts": [
     "the ten-day 600x 3,380-asset application shadow still checks full-root equality after each of 240 commits",
     "the live simulation asset Worker now reads and writes nine hot fields through its typed state kernel and returns patches read back from that kernel",
-    "the application transaction remains the cross-domain owner; independent finance/market kernel execution and full kernel promotion remain pending"
+    "the application transaction remains the cross-domain owner; independent finance/market kernel execution and full kernel promotion remain pending",
+    "the normalized migrated live state is installed into the kernel before diagnostics, event-ledger and control-plane bootstrap writes"
   ],
   "stage3_contracts": [
     "Save Schema remains 2.0.0 while native physical storage uses independent storageVersion 2",
     "native save sections are content-addressed, chunked, hash-verified, and published through A/B header plus atomic save-head",
-    "legacy inline Save Schema 2.0.0 payload remains readable and rollback uses the retained full snapshot fallback"
+    "legacy inline Save Schema 2.0.0 payload remains readable and rollback uses the retained full snapshot fallback",
+    "normal transactions on the live owner use kernel reverse-write records and retain full-snapshot fallback for unsupported legacy paths"
   ],
   "stage4_contracts": [
     "Mobility trip overflow is written through the production app path to the native A/B cold archive after each bounded 128-record flush",
@@ -2062,7 +2060,8 @@
   "stage6_contracts": [
     "the production simulation Worker registers nine hot numeric asset fields in Float64Array columns with presence bytes and operates on the live 3,380-asset app path",
     "the separate 20,000-row typed-kernel fixture and app transaction integration tests pass on Node",
-    "the application still publishes compatibility object rows; oldest-supported-iPhone memory, FPS and thermal acceptance remain pending"
+    "the application still publishes compatibility object rows; oldest-supported-iPhone memory, FPS and thermal acceptance remain pending",
+    "live object-backed asset rows contain zero duplicate copies of the nine typed hot fields while preserving exact Save Schema JSON key order"
   ],
   "source_tracking": {
     "repository": "bdr-design/GlobalHoldings-iOS-Source",
@@ -2073,13 +2072,22 @@
     "normal_ci_uses_overlay": false,
     "repository_branch": "build342-state-kernel-20260927",
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
-    "remote_branch_created_from_verified_base": true
+    "remote_branch_created_from_verified_base": true,
+    "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
+    "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
   },
-  "source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
-  "webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
+  "source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
+  "webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada",
   "previous_passed_direct_source_ci": {
-    "run_id": "36307934626",
-    "commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",
-    "source_tree_sha256": "1a95fc47734dc88981f7b483db2aad8f2082139826cbaac18b1bfffa05e5b44e"
+    "run_id": "36315061990",
+    "commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
+    "result": "PASS_BUILD341_124_OF_124_BUILD342_140_OF_140_NATIVE_41_OF_41_WKWEBVIEW_6_OF_6_UNSIGNED_IPA_BUILT_SOURCE_VERIFIED_NOT_DELIVERED",
+    "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
+    "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
+    "nativeVaultCommitMs_macos_single_sample": 773.430958,
+    "nativeVaultCommitBytes": 29360245,
+    "ipa_built": true,
+    "ipa_uploaded_or_delivered": false,
+    "physical_iphone_tested": false
   }
 }

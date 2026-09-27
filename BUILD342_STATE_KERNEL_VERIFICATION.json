@@ -9,24 +9,27 @@
     "verified_base_branch": "build341-hotpath-fix-20260926",
     "verified_base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
     "branch": "build342-state-kernel-20260927",
-    "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b"
+    "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
+    "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
+    "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
   },
   "stages": {
     "0": {
-      "status": "LOCAL_BUILD342_GATES_PASS_CURRENT_MACOS_AND_IPHONE_TIMING_PENDING",
+      "status": "LOCAL_SOURCE_GATES_PASS_NATIVE_CURRENT_CI_AND_IPHONE_TIMING_PENDING",
       "gates": {
-        "record_alert_p95_ms": 0.26,
-        "record_alert_max_ms": 0.621,
+        "record_alert_p95_ms": 0.297,
+        "record_alert_max_ms": 0.634,
         "record_alert_samples": 120,
-        "nativeVaultCommitMs_under_2000": "PRIOR_MACOS_SAMPLE_773.430958_MS_ONLY_CURRENT_SOURCE_CI_PENDING_IPHONE_PENDING",
+        "nativeVaultCommitMs_under_2000": "PRIOR_MACOS_SAMPLE_773.430958_MS_ONLY_CURRENT_NATIVE_CI_AND_IPHONE_PENDING",
         "finish_during_map_drag": "PASS_BUILD342_NODE_GATE",
         "manualFailures_equals_CALENDAR_ADVANCE_FAILED": "PASS_BUILD342_NODE_GATE",
         "map_bounds_and_bounded_rendering": "PASS_BUILD342_NODE_GATE",
-        "record_alert_measurement_source": "LOCAL_NODE_BUILD342_TEST"
+        "record_alert_measurement_source": "LOCAL_NODE_BUILD342_TEST",
+        "current_native_ci_attempt": "36320128185_FAILED_FIXTURE_RESET_EPOCH; FIXTURE_CORRECTED_LOCALLY"
       }
     },
     "1": {
-      "status": "PASS_EXACT_BUILD341_124_OF_124_UNCHANGED_CI_RUN_36315061990",
+      "status": "PASS_EXACT_BUILD341_124_OF_124_UNCHANGED_CI_RUN_36320128185",
       "local_build341_acceptance": {
         "completed": false,
         "executed": 107,
@@ -34,41 +37,41 @@
         "blocked_or_failed": 4,
         "reason": "Local attempt stopped before the full exact-source suite because Chromium/ESLint are unavailable; macOS CI will run the unchanged verified source."
       },
-      "ci_gate": "Exact verified Build341 source acceptance passed 124/124 unchanged on macOS CI run 36315061990."
+      "ci_gate": "Exact Build341 acceptance passed 124/124 unchanged in the latest macOS attempt 36320128185."
     },
     "2": {
-      "status": "APP_ROOT_PARITY_PASS_ASSET_KERNEL_WORKER_INTEGRATED_FULL_APP_OWNER_PENDING",
+      "status": "LIVE_KERNEL_OWNER_AND_TYPED_COLUMNS_INTEGRATED_BOUNDED_PARITY_PASS_CROSS_DOMAIN_PROMOTION_PENDING",
       "scenario": {
-        "simulated_days": 10,
-        "speed_x": 600,
-        "assets": 3380,
-        "hourly_commits": 240,
-        "state_comparison": "100% full-root first-difference equality after every atomic app slice",
-        "app_path": "createSimulationSliceJob + GH_SIMULATION_ASSET_CORE + GH_TRANSACTION_CORE",
-        "boundary_fixture": "controlled deterministic processFinancialDay/processMarket callbacks",
+        "legacy_shadow_days": 10,
+        "legacy_shadow_speed_x": 600,
+        "legacy_shadow_assets": 3380,
+        "legacy_shadow_hourly_commits": 240,
+        "legacy_shadow_state_comparison": "100% full-root first-difference equality after every old-path app slice; finance/market callbacks are controlled fixtures",
+        "live_owner_large_fleet_commits": 1,
+        "live_owner_large_fleet_assets": 3380,
+        "live_owner_financial_boundary_commits": 24,
+        "live_owner_financial_boundary_assets": 128,
+        "live_owner_result": "full logical state equality against the old path for the tested commits",
+        "kernel_install_point": "after save normalization/structural migration and before diagnostics, event ledger, control plane or other runtime state writes",
         "local_gate": "PASS"
       },
-      "limit": "The 240-slice test remains an app-owned shadow with controlled finance/market callbacks. The live simulation Worker now synchronizes, processes and commits assets through its typed kernel, and the app publishes patches read back from that kernel; finance/time/domain publication remains app-owned and <30 ms on iPhone is unproven."
+      "limit": "The 240-commit, 10-day test is still an app-owned shadow with controlled finance/market callbacks. The live owner has bounded parity tests, but full independent kernel execution for all finance, time, market and domain callbacks and the >30 ms ordinary-slice iPhone gate are not proven."
     },
     "3": {
-      "status": "NATIVE_CHUNKED_AB_STORAGE_AND_RECOVERY_IMPLEMENTED_CURRENT_SOURCE_MACOS_CI_PENDING_DOMAIN_AUDIT_AND_DEVICE_TIMING_PENDING",
+      "status": "KERNEL_DELTA_UNDO_AND_NATIVE_AB_CHUNK_STORAGE_IMPLEMENTED_CORRECTED_NATIVE_FIXTURE_CI_PENDING",
       "implemented": [
-        "bounded record-alert delta validation",
-        "content-addressed native sections",
-        "independent storageVersion 2",
-        "A/B save-head pointer",
-        "compact payloadSHA256 is checked against the reconstructed payload before an A/B generation is accepted; mismatch falls back to the verified peer and is covered by fault injection",
-        "old inline Save Schema 2.0.0 compatibility",
-        "post-publication garbage-collection failure cannot misreport a durable save as failed",
-        "immutable verified chained and legacy document proof cache with ancestor invalidation",
-        "application idle document proof audit, at most 20 top-level records per tick, paused during drag and durable commands",
-        "production Native cold-archive bridge with correlated asynchronous acknowledgements, validated paths, atomic writes and readback verification",
-        "Save Schema 2.0.0 remains unchanged; internal storageVersion remains independent at 2"
+        "normal live-owner transactions use kernel reverse-write records; full snapshots are skipped on the proven owner path and remain available for legacy fallbacks",
+        "all state-load, durable-publication, native memory-recovery and hard-reset compensation paths restore through the kernel owner",
+        "Save Schema 2.0.0 remains unchanged while native physical storage uses storageVersion 2",
+        "content-addressed native sections and compact A/B head with payload SHA-256 verification and fallback",
+        "legacy inline Save Schema 2.0.0 read and migration tests",
+        "incremental document-proof cache and bounded idle audit",
+        "native cold-archive bridge and correlated acknowledgement tests"
       ],
-      "limit": "The prior source passed 41/41 Native storage tests on macOS. Current Swift changes await macOS compile/tests; comprehensive domain delta validators, full idle-state audit and production hour/day/save timing remain pending."
+      "limit": "The latest native macOS run passed Build341 124/124 and Build342 source 143/143, then failed 42/43 because its new A/B fixture used resetEpoch 0. The fixture now inherits the verified baseline resetEpoch; corrected current-source Swift build/tests remain pending. iPhone timing and complete domain-owner audit remain pending."
     },
     "4": {
-      "status": "PRODUCTION_MOBILITY_ARCHIVE_PATH_AND_SEGMENTED_INDEXES_IMPLEMENTED_HOT_STATE_DEVICE_GATE_PENDING",
+      "status": "MOBILITY_COLD_ARCHIVE_INTEGRATED_SOA_ROW_DUPLICATES_REMOVED_DEVICE_HOT_STATE_GATE_PENDING",
       "implemented": [
         "cold archive core",
         "chunked save core",
@@ -78,7 +81,8 @@
         "per-adapter, per-bucket append serialization shared across archive instances to prevent lost concurrent updates",
         "Mobility trip completion and legacy hot-window displacement enqueue stable-ID receipts for bounded production archive flushes",
         "hot pending rows are removed only after native archive durability and scoped transaction commit; failure/retry and readback are integration-tested",
-        "per-epoch archive indexes roll over at 4,096 receipts and verified reads merge all segments"
+        "per-epoch archive indexes roll over at 4,096 receipts and verified reads merge all segments",
+        "3,380-asset live owner stores nine hot values only in Float64Array columns; backing row objects contain zero duplicate hot fields, with legacy JSON property order preserved"
       ],
       "limit": "App and Native bridge integration passes local adapter/application tests. The actual iPhone archive path, 3,380-asset under-12-MB hot-state gate and storage growth under long sessions remain unmeasured.",
       "controlled_app_hot_state_sample": {
@@ -89,12 +93,15 @@
         "logical_json_bytes": 5952155,
         "asset_json_bytes": 5794577,
         "scope": "Production app simulation-slice path with controlled finance-day and market-hour callbacks; no production cold archive, device memory or thermal measurement",
-        "target_proven": false
+        "target_proven": false,
+        "live_kernel_hot_column_bytes": 273780,
+        "duplicate_hot_fields_in_backing_objects": 0,
+        "measurement_scope": "Raw typed-column storage only; does not include rare row fields, other state, heap overhead or establish the <12 MB whole hot-state target"
       },
       "post_integration_hot_state_measurement": "PENDING_PHYSICAL_IPHONE_17_PRO_MAX"
     },
     "5": {
-      "status": "SIMULATION_ASSET_WORKER_KERNEL_INTEGRATED_CROSS_DOMAIN_WORKER_OWNERSHIP_AND_DEVICE_GATE_PENDING",
+      "status": "TENTATIVE_ASSET_WORKER_KERNEL_INTEGRATED_FULL_APP_KERNEL_WORKER_OWNERSHIP_AND_DEVICE_GATE_PENDING",
       "implemented": [
         "worker transaction/query/frame protocol",
         "stale generation and idempotency tests",
@@ -104,10 +111,10 @@
         "live simulation asset Worker owns typed kernel state, resynchronizes current app rows, publishes kernel-readback patches, and uses confirm/rollback after the outer transaction",
         "Worker initialization sends at most 128 assets per event-loop turn; 20,000-row app integration and failed outer-transaction compensation pass locally"
       ],
-      "limit": "The cross-domain transaction, financial boundaries, calendar and market callbacks remain on the app thread. Ten-minute iPhone 17 Pro Max continuous-drag FPS/drop/task acceptance is pending."
+      "limit": "The live simulation-asset Worker owns tentative typed asset updates and confirms/rolls them back after the app transaction. State reads, the cross-domain commit and financial/calendar/market callbacks remain on the app thread; the generic kernel-worker protocol is test-only and is not instantiated by app.js. Ten-minute physical drag/FPS/task acceptance is pending."
     },
     "6": {
-      "status": "LIVE_SIMULATION_WORKER_FLOAT64_COLUMNS_INTEGRATED_COMPATIBILITY_ROWS_AND_DEVICE_MEMORY_GATE_PENDING",
+      "status": "LIVE_APP_SOA_COLUMNS_WITHOUT_DUPLICATE_HOT_OBJECT_FIELDS_20K_SYNTHETIC_GATE_PASS_DEVICE_GATE_PENDING",
       "scenario": {
         "synthetic_assets": 20000,
         "column_types": [
@@ -118,7 +125,7 @@
         "worker_bulk_row_patches": 1000,
         "worker_base_snapshot_bytes_upper_bound": 1024
       },
-      "limit": "The app still publishes object-row compatibility state for renderers and other domain writers. iPhone memory/thermal validation at 20,000 assets on the oldest supported model is pending; that model is not identified.",
+      "limit": "Nine hot numeric fields are in app-owned Float64Array columns and absent from backing row objects, while Proxy row views preserve current app consumers and Save Schema bytes. Synthetic 20,000-row Worker/kernel tests pass, but app execution at 20,000 assets, iPhone memory/thermal behavior and oldest-supported-device acceptance remain pending.",
       "implemented": [
         "the live simulation Worker stores progress, fuel, condition, dwellRemaining, simCarrySeconds, tripSeconds, effectiveSpeedKmh, lat and lng in Float64Array columns with presence bytes",
         "3,380-row production-path initialization and 20,000-row typed-kernel fixtures pass locally; patches are read back from the Worker kernel",
@@ -131,7 +138,7 @@
     "build340_local_suite": "PASS",
     "recovery_integration": "PASS_8_OF_8",
     "full_build342_acceptance": {
-      "completed": true,
+      "completed": false,
       "most_recent_completed_run": {
         "id": "36315061990",
         "commit": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
@@ -139,9 +146,9 @@
         "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
         "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988"
       },
-      "current_source": "PENDING_MACOS_CI_AFTER_WORKER_ARCHIVE_AND_SOURCE_MANIFEST_REFRESH"
+      "current_source": "PENDING_CURRENT_SOURCE_MACOS_CI_AFTER_RESET_EPOCH_FIX_AND_KERNEL_OWNER_REPLACEMENT"
     },
-    "swift_compile_and_native_tests": "PRIOR_SOURCE_PASS_41_OF_41_CI_RUN_36315061990_CURRENT_SOURCE_MACOS_COMPILE_AND_TEST_PENDING",
+    "swift_compile_and_native_tests": "LATEST_ATTEMPT_42_OF_43_FIXTURE_RESET_EPOCH_FAILED; FIXTURE_CORRECTED_LOCALLY; CURRENT_SOURCE_MACOS_CI_PENDING",
     "unsigned_ipa": {
       "status": "PRIOR_SOURCE_IPA_BUILT_ON_CI_NOT_CURRENT_SOURCE_NOT_UPLOADED_OR_DELIVERED",
       "run_id": "36315061990",
@@ -177,33 +184,43 @@
       "worker_asset_kernel_integration": "PASS_LOCAL_WORKER_KERNEL_READBACK_CONFIRM_ROLLBACK_AND_CHUNKED_BOOTSTRAP_TESTS"
     },
     "build342_local_final_run": {
-      "result": "PASS_19_OF_19_BUILD342_TEST_PROGRAMS",
-      "programs": 19,
+      "result": "PASS_20_OF_20_BUILD342_TEST_PROGRAMS",
+      "programs": 20,
       "command": "npm run test:build342",
       "completed_at": "2026-09-27",
       "includes_production_mobility_archive_integration": true,
-      "includes_archive_segment_rollover": true
+      "includes_archive_segment_rollover": true,
+      "includes_kernel_owned_startup_recovery_reset_paths": true,
+      "includes_zero_duplicate_hot_object_fields": true
     },
     "build342_macOS_ci_run": {
-      "run_id": "36315061990",
-      "commit": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
-      "result": "PASS_BUILD341_124_OF_124_BUILD342_140_OF_140_NATIVE_41_OF_41_WEBKIT_6_OF_6_UNSIGNED_IPA_BUILT_AND_SOURCE_VERIFIED_NOT_DELIVERED",
-      "nativeVaultCommitMs": 773.430958,
-      "nativeVaultCommitBytes": 29360245,
-      "ipa_sha256": "284250c85768bc0fa7c4378fd1e6ffb252472a23ee3db02ed8b3c03695c016f7",
-      "ipa_bytes": 13445716,
-      "verification_artifact_id": "10931010204",
-      "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
+      "run_id": "36320128185",
+      "commit_sha": "ecd8c17adfc5339610c414fc88da232109a5dba2",
+      "result": "FAILED_NATIVE_TEST_42_OF_43_AFTER_BUILD341_124_OF_124_AND_BUILD342_SOURCE_143_OF_143",
+      "failure": "The compact A/B recovery fixture created its next save with resetEpoch 0 instead of inheriting the active baseline resetEpoch; native test reported Stale native save rejected.",
+      "native_fixture_fix": "prepare_native_tests.py now copies resetEpoch from the verified current baseline object before incrementing saveRevision.",
+      "wkwebview_tests": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+      "unsigned_iphoneos_release_app": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+      "ipa_built": false,
+      "ipa_uploaded_or_delivered": false,
+      "device_tested": false,
+      "tested_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
+      "tested_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
+      "build341_baseline": "PASS_124_OF_124",
+      "build342_source_gates": "PASS_143_OF_143",
+      "native_storage": "FAIL_42_OF_43_FIXTURE_RESET_EPOCH",
+      "corrected_native_fixture_in_candidate": true,
+      "corrected_current_source_ci": "PENDING",
       "physical_iphone_tested": false
     },
     "new_source_regression": {
-      "change": "Production Mobility cold archive with durable acknowledgement, 4,096-record segment rollover and verified multi-segment reads; simulation Worker typed kernel now supplies asset patches with confirm/rollback; bootstrap yields in 128-row chunks.",
-      "previous_source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
-      "pending_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
-      "pending_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
-      "local_tests": "PASS_19_OF_19_BUILD342_AND_21_OF_21_BUILD340_PROGRAMS",
+      "change": "Kernel ownership now starts immediately after Save Schema normalization and structural migration; nine app live hot asset fields are removed from row-object backing storage; key-order-compatible JSON is preserved; state load, recovery, durable publish and hard-reset paths are checked.",
+      "pending_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
+      "pending_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada",
+      "local_tests": "PASS_20_OF_20_BUILD342_AND_21_OF_21_BUILD340_PROGRAMS",
       "local_swift_toolchain": "UNAVAILABLE",
-      "native_macos_ci": "PENDING",
+      "local_eslint": "BLOCKED_PACKAGE_MISSING",
+      "native_macos_ci": "PENDING_CORRECTED_FIXTURE",
       "physical_iphone": "PENDING"
     },
     "build340_local_final_run": {
@@ -214,12 +231,36 @@
       "includes_worker_typed_kernel_and_rollback_integration": true
     },
     "local_lint": "BLOCKED_LOCAL_ESLINT_PACKAGE_MISSING_CI_INSTALLS_PINNED_DEPENDENCIES",
-    "local_native_compile": "BLOCKED_SWIFT_TOOLCHAIN_UNAVAILABLE_NATIVE_TEST_SOURCE_GENERATION_PASS_CI_COMPILE_PENDING"
+    "local_native_compile": "BLOCKED_SWIFT_TOOLCHAIN_UNAVAILABLE_NATIVE_TEST_SOURCE_GENERATION_PASS_CI_COMPILE_PENDING",
+    "record_alert_latest_local": {
+      "samples": 120,
+      "p95_ms": 0.297,
+      "max_ms": 0.634,
+      "source": "npm run test:build342 on Node; not iPhone"
+    },
+    "latest_ci_attempt": {
+      "run_id": "36320128185",
+      "commit_sha": "ecd8c17adfc5339610c414fc88da232109a5dba2",
+      "result": "FAILED_NATIVE_TEST_42_OF_43_AFTER_BUILD341_124_OF_124_AND_BUILD342_SOURCE_143_OF_143",
+      "failure": "The compact A/B recovery fixture created its next save with resetEpoch 0 instead of inheriting the active baseline resetEpoch; native test reported Stale native save rejected.",
+      "native_fixture_fix": "prepare_native_tests.py now copies resetEpoch from the verified current baseline object before incrementing saveRevision.",
+      "wkwebview_tests": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+      "unsigned_iphoneos_release_app": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+      "ipa_built": false,
+      "ipa_uploaded_or_delivered": false,
+      "device_tested": false,
+      "tested_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
+      "tested_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
+      "build341_baseline": "PASS_124_OF_124",
+      "build342_source_gates": "PASS_143_OF_143",
+      "native_storage": "FAIL_42_OF_43_FIXTURE_RESET_EPOCH",
+      "corrected_current_source": "PENDING"
+    }
   },
-  "source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
-  "webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
+  "source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
+  "webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada",
   "physical_device_evidence": {
-    "available_device": "iPhone 17 Pro Max (user-reported)",
+    "available_device": "iPhone 17 Pro Max (user-reported only; no device connection in this session)",
     "provided_reference_artifact_build": 341,
     "build342_physical_test": "NOT_TESTED",
     "oldest_supported_iphone": "NOT_SPECIFIED"
