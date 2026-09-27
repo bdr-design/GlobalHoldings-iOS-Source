@@ -9,7 +9,8 @@
     "The app simulation still uses its original transaction owner. Worker command/request replay identities survive a 512-reply cache rollover, with fail-closed session limits; its 20,000-asset responses use bounded incremental section fingerprints. Core tests do not prove authoritative Worker ownership, production archive integration or live column migration.",
     "Physical iPhone acceptance must establish continuous 600x/drag FPS, main-thread task/drop limits, hot/process memory at 3,380 assets and thermal stability on the oldest supported device with 20,000 assets.",
     "The cold archive now recovers to the last complete A/B generation and serializes writers sharing an adapter/bucket; focused Build342 tests pass 16/16 locally, but current-source macOS CI and production archive integration remain pending.",
-    "The provided device reference belongs to Build 341. An iPhone 17 Pro Max is available, but this Build342 source has no physical-device measurements; the oldest supported iPhone is not specified."
+    "The provided device reference belongs to Build 341. An iPhone 17 Pro Max is available, but this Build342 source has no physical-device measurements; the oldest supported iPhone is not specified.",
+    "SaveVault recovery for a corrupt A/B pointer now selects and repairs the highest fully verified slot; this source change awaits native macOS CI."
   ],
   "minimum_acceptance_gates": 140,
   "production_approved": false,
@@ -32,7 +33,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
+  "source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
   "test_build_authorized": true,
   "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
   "version": "3.0.0",

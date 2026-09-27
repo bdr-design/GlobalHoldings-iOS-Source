@@ -1,7 +1,7 @@
 {
   "approved": false,
   "blocking_issues": [
-    "Current source passed macOS CI run 36315061990 on commit 3f4feb10ac8b1e6049be7f6b40704e2a70532090: Build341 124/124, Build342 140/140, Native 41/41, WKWebView 6/6, and an unsigned IPA built and source-verified. The IPA remains on the CI runner; release approval stays closed until remaining architecture and physical-device gates pass.",
+    "The last verified source tree 84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e passed macOS CI run 36315061990 on commit 3f4feb10ac8b1e6049be7f6b40704e2a70532090. Current source adds corrupt save-head recovery and repair; native CI for this change is pending. The IPA remains on the CI runner and release approval stays closed.",
     "Native SaveVault measured 773.430958 ms for a 29360245-byte commit on one macOS CI sample (run 36315061990); this is not an iPhone measurement. The actual iPhone <2-second gate remains unmeasured.",
     "The 10-day, 600x, 3,380-asset app slice shadow test now passes full-root comparison after 240 commits. The shadow mirrors legacy transaction writes, and finance-day/market-hour callbacks are controlled fixtures; independent kernel business execution, promotion and the <30 ms normal-slice gate are not established.",
     "Document proof cache now covers verified immutable chains with ancestor invalidation, and application idle document proof audit processes at most 20 top-level records per tick, but complete domain delta validators and an idle full-state audit remain pending.",
@@ -12,7 +12,7 @@
   ],
   "build": 342,
   "latest_direct_source_ci": {
-    "status": "PASS_CURRENT_SOURCE_MACOS_GATES_DEVICE_GATES_OPEN",
+    "status": "PENDING_MACOS_CI_AFTER_A_B_HEAD_RECOVERY",
     "source_mode": "direct_git_tree_from_verified_build341_commit",
     "tested_commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
     "run_id": "36315061990",
@@ -31,7 +31,8 @@
     "verification_artifact_id": "10931010204",
     "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
     "ipa_uploaded_or_delivered": false,
-    "physical_iphone_tested": false
+    "physical_iphone_tested": false,
+    "pending_source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c"
   },
   "phase_status": {
     "stage0_urgent_build342": "MACOS_SOURCE_NATIVE_PASS_PHYSICAL_IPHONE_TIMING_PENDING",
@@ -55,7 +56,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
+  "source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
   "version": "3.0.0",
   "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
   "previous_passed_source_ci": {

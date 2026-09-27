@@ -198,6 +198,12 @@ test("corrupt newest A/B slot falls back to verified peer") {
       if (obj["generation"] as? Int)==gen {try Data("broken".utf8).write(to:file)}
     }
     try check(vault.currentSave()==stable && vault.currentGeneration()<gen,"Corrupt slot selected")
+    let recovered=vault.currentSave(),recoveredGeneration=vault.currentGeneration()
+    try check(recovered != nil && recoveredGeneration > 0,"Verified peer was not available for pointer recovery")
+    try Data("broken".utf8).write(to:folder.appendingPathComponent("save-head.json"),options:.atomic)
+    try check(vault.currentSave()==recovered && vault.currentGeneration()==recoveredGeneration,"Corrupt save-head did not recover the highest complete A/B generation")
+    let repairedHead=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-head.json"))) as! [String:Any]
+    try check(repairedHead["generation"] as? Int==recoveredGeneration && ["A","B"].contains(repairedHead["slot"] as? String ?? ""),"Recovered save-head pointer was not repaired")
 }
 for (name,value,expected) in [("slot integer",NSNumber(value:2) as Any,Optional(2)),("slot fraction",NSNumber(value:1.9) as Any,nil),("slot bool",NSNumber(value:true) as Any,nil),("slot NaN",NSNumber(value:Double.nan) as Any,nil),("slot over-safe-int",NSNumber(value:9_007_199_254_740_992.0) as Any,nil),("legacy integer string","2" as Any,Optional(2))] {
     test(name){try check(probe.payloadInteger(value)==expected,"Coerced invalid integer")}

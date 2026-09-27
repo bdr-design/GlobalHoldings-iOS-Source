@@ -920,23 +920,25 @@ final class GlobalSaveVault {
         if let cachedSlotStamps, cachedSlotStamps == stamps { return cachedBestEnvelope }
         var best: Envelope?
         if fm.fileExists(atPath: headURL.path) {
-            guard let data = try? Data(contentsOf: headURL),
-                  let head = try? JSONDecoder().decode(VaultHead.self, from: data) else {
-                cachedBestEnvelope = nil
-                cachedSlotStamps = stamps
-                return nil
-            }
-            if head.generation == 0 && head.slot == "none" {
-                best = nil
-            } else if head.generation > 0, head.slot == "A" || head.slot == "B",
-                      let candidate = readEnvelope(url(head.slot)), candidate.generation == head.generation {
-                best = candidate
+            let decodedHead = (try? Data(contentsOf: headURL)).flatMap { try? JSONDecoder().decode(VaultHead.self, from: $0) }
+            if let head = decodedHead {
+                if head.generation == 0 && head.slot == "none" {
+                    best = nil
+                } else if head.generation > 0, head.slot == "A" || head.slot == "B",
+                          let candidate = readEnvelope(url(head.slot)), candidate.generation == head.generation {
+                    best = candidate
+                } else {
+                    // A committed slot can be damaged after a crash or filesystem
+                    // fault. Recover only the verified peer; never promote a staged
+                    // higher generation while a valid head still identifies the
+                    // previously committed slot.
+                    best = envelopes().filter { $0.generation < head.generation }.max { $0.generation < $1.generation }
+                    if let best { try? writeHeadLocked(VaultHead(generation: best.generation, slot: best.slot)) }
+                }
             } else {
-                // A committed slot can be damaged after a crash or filesystem
-                // fault. Recover only the verified peer; never promote a staged
-                // higher generation while a valid head still identifies the
-                // previously committed slot.
-                best = envelopes().filter { $0.generation < head.generation }.max { $0.generation < $1.generation }
+                // A corrupt pointer carries no trustworthy generation boundary.
+                // Select only a fully verified A/B envelope and repair the pointer.
+                best = envelopes().max { $0.generation < $1.generation }
                 if let best { try? writeHeadLocked(VaultHead(generation: best.generation, slot: best.slot)) }
             }
         } else {

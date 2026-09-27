@@ -125,7 +125,7 @@
         "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
         "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988"
       },
-      "current_source": "PASS_EXACT_RUNTIME_SOURCE_CI"
+      "current_source": "PENDING_MACOS_CI_AFTER_A_B_HEAD_RECOVERY_REGRESSION"
     },
     "swift_compile_and_native_tests": "PASS_41_OF_41_CI_RUN_36315061990",
     "unsigned_ipa": {
@@ -179,9 +179,16 @@
       "verification_artifact_id": "10931010204",
       "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
       "physical_iphone_tested": false
+    },
+    "new_source_regression": {
+      "change": "Corrupt or unreadable A/B save-head now recovers the highest fully verified slot and repairs the pointer; a valid pointer still blocks promotion of an uncommitted higher slot.",
+      "previous_verified_source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
+      "pending_source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
+      "local_swift_toolchain": "UNAVAILABLE",
+      "native_macos_ci": "PENDING"
     }
   },
-  "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
+  "source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
   "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
   "physical_device_evidence": {
     "available_device": "iPhone 17 Pro Max (user-reported)",
