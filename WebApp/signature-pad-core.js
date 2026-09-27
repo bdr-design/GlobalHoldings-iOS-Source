@@ -1,6 +1,6 @@
 (()=>{'use strict';
 const VERSION='1.0.0',MAX_STROKES=64,MAX_POINTS=8192,MAX_BYTES=32768;
-const clone=value=>value===undefined?undefined:(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
+const clone=value=>value===undefined?undefined:(typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value))));
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
 const round=value=>Math.round(value*10000)/10000;
 function pointOf(value){
