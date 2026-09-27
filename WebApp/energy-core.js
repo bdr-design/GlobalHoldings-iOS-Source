@@ -2,7 +2,7 @@
   'use strict';
   const VERSION='3.0.0';
   const num=value=>Math.max(0,Number(value)||0),now=state=>Number(state.simSeconds)||0;
-  const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
+  const clone=value=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number(value)||0));
   const KIND=Object.freeze({
     gas:{name:'توليد غازي',factor:.56,variableCost:18,forcedOutage:.04,degradation:.004,lifeYears:30},
