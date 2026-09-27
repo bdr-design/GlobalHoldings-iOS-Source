@@ -69,7 +69,7 @@
   }
   function finite(v){return v!==null&&v!==''&&typeof v!=='boolean'&&Number.isFinite(Number(v));}
   function dataId(v){return /^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$/.test(String(v||''));}
-  function structured(v){if(typeof globalThis.structuredClone==='function')try{return globalThis.structuredClone(v);}catch(_e){}return JSON.parse(JSON.stringify(v));}
+  function structured(v){if(typeof globalThis.GH_CLONE_CORE?.clone==='function')return globalThis.GH_CLONE_CORE.clone(v);if(typeof globalThis.structuredClone==='function')try{return globalThis.structuredClone(v);}catch(_e){}return JSON.parse(JSON.stringify(v));}
   function validPoint(point){return Array.isArray(point)&&point.length>=2&&typeof point[0]==='number'&&Number.isFinite(point[0])&&typeof point[1]==='number'&&Number.isFinite(point[1])&&point[0]>=-90&&point[0]<=90&&point[1]>=-180&&point[1]<=180;}
   function serializedBytes(value){try{const json=typeof value==='string'?value:JSON.stringify(value);return globalThis.TextEncoder?new TextEncoder().encode(json).byteLength:json.length*2;}catch(_error){return Infinity;}}
   function financeSequence(value){const matches=String(value||'').match(/(\d+)(?!.*\d)/);if(!matches)return 0;const n=Number(matches[1]);return Number.isSafeInteger(n)&&n>=0?n:0;}
