@@ -291,6 +291,9 @@
     "ci_timeout_seconds": 600,
     "corrected_source_ci": "PENDING",
     "iphone_17_pro_max_physical_metrics": "PENDING",
-    "seven_stages_complete": false
+    "seven_stages_complete": false,
+    "checksum_inventory_ci_run": "36328636252",
+    "checksum_inventory_ci_result": "FAILED_BEFORE_BASELINE_OR_BUILD342_GATES; CI found one checksum entry for a Build340 workflow from the stale local base. The inventory has been restored from the pushed branch and updated only for changed files.",
+    "corrected_source_tree_sha256": "03e451b343c44a48222575e8639a5b0243e512cfbdc742d7a579f127a4affda6"
   }
 }
