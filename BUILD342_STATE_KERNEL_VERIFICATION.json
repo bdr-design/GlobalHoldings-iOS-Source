@@ -12,26 +12,28 @@
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "current_candidate_source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
     "current_candidate_webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
-    "latest_candidate_ci_run": "36352181861",
-    "current_candidate_ci_status": "PENDING_AFTER_AUTHORITATIVE_COMPACTION_MARKER_WAIT_FIX"
+    "latest_candidate_ci_run": "36353111793",
+    "current_candidate_ci_status": "PASS_BUILD341_124_OF_124_BUILD342_144_OF_144_NATIVE_43_OF_43_WKWEBVIEW_6_OF_6_UNSIGNED_IPHONEOS_RELEASE_AND_TEST_IPA_VERIFIED; PHYSICAL_IPHONE_ACCEPTANCE_PENDING",
+    "latest_candidate_ci_commit": "6c873e3de87cbd127c0774d3c5fbe899babda92b",
+    "latest_candidate_ci_url": "https://github.com/bdr-design/GlobalHoldings-iOS-Source/actions/runs/36353111793"
   },
   "stages": {
     "0": {
-      "status": "LOCAL_SOURCE_GATES_PASS_NATIVE_CURRENT_CI_AND_IPHONE_TIMING_PENDING",
+      "status": "LOCAL_SOURCE_GATES_PASS_CURRENT_SOURCE_MACOS_CI_AND_UNSIGNED_BUILD; PHYSICAL_IPHONE_TIMING_PENDING",
       "gates": {
         "record_alert_p95_ms": 0.297,
         "record_alert_max_ms": 0.634,
         "record_alert_samples": 120,
-        "nativeVaultCommitMs_under_2000": "PRIOR_MACOS_SAMPLE_773.430958_MS_ONLY_CURRENT_NATIVE_CI_AND_IPHONE_PENDING",
+        "nativeVaultCommitMs_under_2000": "PASS_CURRENT_SOURCE_MACOS_CI_357.892625_MS_FOR_29,360,245_BYTES; NOT_AN_IPHONE_MEASUREMENT",
         "finish_during_map_drag": "PASS_BUILD342_NODE_GATE",
         "manualFailures_equals_CALENDAR_ADVANCE_FAILED": "PASS_BUILD342_NODE_GATE",
         "map_bounds_and_bounded_rendering": "PASS_BUILD342_NODE_GATE",
         "record_alert_measurement_source": "LOCAL_NODE_BUILD342_TEST",
-        "current_native_ci_attempt": "36320128185_FAILED_FIXTURE_RESET_EPOCH; FIXTURE_CORRECTED_LOCALLY"
+        "current_native_ci_attempt": "36353111793 PASS: 144/144 Build342, 43/43 native vault, 6/6 real WKWebView smoke, unsigned arm64 iPhoneOS Release build and verified test IPA"
       }
     },
     "1": {
-      "status": "PASS_EXACT_BUILD341_124_OF_124_UNCHANGED_CI_RUN_36320128185",
+      "status": "PASS_EXACT_BUILD341_124_OF_124_UNCHANGED_CI_RUN_36353111793",
       "local_build341_acceptance": {
         "completed": false,
         "executed": 107,
@@ -39,7 +41,7 @@
         "blocked_or_failed": 4,
         "reason": "Local attempt stopped before the full exact-source suite because Chromium/ESLint are unavailable; macOS CI will run the unchanged verified source."
       },
-      "ci_gate": "Exact Build341 acceptance passed 124/124 unchanged in the latest macOS attempt 36320128185."
+      "ci_gate": "Exact unchanged Build341 baseline passed 124/124 in current-source macOS CI run 36353111793."
     },
     "2": {
       "status": "LIVE_KERNEL_OWNER_AND_TYPED_COLUMNS_INTEGRATED_BOUNDED_PARITY_PASS_CROSS_DOMAIN_PROMOTION_PENDING",
@@ -60,7 +62,7 @@
       "limit": "The 240-commit, 10-day test is still an app-owned shadow with controlled finance/market callbacks. The live owner has bounded parity tests, but full independent kernel execution for all finance, time, market and domain callbacks and the >30 ms ordinary-slice iPhone gate are not proven."
     },
     "3": {
-      "status": "KERNEL_DELTA_UNDO_AND_NATIVE_AB_CHUNK_STORAGE_IMPLEMENTED_CORRECTED_NATIVE_FIXTURE_CI_PENDING",
+      "status": "KERNEL_DELTA_UNDO_AND_NATIVE_AB_CHUNK_STORAGE_IMPLEMENTED_CURRENT_SOURCE_NATIVE_TESTS_43_OF_43_PASS; IPHONE_TIMING_PENDING",
       "implemented": [
         "normal live-owner transactions use kernel reverse-write records; full snapshots are skipped on the proven owner path and remain available for legacy fallbacks",
         "all state-load, durable-publication, native memory-recovery and hard-reset compensation paths restore through the kernel owner",
@@ -70,7 +72,16 @@
         "incremental document-proof cache and bounded idle audit",
         "native cold-archive bridge and correlated acknowledgement tests"
       ],
-      "limit": "The latest native macOS run passed Build341 124/124 and Build342 source 143/143, then failed 42/43 because its new A/B fixture used resetEpoch 0. The fixture now inherits the verified baseline resetEpoch; corrected current-source Swift build/tests remain pending. iPhone timing and complete domain-owner audit remain pending."
+      "limit": "Current-source native vault tests and Swift compilation pass 43/43 in macOS CI run 36353111793. The 357.892625 ms commit sample covers 29,360,245 bytes on macOS only; iPhone timing and the complete domain-owner audit remain pending.",
+      "current_native_ci": {
+        "run_id": "36353111793",
+        "passed": 43,
+        "total": 43,
+        "native_vault_commit_ms": 357.892625,
+        "sample_bytes": 29360245,
+        "platform": "macOS",
+        "iphone_measurement": false
+      }
     },
     "4": {
       "status": "MOBILITY_COLD_ARCHIVE_INTEGRATED_SOA_ROW_DUPLICATES_REMOVED_DEVICE_HOT_STATE_GATE_PENDING",
@@ -140,28 +151,35 @@
     "build340_local_suite": "PASS",
     "recovery_integration": "PASS_8_OF_8",
     "full_build342_acceptance": {
-      "completed": false,
+      "completed": true,
       "most_recent_completed_run": {
-        "id": "36352181861",
-        "commit": "56643f2fc57338fc97d66e3cc0b0d640f93ef495",
-        "result": "FAILED_BUILD342_ACCEPTANCE_143_OF_144_CALENDAR_COMPACTION_WAIT_TIMEOUT; PRIOR_HOUR83_JOURNAL_REPAIR_CONFIRMED",
+        "id": "36353111793",
+        "commit": "6c873e3de87cbd127c0774d3c5fbe899babda92b",
+        "result": "PASS_BUILD341_BASELINE_124_OF_124; BUILD342_ACCEPTANCE_144_OF_144; NATIVE_43_OF_43; REAL_WKWEBVIEW_SMOKE_6_OF_6; FRESH_UNSIGNED_ARM64_IPHONEOS_RELEASE_BUILD_PASS; TEST_IPA_VERIFIED_NOT_UPLOADED; PHYSICAL_DEVICE_NOT_TESTED",
         "source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
-        "webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574"
+        "webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
+        "verification_artifact_id": 10943520827,
+        "verification_artifact_sha256": "eae006dce264dbd20cd1994019ca6c596683d9a19dbd7fb49c1b9a98e326be5"
       },
-      "current_source": "LOCAL_BUILD342_20_OF_20_PASS; CALENDAR_HELPER_WAITS_FOR_KERNEL_COMPACTION_MARKER; EXACT_CURRENT_SOURCE_MACOS_CI_PENDING"
+      "current_source": "LOCAL_BUILD342_20_OF_20_PASS; EXACT_CURRENT_SOURCE_MACOS_CI_PASS_144_OF_144; PHYSICAL_IPHONE_ACCEPTANCE_PENDING"
     },
-    "swift_compile_and_native_tests": "LATEST_ATTEMPT_42_OF_43_FIXTURE_RESET_EPOCH_FAILED; FIXTURE_CORRECTED_LOCALLY; CURRENT_SOURCE_MACOS_CI_PENDING",
+    "swift_compile_and_native_tests": "PASS_CURRENT_SOURCE_NATIVE_VAULT_43_OF_43_IN_CI_RUN_36353111793; FRESH_UNSIGNED_ARM64_IPHONEOS_RELEASE_BUILD_PASS; IPHONE_TIMING_PENDING",
     "unsigned_ipa": {
-      "status": "PRIOR_SOURCE_IPA_BUILT_ON_CI_NOT_CURRENT_SOURCE_NOT_UPLOADED_OR_DELIVERED",
-      "run_id": "36315061990",
-      "commit": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
-      "bytes": 13445716,
-      "sha256": "284250c85768bc0fa7c4378fd1e6ffb252472a23ee3db02ed8b3c03695c016f7",
-      "verification_artifact_id": "10931010204",
-      "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
+      "status": "CURRENT_SOURCE_UNSIGNED_TEST_IPA_BUILT_VERIFIED_AND_NOT_UPLOADED_OR_DELIVERED",
+      "run_id": "36353111793",
+      "commit": "6c873e3de87cbd127c0774d3c5fbe899babda92b",
+      "bytes": 13467562,
+      "sha256": "aca416b363042dcb5157fb5f6205f1aca9aaac04b5ffac311a346dc31defedde",
+      "source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
+      "webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
+      "verification_artifact_id": 10943520827,
+      "verification_artifact_sha256": "eae006dce264dbd20cd1994019ca6c596683d9a19dbd7fb49c1b9a98e326be5",
+      "arm64_iphoneos": true,
+      "unsigned": true,
+      "production_approved": false,
       "device_tested": false
     },
-    "physical_iphone": "NOT_TESTED",
+    "physical_iphone": "NOT_TESTED; available iPhone 17 Pro Max is not connected in this session; oldest supported iPhone is not specified",
     "deferred_persistence_regression": "PASS_12_OF_12_INCLUDING_MAP_GESTURE_DEFER",
     "build342_macOS_ci_previous_run": {
       "run_id": "36307934626",
@@ -182,7 +200,7 @@
       "first_difference": "none after every application slice",
       "independent_kernel_execution": false,
       "boundary_callbacks": "controlled fixtures",
-      "current_source_ci": "PASS_BUILD342_SOURCE_CI_RUN_36315061990",
+      "current_source_ci": "PASS_BUILD342_SOURCE_CI_RUN_36353111793",
       "worker_asset_kernel_integration": "PASS_LOCAL_WORKER_KERNEL_READBACK_CONFIRM_ROLLBACK_AND_CHUNKED_BOOTSTRAP_TESTS"
     },
     "build342_local_final_run": {
@@ -193,24 +211,26 @@
       "scope": "Linux Node.js source tests; does not include macOS native/WKWebView or physical iPhone gates"
     },
     "build342_macOS_ci_run": {
-      "run_id": "36352181861",
-      "commit_sha": "56643f2fc57338fc97d66e3cc0b0d640f93ef495",
-      "status": "FAILED_BUILD342_ACCEPTANCE_143_OF_144_CALENDAR_COMPACTION_WAIT_TIMEOUT; PRIOR_HOUR83_JOURNAL_REPAIR_CONFIRMED",
+      "run_id": "36353111793",
+      "commit_sha": "6c873e3de87cbd127c0774d3c5fbe899babda92b",
+      "status": "PASS",
       "source_mode": "direct_git_tree_from_verified_build341_commit",
-      "result": "BUILD341_BASELINE_PASS_124_OF_124; BUILD342_ACCEPTANCE_143_OF_144; CALENDAR_QUIESCENCE_TEST_WAIT_TIMED_OUT; NO_SCHEMA_FAILURE_RECORDED",
-      "failure_paths": [
-        "Run 36352181861 on commit 56643f2fc57338fc97d66e3cc0b0d640f93ef495 passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The calendar journey stopped while waiting for deferred compaction to settle: its test synchronization predicate timed out after 30 seconds before the calendar parity assertions, with no schema or journal-integrity error. The journal-unbalanced failure at hour 83 was cleared in run 36351219317. The candidate helper now waits on the authoritative simulationKernel.lastCompactDay marker and includes predicate state in any timeout diagnostic. Swift, WKWebView and current-source iOS build were not reached."
-      ],
+      "result": "PASS_BUILD341_BASELINE_124_OF_124; BUILD342_ACCEPTANCE_144_OF_144; NATIVE_43_OF_43; REAL_WKWEBVIEW_SMOKE_6_OF_6; FRESH_UNSIGNED_ARM64_IPHONEOS_RELEASE_BUILD_PASS; TEST_IPA_VERIFIED_NOT_UPLOADED; PHYSICAL_DEVICE_NOT_TESTED",
       "build341_baseline": "PASS_124_OF_124_UNCHANGED",
-      "build342_source_gates": "FAILED_1_OF_144; INVALID_JOURNAL_OWNER_NOT_YET_IDENTIFIED",
-      "native_tests": "NOT_REACHED",
-      "wkwebview_tests": "NOT_REACHED",
-      "unsigned_iphoneos_release_app": "NOT_REACHED",
-      "ipa_built": false,
+      "build342_source_gates": "PASS_144_OF_144",
+      "native_tests": "PASS_43_OF_43",
+      "wkwebview_tests": "PASS_REAL_WKWEBVIEW_6_OF_6; FULL_GAME_NOT_TESTED",
+      "unsigned_iphoneos_release_app": "PASS_FRESH_UNSIGNED_ARM64_IPHONEOS_RELEASE",
+      "ipa_built": true,
       "ipa_uploaded_or_delivered": false,
+      "ipa_name": "GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST.ipa",
+      "ipa_bytes": 13467562,
+      "ipa_sha256": "aca416b363042dcb5157fb5f6205f1aca9aaac04b5ffac311a346dc31defedde",
+      "verification_artifact_id": 10943520827,
+      "verification_artifact_sha256": "eae006dce264dbd20cd1994019ca6c596683d9a19dbd7fb49c1b9a98e326be5",
       "device_tested": false,
-      "tested_source_tree_sha256": "03e451b343c44a48222575e8639a5b0243e512cfbdc742d7a579f127a4affda6",
-      "tested_webapp_tree_sha256": "28179d1593b4a3c0b3752832dcbd8b56f17e6426b8b69e62c300c37823ec8cb5"
+      "tested_source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
+      "tested_webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574"
     },
     "new_source_regression": {
       "change": "Kernel ownership now starts immediately after Save Schema normalization and structural migration; nine app live hot asset fields are removed from row-object backing storage; key-order-compatible JSON is preserved; state load, recovery, durable publish and hard-reset paths are checked.",
@@ -246,7 +266,8 @@
       "failure_paths": [
         "Run 36352181861 on commit 56643f2fc57338fc97d66e3cc0b0d640f93ef495 passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The calendar journey stopped while waiting for deferred compaction to settle: its test synchronization predicate timed out after 30 seconds before the calendar parity assertions, with no schema or journal-integrity error. The journal-unbalanced failure at hour 83 was cleared in run 36351219317. The candidate helper now waits on the authoritative simulationKernel.lastCompactDay marker and includes predicate state in any timeout diagnostic. Swift, WKWebView and current-source iOS build were not reached."
       ]
-    }
+    },
+    "webkit_smoke": "PASS_REAL_WKWEBVIEW_6_OF_6_IN_CI_RUN_36353111793; FULL_GAME_AND_IPHONE_TEST_NOT_RUN"
   },
   "source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
   "webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
@@ -266,16 +287,23 @@
       "build340": "PASS"
     },
     "ci_timeout_seconds": 600,
-    "corrected_source_ci": "RUN_36351219317_CLEARED_HOUR83_JOURNAL_FAILURE; RUN_36352181861_CALENDAR_PERSISTENCE_WAIT_PREDICATE_TIMED_OUT",
+    "corrected_source_ci": "RUN_36351219317_CLEARED_HOUR83_JOURNAL_FAILURE; RUN_36352181861_WAIT_PREDICATE_FAILURE_RESOLVED_BY_RUN_36353111793",
     "iphone_17_pro_max_physical_metrics": "PENDING",
     "seven_stages_complete": false,
     "checksum_inventory_ci_run": "36328636252",
     "checksum_inventory_ci_result": "FAILED_BEFORE_BASELINE_OR_BUILD342_GATES; CI found one checksum entry for a Build340 workflow from the stale local base. The inventory has been restored from the pushed branch and updated only for changed files.",
     "corrected_source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
-    "latest_diagnostic_ci_run": "36352181861",
-    "latest_diagnostic_commit": "56643f2fc57338fc97d66e3cc0b0d640f93ef495",
-    "latest_diagnostic_result": "Run 36352181861 on commit 56643f2fc57338fc97d66e3cc0b0d640f93ef495 passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The calendar journey stopped while waiting for deferred compaction to settle: its test synchronization predicate timed out after 30 seconds before the calendar parity assertions, with no schema or journal-integrity error. The journal-unbalanced failure at hour 83 was cleared in run 36351219317. The candidate helper now waits on the authoritative simulationKernel.lastCompactDay marker and includes predicate state in any timeout diagnostic. Swift, WKWebView and current-source iOS build were not reached.",
+    "latest_diagnostic_ci_run": "36353111793",
+    "latest_diagnostic_commit": "6c873e3de87cbd127c0774d3c5fbe899babda92b",
+    "latest_diagnostic_result": "Run 36352181861 had a calendar helper wait failure on day 7 when no compaction work existed. The wait now occurs only at day 37 before the read-only date selection. Current-source run 36353111793 passed all source/native/WKWebView/build gates; physical iPhone metrics remain pending.",
     "corrected_webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
-    "exact_current_source_ci": "PENDING_AFTER_AUTHORITATIVE_COMPACTION_MARKER_WAIT_FIX"
+    "exact_current_source_ci": "PASS_RUN_36353111793_BUILD341_124_OF_124_BUILD342_144_OF_144_NATIVE_43_OF_43_WKWEBVIEW_6_OF_6_UNSIGNED_TEST_IPA_VERIFIED; PHYSICAL_DEVICE_GATES_PENDING",
+    "latest_successful_ci_run": {
+      "run_id": "36353111793",
+      "commit_sha": "6c873e3de87cbd127c0774d3c5fbe899babda92b",
+      "result": "PASS_BUILD341_BASELINE_124_OF_124; BUILD342_ACCEPTANCE_144_OF_144; NATIVE_43_OF_43; REAL_WKWEBVIEW_SMOKE_6_OF_6; FRESH_UNSIGNED_ARM64_IPHONEOS_RELEASE_BUILD_PASS; TEST_IPA_VERIFIED_NOT_UPLOADED; PHYSICAL_DEVICE_NOT_TESTED",
+      "verification_artifact_id": 10943520827
+    },
+    "checksum_inventory_ci_current_run": "36353111793_PASS_SOURCE_PACKAGE_INTEGRITY_791_OF_791_AND_DIRECT_SOURCE_VERIFICATION_501_FILES"
   }
 }
