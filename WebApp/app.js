@@ -33,7 +33,7 @@
   const resetMarkerKey = 'global-holdings-reset-epoch';
   let hardResetInProgress=false,hardResetSettlement=Promise.resolve({committed:false});
   let durableCommandInProgress=false;
-  let mapInteractionActive=false,lastMarkerFrameAt=0,lastHudRefreshAt=0,lastMapStructureSignature='',visualResyncRequested=false;
+  let mapInteractionActive=false,mapSavePending=false,mapSaveFlushTask=null,lastMarkerFrameAt=0,lastHudRefreshAt=0,lastMapStructureSignature='',visualResyncRequested=false;
   const markerMotionStates=new Map();let markerVisualCarry=new Map();
   const legacyStorageKeys = ['global-holdings-world-v1.2.0','global-holdings-world-v1.1.0','global-holdings-premium-v1.0.0','global-holdings-clean-v0.1.2'];
   const SIM_START = Date.UTC(2026, 0, 1, 0, 0, 0);
@@ -732,7 +732,6 @@
   function recordRenderMetric(kind,durationMs,detail={}){const render=runtimeInstrumentation.render,row={kind,durationMs:Math.max(0,Number(durationMs)||0),recordedAtMs:Date.now(),...detail};if(kind==='frame'){render.lastFrame=row;render.maxFrameMs=Math.max(render.maxFrameMs,row.durationMs);}else if(kind==='target-update'){render.lastTargetUpdate=row;render.maxTargetUpdateMs=Math.max(render.maxTargetUpdateMs,row.durationMs);}else if(kind==='marker-animation'){render.lastMarkerAnimation=row;render.maxMarkerAnimationMs=Math.max(render.maxMarkerAnimationMs,row.durationMs);}else if(kind==='structural-render'){render.lastStructuralRender=row;render.maxStructuralRenderMs=Math.max(render.maxStructuralRenderMs,row.durationMs);}render.samples.push(row);if(render.samples.length>120)render.samples.shift();return row;}
   window.__GH_APP_RUNTIME_INSTRUMENTATION__=runtimeInstrumentation;
   window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,render:runtimeInstrumentation.render}))});
-  let mapSavePending=false,mapSaveFlushTask=null;
   function cancelMapSaveFlush(){const task=mapSaveFlushTask;mapSaveFlushTask=null;if(!task)return;if(task.idle&&typeof window.cancelIdleCallback==='function')window.cancelIdleCallback(task.handle);else if(!task.idle)clearTimeout(task.handle);}
   function flushMapDeferredSave(){
     if(!mapSavePending||mapInteractionActive||mapSaveFlushTask)return false;

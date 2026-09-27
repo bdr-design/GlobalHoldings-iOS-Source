@@ -15,8 +15,8 @@
     "0": {
       "status": "LOCAL_FOCUSED_GATES_PASS_NATIVE_PENDING",
       "gates": {
-        "record_alert_p95_ms": 0.292,
-        "record_alert_max_ms": 2.839,
+        "record_alert_p95_ms": 0.265,
+        "record_alert_max_ms": 2.548,
         "record_alert_samples": 120,
         "nativeVaultCommitMs_under_2000": "PENDING_MACOS_NATIVE_TEST",
         "finish_during_map_drag": "PASS_LOCAL_NODE",
@@ -25,7 +25,7 @@
       }
     },
     "1": {
-      "status": "PENDING_EXACT_SOURCE_MACOS_CI",
+      "status": "EXACT_BUILD341_BASELINE_PASS_CI_RUN_36285862018_BUILD342_ACCEPTANCE_RERUN_PENDING",
       "local_build341_acceptance": {
         "completed": false,
         "executed": 107,
@@ -33,7 +33,7 @@
         "blocked_or_failed": 4,
         "reason": "Local attempt stopped before the full exact-source suite because Chromium/ESLint are unavailable; macOS CI will run the unchanged verified source."
       },
-      "ci_gate": "run exact source commit 1cd0a914cf54a0db88c360e650242cc60618eb01 unchanged"
+      "ci_gate": "Exact source Build341 baseline passed in macOS CI run 36285862018; Build342 browser acceptance failed before fix and is being rerun."
     },
     "2": {
       "status": "SYNTHETIC_PARITY_PASS_KERNEL_NOT_ADOPTED",
@@ -108,11 +108,18 @@
       ],
       "macos_ci": "PENDING"
     },
-    "swift_compile_and_native_tests": "PENDING_MACOS_CI",
-    "unsigned_ipa": "NOT_BUILT_PENDING_ALL_CI_GATES",
+    "swift_compile_and_native_tests": "PENDING_MACOS_CI_RERUN",
+    "unsigned_ipa": "NOT_BUILT_FAILED_PRIOR_CI_PENDING_RERUN",
     "physical_iphone": "NOT_TESTED",
-    "deferred_persistence_regression": "PASS_12_OF_12_INCLUDING_MAP_GESTURE_DEFER"
+    "deferred_persistence_regression": "PASS_12_OF_12_INCLUDING_MAP_GESTURE_DEFER",
+    "build342_macOS_ci_previous_run": {
+      "run_id": "36285862018",
+      "result": "FAILED_BUILD342_SOURCE_ACCEPTANCE",
+      "cause": "ReferenceError: Cannot access mapSavePending before initialization during startup migration; five browser tests could not enter founder onboarding.",
+      "fix": "Declaration moved before boot-time migration; browser test now asserts clean boot and visible founder onboarding.",
+      "rerun": "PENDING"
+    }
   },
-  "source_tree_sha256": "84df26c7b12624f07471b82742eec506e32add9736eb8e152f4e8a2a720448b9",
-  "webapp_tree_sha256": "9fe03a6318318e26eac79e2d1fe90581c15da638e5dbb92547b8743bd0ee8167"
+  "source_tree_sha256": "71a166bcbd738a8f14b79032b08d16a4b7ed68a7a171700a51e7b8446ca26b58",
+  "webapp_tree_sha256": "46f24e363668859353cb90731bdbae9b0ca8569c419eeffa40294c00b072e2ed"
 }

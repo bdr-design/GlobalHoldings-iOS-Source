@@ -11,15 +11,15 @@
   ],
   "build": 342,
   "latest_direct_source_ci": {
-    "status": "PENDING_SOURCE_UPLOAD",
+    "status": "PENDING_BOOT_TDZ_FIX_RERUN",
     "source_mode": "direct_git_tree_from_verified_build341_commit",
     "tested_commit_sha": null,
     "run_id": null,
-    "build341_baseline": "PENDING",
+    "build341_baseline": "PASS_RUN_36285862018",
     "source_gates": "PENDING",
     "chromium_webkit": "PENDING",
     "native_storage": "PENDING",
-    "unsigned_iphoneos_release_app": "PENDING",
+    "unsigned_iphoneos_release_app": "NOT_BUILT",
     "ipa_built": false,
     "physical_iphone_tested": false
   },
@@ -45,7 +45,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "84df26c7b12624f07471b82742eec506e32add9736eb8e152f4e8a2a720448b9",
+  "source_tree_sha256": "71a166bcbd738a8f14b79032b08d16a4b7ed68a7a171700a51e7b8446ca26b58",
   "version": "3.0.0",
-  "webapp_tree_sha256": "9fe03a6318318e26eac79e2d1fe90581c15da638e5dbb92547b8743bd0ee8167"
+  "webapp_tree_sha256": "46f24e363668859353cb90731bdbae9b0ca8569c419eeffa40294c00b072e2ed"
 }
