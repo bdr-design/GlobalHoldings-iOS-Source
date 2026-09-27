@@ -9,7 +9,7 @@
   const MAX_BATCH_ITEMS=256,MAX_TEXT=512;
   const WRITE_FIELDS=Object.freeze(['phase','dwellRemaining','reverse','progress','fuel','condition','from','to','load','baseFacility','lastTrip','routeId','routeSignature','routeSlot','departureScheduled','departureScheduledAt','releaseExclusiveRouteOnArrival','simCarrySeconds','lastTransitionGuardDay','crewBlocked','simulationFault']);
   const EFFECT_MAPS=Object.freeze(['sectorProfit','tripProfit','tripRevenue','tripFuel','tripMaintenance','tripCount','cash']);
-  const clone=value=>typeof globalThis.structuredClone==='function'?globalThis.structuredClone(value):JSON.parse(JSON.stringify(value));
+  const clone=value=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(typeof globalThis.structuredClone==='function'?globalThis.structuredClone(value):JSON.parse(JSON.stringify(value)));
   const number=(value,fallback=0)=>{const result=Number(value);return Number.isFinite(result)?result:fallback;};
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,number(value)));
   const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
