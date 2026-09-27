@@ -26,7 +26,7 @@
     road:Object.freeze([{maxFleet:128,target:8},{maxFleet:512,target:24},{maxFleet:Infinity,target:48}])
   });
 
-  const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
+  const clone=value=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
   const simDay=state=>Math.floor((Number(state?.simSeconds)||0)/86400);
   const platform=()=>globalThis.GH_COMPANY_PLATFORM||null;
   const assetMode=asset=>String(asset?.assetMode||asset?.type||'').trim();
