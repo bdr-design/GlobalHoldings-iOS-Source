@@ -1,0 +1,159 @@
+name: Build 342 unsigned test IPA delivery
+
+on:
+  push:
+    branches:
+      - build342-ipa-delivery-20260927
+
+permissions:
+  contents: read
+
+jobs:
+  deliver-test-ipa:
+    name: Verify exact runtime source and build unsigned iPhoneOS IPA
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      SOURCE_DIR: ${{ github.workspace }}
+    steps:
+      - name: Check out Build 342 exact source
+        uses: actions/checkout@v4
+
+      - name: Verify source manifest and checksum inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.ci-output"
+          python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification.json"
+          cd "$SOURCE_DIR"
+          shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt > "$GITHUB_WORKSPACE/.ci-output/source-package-integrity.log"
+          python3 - <<'PY_CHECK'
+          import json
+          from pathlib import Path
+          root=Path('.')
+          source=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
+          gate=json.loads((root/'RELEASE_GATE.json').read_text())
+          auth=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
+          if gate.get('approved') is not False or auth.get('test_build_authorized') is not True or auth.get('production_approved') is not False:
+              raise SystemExit('Unsigned experimental build authorization mismatch')
+          if source.get('source_tree_sha256') != 'e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1' or source.get('save_schema') != '2.0.0':
+              raise SystemExit('Unexpected runtime source snapshot or Save Schema')
+          print('Exact tested Build 342 source and closed production gate: PASS')
+          PY_CHECK
+
+      - name: Build a fresh unsigned arm64 iPhoneOS Release app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          xcrun swiftc -parse iOS/GlobalHoldings/*.swift
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          xcodegen generate --spec project.yml
+          DERIVED_DATA="$RUNNER_TEMP/build342-derived-data"
+          xcodebuild \
+            -project GlobalHoldings.xcodeproj \
+            -scheme GlobalHoldings \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean build 2>&1 | tee "$GITHUB_WORKSPACE/.ci-output/xcodebuild.log"
+          test -d "$DERIVED_DATA/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          GENERATED_PLIST="$SOURCE_DIR/iOS/GlobalHoldings/Info.plist"
+          if [[ -e "$GENERATED_PLIST" ]]; then
+            if git -C "$SOURCE_DIR" ls-files --error-unmatch -- "iOS/GlobalHoldings/Info.plist" >/dev/null 2>&1; then
+              echo "Generated Info.plist path is tracked; preserve it and investigate the source manifest" >&2
+              exit 1
+            fi
+            rm -f "$GENERATED_PLIST"
+          fi
+          python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification-after-build.json"
+          printf 'fresh_unsigned_arm64_iphoneos_release=PASS\n' | tee "$GITHUB_WORKSPACE/.ci-output/native-build-verification.txt"
+
+      - name: Assemble and verify unsigned Build 342 STATE_KERNEL test IPA
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/build342-derived-data/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          STAGE="$RUNNER_TEMP/build342-test-ipa"
+          IPA="$GITHUB_WORKSPACE/.ci-output/GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST.ipa"
+          REPORT="$GITHUB_WORKSPACE/.ci-output/test-ipa-verification.json"
+          mkdir -p "$STAGE/Payload" "$GITHUB_WORKSPACE/.ci-output"
+          ditto "$APP" "$STAGE/Payload/GlobalHoldings.app"
+          (cd "$STAGE" && /usr/bin/zip -qry "$IPA" Payload)
+          python3 - "$SOURCE_DIR" "$IPA" "$REPORT" "$GITHUB_RUN_ID" "$GITHUB_SHA" <<'PY'
+          import hashlib,json,plistlib,struct,sys,zipfile
+          from pathlib import Path
+          root,ipa,report=Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3])
+          run_id,commit=int(sys.argv[4]),sys.argv[5]
+          runtime=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text(encoding='utf-8'))
+          prefix='Payload/GlobalHoldings.app/'
+          with zipfile.ZipFile(ipa) as archive:
+              if archive.testzip() is not None: raise SystemExit('IPA CRC failure')
+              names=[row.filename for row in archive.infolist()]
+              if len(names)!=len(set(names)): raise SystemExit('Duplicate IPA entries')
+              rows={row.filename:row for row in archive.infolist() if not row.is_dir()}
+              if not rows or any(not name.startswith(prefix) for name in rows): raise SystemExit('IPA root is not a clean Payload app')
+              info=plistlib.loads(archive.read(prefix+'Info.plist'))
+              if (info.get('CFBundleIdentifier'),info.get('CFBundleShortVersionString'),info.get('CFBundleVersion'),info.get('UIDeviceFamily')) != ('com.example.globalholdings','3.0.0','342',[1]):
+                  raise SystemExit('IPA bundle identity/version/device family mismatch')
+              if info.get('GHSourceSnapshotSHA256') != runtime['webapp_tree_sha256']:
+                  raise SystemExit('IPA app is not bound to the exact WebApp source snapshot')
+              expected={name[len('WebApp/'):]:row['sha256'] for name,row in runtime['files'].items() if name.startswith('WebApp/')}
+              actual={name[len(prefix+'WebApp/'):]:hashlib.sha256(archive.read(name)).hexdigest() for name in rows if name.startswith(prefix+'WebApp/')}
+              if actual.keys()!=expected.keys(): raise SystemExit('IPA WebApp file set differs from direct source')
+              for name,expected_hash in expected.items():
+                  if actual[name]!=expected_hash: raise SystemExit('IPA WebApp byte mismatch: '+name)
+              if prefix+'embedded.mobileprovision' in rows or any(name.startswith(prefix+'_CodeSignature/') for name in rows):
+                  raise SystemExit('Unexpected signing material in unsigned test IPA')
+              executable=prefix+'GlobalHoldings'
+              if executable not in rows or not (rows[executable].external_attr>>16)&0o111:
+                  raise SystemExit('IPA arm64 app executable or execute permissions missing')
+              data=archive.read(executable)
+              if len(data)<32: raise SystemExit('Truncated native executable')
+              magic,cpu,subtype,filetype,count,size,flags,reserved=struct.unpack_from('<8I',data)
+              if magic!=0xfeedfacf or cpu!=0x0100000c or filetype!=2: raise SystemExit('Native executable is not arm64 Mach-O')
+              cursor,platforms=32,[]
+              for _ in range(count):
+                  command,length=struct.unpack_from('<II',data,cursor)
+                  if length<8 or cursor+length>len(data): raise SystemExit('Invalid Mach-O load command')
+                  if command==0x32: platforms.append(struct.unpack_from('<I',data,cursor+8)[0])
+                  cursor+=length
+              if 2 not in platforms: raise SystemExit('Native executable is not built for iPhoneOS')
+          digest=hashlib.sha256(ipa.read_bytes()).hexdigest()
+          result={'ipa_created':True,'ipa_name':ipa.name,'ipa_sha256':digest,'ipa_bytes':ipa.stat().st_size,'source_tree_sha256':runtime['source_tree_sha256'],'webapp_tree_sha256':runtime['webapp_tree_sha256'],'webapp_files':len(expected),'app_files':len(rows),'workflow_run_id':run_id,'workflow_commit':commit,'arm64_iphoneos':True,'unsigned':True,'experimental_test_build':True,'physical_iphone_tested':False,'production_approved':False,'save_schema':'2.0.0'}
+          report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(result,ensure_ascii=False))
+          PY
+
+      # The seven-stage release gate remains closed until device acceptance.
+
+      - name: Upload unsigned Build 342 test IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST_ipa
+          path: |
+            .ci-output/GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST.ipa
+            .ci-output/test-ipa-verification.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload source and build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings_BUILD342_IPA_delivery_diagnostics
+          path: |
+            .ci-output/*.json
+            .ci-output/*.txt
+            .ci-output/*.log
+          if-no-files-found: warn
+          retention-days: 30
+          include-hidden-files: true
