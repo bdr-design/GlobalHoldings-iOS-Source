@@ -20,6 +20,7 @@
   const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
   const clone=value=>{
     if(value===undefined)return undefined;
+    if(typeof globalThis.GH_CLONE_CORE?.clone==='function')return globalThis.GH_CLONE_CORE.clone(value);
     if(typeof globalThis.structuredClone==='function')try{return globalThis.structuredClone(value);}catch(_error){}
     return JSON.parse(JSON.stringify(value));
   };
