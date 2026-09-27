@@ -37,6 +37,13 @@ class LoopbackWorker{
   assert.equal(bulk.sectionRevisions.assets,2);assert.equal(bulk.undoRecords,3000);
   assert.deepEqual(host.legacyState().assets[19].lastTrip,{sequence:1});
   assert.ok(performance.now()-bulkStarted<8000,'1,000 row patches against 20,000 assets must avoid rematerializing every row per patch');
+  const rawCommand={protocol:PROTOCOL.PROTOCOL,requestId:'RAW-RETRY-1',type:'command',owner:'simulation-asset',writes:['assets'],reads:{assets:2},idempotencyKey:'SIM-RAW-RETRY',operations:[{type:'column-set',section:'assets',column:'progress',index:42,value:.7}]};
+  const rawFirst=host.handle(rawCommand);assert.equal(rawFirst.message.ok,true);assert.equal(rawFirst.message.sectionRevisions.assets,3);
+  assert.deepEqual(host.handle(rawCommand).message,rawFirst.message,'identical request ID and payload replay the same acknowledgement');
+  const rawConflict=host.handle({...rawCommand,operations:[{type:'column-set',section:'assets',column:'progress',index:42,value:.9}]});
+  assert.equal(rawConflict.message.ok,false);assert.match(rawConflict.message.error,/request-id-conflict/);
+  assert.equal(host.snapshot().sections.assets.revision,3,'conflicting request ID cannot commit another write');
+  assert.equal(host.legacyState().assets[42].progress,.7);
   client.close();
   console.log('Build342 kernel worker: worker-owned typed state, 1,000 row patches across 20,000 assets, revision conflict, command idempotency, bounded query and transferable frame buffers PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -67,13 +67,24 @@
         "chunked save core",
         "atomic index and lazy verified lookup test"
       ],
-      "limit": "Production archive integration and <12 MB hot-state measurement at 3,380 assets are pending."
+      "limit": "Production archive integration and <12 MB hot-state measurement at 3,380 assets are pending.",
+      "controlled_app_hot_state_sample": {
+        "simulated_days": 10,
+        "speed_x": 600,
+        "assets": 3380,
+        "hourly_commits": 240,
+        "logical_json_bytes": 5952155,
+        "asset_json_bytes": 5794577,
+        "scope": "Production app simulation-slice path with controlled finance-day and market-hour callbacks; no production cold archive, device memory or thermal measurement",
+        "target_proven": false
+      }
     },
     "5": {
       "status": "WORKER_PROTOCOL_AND_EXISTING_ASSET_WORKER_PASS_KERNEL_SIMULATION_OWNERSHIP_PENDING",
       "implemented": [
         "worker transaction/query/frame protocol",
-        "stale generation and idempotency tests"
+        "stale generation and idempotency tests",
+        "worker request-ID replay payload conflict rejection"
       ],
       "limit": "Authoritative app simulation remains in the main-thread owner; 10-minute iPhone frame/task gates are pending."
     },
@@ -96,33 +107,23 @@
     "build340_local_suite": "PASS",
     "recovery_integration": "PASS_8_OF_8",
     "full_build342_acceptance": {
-      "completed": true,
-      "total": 136,
-      "passed": 129,
-      "failed_or_blocked": 7,
-      "runtime_unchanged": true,
-      "blocked_tests": [
-        "tests/build334-r4-recovery-browser.cjs: Playwright Chromium binary missing",
-        "tests/lint.cjs: ESLint dependency missing",
-        "tests/build334-tabs-browser.cjs: Playwright Chromium binary missing",
-        "tests/build334-tabs-component.cjs: Playwright Chromium binary missing",
-        "tests/build334-calendar-advance-browser.cjs: Playwright Chromium binary missing",
-        "tests/build334-calendar-journey-browser.cjs: Playwright Chromium binary missing",
-        "tests/build334-market-discovery-browser.cjs: Playwright Chromium binary missing"
-      ],
-      "macos_ci": "PENDING"
+      "completed": false,
+      "previous_run": {
+        "id": "36303675104",
+        "result": "PASS_137_OF_137",
+        "runtime_unchanged": true
+      },
+      "current_source": "PENDING_MACOS_RERUN_AFTER_NATIVE_COMPILER_FIX_AND_WORKER_REPLAY_CHANGE"
     },
-    "swift_compile_and_native_tests": "PENDING_MACOS_CI_RERUN",
-    "unsigned_ipa": "NOT_BUILT_FAILED_PRIOR_CI_PENDING_RERUN",
+    "swift_compile_and_native_tests": "NATIVE_SWIFT_COMPILE_FAILED_RUN_36303675104_INT_DOUBLE_COMPARE_FIXED_PENDING_RERUN",
+    "unsigned_ipa": "NOT_BUILT_NATIVE_SWIFT_COMPILER_GATE_FAILED",
     "physical_iphone": "NOT_TESTED",
     "deferred_persistence_regression": "PASS_12_OF_12_INCLUDING_MAP_GESTURE_DEFER",
     "build342_macOS_ci_previous_run": {
-      "run_id": "36285862018",
-      "result": "FAILED_BUILD342_SOURCE_ACCEPTANCE",
-      "cause": "ReferenceError: Cannot access mapSavePending before initialization during startup migration; five browser tests could not enter founder onboarding.",
-      "fix_commit": "8077d866758f0b23fe532070fa6f3a8fe5ca28a1",
-      "fix": "Moved mapSavePending/mapSaveFlushTask initialization before boot-time migrations; browser test now asserts clean boot and visible founder onboarding.",
-      "rerun": "PENDING_ACTIONS_CHECK_STATUS"
+      "run_id": "36303675104",
+      "result": "PASS_137_OF_137_SOURCE_ACCEPTANCE_NATIVE_SWIFT_COMPILE_FAILED",
+      "cause": "Swift Int saveRevision compared with Double envelope revision in GlobalSaveVault.validateBridgeEnvelope",
+      "fix": "Compare Double(validated.saveRevision) with the already bounded integral Double revision; rerun native save/rollback/migration tests."
     },
     "build342_app_shadow_10day": {
       "result": "PASS_LOCAL",
@@ -135,6 +136,6 @@
       "boundary_callbacks": "controlled fixtures"
     }
   },
-  "source_tree_sha256": "00186fc996919d5fe20c69839be5b250eabf232ff676a5cc1485f2fef317439a",
-  "webapp_tree_sha256": "0c43e156b058ca78c9a994cfcf6f27f255695dda3671acdb3c3ae71e2994e1cd"
+  "source_tree_sha256": "7673899f78beafee3f0326c04a721f8ef1c5e8ad7a5372f107fa5546b9960a6d",
+  "webapp_tree_sha256": "eebdd32cd1cd284b64503fe2a05197bd9b5c6be4e88bdea3f3b00d0feff06fc9"
 }

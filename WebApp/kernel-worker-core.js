@@ -9,7 +9,7 @@
   function createHost(kernelFactory=GH_KERNEL){
     if(!kernelFactory?.fromLegacyState)throw new Error('kernel-worker-core-unavailable');
     let kernel=null,requestSequence=0;const requestCache=new Map(),idempotency=new Map();
-    const remember=(key,value)=>{requestCache.set(key,clone(value));while(requestCache.size>512)requestCache.delete(requestCache.keys().next().value);};
+    const remember=(key,fingerprint,value)=>{requestCache.set(key,{fingerprint,message:clone(value)});while(requestCache.size>512)requestCache.delete(requestCache.keys().next().value);};
     function response(request,body,transfer=[]){return {message:{protocol:PROTOCOL,requestId:request.requestId,ok:true,...body},transfer};}
     function fail(request,error){return {message:{protocol:PROTOCOL,requestId:request?.requestId||'',ok:false,error:String(error?.message||error).slice(0,240),code:String(error?.code||'KERNEL_WORKER_ERROR')},transfer:[]};}
     function applyOperation(writer,operation){
@@ -23,25 +23,27 @@
     }
     function handle(request){
       if(!request||request.protocol!==PROTOCOL||typeof request.requestId!=='string'||!request.requestId||request.requestId.length>128)return fail(request,new Error('kernel-worker-message-invalid'));
-      const cacheable=request.type!=='frame';if(cacheable&&requestCache.has(request.requestId))return {message:clone(requestCache.get(request.requestId)),transfer:[]};
+      const cacheable=request.type!=='frame';
       try{
+        const requestFingerprint=cacheable?kernelFactory.fingerprint(request):null,cached=cacheable?requestCache.get(request.requestId):null;
+        if(cached){if(cached.fingerprint!==requestFingerprint)throw new Error('kernel-worker-request-id-conflict');return {message:clone(cached.message),transfer:[]};}
         if(request.type==='init'){
           if(kernel)throw new Error('kernel-worker-already-initialized');
-          kernel=kernelFactory.fromLegacyState(request.state,request.contracts,{schemaVersion:'2.0.0'});const body={schemaVersion:kernel.schemaVersion,sections:kernel.contracts().map(section=>({name:section.name,revision:kernel.revision(section.name)})),initialized:true};const result=response(request,body);remember(request.requestId,result.message);return result;
+          kernel=kernelFactory.fromLegacyState(request.state,request.contracts,{schemaVersion:'2.0.0'});const body={schemaVersion:kernel.schemaVersion,sections:kernel.contracts().map(section=>({name:section.name,revision:kernel.revision(section.name)})),initialized:true};const result=response(request,body);remember(request.requestId,requestFingerprint,result.message);return result;
         }
         if(!kernel)throw new Error('kernel-worker-not-initialized');
         if(request.type==='command'){
           if(!Array.isArray(request.operations)||request.operations.length>10000)throw new Error('kernel-worker-command-invalid');
           const idempotencyKey=String(request.idempotencyKey||'').trim();if(!idempotencyKey||idempotencyKey.length>200)throw new Error('kernel-worker-idempotency-key-required');
           const payload={owner:request.owner,writes:request.writes,reads:request.reads||{},operations:request.operations},fingerprint=kernelFactory.fingerprint(payload),prior=idempotency.get(idempotencyKey);
-          if(prior){if(prior.fingerprint!==fingerprint)throw new Error('kernel-worker-idempotency-conflict');const result=response(request,{...clone(prior.result),idempotent:true});remember(request.requestId,result.message);return result;}
+          if(prior){if(prior.fingerprint!==fingerprint)throw new Error('kernel-worker-idempotency-conflict');const result=response(request,{...clone(prior.result),idempotent:true});remember(request.requestId,requestFingerprint,result.message);return result;}
           const result=kernel.tx({label:String(request.label||'worker-command'),owner:String(request.owner||''),owners:request.owners,writes:request.writes,reads:request.reads||{}},writer=>request.operations.map(operation=>applyOperation(writer,operation)));
           const body={committed:true,revision:result.revision,dirty:result.dirty,sectionRevisions:result.sectionRevisions,undoRecords:result.undoRecords,ms:result.ms,fingerprints:Object.fromEntries(result.dirty.map(name=>[name,kernel.fingerprint(name)]))};idempotency.set(idempotencyKey,{fingerprint,result:body});while(idempotency.size>512)idempotency.delete(idempotency.keys().next().value);
-          const out=response(request,body);remember(request.requestId,out.message);return out;
+          const out=response(request,body);remember(request.requestId,requestFingerprint,out.message);return out;
         }
         if(request.type==='query'){
           const section=String(request.section||'');const revision=kernel.revision(section);if(revision==null)throw new Error(`kernel-section-unregistered:${section}`);
-          const body={section,revision,fingerprint:kernel.fingerprint(section)};if(request.includeValue===true)body.value=kernel.read(section);const out=response(request,body);remember(request.requestId,out.message);return out;
+          const body={section,revision,fingerprint:kernel.fingerprint(section)};if(request.includeValue===true)body.value=kernel.read(section);const out=response(request,body);remember(request.requestId,requestFingerprint,out.message);return out;
         }
         if(request.type==='frame'){
           const generation=Number(request.generation);if(!Number.isSafeInteger(generation)||generation<0)throw new Error('kernel-worker-frame-generation-invalid');

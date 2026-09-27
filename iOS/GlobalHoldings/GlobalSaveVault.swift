@@ -1046,7 +1046,7 @@ final class GlobalSaveVault {
               let epoch = integer(payload["resetEpoch"]),
               let rootEpoch = integer(root["resetEpoch"] ?? NSNumber(value: 0)), epoch == rootEpoch else { throw VaultError.message("Invalid save envelope.") }
         let validated = try validatePayloadRoot(root, data: data)
-        guard validated.saveRevision == revision, validated.resetEpoch == epoch, validated.payloadSHA256 == hash else {
+        guard Double(validated.saveRevision) == revision, validated.resetEpoch == epoch, validated.payloadSHA256 == hash else {
             throw VaultError.message("Invalid save envelope.")
         }
         return validated

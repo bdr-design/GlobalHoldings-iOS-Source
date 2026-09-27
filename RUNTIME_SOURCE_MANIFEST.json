@@ -3,14 +3,6 @@
   "version": "3.0.0",
   "save_schema": "2.0.0",
   "files": {
-    "BUILD": {
-      "bytes": 4,
-      "sha256": "8c80c1d95894af1d6b39590e0b2d0d9761caa096210587a8e3e16636297f2a40"
-    },
-    "VERSION": {
-      "bytes": 6,
-      "sha256": "2985be8b28d3ade858e8d8fb4bc22f565b1bf6020dff982dce141f7721b9999c"
-    },
     "WebApp/advanced-core.js": {
       "bytes": 231897,
       "sha256": "7bf5d7babc53eae9eb1687e26831c09704851b88aadab7134b078cdcb641edc4"
@@ -1776,8 +1768,8 @@
       "sha256": "b3221289b19caf386b68dc7793594cea59adcf5de17aeb9aa7a0b51c2e5f676f"
     },
     "WebApp/kernel-worker-core.js": {
-      "bytes": 8902,
-      "sha256": "306337c74845147643b6d215572fd8d4a70f7be49697b396c9ed2c5e46f320ec"
+      "bytes": 9200,
+      "sha256": "137a0ac293515afa6876c342e4646cfbb2c3d317ce3b1b8cfb61094994bd72bf"
     },
     "WebApp/kernel-worker.js": {
       "bytes": 334,
@@ -1992,8 +1984,8 @@
       "sha256": "cee936612b3017c810e5c904b617d96091046077400c2f9e187b7a020b81a44a"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
-      "bytes": 61711,
-      "sha256": "def2ee6579d86ba9075ab063e46d9f0e78e8ac79a24e67e8c3059853ab15b57b"
+      "bytes": 61719,
+      "sha256": "3175aead74cd7226b7e7a6f6ba74e51b09b8fb263843e46fe4a750b7f3be6d13"
     },
     "iOS/GlobalHoldings/LaunchScreen.storyboard": {
       "bytes": 1728,
@@ -2002,6 +1994,14 @@
     "project.yml": {
       "bytes": 2423,
       "sha256": "49fd848dc2820528e1b90c39f78118631c65d27935d69db611119deccd02293e"
+    },
+    "BUILD": {
+      "bytes": 4,
+      "sha256": "8c80c1d95894af1d6b39590e0b2d0d9761caa096210587a8e3e16636297f2a40"
+    },
+    "VERSION": {
+      "bytes": 6,
+      "sha256": "2985be8b28d3ade858e8d8fb4bc22f565b1bf6020dff982dce141f7721b9999c"
     }
   },
   "latest_direct_source_ci": {
@@ -2040,7 +2040,7 @@
     "production cold-archive integration and under-12-MB hot-state device acceptance remain gated"
   ],
   "stage5_contracts": [
-    "kernel Worker protocol supports bounded commands, revisions, idempotency, query, transferable visible frames, and stale-generation rejection",
+    "kernel Worker protocol supports bounded commands, revisions, idempotency, conflicting request-ID rejection, query, transferable visible frames, and stale-generation rejection",
     "authoritative application simulation migration and physical frame/task acceptance remain gated"
   ],
   "stage6_contracts": [
@@ -2058,6 +2058,6 @@
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "remote_branch_created_from_verified_base": true
   },
-  "source_tree_sha256": "00186fc996919d5fe20c69839be5b250eabf232ff676a5cc1485f2fef317439a",
-  "webapp_tree_sha256": "0c43e156b058ca78c9a994cfcf6f27f255695dda3671acdb3c3ae71e2994e1cd"
+  "source_tree_sha256": "7673899f78beafee3f0326c04a721f8ef1c5e8ad7a5372f107fa5546b9960a6d",
+  "webapp_tree_sha256": "eebdd32cd1cd284b64503fe2a05197bd9b5c6be4e88bdea3f3b00d0feff06fc9"
 }
