@@ -16,11 +16,12 @@ class LoopbackWorker{
     {name:'assets',path:'assets',owner:'simulation-asset',kind:'columns',columns:{lat:'f64',lng:'f64',progress:'f64',fuel:'f64',phase:'u8'},enumValues:{phase:['idle','moving','turnaround']}},
     {name:'eventLog',path:'eventLog',owner:'operations',kind:'append-only',cap:400,legacyOrder:'newest-first'}
   ];
-  const host=PROTOCOL.createHost(GH_KERNEL),worker=new LoopbackWorker(host),client=PROTOCOL.createClient(worker,{timeoutMs:1000});
+  const host=PROTOCOL.createHost(GH_KERNEL),worker=new LoopbackWorker(host),client=PROTOCOL.createClient(worker,{timeoutMs:8000});
   const initialized=await client.initialize(state,contracts);assert.equal(initialized.schemaVersion,'2.0.0');assert.deepEqual(initialized.sections.map(row=>row.name),['assets','eventLog']);assert.equal(initialized.sections[0].value,undefined,'worker init acknowledgement never serializes 20,000 asset DTOs back to the UI');
   assert.equal(host.metrics().typedArrayBytes,760000,'20,000-asset Float64Array/F64 plus enum columns use bounded raw column buffers');
-  const command={owner:'simulation-asset',writes:['assets'],reads:{assets:0},idempotencyKey:'SIM-SLICE-1',operations:[{type:'column-set',section:'assets',column:'progress',index:12,value:.5}]};
+  const command={owner:'simulation-asset',writes:['assets'],reads:{assets:0},idempotencyKey:'SIM-SLICE-1',operations:[{type:'row-patch',section:'assets',index:12,value:{progress:.5,phase:'turnaround',lastTrip:{revenue:100}}}]};
   const first=await client.command(command);assert.equal(first.committed,true);assert.equal(first.sectionRevisions.assets,1);
+  const patched=host.legacyState().assets[12];assert.equal(patched.progress,.5);assert.equal(patched.phase,'turnaround');assert.deepEqual(patched.lastTrip,{revenue:100});assert.equal(patched.name,'asset-12','worker patch preserves non-hot legacy asset fields');
   const duplicate=await client.command(command);assert.equal(duplicate.idempotent,true);assert.equal(host.snapshot().sections.assets.revision,1,'worker retry is idempotent');
   await assert.rejects(()=>client.command({...command,operations:[{type:'column-set',section:'assets',column:'progress',index:12,value:.6}]}),/idempotency-conflict/);
   await assert.rejects(()=>client.command({...command,idempotencyKey:'SIM-SLICE-2'}),/revision-conflict/);
@@ -31,6 +32,11 @@ class LoopbackWorker{
   const stale=client.frame({generation:1,section:'assets',viewport:{south:-90,north:90,west:-180,east:180}});
   const fresh=client.frame({generation:4,section:'assets',viewport:{south:-90,north:90,west:-180,east:180}});
   await assert.rejects(()=>stale,/stale-frame/);assert.equal((await fresh).generation,4);
+  const bulkStarted=performance.now(),bulkOperations=Array.from({length:1000},(_,index)=>({type:'row-patch',section:'assets',index:index*19,value:{progress:(index%10)/10,fuel:80+index%20,lastTrip:{sequence:index}}}));
+  const bulk=await client.command({owner:'simulation-asset',writes:['assets'],reads:{assets:1},idempotencyKey:'SIM-SLICE-BULK',operations:bulkOperations});
+  assert.equal(bulk.sectionRevisions.assets,2);assert.equal(bulk.undoRecords,3000);
+  assert.deepEqual(host.legacyState().assets[19].lastTrip,{sequence:1});
+  assert.ok(performance.now()-bulkStarted<8000,'1,000 row patches against 20,000 assets must avoid rematerializing every row per patch');
   client.close();
-  console.log('Build342 kernel worker: worker-owned typed state, revision conflict, command idempotency, bounded query and transferable frame buffers PASS');
+  console.log('Build342 kernel worker: worker-owned typed state, 1,000 row patches across 20,000 assets, revision conflict, command idempotency, bounded query and transferable frame buffers PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

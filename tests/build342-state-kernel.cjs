@@ -37,6 +37,11 @@ function legacy(){return {saveVersion:'2.0.0',simSeconds:0,alerts:['middle','old
   assert.equal(kernel.legacyState().assets[0].progress,.75);
   assert.equal(kernel.legacyState().assets[0].phase,'turnaround');
   assert.equal(kernel.compareLegacy({...kernel.legacyState(),assets:[{...kernel.legacyState().assets[0],fuel:12}]}).path,'$.assets[0].fuel');
+  const rowBefore=JSON.stringify(kernel.legacyState());
+  assert.throws(()=>kernel.tx({owner:'simulation-asset',writes:['assets']},w=>{w.updateRow('assets',0,{progress:.4,phase:'moving',name:'changed',lastTrip:{margin:1}});throw new Error('abort-row-patch');}),/abort-row-patch/);
+  assert.equal(JSON.stringify(kernel.legacyState()),rowBefore,'combined typed-column and row patch rollback restores exact source values');
+  kernel.tx({owner:'simulation-asset',writes:['assets']},w=>w.updateRow('assets',0,{progress:.4,phase:'moving',name:'updated',lastTrip:{margin:1}}));
+  assert.deepEqual(kernel.legacyState().assets[0],{id:'A-1',progress:.4,lat:24.7,lng:46.6,phase:'moving',name:'updated',lastTrip:{margin:1}},'worker output row patches preserve the legacy object view');
 }
 
 {

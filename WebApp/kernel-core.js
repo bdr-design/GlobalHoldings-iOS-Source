@@ -74,6 +74,8 @@
           }
         }
         columns[name]={type,data,presence,enumValues};
+        // Preserve each legacy row's property order for byte-compatible export;
+        // the placeholder never owns the authoritative hot-field value.
         for(const row of rows)if(own(row,name))row[name]=null;
       }
       return {rows,columns};
@@ -104,15 +106,16 @@
       if(section.kind==='columns')return columnDTO(section);
       const data=clone(section.data);return section.legacyOrder==='newest-first'&&(section.kind==='append-only'||section.kind==='ledger')?data.reverse():data;
     }
-    function columnDTO(section){
-      const out=section.data.rows.map(row=>clone(row));
-      for(const [name,column] of Object.entries(section.data.columns))for(let i=0;i<out.length;i++){
-        if(column.presence[i]===0)delete out[i][name];
-        else if(column.presence[i]===1)out[i][name]=null;
-        else out[i][name]=column.type==='u8'&&column.enumValues?column.enumValues[column.data[i]]:column.data[i];
+    function columnRow(section,index){
+      const row=clone(section.data.rows[index]);
+      for(const [name,column] of Object.entries(section.data.columns)){
+        if(column.presence[index]===0)delete row[name];
+        else if(column.presence[index]===1)row[name]=null;
+        else if(column.presence[index]===2)row[name]=column.type==='u8'&&column.enumValues?column.enumValues[column.data[index]]:column.data[index];
       }
-      return out;
+      return row;
     }
+    function columnDTO(section){return section.data.rows.map((_,index)=>columnRow(section,index));}
     function sectionFingerprint(name){const section=ensure(name);if(!fingerprints.has(name))fingerprints.set(name,fingerprint(expose(section)));return fingerprints.get(name);}
     function legacyState(){const out=clone(base);for(const section of contracts.values())if(section.present)pathWrite(out,section.path,expose(section));else pathDelete(out,section.path);return out;}
     function tx(spec,apply){
@@ -131,6 +134,7 @@
         delete(name){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='object')throw new Error(`kernel-delete-kind:${name}`);const previous=clone(section.data),wasPresent=section.present;log(()=>{section.data=previous;section.present=wasPresent;});section.data=undefined;section.present=false;mark(name,{kind:'delete'});return wasPresent;},
         append(name,row){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='append-only')throw new Error(`kernel-append-kind:${name}`);const removed=[];section.data.push(clone(row));if(section.cap&&section.data.length>section.cap)removed.push(...section.data.splice(0,section.data.length-section.cap));log(()=>{section.data.pop();if(removed.length)section.data.unshift(...removed);});mark(name,{kind:'append',row:clone(row),trimmed:removed.length});return section.data.length;},
         col(name,columnName){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const column=section.data.columns[String(columnName)];if(!column)throw new Error(`kernel-column-unregistered:${name}.${columnName}`);return Object.freeze({length:column.data.length,get(index){if(!Number.isInteger(index)||index<0||index>=column.data.length)throw new RangeError('kernel-column-index');if(column.presence[index]===0)return undefined;if(column.presence[index]===1)return null;return column.type==='u8'&&column.enumValues?column.enumValues[column.data[index]]:column.data[index];},set(index,value){if(!Number.isInteger(index)||index<0||index>=column.data.length)throw new RangeError('kernel-column-index');const previousValue=column.data[index],previousPresence=column.presence[index];let next=0,presence=0;if(value===null)presence=1;else if(value!==undefined){if(column.type==='f64'){if(typeof value!=='number'||!Number.isFinite(value))throw new TypeError(`kernel-column-nonfinite:${columnName}`);next=value;}else {const encoded=column.enumValues?column.enumValues.indexOf(String(value)):Number(value);if(!Number.isSafeInteger(encoded)||encoded<0||encoded>255)throw new TypeError(`kernel-column-enum-invalid:${columnName}`);next=encoded;}presence=2;}log(()=>{column.data[index]=previousValue;column.presence[index]=previousPresence;});column.data[index]=next;column.presence[index]=presence;mark(name,{kind:'column',column:String(columnName),index,from:previousPresence===2?previousValue:null,to:presence===2?next:null});return value;}});},
+        updateRow(name,index,patch){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='columns')throw new Error(`kernel-row-kind:${name}`);if(!Number.isInteger(index)||index<0||index>=section.data.rows.length)throw new RangeError('kernel-row-index');if(!patch||typeof patch!=='object'||Array.isArray(patch))throw new TypeError('kernel-row-patch-invalid');const row=section.data.rows[index];for(const [key,value] of Object.entries(patch)){if(key==='__proto__'||key==='constructor'||key==='prototype')throw new Error(`kernel-row-field-invalid:${key}`);if(own(section.data.columns,key)){writerAPI.col(name,key).set(index,value);continue;}const had=own(row,key),previous=had?clone(row[key]):undefined;log(()=>{if(had)row[key]=previous;else delete row[key];});if(value===undefined)delete row[key];else row[key]=clone(value);mark(name,{kind:'row-field',index,field:key});}return columnRow(section,index);},
         post(name,entry){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='ledger')throw new Error(`kernel-post-kind:${name}`);const debit=Number(entry?.debit),credit=Number(entry?.credit),key=String(entry?.idempotencyKey||'');if(!key||!Number.isFinite(debit)||!Number.isFinite(credit)||debit<=0||credit<=0||debit!==credit)throw new Error('kernel-ledger-entry-unbalanced');const fp=fingerprint(entry),cacheKey=`${name}:${key}`,prior=idempotency.get(cacheKey);if(prior){if(prior.fingerprint!==fp)throw new Error('kernel-idempotency-conflict');return clone(prior.row);}const row=clone(entry),index=section.data.length;section.data.push(row);idempotency.set(cacheKey,{fingerprint:fp,row:clone(row),index});log(()=>{section.data.splice(index,1);idempotency.delete(cacheKey);});mark(name,{kind:'post',row:clone(row)});return clone(row);},
         afterCommit(fn){if(typeof fn!=='function')throw new TypeError('kernel-after-commit-function-required');hooks.push(fn);}
       };

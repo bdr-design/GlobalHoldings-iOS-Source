@@ -1,17 +1,17 @@
 {
   "approved": false,
   "blocking_issues": [
-    "Local Build 342 acceptance completed 129/136; seven browser/lint checks are blocked by missing Chromium and ESLint in this Linux workspace. Exact Build 341 baseline, full Build 342 acceptance, macOS native storage tests, WKWebView checks, and unsigned iPhoneOS build await macOS CI.",
-    "Native GlobalSaveVault rollback, legacy-save migration, and nativeVaultCommitMs < 2,000 ms have not been compiled or measured in this environment.",
-    "The 10-day/600x/3,380-asset parity result is a deterministic synthetic fixture; application-owned business-simulation parity is not yet established and the kernel is not authoritative.",
-    "Delta integrity validation currently covers record-alert only; a complete idle full-audit schedule and broader domain delta validators are not integrated.",
-    "Cold archive core and chunked-save tests use memory adapters; production cold-archive integration and the <12 MB hot-state gate at 3,380 assets are not established.",
-    "The kernel Worker protocol and 20,000-asset Float64Array fixture pass Node tests, but the application simulation still runs on the main owner and device frame/task/memory limits remain unmeasured.",
-    "Physical iPhone testing is required for 10-minute 600x continuous-drag frame cadence, long-task/drop limits, oldest-supported-device memory ceiling, and thermal behavior."
+    "Build342 macOS CI run 36285862018 passed source verification, dependency installation/lint and the exact Build341 baseline, then failed five browser acceptance cases because startup migration read mapSavePending before initialization. The declaration order and browser boot assertion are fixed on the branch; Build342 acceptance rerun is required.",
+    "Native GlobalSaveVault rollback, legacy-save migration and nativeVaultCommitMs < 2,000 ms still require successful macOS native tests; no current rerun result is available.",
+    "The 10-day, 600x, 3,380-asset app slice shadow test now passes full-root comparison after 240 commits. The shadow mirrors legacy transaction writes, and finance-day/market-hour callbacks are controlled fixtures; independent kernel business execution, promotion and the <30 ms normal-slice gate are not established.",
+    "record-alert delta is integrated, but broader domain delta validators and scheduled idle full audits are incomplete.",
+    "Cold archive and chunked-save JavaScript adapters pass focused tests, but production cold archive loading/query integration and the <12 MB hot-state target at 3,380 assets are not established.",
+    "The application still uses its existing simulation transaction owner. Kernel Worker protocol tests and the 20,000-asset Float64Array fixture pass, but authoritative Worker simulation and live asset-column migration are not integrated.",
+    "Physical iPhone tests are required for ten minutes at 600x with continuous drag, >=58 FPS, <1% frame drops, no main-thread tasks over 50 ms, <12 MB hot-state at 3,380 assets and oldest-supported-iPhone 20,000-asset memory/thermal acceptance."
   ],
   "build": 342,
   "latest_direct_source_ci": {
-    "status": "PENDING_BOOT_TDZ_FIX_RERUN",
+    "status": "PENDING_MACOS_RERUN_AFTER_STARTUP_FIX",
     "source_mode": "direct_git_tree_from_verified_build341_commit",
     "tested_commit_sha": null,
     "run_id": null,
@@ -25,12 +25,12 @@
   },
   "phase_status": {
     "stage0_urgent_build342": "LOCAL_FOCUSED_GATES_PASS_NATIVE_COMMIT_GATE_PENDING_MACOS",
-    "stage1_build341_baseline": "PENDING_EXACT_SOURCE_MACOS_ACCEPTANCE",
-    "stage2_shadow_state_kernel": "SYNTHETIC_10_DAY_PARITY_PASS_APPLICATION_PARITY_PENDING_KERNEL_NOT_ADOPTED",
-    "stage3_delta_validation_and_incremental_storage": "PARTIAL_RECORD_ALERT_DELTA_AND_NATIVE_CHUNKED_STORAGE_UNCOMPILED",
-    "stage4_cold_archive": "CORE_FIXTURE_PASS_PRODUCTION_INTEGRATION_AND_HOT_STATE_BUDGET_PENDING",
-    "stage5_worker": "WORKER_PROTOCOL_FIXTURE_PASS_APPLICATION_SIMULATION_NOT_MIGRATED_DEVICE_GATES_PENDING",
-    "stage6_typed_asset_columns": "20K_TYPED_COLUMN_FIXTURE_PASS_LIVE_STATE_MIGRATION_AND_DEVICE_MEMORY_PENDING",
+    "stage1_build341_baseline": "PASS_EXACT_SOURCE_MACOS_CI_RUN_36285862018",
+    "stage2_shadow_state_kernel": "APP_SLICE_SHADOW_PARITY_PASS_KERNEL_NOT_AUTHORITATIVE_FINANCIAL_AND_MARKET_BOUNDARIES_FIXTURED",
+    "stage3_delta_validation_and_incremental_storage": "PARTIAL_NATIVE_STORAGE_IMPLEMENTED_MACOS_VALIDATION_AND_IDLE_FULL_AUDIT_PENDING",
+    "stage4_cold_archive": "CORE_FIXTURE_PASS_PRODUCTION_COLD_ARCHIVE_AND_HOT_STATE_BUDGET_PENDING",
+    "stage5_worker": "ASSET_WORKER_AND_KERNEL_PROTOCOL_FIXTURES_PASS_AUTHORITATIVE_KERNEL_SIMULATION_WORKER_PENDING",
+    "stage6_typed_asset_columns": "20K_TYPED_COLUMN_FIXTURE_PASS_LIVE_APP_MIGRATION_AND_DEVICE_MEMORY_PENDING",
     "full_snapshot_fallback": "ON",
     "save_schema": "2.0.0",
     "production_approved": false
@@ -45,7 +45,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "71a166bcbd738a8f14b79032b08d16a4b7ed68a7a171700a51e7b8446ca26b58",
+  "source_tree_sha256": "00186fc996919d5fe20c69839be5b250eabf232ff676a5cc1485f2fef317439a",
   "version": "3.0.0",
-  "webapp_tree_sha256": "46f24e363668859353cb90731bdbae9b0ca8569c419eeffa40294c00b072e2ed"
+  "webapp_tree_sha256": "0c43e156b058ca78c9a994cfcf6f27f255695dda3671acdb3c3ae71e2994e1cd"
 }

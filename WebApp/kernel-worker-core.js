@@ -17,6 +17,7 @@
       if(operation.type==='set')return writer.set(operation.section,operation.value);
       if(operation.type==='append')return writer.append(operation.section,operation.value);
       if(operation.type==='column-set')return writer.col(operation.section,operation.column).set(operation.index,operation.value);
+      if(operation.type==='row-patch')return writer.updateRow(operation.section,operation.index,operation.value);
       if(operation.type==='ledger-post')return writer.post(operation.section,operation.value);
       throw new Error(`kernel-worker-operation-unsupported:${String(operation.type)}`);
     }

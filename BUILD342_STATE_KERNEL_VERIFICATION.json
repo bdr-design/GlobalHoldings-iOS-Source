@@ -13,19 +13,19 @@
   },
   "stages": {
     "0": {
-      "status": "LOCAL_FOCUSED_GATES_PASS_NATIVE_PENDING",
+      "status": "LOCAL_FOCUSED_GATES_PASS_NATIVE_COMMIT_GATE_PENDING_MACOS",
       "gates": {
-        "record_alert_p95_ms": 0.265,
-        "record_alert_max_ms": 2.548,
+        "record_alert_p95_ms": 0.521,
+        "record_alert_max_ms": 2.883,
         "record_alert_samples": 120,
         "nativeVaultCommitMs_under_2000": "PENDING_MACOS_NATIVE_TEST",
-        "finish_during_map_drag": "PASS_LOCAL_NODE",
-        "manualFailures_equals_CALENDAR_ADVANCE_FAILED": "PASS_LOCAL_NODE",
-        "map_bounds_and_bounded_rendering": "PASS_LOCAL_NODE"
+        "finish_during_map_drag": "PASS_BUILD342_NODE_GATE",
+        "manualFailures_equals_CALENDAR_ADVANCE_FAILED": "PASS_BUILD342_NODE_GATE",
+        "map_bounds_and_bounded_rendering": "PASS_BUILD342_NODE_GATE"
       }
     },
     "1": {
-      "status": "EXACT_BUILD341_BASELINE_PASS_CI_RUN_36285862018_BUILD342_ACCEPTANCE_RERUN_PENDING",
+      "status": "PASS_EXACT_BUILD341_ACCEPTANCE_CI_RUN_36285862018",
       "local_build341_acceptance": {
         "completed": false,
         "executed": 107,
@@ -33,21 +33,24 @@
         "blocked_or_failed": 4,
         "reason": "Local attempt stopped before the full exact-source suite because Chromium/ESLint are unavailable; macOS CI will run the unchanged verified source."
       },
-      "ci_gate": "Exact source Build341 baseline passed in macOS CI run 36285862018; Build342 browser acceptance failed before fix and is being rerun."
+      "ci_gate": "Exact source Build341 baseline passed unchanged in macOS CI run 36285862018; Build342 source acceptance must rerun after the startup initialization fix."
     },
     "2": {
-      "status": "SYNTHETIC_PARITY_PASS_KERNEL_NOT_ADOPTED",
+      "status": "APP_SLICE_SHADOW_PARITY_PASS_KERNEL_NOT_AUTHORITATIVE",
       "scenario": {
         "simulated_days": 10,
         "speed_x": 600,
         "assets": 3380,
         "hourly_commits": 240,
-        "state_comparison": "100% first-difference equality"
+        "state_comparison": "100% full-root first-difference equality after every atomic app slice",
+        "app_path": "createSimulationSliceJob + GH_SIMULATION_ASSET_CORE + GH_TRANSACTION_CORE",
+        "boundary_fixture": "controlled deterministic processFinancialDay/processMarket callbacks",
+        "local_gate": "PASS"
       },
-      "limit": "Uses a deterministic synthetic asset workload, not full app domain simulation."
+      "limit": "The app transaction still owns each mutation and refreshes the shadow mirror from its committed write roots; this is not independent kernel-side business simulation. The finance-day and market-hour callbacks are controlled fixtures. Kernel promotion and the normal-slice <30 ms gate remain unproven."
     },
     "3": {
-      "status": "PARTIAL_NATIVE_COMPILE_PENDING",
+      "status": "PARTIAL_NATIVE_COMPILE_AND_IDLE_AUDIT_INTEGRATION_PENDING",
       "implemented": [
         "bounded record-alert delta validation",
         "content-addressed native sections",
@@ -55,10 +58,10 @@
         "A/B save-head pointer",
         "old inline Save Schema 2.0.0 compatibility"
       ],
-      "limit": "Broader domain delta validators and complete live incremental/background audit integration are not established; native code awaits macOS CI."
+      "limit": "record-alert delta and native storageVersion 2 content-addressed section/A-B implementation are present; broader domain delta validators, scheduled idle full audit and macOS native acceptance remain pending."
     },
     "4": {
-      "status": "CORE_FIXTURE_ONLY",
+      "status": "CORE_FIXTURE_ONLY_PRODUCTION_COLD_ARCHIVE_PENDING",
       "implemented": [
         "cold archive core",
         "chunked save core",
@@ -67,7 +70,7 @@
       "limit": "Production archive integration and <12 MB hot-state measurement at 3,380 assets are pending."
     },
     "5": {
-      "status": "WORKER_PROTOCOL_FIXTURE_ONLY",
+      "status": "WORKER_PROTOCOL_AND_EXISTING_ASSET_WORKER_PASS_KERNEL_SIMULATION_OWNERSHIP_PENDING",
       "implemented": [
         "worker transaction/query/frame protocol",
         "stale generation and idempotency tests"
@@ -75,20 +78,21 @@
       "limit": "Authoritative app simulation remains in the main-thread owner; 10-minute iPhone frame/task gates are pending."
     },
     "6": {
-      "status": "TYPED_COLUMN_FIXTURE_ONLY",
+      "status": "20K_TYPED_COLUMN_WORKER_FIXTURE_PASS_LIVE_APPLICATION_MIGRATION_PENDING",
       "scenario": {
         "synthetic_assets": 20000,
         "column_types": [
           "Float64Array",
           "Uint8Array"
         ],
-        "worker_typed_column_bytes": 760000
+        "worker_typed_column_bytes": 760000,
+        "worker_bulk_row_patches": 1000
       },
       "limit": "Live app state migration, oldest-supported-iPhone selection, memory ceiling, FPS and thermal measurements are pending."
     }
   },
   "acceptance": {
-    "build342_local_focused_tests": "PASS_12_OF_12",
+    "build342_local_focused_tests": "PASS_13_OF_13_BUILD342_TEST_PROGRAMS",
     "build340_local_suite": "PASS",
     "recovery_integration": "PASS_8_OF_8",
     "full_build342_acceptance": {
@@ -116,10 +120,21 @@
       "run_id": "36285862018",
       "result": "FAILED_BUILD342_SOURCE_ACCEPTANCE",
       "cause": "ReferenceError: Cannot access mapSavePending before initialization during startup migration; five browser tests could not enter founder onboarding.",
-      "fix": "Declaration moved before boot-time migration; browser test now asserts clean boot and visible founder onboarding.",
-      "rerun": "PENDING"
+      "fix_commit": "8077d866758f0b23fe532070fa6f3a8fe5ca28a1",
+      "fix": "Moved mapSavePending/mapSaveFlushTask initialization before boot-time migrations; browser test now asserts clean boot and visible founder onboarding.",
+      "rerun": "PENDING_ACTIONS_CHECK_STATUS"
+    },
+    "build342_app_shadow_10day": {
+      "result": "PASS_LOCAL",
+      "simulated_days": 10,
+      "speed_x": 600,
+      "assets": 3380,
+      "hourly_commits": 240,
+      "first_difference": "none after every application slice",
+      "independent_kernel_execution": false,
+      "boundary_callbacks": "controlled fixtures"
     }
   },
-  "source_tree_sha256": "71a166bcbd738a8f14b79032b08d16a4b7ed68a7a171700a51e7b8446ca26b58",
-  "webapp_tree_sha256": "46f24e363668859353cb90731bdbae9b0ca8569c419eeffa40294c00b072e2ed"
+  "source_tree_sha256": "00186fc996919d5fe20c69839be5b250eabf232ff676a5cc1485f2fef317439a",
+  "webapp_tree_sha256": "0c43e156b058ca78c9a994cfcf6f27f255695dda3671acdb3c3ae71e2994e1cd"
 }

@@ -1772,12 +1772,12 @@
       "sha256": "b5d93bbe265471a6fb1961a3f6cd0f3bfacf74c4779799b395288c35b76fb133"
     },
     "WebApp/kernel-core.js": {
-      "bytes": 17154,
-      "sha256": "980595af227d622fb505e1245182579e3d50aafd5dd0b0e9df3f062136fbda21"
+      "bytes": 18344,
+      "sha256": "b3221289b19caf386b68dc7793594cea59adcf5de17aeb9aa7a0b51c2e5f676f"
     },
     "WebApp/kernel-worker-core.js": {
-      "bytes": 8788,
-      "sha256": "3d150b63ef3e85d9b9a4c1eb8e50db6fcd4a59f81ab6fa88a0a31295c3224273"
+      "bytes": 8902,
+      "sha256": "306337c74845147643b6d215572fd8d4a70f7be49697b396c9ed2c5e46f320ec"
     },
     "WebApp/kernel-worker.js": {
       "bytes": 334,
@@ -2005,13 +2005,13 @@
     }
   },
   "latest_direct_source_ci": {
-    "status": "PENDING_SOURCE_UPLOAD",
+    "status": "PENDING_MACOS_RERUN_AFTER_STARTUP_FIX",
     "tested_commit_sha": null,
-    "build341_baseline": "PENDING",
+    "build341_baseline": "PASS_RUN_36285862018",
     "source_gates": "PENDING",
     "chromium_webkit": "PENDING",
     "native_storage": "PENDING",
-    "unsigned_iphoneos_release_app": "PENDING",
+    "unsigned_iphoneos_release_app": "NOT_BUILT",
     "ipa_built": false,
     "physical_iphone_tested": false
   },
@@ -2058,6 +2058,6 @@
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "remote_branch_created_from_verified_base": true
   },
-  "source_tree_sha256": "71a166bcbd738a8f14b79032b08d16a4b7ed68a7a171700a51e7b8446ca26b58",
-  "webapp_tree_sha256": "46f24e363668859353cb90731bdbae9b0ca8569c419eeffa40294c00b072e2ed"
+  "source_tree_sha256": "00186fc996919d5fe20c69839be5b250eabf232ff676a5cc1485f2fef317439a",
+  "webapp_tree_sha256": "0c43e156b058ca78c9a994cfcf6f27f255695dda3671acdb3c3ae71e2994e1cd"
 }

@@ -2,11 +2,12 @@
   "authorized_at": "2026-09-26",
   "build": 342,
   "known_limits": [
-    "The local Build 341 baseline acceptance is incomplete because Chromium and ESLint are unavailable; exact-source macOS CI is required.",
-    "The state-kernel 10-day run is a deterministic fixture with 3,380 synthetic assets, not the complete app business-simulation engine; kernel adoption remains disabled.",
-    "Native storage changes require macOS Swift/Foundation compilation and real-file rollback and legacy-format tests before acceptance.",
-    "Cold archive, Worker-owned simulation state, and Float64Array columns have focused core fixtures but are not all wired as authoritative live application state.",
-    "Physical iPhone testing must establish continuous 600x/drag FPS, task/drop limits, hot-state and process memory on the oldest supported device, and thermal stability."
+    "Exact Build341 acceptance passed unchanged in macOS CI run 36285862018. Build342 browser acceptance failed in that run on a startup temporal-dead-zone bug; the fix is on the branch and needs a fresh successful macOS run.",
+    "The ten-day app slice shadow gate now runs the production createSimulationSliceJob and GH_SIMULATION_ASSET_CORE over 3,380 assets. It mirrors committed legacy transaction roots; independent kernel-side business simulation and promotion remain gated, and day/hour callbacks are controlled fixtures.",
+    "Native SaveVault storageVersion 2 chunking, A/B head publication and legacy Save Schema 2.0.0 reading require passing macOS real-file rollback, migration and <2-second native commit tests.",
+    "Cold archive is core-fixture-only; production lazy financial-history lookup and the <12 MB hot-state ceiling at 3,380 assets remain unproven.",
+    "The app simulation still uses the existing transaction owner. Worker protocol and 20,000-asset typed-column tests do not prove authoritative Worker ownership or live column migration.",
+    "Physical iPhone testing must establish continuous 600x/drag FPS, main-thread task/drop limits, hot/process memory on the oldest supported device and thermal stability."
   ],
   "minimum_acceptance_gates": 136,
   "production_approved": false,
@@ -29,7 +30,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "71a166bcbd738a8f14b79032b08d16a4b7ed68a7a171700a51e7b8446ca26b58",
+  "source_tree_sha256": "00186fc996919d5fe20c69839be5b250eabf232ff676a5cc1485f2fef317439a",
   "test_build_authorized": true,
   "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
   "version": "3.0.0"
