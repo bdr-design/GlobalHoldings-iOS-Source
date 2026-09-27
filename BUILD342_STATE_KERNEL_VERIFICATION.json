@@ -57,6 +57,7 @@
         "content-addressed native sections",
         "independent storageVersion 2",
         "A/B save-head pointer",
+        "compact payloadSHA256 is checked against the reconstructed payload before an A/B generation is accepted; mismatch falls back to the verified peer and is covered by fault injection",
         "old inline Save Schema 2.0.0 compatibility",
         "post-publication garbage-collection failure cannot misreport a durable save as failed",
         "immutable verified chained and legacy document proof cache with ancestor invalidation",
@@ -198,7 +199,7 @@
     "new_source_regression": {
       "change": "Production Mobility cold archive with durable acknowledgement, 4,096-record segment rollover and verified multi-segment reads; simulation Worker typed kernel now supplies asset patches with confirm/rollback; bootstrap yields in 128-row chunks.",
       "previous_source_tree_sha256": "b07719fd2382eac3e873450094ab1f6a4e6ffbfba9e73c996b5ccb4a44bdbf5c",
-      "pending_source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
+      "pending_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
       "pending_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
       "local_tests": "PASS_19_OF_19_BUILD342_AND_21_OF_21_BUILD340_PROGRAMS",
       "local_swift_toolchain": "UNAVAILABLE",
@@ -215,7 +216,7 @@
     "local_lint": "BLOCKED_LOCAL_ESLINT_PACKAGE_MISSING_CI_INSTALLS_PINNED_DEPENDENCIES",
     "local_native_compile": "BLOCKED_SWIFT_TOOLCHAIN_UNAVAILABLE_NATIVE_TEST_SOURCE_GENERATION_PASS_CI_COMPILE_PENDING"
   },
-  "source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
+  "source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
   "webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
   "physical_device_evidence": {
     "available_device": "iPhone 17 Pro Max (user-reported)",

@@ -32,7 +32,7 @@
     "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
     "ipa_uploaded_or_delivered": false,
     "physical_iphone_tested": false,
-    "pending_source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
+    "pending_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
     "pending_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3"
   },
   "phase_status": {
@@ -57,7 +57,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "ebdd95f5531acfe4225e57388d4bae5a6c8cd4636f197a24f959efde17367897",
+  "source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
   "version": "3.0.0",
   "webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
   "previous_passed_source_ci": {

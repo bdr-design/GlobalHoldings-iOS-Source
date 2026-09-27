@@ -1047,8 +1047,9 @@ final class GlobalSaveVault {
             payload = legacy
             payloadData = Data(legacy.utf8)
         } else { return nil }
+        let expectedPayloadSHA256 = envelope.payloadSHA256 ?? envelope.sha256
         guard let validated = try? validatePayload(data: payloadData),
-              (envelope.manifestFile != nil || validated.payloadSHA256 == envelope.sha256),
+              validated.payloadSHA256 == expectedPayloadSHA256,
               validated.simSeconds == envelope.simSeconds,
               validated.saveRevision == (envelope.saveRevision ?? 0),
               validated.resetEpoch == (envelope.resetEpoch ?? 0) else { return nil }

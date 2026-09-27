@@ -241,6 +241,20 @@ test("AppliedUpdate preserves exact operationsJSON and no mirror"){
     try check(applied.webPayload["operationsJSON"] as? String==operationsJSON,"Signed text missing or changed")
     try check(applied.webPayload["operations"]==nil,"Forbidden operations mirror present")
 }
+test("chunked envelope verifies payload digest metadata before A/B selection") {
+    guard let baseline=vault.currentSave(),let baselineObject=try JSONSerialization.jsonObject(with:Data(baseline.utf8)) as? [String:Any] else {throw TestFailure(message:"Verified baseline save missing")}
+    let next=try makeJSON((baselineObject["saveRevision"] as? Int ?? 0)+1)
+    let generation:Int=try wait { commit(next,try! envelope(next),$0) }
+    let head=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-head.json"))) as! [String:Any]
+    guard head["generation"] as? Int==generation,let slot=head["slot"] as? String,["A","B"].contains(slot) else {throw TestFailure(message:"Current A/B pointer missing")}
+    let peerSlot=slot=="A" ? "B" : "A",currentSlotURL=folder.appendingPathComponent("save-\\(slot).json"),peerURL=folder.appendingPathComponent("save-\\(peerSlot).json")
+    guard let peerHeader=try JSONSerialization.jsonObject(with:Data(contentsOf:peerURL)) as? [String:Any],
+          let peerGeneration=peerHeader["generation"] as? Int,let peerPayload=vault.snapshot(generation:peerGeneration)?.payload else {throw TestFailure(message:"Verified A/B peer missing")}
+    let latest=try JSONSerialization.jsonObject(with:Data(contentsOf:currentSlotURL)) as! [String:Any]
+    var damaged=latest;damaged["payloadSHA256"]=String(repeating:"0",count:64)
+    try JSONSerialization.data(withJSONObject:damaged).write(to:currentSlotURL,options:.atomic)
+    try check(vault.currentSave()==peerPayload && vault.currentGeneration()==peerGeneration,"Mismatched compact payload digest was accepted instead of recovering the verified A/B peer")
+}
 // Baseline validation runs in the main-thread probe; candidate enqueues it on the real vault queue.
 vault.reset()
 let perf=try makeJSON(1,extra:String(repeating:"x",count:28*1024*1024)),perfEnvelope=try envelope(perf)
