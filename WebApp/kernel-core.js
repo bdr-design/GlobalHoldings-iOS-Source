@@ -8,6 +8,7 @@
   const VERSION='GH-STATE-KERNEL-1.0.0';
   const clone=value=>{
     if(value===undefined)return undefined;
+    if(typeof globalThis.GH_CLONE_CORE?.clone==='function')return globalThis.GH_CLONE_CORE.clone(value);
     if(typeof globalThis.structuredClone==='function')try{return globalThis.structuredClone(value);}catch(_error){}
     if(ArrayBuffer.isView(value))return new value.constructor(value);
     return JSON.parse(JSON.stringify(value));
