@@ -126,7 +126,7 @@ func reject(_ name:String, json:String, payload:[String:Any]) {
 }
 let first=try makeJSON(1)
 test("native cold archive uses validated names, atomic writes, readback and remove") {
-    let key="gh-cold-mobility-trip-receipts-e9-A.json",value="{\"generation\":1,\"items\":[]}"
+    let key="gh-cold-mobility-trip-receipts-e9-A.json",value=#"{"generation":1,"items":[]}"#
     let _:Void=try wait { vault.writeColdArchiveAsync(key,value:value,completion:$0) }
     let loaded:String?=try wait { vault.readColdArchiveAsync(key,completion:$0) }
     try check(loaded==value,"Cold archive readback mismatch")
