@@ -1,14 +1,8 @@
 {
-  "build": 341,
+  "build": 342,
+  "version": "3.0.0",
+  "save_schema": "2.0.0",
   "files": {
-    "BUILD": {
-      "bytes": 4,
-      "sha256": "75fa55306cb81a01b436fa14731c79e18036d89472e4280d44bc2776e8d3184b"
-    },
-    "VERSION": {
-      "bytes": 6,
-      "sha256": "2985be8b28d3ade858e8d8fb4bc22f565b1bf6020dff982dce141f7721b9999c"
-    },
     "WebApp/advanced-core.js": {
       "bytes": 231897,
       "sha256": "7bf5d7babc53eae9eb1687e26831c09704851b88aadab7134b078cdcb641edc4"
@@ -22,8 +16,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 647932,
-      "sha256": "c6bf879593e8470e192f166676c4008c66718a87589bf9db2b76d539a0b87a2c"
+      "bytes": 653637,
+      "sha256": "89f5a50f3f97d39c236dfdf8d9cfb988cd9767f75519297a6c919e5f16dd770a"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1597,6 +1591,14 @@
       "bytes": 21091,
       "sha256": "93ed7a974472b80f80543dd8e08d93f995656f51d6fe019a1f1e84a144620ffa"
     },
+    "WebApp/chunked-save-core.js": {
+      "bytes": 12540,
+      "sha256": "4ef1d88a3526455b68a136fee0ab2bbb0593f8f3ac435583edfab156764418ba"
+    },
+    "WebApp/cold-archive-core.js": {
+      "bytes": 5662,
+      "sha256": "84dc579e9f1393aadcdc9c360827c736a8d23831d2ce4ca7da514f6428d5b2a7"
+    },
     "WebApp/company-adapters-core.js": {
       "bytes": 13412,
       "sha256": "a4ecdc3b2d812227bc6779159af31216710d8ec48d80ad64da641b9b0e1ecb0b"
@@ -1662,8 +1664,8 @@
       "sha256": "11650b4b91eebd66bf301e2f4682b07696618001760c7f7c074ff597f089469a"
     },
     "WebApp/diagnostics-core.js": {
-      "bytes": 54006,
-      "sha256": "e93b513a5250a916b7aaf877c876558af08fc2ee4a59cf035a0084adfaf45193"
+      "bytes": 54169,
+      "sha256": "61be9fe4703373146c98461383f5cd6d5fa82d7d3f863f0954dfd631f92ddd54"
     },
     "WebApp/directory-core.js": {
       "bytes": 16330,
@@ -1674,8 +1676,8 @@
       "sha256": "12f33c7a1e3ff816e0f2bba119b99b89c9b1b4c14c9e2bf51befdc0f03c028df"
     },
     "WebApp/domain-command-core.js": {
-      "bytes": 20621,
-      "sha256": "fe20b8a48148ee0510cc052dd5aceadff0850688af23cf016754e7c529955f3f"
+      "bytes": 22050,
+      "sha256": "f4a3100b8fdd02fa851ed3f8ee455fdef071051d8fa9a3a1b72b59e752e14c4f"
     },
     "WebApp/economics-core.js": {
       "bytes": 8403,
@@ -1742,12 +1744,12 @@
       "sha256": "03898d1c92402ea437c53996c7c5341f7be4afb7fc0a58dc5d460c0fa8c0cadc"
     },
     "WebApp/index.html": {
-      "bytes": 32545,
-      "sha256": "290c1e559eb77b045e621b7be5929874e11a197c7cd85ba473ff1c7728446494"
+      "bytes": 32728,
+      "sha256": "e794dbef22bb8c12453165d180e7755883b2b2cdff2cb23e8b6b68d0e48a8757"
     },
     "WebApp/integrity-core.js": {
-      "bytes": 24272,
-      "sha256": "0fc7d4cfcb2e1dd55994e9fdcf7634dae84e47ffceef49d2c62a4525377dd107"
+      "bytes": 26314,
+      "sha256": "e5b50f2d5df6c946171c3b739749bf435aa33e8986293a3de593ce7a703b7537"
     },
     "WebApp/interaction-core.js": {
       "bytes": 4264,
@@ -1760,6 +1762,18 @@
     "WebApp/interface-layout.css": {
       "bytes": 12821,
       "sha256": "b5d93bbe265471a6fb1961a3f6cd0f3bfacf74c4779799b395288c35b76fb133"
+    },
+    "WebApp/kernel-core.js": {
+      "bytes": 17154,
+      "sha256": "980595af227d622fb505e1245182579e3d50aafd5dd0b0e9df3f062136fbda21"
+    },
+    "WebApp/kernel-worker-core.js": {
+      "bytes": 8788,
+      "sha256": "3d150b63ef3e85d9b9a4c1eb8e50db6fcd4a59f81ab6fa88a0a31295c3224273"
+    },
+    "WebApp/kernel-worker.js": {
+      "bytes": 334,
+      "sha256": "ed5c50939fa1e4437046cfd13ed9426b4657da7b1ab7d13609d897ac04601155"
     },
     "WebApp/lifecycle-core.js": {
       "bytes": 1576,
@@ -1786,8 +1800,8 @@
       "sha256": "ccfc75ea172fd45dd43afd2ff9a28647ee02870bb373470365de625c69503d50"
     },
     "WebApp/map-presentation-core.js": {
-      "bytes": 13744,
-      "sha256": "a64645b296afaeedb308c75180d094316ef95581a5220caf69500d50d7ffcb10"
+      "bytes": 16746,
+      "sha256": "598e0e07fc8b941c1223077c9eb09d967ec6cba512d47afe48aaff73e8ceb439"
     },
     "WebApp/map-presentation-worker.js": {
       "bytes": 1644,
@@ -1814,8 +1828,8 @@
       "sha256": "7d417dc741c0c040e389332e26c25384fb69593d398fe54ea832eec2cfbad2cb"
     },
     "WebApp/operations-core.js": {
-      "bytes": 1716,
-      "sha256": "a60a12c745e33195b2eeb998a6118f9eae056e67c837eec672f42778181a75f4"
+      "bytes": 1688,
+      "sha256": "d60c6da5cd6212abde476caa392977f3a9cfd8fd1ccd1126fbdb0ca200f4f531"
     },
     "WebApp/persistence-core.js": {
       "bytes": 30352,
@@ -1850,8 +1864,8 @@
       "sha256": "8b868b4b48bb852dec8a7e700d22f57b9b87b1807edb7ca04146bf338bdbcc65"
     },
     "WebApp/runtime-required.json": {
-      "bytes": 16495,
-      "sha256": "27dc9fcc5dcd52094376f7fb1cb2e21ff418a407116b7017bda1b091a0751fe8"
+      "bytes": 16626,
+      "sha256": "b071e0705229517f4be91a905d4ed2185eaa4963f72080876fad85431ae57825"
     },
     "WebApp/save-schema.js": {
       "bytes": 61524,
@@ -1874,8 +1888,8 @@
       "sha256": "0e3f6cece32b6c12432a0d4ec77926f812b0417e5c3a7c357604b659a2ff7ed8"
     },
     "WebApp/simulation-core.js": {
-      "bytes": 24265,
-      "sha256": "6558c7c53bb4ae64fc04c632ed49236c1b8895978390db2ff12e9b3b8e519a22"
+      "bytes": 24692,
+      "sha256": "045bb3961ace516c06332b5dbcb6b634645ecf4a3666b5c5d6f906e10cda66df"
     },
     "WebApp/simulation-pacing-core.js": {
       "bytes": 4459,
@@ -1890,12 +1904,12 @@
       "sha256": "edacf776f6832178ea0e7678e0180b9381b56a3d6aeb57fff33165e24df554d9"
     },
     "WebApp/styles.css": {
-      "bytes": 38948,
-      "sha256": "2e69ee058343d89b2310384a46dcf75992e2376945fa153ce74786adaf30ce02"
+      "bytes": 39448,
+      "sha256": "73be32015076bdad2a6ab26066ddd5f71aee1048613d8a10a381bc02eec314fd"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 31988,
-      "sha256": "222a70718fbdc2dc062e3d4fbeb5e73b034ede474ff1bf8811e995852f435fe0"
+      "bytes": 39024,
+      "sha256": "2d55e74a01c4360031e209d9a8f2ea5a327ea309159edec89a2702ad62bc80fd"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -1970,8 +1984,8 @@
       "sha256": "cee936612b3017c810e5c904b617d96091046077400c2f9e187b7a020b81a44a"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
-      "bytes": 33365,
-      "sha256": "71258a4fb4482d0a77e89bd532647ab6010b6b22f6def25f36bf79b431989b7b"
+      "bytes": 61711,
+      "sha256": "def2ee6579d86ba9075ab063e46d9f0e78e8ac79a24e67e8c3059853ab15b57b"
     },
     "iOS/GlobalHoldings/LaunchScreen.storyboard": {
       "bytes": 1728,
@@ -1979,67 +1993,71 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "d0fc3b8f1f2f76ba73879bf91a77485e1516c55e6ad90d731cde40ea71f2b1a1"
+      "sha256": "49fd848dc2820528e1b90c39f78118631c65d27935d69db611119deccd02293e"
+    },
+    "BUILD": {
+      "bytes": 4,
+      "sha256": "8c80c1d95894af1d6b39590e0b2d0d9761caa096210587a8e3e16636297f2a40"
+    },
+    "VERSION": {
+      "bytes": 6,
+      "sha256": "2985be8b28d3ade858e8d8fb4bc22f565b1bf6020dff982dce141f7721b9999c"
     }
   },
   "latest_direct_source_ci": {
-    "base_ci_run_id": 36247000333,
-    "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
-    "physical_iphone_tested": false,
-    "status": "PENDING"
+    "status": "PENDING_SOURCE_UPLOAD",
+    "tested_commit_sha": null,
+    "build341_baseline": "PENDING",
+    "source_gates": "PENDING",
+    "chromium_webkit": "PENDING",
+    "native_storage": "PENDING",
+    "unsigned_iphoneos_release_app": "PENDING",
+    "ipa_built": false,
+    "physical_iphone_tested": false
   },
-  "phase": "1C-B — writer proof / no live journal activation",
-  "phase1a_contracts": [
-    "simulation-time boundary math extracted without changing scheduler semantics",
-    "golden time fixture pins manual advance, live boundary split, stall policy and day-before-hour midnight order",
-    "transaction write-set audit is opt-in and zero-cost when disabled",
-    "enforced write declarations rollback undeclared mutations",
-    "actual hourly market root write map captured from clean-source owners"
+  "phase": "Build 342 — seven-stage state kernel and lag-root verification",
+  "stage0_contracts": [
+    "record-alert hot path uses bounded delta validation and records measured Node p95/pmax",
+    "manual calendar failure counter maps one-to-one to CALENDAR_ADVANCE_FAILED evidence",
+    "calendar finish publication is blocked during map drag while an atomic slice remains pending",
+    "map viewport bounds, clustering, and unchanged-structure render work are bounded"
   ],
-  "phase1b_a_contracts": [
-    "actual day-close root write maps pinned for normal, payroll and month-end days",
-    "month-end critical failure restores state to byte-equivalent JSON serialization",
-    "plain-object rollback restores snapshot key order while preserving reusable object identities",
-    "scoped-to-full promotion preserves original top-level root order in the promoted snapshot",
-    "full hour/day rollback snapshots remain enabled"
+  "stage1_contracts": [
+    "exact Build 341 source commit acceptance runs unchanged in an isolated worktree on macOS CI",
+    "Build 342 retains and extends the declared acceptance set without replacing the baseline run"
   ],
-  "phase1b_b_contracts": [
-    "wall-clock pacing, backlog accumulation, execution budget and render/persist cadence are owned by runtime-only simulation-pacing-core.js",
-    "state.simSeconds remains the sole authoritative committed economic time source",
-    "variable deterministic 30/120/300/600 slices and exact hour/day boundary clamping remain unchanged",
-    "midnight ordering remains Day then Hour",
-    "manual advance remains target-driven and refreshes the wall-clock anchor so manual wall duration cannot leak into live catch-up",
-    "hidden/background duration is never replayed as authoritative simulation catch-up",
-    "simulation render cadence no longer copies scheduler snapshots into persisted simulationKernel",
-    "save normalization removes legacy scheduler/pacing snapshot residue while preserving semantic simulation audit fields",
-    "full hour/day rollback snapshots remain enabled; root-journal/COW remains Phase1C"
+  "stage2_contracts": [
+    "kernel shadow compares complete synthetic state after every hourly commit for ten simulated days at 600x and 3380 assets",
+    "kernel remains a non-authoritative mirror until full application-domain parity is independently established"
   ],
-  "phase1c_a_contracts": [
-    "transaction journal foundation is opt-in; live simulation does not request journal mode",
-    "unproven, structural, mutating validation and mutating critical paths fall back to Full Snapshot before execution",
-    "byte-equivalent rollback and 600-asset full-vs-journal equivalence are proven in Node architecture tests",
-    "Full Snapshot fallback remains enabled and Hour/Day boundaries remain unmodified"
+  "stage3_contracts": [
+    "Save Schema remains 2.0.0 while native physical storage uses independent storageVersion 2",
+    "native save sections are content-addressed, chunked, hash-verified, and published through A/B header plus atomic save-head",
+    "legacy inline Save Schema 2.0.0 payload remains readable and rollback uses the retained full snapshot fallback"
   ],
-  "phase1c_b_contracts": [
-    "composite writers declaring mayJoin are admitted to Full Snapshot before apply; unexpected late join in journal mode is rejected",
-    "journal primitive fields are limited to pre-existing own data properties with null/string/boolean/finite-number values",
-    "nested-asset writers are not admitted to field journal and require broader fallback",
-    "write-set barrier executes before irreversible critical persistence",
-    "dependency cycle integrity check no longer normalizes or writes dependencyGraph during read-only integrity-final checks",
-    "steady owner writer proof records exact tested root writes for finance, corporate, operations, inactive mobility, and frozen-state integrity-final",
-    "live simulation journal remains disabled pending 20k-scalable capture-on-first-write journal design"
+  "stage4_contracts": [
+    "cold-archive core supports stable IDs, digests, atomic index generations, bounded hot windows, and lazy verification",
+    "production cold-archive integration and under-12-MB hot-state device acceptance remain gated"
   ],
-  "point": "Build 341 hotpath proof verification cache and nested financial close profiling",
-  "save_schema": "2.0.0",
+  "stage5_contracts": [
+    "kernel Worker protocol supports bounded commands, revisions, idempotency, query, transferable visible frames, and stale-generation rejection",
+    "authoritative application simulation migration and physical frame/task acceptance remain gated"
+  ],
+  "stage6_contracts": [
+    "kernel supports Float64Array hot columns and a synthetic 20000-asset Worker fixture",
+    "live application migration and oldest-supported-iPhone memory/FPS/thermal acceptance remain gated"
+  ],
   "source_tracking": {
-    "base_branch": "build340-hotpath-diagnostics-20260926",
-    "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
+    "repository": "bdr-design/GlobalHoldings-iOS-Source",
+    "base_branch": "build341-hotpath-fix-20260926",
+    "base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
+    "verified_base_source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "repository_branch": "build341-hotpath-fix-20260926",
-    "runtime_source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993"
+    "repository_branch": "build342-state-kernel-20260927",
+    "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
+    "remote_branch_created_from_verified_base": true
   },
-  "source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993",
-  "version": "3.0.0",
-  "webapp_tree_sha256": "98ea1165accf3540c9601d677eca545a2039c40fcc91521c50ea5e22423e50fb"
+  "source_tree_sha256": "84df26c7b12624f07471b82742eec506e32add9736eb8e152f4e8a2a720448b9",
+  "webapp_tree_sha256": "9fe03a6318318e26eac79e2d1fe90581c15da638e5dbb92547b8743bd0ee8167"
 }

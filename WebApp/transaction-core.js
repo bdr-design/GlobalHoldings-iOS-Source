@@ -3,7 +3,9 @@
   const VERSION='3.0.0';
   let activeContext=null,durableSequence=0;
   const targetRevisions=new WeakMap();
+  const targetSectionRevisions=new WeakMap();
   const durableTargets=new WeakSet();
+  const kernelShadows=new WeakMap();
   const runtimeTelemetry={last:null,lastSimulation:null,samples:[],profiledSamples:[],profiledCount:0};
   const runtimeClock=()=>globalThis.performance?.now?.()??Date.now();
   function publishRuntimeMetric(row){
@@ -50,6 +52,40 @@
   function isActive(){return !!activeContext;}
   function revision(target){return target&&typeof target==='object'?targetRevisions.get(target)||0:0;}
   function advanceRevision(target){const next=revision(target)>=Number.MAX_SAFE_INTEGER?1:revision(target)+1;targetRevisions.set(target,next);return next;}
+  function sectionRevision(target,name){if(!target||typeof target!=='object')return 0;return targetSectionRevisions.get(target)?.get(String(name||'*'))||0;}
+  function advanceSectionRevisions(target,names){if(!target||typeof target!=='object')return;let revisions=targetSectionRevisions.get(target);if(!revisions){revisions=new Map();targetSectionRevisions.set(target,revisions);}for(const name of new Set((names||['*']).map(String))){const current=revisions.get(name)||0;revisions.set(name,current>=Number.MAX_SAFE_INTEGER?1:current+1);}}
+  function registerShadowRoot(shadow,name){if(shadow.registered.has(name))return;shadow.kernel.register(name,{owner:'transaction-core',kind:'object',path:[name]});shadow.registered.add(name);}
+  function shadowCompare(target,shadow){const result=shadow.kernel.compareLegacy(target);shadow.checks++;shadow.last={ok:result.ok,path:result.path||null,fingerprints:result.fingerprints,checkedAt:Date.now()};if(!result.ok){const error=new Error(`state-kernel-shadow-mismatch:${result.path||'$'}`);error.code='STATE_KERNEL_SHADOW_MISMATCH';error.path=result.path;throw error;}return result;}
+  function shadowSync(target,roots,label='transaction'){
+    const shadow=kernelShadows.get(target);if(!shadow)return null;
+    const names=[...new Set((roots||[]).map(String))];for(const name of names)registerShadowRoot(shadow,name);
+    if(!names.length)return shadowCompare(target,shadow);
+    try{
+      const result=shadow.kernel.tx({label:String(label||'transaction'),actor:'transaction-core',writes:names},writer=>{
+        for(const name of names){if(Object.prototype.hasOwnProperty.call(target,name))writer.set(name,target[name]);else writer.delete(name);}
+        return shadowCompare(target,shadow);
+      });
+      shadow.revision=result.revision;return result;
+    }catch(error){shadow.last={...(shadow.last||{}),ok:false,error:String(error?.message||error),checkedAt:Date.now()};throw error;}
+  }
+  function reconcileKernelShadow(target){
+    const shadow=kernelShadows.get(target);if(!shadow)return true;
+    try{
+      const names=new Set([...shadow.registered,...Object.keys(target)]);shadowSync(target,[...names],'rollback-reconcile');return true;
+    }catch(error){shadow.enabled=false;shadow.last={...(shadow.last||{}),ok:false,detached:true,error:String(error?.message||error),checkedAt:Date.now()};return false;}
+  }
+  function enableKernelShadow(target){
+    if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('kernel-shadow-target-required');
+    if(kernelShadows.has(target))return kernelShadowStatus(target);
+    const factory=globalThis.GH_KERNEL;if(!factory?.create)throw new Error('state-kernel-unavailable');
+    const kernel=factory.create({schemaVersion:'2.0.0',legacyState:target}),shadow={kernel,registered:new Set(),checks:0,revision:0,last:null,enabled:true};
+    kernelShadows.set(target,shadow);for(const name of Object.keys(target))registerShadowRoot(shadow,name);
+    const result=kernel.compareLegacy(target);shadow.last={ok:result.ok,path:result.path||null,fingerprints:result.fingerprints,checkedAt:Date.now()};
+    if(!result.ok){kernelShadows.delete(target);throw new Error(`state-kernel-shadow-bootstrap-mismatch:${result.path||'$'}`);}
+    return kernelShadowStatus(target);
+  }
+  function disableKernelShadow(target){const shadow=kernelShadows.get(target);if(!shadow)return false;shadow.enabled=false;kernelShadows.delete(target);return true;}
+  function kernelShadowStatus(target){const shadow=kernelShadows.get(target);return shadow?{enabled:shadow.enabled,checks:shadow.checks,revision:shadow.revision,sections:shadow.registered.size,last:shadow.last?deepClone(shadow.last):null}: {enabled:false,checks:0,revision:0,sections:0,last:null};}
   function transactionMemo(key,factory){if(!activeContext)return typeof factory==='function'?factory():undefined;key=String(key||'');if(activeContext.memo.has(key))return activeContext.memo.get(key);const value=typeof factory==='function'?factory():factory;activeContext.memo.set(key,value);return value;}
   function transactionMemoGet(key){if(!activeContext)return undefined;return activeContext.memo.get(String(key||''));}
   function transactionMemoSet(key,value){if(!activeContext)return value;activeContext.memo.set(String(key||''),value);return value;}
@@ -76,8 +112,15 @@
   function isJournalPrimitive(value){return value===null||typeof value==='string'||typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value));}
   function captureJournal(target,scope,contracts){
     const assetContract=contracts.find(row=>row.proven===true&&row.root==='assets'&&row.mode==='asset-fields'&&Array.isArray(row.fields)&&row.fields.length);
+    const fieldContracts=contracts.filter(row=>row.proven===true&&row.mode==='fields'&&Array.isArray(row.fields)&&row.fields.length);
     if(scope.includes('assets')&&!assetContract)return {ok:false,reason:'journal-assets-without-field-contract'};
-    const rootScope=scope.filter(key=>key!=='assets'),rootSnapshot=captureScoped(target,rootScope),assetEntries=[];
+    const fieldRoots=new Set(fieldContracts.map(row=>String(row.root||''))),rootScope=scope.filter(key=>key!=='assets'&&!fieldRoots.has(key)),rootSnapshot=captureScoped(target,rootScope),assetEntries=[],fieldEntries=[];
+    for(const contract of fieldContracts){
+      const root=String(contract.root||''),object=target[root];if(!root||!scope.includes(root)||!object||typeof object!=='object'||Array.isArray(object))return {ok:false,reason:`journal-field-root-invalid:${root}`};
+      const fields={},names=[...new Set(contract.fields.map(String).filter(Boolean))];
+      for(const field of names){const descriptor=Object.getOwnPropertyDescriptor(object,field);if(descriptor&&!Object.prototype.hasOwnProperty.call(descriptor,'value'))return {ok:false,reason:`journal-field-accessor:${root}.${field}`};fields[field]=descriptor?{exists:true,descriptor:{...descriptor}}:{exists:false,descriptor:null};}
+      fieldEntries.push({root,ref:object,fields});
+    }
     if(assetContract){
       const fields=[...new Set(assetContract.fields.map(String).filter(Boolean))];
       for(let index=0;index<(target.assets||[]).length;index++){
@@ -90,12 +133,13 @@
         }
         assetEntries.push({index,id:asset.id??null,ref:asset,keyOrder:Object.keys(asset),fields:saved});
       }
-      return {ok:true,rootScope,rootSnapshot,assetEntries,assetFields:fields,records:rootScope.length+assetEntries.length*fields.length};
+      return {ok:true,rootScope,rootSnapshot,assetEntries,fieldEntries,assetFields:fields,records:rootScope.length+assetEntries.length*fields.length+fieldEntries.reduce((sum,row)=>sum+Object.keys(row.fields).length,0)};
     }
-    return {ok:true,rootScope,rootSnapshot,assetEntries,assetFields:[],records:rootScope.length};
+    return {ok:true,rootScope,rootSnapshot,assetEntries,fieldEntries,assetFields:[],records:rootScope.length+fieldEntries.reduce((sum,row)=>sum+Object.keys(row.fields).length,0)};
   }
   function validateJournalPostState(target,journal){
     if(!journal)return {ok:true};
+    for(const entry of journal.fieldEntries||[]){if(target[entry.root]!==entry.ref)return {ok:false,reason:`journal-field-root-replaced:${entry.root}`};for(const field of Object.keys(entry.fields)){const descriptor=Object.getOwnPropertyDescriptor(entry.ref,field);if(descriptor&&!Object.prototype.hasOwnProperty.call(descriptor,'value'))return {ok:false,reason:`journal-field-accessor-new:${entry.root}.${field}`};}}
     const assets=target.assets||[];
     if(journal.assetEntries.length&&assets.length!==journal.assetEntries.length)return {ok:false,reason:'journal-assets-structural-length'};
     for(const entry of journal.assetEntries){
@@ -112,6 +156,7 @@
   }
   function restoreJournal(target,journal,rootOrder){
     if(journal.rootScope.length)restoreScoped(target,journal.rootSnapshot,journal.rootScope);
+    for(const entry of journal.fieldEntries||[])for(const [field,saved] of Object.entries(entry.fields)){if(saved.exists)Object.defineProperty(entry.ref,field,saved.descriptor);else delete entry.ref[field];}
     const assets=target.assets||[];
     for(const entry of journal.assetEntries){
       let asset=assets[entry.index];if(!asset||asset!==entry.ref){if(entry.id!=null)asset=assets.find(row=>row?.id===entry.id);}
@@ -123,6 +168,7 @@
   function applyJournalPreimageToBaseline(baseline,context){
     const journal=context.journal;if(!journal)return baseline;
     if(journal.rootScope.length)restoreScoped(baseline,journal.rootSnapshot,journal.rootScope);
+    for(const entry of journal.fieldEntries||[]){const object=baseline[entry.root];if(!object||typeof object!=='object')throw new Error(`journal-promotion-field-root-missing:${entry.root}`);for(const [field,saved] of Object.entries(entry.fields)){if(saved.exists)Object.defineProperty(object,field,{...saved.descriptor});else delete object[field];}}
     const assets=baseline.assets||[];
     for(const entry of journal.assetEntries){
       const asset=assets[entry.index];if(!asset||typeof asset!=='object')throw new Error(`journal-promotion-asset-missing:${entry.id??entry.index}`);
@@ -203,7 +249,9 @@
     if(typeof options.apply!=='function')throw new TypeError('Transaction apply callback is required');
     if(activeContext)throw new Error('Nested state transactions are forbidden; domain commands must join their owner');
     const label=String(options.label||'transaction'),scope=normalizeScope(options.scope),declaredWriteRoots=normalizeWriteRoots(options.writeRoots),writerContracts=normalizeWriterContracts(options.writerContracts),auditWrites=options.auditWrites===true||options.enforceWriteRoots===true,totalStart=runtimeClock(),requestedJournal=options.rollbackMode==='journal',profiled=options.profile===true||(options.profile!==false&&globalThis.GH_DIAGNOSTICS?.recorderIsActive?.(target)===true),phaseBreakdown=profiled?[]:null;
+    for(const [section,expected] of Object.entries(options.readRevisions||{})){const actual=sectionRevision(target,section);if(Number(expected)!==actual){const error=new Error(`transaction-section-revision-conflict:${section}:${expected}:${actual}`);error.code='TRANSACTION_SECTION_REVISION_CONFLICT';error.transactionLabel=label;error.transactionStage='admission';throw error;}}
     let fallbackReason=journalAdmissionReason(options,scope,writerContracts),rollbackStorage='legacy-scoped',snapshot=null,journal=null;
+    const shadow=kernelShadows.get(target),shadowRoots=declaredWriteRoots||scope;
     let phaseDepth=0;
     const measure=(name,work)=>{
       if(typeof work!=='function')throw new TypeError('Profile phase callback is required');
@@ -215,19 +263,20 @@
     const derivedProfileContext=profiled?{kind:label.startsWith('simulation:')?'simulation-slice':label.startsWith('boundary-recovery:')?'boundary-recovery':'state-transaction',assetCount:Array.isArray(target.assets)?target.assets.length:null,invoiceCount:Array.isArray(target.finance?.invoices)?target.finance.invoices.length:null,receivableCount:Array.isArray(target.finance?.receivables)?target.finance.receivables.length:null,payableCount:Array.isArray(target.finance?.payables)?target.finance.payables.length:null}:null;
     const timing={label,profiled,profileContext:profiled?compactProfileContext(options.profileContext||derivedProfileContext):null,phaseBreakdown,scopeSize:scope?scope.length:null,fullSnapshot:false,fullSnapshotFallback:false,fallbackReason:null,rollbackStorage:null,journalRecords:0,snapshotMs:0,validateMs:0,applyMs:0,postCommitCriticalMs:0,postCommitNonCriticalMs:0,postCommitCriticalTasks:[],postCommitNonCriticalTasks:[],writeAudit:auditWrites?{enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots:[],undeclaredRoots:[],declaredButUnchanged:[],stage:'pending'}:null,rollbackMs:0,totalMs:0,committed:false,stage:'snapshot'};
     const snapshotStart=runtimeClock();
-    if(requestedJournal&&!fallbackReason){
+    if(shadow?.enabled){snapshot=deepClone(target);rollbackStorage='full-snapshot';fallbackReason=fallbackReason||'kernel-shadow-audit-mode';}
+    else if(requestedJournal&&!fallbackReason){
       const captured=captureJournal(target,scope,writerContracts);
       if(captured.ok){journal=captured;rollbackStorage='journal';timing.journalRecords=captured.records;}
       else fallbackReason=captured.reason;
     }
-    if(requestedJournal&&fallbackReason){snapshot=deepClone(target);rollbackStorage='full-snapshot';}
-    else if(!requestedJournal){snapshot=scope?captureScoped(target,scope):deepClone(target);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
+    if(!shadow?.enabled&&requestedJournal&&fallbackReason){snapshot=deepClone(target);rollbackStorage='full-snapshot';}
+    else if(!shadow?.enabled&&!requestedJournal){snapshot=scope?captureScoped(target,scope):deepClone(target);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
     timing.snapshotMs=Math.max(0,runtimeClock()-snapshotStart);timing.rollbackStorage=rollbackStorage;timing.fullSnapshot=rollbackStorage==='full-snapshot';timing.fullSnapshotFallback=requestedJournal&&rollbackStorage==='full-snapshot';timing.fallbackReason=timing.fullSnapshotFallback?fallbackReason:null;
     // Write auditing is an architecture-development proof tool. Full transactions reuse
     // their rollback snapshot; scoped/journal transactions take an extra full baseline only when
     // audit/enforcement is explicitly requested. Normal gameplay pays no audit cost.
     const auditBaseline=auditWrites?((rollbackStorage==='full-snapshot')?snapshot:deepClone(target)):null;
-    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null};
+    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null,shadowRoots};
     const rollback=()=>{if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot);};
     let phase='validate';activeContext=context;
     try{
@@ -256,16 +305,18 @@
           timing.writeAudit={enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots,undeclaredRoots:undeclared,declaredButUnchanged:unchanged,stage:'pre-irreversible'};
           if(options.enforceWriteRoots===true&&undeclared.length){const error=new Error(`transaction-write-set-violation:${undeclared.join(',')}`);error.code='TRANSACTION_WRITE_SET_VIOLATION';error.undeclaredRoots=undeclared;throw error;}
         }
+        if(shadow?.enabled){const roots=context.shadowRoots||diffRootKeys(target,snapshot);shadowSync(target,roots,label);}
         phase='post-commit-irreversible';runCritical(irreversibleCritical);
       }finally{timing.postCommitCriticalMs=Math.max(0,runtimeClock()-criticalStart);}
       const nonCriticalStart=runtimeClock();for(const task of context.postCommit.filter(x=>!x.critical)){const taskStart=runtimeClock(),row={key:task.key||null,owner:task.owner||null,priority:task.priority,durationMs:0,ok:false};try{task.fn();row.ok=true;}catch(error){row.error=String(error?.message||error).slice(0,240);globalThis.console?.warn?.(`${label}: non-critical post-commit side effect failed`,error);}finally{row.durationMs=Math.max(0,runtimeClock()-taskStart);timing.postCommitNonCriticalTasks.push(row);}}timing.postCommitNonCriticalMs=Math.max(0,runtimeClock()-nonCriticalStart);
-      advanceRevision(target);timing.committed=true;timing.stage='committed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);
+      advanceSectionRevisions(target,declaredWriteRoots||scope||['*']);advanceRevision(target);timing.committed=true;timing.stage='committed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);
       return {committed:true,value,label,scope:context.scope?[...context.scope]:null};
     }catch(error){
       activeContext=null;context.postCommit.length=0;
       if(auditWrites&&timing.writeAudit?.stage==='pending'){const mutatedRoots=diffRootKeys(target,auditBaseline),declared=declaredWriteRoots?new Set(declaredWriteRoots):null;timing.writeAudit={enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots,undeclaredRoots:declared?mutatedRoots.filter(key=>!declared.has(key)):[],declaredButUnchanged:declaredWriteRoots?declaredWriteRoots.filter(key=>!mutatedRoots.includes(key)):[],stage:'failure-before-rollback'};}
       const rollbackStart=runtimeClock();
       try{rollback();timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);}catch(restoreError){timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);timing.stage='rollback-failed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);const fatal=new Error(`${label}: rollback failed`);fatal.cause=error;fatal.rollbackError=restoreError;fatal.transactionLabel=label;fatal.transactionStage='rollback';throw fatal;}
+      if(shadow?.enabled)reconcileKernelShadow(target);
       timing.stage=phase;timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);error.transactionLabel=label;error.transactionStage=phase;throw error;
     }finally{activeContext=null;}
   }
@@ -297,12 +348,12 @@
       phase='publish';if(typeof options.publish==='function')await options.publish(liveState,draft,context);else restoreObject(liveState,draft);
       for(const task of afterPublishTasks)try{await task(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-publish side effect failed`,error);}
       if(typeof options.afterCommit==='function')try{await options.afterCommit(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-commit side effect failed`,error);}
-      advanceRevision(liveState);return {committed:true,durable:true,transactionId,label,saveRevision:Number(liveState.saveRevision)||0,value,persistence:persisted};
+      advanceSectionRevisions(liveState,normalizeWriteRoots(options.writeRoots)||['*']);advanceRevision(liveState);return {committed:true,durable:true,transactionId,label,saveRevision:Number(liveState.saveRevision)||0,value,persistence:persisted};
     }catch(error){
       error.transactionLabel=error.transactionLabel||label;error.transactionStage=error.transactionStage||phase;error.durableCommitted=durableCommitted;
       if(durableCommitted){error.critical=true;globalThis.GH_PERSISTENCE?.markRecoveryRequired?.('durable-publish-failed');}
       throw error;
     }finally{if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,sectionRevision,enableKernelShadow,disableKernelShadow,kernelShadowStatus:target=>kernelShadowStatus(target),afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

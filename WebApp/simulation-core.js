@@ -99,6 +99,10 @@
       return true;
     }
     function completeManualAdvance(){
+      // Do not publish calendar completion while a map gesture is active. A
+      // prepared slice remains atomic, and its completion signal follows the
+      // same interaction barrier as its commit.
+      if(adapter.isInteractionBusy?.()===true)return false;
       if(!manualAdvance||simNow()+1e-6<manualAdvance.target)return false;
       const completed={...manualAdvance};manualAdvance=null;pacing.clearBacklog();
       try{adapter.onAdvance?.({active:false,completed:true,target:completed.target,reason:completed.reason});}catch(error){report('advance-complete',error,false);}
@@ -193,6 +197,8 @@
     }
 
     function finishJob(speed){
+      // Preserve the prepared atomic job and its backlog while the user drags.
+      if(adapter.isInteractionBusy?.()===true)return {done:false,breakFrame:true};
       const activeJob=job,from=jobStart,to=jobStart+jobSlice,slice=jobSlice,boundary={...jobBoundary};
       let result,finishTook=0,finishError=null;const finishStart=clock();
       try{result=activeJob.finish({from,to,speed,boundary});}

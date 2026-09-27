@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const app=fs.readFileSync(require.resolve('../WebApp/app.js'),'utf8');
+const renderStart=app.indexOf('  function renderMap(){'),renderEnd=app.indexOf('\n  let mapStatusCache=',renderStart);
+assert(renderStart>=0&&renderEnd>renderStart,'renderMap source block is present');
+const render=app.slice(renderStart,renderEnd),signature=app.slice(app.indexOf('  function mapStructureSignature(){'),app.indexOf('\n\n  function presentationAssetLookup',app.indexOf('  function mapStructureSignature(){')));
+const guard=render.indexOf('if(renderSignature===lastMapStructureSignature)');
+const destructive=render.indexOf('routeLayers.forEach(layer=>');
+assert(guard>=0&&destructive>guard,'unchanged structure exits before destructive layer rebuild');
+assert.match(render.slice(guard,destructive),/updateMapStatus\(\);renderWorldInfrastructureMarkers\(\);updateMarkerPositions\(true\);return;/,'unchanged pans update only viewport-dependent infrastructure and marker targets');
+assert.match(signature,/Math\.round\(\(Number\(map\.getZoom\?\.\(\)\)\|\|0\)\*1000\)\/1000/,'continuous zoom changes invalidate an incompatible cluster plan');
+assert.match(app,/lastMapStructureSignature='';\s*renderMap\(\);/,'new asynchronous worker plans request one reconciliation pass');
+console.log('Build342 map diff rendering: unchanged pan/UI frames preserve Leaflet layers and reconcile only viewport infrastructure PASS');

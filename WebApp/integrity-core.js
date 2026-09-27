@@ -84,5 +84,18 @@
     const w=state.workflowControl;if(w&&(!Array.isArray(w.history)||!finite(w.sequence)))issues.push(issue('WORKFLOW_CONTROL_INVALID','warning','حالة Workflow Control غير صالحة','workflowControl يحتاج sequence رقمي وhistory مصفوفة.','workflow'));
     return {version:VERSION,status:issues.some(x=>x.severity==='critical')?'critical':issues.length?'warning':'healthy',counts:{critical:issues.filter(x=>x.severity==='critical').length,warning:issues.filter(x=>x.severity==='warning').length,total:issues.length},byDomain:issues.reduce((o,x)=>(o[x.domain]=(o[x.domain]||0)+1,o),{}),issues};
   }
-  const API=Object.freeze({VERSION,check});globalThis.GH_INTEGRITY_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_INTEGRITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  function checkCommandDelta(state,command){
+    const fail=reason=>({ok:false,reason,critical:[{id:`COMMAND_DELTA_${String(reason).replace(/[^A-Z0-9]+/gi,'_').toUpperCase()}`,severity:'critical'}],issues:[]});
+    if(command?.domain!=='operations'||command?.name!=='record-alert')return fail('unsupported-command');
+    const runtime=state?.domainRuntime,commands=runtime?.commands,alerts=state?.alerts,events=state?.eventLog,operations=state?.operations;
+    if(!runtime||runtime.schema!=='gh-domain-runtime-v2'||!Number.isSafeInteger(Number(runtime.commandSequence))||Number(runtime.commandSequence)<1||!Array.isArray(commands)||commands.length>240)return fail('domain-runtime-invalid');
+    const row=commands[0];if(!row||row.id!==command.commandId||row.domain!=='operations'||row.name!=='record-alert'||row.status!=='committed'||!finite(row.at)||!finite(row.completedAt))return fail('command-record-invalid');
+    const sequence=Number(String(command.commandId||'').match(/^DOM-(\d{9})$/)?.[1]);if(!Number.isSafeInteger(sequence)||sequence!==Number(runtime.commandSequence))return fail('command-sequence-mismatch');
+    if(!Array.isArray(alerts)||alerts.length>40||alerts[0]!==command.expectedAlert)return fail('alert-delta-invalid');
+    if(!Array.isArray(events)||events.length>400)return fail('event-log-invalid');
+    const event=events[0];if(!event||event.id!==command.expectedEventId||!finite(event.at)||Number(event.at)!==Number(command.expectedEventAt)||event.type!==command.expectedEventType||event.text!==command.expectedAlert)return fail('event-delta-invalid');
+    if(!operations||typeof operations!=='object'||Array.isArray(operations)||!Array.isArray(operations.dailyBriefs)||operations.dailyBriefs.length>30||!finite(operations.riskIndex)||Number(operations.riskIndex)<0)return fail('operations-delta-invalid');
+    return {ok:true,critical:[],issues:[],checked:['domainRuntime.commandSequence','domainRuntime.commands[0]','alerts[0]','eventLog[0]','operations.dailyBriefs','operations.riskIndex']};
+  }
+  const API=Object.freeze({VERSION,check,checkCommandDelta});globalThis.GH_INTEGRITY_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_INTEGRITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

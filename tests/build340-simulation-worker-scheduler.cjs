@@ -29,3 +29,24 @@ assert.equal(cancellable.advanceTo(300,{speed:30,batchSeconds:300}).accepted,tru
 assert.equal(cancellable.cancelAdvance('test-stale-worker'),true);secondNow=32;cancellable.frame(secondNow);
 assert.equal(pendingCancel,1);assert.equal(pendingFinish,0,'cancelled or late worker output must never commit');
 console.log('PASS scheduler yields one pending worker request per frame and rejects cancelled output before commit');
+
+let interactionBusy=false,interactionTime=0,interactionFinish=0,interactionCancel=0,interactionChunks=0;
+const interactionEngine=Simulation.create({
+  getSimTime:()=>interactionTime,setSimTime:value=>{interactionTime=value;},getSpeed:()=>30,setSpeed:()=>{},isInteractionBusy:()=>interactionBusy,
+  createSliceJob:(slice,meta)=>({
+    runChunk(){interactionChunks++;return interactionChunks===1?{pending:true}:{done:true};},
+    finish(){interactionFinish++;interactionTime=meta.to;return {committed:true};},
+    cancel(){interactionCancel++;}
+  })
+},{nowMs:()=>0,allowedSpeeds:[0,30],fallbackSpeed:30,manualBatchSeconds:300,manualMinBatchSeconds:300});
+assert.equal(interactionEngine.advanceTo(300,{speed:30,batchSeconds:300}).accepted,true);
+interactionEngine.frame(16);
+interactionBusy=true;interactionEngine.frame(32);
+assert.equal(interactionFinish,0,'map gestures defer an already-prepared atomic simulation commit');
+assert.equal(interactionTime,0,'authoritative simulation time remains unchanged while map input is active');
+assert.equal(interactionCancel,0,'map input must preserve the prepared slice instead of discarding it');
+interactionBusy=false;interactionEngine.frame(48);
+assert.equal(interactionFinish,1,'the preserved slice commits as soon as the gesture ends');
+assert.equal(interactionTime,300);
+assert.equal(interactionEngine.snapshot().slices,1,'the deferred slice commits exactly once');
+console.log('PASS map gesture preserves the pending atomic simulation slice and commits it once afterward');

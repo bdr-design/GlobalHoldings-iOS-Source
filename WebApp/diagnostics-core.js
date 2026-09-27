@@ -109,8 +109,10 @@
     if(engine.cancels>Number(prevEngine.cancels||0))recorderEvent(state,'SIM_SLICE_CANCELLED',{delta:engine.cancels-Number(prevEngine.cancels||0),reason:simulation.lastCancelReason||'',jobActive:!!simulation.jobActive,jobReadyToFinish:!!simulation.jobReadyToFinish},'warning',{nowMs:atMs});
     if(engine.hardTasks>Number(prevEngine.hardTasks||0))recorderEvent(state,'SIM_STAGE_HARD_TASK',{delta:engine.hardTasks-Number(prevEngine.hardTasks||0),stage:simulation.lastWorkStage||'',lastCreateMs:Number(simulation.lastCreateMs)||0,lastChunkMs:Number(simulation.lastChunkMs)||0,lastFinishMs:Number(simulation.lastFinishMs)||0,maxCycleMs:Number(simulation.maxCycleMs)||0,governor:simulation.governor||''},'warning',{nowMs:atMs});
     if(engine.backlogClamps>Number(prevEngine.backlogClamps||0))recorderEvent(state,'LIVE_BACKLOG_CLAMP',{delta:engine.backlogClamps-Number(prevEngine.backlogClamps||0),backlog:Number(simulation.backlog)||0,requestedRate,governor:simulation.governor||''},'warning',{nowMs:atMs});
-    if(engine.manualFailures>Number(prevEngine.manualFailures||0)||simulation.lastAdvanceFailure&&JSON.stringify(simulation.lastAdvanceFailure)!==JSON.stringify(r.lastAdvanceFailure||null)){
-      if(simulation.lastAdvanceFailure)recorderEvent(state,'CALENDAR_ADVANCE_FAILED',simulation.lastAdvanceFailure,'warning',{nowMs:atMs});
+    const manualFailureDelta=Math.max(0,Math.floor(engine.manualFailures)-Math.floor(Number(prevEngine.manualFailures)||0));
+    for(let index=0;index<manualFailureDelta;index++){
+      const failure=simulation.lastAdvanceFailure&&typeof simulation.lastAdvanceFailure==='object'?simulation.lastAdvanceFailure:{reason:'manual-advance-failed'};
+      recorderEvent(state,'CALENDAR_ADVANCE_FAILED',{...failure,observedFailure:Number(prevEngine.manualFailures||0)+index+1},'warning',{nowMs:atMs});
     }
     r.lastAdvanceFailure=cleanDetail(simulation.lastAdvanceFailure||null);
     const progressed=simSeconds>Number(r.lastProgressSim||0)+1e-6;

@@ -9,6 +9,11 @@
   const finitePoint=point=>Array.isArray(point)&&point.length===2&&Number.isFinite(point[0])&&Number.isFinite(point[1]);
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number(value)||0));
   const shortestLongitudeDelta=(a,b)=>((b-a+540)%360)-180;
+  function minimumWorldZoom(viewportWidth,tileSize=256){
+    const width=Number(viewportWidth),tile=Number(tileSize);
+    if(!Number.isFinite(width)||width<=0||!Number.isFinite(tile)||tile<=0)return 0;
+    return clamp(Math.log2(Math.max(1,width)/tile),0,2);
+  }
 
   function interpolateRoute(points,progress){
     if(!Array.isArray(points)||points.length<2||points.some(point=>!finitePoint(point)))return points?.[0]||[0,0];
@@ -24,6 +29,20 @@
     while(low<high){const middle=(low+high)>>1;if(cumulative[middle]>=target)high=middle;else low=middle+1;}
     const start=low-1,segment=cumulative[low]-cumulative[start],ratio=segment===0?0:(target-cumulative[start])/segment,a=points[start],b=points[low];
     return [a[0]+(b[0]-a[0])*ratio,((a[1]+shortestLongitudeDelta(a[1],b[1])*ratio+540)%360)-180];
+  }
+
+  // Cluster by projected screen area, with a bounded number of visual nodes.
+  // Counts and membership are preserved; authoritative asset positions are untouched.
+  function clusterPoints(rows,{zoom=3,cellPixels=64,limit=24}={}){
+    const scale=256*Math.pow(2,Number(zoom)||0),project=point=>{const lat=clamp(point[0],-85.05112878,85.05112878)*Math.PI/180;return [(point[1]+180)/360*scale,(1-Math.log(Math.tan(lat)+1/Math.cos(lat))/Math.PI)/2*scale];};
+    const source=[];
+    for(const row of rows||[]){if(!finitePoint(row?.coords))continue;const count=Math.max(1,Math.floor(Number(row.count)||1)),point=project(row.coords);source.push({row,count,x:point[0],y:point[1]});}
+    const requested=Number(limit),cap=Math.max(0,Math.floor(Number.isFinite(requested)?requested:24));if(cap===0)return [];let cell=Math.max(32,Number(cellPixels)||64),groups=[];
+    const merge=(a,b)=>{a.x+=b.x;a.y+=b.y;a.count+=b.count;a.ids.push(...b.ids);if(a.mode!==b.mode)a.mode='all';};
+    do{const buckets=new Map();for(const item of source){const key=`${Math.floor(item.x/cell)}:${Math.floor(item.y/cell)}`,group={key,x:item.x*item.count,y:item.y*item.count,count:item.count,mode:item.row.mode||'all',ids:[item.row.id]};if(buckets.has(key))merge(buckets.get(key),group);else buckets.set(key,group);}groups=[...buckets.values()];cell*=1.5;}while(groups.length>cap&&cell<scale*4);
+    // Adjacent cells can still have centres close to their common edge.
+    for(let i=0;i<groups.length;i++)for(let j=i+1;j<groups.length;){const a=groups[i],b=groups[j];if(Math.hypot(a.x/a.count-b.x/b.count,a.y/a.count-b.y/b.count)<40){merge(a,b);groups.splice(j,1);i=-1;break;}else j++;}
+    return groups.map(group=>({...group,coords:[Math.atan(Math.sinh(Math.PI*(1-2*(group.y/group.count)/scale)))*180/Math.PI,(group.x/group.count)/scale*360-180]}));
   }
 
   function buildPlan(input={}){
@@ -46,8 +65,9 @@
     const queues=new Map();
     for(const index of representativeIndices){if(ids[index]===input.selectedId)continue;const key=owners[index]||`unknown:${modes[index]||'asset'}`,queue=queues.get(key)||[];queue.push(index);queues.set(key,queue);}
     const ordered=[...queues].sort((a,b)=>a[0].localeCompare(b[0])).map(([,queue])=>queue.sort((a,b)=>String(ids[a]).localeCompare(String(ids[b]))));
-    const heroes=pinned===undefined?[]:[pinned];let cursor=0,limit=Math.max(0,Math.floor(Number(input.limit)||0));
-    while(heroes.length<limit&&ordered.some(queue=>queue.length)){const queue=ordered[cursor%ordered.length];if(queue.length)heroes.push(queue.shift());cursor++;}
+    const markerLimit=Math.max(1,Math.floor(Number(input.limit)||1)),requestedHeroes=Number(input.heroLimit),heroBudget=Math.max(input.selectedId?1:0,Math.min(markerLimit-1,Math.floor(Number.isFinite(requestedHeroes)?requestedHeroes:Math.ceil(markerLimit*.45))));
+    const heroes=pinned===undefined?[]:[pinned];let cursor=0;
+    while(heroes.length<heroBudget&&ordered.some(queue=>queue.length)){const queue=ordered[cursor%ordered.length];if(queue.length)heroes.push(queue.shift());cursor++;}
     const heroSet=new Set(heroes),zoom=Number(input.zoom)||0;let cell=zoom<4?28:zoom<6?12:zoom<9?4:1.2,groups=[];
     const build=()=>{
       const byKey=new Map();
@@ -59,8 +79,12 @@
       }
       return [...byKey.values()];
     };
-    groups=build();const groupLimit=Math.max(4,Math.floor(Number(input.groupLimit)||0)-heroes.length);
+    groups=build();const groupLimit=Math.max(1,Math.floor(Number(input.groupLimit)||markerLimit)-heroes.length);
     while(groups.length>groupLimit&&cell<180){cell*=1.7;groups=build();}
+    if(groups.length>groupLimit){
+      const lookup=new Map(groups.map(group=>[group.key,group])),spatial=clusterPoints(groups.map(group=>({id:group.key,coords:[group.lat/group.indices.length,group.lng/group.indices.length],count:group.indices.length,mode:group.mode})),{zoom,cellPixels:64,limit:groupLimit});
+      groups=spatial.map(cluster=>{const parts=cluster.ids.map(key=>lookup.get(key)).filter(Boolean),indices=parts.flatMap(group=>group.indices);let lat=0,lng=0;for(const group of parts){lat+=group.lat;lng+=group.lng;}return {key:`screen:${cluster.key}`,owner:parts.length===1?parts[0].owner:'all',mode:cluster.mode,indices,lat,lng};});
+    }
     const members=[],resultGroups=[];
     for(const group of groups){
       const start=members.length;members.push(...group.indices);
@@ -143,5 +167,5 @@
     return Object.freeze({requestPlan,requestPositions,getAssetIds,isDisabled:()=>disabled,disable:()=>disable(new Error('map-presentation-worker-disabled')),version:VERSION});
   }
 
-  return Object.freeze({VERSION,interpolateRoute,buildPlan,updateGroupCenters,create});
+  return Object.freeze({VERSION,minimumWorldZoom,interpolateRoute,clusterPoints,buildPlan,updateGroupCenters,create});
 });

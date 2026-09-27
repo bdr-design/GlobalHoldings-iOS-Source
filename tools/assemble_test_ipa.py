@@ -130,7 +130,7 @@ def run(root: Path, artifact: Path, acceptance: Path, output: Path) -> dict:
         if file_hashes(app) != native_files:
             raise ValueError('Fresh compiler product file hashes differ')
         info = plistlib.loads((app / 'Info.plist').read_bytes())
-        if (info.get('CFBundleShortVersionString'), info.get('CFBundleVersion'), info.get('UIDeviceFamily')) != ('3.0.0', '341', [1]):
+        if (info.get('CFBundleShortVersionString'), info.get('CFBundleVersion'), info.get('UIDeviceFamily')) != (verified['version'], str(verified['build']), [1]):
             raise ValueError('Incorrect iPhone version/build/family')
         if info.get('CFBundleIdentifier') != 'com.example.globalholdings' or info.get('GHSourceSnapshotSHA256') != inputs['webapp_tree_sha256']:
             raise ValueError('Bundle identity or snapshot mismatch')

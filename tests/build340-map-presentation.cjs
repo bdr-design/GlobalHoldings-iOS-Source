@@ -11,7 +11,7 @@ function makeInput(count,zoom=5,limit=48){
   for(let i=0;i<count;i++){
     assetIds.push(`asset-${String(i).padStart(6,'0')}`);owners.push(i%37===0?'':`company-${i%6}`);modes.push(['air','sea','road'][i%3]);routeKeys.push(`route-${i%4}`);routeIndexes[i]=i%4;progress[i]=((i*7919)%10000)/10000;baseCoordinates[i*2]=NaN;baseCoordinates[i*2+1]=NaN;
   }
-  return {key:`test:${count}:${zoom}:${limit}`,assetIds,owners,modes,routeKeys,routeIndexes,progress,baseCoordinates,routes,zoom,limit,groupLimit:limit,selectedId:count?assetIds[Math.floor(count*.61)]:''};
+  return {key:`test:${count}:${zoom}:${limit}`,assetIds,owners,modes,routeKeys,routeIndexes,progress,baseCoordinates,routes,zoom,limit,heroLimit:Math.ceil(limit*.45),groupLimit:limit,selectedId:count?assetIds[Math.floor(count*.61)]:''};
 }
 
 function referenceHeroIndices(input){
@@ -19,7 +19,7 @@ function referenceHeroIndices(input){
   const values=[...reps.values()],pinned=values.find(i=>input.assetIds[i]===input.selectedId),queues=new Map();
   for(const index of values){if(input.assetIds[index]===input.selectedId)continue;const key=input.owners[index]||`unknown:${input.modes[index]}`,queue=queues.get(key)||[];queue.push(index);queues.set(key,queue);}
   const ordered=[...queues].sort((a,b)=>a[0].localeCompare(b[0])).map(([,rows])=>rows.sort((a,b)=>input.assetIds[a].localeCompare(input.assetIds[b]))),picked=pinned===undefined?[]:[pinned];let cursor=0;
-  while(picked.length<input.limit&&ordered.some(queue=>queue.length)){const queue=ordered[cursor%ordered.length];if(queue.length)picked.push(queue.shift());cursor++;}
+  while(picked.length<input.heroLimit&&ordered.some(queue=>queue.length)){const queue=ordered[cursor%ordered.length];if(queue.length)picked.push(queue.shift());cursor++;}
   return picked;
 }
 
@@ -27,7 +27,7 @@ function referencePlan(input){
   const heroes=referenceHeroIndices(input),heroSet=new Set(heroes),position=index=>core.interpolateRoute(input.routes[input.routeIndexes[index]],input.progress[index]);
   let cell=input.zoom<4?28:input.zoom<6?12:input.zoom<9?4:1.2,groups=[];
   const build=()=>{const out=new Map();for(let i=0;i<input.assetIds.length;i++){if(heroSet.has(i))continue;const point=position(i),owner=input.owners[i]||'unknown',mode=input.modes[i],key=`${owner}:${mode}:${Math.floor((point[0]+90)/cell)}:${Math.floor((point[1]+180)/cell)}`;let row=out.get(key);if(!row){row={key,owner,mode,indices:[],lat:0,lng:0};out.set(key,row);}row.indices.push(i);row.lat+=point[0];row.lng+=point[1];}return [...out.values()];};
-  groups=build();while(groups.length>Math.max(4,input.limit-heroes.length)&&cell<180){cell*=1.7;groups=build();}
+  groups=build();while(groups.length>Math.max(1,input.groupLimit-heroes.length)&&cell<180){cell*=1.7;groups=build();}
   return {heroes,groups:groups.map(group=>({key:group.key,owner:group.owner,mode:group.mode,coords:[group.lat/group.indices.length,group.lng/group.indices.length],indices:group.indices}))};
 }
 
@@ -40,12 +40,23 @@ function assertPlanParity(input,plan){
 
 async function testLoadAndParity(){
   for(const count of [4300,20000]){
-    const input=makeInput(count),plan=core.buildPlan(input);assert.equal(plan.assetCount,count);assert.ok(plan.groups.length<=input.limit,'cluster count stays within the marker budget after hero representatives');assertPlanParity(input,plan);
+    const input=makeInput(count),plan=core.buildPlan(input);assert.equal(plan.assetCount,count);assert.ok(plan.groups.length+plan.heroIndices.length<=input.limit,'hero markers and aggregate markers share one cap');assertPlanParity(input,plan);
     const updated=input.progress.slice();for(let i=0;i<updated.length;i++)updated[i]=Math.fround((updated[i]+.173)%1);
     const snapshot={assetCount:count,routeIndexes:input.routeIndexes,baseCoordinates:input.baseCoordinates,routes:input.routes,members:plan.members,groups:plan.groups};
     const centers=core.updateGroupCenters(snapshot,updated),expected=plan.groups.map(group=>{let lat=0,lng=0;for(let j=group.start;j<group.start+group.count;j++){const point=core.interpolateRoute(input.routes[input.routeIndexes[plan.members[j]]],updated[plan.members[j]]);lat+=point[0];lng+=point[1];}return {key:group.key,coords:[lat/group.count,lng/group.count]};});
     assert.deepEqual(centers,expected,`${count} moving-asset centroids update from a compact progress vector`);
   }
+}
+
+function testDenseScreenClusters(){
+  const rows=Array.from({length:3380},(_,i)=>({id:`asset-${i}`,coords:[40+(i%75)*0.016,-70+Math.floor(i/75)*0.018],count:1,mode:i%3===0?'air':'sea'}));
+  const clusters=core.clusterPoints(rows,{zoom:3,cellPixels:64,limit:12});
+  assert.ok(clusters.length<=12,'a dense map cannot add unlimited stationary badges');
+  assert.equal(clusters.reduce((sum,row)=>sum+row.count,0),rows.length,'aggregation preserves the asset count');
+  assert.deepEqual(new Set(clusters.flatMap(row=>row.ids)),new Set(rows.map(row=>row.id)),'all asset groups remain represented');
+  assert.ok(clusters.every(row=>row.coords.every(Number.isFinite)),'every badge has a valid map position');
+  assert.ok(clusters.some(row=>row.mode==='all'),'moving and stationary types can share a screen cluster');
+  assert.deepEqual(core.clusterPoints(rows,{zoom:3,limit:0}),[],'a zero remaining marker budget creates no extra badges');
 }
 
 class FakeWorker{
@@ -80,6 +91,11 @@ async function testFallbackAndWorkerContract(){
   context.receive({data:{type:'positions',requestId:3,generation:0,progress:input.progress}});assert.equal(sent[2].message.type,'error','stale generation cannot be read as current map state');
   const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'WebApp/index.html'),'utf8'),app=fs.readFileSync(path.join(root,'WebApp/app.js'),'utf8'),runtime=JSON.parse(fs.readFileSync(path.join(root,'WebApp/runtime-required.json'),'utf8'));
   assert.match(html,/map-presentation-core\.js/);assert.ok(html.indexOf('map-presentation-core.js')<html.indexOf('app.js'));assert.match(app,/new Worker\('map-presentation-worker\.js'\)/);assert.match(app,/mapPresentationEngine\.requestPlan\(/);assert.match(app,/mapPresentationEngine\.requestPositions\(/);assert.ok(runtime.files.includes('map-presentation-worker.js'));
+  const renderStart=app.indexOf('function renderMap()'),renderEnd=app.indexOf('function updateMarkerPositions',renderStart),render=app.slice(renderStart,renderEnd);
+  assert.match(render,/if\(!map\|\|mapInteractionActive\)return/,'map structure work is skipped during a gesture');
+  assert.match(render,/clusterPoints\(visualRows,\{zoom,limit:remainingMarkerBudget/,'moving and stationary groups share the remaining marker budget');
+  assert.match(render,/compactFleetMarker\(asset,position,zoom,movingAssets\.length\)/,'unselected representative assets use the compact canvas renderer');
+  assert.match(render,/iconSize:\[32,32\]/,'the selected detailed asset uses a compact sprite');
 }
 
-(async()=>{await testLoadAndParity();await testAsyncLifecycle();await testFallbackAndWorkerContract();console.log('Build 340 map presentation engine: 4.3k/20k parity, fair hero selection, route interpolation, centroid updates, bounded async lifecycle and fallback PASS');})().catch(error=>{console.error(error);process.exitCode=1;});
+(async()=>{testDenseScreenClusters();await testLoadAndParity();await testAsyncLifecycle();await testFallbackAndWorkerContract();console.log('Build 340 map presentation engine: dense badge cap, 4.3k/20k parity, fair hero selection, route interpolation, centroid updates, bounded async lifecycle and fallback PASS');})().catch(error=>{console.error(error);process.exitCode=1;});

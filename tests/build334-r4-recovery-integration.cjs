@@ -32,7 +32,9 @@ async function scenario({label,version='R3',action='diagnostics-run',native='val
  }}}};
  vm.runInContext(version==='original'?original:current,s,{filename:`${version}/persistence-core.js`});
  const ownerStart=app.indexOf('  function persistStateNow('),ownerEnd=app.indexOf('  if(startupLoadMeta',ownerStart);assert(ownerStart>=0&&ownerEnd>ownerStart);
- vm.runInContext(app.slice(ownerStart,ownerEnd),s,{filename:'app-save-owner.js'});
+ // The production save owner closes over map-interaction state. This harness
+ // extracts that function from app.js, so provide the same (inactive) closure.
+ vm.runInContext('let mapInteractionActive=false,mapSavePending=false,mapSaveFlushTask=null;'+app.slice(ownerStart,ownerEnd),s,{filename:'app-save-owner.js'});
  const listenerStart=app.indexOf('  let savePressureNoticeShown=false;'),listenerEnd=app.indexOf("  window.addEventListener('gh-native-recovery'",listenerStart);assert(listenerStart>=0&&listenerEnd>listenerStart);
  vm.runInContext(app.slice(listenerStart,listenerEnd),s,{filename:'app-reconciliation-listener.js'});
  s.addEventListener('gh-persistence-status',e=>events.push(structuredClone(e.detail)));

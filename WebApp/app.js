@@ -25,7 +25,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 341;
+  const RUNTIME_BUILD = 342;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   const FOUNDER_PRINCIPAL_ID='PLAYER-FOUNDER';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
@@ -732,6 +732,14 @@
   function recordRenderMetric(kind,durationMs,detail={}){const render=runtimeInstrumentation.render,row={kind,durationMs:Math.max(0,Number(durationMs)||0),recordedAtMs:Date.now(),...detail};if(kind==='frame'){render.lastFrame=row;render.maxFrameMs=Math.max(render.maxFrameMs,row.durationMs);}else if(kind==='target-update'){render.lastTargetUpdate=row;render.maxTargetUpdateMs=Math.max(render.maxTargetUpdateMs,row.durationMs);}else if(kind==='marker-animation'){render.lastMarkerAnimation=row;render.maxMarkerAnimationMs=Math.max(render.maxMarkerAnimationMs,row.durationMs);}else if(kind==='structural-render'){render.lastStructuralRender=row;render.maxStructuralRenderMs=Math.max(render.maxStructuralRenderMs,row.durationMs);}render.samples.push(row);if(render.samples.length>120)render.samples.shift();return row;}
   window.__GH_APP_RUNTIME_INSTRUMENTATION__=runtimeInstrumentation;
   window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,render:runtimeInstrumentation.render}))});
+  let mapSavePending=false,mapSaveFlushTask=null;
+  function cancelMapSaveFlush(){const task=mapSaveFlushTask;mapSaveFlushTask=null;if(!task)return;if(task.idle&&typeof window.cancelIdleCallback==='function')window.cancelIdleCallback(task.handle);else if(!task.idle)clearTimeout(task.handle);}
+  function flushMapDeferredSave(){
+    if(!mapSavePending||mapInteractionActive||mapSaveFlushTask)return false;
+    const task={idle:typeof window.requestIdleCallback==='function',handle:null};mapSaveFlushTask=task;
+    const run=()=>{if(mapSaveFlushTask!==task)return;mapSaveFlushTask=null;if(mapInteractionActive)return;if(!mapSavePending)return;mapSavePending=false;persistStateNow({mapDeferredFlush:true});};
+    try{task.handle=task.idle?window.requestIdleCallback(run,{timeout:1500}):setTimeout(run,0);}catch(_error){mapSaveFlushTask=null;setTimeout(run,0);}return true;
+  }
   function cancelSimulationPersistence(){
     const task=simulationPersistenceTask;simulationPersistenceTask=null;if(!task)return;
     if(task.idle&&typeof window.cancelIdleCallback==='function')window.cancelIdleCallback(task.handle);
@@ -746,6 +754,7 @@
       if(simulationPersistenceTask!==task)return;
       simulationPersistenceTask=null;
       if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked()||(Number(state.resetEpoch)||0)!==task.epoch)return;
+      if(mapInteractionActive){mapSavePending=true;return;}
       try{
         const metricClock=()=>globalThis.performance?.now?.()??Date.now(),compactionStart=metricClock();compactSimulationState(false);
         const pending={durationMs:Math.max(0,metricClock()-compactionStart),simSeconds:Number(state.simSeconds)||0,saveRevision:Number(state.saveRevision)||0},sink=window.__GH_APP_RUNTIME_INSTRUMENTATION__;
@@ -758,6 +767,8 @@
   }
   function persistStateNow(options={}){
     if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
+    if(mapInteractionActive&&!options.allowMapInteraction){mapSavePending=true;return true;}
+    if(mapSavePending&&!options.mapDeferredFlush){cancelMapSaveFlush();mapSavePending=false;}
     const metricClock=()=>globalThis.performance?.now?.()??Date.now(),runtimeMetrics=window.__GH_APP_RUNTIME_INSTRUMENTATION__||null,pending=runtimeMetrics?.pendingCompaction||null;
     const metric={kind:'save-preparation',simSeconds:Number(state.simSeconds)||0,saveRevisionBefore:Number(state.saveRevision)||0,compactionMs:Number(pending?.durationMs)||0,baselineIntegrityMs:0,prepareMs:0,finalIntegrityMs:0,persistenceSyncMs:0,totalMs:0,ok:false};
     if(runtimeMetrics)runtimeMetrics.pendingCompaction=null;const totalStart=metricClock();
@@ -992,12 +1003,15 @@
     onPlan:result=>{
       const current=mapPresentationPlanRequest;
       if(!map||!current||current.key!==result.key||current.assets!==state.assets||current.revision!==(Number(state.saveRevision)||0)||!mapPresentationEngine)return;
+      // A worker result changes the desired visual plan without changing the
+      // domain structure signature, so explicitly invalidate one structural pass.
+      lastMapStructureSignature='';
       renderMap();
     },
     onPositions:result=>{
       if(!map||mapInteractionActive||result.generation!==mapPresentationPlanGeneration)return;
-      const now=(window.performance?.now?.()||Date.now());
-      for(const group of result.groups){const cluster=movingFleetClusters.get(`moving:${group.key}`);if(cluster?.marker&&Array.isArray(group.coords))setMapMarkerTarget(`own:moving:${group.key}`,cluster.marker,group.coords,now,false);}
+      const now=(window.performance?.now?.()||Date.now()),centers=new Map(result.groups.map(group=>[group.key,group.coords]));
+      for(const [key,cluster] of movingFleetClusters){let lat=0,lng=0,count=0;for(const ref of cluster.movingRefs||[]){const point=centers.get(ref.key);if(!Array.isArray(point))continue;const weight=Math.max(1,Number(ref.count)||1);lat+=point[0]*weight;lng+=point[1]*weight;count+=weight;}for(const row of cluster.stationaryEntries||[]){if(!Array.isArray(row.coords))continue;const weight=Math.max(1,Number(row.count)||1);lat+=row.coords[0]*weight;lng+=row.coords[1]*weight;count+=weight;}if(count)setMapMarkerTarget(`own:${key}`,cluster.marker,[lat/count,lng/count],now,false);}
     }
   })||null;
   let financeReportWorkerResult=null,financeReportSnapshotCache=null,financeReportFallbackCache=null;
@@ -1008,7 +1022,7 @@
     onResult:result=>{financeReportWorkerResult=result;const body=$('drawerBody');if(activeDrawerPanel==='monthlyFinance'&&body?.querySelector?.('.monthly-finance-report')){body.innerHTML=renderMonthlyFinance();window.GH_INTERFACE?.prepare?.(body,activeDrawerPanel,activeDrawerArg,advancedContext());}}
   })||null;
   const mediaAssetEngine=window.GH_MEDIA_ASSET_CORE?.create?.({imageFactory:()=>new Image(),maxConcurrent:3,maxQueued:32,maxCached:24,onFailure:detail=>nonCritical('media-asset-decode',new Error(`${detail.src}:${detail.error||'decode-failed'}`))})||null;
-  function mapMovingPlanInput(rows,zoom,limit){
+  function mapMovingPlanInput(rows,zoom,limit,heroLimit){
     const routeIndexes=new Int32Array(rows.length),progress=new Float32Array(rows.length),baseCoordinates=new Float32Array(rows.length*2),assetIds=[],owners=[],modes=[],routeKeys=[],routes=[],routeLookup=new Map(),facilities=new Map();let structuralHash=2166136261;
     const hashValue=value=>{const text=String(value??'');for(let char=0;char<text.length;char++){structuralHash^=text.charCodeAt(char);structuralHash=Math.imul(structuralHash,16777619)>>>0;}structuralHash^=255;structuralHash=Math.imul(structuralHash,16777619)>>>0;};
     for(const facility of getDynamicFacilities()){if(Array.isArray(facility?.coords)&&facility.coords.length===2)facilities.set(facility.id,facility.coords);}
@@ -1021,8 +1035,8 @@
       const id=String(asset.id||''),owner=assetOwnerCompanyId(asset)||'',mode=assetModeOf(asset)||'asset';assetIds.push(id);owners.push(owner);modes.push(mode);routeKeys.push(routeKey);hashValue(id);hashValue(owner);hashValue(mode);hashValue(routeKey);hashValue(asset.baseFacility||'');hashValue(reverse?1:0);
     }
     const core=window.GH_MAP_ASSET_QUERY_CORE,filterKey=core?.filterKey?.(currentMapFilter().companies)||'all';
-    const key=`${Number(state.saveRevision)||0}:${rows.length}:${structuralHash.toString(36)}:${zoom}:${limit}:${selectedAssetId||''}:${filterKey}`;
-    return {key,assetIds,owners,modes,routeKeys,routeIndexes,progress,baseCoordinates,routes,zoom,limit,groupLimit:limit,selectedId:selectedAssetId||''};
+    const key=`${Number(state.saveRevision)||0}:${rows.length}:${structuralHash.toString(36)}:${zoom}:${limit}:${heroLimit}:${selectedAssetId||''}:${filterKey}`;
+    return {key,assetIds,owners,modes,routeKeys,routeIndexes,progress,baseCoordinates,routes,zoom,limit,heroLimit,groupLimit:limit,selectedId:selectedAssetId||''};
   }
   function monthlyFinanceReportInput(months=12){
     const reports=Array.isArray(state.finance?.dailyCompanyReports)?state.finance.dailyCompanyReports:[],companyTypes=window.GH_FINANCE_CORE.companyIds(state,{includeGroup:false}),currentMonthKey=window.GH_FINANCE_CORE.calendarMonthForDay(Math.floor((Number(state.simSeconds)||0)/86400)),firstDay=Number(reports[0]?.day)||0,lastDay=Number(reports[reports.length-1]?.day)||0;
@@ -1123,7 +1137,8 @@
   const VEHICLE_SVG = {
     air: '<svg viewBox="0 0 24 24"><path d="M12 1 L14 9 L22 13 L22 15 L14 13 L13 20 L17 22 L17 23 L12 22 L7 23 L7 22 L11 20 L10 13 L2 15 L2 13 L10 9 Z"/></svg>',
     sea: '<svg viewBox="0 0 24 24"><path d="M12 2 L14 9 L14 15 L20 15 L17 21 L7 21 L4 15 L10 15 L10 9 Z"/></svg>',
-    road:'<svg viewBox="0 0 24 24"><path d="M3 8 H13 L17 12 H19 V16 H3 Z"/><circle cx="6" cy="17" r="1.7"/><circle cx="16" cy="17" r="1.7"/></svg>'
+    road:'<svg viewBox="0 0 24 24"><path d="M8 2h8l2 5v14H6V7z"/><path d="M8 6h8v3H8z" fill="white"/><path d="M8 12h8v7H8z" fill="white" fill-opacity=".35"/></svg>',
+    mobility:'<svg viewBox="0 0 24 24"><path d="M9 2h6l3 5v13l-2 2H8l-2-2V7z"/><path d="M8 7h8v4H8zM8 17h8v2H8z" fill="white"/></svg>'
   };
   const VEHICLE_MARKER_PHOTOS={air:'assets/images/map-aircraft-topdown.png',sea:'assets/images/map-container-ship-topdown.png',road:'assets/images/map-truck-topdown.png',mobility:'assets/images/map-mobility-sedan-topdown.webp'};
   function markerKind(type){return type==='air'?'air':type==='sea'?'sea':type==='mobility'?'mobility':'road';}
@@ -1132,12 +1147,11 @@
   function markerHeading(kind,bearing){return Number(bearing||0);}
   function assetMarkerPhoto(asset){return VEHICLE_MARKER_PHOTOS[markerKind(asset.type)];}
   function vehicleVisualHtml(type,bearing,photo,moving=true,competitor=false){
-    const kind=markerKind(type),heading=markerHeading(kind,bearing),className=`vehicle-pin ${kind}${moving?' is-live':''}${competitor?' competitor':''}`,imageSource=photo||VEHICLE_MARKER_PHOTOS[kind];
-    mediaAssetEngine?.request?.(imageSource,10);
-    const glyph=`<img src="${imageSource}" alt="" draggable="false" decoding="async">`;
+    const kind=markerKind(type),heading=markerHeading(kind,bearing),className=`vehicle-pin ${kind}${moving?' is-live':''}${competitor?' competitor':''}`;
+    const glyph=VEHICLE_SVG[kind]||VEHICLE_SVG.road;
     return `<div class="${className}"><span class="vehicle-trail"></span><span class="vehicle-sprite"><span class="vehicle-heading" style="transform:rotate(${heading.toFixed(1)}deg)">${glyph}</span></span><span class="vehicle-beacon"></span></div>`;
   }
-  function vehicleMarkerHtml(asset){return vehicleVisualHtml(asset.type,assetBearing(asset),assetMarkerPhoto(asset),asset.phase==='moving');}
+  function vehicleMarkerHtml(asset){const imageSource=assetMarkerPhoto(asset);mediaAssetEngine?.request?.(imageSource,10);return vehicleVisualHtml(asset.type,assetBearing(asset),imageSource,asset.phase==='moving');}
   function competitorMarkerHtml(asset){return vehicleVisualHtml(asset.type,routeBearing(asset.route,asset.progress),VEHICLE_MARKER_PHOTOS[markerKind(asset.type)],true,true);}
   function refreshVehicleMarker(marker,type,bearing,moving){
     const element=marker?.getElement?.();if(!element)return;
@@ -1311,24 +1325,27 @@
       $('map').innerHTML='<div style="height:100%;display:grid;place-items:center;background:#84958a;color:#152024;padding:28px;text-align:center;font-weight:700">تعذر تهيئة الخريطة المحلية. بيانات اللعبة والحفظ لم تتأثر؛ افتح مركز التشخيص للحصول على سبب الخطأ.</div>';
       return;
     }
-    map = L.map('map',{zoomControl:true,minZoom:2,maxZoom:19,worldCopyJump:true,preferCanvas:true}).setView([22,28],3);
+    let minimumWorldZoom=window.GH_MAP_PRESENTATION_CORE.minimumWorldZoom($('map').clientWidth||window.innerWidth||256),localTerrainLayer=null;
+    map = L.map('map',{zoomControl:true,minZoom:minimumWorldZoom,maxZoom:19,worldCopyJump:false,maxBounds:[[-85.05112878,-180],[85.05112878,180]],maxBoundsViscosity:1,preferCanvas:true}).setView([22,28],3);
+    const constrainMap=()=>{const size=map.getSize(),minimum=window.GH_MAP_PRESENTATION_CORE.minimumWorldZoom(size.x||$('map').clientWidth||window.innerWidth||256);if(Math.abs(minimum-minimumWorldZoom)>.001){minimumWorldZoom=minimum;map.setMinZoom(minimumWorldZoom);if(localTerrainLayer){localTerrainLayer.options.minZoom=minimumWorldZoom;localTerrainLayer.redraw();}}map.panInsideBounds([[-85.05112878,-180],[85.05112878,180]],{animate:false});};
+    map.on('resize',constrainMap);constrainMap();
     const terrainPane=map.createPane('localTerrain');terrainPane.style.zIndex='160';terrainPane.style.pointerEvents='none';
-    L.tileLayer('assets/maps/ne2/{z}/{x}/{y}.webp',{pane:'localTerrain',tileSize:L.Browser.retina?128:256,zoomOffset:L.Browser.retina?1:0,maxNativeZoom:L.Browser.retina?3:4,maxZoom:19,minZoom:2,attribution:'Natural Earth'}).addTo(map);
-    const osmOptions={maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'};
+    localTerrainLayer=L.tileLayer('assets/maps/ne2/{z}/{x}/{y}.webp',{pane:'localTerrain',noWrap:true,bounds:[[-85.05112878,-180],[85.05112878,180]],tileSize:L.Browser.retina?128:256,zoomOffset:L.Browser.retina?1:0,maxNativeZoom:L.Browser.retina?3:4,maxZoom:19,minZoom:minimumWorldZoom,attribution:'Natural Earth'}).addTo(map);
+    const osmOptions={maxZoom:19,noWrap:true,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'};
     layers.standard = observeTileLayer(L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{...osmOptions,minZoom:5}));
     layers.street = observeTileLayer(L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',osmOptions));
     layers.light = layers.standard;
     layers.dark = layers.standard;
-    layers.satellite = observeTileLayer(L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}));
+    layers.satellite = observeTileLayer(L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,noWrap:true,attribution:'Tiles © Esri'}));
     setMapLayer(['street','satellite'].includes(state.mapLayer)?state.mapLayer:'standard');
     const countryPane=map.createPane('countryLabels');countryPane.style.zIndex='380';countryPane.style.pointerEvents='none';
     const countryLabels=L.layerGroup().addTo(map),updateCountryLabels=()=>{countryLabels.clearLayers();const zoom=map.getZoom();if(zoom>5||state.mapLayer==='street')return;const minimum=zoom<4?20000000:zoom<5?3000000:1000000,size=map.getSize(),placed=[];for(const row of [...(window.GH_MAP_LABELS||[])].sort((a,b)=>b.population-a.population)){if(row.population<minimum)continue;const point=map.latLngToContainerPoint(row.coords),width=Math.min(132,Math.max(40,row.name.length*6)),box={x:point.x-width/2,y:point.y-12,w:width,h:24};if(box.x+box.w<0||box.y+box.h<0||box.x>size.x||box.y>size.y||placed.some(b=>box.x<b.x+b.w+8&&box.x+box.w+8>b.x&&box.y<b.y+b.h+4&&box.y+box.h+4>b.y))continue;placed.push(box);L.marker(row.coords,{pane:'countryLabels',interactive:false,keyboard:false,icon:L.divIcon({className:'ui-country-label',html:esc(row.name),iconSize:[width,24],iconAnchor:[width/2,12]})}).addTo(countryLabels);}};
     map.on('zoomend moveend resize baselayerchange',updateCountryLabels);updateCountryLabels();
-    const setInteractionState=active=>{mapInteractionActive=!!active;if(!active){requestVisualResync();updateMarkerPositions(true);}};
+    const setInteractionState=active=>{mapInteractionActive=!!active;clearTimeout(worldRenderTimer);if(!active)worldRenderTimer=setTimeout(()=>{if(mapInteractionActive)return;updateMarkerPositions(true);renderMap();flushMapDeferredSave();},160);};
     map.on('movestart zoomstart dragstart',()=>setInteractionState(true));
-    map.on('moveend dragend',()=>{setInteractionState(false);clearTimeout(worldRenderTimer);worldRenderTimer=setTimeout(renderWorldInfrastructureMarkers,140);});
+    map.on('moveend dragend',()=>setInteractionState(false));
     // إعادة رسم الطبقات الثقيلة فقط عند توقف التكبير، وليس أثناء الحركة.
-    map.on('zoomend',()=>{setInteractionState(false);clearTimeout(worldRenderTimer);worldRenderTimer=setTimeout(renderMap,120);});
+    map.on('zoomend',()=>setInteractionState(false));
     renderMap();
     hydrateRoadRoutes();
   }
@@ -1649,15 +1666,15 @@
     if(kind==='mobility')return zoom<4?10:zoom<6?18:zoom<9?26:36;
     if(kind==='routes')return zoom<4?12:zoom<6?20:zoom<9?32:48;
     if(kind==='facilities')return zoom<4?24:zoom<6?40:zoom<9?60:84;
-    return zoom<4?24:zoom<6?36:zoom<9?54:72;
+    return zoom<4?12:zoom<6?18:zoom<9?28:40;
   }
   function fleetClusterHtml(type,count,label=''){
-    const key=markerKind(type),symbol=key==='mobility'?'M':key==='air'?'AIR':key==='sea'?'SEA':'LOG';
-    return `<div class="fleet-map-cluster ${key}" title="${esc(label)}"><span>${symbol}</span><b>${fmtNumber(count)}</b></div>`;
+    const key=markerKind(type);
+    return `<div class="fleet-map-cluster ${key}" title="${esc(label)}"><b>${fmtNumber(count)}</b></div>`;
   }
   function addFleetCluster(key,coords,type,count,label,onClick){
     if(!Array.isArray(coords)||coords.length!==2||count<=0)return;
-    const icon=L.divIcon({className:`fleet-cluster-marker ${type}`,html:fleetClusterHtml(type,count,label),iconSize:[34,34],iconAnchor:[17,17]});
+    const icon=L.divIcon({className:`fleet-cluster-marker ${type}`,html:fleetClusterHtml(type,count,label),iconSize:[28,28],iconAnchor:[14,14]});
     const marker=L.marker(markerDisplayStart(`own:${key}`,coords),{icon,zIndexOffset:610}).addTo(map).bindTooltip(`${esc(label)} · ${fmtNumber(count)} أصل`,{direction:'top',permanent:false,opacity:.9});
     marker.on('click',onClick);ownMarkers.set(key,marker);return marker;
   }
@@ -1686,7 +1703,13 @@
   }
 
   function renderMap(){
-    if(!map)return;
+    if(!map||mapInteractionActive)return;
+    const renderSignature=mapStructureSignature();
+    if(renderSignature===lastMapStructureSignature){
+      // Panning and repeated UI refreshes do not change owned fleet layers.
+      // Keep their Leaflet objects and reconcile only viewport infrastructure.
+      updateMapStatus();renderWorldInfrastructureMarkers();updateMarkerPositions(true);return;
+    }
     const filter=state.activeFilter||'all',filterState=currentMapFilter(),zoom=map.getZoom(),visibleAssets=mapCategoryVisible('assets')?mapVisibleAssetRows(filterState):[];
     captureMarkerVisualPositions();markerMotionStates.clear();
     routeLayers.forEach(layer=>{try{map.removeLayer(layer)}catch(error){nonCritical('map-route-remove',error);}}); routeLayers=[];
@@ -1707,34 +1730,41 @@
       const route=currentAssetRoute(selectedRouteAsset),color=identityRouteColor(assetOwnerCompanyId(selectedRouteAsset),assetModeOf(selectedRouteAsset));
       const line=L.polyline(window.GH_ROUTE_CORE.splitAtDateline(route),{color,weight:3.4,opacity:.96,dashArray:selectedRouteAsset.type==='air'?'7 9':null,lineCap:'round',smoothFactor:1.8,interactive:false}).addTo(map);routeLayers.push(line);
     }
-    const standardBudget=mapRenderBudget(zoom,'standard'),movingAssets=visibleAssets.filter(asset=>asset.phase==='moving'),presentationInput=movingAssets.length&&mapPresentationEngine&&!mapPresentationEngine.isDisabled()?mapMovingPlanInput(movingAssets,zoom,standardBudget):null,presentationRequest=presentationInput?mapPresentationEngine.requestPlan(presentationInput):{ready:false,worker:false},presentationPlan=presentationRequest.ready?presentationRequest.plan:null;
+    const standardBudget=mapRenderBudget(zoom,'standard'),movingAssets=visibleAssets.filter(asset=>asset.phase==='moving'),stationary=visibleAssets.filter(asset=>asset.phase!=='moving'),mixedFleet=movingAssets.length>0&&stationary.length>0;
+    const movingDisplayBudget=movingAssets.length?(mixedFleet?Math.max(2,Math.floor(standardBudget*.58)):standardBudget):0,stationaryDisplayBudget=stationary.length?standardBudget-movingDisplayBudget:0,movingHeroBudget=movingAssets.length?Math.max(1,Math.min(movingDisplayBudget-1,Math.ceil(movingDisplayBudget*.42))):0;
+    const presentationInput=movingAssets.length&&mapPresentationEngine&&!mapPresentationEngine.isDisabled()?mapMovingPlanInput(movingAssets,zoom,movingDisplayBudget,movingHeroBudget):null,presentationRequest=presentationInput?mapPresentationEngine.requestPlan(presentationInput):{ready:false,worker:false},presentationPlan=presentationRequest.ready?presentationRequest.plan:null;
     mapPresentationPlanRequest=presentationInput?{key:presentationInput.key,assets:state.assets,revision:Number(state.saveRevision)||0}:null;
     mapPresentationPlanGeneration=presentationPlan?.generation||0;
-    const movingHeroes=presentationPlan?[...presentationPlan.heroIndices].map(index=>movingAssets[index]).filter(Boolean):movingHeroSelection(movingAssets,zoom,standardBudget),movingHeroIds=new Set(movingHeroes.map(asset=>asset.id));
-    const movingClusterBudget=Math.max(4,standardBudget-movingHeroes.length);
-    const stationary=visibleAssets.filter(asset=>asset.phase!=='moving'),stationaryGroups=new Map();
+    const movingHeroes=presentationPlan?[...presentationPlan.heroIndices].map(index=>movingAssets[index]).filter(Boolean):movingHeroSelection(movingAssets,zoom,movingHeroBudget),movingHeroIds=new Set(movingHeroes.map(asset=>asset.id));
+    const movingClusterBudget=Math.max(1,movingDisplayBudget-movingHeroes.length),stationaryGroups=new Map();
     for(const asset of stationary){const ownerCompanyId=assetOwnerCompanyId(asset),key=`${ownerCompanyId}:${asset.baseFacility||'unbased'}`,row=stationaryGroups.get(key)||{type:assetModeOf(asset),ownerCompanyId,baseFacility:asset.baseFacility,assets:[]};row.assets.push(asset);stationaryGroups.set(key,row);}
     const individual=[...movingHeroes],workerPending=presentationRequest.worker===true&&presentationRequest.pending===true,nonHeroMoving=presentationPlan||workerPending?[]:movingAssets.filter(asset=>!movingHeroIds.has(asset.id)),movingGroups=presentationPlan?presentationPlan.groups.map(group=>({...group,assets:Array.from(presentationPlan.members.slice(group.start,group.start+group.count),index=>movingAssets[index]).filter(Boolean)})):workerPending?[]:movingAssetRenderGroups(nonHeroMoving,zoom,movingClusterBudget);
-    for(const group of movingGroups){
-      if(!group.assets.length)continue;const coords=group.coords||averageMapPoint(group.assets,assetPosition),key=`moving:${group.key}`,label=`${companyFinanceName(group.owner)} · أصول متحركة`;
-      const marker=addFleetCluster(key,coords,group.mode,group.count||group.assets.length,label,()=>openDrawer('assets',group.mode));if(marker)movingFleetClusters.set(key,{marker,assetIds:group.assets.map(asset=>asset.id)});
-    }
-    let stationarySlots=Math.max(0,standardBudget-individual.length);
+    const stationaryClusterRows=[],stationaryFacilities=new Map(getDynamicFacilities().map(row=>[row.id,row]));
+    let stationarySlots=mixedFleet?0:Math.floor(stationaryDisplayBudget*.35),stationaryIndividualCount=0;
     const orderedStationaryGroups=[...stationaryGroups].sort((a,b)=>Number(b[1].assets.some(asset=>asset.id===selectedAssetId))-Number(a[1].assets.some(asset=>asset.id===selectedAssetId))||b[1].assets.length-a[1].assets.length);
     for(const [key,group] of orderedStationaryGroups){
       const selected=group.assets.find(asset=>asset.id===selectedAssetId);
       let clusteredAssets=group.assets;
-      if(selected){individual.push(selected);stationarySlots=Math.max(0,stationarySlots-1);clusteredAssets=group.assets.filter(asset=>asset.id!==selected.id);}
-      if(!selected&&group.assets.length<=3&&stationarySlots>=group.assets.length){for(const asset of group.assets)individual.push(asset);stationarySlots-=group.assets.length;continue;}
+      if(selected){individual.push(selected);stationaryIndividualCount++;stationarySlots=Math.max(0,stationarySlots-1);clusteredAssets=group.assets.filter(asset=>asset.id!==selected.id);}
+      if(!mixedFleet&&!selected&&group.assets.length<=3&&stationarySlots>=group.assets.length){for(const asset of group.assets)individual.push(asset);stationarySlots-=group.assets.length;stationaryIndividualCount+=group.assets.length;continue;}
       if(!clusteredAssets.length)continue;
-      const base=findFacility(group.baseFacility),coords=base?.coords||assetPosition(group.assets[0]),label=base?.name||'مركز تشغيل';
-      addFleetCluster(`cluster:${key}`,coords,group.type,clusteredAssets.length,label,()=>openDrawer('assets',group.type));
+      const base=stationaryFacilities.get(group.baseFacility),coords=base?.coords||assetPosition(group.assets[0]);
+      if(coords)stationaryClusterRows.push({id:key,coords,count:clusteredAssets.length,mode:group.type});
     }
     const uniqueIndividuals=[...new Map(individual.map(asset=>[asset.id,asset])).values()];
+    const visualRows=[],visualSources=new Map();
+    for(const group of movingGroups){if(!group.assets.length)continue;const id=`moving:${group.key}`,count=group.count||group.assets.length,coords=group.coords||averageMapPoint(group.assets,assetPosition);if(!coords)continue;visualRows.push({id,coords,count,mode:group.mode});visualSources.set(id,{kind:'moving',key:group.key,count,assetIds:group.assets.map(asset=>asset.id)});}
+    for(const row of stationaryClusterRows){const id=`stationary:${row.id}`;visualRows.push({...row,id});visualSources.set(id,{kind:'stationary',coords:row.coords,count:row.count});}
+    const remainingMarkerBudget=Math.max(0,standardBudget-uniqueIndividuals.length),visualGroups=window.GH_MAP_PRESENTATION_CORE.clusterPoints(visualRows,{zoom,limit:remainingMarkerBudget,cellPixels:64});
+    for(const group of visualGroups){
+      const key=`visual:${group.key}`,sources=group.ids.map(id=>visualSources.get(id)).filter(Boolean),movingRefs=sources.filter(source=>source.kind==='moving').map(source=>({key:source.key,count:source.count})),stationaryEntries=sources.filter(source=>source.kind==='stationary').map(source=>({coords:source.coords,count:source.count})),assetIds=sources.filter(source=>source.kind==='moving').flatMap(source=>source.assetIds),mode=group.mode,label=mode==='all'?'أسطول متحرك وثابت':mode==='air'?'أصول جوية':mode==='sea'?'أصول بحرية':mode==='road'?'أصول برية':'أصول في المحطات';
+      const marker=addFleetCluster(key,group.coords,mode,group.count,label,()=>{if(!movingRefs.length&&zoom<9)map.setView(group.coords,Math.min(12,zoom+2));else openDrawer('assets',mode==='all'?undefined:mode);});
+      if(marker&&movingRefs.length)movingFleetClusters.set(key,{marker,assetIds,movingRefs,stationaryEntries});
+    }
     for(const asset of uniqueIndividuals){
       const position=assetPosition(asset);if(!position){nonCritical('asset-position-missing',new Error(`Missing position for ${asset.id}`));continue;}
-      const moving=asset.phase==='moving',icon=L.divIcon({className:`asset-marker ${asset.type}${moving?' is-moving':''}`,html:vehicleMarkerHtml(asset),iconSize:[42,42],iconAnchor:[21,21]});
-      const marker=L.marker(markerDisplayStart(`own:${asset.id}`,position),{icon,zIndexOffset:selectedAssetId===asset.id?760:700}).addTo(map);
+      const moving=asset.phase==='moving',selected=selectedAssetId===asset.id;
+      const marker=selected?L.marker(markerDisplayStart(`own:${asset.id}`,position),{icon:L.divIcon({className:`asset-marker ${asset.type}${moving?' is-moving':''} is-selected`,html:vehicleMarkerHtml(asset),iconSize:[32,32],iconAnchor:[16,16]}),zIndexOffset:760}).addTo(map):compactFleetMarker(asset,position,zoom,movingAssets.length);
       marker.on('click',()=>showAsset(asset.id));ownMarkers.set(asset.id,marker);renderedAssetIds.add(asset.id);
     }
 
@@ -1751,7 +1781,7 @@
       for(const vehicle of mobilityRows){
         const pos=interpolatePresentationRoute(vehicle.route,vehicle.progress),moving=vehicle.phase==='moving',heading=routeBearing(vehicle.route,vehicle.progress);
         if(selectedMobilityId===vehicle.id&&moving&&mapCategoryVisible('routes')){const selectedLine=L.polyline(vehicle.route,{color:identityRouteColor('mobility','mobility'),weight:3.2,opacity:.92,lineCap:'round',smoothFactor:1.2,interactive:false}).addTo(map);routeLayers.push(selectedLine);}
-        const icon=L.divIcon({className:`asset-marker mobility mobility-car-marker${moving?' is-moving':''}${selectedMobilityId===vehicle.id?' is-selected':''}`,html:vehicleVisualHtml('mobility',heading,null,moving),iconSize:[44,44],iconAnchor:[22,22]});
+        const icon=L.divIcon({className:`asset-marker mobility mobility-car-marker${moving?' is-moving':''}${selectedMobilityId===vehicle.id?' is-selected':''}`,html:vehicleVisualHtml('mobility',heading,null,moving),iconSize:[34,34],iconAnchor:[17,17]});
         const marker=L.marker(markerDisplayStart(`own:mobility:${vehicle.id}`,pos),{icon,zIndexOffset:selectedMobilityId===vehicle.id?750:680,title:`${vehicle.name} · ${moving?'متحركة':'متاحة'}`,keyboard:true,riseOnHover:true}).addTo(map);
         marker.bindTooltip(`${esc(vehicle.name)} · ${moving?(vehicle.routeVerified?'على شبكة الشوارع':'بانتظار تثبيت مسار الشارع'):'متاحة في المركز'}`,{direction:'top',permanent:false,opacity:.88});
         marker.on('click',()=>{selectedAssetId=null;selectedMobilityId=vehicle.id;renderMap();openDrawer('mobilityAsset',vehicle.id);});ownMarkers.set(`mobility:${vehicle.id}`,marker);renderedMobilityIds.add(vehicle.id);
@@ -1905,7 +1935,7 @@
     visualResyncRequested=false;
   }
   window.GH_VISUAL_MOTION=Object.freeze({MIN_FRAME_MS:50,MAX_FRAME_MS:300,profile:markerMotionProfile,boundedStepRatio,interpolateRoute:interpolatePresentationRoute});
-  function mapStructureSignature(){if(!map)return'';const zoom=Math.floor(Number(map.getZoom?.())||0),assetRevision=`${Number(state.saveRevision)||0}:${Number(window.GH_MAP_STRUCTURE_REVISION)||0}:${state.assets?.length||0}`,mobilityRevision=`${state.mobility?.vehicles?.length||0}:${window.GH_MOBILITY_CORE?.mapStructureRevision?.()||0}`;return `${JSON.stringify(currentMapFilter())};${zoom};${selectedAssetId||''};${selectedMobilityId||''};${selectedFacilityId||''};${assetRevision};${mobilityRevision}`;}
+  function mapStructureSignature(){if(!map)return'';const zoom=Math.round((Number(map.getZoom?.())||0)*1000)/1000,assetRevision=`${Number(state.saveRevision)||0}:${Number(window.GH_MAP_STRUCTURE_REVISION)||0}:${state.assets?.length||0}`,mobilityRevision=`${state.mobility?.vehicles?.length||0}:${window.GH_MOBILITY_CORE?.mapStructureRevision?.()||0}`;return `${JSON.stringify(currentMapFilter())};${zoom};${selectedAssetId||''};${selectedMobilityId||''};${selectedFacilityId||''};${assetRevision};${mobilityRevision}`;}
 
   function presentationAssetLookup(){
     const revision=Math.max(0,Math.floor(Number(state.saveRevision)||0)),length=state.assets?.length||0;
@@ -1919,7 +1949,7 @@
     // Grid coarsening changes bucket sizes, not committed asset positions.
     const positioned=[];for(const asset of rows){const point=assetPosition(asset);if(Array.isArray(point))positioned.push({asset,point,owner:assetOwnerCompanyId(asset)||'unknown',mode:assetModeOf(asset)||'asset'});}
     const build=()=>{const out=new Map();for(const {asset,point,owner,mode} of positioned){const key=`${owner}:${mode}:${Math.floor((point[0]+90)/cell)}:${Math.floor((point[1]+180)/cell)}`,group=out.get(key)||{key,owner,mode,assets:[]};group.assets.push(asset);out.set(key,group);}return [...out.values()];};
-    groups=build();while(groups.length>Math.max(4,limit)&&cell<180){cell*=1.7;groups=build();}
+    groups=build();while(groups.length>Math.max(1,limit)&&cell<180){cell*=1.7;groups=build();}
     return groups;
   }
   function updateMarkerPositions(force=false){
@@ -1939,7 +1969,7 @@
     if(mapPresentationEngine&&!mapPresentationEngine.isDisabled()&&mapPresentationPlanGeneration){
       const ids=mapPresentationEngine.getAssetIds();if(ids.length){const progress=new Float32Array(ids.length);for(let index=0;index<ids.length;index++){const asset=assetIndex.get(ids[index]);progress[index]=asset?.phase==='turnaround'?1:Math.max(0,Math.min(1,Number(asset?.progress)||0));}movingCentersQueued=mapPresentationEngine.requestPositions(progress);}
     }
-    if(!movingCentersQueued)for(const [key,cluster] of movingFleetClusters){const assets=cluster.assetIds.map(id=>assetIndex.get(id)).filter(Boolean),point=averageMapPoint(assets,assetPosition);if(point)setMapMarkerTarget(`own:${key}`,cluster.marker,point,now,force);}
+    if(!movingCentersQueued)for(const [key,cluster] of movingFleetClusters){const assets=cluster.assetIds.map(id=>assetIndex.get(id)).filter(Boolean),movingPoint=averageMapPoint(assets,assetPosition);let lat=0,lng=0,count=0;if(movingPoint&&assets.length){lat+=movingPoint[0]*assets.length;lng+=movingPoint[1]*assets.length;count+=assets.length;}for(const row of cluster.stationaryEntries||[]){if(!Array.isArray(row.coords))continue;const weight=Math.max(1,Number(row.count)||1);lat+=row.coords[0]*weight;lng+=row.coords[1]*weight;count+=weight;}if(count)setMapMarkerTarget(`own:${key}`,cluster.marker,[lat/count,lng/count],now,force);}
     const liveIds=[...renderedMobilityIds];for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,Math.max(1,liveIds.length),{onlyIds:liveIds})||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){const motionKey=`own:mobility:${vehicle.id}`,route=vehicle.phase==='moving'?vehicle.route:null;setMapMarkerTarget(motionKey,m,interpolatePresentationRoute(vehicle.route,vehicle.progress),now,force,{route,routeKey:route?`${vehicle.id}:${vehicle.routeKey||vehicle.route?.length||0}`:null,progress:route?vehicle.progress:null,type:'mobility',moving:vehicle.phase==='moving'});const row=markerMotionStates.get(motionKey),bridge=row?.routeBridge?.[0],visualProgress=bridge?.visualProgress??row?.visualProgress??vehicle.progress;refreshVehicleMarker(m,'mobility',routeBearing(bridge?.route||vehicle.route,visualProgress),vehicle.phase==='moving'||!!bridge);}}
     const mobilityClusterIndex=new Map((window.GH_MOBILITY_CORE?.movingClusters?.(state,liveIds)||[]).map(cluster=>[cluster.centerId,cluster]));for(const [key,cluster] of movingMobilityClusters){const live=mobilityClusterIndex.get(cluster.centerId);if(live?.coords)setMapMarkerTarget(`own:${key}`,cluster.marker,live.coords,now,force);}
     competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){setMapMarkerTarget(`competitor:${a.id}`,m,interpolatePresentationRoute(a.route,a.progress),now,force,{route:a.route,routeKey:`${a.id}:${a.route?.length||0}`,progress:a.progress,type:a.type,moving:true});refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
@@ -2245,7 +2275,7 @@
         else pushAlert(`ارتجع الشيك ${result.id} لعدم كفاية رصيد أو ميزانية ${companyFinanceName(result.company)}.`);
       }});
 
-      const tripAccruals=dispatchSystemCommand({state},'finance','consume-trip-accruals',{}, {actor:'financial-close'}).result;
+      const tripAccruals=phase('simulation.finance-day.consume-trip-accruals',()=>dispatchSystemCommand({state},'finance','consume-trip-accruals',{}, {actor:'financial-close'}).result);
       const tripProfit=tripAccruals.profit,tripRevenue=tripAccruals.revenue,tripFuel=tripAccruals.fuel,tripMaintenance=tripAccruals.maintenance,tripCount=tripAccruals.count,tripCash=tripAccruals.cash||{};
       // Scalable accounting source of truth: one daily settlement batch per company,
       // not three financial documents per individual trip. Trip cash stays in a
@@ -2253,7 +2283,7 @@
       // current account exactly once at this atomic day boundary.
       const companyIds=operationalCompanyIds(state),companyIdSet=new Set(companyIds),accrualCompanyIds=new Set([...Object.keys(tripProfit||{}),...Object.keys(tripRevenue||{}),...Object.keys(tripFuel||{}),...Object.keys(tripMaintenance||{}),...Object.keys(tripCount||{}),...Object.keys(tripCash||{})]);
       for(const companyId of accrualCompanyIds)if(!companyIdSet.has(companyId)&&[tripProfit,tripRevenue,tripFuel,tripMaintenance,tripCount,tripCash].some(bucket=>Math.abs(Number(bucket?.[companyId])||0)>.005))throw new Error(`trip-accrual-company-not-operational:${companyId}`);
-      for(const companyId of companyIds){
+      phase('simulation.finance-day.trip-invoices-and-cash',()=>{for(const companyId of companyIds){
         const count=Math.max(0,Number(tripCount[companyId])||0),revenue=Math.max(0,Number(tripRevenue[companyId])||0),fuel=Math.max(0,Number(tripFuel[companyId])||0),maint=Math.max(0,Number(tripMaintenance[companyId])||0),taxable=companyTaxable(state,companyId),clearing='مركز التسوية التشغيلية اليومية',invoiceNumbers=[],profile=window.GH_FINANCE_CORE.collectionProfile(companyId,state),mobility=isMobilityCompany(companyId,state);
         const post=(...args)=>{const doc=postInvoice(...args);invoiceNumbers.push(doc.number);return doc;};
         if(revenue>0)post('دخل',revenue,`تسوية رحلات يومية ${typeName(companyId)} · ${count} رحلة`,'تسوية تشغيل يومية',taxable,'مدفوعة',companyId,profile.source,{settlementAccount:clearing});
@@ -2261,6 +2291,7 @@
         if(maint>0)post('مصروف',maint,`مخصص صيانة رحلات يومية ${typeName(companyId)} · ${count} رحلة`,'مخصص صيانة يومي',false,'مدفوعة',companyId,'مراكز الصيانة المعتمدة',{settlementAccount:clearing});
         const amount=Number(tripCash[companyId])||0;if(Math.abs(amount)>=.005||revenue>0){const before=companyOperatingBalance(companyId),settlement=dispatchSystemCommand({state},'finance','settle-daily-cash',{company:companyId,amount,grossAmount:revenue,deductions:fuel+maint,tripCount:count,invoiceNumbers,day:state.lastFinancialDay,reference:`DAY-CASH-${companyId}-${state.lastFinancialDay}`,note:`تحويل صافي تشغيل اليوم ${state.lastFinancialDay} إلى الحساب الجاري · ${typeName(companyId)}`},{actor:'financial-close'}).result,after=companyOperatingBalance(companyId);if(Math.abs((after-before)-Number(settlement?.amount||0))>.01)throw new Error(`daily-profit-current-account-mismatch:${companyId}`);if(settlement?.shortfall>0)pushAlert(`رحّلت تسوية نقدية غير مغطاة بقيمة ${fmtMoney(settlement.shortfall)} في ${typeName(companyId)} إلى إقفال اليوم التالي دون إسقاطها.`);}
       }
+      });
       const companyContractRevenue=zeroCompanyMap(state),companyContractCost=zeroCompanyMap(state),contractDailyRows=[];
       const contractTerms={};for(const id of (state.acceptedContracts||[])){const c=contracts.find(x=>x.id===id);if(!c)continue;const companyId=contractOwnerCompanyId(c,state);if(!companyId)throw new Error(`contract-owner-unresolved-or-ambiguous:${id}`);const termDays=Math.max(1,Number(c.termMonths)||1)*30,dailyRevenue=c.value/termDays,dailyCost=c.cost/termDays;contractTerms[id]=termDays;companyContractRevenue[companyId]=(companyContractRevenue[companyId]||0)+dailyRevenue;companyContractCost[companyId]=(companyContractCost[companyId]||0)+dailyCost;contractDailyRows.push({id,companyId,sector:c.sector,client:c.client,name:c.name,revenue:dailyRevenue,cost:dailyCost});}const expiredContracts=dispatchSystemCommand({state},'contracts','tick-day',{day:state.lastFinancialDay,terms:contractTerms},{actor:'simulation'}).result?.expired||[];for(const id of expiredContracts){const c=contracts.find(x=>x.id===id);if(c)pushAlert(`اكتمل عقد ${c.name} وانتهت مدته التشغيلية بعد ${c.termMonths} شهرًا.`);}
       // Bank and energy daily owners must close first. The accounting read model
@@ -2671,10 +2702,10 @@
         const reason=String(detail.reason||'manual-advance-failed');
         state.simulationKernel=state.simulationKernel||{};state.simulationKernel.lastAdvanceFailure={reason,stage:String(detail.stage||''),from:Number(detail.from)||state.simSeconds,to:Number(detail.to)||state.simSeconds,at:state.simSeconds,retries:Number(detail.retries)||0,error:String(detail.error||'').slice(0,240)};
         diag('SIM_CALENDAR_ADVANCE_FAILED',state.simulationKernel.lastAdvanceFailure,'warning');
-        window.GH_DIAGNOSTICS.recorderEvent?.(state,'CALENDAR_ADVANCE_FAILED',state.simulationKernel.lastAdvanceFailure,'warning',{nowMs:Date.now()});
         pushAlert(`توقف تقديم التاريخ وقائيًا عند آخر حالة معتمدة (${formatSimDate()}). السبب: ${reason}. لم تُعتمد حركة أصل أو إيراد جزئي.`);
       }
     },
+    isInteractionBusy:()=>mapInteractionActive,
     isSuspended:()=>hardResetInProgress,
     onFatal:error=>{simulationEngine.cancelAdvance?.('simulation-fatal');state.speed=0;diag('SIM_FATAL',{message:String(error?.message||error)});console.error('Simulation Core fatal error',error);try{pushAlert('أوقف محرك المحاكاة الوقت لحماية الحفظ بعد خطأ داخلي.');}catch(alertError){console.error('تعذر تسجيل تنبيه خطأ المحاكاة',alertError);}},
     onWarning:({stage,error})=>{diag('SIM_WARNING',{stage,message:String(error?.message||error)});console.warn(`Simulation Core warning [${stage}]`,error);},
@@ -3065,7 +3096,7 @@
         await window.GH_PERSISTENCE.drain();diag('BACKGROUND_SAVE_COALESCED',{saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0});
         return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,resetEpoch:Number(state.resetEpoch)||0,coalesced:true};
       }
-      if(!persistStateNow({throwOnError:true}))throw new Error('background-save-rejected');
+      if(!persistStateNow({throwOnError:true,allowMapInteraction:true}))throw new Error('background-save-rejected');
       await window.GH_PERSISTENCE.drain();diag('BACKGROUND_SAVE_OK',{saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0});
       return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,resetEpoch:Number(state.resetEpoch)||0,coalesced:false};
     },
@@ -4165,6 +4196,11 @@
     try{ openDrawer(state.lastPanel,state.lastPanelArg??undefined); }
     catch(error){ state.lastPanel=null;state.lastPanelArg=null;diag('RESTORE_LAST_PANEL_FAILED',{message:String(error?.message||error)},'warning'); }
   }
+
+  // Shadow mode is explicitly opt-in for deterministic development/TestFlight
+  // parity runs; production gameplay stays on the existing state owner until the
+  // ten-day golden equivalence gate has passed.
+  if(globalThis.__GH_ENABLE_STATE_KERNEL_SHADOW__===true)window.GH_TRANSACTION_CORE?.enableKernelShadow?.(state);
 
   let lastMapRenderAt=0,lastPresentationPaintAt=0,lastMarkerAnimationAt=0,lastLoopRafTimestamp=null;
   const latestSimulationTransaction=()=>window.GH_TRANSACTION_CORE?.telemetry?.()?.lastSimulation||null;

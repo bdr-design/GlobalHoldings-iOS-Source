@@ -22,7 +22,8 @@ def main():
     tail=controller[controller.index('    private func applyPendingNativeOperationsIfNeeded()'):]
     script=tail.split('let script = """',1)[1].split('"""',1)[0]
     (a.output/'update-script.swift-string.txt').write_text(script)
-    (a.output/'source-checks.json').write_text(json.dumps({'moved_envelope_validation':changed,'handler_origin_gate': 'guard message.webView === webView, message.frameInfo.isMainFrame,' in controller,'raw_operations_forwarded': '"operationsJSON": operationsJSON,' in storage and 'operationsJSON: update.operationsJSON' in storage,'script_sha256':hashlib.sha256(script.encode()).hexdigest(),'swift_files':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (a.source/'iOS/GlobalHoldings').glob('*.swift')}},indent=2)+'\n')
+    origin_gate=('message.webView === webView' in controller and 'message.frameInfo.isMainFrame' in controller and 'isTrustedGameDocument(message.frameInfo.request.url)' in controller)
+    (a.output/'source-checks.json').write_text(json.dumps({'moved_envelope_validation':changed,'handler_origin_gate':origin_gate,'raw_operations_forwarded': '"operationsJSON": operationsJSON,' in storage and 'operationsJSON: update.operationsJSON' in storage,'script_sha256':hashlib.sha256(script.encode()).hexdigest(),'swift_files':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (a.source/'iOS/GlobalHoldings').glob('*.swift')}},indent=2)+'\n')
     commit='''vault.commitAsync(json, runtimeVersion: "3.0.0", envelope: envelope, completion: completion)''' if changed else '''if !probe.validSaveEnvelope(envelope, json: json) { completion(.failure(TestFailure(message:"Invalid envelope"))); return }
     vault.commitAsync(json, runtimeVersion: "3.0.0", completion: completion)'''
     save='vault.saveManualSlotAsync(index, json: json, label: "اختبار", runtimeVersion: "3.0.0", envelope: envelope, completion: completion)' if changed else '''if !probe.validSaveEnvelope(envelope, json: json) { completion(.failure(TestFailure(message:"Invalid envelope"))); return }
@@ -60,7 +61,8 @@ func makeJSON(_ rev:Int,_ epoch:Int=0,extra:String="") throws -> String {
     let obj:[String:Any]=["saveVersion":"2.0.0","saveRevision":rev,"resetEpoch":epoch,"simSeconds":Double(rev)*60,"label":"العساف / 海 🚢","extra":extra]
     return String(data:try JSONSerialization.data(withJSONObject:obj,options:[.sortedKeys]),encoding:.utf8)!
 }
-func hash(_ json:String)->String {SHA256.hash(data:Data(json.utf8)).map{String(format:"%02x",$0)}.joined()}
+func hashData(_ data:Data)->String {SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined()}
+func hash(_ json:String)->String {hashData(Data(json.utf8))}
 func envelope(_ json:String,action:String="commitSave") throws->[String:Any] {
     let root=try JSONSerialization.jsonObject(with:Data(json.utf8)) as! [String:Any]
     return ["action":action,"requestId":UUID().uuidString,"saveSchemaVersion":"2.0.0","saveRevision":root["saveRevision"]!,"resetEpoch":root["resetEpoch"] ?? 0,"saveHash":hash(json),"saveJSON":json]
@@ -81,6 +83,40 @@ func diskDigest() throws -> [String:String] {
       let d=try Data(contentsOf:f);out[f.lastPathComponent]=SHA256.hash(data:d).map{String(format:"%02x",$0)}.joined()
     };return out
 }
+func materializedPayload(_ header:[String:Any]) throws -> String {
+    guard let name=header["manifestFile"] as? String,
+          let data=try? Data(contentsOf:folder.appendingPathComponent(name)),
+          let manifest=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+          manifest["format"] as? String=="gh-state-manifest-v2",
+          manifest["storageVersion"] as? Int==2,
+          let sections=manifest["sections"] as? [[String:Any]] else {throw TestFailure(message:"Chunked manifest missing or invalid")}
+    func components(_ key:String)->[String] {
+      key.components(separatedBy:".").map { part in
+        let bytes=Array(part.utf8);var decoded:[UInt8]=[],index=0
+        while index<bytes.count {if bytes[index]==37 && index+2<bytes.count,let byte=UInt8(String(bytes:bytes[(index+1)...(index+2)],encoding:.utf8)!,radix:16){decoded.append(byte);index+=3}else{decoded.append(bytes[index]);index+=1}}
+        return String(bytes:decoded,encoding:.utf8)!
+      }
+    }
+    func assign(_ value:Any,_ path:[String],_ root:inout [String:Any]) {
+      guard let key=path.first else{return};if path.count==1{root[key]=value;return}
+      var child=root[key] as? [String:Any] ?? [:];assign(value,Array(path.dropFirst()),&child);root[key]=child
+    }
+    var root:[String:Any]=[:],nested:[([String],Any)]=[]
+    for section in sections {
+      guard let key=section["key"] as? String,let kind=section["kind"] as? String,let itemCount=section["itemCount"] as? Int,itemCount>=0,let chunks=section["chunks"] as? [[String:Any]] else {throw TestFailure(message:"Manifest section invalid")}
+      var values:[Any]=[]
+      for chunk in chunks {
+        guard let file=chunk["file"] as? String,let expected=chunk["sha256"] as? String,let byteCount=chunk["byteCount"] as? Int,let bytes=try? Data(contentsOf:folder.appendingPathComponent(file)) else {throw TestFailure(message:"Manifest chunk missing")}
+        try check(bytes.count==byteCount && hashData(bytes)==expected,"Chunk byte count or digest mismatch")
+        values.append(try JSONSerialization.jsonObject(with:bytes,options:[.fragmentsAllowed]))
+      }
+      let path=components(key)
+      if kind=="array" {var rows:[Any]=[];for value in values {guard let part=value as? [Any] else {throw TestFailure(message:"Array section chunk invalid")};rows.append(contentsOf:part)};try check(rows.count==itemCount,"Section item count mismatch");nested.append((path,rows))}
+      else {guard values.count==1 && path.count==1 && itemCount==1 else {throw TestFailure(message:"Value section chunk count invalid")};root[path[0]]=values[0]}
+    }
+    for (path,value) in nested.sorted(by:{$0.0.count<$1.0.count}){assign(value,path,&root)}
+    return String(data:try JSONSerialization.data(withJSONObject:root,options:[.sortedKeys]),encoding:.utf8)!
+}
 func reject(_ name:String, json:String, payload:[String:Any]) {
     test(name){let before=try diskDigest();var failed=false
       do {let _:Int=try wait {commit(json,payload,$0)}}catch{failed=true}
@@ -88,7 +124,11 @@ func reject(_ name:String, json:String, payload:[String:Any]) {
     }
 }
 let first=try makeJSON(1)
-test("real UTF8 save, hash, A/B readback") {let gen:Int=try wait {commit(first,try! envelope(first),$0)};try check(gen==1 && vault.currentSave()==first,"Native roundtrip mismatch")}
+test("real UTF8 save, content-addressed sections and compact atomic manifest pointer") {let gen:Int=try wait {commit(first,try! envelope(first),$0)};try check(gen==1 && vault.currentSave()==first,"Native roundtrip mismatch");let header=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-A.json"))) as! [String:Any];try check(header["payload"]==nil && header["payloadFile"]==nil,"New header still embeds the full payload");try check(header["storageVersion"] as? Int==2,"Physical storage version is not independent V2");guard let manifestName=header["manifestFile"] as? String,let manifestData=try? Data(contentsOf:folder.appendingPathComponent(manifestName)),let manifest=try JSONSerialization.jsonObject(with:manifestData) as? [String:Any],let sections=manifest["sections"] as? [[String:Any]] else {throw TestFailure(message:"Chunked manifest missing")};try check(manifest["schemaVersion"] as? String=="2.0.0" && manifest["storageVersion"] as? Int==2,"Manifest changed logical schema or storage version");try check(manifest["saveRevision"] as? Int==1 && manifest["resetEpoch"] as? Double==0,"Manifest omitted save revision/reset epoch");try check(try materializedPayload(header)==first,"Manifest sections did not reconstruct the logical Save Schema")}
+test("uncommitted higher A/B header cannot overtake atomic save-head") {let staged=try makeJSON(99);let stagedHash=hash(staged),stagedName="save-payload-B-g99-"+stagedHash+".bin",stagedData=Data(staged.utf8);try stagedData.write(to:folder.appendingPathComponent(stagedName),options:.atomic);let stagedHeader:[String:Any] = ["generation":99,"slot":"B","schemaVersion":"2.0.0","runtimeVersion":"3.0.0","simSeconds":5940,"saveRevision":99,"resetEpoch":0,"savedAt":99,"sha256":stagedHash,"payloadFile":stagedName];try JSONSerialization.data(withJSONObject:stagedHeader).write(to:folder.appendingPathComponent("save-B.json"),options:.atomic);try check(vault.currentSave()==first && vault.currentGeneration()==1,"Staged slot displaced the committed head");let committed=try makeJSON(2);let gen:Int=try wait{commit(committed,try! envelope(committed),$0)};try check(gen==2 && vault.currentSave()==committed,"Next commit did not replace staged slot at the next generation")}
+test("root and nested append-only arrays split into 1000-row content-addressed sections") {var root=try JSONSerialization.jsonObject(with:Data(try makeJSON(3).utf8)) as! [String:Any];root["eventLog"]=(0..<2501).map{["id":"E-"+String($0),"at":$0] as [String:Any]};var finance=root["finance"] as? [String:Any] ?? [:];finance["ledger"]=(0..<2201).map{["id":"L-"+String($0),"debit":1,"credit":1] as [String:Any]};root["finance"]=finance;root["مفتاح.بمسافة "]=["ر" as Any];let json=String(data:try JSONSerialization.data(withJSONObject:root,options:[.sortedKeys]),encoding:.utf8)!;let gen:Int=try wait{commit(json,try! envelope(json),$0)};try check(gen==3,"Chunked save generation mismatch");let header=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-A.json"))) as! [String:Any],manifestData=try Data(contentsOf:folder.appendingPathComponent(header["manifestFile"] as! String)),manifest=try JSONSerialization.jsonObject(with:manifestData) as! [String:Any],sections=manifest["sections"] as! [[String:Any]],log=sections.first{$0["key"] as? String=="eventLog"}!,chunks=log["chunks"] as! [[String:Any]],ledger=sections.first{$0["key"] as? String=="finance.ledger"}!,ledgerChunks=ledger["chunks"] as! [[String:Any]];try check(chunks.count==3 && log["itemCount"] as? Int==2501,"Root append-only array was not chunked");try check(ledgerChunks.count==3 && ledger["itemCount"] as? Int==2201,"Nested finance ledger was not chunked");try check(sections.contains{$0["key"] as? String=="%D9%85%D9%81%D8%AA%D8%A7%D8%AD%2E%D8%A8%D9%85%D8%B3%D8%A7%D9%81%D8%A9%20"},"UTF-8 or dotted section key was not encoded safely");try check(try materializedPayload(header)==json,"Chunked append-only sections changed logical JSON")}
+test("unchanged chunks are reused and a corrupt newest section falls back atomically") {let previous=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-A.json"))) as! [String:Any],previousManifest=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent(previous["manifestFile"] as! String))) as! [String:Any],previousSections=previousManifest["sections"] as! [[String:Any]],previousLog=previousSections.first{$0["key"] as? String=="eventLog"}!,previousFiles=(previousLog["chunks"] as! [[String:Any]]).compactMap{$0["file"] as? String},previousPayload=try materializedPayload(previous);var root=try JSONSerialization.jsonObject(with:Data(previousPayload.utf8)) as! [String:Any];root["saveRevision"]=4;root["simSeconds"]=240;let json=String(data:try JSONSerialization.data(withJSONObject:root,options:[.sortedKeys]),encoding:.utf8)!;let gen:Int=try wait{commit(json,try! envelope(json),$0)};try check(gen==4,"Incremental generation mismatch");let current=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-B.json"))) as! [String:Any],currentManifest=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent(current["manifestFile"] as! String))) as! [String:Any],currentSections=currentManifest["sections"] as! [[String:Any]],currentLog=currentSections.first{$0["key"] as? String=="eventLog"}!,currentFiles=(currentLog["chunks"] as! [[String:Any]]).compactMap{$0["file"] as? String};try check(currentFiles==previousFiles,"Unchanged append-only chunks were rewritten instead of shared");try check(try materializedPayload(current)==json,"Incremental manifest changed logical state");let revision=currentSections.first{$0["key"] as? String=="saveRevision"}!,revisionChunk=(revision["chunks"] as! [[String:Any]])[0],revisionURL=folder.appendingPathComponent(revisionChunk["file"] as! String);try Data("damaged".utf8).write(to:revisionURL,options:.atomic);try check(vault.currentSave()==previousPayload && vault.currentGeneration()==3,"Corrupt newest section did not recover the prior committed A/B generation")}
+test("legacy inline A/B payload loads and migrates without changing logical schema") {vault.reset();let legacy=try makeJSON(20);let object:[String:Any]=["generation":50,"slot":"A","schemaVersion":"2.0.0","runtimeVersion":"3.0.0","simSeconds":1200,"saveRevision":20,"resetEpoch":0,"savedAt":1,"sha256":hash(legacy),"payload":legacy];try JSONSerialization.data(withJSONObject:object).write(to:folder.appendingPathComponent("save-A.json"));try check(vault.currentSave()==legacy && vault.currentGeneration()==50,"Legacy inline payload failed to load");let next=try makeJSON(21);let gen:Int=try wait{commit(next,try! envelope(next),$0)};try check(gen==51 && vault.currentSave()==next,"Legacy save was not promoted to the new generation");let header=try JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("save-B.json"))) as! [String:Any];try check(header["payload"]==nil && header["payloadFile"]==nil && header["manifestFile"] is String && header["storageVersion"] as? Int==2,"Legacy save was not migrated to a storage V2 manifest");try check(try materializedPayload(header)==next,"Migrated manifest changed Save Schema 2.0.0")}
 let next=try makeJSON(2)
 var p=try envelope(next);p["saveHash"]=String(repeating:"0",count:64);reject("bad hash leaves disk unchanged",json:next,payload:p)
 p=try envelope(next);p["saveRevision"]=999;reject("revision mismatch leaves disk unchanged",json:next,payload:p)
@@ -147,7 +187,7 @@ test("reset updates both slots, clears manual slots, no resurrection") {
     for slot in ["A","B"] {
       let file=folder.appendingPathComponent("save-\\(slot).json")
       let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:file)) as! [String:Any]
-      try check(obj["payload"] as? String==clean,"Pre-reset slot survived")
+      try check(obj["payload"]==nil && obj["payloadFile"]==nil && obj["storageVersion"] as? Int==2,"Reset slot still embeds a legacy payload");try check(try materializedPayload(obj)==clean,"Reset manifest did not retain the exact logical Save Schema")
     }
 }
 let staleEpoch=try makeJSON(100,99);reject("pre-reset epoch cannot resurrect",json:staleEpoch,payload:try envelope(staleEpoch))
@@ -177,7 +217,7 @@ test("AppliedUpdate preserves exact operationsJSON and no mirror"){
 }
 // Baseline validation runs in the main-thread probe; candidate enqueues it on the real vault queue.
 vault.reset()
-let perf=try makeJSON(1,extra:String(repeating:"x",count:14_000_000)),perfEnvelope=try envelope(perf)
+let perf=try makeJSON(1,extra:String(repeating:"x",count:28*1024*1024)),perfEnvelope=try envelope(perf)
 let begin=DispatchTime.now().uptimeNanoseconds
 var perfDone=false;var perfSuccess=false
 commit(perf,perfEnvelope){r in perfSuccess=(try? r.get()) != nil;perfDone=true}
@@ -185,8 +225,9 @@ let dispatchMS=Double(DispatchTime.now().uptimeNanoseconds-begin)/1e6
 let deadline=Date().addingTimeInterval(60)
 while !perfDone && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.002))}
 let totalMS=Double(DispatchTime.now().uptimeNanoseconds-begin)/1e6
-let performance:[String:Any]=["bytes":perf.utf8.count,"handler_validation_and_enqueue_ms":dispatchMS,"completed_ms":totalMS,"success":perfSuccess,"single_sample":true,"iphone_measurement":false,"includes_bootstrap_refresh":false]
+let performance:[String:Any]=["bytes":perf.utf8.count,"handler_validation_and_enqueue_ms":dispatchMS,"completed_ms":totalMS,"nativeVaultCommitMs":totalMS,"success":perfSuccess,"single_sample":true,"iphone_measurement":false,"includes_bootstrap_refresh":false]
 try JSONSerialization.data(withJSONObject:performance,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"save-enqueue-measurement.json"))
+test("28 MiB native vault commit meets the 2s macOS acceptance limit") {try check(perfSuccess,"Native vault commit failed");try check(totalMS<2000,"nativeVaultCommitMs must be below 2000 ms, got "+String(totalMS)+" ms")}
 vault.reset()
 let failed=rows.filter{($0["ok"] as? Bool) != true}.count
 let report:[String:Any]=["total":rows.count,"passed":rows.count-failed,"failed":failed,"cases":rows,"native_foundation_real_file_io":true,"device_test":false,"scope":"Vault compiled unmodified except candidate fixes. Controller pure helpers extracted; no live WKWebView." ]

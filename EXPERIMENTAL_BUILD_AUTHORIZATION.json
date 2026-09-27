@@ -1,33 +1,36 @@
 {
   "authorized_at": "2026-09-26",
-  "build": 341,
+  "build": 342,
   "known_limits": [
-    "The supplied Build 340 diagnostic recorded 2,160 assets, so it does not establish performance at 4,300 or 20,000 assets.",
-    "The proof cache only reuses complete successful checks for deeply frozen rows and matching dependency identities; new, replaced, chained, or imported rows are verified in full.",
-    "Build 341 has not yet passed direct-source CI or physical iPhone testing; production approval remains false."
+    "The local Build 341 baseline acceptance is incomplete because Chromium and ESLint are unavailable; exact-source macOS CI is required.",
+    "The state-kernel 10-day run is a deterministic fixture with 3,380 synthetic assets, not the complete app business-simulation engine; kernel adoption remains disabled.",
+    "Native storage changes require macOS Swift/Foundation compilation and real-file rollback and legacy-format tests before acceptance.",
+    "Cold archive, Worker-owned simulation state, and Float64Array columns have focused core fixtures but are not all wired as authoritative live application state.",
+    "Physical iPhone testing must establish continuous 600x/drag FPS, task/drop limits, hot-state and process memory on the oldest supported device, and thermal stability."
   ],
-  "minimum_acceptance_gates": 124,
+  "minimum_acceptance_gates": 136,
   "production_approved": false,
-  "purpose": "Internal experimental Build 341 verification for identity-safe reuse of validated authorization and document-proof records, immutable copy-on-write owner updates, and nested financial close profiling. Production approval and physical-device acceptance are not implied.",
+  "purpose": "Internal experimental Build 342 verification for bounded map interaction work, transactional state-kernel shadowing, independent storageVersion 2 with Save Schema 2.0.0, and staged Worker/typed-column research. This authorization does not imply production approval or device acceptance.",
   "rollback_and_ownership": {
     "authoritative_state_owner": "existing serialized app/domain transaction boundary",
     "full_snapshot_fallback": true,
     "live_field_journal": false,
     "save_schema_preserved": true,
-    "worker_failure_fallback": "simulation, route, map and finance workers use validated cooperative or existing-owner fallback; workers never mutate authoritative state",
+    "worker_failure_fallback": "existing authoritative main-thread and cooperative worker fallback remains in control",
     "worker_may_mutate_authoritative_state": false
   },
   "save_schema": "2.0.0",
-  "source_rule": "Use the complete Build 341 source tracked directly at the repository root on build341-hotpath-fix-20260926. Test-only, Save Schema 2.0.0; Full Snapshot rollback remains required; live field journal remains disabled.",
+  "source_rule": "Build 342 starts from the exact verified Build 341 source commit 1cd0a914cf54a0db88c360e650242cc60618eb01. Preserve Save Schema 2.0.0, full-snapshot rollback fallback, legacy save compatibility, and closed release approval.",
   "source_tracking": {
-    "base_branch": "build340-hotpath-diagnostics-20260926",
-    "base_commit_sha": "b736d74c3745c993edd5443811a9f54fcd1ad8f8",
-    "branch": "build341-hotpath-fix-20260926",
+    "repository": "bdr-design/GlobalHoldings-iOS-Source",
+    "base_branch": "build341-hotpath-fix-20260926",
+    "base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
+    "branch": "build342-state-kernel-20260927",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993",
+  "source_tree_sha256": "84df26c7b12624f07471b82742eec506e32add9736eb8e152f4e8a2a720448b9",
   "test_build_authorized": true,
-  "user_request": "The user authorized an isolated internal repository branch and requested implementation of engine separation with repository/browser verification.",
+  "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
   "version": "3.0.0"
 }
