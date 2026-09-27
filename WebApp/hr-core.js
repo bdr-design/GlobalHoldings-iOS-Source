@@ -58,7 +58,7 @@
     H10:s=>(s.openedCompanies||[]).includes('bank'),
     H11:s=>(s.openedCompanies||[]).includes('power')
   });
-  const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+  const clone=v=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(v):(globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v)));
   const day=s=>Math.floor((Number(s?.simSeconds)||0)/86400);
   function stableHash(value){let hash=2166136261;for(let index=0;index<String(value||'').length;index++){hash^=String(value).charCodeAt(index);hash=Math.imul(hash,16777619);}return hash>>>0;}
   function fallbackManagerCandidates(definition,company){
