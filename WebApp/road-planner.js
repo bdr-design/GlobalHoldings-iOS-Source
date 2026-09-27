@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
   const VERSION='3.0.0',BATCH_SIZE=12,MAX_ATTEMPTS=6,DEFAULT_ROUTE_CAPACITY=64,DEFAULT_PLAN_YIELD_EVERY=48;
-  const copy=value=>structuredClone(value);
+  const copy=value=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(value):structuredClone(value);
   const yieldToUI=()=>typeof globalThis.scheduler?.yield==='function'?globalThis.scheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
   function fail(result){if(result.status==='cancelled')throw new Error('أُلغي حساب المسارات');if(result.status==='circuit-open')throw new Error('مزود الطرق غير متاح مؤقتًا؛ أعد المحاولة بعد 30 ثانية');throw new Error('تعذر الاتصال بمزود الطرق؛ لم تُعتمد أي رحلة. أعد المحاولة عند استقرار الاتصال');}
   function pointFor(origin,asset,index,attempt,seed){
