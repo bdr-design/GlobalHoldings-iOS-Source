@@ -2005,17 +2005,24 @@
     }
   },
   "latest_direct_source_ci": {
-    "status": "PENDING_MACOS_CI_AFTER_COLD_ARCHIVE_RECOVERY_AND_SHARED_WRITER_FIX",
+    "status": "PASS_CURRENT_SOURCE_MACOS_GATES_DEVICE_GATES_OPEN",
     "source_mode": "direct_git_tree_from_verified_build341_commit",
-    "expected_source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
-    "parent_remote_commit_sha": "af09f9862d4d1953ea89a5bba083230e309e39f0",
-    "previous_passed_run_id": "36307934626",
-    "previous_passed_commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",
-    "previous_passed_source_tree_sha256": "1a95fc47734dc88981f7b483db2aad8f2082139826cbaac18b1bfffa05e5b44e",
-    "build341_baseline": "PENDING_CURRENT_SOURCE_CI",
-    "source_gates": "PENDING_CURRENT_SOURCE_CI",
-    "native_storage": "PENDING_CURRENT_SOURCE_CI",
-    "unsigned_iphoneos_release_app": "NOT_BUILT_FOR_CURRENT_SOURCE_YET",
+    "tested_commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
+    "run_id": "36315061990",
+    "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
+    "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
+    "build341_baseline": "PASS_124_OF_124_UNCHANGED",
+    "source_gates": "PASS_140_OF_140",
+    "chromium_webkit": "SOURCE_BROWSER_AND_WKWEBVIEW_6_OF_6_PASS",
+    "native_storage": "PASS_41_OF_41",
+    "nativeVaultCommitMs_macos_single_sample": 773.430958,
+    "nativeVaultCommitBytes": 29360245,
+    "unsigned_iphoneos_release_app": "BUILT_AND_VERIFIED",
+    "ipa_built": true,
+    "ipa_sha256": "284250c85768bc0fa7c4378fd1e6ffb252472a23ee3db02ed8b3c03695c016f7",
+    "ipa_bytes": 13445716,
+    "verification_artifact_id": "10931010204",
+    "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
     "ipa_uploaded_or_delivered": false,
     "physical_iphone_tested": false
   },
@@ -2063,5 +2070,10 @@
     "remote_branch_created_from_verified_base": true
   },
   "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
-  "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988"
+  "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
+  "previous_passed_direct_source_ci": {
+    "run_id": "36307934626",
+    "commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",
+    "source_tree_sha256": "1a95fc47734dc88981f7b483db2aad8f2082139826cbaac18b1bfffa05e5b44e"
+  }
 }

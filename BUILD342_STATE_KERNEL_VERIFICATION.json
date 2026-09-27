@@ -15,17 +15,18 @@
     "0": {
       "status": "MACOS_SOURCE_NATIVE_GATE_PASS_PHYSICAL_IPHONE_TIMING_PENDING",
       "gates": {
-        "record_alert_p95_ms": 0.521,
-        "record_alert_max_ms": 2.883,
+        "record_alert_p95_ms": 0.221,
+        "record_alert_max_ms": 0.487,
         "record_alert_samples": 120,
-        "nativeVaultCommitMs_under_2000": "PASS_SINGLE_SAMPLE_MACOS_275.981417_MS_CI_RUN_36307934626_IPHONE_PENDING",
+        "nativeVaultCommitMs_under_2000": "PASS_SINGLE_SAMPLE_MACOS_773.430958_MS_CI_RUN_36315061990_IPHONE_PENDING",
         "finish_during_map_drag": "PASS_BUILD342_NODE_GATE",
         "manualFailures_equals_CALENDAR_ADVANCE_FAILED": "PASS_BUILD342_NODE_GATE",
-        "map_bounds_and_bounded_rendering": "PASS_BUILD342_NODE_GATE"
+        "map_bounds_and_bounded_rendering": "PASS_BUILD342_NODE_GATE",
+        "record_alert_measurement_source": "LOCAL_NODE_BUILD342_TEST"
       }
     },
     "1": {
-      "status": "PASS_EXACT_BUILD341_124_OF_124_UNCHANGED_CI_RUN_36307934626",
+      "status": "PASS_EXACT_BUILD341_124_OF_124_UNCHANGED_CI_RUN_36315061990",
       "local_build341_acceptance": {
         "completed": false,
         "executed": 107,
@@ -33,7 +34,7 @@
         "blocked_or_failed": 4,
         "reason": "Local attempt stopped before the full exact-source suite because Chromium/ESLint are unavailable; macOS CI will run the unchanged verified source."
       },
-      "ci_gate": "Exact verified Build341 source acceptance passed 124/124 unchanged on macOS CI run 36307934626."
+      "ci_gate": "Exact verified Build341 source acceptance passed 124/124 unchanged on macOS CI run 36315061990."
     },
     "2": {
       "status": "APP_SLICE_SHADOW_PARITY_PASS_KERNEL_NOT_AUTHORITATIVE",
@@ -50,7 +51,7 @@
       "limit": "The app transaction still owns each mutation and refreshes the shadow mirror from its committed write roots; this is not independent kernel-side business simulation. The finance-day and market-hour callbacks are controlled fixtures. Kernel promotion and the normal-slice <30 ms gate remain unproven."
     },
     "3": {
-      "status": "NATIVE_STORAGE_41_OF_41_PASS_IDLE_PROOF_AUDIT_BOUNDED_LOCAL_PASS_FULL_DOMAIN_AUDIT_PENDING",
+      "status": "NATIVE_STORAGE_41_OF_41_PASS_MACOS_773.430958_MS_IPHONE_PENDING_FULL_DOMAIN_AUDIT_PENDING",
       "implemented": [
         "bounded record-alert delta validation",
         "content-addressed native sections",
@@ -61,7 +62,7 @@
         "immutable verified chained and legacy document proof cache with ancestor invalidation",
         "application idle document proof audit, at most 20 top-level records per tick, paused during drag and durable commands"
       ],
-      "limit": "Native Swift compiled and 41/41 storage tests passed macOS CI run 36307934626, including a 28 MiB commit in 275.981417 ms on one macOS sample. Comprehensive domain delta validators, full idle state audit and production hour/day/save timing remain pending."
+      "limit": "Native Swift compiled and 41/41 storage tests passed macOS CI run 36315061990, including one 29360245-byte commit in 773.430958 ms on macOS. This is not an iPhone measurement; comprehensive domain delta validators, full idle state audit and production hour/day/save timing remain pending."
     },
     "4": {
       "status": "CORE_FIXTURE_ONLY_PRODUCTION_COLD_ARCHIVE_PENDING",
@@ -108,7 +109,7 @@
         "worker_bulk_row_patches": 1000,
         "worker_base_snapshot_bytes_upper_bound": 1024
       },
-      "limit": "Registered 20,000-asset section releases duplicated base rows; one-row patches rehash only one of 79 chunks and Worker command/query acknowledgements reuse this bounded fingerprint. Actual app still holds legacy object rows. Live migration and oldest-supported-iPhone memory, FPS and thermal gates are pending; latest source needs CI rerun."
+      "limit": "Registered 20,000-asset section releases duplicated base rows; one-row patches rehash only one of 79 chunks and Worker command/query acknowledgements reuse this bounded fingerprint. Actual app still holds legacy object rows. Live migration and oldest-supported-iPhone memory, FPS and thermal gates remain pending."
     }
   },
   "acceptance": {
@@ -118,20 +119,23 @@
     "full_build342_acceptance": {
       "completed": true,
       "most_recent_completed_run": {
-        "id": "36307934626",
-        "commit": "580eff4b802e12e788f472a9bfeba5227338410f",
-        "result": "PASS_140_OF_140_BUILD342_124_OF_124_BUILD341_NATIVE_41_OF_41_WKWEBVIEW_6_OF_6_UNSIGNED_IPA_BUILT_AND_SOURCE_VERIFIED_NOT_PUBLISHED"
+        "id": "36315061990",
+        "commit": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
+        "result": "PASS_140_OF_140_BUILD342_124_OF_124_BUILD341_NATIVE_41_OF_41_WKWEBVIEW_6_OF_6_UNSIGNED_IPA_BUILT_AND_SOURCE_VERIFIED_NOT_PUBLISHED",
+        "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
+        "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988"
       },
-      "current_source": "PENDING_MACOS_CI_AFTER_COLD_ARCHIVE_FIX"
+      "current_source": "PASS_EXACT_RUNTIME_SOURCE_CI"
     },
-    "swift_compile_and_native_tests": "PASS_41_OF_41_CI_RUN_36307934626",
+    "swift_compile_and_native_tests": "PASS_41_OF_41_CI_RUN_36315061990",
     "unsigned_ipa": {
       "status": "BUILT_AND_SOURCE_VERIFIED_NOT_UPLOADED_OR_DELIVERED",
-      "run_id": "36307934626",
-      "commit": "580eff4b802e12e788f472a9bfeba5227338410f",
-      "bytes": 13445005,
-      "sha256": "2a7ab65be7c0b702456aaa100875f71a30f63dffb8d1277c7c92e47e3b846df7",
-      "verification_artifact_id": "10928023748",
+      "run_id": "36315061990",
+      "commit": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
+      "bytes": 13445716,
+      "sha256": "284250c85768bc0fa7c4378fd1e6ffb252472a23ee3db02ed8b3c03695c016f7",
+      "verification_artifact_id": "10931010204",
+      "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
       "device_tested": false
     },
     "physical_iphone": "NOT_TESTED",
@@ -154,7 +158,8 @@
       "hourly_commits": 240,
       "first_difference": "none after every application slice",
       "independent_kernel_execution": false,
-      "boundary_callbacks": "controlled fixtures"
+      "boundary_callbacks": "controlled fixtures",
+      "current_source_ci": "PASS_BUILD342_SOURCE_CI_RUN_36315061990"
     },
     "build342_local_final_run": {
       "result": "PASS",
@@ -162,8 +167,26 @@
       "command": "npm run test:build342",
       "completed_at": "2026-09-27",
       "includes_shared_writer_serialization_regression": true
+    },
+    "build342_macOS_ci_run": {
+      "run_id": "36315061990",
+      "commit": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
+      "result": "PASS_BUILD341_124_OF_124_BUILD342_140_OF_140_NATIVE_41_OF_41_WEBKIT_6_OF_6_UNSIGNED_IPA_BUILT_AND_SOURCE_VERIFIED_NOT_DELIVERED",
+      "nativeVaultCommitMs": 773.430958,
+      "nativeVaultCommitBytes": 29360245,
+      "ipa_sha256": "284250c85768bc0fa7c4378fd1e6ffb252472a23ee3db02ed8b3c03695c016f7",
+      "ipa_bytes": 13445716,
+      "verification_artifact_id": "10931010204",
+      "verification_artifact_sha256": "590d816baa047161bcc7c4fa58a2bd1ff1d8f7a1f13f02d51d55d301992d0e3e",
+      "physical_iphone_tested": false
     }
   },
   "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
-  "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988"
+  "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
+  "physical_device_evidence": {
+    "available_device": "iPhone 17 Pro Max (user-reported)",
+    "provided_reference_artifact_build": 341,
+    "build342_physical_test": "NOT_TESTED",
+    "oldest_supported_iphone": "NOT_SPECIFIED"
+  }
 }
