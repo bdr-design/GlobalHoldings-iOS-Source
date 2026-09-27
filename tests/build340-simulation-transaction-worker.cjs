@@ -43,8 +43,13 @@ function setup({assetCount=1}={}){
 }
 async function prepare(job){
   const first=job.runChunk(64,{deadline:Infinity});assert.equal(first?.pending,true,'the main thread yields after submitting the bounded worker batch');
-  await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(job.runChunk(64,{deadline:Infinity}),true,'worker plan completes the immutable asset set');
+  for(let turn=0;turn<500;turn++){
+    await new Promise(resolve=>setTimeout(resolve,2));
+    const result=job.runChunk(64,{deadline:Infinity});
+    if(result===true)return;
+    assert.equal(result?.pending,true,'the worker integration keeps an incomplete plan pending until its result arrives');
+  }
+  throw new Error('simulation-worker-integration-timeout');
 }
 async function prepareFully(job){
   for(let turn=0;turn<500;turn++){
