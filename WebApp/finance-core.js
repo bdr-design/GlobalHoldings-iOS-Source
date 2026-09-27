@@ -1,7 +1,7 @@
 (()=>{
 'use strict';
 const VERSION='3.1.0',TYPES=Object.freeze(['group','air','sea','road','power','bank','mobility']);
-const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+const clone=v=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH_CLONE_CORE.clone(v):(globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v)));
 const num=v=>Math.max(0,Number(v)||0), now=s=>Number(s.simSeconds)||0;
 let activeExecutionMeta=null,activeEnsureTarget=null,activeEnsureComplete=false;
 const collectionBatches=new WeakMap();
