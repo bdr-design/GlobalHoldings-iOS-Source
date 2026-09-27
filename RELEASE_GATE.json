@@ -1,12 +1,12 @@
 {
   "approved": false,
   "blocking_issues": [
-    "macOS CI run 36306707904 passed exact Build341 124/124 and Build342 140/140, Swift save tests 41/41 and WKWebView smoke 6/6; its unsigned iPhoneOS IPA was built and checked but not distributed. Current Worker replay and cold archive ordering fixes changed the tested source and require another full CI run.",
+    "macOS CI run 36306707904 passed exact Build341 124/124 and Build342 140/140, Swift save tests 41/41 and WKWebView smoke 6/6; its unsigned iPhoneOS IPA was built and checked but not distributed. The latest Worker replay, incremental fingerprints and cold archive fixes require a new full CI run.",
     "Native save-vault 28 MiB commit measured 355.630709 ms on one macOS CI sample (run 36306707904), with legacy Save Schema 2.0.0 migration, corruption fallback and A/B recovery 41/41. The actual iPhone <2-second gate is still unmeasured.",
     "The 10-day, 600x, 3,380-asset app slice shadow test now passes full-root comparison after 240 commits. The shadow mirrors legacy transaction writes, and finance-day/market-hour callbacks are controlled fixtures; independent kernel business execution, promotion and the <30 ms normal-slice gate are not established.",
     "Document proof cache now covers verified immutable chains with ancestor invalidation, and application idle document proof audit processes at most 20 top-level records per tick, but complete domain delta validators and an idle full-state audit remain pending.",
     "Controlled 10-day app slice at 600x and 3,380 assets yielded 5,952,155 logical JSON bytes with stubbed finance/market boundary callbacks and no production trip archive; cold archive production integration and the <12 MB production hot-state and device-memory targets remain unproven.",
-    "The application still uses its existing simulation transaction owner. Kernel Worker protocol and 20,000-asset Float64Array fixture pass, and bounded section fingerprints locally rehash one chunk with inverse rollback, but authoritative Worker simulation and live asset-column migration are not integrated.",
+    "The application still uses its existing simulation transaction owner. Kernel Worker protocol now keeps replay identities and uses bounded incremental fingerprints on 20,000-asset acknowledgements, but authoritative Worker simulation and live asset-column migration are not integrated.",
     "Physical iPhone tests are required for ten minutes at 600x with continuous drag, >=58 FPS, <1% frame drops, no main-thread tasks over 50 ms, <12 MB hot-state at 3,380 assets and oldest-supported-iPhone 20,000-asset memory/thermal acceptance."
   ],
   "build": 342,
@@ -46,7 +46,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "fd375c140c998847088a8725104ba69ed6f4cb23e3bac2b84b7803c58611fdfb",
+  "source_tree_sha256": "1a95fc47734dc88981f7b483db2aad8f2082139826cbaac18b1bfffa05e5b44e",
   "version": "3.0.0",
-  "webapp_tree_sha256": "372958fcfb42cf7a068f46444ca21d5302c560a9cd39842f9d64040e2ef76d84"
+  "webapp_tree_sha256": "889c4865371acde996eb363cc68e1e20cdc40bb57c9354c1793f2eeef2d93650"
 }

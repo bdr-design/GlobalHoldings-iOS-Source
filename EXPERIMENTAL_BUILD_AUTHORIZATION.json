@@ -6,7 +6,7 @@
     "The ten-day app slice shadow gate now runs the production createSimulationSliceJob and GH_SIMULATION_ASSET_CORE over 3,380 assets. It mirrors committed legacy transaction roots; independent kernel-side business simulation and promotion remain gated, and day/hour callbacks are controlled fixtures.",
     "Native SaveVault storageVersion 2, A/B head, legacy Save Schema 2.0.0 and 41/41 macOS real-file tests pass. An idle document proof audit and safe cached chain verification now run locally; broader state audit and physical iPhone timing remain pending.",
     "Cold archive is core-fixture-only; production lazy financial-history lookup and the <12 MB hot-state ceiling at 3,380 assets remain unproven.",
-    "The app simulation still uses the existing transaction owner. Worker protocol now retains command replay identity beyond 512 replies and fails closed at a 100,000-key session bound; the cold archive core preserves newest-first export order across offloads. Neither core fixture proves authoritative Worker ownership, production archive integration or live 20,000-asset column migration.",
+    "The app simulation still uses its original transaction owner. Worker command/request replay identities survive a 512-reply cache rollover, with fail-closed session limits; its 20,000-asset responses use bounded incremental section fingerprints. Core tests do not prove authoritative Worker ownership, production archive integration or live column migration.",
     "Physical iPhone testing must establish continuous 600x/drag FPS, main-thread task/drop limits, hot/process memory on the oldest supported device and thermal stability."
   ],
   "minimum_acceptance_gates": 140,
@@ -30,7 +30,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "fd375c140c998847088a8725104ba69ed6f4cb23e3bac2b84b7803c58611fdfb",
+  "source_tree_sha256": "1a95fc47734dc88981f7b483db2aad8f2082139826cbaac18b1bfffa05e5b44e",
   "test_build_authorized": true,
   "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
   "version": "3.0.0"

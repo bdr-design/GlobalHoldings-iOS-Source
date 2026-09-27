@@ -51,12 +51,12 @@
           if(prior){if(prior.fingerprint!==fingerprint)throw new Error('kernel-worker-idempotency-conflict');const result=response(request,{...clone(prior.result),idempotent:true});remember(request.requestId,requestFingerprint,result.message);return result;}
           if(idempotency.size>=MAX_REPLAY_KEYS)throw new Error('kernel-worker-idempotency-history-full');
           const result=kernel.tx({label:String(request.label||'worker-command'),owner:String(request.owner||''),owners:request.owners,writes:request.writes,reads:request.reads||{}},writer=>request.operations.map(operation=>applyOperation(writer,operation)));
-          const body={committed:true,revision:result.revision,dirty:result.dirty,sectionRevisions:result.sectionRevisions,undoRecords:result.undoRecords,ms:result.ms,fingerprints:Object.fromEntries(result.dirty.map(name=>[name,kernel.fingerprint(name)]))};idempotency.set(idempotencyKey,{fingerprint,result:body});
+          const body={committed:true,revision:result.revision,dirty:result.dirty,sectionRevisions:result.sectionRevisions,undoRecords:result.undoRecords,ms:result.ms,fingerprints:Object.fromEntries(result.dirty.map(name=>[name,kernel.incrementalFingerprint(name)]))};idempotency.set(idempotencyKey,{fingerprint,result:body});
           const out=response(request,body);remember(request.requestId,requestFingerprint,out.message);return out;
         }
         if(request.type==='query'){
           const section=String(request.section||'');const revision=kernel.revision(section);if(revision==null)throw new Error(`kernel-section-unregistered:${section}`);
-          const body={section,revision,fingerprint:kernel.fingerprint(section)};if(request.includeValue===true)body.value=kernel.read(section);const out=response(request,body);remember(request.requestId,requestFingerprint,out.message);return out;
+          const body={section,revision,fingerprint:kernel.incrementalFingerprint(section)};if(request.includeValue===true)body.value=kernel.read(section);const out=response(request,body);remember(request.requestId,requestFingerprint,out.message);return out;
         }
         if(request.type==='frame'){
           const generation=Number(request.generation);if(!Number.isSafeInteger(generation)||generation<0)throw new Error('kernel-worker-frame-generation-invalid');
@@ -70,7 +70,7 @@
         throw new Error(`kernel-worker-message-type-unsupported:${String(request.type)}`);
       }catch(error){return fail(request,error);}
     }
-    return Object.freeze({VERSION,PROTOCOL,handle,snapshot:()=>kernel?.snapshot()||null,legacyState:()=>kernel?.legacyState()||null,metrics:()=>({initialized:!!kernel,typedArrayBytes:kernel?.typedArrayBytes?.()||0,baseStorageBytes:kernel?.baseStorageBytes?.()||0,sectionCount:kernel?.contracts?.().length||0})});
+    return Object.freeze({VERSION,PROTOCOL,handle,snapshot:()=>kernel?.snapshot()||null,legacyState:()=>kernel?.legacyState()||null,metrics:()=>({initialized:!!kernel,typedArrayBytes:kernel?.typedArrayBytes?.()||0,baseStorageBytes:kernel?.baseStorageBytes?.()||0,sectionCount:kernel?.contracts?.().length||0,fingerprintChunkCalculations:kernel?.fingerprintChunkCalculations?.()||0})});
   }
   function createClient(worker,options={}){
     if(!worker||typeof worker.postMessage!=='function'||typeof worker.addEventListener!=='function')throw new TypeError('kernel-worker-transport-required');
