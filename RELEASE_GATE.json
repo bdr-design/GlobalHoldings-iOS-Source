@@ -1,8 +1,8 @@
 {
   "approved": false,
   "blocking_issues": [
-    "Build342 macOS CI run 36303675104 passed unchanged Build341 baseline and all 137 Build342 source/browser gates, but this result predates the latest runtime fix and must be rerun on its exact source.",
-    "Native GlobalSaveVault Swift compilation failed in run 36303675104 on Int versus Double saveRevision comparison. The compile fix is staged; actual rollback, legacy migration and nativeVaultCommitMs <2,000ms tests remain pending rerun.",
+    "Build342 macOS CI run 36304534035 passed unchanged Build341 baseline and all 137 Build342 source/browser gates. New kernel base-compaction and chunked-save regression changes require the same exact-source gates to pass again.",
+    "Native run 36304534035 compiled Swift and passed 40/41 real-file tests, including 28 MiB commit under 2 seconds, rollback and reset. The legacy inline save fixture removed its directory then wrote without recreating it; fixture corrected, actual legacy migration test and final Native gate pending rerun.",
     "The 10-day, 600x, 3,380-asset app slice shadow test now passes full-root comparison after 240 commits. The shadow mirrors legacy transaction writes, and finance-day/market-hour callbacks are controlled fixtures; independent kernel business execution, promotion and the <30 ms normal-slice gate are not established.",
     "record-alert delta is integrated, but broader domain delta validators and scheduled idle full audits are incomplete.",
     "Controlled 10-day app slice at 600x and 3,380 assets yielded 5,952,155 logical JSON bytes with stubbed finance/market boundary callbacks and no production trip archive; cold archive production integration and the <12 MB production hot-state and device-memory targets remain unproven.",
@@ -11,21 +11,21 @@
   ],
   "build": 342,
   "latest_direct_source_ci": {
-    "status": "NATIVE_SWIFT_COMPILE_FIX_PENDING_MACOS_RERUN",
+    "status": "NATIVE_LEGACY_FIX_AND_LATEST_KERNEL_CHANGES_PENDING_MACOS_RERUN",
     "source_mode": "direct_git_tree_from_verified_build341_commit",
-    "tested_commit_sha": "3dfa43d2bf45f3df0355c0afe263f2855db7a8f7",
-    "run_id": "36303675104",
-    "build341_baseline": "PASS_RUN_36303675104",
+    "tested_commit_sha": "ae611b44385acce38bb2140e24946fcadadd5365",
+    "run_id": "36304534035",
+    "build341_baseline": "PASS_RUN_36304534035",
     "source_gates": "PASS_137_OF_137_PREVIOUS_SOURCE",
     "chromium_webkit": "PASS_SOURCE_BROWSER_TESTS_PREVIOUS_SOURCE",
-    "native_storage": "FAILED_COMPILE_INT_DOUBLE_COMPARE_FIXED_PENDING_RERUN",
+    "native_storage": "SWIFT_COMPILED_PASS_40_OF_41_LEGACY_FIXTURE_REQUIRES_RERUN",
     "unsigned_iphoneos_release_app": "NOT_BUILT",
     "ipa_built": false,
     "physical_iphone_tested": false
   },
   "phase_status": {
-    "stage0_urgent_build342": "SOURCE_137_OF_137_PREVIOUS_RUN_NATIVE_SWIFT_COMPILE_FIX_PENDING_RERUN",
-    "stage1_build341_baseline": "PASS_EXACT_SOURCE_MACOS_CI_RUN_36303675104",
+    "stage0_urgent_build342": "SOURCE_GATES_PASS_PRIOR_RUN_NATIVE_28MIB_UNDER_2S_PRIOR_RUN_LEGACY_MIGRATION_FIX_PENDING",
+    "stage1_build341_baseline": "PASS_EXACT_SOURCE_MACOS_CI_RUN_36304534035",
     "stage2_shadow_state_kernel": "APP_SLICE_SHADOW_PARITY_PASS_KERNEL_NOT_AUTHORITATIVE_FINANCIAL_AND_MARKET_BOUNDARIES_FIXTURED",
     "stage3_delta_validation_and_incremental_storage": "PARTIAL_NATIVE_STORAGE_IMPLEMENTED_MACOS_VALIDATION_AND_IDLE_FULL_AUDIT_PENDING",
     "stage4_cold_archive": "CORE_FIXTURE_PASS_PRODUCTION_COLD_ARCHIVE_AND_HOT_STATE_BUDGET_PENDING",
@@ -45,7 +45,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "7673899f78beafee3f0326c04a721f8ef1c5e8ad7a5372f107fa5546b9960a6d",
+  "source_tree_sha256": "a5b05fedb713ecfcd885128014faeb40a4e489dc2ec67ec19905a2847ffd4d62",
   "version": "3.0.0",
-  "webapp_tree_sha256": "eebdd32cd1cd284b64503fe2a05197bd9b5c6be4e88bdea3f3b00d0feff06fc9"
+  "webapp_tree_sha256": "b15ec0e8249be7ef04afa12cf0c5cbd448035d951f08e515add1f4b92e279e11"
 }

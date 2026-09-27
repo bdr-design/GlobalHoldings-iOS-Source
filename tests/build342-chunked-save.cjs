@@ -3,10 +3,10 @@ const assert=require('node:assert/strict');
 const CHUNKED=require('../WebApp/chunked-save-core.js');
 
 class MemoryAtomicAdapter{
-  constructor(){this.data=new Map();this.failKey=null;this.writes=[];}
+  constructor(){this.data=new Map();this.failKey=null;this.failRemove=false;this.writes=[];}
   async read(key){return this.data.has(key)?this.data.get(key):null;}
   async writeAtomic(key,value){if(this.failKey===key){this.failKey=null;throw new Error('injected-atomic-index-failure');}this.data.set(key,value);this.writes.push(key);}
-  async remove(key){this.data.delete(key);}
+  async remove(key){if(this.failRemove){this.failRemove=false;throw new Error('injected-cleanup-failure');}this.data.delete(key);}
   async keys(){return [...this.data.keys()];}
 }
 
@@ -40,6 +40,12 @@ class MemoryAtomicAdapter{
   const recovered=await store.load();
   assert.equal(recovered.manifest.generation,1,'corrupt newest section falls back to the highest fully verified A/B manifest');
   assert.equal(recovered.state.simSeconds,3600);
+
+  adapter.data.set(`${CHUNKED.CHUNK_PREFIX}orphan.json`,'[]');adapter.failRemove=true;
+  const afterCleanupFailure=await store.commit({...state,saveRevision:3,simSeconds:10800});
+  assert.equal(afterCleanupFailure.manifest.generation,2,'verified publication remains committed if later garbage collection fails');
+  assert.match(afterCleanupFailure.metrics.cleanupError,/injected-cleanup-failure/);
+  assert.equal((await store.load()).state.saveRevision,3,'a post-commit cleanup error cannot make the caller roll back a durable state');
 
   const legacyAdapter=new MemoryAtomicAdapter(),legacy=JSON.stringify({saveVersion:'2.0.0',saveRevision:7,simSeconds:9});
   const legacyStore=CHUNKED.create({adapter:legacyAdapter,readLegacy:async()=>legacy});

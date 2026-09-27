@@ -62,7 +62,7 @@ jobs:
           import json,sys
           from pathlib import Path
           root=Path(sys.argv[1])
-          expected='7673899f78beafee3f0326c04a721f8ef1c5e8ad7a5372f107fa5546b9960a6d'
+          expected='a5b05fedb713ecfcd885128014faeb40a4e489dc2ec67ec19905a2847ffd4d62'
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
           authorization=json.loads((root/'EXPERIMENTAL_BUILD_AUTHORIZATION.json').read_text())
           result=json.loads((root/'BUILD342_STATE_KERNEL_VERIFICATION.json').read_text())

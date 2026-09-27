@@ -1592,8 +1592,8 @@
       "sha256": "93ed7a974472b80f80543dd8e08d93f995656f51d6fe019a1f1e84a144620ffa"
     },
     "WebApp/chunked-save-core.js": {
-      "bytes": 12540,
-      "sha256": "4ef1d88a3526455b68a136fee0ab2bbb0593f8f3ac435583edfab156764418ba"
+      "bytes": 12709,
+      "sha256": "26fdadeae781f2a441d9dda4b79d974310da6908b9c8e56c459db8dcdfcf549f"
     },
     "WebApp/cold-archive-core.js": {
       "bytes": 5662,
@@ -1764,12 +1764,12 @@
       "sha256": "b5d93bbe265471a6fb1961a3f6cd0f3bfacf74c4779799b395288c35b76fb133"
     },
     "WebApp/kernel-core.js": {
-      "bytes": 18344,
-      "sha256": "b3221289b19caf386b68dc7793594cea59adcf5de17aeb9aa7a0b51c2e5f676f"
+      "bytes": 19059,
+      "sha256": "20a91c72e5ed85ee2d135c51773a55b152b3d8f41a86dc554fde067f028713f8"
     },
     "WebApp/kernel-worker-core.js": {
-      "bytes": 9200,
-      "sha256": "137a0ac293515afa6876c342e4646cfbb2c3d317ce3b1b8cfb61094994bd72bf"
+      "bytes": 9249,
+      "sha256": "dd5b1815eb40119b35e57ba32b33803a70866ce394339552729efa9db5d08479"
     },
     "WebApp/kernel-worker.js": {
       "bytes": 334,
@@ -1908,8 +1908,8 @@
       "sha256": "73be32015076bdad2a6ab26066ddd5f71aee1048613d8a10a381bc02eec314fd"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 39024,
-      "sha256": "2d55e74a01c4360031e209d9a8f2ea5a327ea309159edec89a2702ad62bc80fd"
+      "bytes": 39060,
+      "sha256": "d141953bb59ce217fd8f28060b624c847a47ba9326387441e427b5cf42074990"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -2044,7 +2044,7 @@
     "authoritative application simulation migration and physical frame/task acceptance remain gated"
   ],
   "stage6_contracts": [
-    "kernel supports Float64Array hot columns and a synthetic 20000-asset Worker fixture",
+    "kernel supports Float64Array hot columns, 20000-asset Worker fixture, and releases duplicated registered asset arrays from its base snapshot",
     "live application migration and oldest-supported-iPhone memory/FPS/thermal acceptance remain gated"
   ],
   "source_tracking": {
@@ -2058,6 +2058,6 @@
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "remote_branch_created_from_verified_base": true
   },
-  "source_tree_sha256": "7673899f78beafee3f0326c04a721f8ef1c5e8ad7a5372f107fa5546b9960a6d",
-  "webapp_tree_sha256": "eebdd32cd1cd284b64503fe2a05197bd9b5c6be4e88bdea3f3b00d0feff06fc9"
+  "source_tree_sha256": "a5b05fedb713ecfcd885128014faeb40a4e489dc2ec67ec19905a2847ffd4d62",
+  "webapp_tree_sha256": "b15ec0e8249be7ef04afa12cf0c5cbd448035d951f08e515add1f4b92e279e11"
 }

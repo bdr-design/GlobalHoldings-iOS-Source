@@ -57,7 +57,7 @@
         throw new Error(`kernel-worker-message-type-unsupported:${String(request.type)}`);
       }catch(error){return fail(request,error);}
     }
-    return Object.freeze({VERSION,PROTOCOL,handle,snapshot:()=>kernel?.snapshot()||null,legacyState:()=>kernel?.legacyState()||null,metrics:()=>({initialized:!!kernel,typedArrayBytes:kernel?.typedArrayBytes?.()||0,sectionCount:kernel?.contracts?.().length||0})});
+    return Object.freeze({VERSION,PROTOCOL,handle,snapshot:()=>kernel?.snapshot()||null,legacyState:()=>kernel?.legacyState()||null,metrics:()=>({initialized:!!kernel,typedArrayBytes:kernel?.typedArrayBytes?.()||0,baseStorageBytes:kernel?.baseStorageBytes?.()||0,sectionCount:kernel?.contracts?.().length||0})});
   }
   function createClient(worker,options={}){
     if(!worker||typeof worker.postMessage!=='function'||typeof worker.addEventListener!=='function')throw new TypeError('kernel-worker-transport-required');

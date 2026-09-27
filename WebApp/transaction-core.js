@@ -80,6 +80,7 @@
     const factory=globalThis.GH_KERNEL;if(!factory?.create)throw new Error('state-kernel-unavailable');
     const kernel=factory.create({schemaVersion:'2.0.0',legacyState:target}),shadow={kernel,registered:new Set(),checks:0,revision:0,last:null,enabled:true};
     kernelShadows.set(target,shadow);for(const name of Object.keys(target))registerShadowRoot(shadow,name);
+    kernel.releaseRegisteredBase();
     const result=kernel.compareLegacy(target);shadow.last={ok:result.ok,path:result.path||null,fingerprints:result.fingerprints,checkedAt:Date.now()};
     if(!result.ok){kernelShadows.delete(target);throw new Error(`state-kernel-shadow-bootstrap-mismatch:${result.path||'$'}`);}
     return kernelShadowStatus(target);

@@ -19,6 +19,7 @@ class LoopbackWorker{
   const host=PROTOCOL.createHost(GH_KERNEL),worker=new LoopbackWorker(host),client=PROTOCOL.createClient(worker,{timeoutMs:8000});
   const initialized=await client.initialize(state,contracts);assert.equal(initialized.schemaVersion,'2.0.0');assert.deepEqual(initialized.sections.map(row=>row.name),['assets','eventLog']);assert.equal(initialized.sections[0].value,undefined,'worker init acknowledgement never serializes 20,000 asset DTOs back to the UI');
   assert.equal(host.metrics().typedArrayBytes,760000,'20,000-asset Float64Array/F64 plus enum columns use bounded raw column buffers');
+  assert.ok(host.metrics().baseStorageBytes<1024,'registered asset rows must not remain duplicated in the kernel base snapshot');
   const command={owner:'simulation-asset',writes:['assets'],reads:{assets:0},idempotencyKey:'SIM-SLICE-1',operations:[{type:'row-patch',section:'assets',index:12,value:{progress:.5,phase:'turnaround',lastTrip:{revenue:100}}}]};
   const first=await client.command(command);assert.equal(first.committed,true);assert.equal(first.sectionRevisions.assets,1);
   const patched=host.legacyState().assets[12];assert.equal(patched.progress,.5);assert.equal(patched.phase,'turnaround');assert.deepEqual(patched.lastTrip,{revenue:100});assert.equal(patched.name,'asset-12','worker patch preserves non-hot legacy asset fields');

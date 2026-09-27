@@ -113,9 +113,11 @@
       const canonicalJSON=stringify(state),hotState=canonical(state);for(const path of coldPaths)pathDelete(hotState,path);const hotJSON=stringify(hotState),manifest={format:FORMAT,storageVersion,schemaVersion,generation,slot,saveRevision:Math.max(0,Math.floor(Number(metadata.saveRevision??state.saveRevision)||0)),resetEpoch:Math.max(0,Number(metadata.resetEpoch??state.resetEpoch)||0),payloadSHA256:await sha256(canonicalJSON),hotPayloadSHA256:await sha256(hotJSON),sections};
       const text=stringify(manifest),key=INDEX_KEYS[slot==='A'?0:1];await adapter.writeAtomic(key,text);
       const verified=await adapter.read(key);if(verified!==text||!validManifest(parseJSON(verified)))throw new Error('chunked-save-manifest-commit-verification-failed');
-      // The new A/B manifest is committed. Collection happens only after readback.
-      await cleanup();const loaded=await load();if(!loaded||loaded.manifest?.generation!==generation||loaded.manifest?.slot!==slot)throw new Error('chunked-save-post-commit-recovery-failed');
-      metrics.lastCommit={generation,slot,changedChunks:chunksWritten,reusedChunks:chunksReused,sectionCount:sections.length,bytes:new TextEncoder().encode(canonicalJSON).byteLength,hotBytes:new TextEncoder().encode(hotJSON).byteLength,coldBytes:Math.max(0,new TextEncoder().encode(canonicalJSON).byteLength-new TextEncoder().encode(hotJSON).byteLength),storageVersion,schemaVersion};
+      // A published and verified generation must never be reported as an
+      // unsuccessful save merely because later garbage collection failed.
+      const loaded=await load();if(!loaded||loaded.manifest?.generation!==generation||loaded.manifest?.slot!==slot)throw new Error('chunked-save-post-commit-recovery-failed');
+      let cleanupError=null;try{await cleanup();}catch(error){cleanupError=String(error?.message||error);}
+      metrics.lastCommit={generation,slot,changedChunks:chunksWritten,reusedChunks:chunksReused,sectionCount:sections.length,bytes:new TextEncoder().encode(canonicalJSON).byteLength,hotBytes:new TextEncoder().encode(hotJSON).byteLength,coldBytes:Math.max(0,new TextEncoder().encode(canonicalJSON).byteLength-new TextEncoder().encode(hotJSON).byteLength),storageVersion,schemaVersion,cleanupError};
       return {...loaded,metrics:{...metrics.lastCommit}};
     }
     return Object.freeze({VERSION,schemaVersion,storageVersion,chunkItems,load,loadHot:()=>load({includeCold:false}),loadSection,exportLegacy,commit,metrics:()=>JSON.parse(JSON.stringify(metrics)),cleanup});

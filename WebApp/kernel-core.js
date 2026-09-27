@@ -57,6 +57,19 @@
     let base=options.legacyState&&typeof options.legacyState==='object'?clone(options.legacyState):{};
     let sequence=0;
     const hot=new Map();
+    function releaseRegisteredBase(){
+      const sections=[...contracts.values()],parts=section=>pathParts(section.path);
+      for(const section of sections){
+        if(!section.present)continue;
+        const path=parts(section),overlaps=sections.some(other=>{
+          if(other===section)return false;
+          const candidate=parts(other),length=Math.min(path.length,candidate.length);
+          return path.slice(0,length).every((key,index)=>key===candidate[index]);
+        });
+        if(!overlaps)pathWrite(base,section.path,null);
+      }
+      return api;
+    }
     function buildColumnSection(spec,legacyValue){
       const source=Array.isArray(legacyValue)?legacyValue:[],fields=Object.entries(spec.columns||{}),rows=source.map(row=>clone(row&&typeof row==='object'&&!Array.isArray(row)?row:{})),columns={};
       for(const [name,type] of fields){
@@ -154,11 +167,11 @@
     function addAuditor(name,validator){ensure(name);if(typeof validator!=='function')throw new TypeError('kernel-auditor-required');if(!auditors.has(name))auditors.set(name,[]);auditors.get(name).push(validator);return ()=>{const rows=auditors.get(name)||[],index=rows.indexOf(validator);if(index>=0)rows.splice(index,1);};}
     function compareLegacy(candidate){const expected=legacyState(),path=firstDifference(expected,candidate);return {ok:path===null,path,fingerprints:{kernel:fingerprint(expected),legacy:fingerprint(candidate)}};}
     function snapshot(){const sections={};for(const name of contracts.keys())sections[name]={revision:revisions.get(name),fingerprint:sectionFingerprint(name),value:expose(ensure(name))};return {schemaVersion,revision:sequence,sections};}
-    const api={VERSION,schemaVersion,register,tx,read(name){return expose(ensure(name));},columnSnapshot(name,columnName){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const column=section.data.columns[String(columnName)];if(!column)throw new Error(`kernel-column-unregistered:${name}.${columnName}`);return {type:column.type,data:new column.data.constructor(column.data),presence:new Uint8Array(column.presence),enumValues:clone(column.enumValues)};},revision(name){return revisions.get(String(name))??null;},fingerprint:sectionFingerprint,addAuditor,compareLegacy,legacyState,snapshot,contracts(){return [...contracts.values()].map(({data,...row})=>clone(row));},typedArrayBytes(){let bytes=0;for(const section of contracts.values())if(section.kind==='columns')for(const column of Object.values(section.data.columns))bytes+=column.data.byteLength+column.presence.byteLength;return bytes;}};
+    const api={VERSION,schemaVersion,register,releaseRegisteredBase,tx,read(name){return expose(ensure(name));},columnSnapshot(name,columnName){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const column=section.data.columns[String(columnName)];if(!column)throw new Error(`kernel-column-unregistered:${name}.${columnName}`);return {type:column.type,data:new column.data.constructor(column.data),presence:new Uint8Array(column.presence),enumValues:clone(column.enumValues)};},revision(name){return revisions.get(String(name))??null;},fingerprint:sectionFingerprint,addAuditor,compareLegacy,legacyState,snapshot,contracts(){return [...contracts.values()].map(({data,...row})=>clone(row));},baseStorageBytes(){return new TextEncoder().encode(JSON.stringify(base)).byteLength;},typedArrayBytes(){let bytes=0;for(const section of contracts.values())if(section.kind==='columns')for(const column of Object.values(section.data.columns))bytes+=column.data.byteLength+column.presence.byteLength;return bytes;}};
     return Object.freeze(api);
   }
   function fromLegacyState(legacy,contracts,options={}){
-    const kernel=create({...options,legacyState:legacy});for(const contract of contracts||[])kernel.register(contract.name,contract);return kernel;
+    const kernel=create({...options,legacyState:legacy});for(const contract of contracts||[])kernel.register(contract.name,contract);kernel.releaseRegisteredBase();return kernel;
   }
   return Object.freeze({VERSION,create,fromLegacyState,fingerprint,firstDifference,stableStringify:stable});
 });

@@ -2,9 +2,9 @@
   "authorized_at": "2026-09-26",
   "build": 342,
   "known_limits": [
-    "Exact Build341 baseline and 137/137 Build342 source/browser acceptance passed on macOS CI run 36303675104. Native Swift compile then failed at Int/Double saveRevision comparison; the fix and Worker request-ID conflict check require a fresh exact-source CI run.",
+    "Exact Build341 baseline and 137/137 Build342 source/browser acceptance passed on macOS CI run 36304534035. Native Swift compiled and 40/41 real-file cases passed, including 28 MiB commit under 2 seconds. Legacy migration fixture omitted its directory after reset; the corrected fixture and new kernel/chunked-save improvements require exact-source rerun.",
     "The ten-day app slice shadow gate now runs the production createSimulationSliceJob and GH_SIMULATION_ASSET_CORE over 3,380 assets. It mirrors committed legacy transaction roots; independent kernel-side business simulation and promotion remain gated, and day/hour callbacks are controlled fixtures.",
-    "Native SaveVault storageVersion 2 chunking, A/B head publication and legacy Save Schema 2.0.0 reading require passing macOS real-file rollback, migration and <2-second native commit tests.",
+    "Native SaveVault storageVersion 2 chunking, A/B head publication and legacy Save Schema 2.0.0 reading are implemented. Mac CI passed 40/41 including <2-second 28 MiB commit; corrected legacy fixture requires final real-file acceptance.",
     "Cold archive is core-fixture-only; production lazy financial-history lookup and the <12 MB hot-state ceiling at 3,380 assets remain unproven.",
     "The app simulation still uses the existing transaction owner. Worker protocol and 20,000-asset typed-column tests do not prove authoritative Worker ownership or live column migration.",
     "Physical iPhone testing must establish continuous 600x/drag FPS, main-thread task/drop limits, hot/process memory on the oldest supported device and thermal stability."
@@ -30,7 +30,7 @@
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false
   },
-  "source_tree_sha256": "7673899f78beafee3f0326c04a721f8ef1c5e8ad7a5372f107fa5546b9960a6d",
+  "source_tree_sha256": "a5b05fedb713ecfcd885128014faeb40a4e489dc2ec67ec19905a2847ffd4d62",
   "test_build_authorized": true,
   "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
   "version": "3.0.0"
