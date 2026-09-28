@@ -296,7 +296,8 @@
     const out={ok:true,...(json!==null?{json}:{}),...(measurement||{}),browserCache:nativeBridge?null:cache.ok,cacheReason:null,previous:cache?.previous??null,saveRevision:nextRevision};
     if(!nativeBridge){ordinaryError=null;return out;}
     const nativeMetadata={appVersion,...options,saveRevision:nextRevision,resetEpoch};
-    const work=Promise.resolve().then(()=>{if(recoveryRequired)throw new Error('native-recovery-required');return requestNativeStream(state,nativeMetadata);});
+    ordinarySnapshotting=true;
+    const work=Promise.resolve().then(()=>{if(recoveryRequired){ordinarySnapshotting=false;throw new Error('native-recovery-required');}return requestNativeStream(state,nativeMetadata);});
     ordinaryInFlight=work.then(result=>{
       ordinaryError=null;const stats=result.stats||{};timing.stringifyMs=Number(stats.cpuMs)||0;timing.maxSerializationSliceMs=Number(stats.maxSliceMs)||0;timing.serializationYields=Number(stats.yields)||0;timing.streamChunks=Number(stats.chunks)||0;timing.utf8Bytes=Number(stats.utf8Bytes)||0;lastSaveBreakdown=rememberTiming({...timing,kind:'ordinary-save-stream-complete'});
       const mirror=result.mirrorJSON;
