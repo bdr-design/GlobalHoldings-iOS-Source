@@ -88,11 +88,13 @@ final class GlobalSaveStream {
             if action == "saveStreamCommit" {
                 guard let chunks = number(packet["chunks"], maximum: Self.maximumChunks), chunks > 0, chunks == session.digests.count,
                       let byteCount = number(packet["utf8Bytes"], maximum: Self.maximumBytes), byteCount == session.data.count,
-                      let hash = packet["saveHash"] as? String, hash.count == 64,
-                      session.hash.finalize().map({ String(format: "%02x", $0) }).joined() == hash,
                       let json = String(data: session.data, encoding: .utf8) else { throw StreamError.invalid("save-stream-final-digest-mismatch") }
+                let hash = session.hash.finalize().map({ String(format: "%02x", $0) }).joined()
+                if let supplied = packet["saveHash"] as? String, supplied != hash {
+                    throw StreamError.invalid("save-stream-final-digest-mismatch")
+                }
                 var envelope = packet
-                envelope["action"] = "commitSave"; envelope["saveJSON"] = json
+                envelope["action"] = "commitSave"; envelope["saveJSON"] = json; envelope["saveHash"] = hash
                 active = nil
                 return .ready(json: json, envelope: envelope)
             }
