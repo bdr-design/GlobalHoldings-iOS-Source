@@ -1,0 +1,233 @@
+name: Build 345 time fix unsigned IPA
+
+on:
+  push:
+    branches: [fix/build345-time-frame-root]
+    paths: [.github/workflows/build345-time-fix.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build345-time-fix
+  cancel-in-progress: false
+
+jobs:
+  prepare-source:
+    name: Commit reviewed owner-module repair and synchronized version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      source_sha: ${{ steps.commit.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - name: Verify, promote and commit direct source before building
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/fix/build345-time-frame-root'
+          git merge-base --is-ancestor b2f74fae5ceaa126c8b6ecbb6ddc24ade0e24654 HEAD
+          if [[ "$(cat BUILD)" == '344' ]]; then
+            python3 tools/prepare_build345_release.py
+            node tests/build339-architecture-bootstrap.cjs
+            node tests/build345-mobility-read-conflict.cjs
+            node tests/build342-mobility-trip-archive-app.cjs
+            git add -- BUILD VERSION project.yml package.json WebApp/mobility-core.js WebApp/app.js WebApp/advanced-core.js WebApp/control-plane-core.js iOS/GlobalHoldings/GlobalGameStorage.swift tests/build339-architecture-bootstrap.cjs RUNTIME_SOURCE_MANIFEST.json SOURCE_INTEGRITY_SHA256.txt RELEASE_GATE.json EXPERIMENTAL_BUILD_AUTHORIZATION.json BUILD345_TIME_FIX_VERIFICATION.json CURRENT_REVIEW_POINT_AR.md
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Build345: fix read-induced time conflicts in Mobility and raise version to 3.0.3'
+            git push origin HEAD:refs/heads/fix/build345-time-frame-root
+          fi
+          python3 tools/verify_current_source.py --root .
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('RUNTIME_SOURCE_MANIFEST.json').read_text())
+          assert (m['build'],m['version'],m['save_schema'])==(345,'3.0.3','2.0.0')
+          assert m['source_tree_sha256']=='6c8ff4552837430d56393c5723ccbe55cc34a02dcc33f38667ac6d2ffb39e638'
+          PY
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build-test:
+    name: Source acceptance, Native, WKWebView and fresh iPhoneOS build
+    needs: prepare-source
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      SOURCE_COMMIT: ${{ needs.prepare-source.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-source.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - name: Verify exact tracked source and closed approval gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-output
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          python3 tools/verify_current_source.py --root . | tee .ci-output/source-verification.json
+          shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt > .ci-output/source-integrity.log
+          printf 'source_commit=%s\nworkflow_commit=%s\nsource_mode=direct_git_tracked_tree\n' "$SOURCE_COMMIT" "$GITHUB_SHA" > .ci-output/source-identity.txt
+          git archive --format=zip --output=.ci-output/GlobalHoldings_BUILD345_SOURCE.zip HEAD
+      - name: Install pinned source test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --no-audit --no-fund
+          npx playwright install chromium webkit
+          npm run lint
+      - name: Run every declared source acceptance gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/build345-source-acceptance"
+          set +e
+          python3 tools/run_acceptance.py --output "$OUT" --timeout 600 | tee .ci-output/source-acceptance.log
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          cp "$OUT/results.json" .ci-output/source-acceptance-results.json
+          if [[ "$STATUS" != 0 ]]; then
+            python3 - "$OUT" <<'PY'
+          import json,sys
+          from pathlib import Path
+          out=Path(sys.argv[1]);r=json.loads((out/'results.json').read_text())
+          for t in r['tests']:
+              if t['exit_code']!=0:
+                  print('FAILED',t['argv'],t['exit_code'])
+                  print((out/t['log']).read_text(errors='replace')[-12000:])
+          PY
+            exit "$STATUS"
+          fi
+      - name: Replay focused calendar, midnight rollback and save/reload journey
+        shell: bash
+        env:
+          GH_CALENDAR_FOCUSED: '1'
+          GH_LOCAL_EVIDENCE: ${{ runner.temp }}/build345-calendar
+        run: |
+          set -euo pipefail
+          node tests/build334-calendar-local-dom.cjs | tee .ci-output/calendar-local-dom.log
+          cp "$GH_LOCAL_EVIDENCE/334-calendar-journey-results.json" .ci-output/calendar-local-dom-results.json
+      - name: Native Save Vault tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE"
+          OUT="$RUNNER_TEMP/build345-native"
+          mkdir -p "$OUT"
+          python3 tests/native/prepare_native_tests.py --source "$SRC" --output "$OUT"
+          xcrun swiftc "$OUT/main.swift" "$SRC/iOS/GlobalHoldings/GlobalGameStorage.swift" "$SRC/iOS/GlobalHoldings/GlobalSaveVault.swift" -o "$OUT/native-tests"
+          cd "$OUT"
+          GH_NATIVE_AUDIT_EPHEMERAL=1 ./native-tests | tee "$SRC/.ci-output/native-storage-tests.log"
+          cp native-tests.json save-enqueue-measurement.json "$SRC/.ci-output/"
+      - name: Real WKWebView smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE"
+          OUT="$RUNNER_TEMP/build345-wkwebview"
+          mkdir -p "$OUT"
+          python3 tests/native/prepare_webkit_smoke.py "$SRC" "$OUT"
+          xcrun swiftc -framework AppKit -framework WebKit "$OUT/main.swift" -o "$OUT/webkit-smoke"
+          cd "$OUT"
+          ./webkit-smoke | tee "$SRC/.ci-output/webkit-smoke.log"
+          cp webkit-smoke.json "$SRC/.ci-output/"
+      - name: Compile fresh unsigned arm64 iPhoneOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun swiftc -parse iOS/GlobalHoldings/*.swift
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          xcodegen generate --spec project.yml
+          xcodebuild -project GlobalHoldings.xcodeproj -scheme GlobalHoldings -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/build345-derived" ARCHS=arm64 CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' DEVELOPMENT_TEAM='' clean build 2>&1 | tee .ci-output/xcodebuild.log
+          if [[ -e iOS/GlobalHoldings/Info.plist ]]; then
+            if git ls-files --error-unmatch iOS/GlobalHoldings/Info.plist >/dev/null 2>&1; then
+              echo 'Unexpected tracked generated Info.plist' >&2
+              exit 1
+            fi
+            rm iOS/GlobalHoldings/Info.plist
+          fi
+          python3 tools/verify_current_source.py --root . | tee .ci-output/source-verification-after-build.json
+      - name: Package and verify the freshly compiled IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/build345-package"
+          APP="$RUNNER_TEMP/build345-derived/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          IPA="$GITHUB_WORKSPACE/.ci-output/GlobalHoldings_v3_0_3_build345_unsigned.ipa"
+          test -d "$APP"
+          mkdir -p "$STAGE/Payload"
+          ditto "$APP" "$STAGE/Payload/GlobalHoldings.app"
+          (cd "$STAGE" && /usr/bin/zip -qry "$IPA" Payload)
+          python3 tools/verify_build345_ipa.py "$IPA" .ci-output/GlobalHoldings_BUILD345_verification.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GlobalHoldings_BUILD345_verification
+          path: |
+            .ci-output/*.json
+            .ci-output/*.log
+            .ci-output/*.txt
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: GlobalHoldings_BUILD345_unsigned_ipa
+          path: |
+            .ci-output/GlobalHoldings_v3_0_3_build345_unsigned.ipa
+            .ci-output/GlobalHoldings_BUILD345_verification.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: GlobalHoldings_BUILD345_SOURCE
+          path: .ci-output/GlobalHoldings_BUILD345_SOURCE.zip
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  deliver:
+    name: Publish verified experimental IPA
+    needs: [prepare-source, build-test]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    env:
+      SOURCE_COMMIT: ${{ needs.prepare-source.outputs.source_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: GlobalHoldings_BUILD345_unsigned_ipa
+          path: delivery
+      - name: Verify delivery hash and publish prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,zipfile
+          from pathlib import Path
+          root=Path('delivery');p=root/'GlobalHoldings_v3_0_3_build345_unsigned.ipa';r=root/'GlobalHoldings_BUILD345_verification.json';d=json.loads(r.read_text())
+          assert d['source_commit']==os.environ['SOURCE_COMMIT'] and d['version']=='3.0.3' and d['build']==345
+          assert d['ipa_sha256']==hashlib.sha256(p.read_bytes()).hexdigest() and d['ipa_bytes']==p.stat().st_size
+          assert d['unsigned'] is True and d['production_approved'] is False and d['strict_under_5ms_verified'] is False
+          with zipfile.ZipFile(root/'GlobalHoldings_BUILD345_download.zip','w',zipfile.ZIP_STORED) as z:
+              z.write(p,p.name);z.write(r,r.name)
+          (root/'notes.md').write_text('Global Holdings 3.0.3 / Build 345 — unsigned experimental time-conflict fix.\n\nFresh source build, not an old IPA repack. Includes idempotent Mobility normalization. Save Schema 2.0.0 retained. Frame-drop elimination and a strict maximum under 5 ms are NOT verified. Physical iPhone not tested; signing required before installation.\n\nSource commit: '+d['source_commit']+'\nIPA SHA-256: '+d['ipa_sha256']+'\n')
+          PY
+          gh release create "build345-unsigned-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" delivery/*.ipa delivery/*.zip delivery/*.json --repo "$GITHUB_REPOSITORY" --target "$SOURCE_COMMIT" --title 'Global Holdings 3.0.3 Build 345 unsigned TEST' --notes-file delivery/notes.md --prerelease --latest=false
