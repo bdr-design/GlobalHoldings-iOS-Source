@@ -1,0 +1,27 @@
+name: Export verified Build 344 source for repair
+on:
+  push:
+    branches: [fix/build345-time-frame-root]
+    paths: ['.github/workflows/build345-source-export.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b2f74fae5ceaa126c8b6ecbb6ddc24ade0e24654
+          persist-credentials: false
+      - name: Verify tracked runtime source
+        run: python3 tools/verify_current_source.py --root .
+      - name: Archive tracked source only
+        run: git archive --format=zip --output=GlobalHoldings_BUILD344_VERIFIED_SOURCE.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings_BUILD344_VERIFIED_SOURCE
+          path: GlobalHoldings_BUILD344_VERIFIED_SOURCE.zip
+          if-no-files-found: error
+          retention-days: 14
