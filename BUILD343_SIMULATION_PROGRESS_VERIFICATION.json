@@ -5,8 +5,8 @@
   "save_schema": "2.0.0",
   "release_approved": false,
   "repository_branch": "fix/build343-simulation-progress",
-  "source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
-  "webapp_tree_sha256": "41ff981f2c0733b7749eb02843e1d29d93b0b0dde0475e9113c4b3e029c48ff3",
+  "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
+  "webapp_tree_sha256": "8f37fe44506a8daf3336981b6ae8f7378b088e4e8980d87cd86c6510af275500",
   "base_build342_commit": "1235cdf3071d648ccb35cb2a53db10798886b1bc",
   "input_diagnostic": {
     "app_version": "3.0.0",
@@ -42,7 +42,8 @@
     "kernel_shadow_app_ten_days_3380_assets": "PASS_NODE_PARITY_240_COMMITS",
     "kernel_owner_day_boundary_128_assets": "PASS_NODE_PARITY_24_COMMITS",
     "kernel_fault_injection": "PASS_10000_CASES",
-    "source_layout": "PASS_11_OF_11"
+    "source_layout": "PASS_11_OF_11",
+    "diagnostic_export_version_matches_app": "PASS_NODE_VERSION_CONTRACT"
   },
   "performance_acceptance": {
     "target_max_stage_ms": 5,

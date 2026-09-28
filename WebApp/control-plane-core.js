@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
   const VERSION='1.0.0';
-  const APP_VERSION='3.0.0';
+  const APP_VERSION='3.0.1';
   const SCHEMA='gh-control-plane-v1';
   const CONTROL_LIMITS=Object.freeze({events:240,commands:120,incidents:80,outbox:100,blackBox:120});
   const ENGINE_ORDER=['control','simulation','finance','procurement','assets','routes','staffing','save','update','nativeBridge','diagnostics'];

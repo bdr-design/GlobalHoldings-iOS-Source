@@ -39,18 +39,18 @@
     "branch": "fix/build343-simulation-progress",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "current_candidate_source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
-    "current_candidate_webapp_tree_sha256": "41ff981f2c0733b7749eb02843e1d29d93b0b0dde0475e9113c4b3e029c48ff3",
+    "current_candidate_source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
+    "current_candidate_webapp_tree_sha256": "8f37fe44506a8daf3336981b6ae8f7378b088e4e8980d87cd86c6510af275500",
     "current_candidate_ci_status": "PENDING_BUILD343_CI",
     "latest_candidate_ci_matches_current_source": false,
     "build343_base_branch": "fix/build342-asset-hotpath",
     "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc"
   },
-  "source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
+  "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
   "test_build_authorized": true,
   "user_request": "Raise the app version and investigate game lag using the newly supplied diagnostic. Experimental testing is authorized; production approval remains false.",
   "version": "3.0.1",
-  "webapp_tree_sha256": "41ff981f2c0733b7749eb02843e1d29d93b0b0dde0475e9113c4b3e029c48ff3",
+  "webapp_tree_sha256": "8f37fe44506a8daf3336981b6ae8f7378b088e4e8980d87cd86c6510af275500",
   "subsequent_full_ci_attempts": [
     {
       "run_id": "36355076486",
@@ -81,7 +81,7 @@
   },
   "latest_current_source_ci": {
     "status": "PENDING_BUILD343_CI",
-    "source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
+    "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
     "physical_device_tested": false
   },
   "previous_build342_unsigned_test_ipa_delivery": {

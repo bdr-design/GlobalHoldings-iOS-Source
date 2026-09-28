@@ -14,6 +14,7 @@ assert.match(project,new RegExp(`CURRENT_PROJECT_VERSION:\\s*["']?${build}["']?`
 assert.match(project,new RegExp(`CFBundleVersion:\\s*["']?${build}["']?`),'native bundle build drifted');
 const app=read('WebApp/app.js');
 assert.match(app,new RegExp(`const RUNTIME_BUILD\\s*=\\s*${build}\\s*;`),'WebApp runtime build drifted');
+assert.match(read('WebApp/control-plane-core.js'),new RegExp(`const APP_VERSION\\s*=\\s*['"]${read('VERSION').trim().replaceAll('.','\\.')}['"]\\s*;`),'diagnostic export app version drifted');
 assert.match(app,/const SAVE_SCHEMA_VERSION\s*=\s*['"]2\.0\.0['"]\s*;/,'Save Schema changed during bootstrap');
 const pkg=JSON.parse(read('package.json'));
 assert.equal(pkg.version,`3.0.1-build${build}`,'package build identity drifted');
@@ -39,4 +40,4 @@ assert.equal(last.postCommitCriticalTasks[0].ok,false);
 assert.ok(last.postCommitCriticalTasks[0].durationMs>=0);
 assert.equal(JSON.stringify(state),before,'telemetry mutated transaction state');
 
-console.log(JSON.stringify({suite:'build339-architecture-bootstrap',passed:12,total:12,saveSchema:'2.0.0'}));
+console.log(JSON.stringify({suite:'build339-architecture-bootstrap',passed:13,total:13,saveSchema:'2.0.0'}));
