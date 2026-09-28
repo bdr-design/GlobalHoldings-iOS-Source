@@ -70,6 +70,16 @@ const raw=structuredClone(state);assert.equal(schema.validate(raw,{lockVerifiedP
 assert.equal(schema.telemetry().lastValidation.fullStateCacheHits,0,'imported plain save is never cached');
 assert.equal(schema.validate(raw,{lockVerifiedProofs:true}).ok,true);
 assert.equal(schema.telemetry().lastValidation.fullStateCacheHits,0,'repeated imported plain save is still fully checked');
+assert(schema.telemetry().lastValidation.documentRecordCacheHits>0,'frozen raw records still reuse individual proof checks');
+const previousHashOwner=s.GH_CONTROL_PLANE;s.GH_CONTROL_PLANE={sha256:()=> 'f'.repeat(64)};
+const rawProviderChange=schema.validate(raw,{lockVerifiedProofs:true});
+assert(rawProviderChange.errors.includes('document-proof-record-integrity'),'new hash provider must rehash previously frozen raw records');
+assert.equal(schema.telemetry().lastValidation.documentRecordCacheHits,0,'old frozen row locks must be discarded globally on verifier change');
+s.GH_CONTROL_PLANE=previousHashOwner;
+assert.equal(schema.validate(raw,{lockVerifiedProofs:true}).ok,true,'restored hash owner must fully reverify frozen raw records');
+assert.equal(schema.telemetry().lastValidation.documentRecordCacheHits,0,'restoring the provider starts a new lock epoch');
+assert.equal(schema.validate(raw,{lockVerifiedProofs:true}).ok,true);
+assert(schema.telemetry().lastValidation.documentRecordCacheHits>0,'safe frozen row reuse resumes after verification');
 raw.finance.invoices[1].total=999;
 assert(schema.validate(raw,{lockVerifiedProofs:true}).errors.includes('invoice-math'),'tampered raw save is rejected');
 

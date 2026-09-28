@@ -13,8 +13,8 @@
     "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
     "physical_iphone_tested": false
   },
-  "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
-  "webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
+  "source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
+  "webapp_tree_sha256": "ad8b8978fb8ae69c98e527e4ec534033c603c971461f963454593884bd699c2a",
   "input_diagnostic": {
     "app_version": "3.0.0",
     "recorder_build": 342,
@@ -46,14 +46,15 @@
   ],
   "local_verification": {
     "build344_finance_noop": "PASS_NODE",
-    "build344_full_schema_cache_1800_assets_2500_invoices": "PASS_NODE_WARM_P95_APPROX_0_2_TO_0_3_MS",
+    "build344_full_schema_cache_1800_assets_2500_invoices": "PASS_NODE_WARM_P95_0_37_MS_PLUS_RAW_PROVIDER_INVALIDATION",
     "build343_proof_hit_1000_signed_documents": "PASS_NODE_TAMPER_AND_ROLLBACK",
     "build344_worker_bootstrap_save_revision_and_asset_revision": "PASS_NODE",
     "build340_worker_20000_assets_atomic_rollback": "PASS_NODE",
     "native_update_bridge": "PASS_NODE_26_OF_26",
     "browser_webkit_fullapp_1800": "PENDING_MACOS_CI",
-    "full_source_acceptance": "PENDING_MACOS_CI",
-    "physical_iphone": "NOT_TESTED"
+    "full_source_acceptance": "FIRST_CI_156_OF_157_ROW_CACHE_GATE_FAILED_FIX_LOCALLY_PASS_RERUN_PENDING",
+    "physical_iphone": "NOT_TESTED",
+    "build334_durable_authorization_contract": "PASS_NODE_5_OF_5_AFTER_CI_FIX"
   },
   "performance_acceptance": {
     "target_max_stage_ms": 5,
@@ -96,5 +97,13 @@
     "apple_identity_available": false,
     "matching_provisioning_available": false,
     "unsigned_ipa_installable_on_iphone": false
+  },
+  "first_build344_ci_attempt": {
+    "run_id": "36393295600",
+    "commit_sha": "c1b02530e41931019672bf9b76332d7f918cc4da",
+    "result": "FAILED_156_OF_157_SOURCE_GATES",
+    "failed_gate": "tests/build334-durable-authorization-contract.cjs",
+    "fix": "restore frozen plain-state row cache with global verifier-dependency epoch",
+    "native_webkit_ipa": "SKIPPED_AFTER_SOURCE_GATE_FAILURE"
   }
 }

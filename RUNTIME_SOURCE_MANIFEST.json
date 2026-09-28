@@ -1872,8 +1872,8 @@
       "sha256": "14ea17a1bfe885b09633524b56f52a775d93eba4db367fe0417c239be00b0d55"
     },
     "WebApp/save-schema.js": {
-      "bytes": 75006,
-      "sha256": "821613bf21b54cda080d3af0d7753706748e11f41aa718b1e1832a8df207f807"
+      "bytes": 75674,
+      "sha256": "e4069dea1e469be354a0762979f6d728fe1d71a0b307eeda01035deba80f1e2e"
     },
     "WebApp/section-identities.css": {
       "bytes": 2444,
@@ -1997,7 +1997,7 @@
     },
     "project.yml": {
       "bytes": 2421,
-      "sha256": "6d07e6d555a937ec8ba820b4ee05e928d09180a9e29a0133904128bf2be07198"
+      "sha256": "9ae2a7a1d4a404f44168192bf92f1e1abb403a2f4e0393b045345adee3ea0a2f"
     },
     "BUILD": {
       "bytes": 4,
@@ -2070,8 +2070,8 @@
     "build343_base_branch": "fix/build342-asset-hotpath",
     "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc"
   },
-  "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
-  "webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
+  "source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
+  "webapp_tree_sha256": "ad8b8978fb8ae69c98e527e4ec534033c603c971461f963454593884bd699c2a",
   "previous_passed_direct_source_ci": {
     "run_id": "36315061990",
     "commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",

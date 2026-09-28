@@ -2,7 +2,7 @@
   "approved": false,
   "blocking_issues": [
     "Strict under-5-ms maximum is not met in synthetic Node tests: the 3,380-asset chunk peaked at 13.81 ms and 10,000-asset chunk at 82.10 ms; the 8 MB ordinary JSON save still serializes on the main thread.",
-    "Build 344 full browser/macOS/unsigned iPhoneOS CI and physical 1,800/3,380/20,000-asset frame, calendar, memory, and rollback traces remain pending.",
+    "First Build 344 CI passed 156/157 source gates; frozen raw proof row cache regression fixed locally, full macOS/WebKit/unsigned iPhoneOS CI rerun and physical 1,800/3,380/20,000-asset traces remain pending.",
     "No Apple signing identity or provisioning profile is available; the CI test IPA is unsigned and cannot be installed as-is on an iPhone. Production approval remains closed."
   ],
   "build": 344,
@@ -17,7 +17,7 @@
     "full_snapshot_fallback": "ON",
     "save_schema": "2.0.0",
     "production_approved": false,
-    "build344": "LOCAL_FOCUSED_PASS_FULL_CI_PENDING_DEVICE_AND_SIGNING_PENDING_UNDER_5_MS_NOT_MET"
+    "build344": "LOCAL_FOCUSED_PASS_FIRST_CI_156_OF_157_FIX_RERUN_PENDING_DEVICE_AND_SIGNING_PENDING_UNDER_5_MS_NOT_MET"
   },
   "point": "Build 344 — verified source fixes and measured frame-safety limits",
   "save_schema": "2.0.0",
@@ -28,9 +28,9 @@
     "branch": "fix/build344-frame-safety",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "current_candidate_source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
-    "current_candidate_webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
-    "current_candidate_ci_status": "PENDING_BUILD344_CI",
+    "current_candidate_source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
+    "current_candidate_webapp_tree_sha256": "ad8b8978fb8ae69c98e527e4ec534033c603c971461f963454593884bd699c2a",
+    "current_candidate_ci_status": "PENDING_BUILD344_CI_RERUN_AFTER_PROOF_ROW_FIX",
     "latest_candidate_ci_matches_current_source": false,
     "build343_base_branch": "fix/build342-asset-hotpath",
     "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc",
@@ -38,9 +38,9 @@
     "build344_base_branch": "fix/build343-simulation-progress",
     "build344_base_commit_sha": "3d04836ef5360fde07969173f76eb664de90ccf2"
   },
-  "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
+  "source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
   "version": "3.0.2",
-  "webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
+  "webapp_tree_sha256": "ad8b8978fb8ae69c98e527e4ec534033c603c971461f963454593884bd699c2a",
   "previous_passed_source_ci": {
     "run_id": "36307934626",
     "commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",
@@ -62,6 +62,13 @@
       "build342": "143/144",
       "failed_gate": "build334-calendar-journey-browser.cjs",
       "reason": "30-day manual advance timed out after day 7; needs an independent repeat and investigation"
+    },
+    {
+      "run_id": "36393295600",
+      "commit_sha": "c1b02530e41931019672bf9b76332d7f918cc4da",
+      "build344": "156/157",
+      "failed_gate": "build334-durable-authorization-contract.cjs",
+      "reason": "first proof-cache revision lost frozen plain-state row cache hits; dependency epoch fix tested locally"
     }
   ],
   "previous_build342_direct_source_ci": {
@@ -87,8 +94,8 @@
     "tested_webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574"
   },
   "latest_direct_source_ci": {
-    "status": "PENDING_BUILD344_CI",
-    "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
+    "status": "PENDING_BUILD344_CI_RERUN_AFTER_PROOF_ROW_FIX",
+    "source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
     "ipa_built": false,
     "physical_device_tested": false
   },

@@ -7,13 +7,13 @@
   const STATE_LIMITS=Object.freeze({customRoutes:240,routeEndpoints:360,routeCache:160,routePoints:2048,routeBytes:256*1024,routeCacheBytes:512*1024,controlEvents:240,controlCommands:120,controlIncidents:80,controlOutbox:100,controlBlackBox:120,domainCommands:240,businessEvents:240,businessWorldEvents:240,businessWorldOpportunities:120,businessWorldSponsorships:60,businessWorldCampaigns:80,businessWorldCompetitorActivity:120,businessWorldParties:500,businessWorldRelationships:1500,authorizationPeople:64,authorizationSeals:256,authorizationMandates:512,authorizationProofs:4000,authorizationSealBytes:32768,documentProofs:5000});
   const metricClock=()=>globalThis.performance?.now?.()??Date.now();
   const runtimeTelemetry={lastValidation:null,samples:[]};
-  const verifiedAuthorizationProofs=new WeakMap(),verifiedAuthorizationSeals=new WeakSet(),verifiedDocumentRecords=new WeakMap();
+  let verifiedAuthorizationProofs=new WeakMap(),verifiedAuthorizationSeals=new WeakSet(),verifiedDocumentRecords=new WeakMap();
   // A verified proof may be reused only while it provably cannot have changed.
   // Plain state: Object.freeze. Kernel state views cannot be frozen, so the lock
   // is the kernel mutation version recorded at verification time; any write to
   // the row or a descendant (or a rollback) changes it. Caches key on the stored
   // object, not on a per-path view.
-  const kernelViewLocks=new WeakMap(),verifiedDocumentLocks=new WeakMap();
+  let kernelViewLocks=new WeakMap(),verifiedDocumentLocks=new WeakMap();
   const kernelApi=()=>globalThis.GH_KERNEL;
   const proofIdentity=value=>kernelApi()?.identityOf?.(value)??value;
   const isKernelView=value=>kernelApi()?.isStateView?.(value)===true;
@@ -38,6 +38,15 @@
       controlPlane,controlPlane?.sha256,cloneCore,cloneCore?.clone,globalThis.structuredClone,
       globalThis.JSON,globalThis.JSON?.stringify,globalThis.TextEncoder,
       platform,platform?.resolveDocumentProfile];
+  }
+  let lockedRowDependencies=null;
+  function refreshLockedProofRows(dependencies){
+    if(sameDependencies(lockedRowDependencies,dependencies))return;
+    // Frozen raw records are reusable across validations and state objects.
+    // Discard every old row lock if the verifier or one of its providers
+    // changes; a state-local proof key cannot protect rows in a raw import.
+    verifiedAuthorizationProofs=new WeakMap();verifiedAuthorizationSeals=new WeakSet();verifiedDocumentRecords=new WeakMap();
+    kernelViewLocks=new WeakMap();verifiedDocumentLocks=new WeakMap();lockedRowDependencies=dependencies;
   }
   // Only the live kernel view has a mutation stamp for every saved root. The
   // company registry is another validation input, so it must be sealed before
@@ -376,14 +385,14 @@
   }
   function validate(s,options={}){
     const validationStart=metricClock(),proofCacheKey=proofValidationCacheKey(s),metric={totalMs:0,authorizationMs:0,authorizationSealCacheHits:0,authorizationProofVerifyMs:0,authorizationProofCacheHits:0,documentProofMs:0,documentCollectionMs:0,documentRecordVerifyMs:0,documentRecordCacheHits:0,documentVerifyMs:0,documentVerifyCacheHits:0,proofStateCacheHits:0,fullStateCacheHits:0,companyPlatformMs:0,otherMs:0,errors:0};
-    const proofDependencies=proofVerificationDependencies(),previousProof=proofCacheKey?verifiedProofStates.get(s):null,
-      allowCachedProofRows=!!previousProof&&sameDependencies(previousProof.dependencies,proofDependencies);
+    const proofDependencies=proofVerificationDependencies();refreshLockedProofRows(proofDependencies);
+    const previousProof=proofCacheKey?verifiedProofStates.get(s):null,allowCachedProofRows=true;
     const errors=[];validateHeader(s,errors);
     const fullStamp=fullValidationStamp(s,options,proofCacheKey),verifiedFull=fullStamp?verifiedFullStates.get(s):null;
     if((!fullStamp||verifiedFull&&!sameFullValidationStamp(fullStamp,verifiedFull))&&globalThis.GH_TRANSACTION_CORE?.isKernelOwner?.(s)===true)verifiedFullStates.delete(s);
     if(!errors.length&&sameFullValidationStamp(fullStamp,verifiedFull)){
       metric.fullStateCacheHits=1;
-      if(allowCachedProofRows&&previousProof.key===proofCacheKey)metric.proofStateCacheHits=1;
+      if(previousProof?.key===proofCacheKey&&sameDependencies(previousProof.dependencies,proofDependencies))metric.proofStateCacheHits=1;
       metric.totalMs=Math.max(0,metricClock()-validationStart);metric.otherMs=metric.totalMs;publishValidationMetric(metric);
       return {ok:true,errors:[]};
     }
@@ -432,7 +441,7 @@
     const cp=s?.controlPlane;if(cp!==undefined){if(!object(cp)||String(cp.schema||'')!=='gh-control-plane-v1'||!Array.isArray(cp.events)||!Array.isArray(cp.commands)||!Array.isArray(cp.incidents)||!Array.isArray(cp.outbox)||!Array.isArray(cp.blackBox)||!object(cp.registry)||!object(cp.registry.engines)||!Array.isArray(cp.registry.links))errors.push('control-plane-shape');else{if(cp.events.length>STATE_LIMITS.controlEvents||cp.commands.length>STATE_LIMITS.controlCommands||cp.incidents.length>STATE_LIMITS.controlIncidents||cp.outbox.length>STATE_LIMITS.controlOutbox||cp.blackBox.length>STATE_LIMITS.controlBlackBox)errors.push('control-plane-capacity');for(const key of ['revision','commandSequence','eventSequence','incidentSequence','outboxSequence'])if(!finite(cp[key])||Number(cp[key])<0||!Number.isInteger(Number(cp[key])))errors.push('control-plane-sequence');if(!/^[a-f0-9]{64}$/i.test(String(cp.journalHeadHash||'')))errors.push('control-plane-journal-head');if(duplicateIds(cp.events,x=>x?.id)||duplicateIds(cp.commands,x=>x?.id)||duplicateIds(cp.incidents,x=>x?.id)||duplicateIds(cp.outbox,x=>x?.id))errors.push('control-plane-id');for(const e of cp.events){if(!Number.isInteger(Number(e?.sequence))||Number(e.sequence)<=0||!/^[a-f0-9]{64}$/i.test(String(e?.hash||''))||!/^[a-f0-9]{64}$/i.test(String(e?.previousHash||'')))errors.push('control-plane-event');}const eventIds=new Set(cp.events.map(x=>x?.id));for(const row of cp.outbox)if(row?.delivered!==true&&!eventIds.has(row?.eventId)&&row?.payload?.id!==row?.eventId)errors.push('control-plane-outbox-reference');}}
     if(Array.isArray(s?.domainRuntime?.commands)&&s.domainRuntime.commands.length>STATE_LIMITS.domainCommands)errors.push('domain-command-capacity');if(Array.isArray(s?.businessLedger?.events)&&s.businessLedger.events.length>STATE_LIMITS.businessEvents)errors.push('business-event-capacity');
     const bw=s?.businessWorld;if(bw!==undefined){if(!object(bw)||!object(bw.parties)||!object(bw.relationships)||!Number.isInteger(Number(bw.sequence))||Number(bw.sequence)<0)errors.push('business-world-shape');else{const caps={events:STATE_LIMITS.businessWorldEvents,opportunities:STATE_LIMITS.businessWorldOpportunities,sponsorships:STATE_LIMITS.businessWorldSponsorships,campaigns:STATE_LIMITS.businessWorldCampaigns,competitorActivity:STATE_LIMITS.businessWorldCompetitorActivity};for(const [key,limit] of Object.entries(caps)){const rows=bw[key];if(!Array.isArray(rows))errors.push('business-world-'+key+'-shape');else{if(rows.length>limit)errors.push('business-world-'+key+'-capacity');if(duplicateIds(rows,x=>x?.id))errors.push('business-world-'+key+'-id');}}if(Object.keys(bw.parties).length>STATE_LIMITS.businessWorldParties)errors.push('business-world-party-capacity');if(Object.keys(bw.relationships).length>STATE_LIMITS.businessWorldRelationships)errors.push('business-world-relationship-capacity');for(const [id,p] of Object.entries(bw.parties))if(!id||!object(p)||p.id!==id||!String(p.legalName||p.displayName||'').trim()||!Array.isArray(p.roles)||!Array.isArray(p.sectors))errors.push('business-world-party');for(const [id,r] of Object.entries(bw.relationships))if(!id||!object(r)||r.id!==id||!bw.parties[r.partyId]||!String(r.company||'').trim()||!Array.isArray(r.roles))errors.push('business-world-relationship');}}
-    const verifiedProofStateHit=!!proofCacheKey&&allowCachedProofRows&&previousProof.key===proofCacheKey;
+    const verifiedProofStateHit=!!proofCacheKey&&previousProof?.key===proofCacheKey&&sameDependencies(previousProof.dependencies,proofDependencies);
     let started=metricClock();
     if(verifiedProofStateHit){metric.proofStateCacheHits=1;}
     else{
