@@ -3,14 +3,14 @@
   "results": [
     {
       "name": "no subsidiaries: seven days",
-      "seconds": 3.28,
+      "seconds": 8.999,
       "time": 604800,
       "days": 7,
       "hours": 168
     },
     {
       "name": "no subsidiaries: thirty more days across payroll and month end",
-      "seconds": 15.654,
+      "seconds": 73.142,
       "time": 3196800,
       "days": 37,
       "hours": 888
@@ -75,15 +75,15 @@
     {
       "name": "year request advances and cancels safely in full game",
       "requested": 34819200,
-      "committed": 3315600
+      "committed": 3285600
     },
     {
       "name": "cancelled advance exact business save/reload",
-      "time": 3315600
+      "time": 3285600
     },
     {
       "name": "all six founded companies: first day",
-      "seconds": 0.483,
+      "seconds": 1.519,
       "time": 86400,
       "days": 1,
       "hours": 24
@@ -110,7 +110,7 @@
     {
       "name": "midnight failure rolls back time, finance, bank, energy and all state",
       "identicalByValue": true,
-      "identicalPropertyOrder": true,
+      "identicalPropertyOrder": false,
       "attempt": {
         "time": 172800,
         "day": 2,
@@ -120,17 +120,17 @@
           1
         ]
       },
-      "time": 169200,
+      "time": 172200,
       "day": 1,
       "hour": 47,
       "speed": 0,
-      "error": "sliceFinish:Error: qa-calendar-midnight-commit-failure\n    at Object.apply (eval at evaluate (:290:30), <anonymous>:1:645)\n    at executeCore (http://127.0.0.1:36835/transaction-core.js:370:25)\n    at http://127.0.0.1:36835/transaction-core.js:413:21\n    at Object.tx (http://127.0.0.1:36835/kernel-core.js:310:21)\n    at Object.execute (http://127.0.0.1:36835/transaction-core.js:411:33)\n    at Object.execute (eval at evaluate (:290:30), <anonymous>:1:415)\n    at Object.finish (http://127.0.0.1:36835/app.js:2704:24)\n    at finishJob (http://127.0.0.1:36835/simulation-core.js:204:28)\n    at work (http://127.0.0.1:36835/simulation-core.js:269:62)\n    at Object.frame (http://127.0.0.1:36835/simulation-core.js:324:7)",
+      "error": "sliceFinish:Error: qa-calendar-midnight-commit-failure\n    at Object.apply (eval at evaluate (:291:30), <anonymous>:1:645)\n    at Object.execute (http://127.0.0.1:42369/transaction-core.js:52:43)\n    at Object.execute (eval at evaluate (:291:30), <anonymous>:1:415)\n    at Object.finish (http://127.0.0.1:42369/app.js:2243:20)\n    at finishJob (http://127.0.0.1:42369/simulation-core.js:155:28)\n    at work (http://127.0.0.1:42369/simulation-core.js:200:32)\n    at Object.frame (http://127.0.0.1:42369/simulation-core.js:253:7)\n    at loop (http://127.0.0.1:42369/app.js:3760:22)",
       "bank": 1,
       "power": 1
     },
     {
       "name": "retry failed day succeeds without duplicate postings",
-      "seconds": 0.174,
+      "seconds": 0.084,
       "time": 172800,
       "days": 2,
       "hours": 48
@@ -152,7 +152,7 @@
     },
     {
       "name": "portrait full game day",
-      "seconds": 0.845,
+      "seconds": 1.608,
       "time": 259200,
       "days": 3,
       "hours": 72
