@@ -1358,7 +1358,25 @@
     }
   }
   let mobilityStreetHydration=null,lastMobilityStreetHydrationMs=0;
-  const mobilityStreetRetries=new Map();
+  const mobilityStreetRetries=new Map(),mobilityStreetReady=new Map();
+  function flushMobilityStreetRoutes(){
+    if(!mobilityStreetReady.size||window.GH_PERSISTENCE?.isSnapshotting?.())return 0;
+    const engine=typeof simulationEngine!=='undefined'?simulationEngine:null,snapshot=engine?.snapshot?.();
+    if(snapshot?.jobActive||snapshot?.jobReadyToFinish)return 0;
+    let changed=0,selectedChanged=false;
+    for(const [key,row] of [...mobilityStreetReady].slice(0,6)){
+      try{
+        dispatchSystemCommand({state},'mobility','cache-street-route',{...row.request,...row.geometry},{actor:'system-mobility-routing-provider'});
+        mobilityStreetReady.delete(key);mobilityStreetRetries.delete(key);changed++;
+        if(selectedMobilityId&&state.mobility?.activeTrips?.some(trip=>trip.vehicleId===selectedMobilityId&&String(row.request.key)===String(row.key)))selectedChanged=true;
+      }catch(error){mobilityStreetReady.delete(key);nonCritical('mobility-street-route-cache',error);}
+    }
+    if(changed){
+      save();requestVisualResync();
+      if(selectedChanged)renderMap();else updateMarkerPositions(true);
+    }
+    return changed;
+  }
   async function hydrateMobilityStreetRoutes(){
     if(mobilityStreetHydration)return mobilityStreetHydration;
     const wallNow=Date.now(),pending=(window.GH_MOBILITY_CORE?.pendingStreetRoutes?.(state,8)||[]).filter(request=>(mobilityStreetRetries.get(request.key)?.retryAt||0)<=wallNow).slice(0,3);if(!pending.length)return null;
@@ -1367,9 +1385,8 @@
       for(const request of pending){
         let result=null;try{result=await window.GH_MAP_PROVIDER.road(request.fromCoords,request.toCoords);}catch(error){nonCritical('mobility-street-route-provider',error);}
         if(!result?.ok||!result.geometry?.route){const previous=mobilityStreetRetries.get(request.key),attempts=Math.min(8,(previous?.attempts||0)+1),delayMs=Math.min(120000,2500*(2**Math.min(5,attempts-1)));mobilityStreetRetries.set(request.key,{attempts,retryAt:Date.now()+delayMs});continue;}
-        try{dispatchSystemCommand({state},'mobility','cache-street-route',{...request,...result.geometry},{actor:'system-mobility-routing-provider'});mobilityStreetRetries.delete(request.key);changed=true;}catch(error){nonCritical('mobility-street-route-cache',error);}
+        try{mobilityStreetReady.set(request.key,{key:request.key,request:{...request},geometry:clone(result.geometry)});changed=true;}catch(error){nonCritical('mobility-street-route-stage',error);}
       }
-      if(changed){save();renderMap();}
       return changed;
     })().finally(()=>{mobilityStreetHydration=null;});
     return mobilityStreetHydration;
@@ -2010,7 +2027,7 @@
     visualResyncRequested=false;
   }
   window.GH_VISUAL_MOTION=Object.freeze({MIN_FRAME_MS:50,MAX_FRAME_MS:300,profile:markerMotionProfile,boundedStepRatio,interpolateRoute:interpolatePresentationRoute});
-  function mapStructureSignature(){if(!map)return'';const zoom=Math.round((Number(map.getZoom?.())||0)*1000)/1000,assetRevision=`${Number(state.saveRevision)||0}:${Number(window.GH_MAP_STRUCTURE_REVISION)||0}:${state.assets?.length||0}`,mobilityRevision=`${state.mobility?.vehicles?.length||0}:${window.GH_MOBILITY_CORE?.mapStructureRevision?.()||0}`;return `${JSON.stringify(currentMapFilter())};${zoom};${selectedAssetId||''};${selectedMobilityId||''};${selectedFacilityId||''};${assetRevision};${mobilityRevision}`;}
+  function mapStructureSignature(){if(!map)return'';const zoom=Math.round((Number(map.getZoom?.())||0)*1000)/1000,assetRevision=`${Number(window.GH_MAP_STRUCTURE_REVISION)||0}:${state.assets?.length||0}`,mobilityRevision=`${state.mobility?.vehicles?.length||0}:${window.GH_MOBILITY_CORE?.mapStructureRevision?.()||0}`;return `${JSON.stringify(currentMapFilter())};${zoom};${selectedAssetId||''};${selectedMobilityId||''};${selectedFacilityId||''};${assetRevision};${mobilityRevision}`;}
 
   function presentationAssetLookup(){
     const revision=Math.max(0,Math.floor(Number(state.saveRevision)||0)),length=state.assets?.length||0;
@@ -2770,7 +2787,7 @@
         // JavaScript cannot interleave a purchase between this probe and execute().
         // Boundaries still use full-state rollback; pending delivery slices keep the
         // original broad scope because delivery may mutate Fleet/HR/Realism atomically.
-        const deliveryWorkPending=hasBoundary?true:(window.GH_REALISM?.hasPendingDeliveries?.(state)!==false),usePrepared=!!preparedAssets&&!deliveryWorkPending&&preparedCursor===records.length,usePreparedFinance=usePrepared&&!!preparedFinance;
+        const deliveryWorkPending=window.GH_REALISM?.hasPendingDeliveries?.(state)!==false,usePrepared=!!preparedAssets&&!deliveryWorkPending&&preparedCursor===records.length,usePreparedFinance=usePrepared&&!!preparedFinance;
         if(preparedRecordsReleased&&!usePrepared){settleWorker('rollback');return {committed:false,retry:true,reason:'simulation-prepared-mode-conflict'};}
         const financeCompanyIds=usePrepared?(preparedFinanceCompanyIds||[]):[],corporateWorkPending=!usePrepared||preparedCorporateWorkPending;
         const declaredWriteRoots=hasBoundary?null:((deliveryWorkPending||corporateWorkPending)?SIMULATION_TRANSACTION_SCOPE:SIMULATION_STEADY_TRANSACTION_SCOPE),writeAudit=globalThis.__GH_BUILD339_WRITE_AUDIT__===true;
@@ -4449,6 +4466,8 @@
     if(window.GH_CONFERENCE?.isPresentationActive?.()){simulationEngine.reset(now,'conference-3d');if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,'conference-3d');requestAnimationFrame(loop);return;}
     if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){simulationEngine.reset(now,'lifecycle-lock');if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,'lifecycle-lock');requestAnimationFrame(loop);return;}
     if(processOneRecoveryBoundary()){simulationEngine.reset(now,'boundary-recovery');if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,'boundary-recovery');requestAnimationFrame(loop);return;}
+    flushMobilityStreetRoutes();
+    if(window.GH_PERSISTENCE?.isSnapshotting?.()){simulationEngine.reset(now,'persistence-snapshot');if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,'persistence-snapshot');requestAnimationFrame(loop);return;}
     const renderMetrics=runtimeInstrumentation.render,measureFrame=frameRecorderActive||(++renderMetrics.frameCounter%30)===0,frameStarted=measureFrame?appMetricClock():0;let simulationMs=0,targetUpdateMs=0,markerAnimationMs=0,structuralRenderMs=0,targetUpdated=false,markerAnimated=false,structureRendered=false;
     let stageStarted=measureFrame?appMetricClock():0;simulationEngine.frame(now);if(measureFrame)simulationMs=Math.max(0,appMetricClock()-stageStarted);
     // The simulation remains authoritative on every frame. Expensive target
