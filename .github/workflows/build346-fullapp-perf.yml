@@ -1,0 +1,46 @@
+name: Build346 full browser field proxy
+on:
+  push:
+    branches: [fix/build346-time-frame-cleanup]
+    paths:
+      - 'tests/fullapp-browser-perf.cjs'
+      - '.github/workflows/build346-fullapp-perf.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fullapp:
+    name: fullapp-${{ matrix.engine }}-1800
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [webkit, chromium]
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.19.0"
+      - name: Install pinned browser test dependencies
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --no-audit --no-fund
+          npx playwright install ${{ matrix.engine }}
+      - name: Run real WebApp load, 1800 asset departure, live map and next-day advance
+        env:
+          GH_PERF_ENGINE: ${{ matrix.engine }}
+          GH_PERF_FLEET: "1800"
+          GH_PERF_SAMPLE_MS: "12000"
+          GH_PERF_DEPART: "1"
+          GH_PERF_CALENDAR: "1"
+          GH_PERF_OUT: evidence/fullapp-${{ matrix.engine }}-1800.json
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          node tests/fullapp-browser-perf.cjs | tee evidence/fullapp-${{ matrix.engine }}-1800.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Build346_fullapp_${{ matrix.engine }}_1800
+          path: evidence
