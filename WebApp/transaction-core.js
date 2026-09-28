@@ -75,7 +75,7 @@
         return target;
       }finally{owner.transactionDepth--;}
     });
-    owner.transactions++;owner.lastCommit={label:'state-owner:atomic-replace',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};advanceSectionRevisions(target,result.dirty.length?result.dirty:['*']);advanceRevision(target);return target;
+    owner.transactions++;owner.lastCommit={label:'state-owner:atomic-replace',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};{const __names=result.dirty.length?result.dirty:['*'];advanceSectionRevisions(target,__names);noteObservabilityCommit(target,__names);}advanceRevision(target);return target;
   }
   function sameOrder(keys,expected){return keys.length===expected.length&&keys.every((key,index)=>key===expected[index]);}
   function restoreRootOrder(target,rootOrder){
@@ -88,6 +88,16 @@
   }
   function isActive(){return !!activeContext;}
   function revision(target){return target&&typeof target==='object'?targetRevisions.get(target)||0:0;}
+  // Sections written only for observability. A commit that touches nothing
+  // else must not invalidate in-flight simulation work: slices read gameplay
+  // state, never diagnostics (measured: ~90% of slice conflicts were a
+  // diagnostics-only write discarding an otherwise valid slice).
+  const OBSERVABILITY_ONLY_SECTIONS=new Set(['diagnostics']);
+  const observabilityRevisions=new WeakMap();
+  function noteObservabilityCommit(target,names){if(!target||typeof target!=='object')return;const list=(names||[]).map(String);if(list.length&&list.every(name=>OBSERVABILITY_ONLY_SECTIONS.has(name)))observabilityRevisions.set(target,(observabilityRevisions.get(target)||0)+1);}
+  // inputRevision: the global revision minus observability-only commits. Any
+  // gameplay write, or a commit of unknown scope ('*'), still changes it.
+  function inputRevision(target){return revision(target)-(target&&typeof target==='object'?observabilityRevisions.get(target)||0:0);}
   function advanceRevision(target){const next=revision(target)>=Number.MAX_SAFE_INTEGER?1:revision(target)+1;targetRevisions.set(target,next);return next;}
   function sectionRevision(target,name){if(!target||typeof target!=='object')return 0;return targetSectionRevisions.get(target)?.get(String(name||'*'))||0;}
   function advanceSectionRevisions(target,names){if(!target||typeof target!=='object')return;let revisions=targetSectionRevisions.get(target);if(!revisions){revisions=new Map();targetSectionRevisions.set(target,revisions);}for(const name of new Set((names||['*']).map(String))){const current=revisions.get(name)||0;revisions.set(name,current>=Number.MAX_SAFE_INTEGER?1:current+1);}}
@@ -134,7 +144,7 @@
     }
     kernel.releaseRegisteredBase();const initial=kernel.compareLegacy(target);if(!initial.ok)throw new Error(`state-kernel-owner-bootstrap-mismatch:${initial.path||'$'}`);
     let state;const owner={kernel,transactionDepth:0,transactions:0,rollbacks:0,lastCommit:null};
-    state=kernel.stateView({onCommit:result=>{owner.transactions++;owner.lastCommit={label:'state-view:single-write',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};advanceSectionRevisions(state,result.dirty.length?result.dirty:['*']);advanceRevision(state);}});
+    state=kernel.stateView({onCommit:result=>{owner.transactions++;owner.lastCommit={label:'state-view:single-write',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};{const __names=result.dirty.length?result.dirty:['*'];advanceSectionRevisions(state,__names);noteObservabilityCommit(state,__names);}advanceRevision(state);}});
     kernelOwners.set(state,owner);targetRevisions.set(state,0);targetSectionRevisions.set(state,new Map());return state;
   }
   function kernelOwnerStatus(target){
@@ -145,10 +155,13 @@
   function kernelOwnerProofRevisionDigest(target){
     const owner=kernelOwners.get(target);if(!owner)return null;
     // These roots cover every input used by authorization and document-proof
-    // validation. Kernel section revisions change on every committed mutation,
-    // so the exact revision tuple is a cheap, collision-free in-memory digest.
-    const roots=['authorization','documentProofs','finance','contractRegistry'];
-    const tuple=JSON.stringify(roots.map(name=>[name,owner.kernel.revision(name)]));
+    // validation. Section revisions advance only at commit, but integrity is
+    // verified INSIDE the open transaction, so the key also carries each root's
+    // live mutation stamp (identity + version, bumped on every write and on
+    // rollback). Without it an uncommitted proof edit reused the cached result.
+    const roots=['authorization','documentProofs','finance','contractRegistry'],stamp=globalThis.GH_KERNEL?.stampOf;
+    if(typeof stamp!=='function')return null;
+    const tuple=JSON.stringify(roots.map(name=>[name,owner.kernel.revision(name),stamp(target[name])]));
     return `gh-proof-revisions-v1:${globalThis.GH_KERNEL.fingerprint(tuple)}:${tuple}`;
   }
   function kernelOwnerState(target){const owner=kernelOwners.get(target);if(!owner)throw new Error('kernel-owner-not-enabled');return owner.kernel.legacyState();}
@@ -378,7 +391,7 @@
         phase='post-commit-irreversible';runCritical(irreversibleCritical);
       }finally{timing.postCommitCriticalMs=Math.max(0,runtimeClock()-criticalStart);}
       const nonCriticalStart=runtimeClock();for(const task of context.postCommit.filter(x=>!x.critical)){const taskStart=runtimeClock(),row={key:task.key||null,owner:task.owner||null,priority:task.priority,durationMs:0,ok:false};try{task.fn();row.ok=true;}catch(error){row.error=String(error?.message||error).slice(0,240);globalThis.console?.warn?.(`${label}: non-critical post-commit side effect failed`,error);}finally{row.durationMs=Math.max(0,runtimeClock()-taskStart);timing.postCommitNonCriticalTasks.push(row);}}timing.postCommitNonCriticalMs=Math.max(0,runtimeClock()-nonCriticalStart);
-      if(!kernelManaged){advanceSectionRevisions(target,declaredWriteRoots||scope||['*']);advanceRevision(target);}timing.committed=true;timing.stage='committed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);
+      if(!kernelManaged){{const __names=declaredWriteRoots||scope||['*'];advanceSectionRevisions(target,__names);noteObservabilityCommit(target,__names);}advanceRevision(target);}timing.committed=true;timing.stage='committed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);
       return {committed:true,value,label,scope:context.scope?[...context.scope]:null};
     }catch(error){
       activeContext=null;context.postCommit.length=0;
@@ -400,7 +413,7 @@
         try{outcome=executeCore(target,{...options,kernelManaged:true});if(!outcome?.committed)throw new KernelTransactionRejected(outcome);return outcome;}
         finally{owner.transactionDepth--;}
       });
-      owner.transactions++;owner.lastCommit={label,revision:kernelCommit.revision,undoRecords:kernelCommit.undoRecords,ms:kernelCommit.ms,dirty:kernelCommit.dirty};advanceSectionRevisions(target,normalizeWriteRoots(options.writeRoots)||normalizeScope(options.scope)||kernelCommit.dirty||['*']);advanceRevision(target);
+      owner.transactions++;owner.lastCommit={label,revision:kernelCommit.revision,undoRecords:kernelCommit.undoRecords,ms:kernelCommit.ms,dirty:kernelCommit.dirty};{const __names=normalizeWriteRoots(options.writeRoots)||normalizeScope(options.scope)||kernelCommit.dirty||['*'];advanceSectionRevisions(target,__names);noteObservabilityCommit(target,__names);}advanceRevision(target);
       const metric=runtimeTelemetry.last;if(metric?.label===label){Object.assign(metric,{rollbackStorage:'kernel-journal',fullSnapshot:false,fullSnapshotFallback:false,snapshotMs:0,kernelCommitMs:kernelCommit.ms,kernelUndoRecords:kernelCommit.undoRecords,kernelDirtySections:kernelCommit.dirty});}
       return outcome;
     }catch(error){
@@ -437,12 +450,12 @@
       phase='publish';if(typeof options.publish==='function')await options.publish(liveState,draft,context);else restoreObject(liveState,draft);
       for(const task of afterPublishTasks)try{await task(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-publish side effect failed`,error);}
       if(typeof options.afterCommit==='function')try{await options.afterCommit(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-commit side effect failed`,error);}
-      if(!kernelOwners.has(liveState)||typeof options.publish==='function'){advanceSectionRevisions(liveState,normalizeWriteRoots(options.writeRoots)||['*']);advanceRevision(liveState);}return {committed:true,durable:true,transactionId,label,saveRevision:Number(liveState.saveRevision)||0,value,persistence:persisted};
+      if(!kernelOwners.has(liveState)||typeof options.publish==='function'){{const __names=normalizeWriteRoots(options.writeRoots)||['*'];advanceSectionRevisions(liveState,__names);noteObservabilityCommit(liveState,__names);}advanceRevision(liveState);}return {committed:true,durable:true,transactionId,label,saveRevision:Number(liveState.saveRevision)||0,value,persistence:persisted};
     }catch(error){
       error.transactionLabel=error.transactionLabel||label;error.transactionStage=error.transactionStage||phase;error.durableCommitted=durableCommitted;
       if(durableCommitted){error.critical=true;globalThis.GH_PERSISTENCE?.markRecoveryRequired?.('durable-publish-failed');}
       throw error;
     }finally{if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,sectionRevision,enableKernelOwner,kernelOwnerStatus,kernelOwnerProofRevisionDigest,kernelOwnerState,enableKernelShadow,disableKernelShadow,kernelShadowStatus:target=>kernelShadowStatus(target),afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,sectionRevision,enableKernelOwner,kernelOwnerStatus,kernelOwnerProofRevisionDigest,kernelOwnerState,enableKernelShadow,disableKernelShadow,inputRevision,kernelShadowStatus:target=>kernelShadowStatus(target),afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

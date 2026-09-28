@@ -10,8 +10,8 @@
     "verified_base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
     "branch": "build342-state-kernel-20260927",
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
-    "current_candidate_source_tree_sha256": "9d92af8b35ced6e23870d41fa103a34eb830d5affce9217166b2c22184982e5d",
-    "current_candidate_webapp_tree_sha256": "e0d673063a33a091c356349216c4d639eee029d5bc2c10dfa926e3cf0fe383b3",
+    "current_candidate_source_tree_sha256": "d02f4abf54c45b361faa647018da00c09761a4e0d1edeabd98d9e7c9731bc040",
+    "current_candidate_webapp_tree_sha256": "d20972185bb4b9cb013e32324dfcc113b3e2e6f73d0c7950f2c2b45f26b1bde2",
     "latest_candidate_ci_run": "36356730336",
     "current_candidate_ci_status": "PASS_EXACT_RUNTIME_SOURCE_UNSIGNED_ARM64_IPHONEOS_IPA_DELIVERY; PRIOR_FULL_PASS_36353111793; TWO_LATER_CALENDAR_JOURNEY_RERUNS_143_OF_144; PHYSICAL_IPHONE_PENDING",
     "latest_candidate_ci_commit": "d03c6258625cc46fd5b302674c34c749a64ec7cd",
@@ -276,8 +276,8 @@
     },
     "webkit_smoke": "PASS_REAL_WKWEBVIEW_6_OF_6_IN_CI_RUN_36353111793; FULL_GAME_AND_IPHONE_TEST_NOT_RUN"
   },
-  "source_tree_sha256": "9d92af8b35ced6e23870d41fa103a34eb830d5affce9217166b2c22184982e5d",
-  "webapp_tree_sha256": "e0d673063a33a091c356349216c4d639eee029d5bc2c10dfa926e3cf0fe383b3",
+  "source_tree_sha256": "d02f4abf54c45b361faa647018da00c09761a4e0d1edeabd98d9e7c9731bc040",
+  "webapp_tree_sha256": "d20972185bb4b9cb013e32324dfcc113b3e2e6f73d0c7950f2c2b45f26b1bde2",
   "physical_device_evidence": {
     "available_device": "iPhone 17 Pro Max (user-reported only; no device connection in this session)",
     "provided_reference_artifact_build": 341,

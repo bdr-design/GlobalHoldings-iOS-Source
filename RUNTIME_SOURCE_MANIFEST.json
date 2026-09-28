@@ -24,8 +24,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 667030,
-      "sha256": "9e0371030a4583586b798c385bc2d286ba7eb315e7f79999619c9aa8cf7c0d91"
+      "bytes": 667154,
+      "sha256": "cfb3b5cd0997fbe4255e96555fa825a402f31b90d0b2f11e9b56f02d23ed84df"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1776,8 +1776,8 @@
       "sha256": "b5d93bbe265471a6fb1961a3f6cd0f3bfacf74c4779799b395288c35b76fb133"
     },
     "WebApp/kernel-core.js": {
-      "bytes": 43701,
-      "sha256": "91d30ded851b8d78cc3935c3f4b9807945f60f0dbff3e08eaa024fae042aa240"
+      "bytes": 46464,
+      "sha256": "d0798f8c0dc6658dc104ea98510e0a6a015fb7de81c293e832168bf36f06d7a7"
     },
     "WebApp/kernel-worker-core.js": {
       "bytes": 10372,
@@ -1880,8 +1880,8 @@
       "sha256": "14ea17a1bfe885b09633524b56f52a775d93eba4db367fe0417c239be00b0d55"
     },
     "WebApp/save-schema.js": {
-      "bytes": 67424,
-      "sha256": "395936eaab5cdb2be3a176fd673311acf086a2cc3fc87753d0ae9be74a6f98f5"
+      "bytes": 69843,
+      "sha256": "90ea9fc80b9261cfdefdc9cd1bb684f2bdd4c63600d11a42c614e2102c356e1d"
     },
     "WebApp/section-identities.css": {
       "bytes": 2444,
@@ -1920,8 +1920,8 @@
       "sha256": "73be32015076bdad2a6ab26066ddd5f71aee1048613d8a10a381bc02eec314fd"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 46825,
-      "sha256": "bc137311c97425ba9836167f5005d656dcd1f69d46fe51a8b7daa6e81d396cea"
+      "bytes": 48386,
+      "sha256": "4827244e6e566f7674c2a3225dd1ff1bb64455b457f85f350ca7d6df29ce43e3"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -2005,7 +2005,7 @@
     },
     "project.yml": {
       "bytes": 2421,
-      "sha256": "7419e695e5cc718a5f947c62e32315ea990429d512938a053df1ec28802b6620"
+      "sha256": "0427b82c5cd47a43c2004472534e209447dac678bb49d221ea228c51655be0a8"
     }
   },
   "latest_direct_source_ci": {
@@ -2080,8 +2080,8 @@
     "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
     "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
   },
-  "source_tree_sha256": "9d92af8b35ced6e23870d41fa103a34eb830d5affce9217166b2c22184982e5d",
-  "webapp_tree_sha256": "e0d673063a33a091c356349216c4d639eee029d5bc2c10dfa926e3cf0fe383b3",
+  "source_tree_sha256": "d02f4abf54c45b361faa647018da00c09761a4e0d1edeabd98d9e7c9731bc040",
+  "webapp_tree_sha256": "d20972185bb4b9cb013e32324dfcc113b3e2e6f73d0c7950f2c2b45f26b1bde2",
   "previous_passed_direct_source_ci": {
     "run_id": "36315061990",
     "commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",

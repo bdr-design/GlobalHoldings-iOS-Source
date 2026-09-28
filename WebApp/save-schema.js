@@ -8,6 +8,20 @@
   const metricClock=()=>globalThis.performance?.now?.()??Date.now();
   const runtimeTelemetry={lastValidation:null,samples:[]};
   const verifiedAuthorizationProofs=new WeakMap(),verifiedAuthorizationSeals=new WeakSet(),verifiedDocumentRecords=new WeakMap();
+  // A verified proof may be reused only while it provably cannot have changed.
+  // Plain state: Object.freeze. Kernel state views cannot be frozen, so the lock
+  // is the kernel mutation version recorded at verification time; any write to
+  // the row or a descendant (or a rollback) changes it. Caches key on the stored
+  // object, not on a per-path view.
+  const kernelViewLocks=new WeakMap(),verifiedDocumentLocks=new WeakMap();
+  const kernelApi=()=>globalThis.GH_KERNEL;
+  const proofIdentity=value=>kernelApi()?.identityOf?.(value)??value;
+  const isKernelView=value=>kernelApi()?.isStateView?.(value)===true;
+  function proofLocked(value){
+    if(!value||typeof value!=='object')return false;
+    if(isKernelView(value)){const raw=proofIdentity(value);return kernelViewLocks.has(raw)&&kernelViewLocks.get(raw)===kernelApi().versionOf(value);}
+    return Object.isFrozen(value);
+  }
   const verifiedProofStates=new WeakMap();
   // Phase 1B-B: wall-clock pacing/scheduler telemetry is runtime-only. Older
   // Build 339 saves may still contain the former simulationEngine.snapshot()
@@ -28,7 +42,7 @@
     if(!value||typeof value!=='object'||seen.has(value))return value;
     // Kernel state views reject freezing by design; attempting it walks every
     // child and throws per object. Their revision digest owns invalidation.
-    if(globalThis.GH_KERNEL?.isStateView?.(value)===true)return value;
+    if(isKernelView(value)){kernelViewLocks.set(proofIdentity(value),kernelApi().versionOf(value));return value;}
     seen.add(value);for(const child of Object.values(value))freezeProofValue(child,seen);
     // Kernel state views deliberately reject preventExtensions/Object.freeze.
     // Their section revision digest below supplies safe cache invalidation.
@@ -40,42 +54,42 @@
     return `${Number(state?.saveRevision)||0}:${Number(state?.resetEpoch)||0}:${digest}`;
   }
   function authorizationProofCacheEntry(row,seal,mandate){
-    if(!Object.isFrozen(row)||!Object.isFrozen(seal)||!Object.isFrozen(mandate))return null;
-    const cached=verifiedAuthorizationProofs.get(row);
-    return cached&&cached.seal===seal&&cached.mandate===mandate?cached:null;
+    if(!proofLocked(row)||!proofLocked(seal)||!proofLocked(mandate))return null;
+    const cached=verifiedAuthorizationProofs.get(proofIdentity(row));
+    return cached&&cached.seal===proofIdentity(seal)&&cached.mandate===proofIdentity(mandate)?cached:null;
   }
   function documentRecordCacheEntry(row,authorizationProof,records,authorization){
     // A successful full check locks every proof, including chained and legacy
     // records. Reuse it only while the entire predecessor and authorization
     // identity chain remains the same. Replaced imports cannot reuse this cache.
-    const first=verifiedDocumentRecords.get(row),seen=new Set();let current=row;
+    const first=verifiedDocumentRecords.get(proofIdentity(row)),seen=new Set();let current=row;
     while(current){
-      if(!Object.isFrozen(current)||seen.has(current)||seen.size>64)return null;
-      seen.add(current);
-      const verified=verifiedDocumentRecords.get(current),proofId=current.authorizationProofId;
+      if(!proofLocked(current)||seen.has(proofIdentity(current))||seen.size>64)return null;
+      seen.add(proofIdentity(current));
+      const verified=verifiedDocumentRecords.get(proofIdentity(current)),proofId=current.authorizationProofId;
       const currentAuthorization=proofId?(authorization?.proofsById?.[proofId]||authorization?.proofArchiveById?.[proofId]||null):null;
       const parent=current.previousProofId?records[current.previousProofId]:null;
-      if(!verified||verified.authorizationProof!==currentAuthorization||verified.predecessor!==parent||proofId&&!currentAuthorization||current.previousProofId&&!parent)return null;
+      if(!verified||verified.authorizationProof!==proofIdentity(currentAuthorization)||verified.predecessor!==proofIdentity(parent)||proofId&&!currentAuthorization||current.previousProofId&&!parent)return null;
       current=parent;
     }
-    return first?.authorizationProof===authorizationProof?first.result:null;
+    return first?.authorizationProof===proofIdentity(authorizationProof)?first.result:null;
   }
   function cacheVerifiedProofState(state){
     const auth=state?.authorization||{},seals=object(auth.visualSealAssetsById)?auth.visualSealAssetsById:(auth.signatureAssetsById||{}),mandates=auth.mandatesById||{},proofs={...(auth.proofArchiveById||{}),...(auth.proofsById||{})};
     // These leaves are only mutated by their owning engines. Locking them after a full
     // successful check makes object identity a safe cache key; owners replace rows on change.
-    for(const [id,row] of Object.entries(seals)){freezeProofValue(row);verifiedAuthorizationSeals.add(row);}
+    for(const [id,row] of Object.entries(seals)){freezeProofValue(row);verifiedAuthorizationSeals.add(proofIdentity(row));}
     for(const row of Object.values(mandates))freezeProofValue(row);
     for(const [id,row] of Object.entries(proofs)){
       const seal=seals[row?.signatureAssetId||row?.visualSealAssetId],mandate=mandates[row?.mandateId];
-      freezeProofValue(row);verifiedAuthorizationProofs.set(row,{seal,mandate});
+      freezeProofValue(row);verifiedAuthorizationProofs.set(proofIdentity(row),{seal:proofIdentity(seal),mandate:proofIdentity(mandate)});
     }
     const store=state?.documentProofs||{};
     const records={...(store.archiveById||{}),...(store.recordsById||{})};
     for(const row of Object.values(records)){
       const authorizationProof=row?.authorizationProofId?(auth.proofsById?.[row.authorizationProofId]||auth.proofArchiveById?.[row.authorizationProofId]||null):null;
       freezeProofValue(row);
-      verifiedDocumentRecords.set(row,{authorizationProof,predecessor:row?.previousProofId?records[row.previousProofId]||null:null,result:Number(row?.version)===2?{ok:false,legacy:true,readOnly:true,recordIntegrity:true,modern:false,reason:'document-proof-v2-legacy-read-only',record:row}:{ok:true,modern:true,record:row}});
+      verifiedDocumentRecords.set(proofIdentity(row),{authorizationProof:proofIdentity(authorizationProof),predecessor:proofIdentity(row?.previousProofId?records[row.previousProofId]||null:null),result:Number(row?.version)===2?{ok:false,legacy:true,readOnly:true,recordIntegrity:true,modern:false,reason:'document-proof-v2-legacy-read-only',record:row}:{ok:true,modern:true,record:row}});
     }
   }
   function finite(v){return v!==null&&v!==''&&typeof v!=='boolean'&&Number.isFinite(Number(v));}
@@ -270,7 +284,7 @@
       const strokes=row?.strokes,pointCount=Array.isArray(strokes)?strokes.reduce((sum,stroke)=>sum+(Array.isArray(stroke)?stroke.length:9000),0):9000;
       const basic=!id||!object(row)||row.id!==id||!people[row.ownerPersonId]||!Array.isArray(strokes)||!strokes.length||strokes.length>64||pointCount>8192||serializedBytes(strokes)>STATE_LIMITS.authorizationSealBytes||!validDigest(row.digest),validator=globalThis.GH_AUTHORIZATION?.validateVisualSeal;
       if(basic)errors.push('authorization-seal');
-      else if(Object.isFrozen(row)&&verifiedAuthorizationSeals.has(row)){if(metric)metric.authorizationSealCacheHits++;}
+      else if(proofLocked(row)&&verifiedAuthorizationSeals.has(proofIdentity(row))){if(metric)metric.authorizationSealCacheHits++;}
       else if(typeof validator!=='function'||!validator(row).ok)errors.push('authorization-seal');
     }
     for(const [personId,sealId] of Object.entries(active))if(!people[personId]||!seals[sealId]||seals[sealId].ownerPersonId!==personId||seals[sealId].status!=='active')errors.push('authorization-active-seal');
@@ -298,11 +312,19 @@
       if(verified){documentCache.records.set(id,verified);if(metric)metric.documentRecordCacheHits++;}
     }}
     const recordVerificationStart=metric?metricClock():0;if(verificationState&&typeof recordVerifier==='function')for(const id of Object.keys(records)){const check=recordVerifier(verificationState,id,new Set(),documentCache),acceptedLegacy=check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true;if(!check?.ok&&!acceptedLegacy)errors.push('document-proof-record-integrity');}if(metric)metric.documentRecordVerifyMs+=Math.max(0,metricClock()-recordVerificationStart);
-    const documentVerificationStart=metric?metricClock():0;for(const document of documents)if(document?.documentProofId){if(!records[document.documentProofId]||document.contentDigest!==records[document.documentProofId].contentDigest)errors.push('document-proof-reference');else if(!verificationState)errors.push('document-proof-integrity');else{const verification=verifier(verificationState,document,verificationCache?.documents),acceptedLegacy=verification?.legacy===true&&verification?.readOnly===true&&verification?.recordIntegrity===true;if(!verification?.ok&&!acceptedLegacy)errors.push('document-proof-integrity');}}if(metric)metric.documentVerifyMs+=Math.max(0,metricClock()-documentVerificationStart);
+    const accepted=result=>result?.ok===true||(result?.legacy===true&&result?.readOnly===true&&result?.recordIntegrity===true);
+    const documentVerificationStart=metric?metricClock():0;for(const document of documents)if(document?.documentProofId){if(!records[document.documentProofId]||document.contentDigest!==records[document.documentProofId].contentDigest)errors.push('document-proof-reference');else if(!verificationState)errors.push('document-proof-integrity');else{
+      // A document's verification depends only on its own content and its
+      // record. Reuse it only for a kernel view whose version is unchanged since
+      // a fully successful locked check, bound to the same unchanged record, and
+      // only when that record re-verified (or cache-verified) in THIS run.
+      const record=records[document.documentProofId],lock=isKernelView(document)?verifiedDocumentLocks.get(proofIdentity(document)):null;
+      if(lock&&lock.version===kernelApi().versionOf(document)&&lock.record===proofIdentity(record)&&lock.recordVersion===kernelApi().versionOf(record)&&accepted(documentCache?.records?.get(document.documentProofId))){if(metric)metric.documentVerifyCacheHits++;if(documentCache)documentCache.acceptedDocuments.push([document,record]);continue;}
+      const verification=verifier(verificationState,document,verificationCache?.documents);if(!accepted(verification))errors.push('document-proof-integrity');else if(documentCache&&isKernelView(document))documentCache.acceptedDocuments.push([document,record]);}}if(metric)metric.documentVerifyMs+=Math.max(0,metricClock()-documentVerificationStart);
   }
   function validate(s,options={}){
-    const validationStart=metricClock(),proofCacheKey=proofValidationCacheKey(s),metric={totalMs:0,authorizationMs:0,authorizationSealCacheHits:0,authorizationProofVerifyMs:0,authorizationProofCacheHits:0,documentProofMs:0,documentCollectionMs:0,documentRecordVerifyMs:0,documentRecordCacheHits:0,documentVerifyMs:0,proofStateCacheHits:0,companyPlatformMs:0,otherMs:0,errors:0};
-    const verificationCache={authorization:{proofs:new Map(),sealDigests:new Map(),mandateDigests:new Map()},documents:{records:new Map(),signedContentStable:new Map()}};verificationCache.documents.authorization=verificationCache.authorization;
+    const validationStart=metricClock(),proofCacheKey=proofValidationCacheKey(s),metric={totalMs:0,authorizationMs:0,authorizationSealCacheHits:0,authorizationProofVerifyMs:0,authorizationProofCacheHits:0,documentProofMs:0,documentCollectionMs:0,documentRecordVerifyMs:0,documentRecordCacheHits:0,documentVerifyMs:0,documentVerifyCacheHits:0,proofStateCacheHits:0,companyPlatformMs:0,otherMs:0,errors:0};
+    const verificationCache={authorization:{proofs:new Map(),sealDigests:new Map(),mandateDigests:new Map()},documents:{records:new Map(),signedContentStable:new Map(),acceptedDocuments:[]}};verificationCache.documents.authorization=verificationCache.authorization;
     const errors=[];if(!object(s))errors.push('root-not-object');if(String(s?.saveVersion||'')!==SAVE_SCHEMA_VERSION)errors.push('save-version');if(s?.saveRevision!==undefined&&(!finite(s.saveRevision)||Number(s.saveRevision)<0||!Number.isSafeInteger(Number(s.saveRevision))))errors.push('save-revision');if(s?.resetEpoch!==undefined&&(!finite(s.resetEpoch)||!Number.isSafeInteger(Number(s.resetEpoch))||Number(s.resetEpoch)<0))errors.push('reset-epoch');if(!finite(s?.simSeconds)||Number(s.simSeconds)<0)errors.push('sim-seconds');
     validateIdentityState(s,errors);validateConferenceLogoState(s,errors);validatePresentationTextState(s,errors);
     for(const key of ['assets','market'])if(!Array.isArray(s?.[key]))errors.push(key);if(!object(s?.finance)||!Array.isArray(s.finance.invoices)||!Array.isArray(s.finance.cheques)||!Array.isArray(s.finance.payables)||!Array.isArray(s.finance.receivables)||!Array.isArray(s.finance.periods))errors.push('finance');if(!object(s?.companyFinance))errors.push('company-finance');if(!object(s?.advanced))errors.push('advanced');
@@ -357,7 +379,7 @@
     }
     started=metricClock();const companyValidation=globalThis.GH_COMPANY_PLATFORM?.validateState?.(s);metric.companyPlatformMs=Math.max(0,metricClock()-started);if(companyValidation&&!companyValidation.ok)errors.push(...companyValidation.errors.map(error=>`company-platform:${error}`));
     const result={ok:errors.length===0,errors:[...new Set(errors)]};
-    if(result.ok&&options.lockVerifiedProofs===true){cacheVerifiedProofState(s);if(proofCacheKey)verifiedProofStates.set(s,proofCacheKey);}
+    if(result.ok&&options.lockVerifiedProofs===true){for(const [document,record] of verificationCache.documents.acceptedDocuments)verifiedDocumentLocks.set(proofIdentity(document),{version:kernelApi().versionOf(document),record:proofIdentity(record),recordVersion:kernelApi().versionOf(record)});cacheVerifiedProofState(s);if(proofCacheKey)verifiedProofStates.set(s,proofCacheKey);}
     metric.totalMs=Math.max(0,metricClock()-validationStart);metric.errors=result.errors.length;metric.otherMs=Math.max(0,metric.totalMs-metric.authorizationMs-metric.documentProofMs-metric.companyPlatformMs);publishValidationMetric(metric);
     return result;
   }

@@ -12,6 +12,13 @@
   // In-place mutators that only insert caller values or permute existing rows.
   // fill/copyWithin can alias one object at several paths, so they keep the
   // element-wise (cloning) path.
+  // Mutation versions: every kernel write bumps the written object and all of
+  // its ancestors up to the section root (and again on rollback). A cache that
+  // records (raw identity, version) therefore has the same guarantee as an
+  // Object.freeze lock: an unchanged version means unchanged content.
+  const rawByView=new WeakMap(),objectVersions=new WeakMap();
+  const bumpVersion=value=>{if(value&&typeof value==='object')objectVersions.set(value,(objectVersions.get(value)||0)+1);};
+  const bumpChain=chain=>{for(const value of chain)bumpVersion(value);};
   const ARRAY_OPS=new Set(['push','pop','shift','unshift','splice','reverse','sort']);
   const clone=value=>{
     if(value===undefined)return undefined;
@@ -195,7 +202,7 @@
         if(!Array.isArray(rows))throw new TypeError(`kernel-column-rows-required:${name}`);
         const previous=section.data,stableRows=previous.rows,oldRows=stableRows.slice(),oldColumns=previous.columns,wasPresent=section.present,next=buildColumnSection(section,rows);
         log(()=>{stableRows.length=0;for(let index=0;index<oldRows.length;index++)stableRows[index]=oldRows[index];section.data=previous;section.data.rows=stableRows;section.data.columns=oldColumns;section.present=wasPresent;});
-        stableRows.length=0;for(let index=0;index<next.rows.length;index++)stableRows[index]=next.rows[index];section.data={...next,rows:stableRows};section.present=true;mark(name,{kind:'rows-replace'});return columnDTO(section);
+        bumpVersion(stableRows);for(const oldRow of oldRows)bumpVersion(oldRow);stableRows.length=0;for(let index=0;index<next.rows.length;index++)stableRows[index]=next.rows[index];section.data={...next,rows:stableRows};section.present=true;mark(name,{kind:'rows-replace'});return columnDTO(section);
       }
       function setColumnValue(name,columnName,column,index,value,deleteProperty=false){
         if(!Number.isInteger(index)||index<0||index>=column.data.length)throw new RangeError('kernel-column-index');
@@ -207,7 +214,7 @@
           else{const encoded=column.enumValues?column.enumValues.indexOf(String(value)):Number(value);if(!Number.isSafeInteger(encoded)||encoded<0||encoded>255)throw new TypeError(`kernel-column-enum-invalid:${columnName}`);next=encoded;presence=2;}
         }
         const section=ensure(name),previousOrder=section.data.rowOrder[index]||[],nextOrder=deleteProperty?previousOrder.filter(field=>field!==String(columnName)):previousPresence===0?[...previousOrder,String(columnName)]:previousOrder;
-        log(()=>{column.data[index]=previousValue;column.presence[index]=previousPresence;section.data.rowOrder[index]=previousOrder;});column.data[index]=next;column.presence[index]=presence;section.data.rowOrder[index]=nextOrder;
+        const rowChain=[section.data.rows,section.data.rows[index]];log(()=>{column.data[index]=previousValue;column.presence[index]=previousPresence;section.data.rowOrder[index]=previousOrder;bumpChain(rowChain);});bumpChain(rowChain);column.data[index]=next;column.presence[index]=presence;section.data.rowOrder[index]=nextOrder;
         mark(name,{kind:'column',column:String(columnName),index,from:previousPresence===2?previousValue:null,to:presence===2?next:null});return value;
       }
       function columnPatch(name,section,path,action,value){
@@ -226,12 +233,12 @@
         if(column){if(parts.length!==2)throw new Error(`kernel-column-nested-value:${name}:${field}`);return action==='delete'?writerAPI.col(name,field).delete(index):writerAPI.col(name,field).set(index,value);}
         let row=section.data.rows[index];if(!row||typeof row!=='object'){row={};const prior=section.data.rows[index];log(()=>{section.data.rows[index]=prior;});section.data.rows[index]=row;}
         const tail=parts.slice(1),key=tail.at(-1);if(['__proto__','constructor','prototype'].includes(key))throw new Error(`kernel-column-field-invalid:${key}`);
-        let parent=row;for(const part of tail.slice(0,-1)){if(parent==null||typeof parent!=='object')throw new Error(`kernel-column-parent-missing:${name}:${index}:${part}`);parent=parent[part];}
+        let parent=row;const chain=[section.data.rows,row];for(const part of tail.slice(0,-1)){if(parent==null||typeof parent!=='object')throw new Error(`kernel-column-parent-missing:${name}:${index}:${part}`);parent=parent[part];chain.push(parent);}
         if(parent==null||typeof parent!=='object')throw new Error(`kernel-column-parent-missing:${name}:${index}:${tail.slice(0,-1).join('.')}`);
         const prior=Object.getOwnPropertyDescriptor(parent,key),wasPresent=!!prior,priorLength=Array.isArray(parent)?parent.length:null,previousOrder=section.data.rowOrder[index]||[],nextOrder=tail.length!==1?previousOrder:action==='delete'?previousOrder.filter(field=>field!==key):wasPresent?previousOrder:[...previousOrder,key];
         if(action==='set'&&wasPresent&&Object.is(parent[key],value))return value;
-        log(()=>{if(wasPresent)Object.defineProperty(parent,key,prior);else delete parent[key];if(priorLength!==null)parent.length=priorLength;if(tail.length===1)section.data.rowOrder[index]=previousOrder;});
-        if(action==='delete')delete parent[key];else parent[key]=clone(value);
+        log(()=>{if(wasPresent)Object.defineProperty(parent,key,prior);else delete parent[key];if(priorLength!==null)parent.length=priorLength;if(tail.length===1)section.data.rowOrder[index]=previousOrder;bumpChain(chain);});
+        if(action==='delete')delete parent[key];else parent[key]=clone(value);bumpChain(chain);
         if(tail.length===1)section.data.rowOrder[index]=nextOrder;
         section.present=true;mark(name,{kind:'row-field',index,field,action});return action==='delete'?wasPresent:parent[key];
       }
@@ -245,12 +252,13 @@
           const parts=Array.isArray(path)?path.map(String):String(path||'').split('.').filter(Boolean);
           if(!parts.length)return action==='delete'?writerAPI.delete(name):writerAPI.set(name,value);
           const key=parts.at(-1);if(['__proto__','constructor','prototype'].includes(key))throw new Error(`kernel-patch-field-invalid:${key}`);
-          let parent=section.data;for(const part of parts.slice(0,-1)){if(parent==null||typeof parent!=='object')throw new Error(`kernel-patch-parent-missing:${name}:${part}`);parent=parent[part];}
+          let parent=section.data;const chain=[parent];for(const part of parts.slice(0,-1)){if(parent==null||typeof parent!=='object')throw new Error(`kernel-patch-parent-missing:${name}:${part}`);parent=parent[part];chain.push(parent);}
           if(parent==null||typeof parent!=='object')throw new Error(`kernel-patch-parent-missing:${name}:${parts.slice(0,-1).join('.')}`);
           const prior=Object.getOwnPropertyDescriptor(parent,key),wasPresent=!!prior,priorLength=Array.isArray(parent)?parent.length:null;
           if(action==='set'&&wasPresent&&Object.is(parent[key],value))return value;
-          log(()=>{if(wasPresent)Object.defineProperty(parent,key,prior);else delete parent[key];if(priorLength!==null)parent.length=priorLength;});
+          log(()=>{if(wasPresent)Object.defineProperty(parent,key,prior);else delete parent[key];if(priorLength!==null)parent.length=priorLength;bumpChain(chain);});
           if(action==='delete')delete parent[key];else parent[key]=clone(value);
+          bumpChain(chain);
           section.present=true;mark(name,auditors.has(name)?{kind:'patch',path:parts,action}:null);return action==='delete'?wasPresent:parent[key];
         },
         arrayOp(name,path,method,args){
@@ -260,20 +268,20 @@
           const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='object')throw new Error(`kernel-array-kind:${name}`);
           if(!ARRAY_OPS.has(method))throw new Error(`kernel-array-method:${method}`);
           const parts=(Array.isArray(path)?path:[]).map(String);let target=section.data;
-          for(const part of parts){if(target==null||typeof target!=='object')throw new Error(`kernel-array-parent-missing:${name}:${part}`);target=target[part];}
+          const chain=[target];for(const part of parts){if(target==null||typeof target!=='object')throw new Error(`kernel-array-parent-missing:${name}:${part}`);target=target[part];chain.push(target);}
           if(!Array.isArray(target))throw new TypeError(`kernel-array-required:${name}:${parts.join('.')}`);
           const input=Array.from(args||[]),values=method==='splice'?[...input.slice(0,2),...input.slice(2).map(clone)]:(method==='push'||method==='unshift')?input.map(clone):input;
           const prior=target.slice(),priorLength=target.length;
-          log(()=>{target.length=0;target.length=priorLength;for(let index=0;index<priorLength;index++)if(index in prior)target[index]=prior[index];});
-          const result=Array.prototype[method].apply(target,values);
+          log(()=>{target.length=0;target.length=priorLength;for(let index=0;index<priorLength;index++)if(index in prior)target[index]=prior[index];bumpChain(chain);});
+          const result=Array.prototype[method].apply(target,values);bumpChain(chain);
           section.present=true;mark(name,{kind:'array',path:parts,method});return result;
         },
-        append(name,row){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='append-only')throw new Error(`kernel-append-kind:${name}`);const removed=[];section.data.push(clone(row));if(section.cap&&section.data.length>section.cap)removed.push(...section.data.splice(0,section.data.length-section.cap));log(()=>{section.data.pop();if(removed.length)section.data.unshift(...removed);});mark(name,{kind:'append',row:clone(row),trimmed:removed.length});return section.data.length;},
+        append(name,row){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='append-only')throw new Error(`kernel-append-kind:${name}`);const removed=[];section.data.push(clone(row));if(section.cap&&section.data.length>section.cap)removed.push(...section.data.splice(0,section.data.length-section.cap));bumpVersion(section.data);log(()=>{section.data.pop();if(removed.length)section.data.unshift(...removed);bumpVersion(section.data);});mark(name,{kind:'append',row:clone(row),trimmed:removed.length});return section.data.length;},
         replaceRows(name,rows){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='columns')throw new Error(`kernel-row-kind:${name}`);return replaceColumnRows(name,section,rows);},
         col(name,columnName){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const column=section.data.columns[String(columnName)];if(!column)throw new Error(`kernel-column-unregistered:${name}.${columnName}`);return Object.freeze({length:column.data.length,get(index){if(!Number.isInteger(index)||index<0||index>=column.data.length)throw new RangeError('kernel-column-index');if(column.presence[index]===0||column.presence[index]===3)return undefined;if(column.presence[index]===1)return null;return column.type==='u8'&&column.enumValues?column.enumValues[column.data[index]]:column.data[index];},set(index,value){return setColumnValue(name,columnName,column,index,value,false);},delete(index){return setColumnValue(name,columnName,column,index,undefined,true);}});},
         replaceRow(name,index,nextRow){
           const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='columns')throw new Error(`kernel-row-kind:${name}`);if(!Number.isInteger(index)||index<0||index>=section.data.rows.length)throw new RangeError('kernel-row-index');if(!nextRow||typeof nextRow!=='object'||Array.isArray(nextRow))throw new TypeError('kernel-row-replacement-invalid');for(const key of Object.keys(nextRow))if(key==='__proto__'||key==='constructor'||key==='prototype')throw new Error(`kernel-row-field-invalid:${key}`);
-          const priorRow=clone(section.data.rows[index]),priorOrder=section.data.rowOrder[index]||[],priorColumns=Object.fromEntries(Object.entries(section.data.columns).map(([key,column])=>[key,{data:column.data[index],presence:column.presence[index]}]));
+          const priorRowIdentity=section.data.rows[index],priorRow=clone(section.data.rows[index]),priorOrder=section.data.rowOrder[index]||[],priorColumns=Object.fromEntries(Object.entries(section.data.columns).map(([key,column])=>[key,{data:column.data[index],presence:column.presence[index]}]));
           log(()=>{section.data.rows[index]=priorRow;section.data.rowOrder[index]=priorOrder;for(const [key,value] of Object.entries(priorColumns)){section.data.columns[key].data[index]=value.data;section.data.columns[key].presence[index]=value.presence;}});
           const metadata={},rowOrder=Object.keys(nextRow);for(const key of rowOrder)if(!own(section.data.columns,key))metadata[key]=clone(nextRow[key]);
           for(const [key,column] of Object.entries(section.data.columns)){
@@ -281,7 +289,7 @@
             if(present&&value===undefined)presence=3;else if(value===null)presence=1;else if(value!==undefined){if(column.type==='f64'){if(typeof value!=='number'||!Number.isFinite(value))throw new TypeError(`kernel-column-nonfinite:${key}`);data=value;}else{const encoded=column.enumValues?column.enumValues.indexOf(String(value)):Number(value);if(!Number.isSafeInteger(encoded)||encoded<0||encoded>255)throw new TypeError(`kernel-column-enum-invalid:${key}`);data=encoded;}presence=2;}
             column.data[index]=data;column.presence[index]=presence;
           }
-          section.data.rows[index]=metadata;section.data.rowOrder[index]=rowOrder;mark(name,{kind:'row-replace',index});return columnRow(section,index);
+          section.data.rows[index]=metadata;section.data.rowOrder[index]=rowOrder;bumpVersion(section.data.rows);bumpVersion(priorRowIdentity);mark(name,{kind:'row-replace',index});return columnRow(section,index);
         },
         updateRow(name,index,patch){
           const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='columns')throw new Error(`kernel-row-kind:${name}`);if(!Number.isInteger(index)||index<0||index>=section.data.rows.length)throw new RangeError('kernel-row-index');if(!patch||typeof patch!=='object'||Array.isArray(patch))throw new TypeError('kernel-row-patch-invalid');const row=section.data.rows[index];
@@ -289,11 +297,11 @@
             if(key==='__proto__'||key==='constructor'||key==='prototype')throw new Error(`kernel-row-field-invalid:${key}`);
             if(own(section.data.columns,key)){writerAPI.col(name,key).set(index,value);continue;}
             const had=own(row,key),previous=had?clone(row[key]):undefined,previousOrder=section.data.rowOrder[index]||[],nextOrder=had?previousOrder:[...previousOrder,key];
-            log(()=>{if(had)row[key]=previous;else delete row[key];section.data.rowOrder[index]=previousOrder;});row[key]=clone(value);section.data.rowOrder[index]=nextOrder;mark(name,{kind:'row-field',index,field:key});
+            log(()=>{if(had)row[key]=previous;else delete row[key];section.data.rowOrder[index]=previousOrder;bumpVersion(row);});row[key]=clone(value);bumpVersion(row);bumpVersion(section.data.rows);section.data.rowOrder[index]=nextOrder;mark(name,{kind:'row-field',index,field:key});
           }
           return columnRow(section,index);
         },
-        post(name,entry){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='ledger')throw new Error(`kernel-post-kind:${name}`);const debit=Number(entry?.debit),credit=Number(entry?.credit),key=String(entry?.idempotencyKey||'');if(!key||!Number.isFinite(debit)||!Number.isFinite(credit)||debit<=0||credit<=0||debit!==credit)throw new Error('kernel-ledger-entry-unbalanced');const fp=fingerprint(entry),cacheKey=`${name}:${key}`,prior=idempotency.get(cacheKey);if(prior){if(prior.fingerprint!==fp)throw new Error('kernel-idempotency-conflict');return clone(prior.row);}const row=clone(entry),index=section.data.length;section.data.push(row);idempotency.set(cacheKey,{fingerprint:fp,row:clone(row),index});log(()=>{section.data.splice(index,1);idempotency.delete(cacheKey);});mark(name,{kind:'post',row:clone(row)});return clone(row);},
+        post(name,entry){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='ledger')throw new Error(`kernel-post-kind:${name}`);const debit=Number(entry?.debit),credit=Number(entry?.credit),key=String(entry?.idempotencyKey||'');if(!key||!Number.isFinite(debit)||!Number.isFinite(credit)||debit<=0||credit<=0||debit!==credit)throw new Error('kernel-ledger-entry-unbalanced');const fp=fingerprint(entry),cacheKey=`${name}:${key}`,prior=idempotency.get(cacheKey);if(prior){if(prior.fingerprint!==fp)throw new Error('kernel-idempotency-conflict');return clone(prior.row);}const row=clone(entry),index=section.data.length;section.data.push(row);idempotency.set(cacheKey,{fingerprint:fp,row:clone(row),index});bumpVersion(section.data);log(()=>{section.data.splice(index,1);idempotency.delete(cacheKey);bumpVersion(section.data);});mark(name,{kind:'post',row:clone(row)});return clone(row);},
         afterCommit(fn){if(typeof fn!=='function')throw new TypeError('kernel-after-commit-function-required');hooks.push(fn);}
       };
       const started=globalThis.performance?.now?.()??Date.now();
@@ -328,7 +336,14 @@
       const rawRef=value=>{const ref=value&&typeof value==='object'?proxyRefs.get(value):null;if(!ref)return value;const section=contracts.get(ref.name);return section?.kind==='columns'&&ref.path.length<=1?value:ref.raw;};
       const unwrapForWrite=value=>{if(!value||typeof value!=='object')return value;const direct=rawRef(value);if(direct!==value)return direct;if(Array.isArray(value)&&!proxyRefs.has(value)){let changed=false;const out=value.map(item=>{const raw=rawRef(item);if(raw!==item)changed=true;return raw;});return changed?out:value;}return value;};
       function arrayWrite(name,path,method,args){
-        const values=Array.from(args,unwrapForWrite);
+        let values=Array.from(args,unwrapForWrite);
+        if(method==='sort'&&typeof args[0]==='function'){
+          // The comparator sees state views, never raw stored rows, so any write
+          // it makes still goes through the kernel (undo log and versions).
+          const raw=rawAt(name,path),compare=args[0],views=new Map();
+          if(Array.isArray(raw))raw.forEach((item,index)=>{if(item&&typeof item==='object')views.set(item,tracked(name,[...path,String(index)],item));});
+          values=[(a,b)=>compare(views.get(a)??a,views.get(b)??b)];
+        }
         if(activeWriter)return activeWriter.arrayOp(name,path,method,values);
         if(transactionOpen)throw new Error('kernel-state-write-outside-apply');
         let result;const committed=tx({label:'state-view:array-write',owner:'transaction-core',writes:[name]},writer=>{result=writer.arrayOp(name,path,method,values);return result;});
@@ -359,7 +374,7 @@
             const section=contracts.get(name);if(section?.kind==='columns'&&path.length===1&&typeof prop==='string'&&own(section.data.columns,prop)){const column=section.data.columns[prop];if(column.presence[Number(path[0])]===0)return undefined;return {configurable:true,enumerable:true,writable:true,value:columnValue(section,prop,Number(path[0]))};}
             return Reflect.getOwnPropertyDescriptor(target,prop);
           }
-        });paths.set(key,proxy);proxyRefs.set(proxy,{name,path,raw});viewProxies.add(proxy);return proxy;
+        });paths.set(key,proxy);proxyRefs.set(proxy,{name,path,raw});viewProxies.add(proxy);rawByView.set(proxy,raw);return proxy;
       };
       function write(name,path,action,value){
         const reference=action==='set'&&value&&typeof value==='object'?proxyRefs.get(value):null;
@@ -396,5 +411,14 @@
     const kernel=create({...options,legacyState:legacy});for(const contract of contracts||[])kernel.register(contract.name,contract);kernel.releaseRegisteredBase();return kernel;
   }
   const isStateView=value=>!!value&&typeof value==='object'&&viewProxies.has(value);
-  return Object.freeze({VERSION,create,fromLegacyState,fingerprint,firstDifference,stableStringify:stable,isStateView});
+  // identityOf: the stored object behind a state view (value itself otherwise).
+  // versionOf: that object's mutation version (see bumpVersion above).
+  const identityOf=value=>value&&typeof value==='object'&&rawByView.has(value)?rawByView.get(value):value;
+  const versionOf=value=>{const raw=identityOf(value);return raw&&typeof raw==='object'?objectVersions.get(raw)||0:0;};
+  // stampOf: "<identity serial>.<version>" of the stored object. Unlike section
+  // revisions (which advance only at commit) it changes on every write, inside
+  // an open transaction too, and a replaced object never reuses a stamp.
+  const objectSerials=new WeakMap();let nextObjectSerial=0;
+  const stampOf=value=>{const raw=identityOf(value);if(!raw||typeof raw!=='object')return `v:${typeof raw}:${String(raw)}`;if(!objectSerials.has(raw))objectSerials.set(raw,++nextObjectSerial);return `${objectSerials.get(raw)}.${objectVersions.get(raw)||0}`;};
+  return Object.freeze({VERSION,create,fromLegacyState,fingerprint,firstDifference,stableStringify:stable,isStateView,identityOf,versionOf,stampOf});
 });

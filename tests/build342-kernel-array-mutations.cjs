@@ -72,4 +72,35 @@ for(const [method,args] of ops){
   const view=make({log:{x:{}}}).stateView();
   assert.equal(K.isStateView(view.log.x),true);assert.equal(K.isStateView({}),false);assert.equal(K.isStateView(null),false);
 }
-console.log('PASS Build342 kernel array mutations: legacy semantics, single-record rollback, no aliasing, live self-assignment, bounded cost');
+
+// 8. Mutation versions: a nested write bumps the object and every ancestor at
+// once (inside the open transaction), rollback bumps again, siblings untouched.
+{
+  const kernel=make({log:{proofs:{a:{seal:{strokes:[[1,2]]}},b:{x:1}}}}),view=kernel.stateView();
+  const root=view.log,a=view.log.proofs.a,b=view.log.proofs.b,seal=view.log.proofs.a.seal;
+  const before={root:K.versionOf(root),a:K.versionOf(a),b:K.versionOf(b),seal:K.versionOf(seal),stamp:K.stampOf(root)};
+  let inside;
+  assert.throws(()=>kernel.tx({label:'v',owner:'transaction-core',writes:['log']},()=>{
+    view.log.proofs.a.seal.strokes[0][0]=9;
+    inside={root:K.versionOf(root),a:K.versionOf(a),b:K.versionOf(b),seal:K.versionOf(seal),stamp:K.stampOf(root)};
+    throw new Error('qa-version-rollback');
+  }),/qa-version-rollback/);
+  assert(inside.root>before.root&&inside.a>before.a&&inside.seal>before.seal,'ancestors bump before commit');
+  assert.equal(inside.b,before.b,'siblings keep their version');
+  assert.notEqual(inside.stamp,before.stamp,'root stamp changes inside the open transaction');
+  assert.equal(view.log.proofs.a.seal.strokes[0][0],1,'rollback restored content');
+  assert(K.versionOf(a)>inside.a,'rollback bumps again (never reverts to a verified version)');
+  assert.equal(K.identityOf(a),K.identityOf(view.log.proofs.a),'identity is stable across views of one stored object');
+}
+// 9. Replacing an object yields a new identity: stamps never collide.
+{
+  const kernel=make({log:{p:{x:1}}}),view=kernel.stateView(),old=K.stampOf(view.log.p);
+  view.log.p={x:1};assert.notEqual(K.stampOf(view.log.p),old);
+}
+// 10. sort comparators receive state views, so they cannot write raw rows.
+{
+  const kernel=make({log:{rows:[{n:2},{n:1}]}}),view=kernel.stateView();let sawView=true;
+  view.log.rows.sort((x,y)=>{sawView=sawView&&K.isStateView(x)&&K.isStateView(y);return x.n-y.n;});
+  assert.equal(sawView,true);assert.deepEqual(kernel.read('log').rows,[{n:1},{n:2}]);
+}
+console.log('PASS Build342 kernel array mutations + mutation versions: legacy semantics, single-record rollback, no aliasing, live self-assignment, bounded cost; ancestor versions/stamps bump inside transactions and on rollback');

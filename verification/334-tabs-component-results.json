@@ -1,6 +1,6 @@
 {
   "scope": "isolated original tab renderer + original click bindings; no full app, storage, upgrade or iPhone execution",
-  "browser": "144.0.7559.96",
+  "browser": "141.0.7390.37",
   "rows": [
     {
       "panel": "companies",

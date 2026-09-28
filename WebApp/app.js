@@ -2594,7 +2594,7 @@
     // Geometry is guarded once per distinct route, while every asset retains its
     // own full input guard. Caches are slice-local: no stale cross-frame route hash.
     const routeGuards=new Map(),sourceAssets=state.assets,snapshotAssets=Array.isArray(sourceAssets)?sourceAssets:[],assetSeeds=[],snapshotAssetCount=snapshotAssets.length,
-      sourceRevision=typeof tx.revision==='function'?tx.revision(state):null;
+      sourceRevision=typeof tx.inputRevision==='function'?tx.inputRevision(state):typeof tx.revision==='function'?tx.revision(state):null;
     const contextGuard=simulationContextGuard(),assetEngineContext=clone(simulationAssetRuntimeContext()),routePlanCache=new Map();
     const competitorSeeds=(competitorAssets||[]).map(a=>({guard:JSON.stringify(a),snapshot:{...a}}));
     const records=[],journal=makeSimulationEffects(),speed=Number(meta.speed)||state.speed;
@@ -2604,7 +2604,7 @@
     const workerCommitIds=[];
     const pendingAssetRows=[];
     const workerBatchSize=SIMULATION_ASSET_ENGINE.MAX_BATCH_ITEMS;
-    function sourceStillCurrent(){return state.assets===sourceAssets&&(Array.isArray(sourceAssets)?sourceAssets.length:0)===snapshotAssetCount&&(sourceRevision===null||tx.revision(state)===sourceRevision);}
+    function sourceStillCurrent(){return state.assets===sourceAssets&&(Array.isArray(sourceAssets)?sourceAssets.length:0)===snapshotAssetCount&&(sourceRevision===null||(typeof tx.inputRevision==='function'?tx.inputRevision(state):tx.revision(state))===sourceRevision);}
     function settleWorker(type){const ids=workerCommitIds.splice(0);return ids.length&&typeof settleSimulationAssetWorker==='function'?settleSimulationAssetWorker(type,ids):false;}
     function invalidateStaleSource(){
       staleReason='simulation-source-revision-conflict';finished=true;

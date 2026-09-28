@@ -151,7 +151,11 @@ jobs:
           for row in result.get('tests',[]):
               if row.get('exit_code') != 0:
                   log=out/row['log']; print('FAILED TEST:',row['argv'][1],'exit=',row['exit_code'])
+                  tail=log.read_text(errors='replace').splitlines()[-40:] if log.exists() else []
                   if log.exists(): print(''.join(log.read_text(errors='replace').splitlines(True)[-160:]))
+                  # Diagnostic only: surface the failure through the check-run annotations API.
+                  body='\n'.join(tail)[-6000:].replace('%','%25').replace('\r','').replace('\n','%0A')
+                  print(f"::error title=FAILED TEST {row['argv'][1]} exit={row['exit_code']}::{body}")
           PY
             exit "$ACCEPTANCE_STATUS"
           fi
