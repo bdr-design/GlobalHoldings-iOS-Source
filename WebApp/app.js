@@ -1065,8 +1065,8 @@
     timeoutMs:3000,
     onFailure:error=>nonCritical('map-asset-query-worker-disabled',error),
     onResult:result=>{
-      const current=mapAssetQueryRequest;
-      if(!map||!current||current.assets!==state.assets||current.revision!==(Number(state.saveRevision)||0)||current.filterKey!==result.filterKey)return;
+      const current=mapAssetQueryRequest,structureRevision=Number(window.GH_MAP_STRUCTURE_REVISION)||0;
+      if(!map||!current||current.assets!==state.assets||current.revision!==structureRevision||current.filterKey!==result.filterKey)return;
       if(current.filterKey!==window.GH_MAP_ASSET_QUERY_CORE.filterKey(currentMapFilter().companies))return;
       renderMap();
     }
@@ -1076,8 +1076,8 @@
     timeoutMs:2500,
     onFailure:error=>nonCritical('map-presentation-worker-disabled',error),
     onPlan:result=>{
-      const current=mapPresentationPlanRequest;
-      if(!map||!current||current.key!==result.key||current.assets!==state.assets||current.revision!==(Number(state.saveRevision)||0)||!mapPresentationEngine)return;
+      const current=mapPresentationPlanRequest,structureRevision=Number(window.GH_MAP_STRUCTURE_REVISION)||0;
+      if(!map||!current||current.key!==result.key||current.assets!==state.assets||current.revision!==structureRevision||!mapPresentationEngine)return;
       // A worker result changes the desired visual plan without changing the
       // domain structure signature, so explicitly invalidate one structural pass.
       lastMapStructureSignature='';
@@ -1110,7 +1110,7 @@
       const id=String(asset.id||''),owner=assetOwnerCompanyId(asset)||'',mode=assetModeOf(asset)||'asset';assetIds.push(id);owners.push(owner);modes.push(mode);routeKeys.push(routeKey);hashValue(id);hashValue(owner);hashValue(mode);hashValue(routeKey);hashValue(asset.baseFacility||'');hashValue(reverse?1:0);
     }
     const core=window.GH_MAP_ASSET_QUERY_CORE,filterKey=core?.filterKey?.(currentMapFilter().companies)||'all';
-    const key=`${Number(state.saveRevision)||0}:${rows.length}:${structuralHash.toString(36)}:${zoom}:${limit}:${heroLimit}:${selectedAssetId||''}:${filterKey}`;
+    const key=`${Number(window.GH_MAP_STRUCTURE_REVISION)||0}:${rows.length}:${structuralHash.toString(36)}:${zoom}:${limit}:${heroLimit}:${selectedAssetId||''}:${filterKey}`;
     return {key,assetIds,owners,modes,routeKeys,routeIndexes,progress,baseCoordinates,routes,zoom,limit,heroLimit,groupLimit:limit,selectedId:selectedAssetId||''};
   }
   function monthlyFinanceReportInput(months=12){
@@ -1121,7 +1121,7 @@
     const snapshot={months,companyTypes,currentMonthKey,reports:projected};financeReportSnapshotCache={key,reports,snapshot};return {key,snapshot};
   }
   function mapVisibleAssetRows(filterState){
-    const assets=Array.isArray(state.assets)?state.assets:[],companies=filterState?.companies||{mode:'all',included:[],excluded:[]},revision=Number(state.saveRevision)||0,core=window.GH_MAP_ASSET_QUERY_CORE;
+    const assets=Array.isArray(state.assets)?state.assets:[],companies=filterState?.companies||{mode:'all',included:[],excluded:[]},revision=Number(window.GH_MAP_STRUCTURE_REVISION)||0,core=window.GH_MAP_ASSET_QUERY_CORE;
     if(core&&mapAssetQueryEngine){
       const filterKey=core.filterKey(companies);mapAssetQueryRequest={assets,revision,filterKey};
       const allCompaniesFilter=MAP_FEATURE_CORE.normalizeFilterState({...filterState,companies:{mode:'all',included:[],excluded:[]}},{state,companyPlatform:COMPANY_PLATFORM});
@@ -1230,9 +1230,9 @@
   function competitorMarkerHtml(asset){return vehicleVisualHtml(asset.type,routeBearing(asset.route,asset.progress),VEHICLE_MARKER_PHOTOS[markerKind(asset.type)],true,true);}
   function refreshVehicleMarker(marker,type,bearing,moving){
     const element=marker?.getElement?.();if(!element)return;
-    const kind=markerKind(type),pin=element.querySelector('.vehicle-pin'),heading=element.querySelector('.vehicle-heading');
-    if(pin)pin.classList.toggle('is-live',!!moving);
-    if(heading)heading.style.transform=`rotate(${markerHeading(kind,bearing).toFixed(1)}deg)`;
+    const kind=markerKind(type),pin=element.querySelector('.vehicle-pin'),heading=element.querySelector('.vehicle-heading'),live=moving?'1':'0',angle=markerHeading(kind,bearing).toFixed(1);
+    if(pin&&pin.dataset.ghLive!==live){pin.dataset.ghLive=live;pin.classList.toggle('is-live',!!moving);}
+    if(heading&&heading.dataset.ghHeading!==angle){heading.dataset.ghHeading=angle;heading.style.transform=`rotate(${angle}deg)`;}
   }
   // ---- أيقونات منشآت حقيقية (مطار/ميناء/مركز لوجستي/طاقة/بنك/مقر) بدل رموز الإيموجي ----
   const FACILITY_SVG = {
@@ -1825,7 +1825,7 @@
     const standardBudget=mapRenderBudget(zoom,'standard'),movingAssets=visibleAssets.filter(asset=>asset.phase==='moving'),stationary=visibleAssets.filter(asset=>asset.phase!=='moving'),mixedFleet=movingAssets.length>0&&stationary.length>0;
     const movingDisplayBudget=movingAssets.length?(mixedFleet?Math.max(2,Math.floor(standardBudget*.58)):standardBudget):0,stationaryDisplayBudget=stationary.length?standardBudget-movingDisplayBudget:0,movingHeroBudget=movingAssets.length?Math.max(1,Math.min(movingDisplayBudget-1,Math.ceil(movingDisplayBudget*.42))):0;
     const presentationInput=movingAssets.length&&mapPresentationEngine&&!mapPresentationEngine.isDisabled()?mapMovingPlanInput(movingAssets,zoom,movingDisplayBudget,movingHeroBudget):null,presentationRequest=presentationInput?mapPresentationEngine.requestPlan(presentationInput):{ready:false,worker:false},presentationPlan=presentationRequest.ready?presentationRequest.plan:null;
-    mapPresentationPlanRequest=presentationInput?{key:presentationInput.key,assets:state.assets,revision:Number(state.saveRevision)||0}:null;
+    mapPresentationPlanRequest=presentationInput?{key:presentationInput.key,assets:state.assets,revision:Number(window.GH_MAP_STRUCTURE_REVISION)||0}:null;
     mapPresentationPlanGeneration=presentationPlan?.generation||0;
     const movingHeroes=presentationPlan?[...presentationPlan.heroIndices].map(index=>movingAssets[index]).filter(Boolean):movingHeroSelection(movingAssets,zoom,movingHeroBudget),movingHeroIds=new Set(movingHeroes.map(asset=>asset.id));
     const movingClusterBudget=Math.max(1,movingDisplayBudget-movingHeroes.length),stationaryGroups=new Map();
