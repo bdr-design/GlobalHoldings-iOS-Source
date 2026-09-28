@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Select Node 24
         uses: actions/setup-node@v4
@@ -312,3 +313,73 @@ jobs:
             .ci-output/test-ipa-verification.json
           if-no-files-found: error
           retention-days: 30
+
+  publish-test-ipa:
+    name: Publish verified unsigned IPA for direct download
+    if: ${{ github.ref == 'refs/heads/fix/build342-asset-hotpath' }}
+    needs: source-browser-native
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Retrieve newly built IPA from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST_ipa
+          path: .ci-output
+
+      - name: Publish directly downloadable unsigned Build 342 test IPA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          IPA="$GITHUB_WORKSPACE/.ci-output/GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST.ipa"
+          REPORT="$GITHUB_WORKSPACE/.ci-output/test-ipa-verification.json"
+          DOWNLOAD_ZIP="$RUNNER_TEMP/GlobalHoldings_BUILD342_unsigned_TEST_download.zip"
+          NOTES="$RUNNER_TEMP/build342-test-release-notes.md"
+          test -s "$IPA"
+          test -s "$REPORT"
+          python3 - "$IPA" "$REPORT" "$DOWNLOAD_ZIP" "$NOTES" "$GITHUB_SHA" "$GITHUB_RUN_ID" <<'PY'
+          import hashlib, json, sys, zipfile
+          from pathlib import Path
+          ipa, report_path, download, notes = map(Path, sys.argv[1:5])
+          commit, run_id = sys.argv[5:7]
+          record = json.loads(report_path.read_text(encoding='utf-8'))
+          expected = {
+              'ipa_created': True, 'unsigned': True, 'production_approved': False,
+              'arm64_iphoneos': True, 'save_schema': '2.0.0',
+              'workflow_commit': commit, 'workflow_run_id': int(run_id),
+              'source_tree_sha256': '80dc34fec2a216a2304921d2a4e0a331b3c970682fa31574ad96b716011a8c47',
+              'webapp_tree_sha256': 'e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674',
+          }
+          for key, value in expected.items():
+              if record.get(key) != value: raise SystemExit(f'IPA delivery source/run mismatch: {key}')
+          data = ipa.read_bytes()
+          if record.get('ipa_bytes') != len(data) or record.get('ipa_sha256') != hashlib.sha256(data).hexdigest():
+              raise SystemExit('IPA delivery byte digest mismatch')
+          with zipfile.ZipFile(download, 'w', zipfile.ZIP_STORED) as archive:
+              archive.write(ipa, ipa.name)
+              archive.write(report_path, report_path.name)
+          with zipfile.ZipFile(download) as archive:
+              if archive.testzip() is not None or sorted(archive.namelist()) != sorted([ipa.name, report_path.name]):
+                  raise SystemExit('IPA download ZIP verification failed')
+              if hashlib.sha256(archive.read(ipa.name)).hexdigest() != record['ipa_sha256']:
+                  raise SystemExit('IPA download ZIP contains different bytes')
+          notes.write_text(
+              'Global Holdings 3.0.0 / Build 342 — unsigned experimental test build.\n\n'
+              'Requires iOS code signing before installation; no physical iPhone approval. '
+              'Save Schema 2.0.0 and the production approval gate remain unchanged.\n\n'
+              f'Fresh macOS CI run: {run_id}\nSource commit: {commit}\n'
+              f'Source SHA-256: {record["source_tree_sha256"]}\n'
+              f'IPA SHA-256: {record["ipa_sha256"]}\n'
+              'The ZIP contains the same IPA and its verification report.\n',
+              encoding='utf-8')
+          print('Direct-download ZIP verified:', download.name, download.stat().st_size)
+          PY
+          TAG="build342-unsigned-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$TAG" "$IPA" "$DOWNLOAD_ZIP" "$REPORT" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Global Holdings Build 342 unsigned TEST · run $GITHUB_RUN_ID" \
+            --notes-file "$NOTES" --prerelease --latest=false
