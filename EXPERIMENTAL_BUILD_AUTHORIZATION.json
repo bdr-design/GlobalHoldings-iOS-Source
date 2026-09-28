@@ -6,7 +6,8 @@
     "Build 344 conditional full-state validation is fast only when its kernel-owned saved roots and verifier identities are unchanged; changing assets or finance requires full validation. JSON.stringify and Native bridge costs remain on their existing paths.",
     "3,380-asset synthetic Node chunk p95 2.92 ms/max 13.81 ms; 10,000-asset chunk p95 3.02 ms/max 82.10 ms. No strict under-5-ms or FPS/thermal guarantee is established.",
     "An installable iPhone IPA requires Apple signing and a matching provisioning profile, neither present in the accessible source/materials. The generated artifact is explicitly unsigned.",
-    "First Build 344 CI passed 156/157 source gates; proof-row cache compatibility fixed locally and rerun pending. Full WebKit, IPA, physical iPhone tests pending; production gate remains closed."
+    "First Build 344 CI passed 156/157 source gates; proof-row cache compatibility fixed locally and rerun pending. Full WebKit, IPA, physical iPhone tests pending; production gate remains closed.",
+    "Native explicit NACK restores the last verified JS checkpoint and locks for Native reload; ordinary live edits still precede ACK. On timeout the vault outcome remains uncertain and no speculative rollback is attempted."
   ],
   "minimum_acceptance_gates": 140,
   "production_approved": false,
@@ -29,9 +30,9 @@
     "branch": "fix/build344-frame-safety",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "current_candidate_source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
-    "current_candidate_webapp_tree_sha256": "ad8b8978fb8ae69c98e527e4ec534033c603c971461f963454593884bd699c2a",
-    "current_candidate_ci_status": "PENDING_BUILD344_CI_RERUN_AFTER_PROOF_ROW_FIX",
+    "current_candidate_source_tree_sha256": "e81ce91e355c7ad7838b4dd19f347873aea8d8a581ed86f4f1e69f5d8b5b2fa9",
+    "current_candidate_webapp_tree_sha256": "6070d9297b4676346a29198c0ca2f25e28abf210f9e82b8caa9424f987f5d372",
+    "current_candidate_ci_status": "PENDING_BUILD344_COMBINED_CI",
     "latest_candidate_ci_matches_current_source": false,
     "build343_base_branch": "fix/build342-asset-hotpath",
     "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc",
@@ -39,11 +40,11 @@
     "build344_base_branch": "fix/build343-simulation-progress",
     "build344_base_commit_sha": "3d04836ef5360fde07969173f76eb664de90ccf2"
   },
-  "source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
+  "source_tree_sha256": "e81ce91e355c7ad7838b4dd19f347873aea8d8a581ed86f4f1e69f5d8b5b2fa9",
   "test_build_authorized": true,
   "user_request": "Fix remaining performance, save and Worker issues on Build 344; prior experimental build and repository work were authorized, while production approval remains false.",
   "version": "3.0.2",
-  "webapp_tree_sha256": "ad8b8978fb8ae69c98e527e4ec534033c603c971461f963454593884bd699c2a",
+  "webapp_tree_sha256": "6070d9297b4676346a29198c0ca2f25e28abf210f9e82b8caa9424f987f5d372",
   "subsequent_full_ci_attempts": [
     {
       "run_id": "36355076486",
@@ -80,8 +81,8 @@
     "physical_device_tested": false
   },
   "latest_current_source_ci": {
-    "status": "PENDING_BUILD344_CI_RERUN_AFTER_PROOF_ROW_FIX",
-    "source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
+    "status": "PENDING_BUILD344_COMBINED_CI",
+    "source_tree_sha256": "e81ce91e355c7ad7838b4dd19f347873aea8d8a581ed86f4f1e69f5d8b5b2fa9",
     "ipa_built": false,
     "physical_device_tested": false
   },

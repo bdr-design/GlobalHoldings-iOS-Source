@@ -59,6 +59,11 @@ class Board{
   for(const word of words){const next=line?line+' '+word:word;if(line&&ctx.measureText(next).width>width){lines.push(line);line=word;}else line=next;}
   if(line)lines.push(line);lines.slice(0,maxLines).forEach((v,i)=>this.text(ctx,v+(i===maxLines-1&&lines.length>maxLines?'…':''),x,y+i*size*1.45,width,size,color,weight));
  }
+ drawAudienceFacts(ctx,list,panel){
+  const summary=list.slice(0,3),comments=list.slice(3,6);
+  summary.forEach((row,i)=>{const x=142+i*402;panel(x,292,386,128,'#f5f8fc');this.text(ctx,row.label,x+358,338,342,30,COLORS.muted);this.text(ctx,row.value,x+358,397,342,46,COLORS.ink,500);});
+  comments.forEach((row,i)=>{const y=452+i*167;panel(132,y,1225,152,'#f5f8fc');this.text(ctx,row.label,1295,y+45,1090,32,COLORS.muted);this.lines(ctx,row.value,1295,y+93,1090,34,COLORS.ink,500,2);});
+ }
  draw(canvas,onLoad){
   if(this.disposed||!this.doc)return;const ctx=canvas.getContext('2d'),d=this.doc,W=2400,H=1080;
   ctx.save();ctx.scale(canvas.width/W,canvas.height/H);ctx.fillStyle='#edf2f8';ctx.fillRect(0,0,W,H);
@@ -75,7 +80,7 @@ class Board{
   this.lines(ctx,d.unit,2265,605,730,39,COLORS.muted,400,2);
   const stats=d.stats.slice(0,3),gap=720/Math.max(1,stats.length);
   stats.forEach((s,i)=>{const x=2265-i*gap;this.text(ctx,s.value,x,792,gap-22,48,COLORS.ink,500);this.lines(ctx,s.label,x,856,gap-22,31,COLORS.muted,400,2);});
-  if(d.list){const gap=Math.min(194,615/Math.max(1,d.list.length));d.list.forEach((s,i)=>{const y=340+i*gap;panel(132,y-34,1225,gap-18,'#f5f8fc');this.text(ctx,String(i+1).padStart(2,'0'),178,y+25,65,28,COLORS.blue,500,'left');this.text(ctx,s.label,1295,y+18,1020,38,COLORS.muted);this.lines(ctx,s.value,1295,y+78,1030,d.list.length>3?42:58,COLORS.ink,500,2);});}
+  if(d.list){if(d.kind==='audience'&&d.list.length>=3)this.drawAudienceFacts(ctx,d.list,panel);else{const gap=Math.min(194,615/Math.max(1,d.list.length));d.list.forEach((s,i)=>{const y=340+i*gap;panel(132,y-34,1225,gap-18,'#f5f8fc');this.text(ctx,String(i+1).padStart(2,'0'),178,y+25,65,28,COLORS.blue,500,'left');this.text(ctx,s.label,1295,y+18,1020,38,COLORS.muted);this.lines(ctx,s.value,1295,y+78,1030,d.list.length>3?42:58,COLORS.ink,500,2);});}}
   else if(d.series.length){const scale=domain(d.series),span=scale.max-scale.min,left=142,right=1348,bw=right-left,zero=left-scale.min/span*bw,gap=Math.min(195,618/d.series.length),dense=d.series.length>4;
    d.series.forEach((s,i)=>{const y=350+i*gap;this.text(ctx,s.label,right,y,755,dense?34:43,COLORS.muted);this.text(ctx,d.chartUnit?int(s.value):amount(s.value).value+' '+amount(s.value).unit,left,y,415,dense?34:40,COLORS.ink,500,'left');ctx.fillStyle='#eaf0f7';ctx.fillRect(left,y+25,bw,dense?20:30);ctx.fillStyle=s.color;ctx.fillRect(left+(Math.min(0,s.value)-scale.min)/span*bw,y+25,Math.abs(s.value)/span*bw,dense?20:30);ctx.fillStyle='#718198';ctx.fillRect(zero,y+20,2,dense?30:40);});
   }else{this.text(ctx,'بانتظار البيانات المعتمدة',1345,495,1190,64,COLORS.ink,500);this.lines(ctx,d.empty||'',1345,584,1190,40,COLORS.muted,400,3);}

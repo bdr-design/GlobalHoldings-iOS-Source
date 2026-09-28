@@ -2953,6 +2953,17 @@
     const detail=event.detail||{};
     if(detail.validated)window.GH_CONTROL_PLANE.recordBridge(state,detail.ok?'SAVE_ACK':'SAVE_NACK',detail,detail.ok?'info':'critical');
     if(detail.ok===false&&detail.requiresNativeReconciliation){
+      // On an explicit NACK, restore the last acknowledged checkpoint in JS.
+      // A failed Native write can still leave its vault head uncertain, so the
+      // screen stays closed until a fresh Native bootstrap. A timeout does not
+      // even justify a speculative JS rollback. Restore assets and finance too;
+      // changing only saveRevision leaves unsaved gameplay in live memory.
+      simulationEngine.cancelAdvance?.('native-save-reconciliation');
+      if(detail.nativeNack){
+        const checkpoint=window.GH_PERSISTENCE.confirmedNativeState?.();
+        if(checkpoint?.ok)try{replaceLiveState(checkpoint.state);diag('NATIVE_SAVE_NACK_RESTORED',{saveRevision:Number(state.saveRevision)||0,generation:checkpoint.generation},'warning');}
+        catch(error){diag('NATIVE_SAVE_NACK_RESTORE_FAILED',{reason:String(error.message||error)},'critical');}
+      }
       state.speed=0;window.GH_CONTROL_PLANE.incident(state,{fingerprint:'NATIVE_SAVE_ACK_UNCERTAIN',severity:'critical',domain:'save',code:'NATIVE_SAVE_ACK_UNCERTAIN',title:'يلزم توفيق نسخة الحفظ الأصلية',detail:'تعذر تأكيد الحفظ؛ توقفت المحاكاة وتتاح إعادة فتح آخر جيل مكتمل وتصدير سبب العطل.',evidence:detail});
       cancelSimulationPersistence();
       if(!$('nativeSaveReconcile')){

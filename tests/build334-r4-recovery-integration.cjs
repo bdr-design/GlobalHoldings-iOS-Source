@@ -17,6 +17,7 @@ async function scenario({label,version='R3',action='diagnostics-run',native='val
  s.state=minimal();s.state.speed=2;s.storageKey='reconcile-test';s.APP_VERSION='3.0.0';s.hardResetInProgress=false;s.durableCommandInProgress=false;
  s.GH_CONTROL_PLANE={sha256:hash,incident:(_state,event)=>incidents.push(event),recordBridge:()=>{}};
  s.GH_INTEGRITY_CORE={check:()=>({issues:[]})};s.pruneRouteCache=()=>{};s.reconcileConsolidatedCash=()=>{};s.diag=()=>{};s.notice=()=>{};
+ s.simulationEngine={cancelAdvance:()=>{}};
  s.location={reload:()=>reloads++};s.$=id=>nodes.get(id);
  const element=tag=>({tagName:tag.toUpperCase(),style:{},textContent:'',children:[],handlers:{},setAttribute(){},focus(){},addEventListener(k,f){this.handlers[k]=f;},append(...children){this.children.push(...children);for(const c of children)if(c.id)nodes.set(c.id,c);}});
  s.document={createElement:element,body:{appendChild:n=>nodes.set(n.id,n)}};

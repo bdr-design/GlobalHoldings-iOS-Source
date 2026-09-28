@@ -16,8 +16,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 676889,
-      "sha256": "f69735ee13bbedd49ba34bedc5d8238845dabba3609fbf8be0d7ab40cf60c442"
+      "bytes": 677765,
+      "sha256": "60b7b152b6038d45a3f7d571f2f33c50dab3ed69870df487dd843da48ba773ce"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1624,8 +1624,8 @@
       "sha256": "d79035973bcbe02c4ee60700a32b3b530516a4faa0ea78ee9442c309e3db17a2"
     },
     "WebApp/conference-board.js": {
-      "bytes": 13383,
-      "sha256": "648eb23c9fbc86cb86adc32f8907a068f003790a36d9f6b0acaee6033c5027b5"
+      "bytes": 13961,
+      "sha256": "28aea574484981e11fbc402585fb779c91ce489950ea44ce1d7bb1a068c99c88"
     },
     "WebApp/conference-core.js": {
       "bytes": 76510,
@@ -1836,8 +1836,8 @@
       "sha256": "ba21c9496c6c7b11bedd1fb5fab7662b1b0d15675afdc8af4bac6fcfd9bdf039"
     },
     "WebApp/persistence-core.js": {
-      "bytes": 33948,
-      "sha256": "5694b24261ecd94b0732e7b6a6e0339757d7975c056e5938537c60ea91176217"
+      "bytes": 36031,
+      "sha256": "1e8609ac879f31f81286dce7f90c1b864204e73f0578c337bc48f4a0d07b645b"
     },
     "WebApp/policy-core.js": {
       "bytes": 1915,
@@ -1997,7 +1997,7 @@
     },
     "project.yml": {
       "bytes": 2421,
-      "sha256": "9ae2a7a1d4a404f44168192bf92f1e1abb403a2f4e0393b045345adee3ea0a2f"
+      "sha256": "768566af6b0153a6f49f94b3a6c8bed1628615a9bf63c08bcde6704d27737df1"
     },
     "BUILD": {
       "bytes": 4,
@@ -2070,8 +2070,8 @@
     "build343_base_branch": "fix/build342-asset-hotpath",
     "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc"
   },
-  "source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
-  "webapp_tree_sha256": "ad8b8978fb8ae69c98e527e4ec534033c603c971461f963454593884bd699c2a",
+  "source_tree_sha256": "e81ce91e355c7ad7838b4dd19f347873aea8d8a581ed86f4f1e69f5d8b5b2fa9",
+  "webapp_tree_sha256": "6070d9297b4676346a29198c0ca2f25e28abf210f9e82b8caa9424f987f5d372",
   "previous_passed_direct_source_ci": {
     "run_id": "36315061990",
     "commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",

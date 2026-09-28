@@ -13,8 +13,8 @@
     "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
     "physical_iphone_tested": false
   },
-  "source_tree_sha256": "370b12f6c8581124c3aa2b5bcffd1e647ec3f61ab016d9f7a63452aa759944a7",
-  "webapp_tree_sha256": "ad8b8978fb8ae69c98e527e4ec534033c603c971461f963454593884bd699c2a",
+  "source_tree_sha256": "e81ce91e355c7ad7838b4dd19f347873aea8d8a581ed86f4f1e69f5d8b5b2fa9",
+  "webapp_tree_sha256": "6070d9297b4676346a29198c0ca2f25e28abf210f9e82b8caa9424f987f5d372",
   "input_diagnostic": {
     "app_version": "3.0.0",
     "recorder_build": 342,
@@ -42,7 +42,9 @@
     "The main-thread fallback processes owned decoded simulation DTOs without an extra copy; failure still restores from the immutable asset guard.",
     "Simulation Worker bootstrap ignores save/observability-only revision changes while real asset changes still restart initialization.",
     "Advanced update self-check uses the new app version so a correctly installed update is not rejected due to stale 3.0.0 metadata.",
-    "A full WebApp desktop WebKit scenario with 1,800 authorized assets, saved-state reload, dispatch, 30x map sampling and calendar advance is recorded as an optional diagnostic CI step."
+    "A full WebApp desktop WebKit scenario with 1,800 authorized assets, saved-state reload, dispatch, 30x map sampling and calendar advance is recorded as an optional diagnostic CI step.",
+    "On explicit Native NACK, cancel simulation advance and restore all gameplay fields from the last verified Native checkpoint, keep the reconciliation screen locked, and do not speculate on ACK timeout.",
+    "The browser compatibility cache is published only after Native ACK; conference audience comments have separate bounded 3D board cards."
   ],
   "local_verification": {
     "build344_finance_noop": "PASS_NODE",
@@ -52,9 +54,11 @@
     "build340_worker_20000_assets_atomic_rollback": "PASS_NODE",
     "native_update_bridge": "PASS_NODE_26_OF_26",
     "browser_webkit_fullapp_1800": "PENDING_MACOS_CI",
-    "full_source_acceptance": "FIRST_CI_156_OF_157_ROW_CACHE_GATE_FAILED_FIX_LOCALLY_PASS_RERUN_PENDING",
+    "full_source_acceptance": "FIRST_CI_156_OF_157_OLD_COMMIT;_PROOF_ROW_FIX_CI_IN_PROGRESS;_COMBINED_CI_PENDING",
     "physical_iphone": "NOT_TESTED",
-    "build334_durable_authorization_contract": "PASS_NODE_5_OF_5_AFTER_CI_FIX"
+    "build334_durable_authorization_contract": "PASS_NODE_5_OF_5_AFTER_CI_FIX",
+    "build344_native_nack_recovery": "PASS_NODE_5_OF_5_WITH_CONTROLLED_NATIVE_ENDPOINT",
+    "build344_conference_audience_comments": "PASS_NODE_CANVAS_LAYOUT_NO_OVERLAP_AND_NO_TRUNCATION"
   },
   "performance_acceptance": {
     "target_max_stage_ms": 5,
@@ -91,7 +95,10 @@
     "input_diagnostic_utf8_bytes": 8015765,
     "input_diagnostic_sync_ms": 199,
     "build344_ios_sync_ms": null,
-    "json_stringify_moved_off_main_thread": false
+    "json_stringify_moved_off_main_thread": false,
+    "browser_compatibility_cache_after_native_ack": true,
+    "native_nack_restores_verified_js_checkpoint_and_reloads": true,
+    "ordinary_live_state_published_before_native_ack": true
   },
   "signing": {
     "apple_identity_available": false,
