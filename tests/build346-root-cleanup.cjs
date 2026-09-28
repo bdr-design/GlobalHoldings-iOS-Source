@@ -84,6 +84,14 @@ function sourceContracts(){
   assert(app.includes("isSnapshotting?.()"));
   const sig=app.match(/function mapStructureSignature\(\)\{[^\n]+/g)?.[0]||'';
   assert(sig&&!sig.includes('state.saveRevision'));
+  const saveStart=app.indexOf('function persistStateNow(options={})');
+  const saveEnd=app.indexOf('function save(){',saveStart);
+  assert(saveStart>=0&&saveEnd>saveStart,'persistStateNow source must be locatable');
+  const saveBody=app.slice(saveStart,saveEnd);
+  assert(!saveBody.includes('pruneRouteCache('),'ordinary save must not mutate route cache');
+  assert(!saveBody.includes('reconcileConsolidatedCash('),'ordinary save must not reconcile finance');
+  assert(!saveBody.includes('GH_INTEGRITY_CORE.check('),'ordinary save must not duplicate business-integrity scans');
+  assert(saveBody.includes('readOnlySnapshot:true'),'save metric must expose the read-only contract');
   const controller=fs.readFileSync(require.resolve('../iOS/GlobalHoldings/GameViewController.swift'),'utf8');
   assert(controller.includes('case "saveStreamBegin", "saveStreamChunk", "saveStreamAbort", "saveStreamCommit":'));
   assert(controller.includes('commitNativeSave(json: json, envelope: envelope'));
