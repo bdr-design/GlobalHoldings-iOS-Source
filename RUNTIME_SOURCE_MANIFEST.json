@@ -1776,8 +1776,8 @@
       "sha256": "b5d93bbe265471a6fb1961a3f6cd0f3bfacf74c4779799b395288c35b76fb133"
     },
     "WebApp/kernel-core.js": {
-      "bytes": 39811,
-      "sha256": "832393e5add23977757a5f90611999222c2c9506857ba9a264fb35502e3acf98"
+      "bytes": 43701,
+      "sha256": "91d30ded851b8d78cc3935c3f4b9807945f60f0dbff3e08eaa024fae042aa240"
     },
     "WebApp/kernel-worker-core.js": {
       "bytes": 10372,
@@ -1880,8 +1880,8 @@
       "sha256": "14ea17a1bfe885b09633524b56f52a775d93eba4db367fe0417c239be00b0d55"
     },
     "WebApp/save-schema.js": {
-      "bytes": 67197,
-      "sha256": "c3385338268c652b1867fcaae065670e415ba45171c103d9ef1709a71dbd8b8f"
+      "bytes": 67424,
+      "sha256": "395936eaab5cdb2be3a176fd673311acf086a2cc3fc87753d0ae9be74a6f98f5"
     },
     "WebApp/section-identities.css": {
       "bytes": 2444,
@@ -2005,7 +2005,7 @@
     },
     "project.yml": {
       "bytes": 2421,
-      "sha256": "04554d8098775e7aa54809a3e08c569206cf0ba39098e4f2a60e0e9ea9fdd948"
+      "sha256": "7419e695e5cc718a5f947c62e32315ea990429d512938a053df1ec28802b6620"
     }
   },
   "latest_direct_source_ci": {
@@ -2080,8 +2080,8 @@
     "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
     "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
   },
-  "source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
-  "webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
+  "source_tree_sha256": "9d92af8b35ced6e23870d41fa103a34eb830d5affce9217166b2c22184982e5d",
+  "webapp_tree_sha256": "e0d673063a33a091c356349216c4d639eee029d5bc2c10dfa926e3cf0fe383b3",
   "previous_passed_direct_source_ci": {
     "run_id": "36315061990",
     "commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",

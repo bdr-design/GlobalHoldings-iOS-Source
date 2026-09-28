@@ -26,6 +26,9 @@
   function object(v){return !!v&&typeof v==='object'&&!Array.isArray(v);}
   function freezeProofValue(value,seen=new WeakSet()){
     if(!value||typeof value!=='object'||seen.has(value))return value;
+    // Kernel state views reject freezing by design; attempting it walks every
+    // child and throws per object. Their revision digest owns invalidation.
+    if(globalThis.GH_KERNEL?.isStateView?.(value)===true)return value;
     seen.add(value);for(const child of Object.values(value))freezeProofValue(child,seen);
     // Kernel state views deliberately reject preventExtensions/Object.freeze.
     // Their section revision digest below supplies safe cache invalidation.

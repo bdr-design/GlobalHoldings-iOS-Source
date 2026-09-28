@@ -6,6 +6,13 @@
 })(typeof globalThis!=='undefined'?globalThis:this,()=>{
   'use strict';
   const VERSION='GH-STATE-KERNEL-1.0.0';
+  // Every tracked state-view proxy, so callers (e.g. proof locking) can avoid
+  // operations the view rejects instead of paying for a thrown TypeError.
+  const viewProxies=new WeakSet();
+  // In-place mutators that only insert caller values or permute existing rows.
+  // fill/copyWithin can alias one object at several paths, so they keep the
+  // element-wise (cloning) path.
+  const ARRAY_OPS=new Set(['push','pop','shift','unshift','splice','reverse','sort']);
   const clone=value=>{
     if(value===undefined)return undefined;
     if(typeof globalThis.GH_CLONE_CORE?.clone==='function')return globalThis.GH_CLONE_CORE.clone(value);
@@ -246,6 +253,21 @@
           if(action==='delete')delete parent[key];else parent[key]=clone(value);
           section.present=true;mark(name,auditors.has(name)?{kind:'patch',path:parts,action}:null);return action==='delete'?wasPresent:parent[key];
         },
+        arrayOp(name,path,method,args){
+          // One undo record per array mutation. Routing unshift/splice through the
+          // proxy set trap instead moves every element through patch()+clone(),
+          // which is O(length) deep clones per call and grows with retained history.
+          const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='object')throw new Error(`kernel-array-kind:${name}`);
+          if(!ARRAY_OPS.has(method))throw new Error(`kernel-array-method:${method}`);
+          const parts=(Array.isArray(path)?path:[]).map(String);let target=section.data;
+          for(const part of parts){if(target==null||typeof target!=='object')throw new Error(`kernel-array-parent-missing:${name}:${part}`);target=target[part];}
+          if(!Array.isArray(target))throw new TypeError(`kernel-array-required:${name}:${parts.join('.')}`);
+          const input=Array.from(args||[]),values=method==='splice'?[...input.slice(0,2),...input.slice(2).map(clone)]:(method==='push'||method==='unshift')?input.map(clone):input;
+          const prior=target.slice(),priorLength=target.length;
+          log(()=>{target.length=0;target.length=priorLength;for(let index=0;index<priorLength;index++)if(index in prior)target[index]=prior[index];});
+          const result=Array.prototype[method].apply(target,values);
+          section.present=true;mark(name,{kind:'array',path:parts,method});return result;
+        },
         append(name,row){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='append-only')throw new Error(`kernel-append-kind:${name}`);const removed=[];section.data.push(clone(row));if(section.cap&&section.data.length>section.cap)removed.push(...section.data.splice(0,section.data.length-section.cap));log(()=>{section.data.pop();if(removed.length)section.data.unshift(...removed);});mark(name,{kind:'append',row:clone(row),trimmed:removed.length});return section.data.length;},
         replaceRows(name,rows){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='columns')throw new Error(`kernel-row-kind:${name}`);return replaceColumnRows(name,section,rows);},
         col(name,columnName){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const column=section.data.columns[String(columnName)];if(!column)throw new Error(`kernel-column-unregistered:${name}.${columnName}`);return Object.freeze({length:column.data.length,get(index){if(!Number.isInteger(index)||index<0||index>=column.data.length)throw new RangeError('kernel-column-index');if(column.presence[index]===0||column.presence[index]===3)return undefined;if(column.presence[index]===1)return null;return column.type==='u8'&&column.enumValues?column.enumValues[column.data[index]]:column.data[index];},set(index,value){return setColumnValue(name,columnName,column,index,value,false);},delete(index){return setColumnValue(name,columnName,column,index,undefined,true);}});},
@@ -300,6 +322,19 @@
       const rootTarget={},cache=new WeakMap(),proxyRefs=new WeakMap();
       const pathKey=path=>JSON.stringify(path);
       const arrayMutators=new Set(['copyWithin','fill','pop','push','reverse','shift','sort','splice','unshift']);
+      // A tracked proxy of an object section reads straight from its raw target,
+      // so cloning the raw value is equivalent and lets structuredClone work.
+      // Column rows (path depth <= 1) synthesize fields, so they stay proxies.
+      const rawRef=value=>{const ref=value&&typeof value==='object'?proxyRefs.get(value):null;if(!ref)return value;const section=contracts.get(ref.name);return section?.kind==='columns'&&ref.path.length<=1?value:ref.raw;};
+      const unwrapForWrite=value=>{if(!value||typeof value!=='object')return value;const direct=rawRef(value);if(direct!==value)return direct;if(Array.isArray(value)&&!proxyRefs.has(value)){let changed=false;const out=value.map(item=>{const raw=rawRef(item);if(raw!==item)changed=true;return raw;});return changed?out:value;}return value;};
+      function arrayWrite(name,path,method,args){
+        const values=Array.from(args,unwrapForWrite);
+        if(activeWriter)return activeWriter.arrayOp(name,path,method,values);
+        if(transactionOpen)throw new Error('kernel-state-write-outside-apply');
+        let result;const committed=tx({label:'state-view:array-write',owner:'transaction-core',writes:[name]},writer=>{result=writer.arrayOp(name,path,method,values);return result;});
+        try{options.onCommit?.(committed);}catch(error){globalThis.console?.error?.('State Kernel commit observer failed',error);}
+        return result;
+      }
       const rawAt=(name,path)=>{const section=contracts.get(name);if(!section||!section.present)return undefined;let value=section.data;for(const key of path){if(value==null)return undefined;value=value[key];}return value;};
       const tracked=(name,path,raw)=>{
         if(!raw||typeof raw!=='object')return raw;
@@ -309,6 +344,7 @@
             const section=contracts.get(name);
             if(section?.kind==='columns'&&path.length===0&&typeof prop==='string'&&arrayMutators.has(prop))return (...args)=>{const rows=columnDTO(section),result=Array.prototype[prop].apply(rows,args);write(name,[],'set',rows);return ['copyWithin','fill','reverse','sort'].includes(prop)?receiver:result;};
             if(section?.kind==='columns'&&path.length===1&&typeof prop==='string'&&own(section.data.columns,prop))return columnValue(section,prop,Number(path[0]));
+            if(section?.kind==='object'&&Array.isArray(target)&&typeof prop==='string'&&ARRAY_OPS.has(prop))return (...args)=>{const result=arrayWrite(name,path,prop,args);return prop==='reverse'||prop==='sort'?receiver:result;};
             if(prop==='__proto__')return Reflect.get(target,prop,receiver);const value=Reflect.get(target,prop,receiver);return value&&typeof value==='object'?tracked(name,[...path,String(prop)],value):value;
           },
           set(_target,prop,value){if(typeof prop==='symbol')throw new TypeError('kernel-symbol-state-key');write(name,[...path,String(prop)],'set',value);return true;},
@@ -323,11 +359,14 @@
             const section=contracts.get(name);if(section?.kind==='columns'&&path.length===1&&typeof prop==='string'&&own(section.data.columns,prop)){const column=section.data.columns[prop];if(column.presence[Number(path[0])]===0)return undefined;return {configurable:true,enumerable:true,writable:true,value:columnValue(section,prop,Number(path[0]))};}
             return Reflect.getOwnPropertyDescriptor(target,prop);
           }
-        });paths.set(key,proxy);proxyRefs.set(proxy,{name,path,raw});return proxy;
+        });paths.set(key,proxy);proxyRefs.set(proxy,{name,path,raw});viewProxies.add(proxy);return proxy;
       };
       function write(name,path,action,value){
         const reference=action==='set'&&value&&typeof value==='object'?proxyRefs.get(value):null;
         if(reference&&reference.name===name&&reference.path.length===path.length&&reference.path.every((part,index)=>part===path[index])&&rawAt(name,path)===reference.raw)return;
+        // Unwrap only after the self-assignment check: `const x=state.x=state.x`
+        // must stay a no-op so the caller's proxy keeps reading live data.
+        if(action==='set')value=unwrapForWrite(value);
         if(!contracts.has(name)){if(activeWriter)activeWriter.addRoot(name);else register(name,{owner:'transaction-core',kind:'object',path:[name]});}
         if(activeWriter){activeWriter.patch(name,path,action,value);return;}
         if(transactionOpen)throw new Error('kernel-state-write-outside-apply');
@@ -356,5 +395,6 @@
   function fromLegacyState(legacy,contracts,options={}){
     const kernel=create({...options,legacyState:legacy});for(const contract of contracts||[])kernel.register(contract.name,contract);kernel.releaseRegisteredBase();return kernel;
   }
-  return Object.freeze({VERSION,create,fromLegacyState,fingerprint,firstDifference,stableStringify:stable});
+  const isStateView=value=>!!value&&typeof value==='object'&&viewProxies.has(value);
+  return Object.freeze({VERSION,create,fromLegacyState,fingerprint,firstDifference,stableStringify:stable,isStateView});
 });
