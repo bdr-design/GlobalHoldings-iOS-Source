@@ -24,6 +24,9 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
     private var backgroundSaveInFlight = false
     private var backgroundSaveToken: UInt = 0
     private var nativeNavigationToken: UInt = 0
+    // WKScriptMessageHandler callbacks are serialized on the main thread. The stream
+    // only stages bounded transport packets; GlobalSaveVault remains the sole durable owner.
+    private let saveStream = GlobalSaveStream()
     private var navigationPreparing = false
     private var nativeBootstrapIntent: UInt = 0
     private var bootstrapForceOnNavigation = false
@@ -459,6 +462,23 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         reportBridgeEvent("gh-native-slot-ack", detail: detail)
     }
 
+    private func commitNativeSave(json: String, envelope: [String: Any], requestDocument: UInt) {
+        let nativeCommitStartedAt = ProcessInfo.processInfo.systemUptime
+        GlobalSaveVault.shared.commitAsync(json, runtimeVersion: GlobalGameStorage.shared.currentVersion, envelope: envelope) { [weak self] result in
+            let nativeVaultCommitMs = max(0, (ProcessInfo.processInfo.systemUptime - nativeCommitStartedAt) * 1000)
+            switch result {
+            case .success(let generation):
+                GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+                guard self?.isCurrentDocument(requestDocument) == true else { return }
+                self?.reportSaveAck(payload: envelope, success: true, generation: generation, message: nil, nativeVaultCommitMs: nativeVaultCommitMs)
+            case .failure(let error):
+                guard self?.isCurrentDocument(requestDocument) == true else { return }
+                print("GlobalSaveVault commit failed: \(error.localizedDescription)")
+                self?.reportSaveAck(payload: envelope, success: false, generation: nil, message: error.localizedDescription, nativeVaultCommitMs: nativeVaultCommitMs)
+            }
+        }
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         // Privileged bridges are owned by this WebView's main local document only.
         guard !navigationPreparing, message.webView === webView, message.frameInfo.isMainFrame,
@@ -472,18 +492,21 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                     reportSaveAck(payload: payload, success: false, generation: nil, message: "Invalid save envelope.")
                     return
                 }
-                let nativeCommitStartedAt = ProcessInfo.processInfo.systemUptime
-                GlobalSaveVault.shared.commitAsync(json, runtimeVersion: GlobalGameStorage.shared.currentVersion, envelope: payload) { [weak self] result in
-                    let nativeVaultCommitMs = max(0, (ProcessInfo.processInfo.systemUptime - nativeCommitStartedAt) * 1000)
-                    switch result {
-                    case .success(let generation):
-                        GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
-                        guard self?.isCurrentDocument(requestDocument) == true else { return }
-                        self?.reportSaveAck(payload: payload, success: true, generation: generation, message: nil, nativeVaultCommitMs: nativeVaultCommitMs)
-                    case .failure(let error):
-                        guard self?.isCurrentDocument(requestDocument) == true else { return }
-                        print("GlobalSaveVault commit failed: \(error.localizedDescription)")
-                        self?.reportSaveAck(payload: payload, success: false, generation: nil, message: error.localizedDescription, nativeVaultCommitMs: nativeVaultCommitMs)
+                commitNativeSave(json: json, envelope: payload, requestDocument: requestDocument)
+            case "saveStreamBegin", "saveStreamChunk", "saveStreamAbort", "saveStreamCommit":
+                do {
+                    let reply = try saveStream.receive(payload, document: requestDocument, now: ProcessInfo.processInfo.systemUptime)
+                    if case .ready(let json, let envelope) = reply {
+                        commitNativeSave(json: json, envelope: envelope, requestDocument: requestDocument)
+                    }
+                } catch {
+                    // Chunk errors are finalized as one commit NACK. Normalize the
+                    // action so the WebApp cannot confuse a transport failure with
+                    // a successfully authenticated Vault generation.
+                    if action == "saveStreamCommit" {
+                        var failed = payload
+                        failed["action"] = "commitSave"
+                        reportSaveAck(payload: failed, success: false, generation: nil, message: error.localizedDescription)
                     }
                 }
             case "saveManualSlot":
@@ -918,6 +941,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
             return
         }
         nativeNavigationToken &+= 1
+        saveStream.invalidate(document: nativeNavigationToken)
         navigationPreparing = true
         installBootstrapBeforeNavigation(webView, token: nativeNavigationToken, decisionHandler: decisionHandler)
     }
