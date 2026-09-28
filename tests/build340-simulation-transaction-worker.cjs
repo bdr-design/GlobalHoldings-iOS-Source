@@ -123,5 +123,22 @@ async function run(){
     assert(x.workerMessages.some(message=>message.type==='rollback'&&message.requestIds.includes(1)),'stale input rejection rolls back the tentative Worker state');
     console.log('PASS asset guard conflict rejects time and compensates the prepared Worker kernel batch');
   }
+  {
+    const x=setup({assetCount:64});x.e.load('kernel-core');const owner=x.s.GH_TRANSACTION_CORE.enableKernelOwner(x.state);x.s.state=owner;
+    const job=x.s.createSimulationSliceJob(30,{from:7200,to:7230,speed:30,boundary:{day:null,hour:null}});
+    await prepareFully(job);
+    assert.equal(owner.simSeconds,7200,'Worker calculation leaves the live kernel untouched');
+    assert.equal(job.finish().committed,true,'Worker result publishes through the prepared kernel section');
+    assert.equal(owner.simSeconds,7230);assert(owner.assets[0].progress>.1);
+    const before=JSON.stringify(owner),next=x.s.createSimulationSliceJob(30,{from:7230,to:7260,speed:30,boundary:{day:null,hour:null}});
+    await prepareFully(next);
+    const execute=x.s.GH_FINANCE_CORE.execute;
+    x.s.GH_FINANCE_CORE.execute=(ctx,command,...args)=>{if(command==='apply-simulation-journal')throw new Error('owner-worker-finance-failure');return execute(ctx,command,...args);};
+    try{assert.throws(()=>next.finish(),/owner-worker-finance-failure/);}
+    finally{x.s.GH_FINANCE_CORE.execute=execute;}
+    assert.equal(JSON.stringify(owner),before,'Worker plus live owner rollback restores every asset and time');
+    assert(x.workerMessages.some(message=>message.type==='rollback'),'Worker receives the rollback compensation');
+    console.log('PASS Worker result publishes through the live prepared owner and rolls back with finance');
+  }
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

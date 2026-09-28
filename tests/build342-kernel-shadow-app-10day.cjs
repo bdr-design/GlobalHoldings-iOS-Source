@@ -78,3 +78,40 @@ assert.equal(legacy.s.GH_TRANSACTION_CORE.kernelShadowStatus(legacy.state).secti
 assert.equal(tx.kernelOwnerStatus(state).schemaVersion,'2.0.0');
 assert.equal(ownerLive.state.lastMarketHour,24);assert.equal(ownerLive.state.lastFinancialDay,1,'live kernel owner crosses the real daily callback boundary with full state parity');
 console.log(`Build342 app state ownership parity: legacy Full Snapshot 10-day shadow (${hours} commits, ${count} assets), live owner parity 1 commit at ${count} assets and 24 commits across a financial-day boundary at ${longOwnerAssetCount} assets PASS`);
+
+function preparedOwnerJob(env){
+  const from=env.state.simSeconds,job=env.s.createSimulationSliceJob(30,{from,to:from+30,speed:30,boundary:{day:null,hour:null}});
+  for(let turn=0;turn<50;turn++){
+    const result=job.runChunk(16);assert.notEqual(result?.pending,true,'the owner fixture must stay synchronous');
+    if(result===true)return job;
+  }
+  throw new Error('owner-slice-planning-did-not-finish');
+}
+
+// Raw metadata and its descriptors cannot bypass the transaction revision.
+{
+  const env=makeEnvironment(true,2),job=preparedOwnerJob(env),asset=env.state.assets[0];
+  const beforeStamp=GH_KERNEL.stampOf(asset),beforeRevision=env.s.GH_TRANSACTION_CORE.inputRevision(env.state);
+  assert.throws(()=>{GH_KERNEL.identityOf(asset).specs.capacity+=1;},/kernel-raw-mutation-forbidden/);
+  assert.throws(()=>{Object.getOwnPropertyDescriptor(GH_KERNEL.identityOf(asset),'specs').value.capacity+=1;},/kernel-raw-mutation-forbidden/);
+  assert.equal(GH_KERNEL.stampOf(asset),beforeStamp,'rejected raw edits preserve the kernel stamp');
+  assert.equal(env.s.GH_TRANSACTION_CORE.inputRevision(env.state),beforeRevision,'rejected raw edits preserve the revision');
+  Object.getOwnPropertyDescriptor(asset,'specs').value.capacity+=1;
+  assert.notEqual(env.s.GH_TRANSACTION_CORE.inputRevision(env.state),beforeRevision,'state descriptors retain tracked nested writes');
+  assert.notEqual(GH_KERNEL.stampOf(asset),beforeStamp,'a descriptor write advances the kernel stamp');
+  const rejected=job.finish();assert.equal(rejected.committed,false);assert.equal(rejected.reason,'simulation-source-revision-conflict');
+  assert.equal(env.state.simSeconds,0,'a tracked input change cannot publish a partial slice');
+}
+
+// The faster unchanged-field path remains inside the same rollback boundary.
+{
+  const env=makeEnvironment(true,2),job=preparedOwnerJob(env),before=JSON.stringify(env.state),execute=env.s.GH_FINANCE_CORE.execute;
+  env.s.GH_FINANCE_CORE.execute=(context,command,...args)=>{
+    if(command==='apply-simulation-journal')throw new Error('injected-owner-finance-failure');
+    return execute(context,command,...args);
+  };
+  try{assert.throws(()=>job.finish(),/injected-owner-finance-failure/);}
+  finally{env.s.GH_FINANCE_CORE.execute=execute;}
+  assert.equal(JSON.stringify(env.state),before,'a failed finance owner rolls back assets and time byte-for-byte');
+}
+console.log('Build342 raw mutation blockade, revision conflict, and atomic failed asset/finance rollback PASS');
