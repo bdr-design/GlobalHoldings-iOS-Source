@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - build342-state-kernel-20260927
+      - fix/build342-asset-hotpath
   workflow_dispatch:
 
 permissions:
