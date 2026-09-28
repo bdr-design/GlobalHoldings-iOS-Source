@@ -1,9 +1,7 @@
-# نقطة المراجعة الحالية — Build 341 HOTPATH_FIX
+# Build 345 / 3.0.3 — time-conflict fix
 
-الفرع المقصود: `build341-hotpath-fix-20260926`، مبني على فرع Build 340 ذي القياس المرحلي. مرجع CI السابق الذي يثبت أساس Build 340 هو commit `b736d74c3745c993edd5443811a9f54fcd1ad8f8`؛ لا ينسب نجاحه إلى Build 341.
+Base source: `b2f74fae5ceaa126c8b6ecbb6ddc24ade0e24654`. Branch: `fix/build345-time-frame-root`.
 
-أثبت تشخيص المستخدم أن فحص Schema والإثباتات بعد المعاملة هو أثقل مرحلة متكررة: بلغ 299ms في العينة الأبطأ، منها قرابة 146ms لإثباتات الصلاحيات و138ms لإثباتات المستندات. نسخ لقطة 24MB أضاف 124ms، وإقفال اليوم المالي بلغ متوسط 80ms وذروة 92ms.
+The reviewed original Mobility module no longer replaces unchanged arrays/KPIs from map reads. Actual changes still invalidate prepared work; finance rollback remains enabled. Save Schema stays 2.0.0.
 
-Build 341 يعيد استخدام نتيجة تحقق الإثباتات فقط بعد نجاح الفحص الكامل، وبهوية السجل واعتمادياته نفسها. البيانات المعتمدة تُقفل عميقًا؛ أي تغيير مسموح من المالك يستبدل السجل بدل تعديله. ويستمر الفحص الكامل عند استبدال السجل أو استيراده أو تغيير اعتماديته. كما يقيس التشخيص مراحل الإقفال المالي الداخلية.
-
-تبقى `Save Schema 2.0.0`، وFull Snapshot rollback، وLive Field Journal المعطل. أكملت الاختبارات المحلية المستهدفة واختبارات Build 340؛ CI المباشر واختبار الجهاز الفعلي قيد التنفيذ قبل تسليم IPA Build 341.
+Source is committed before macOS checkout/build. The CI artifact records the exact tested commit, source fingerprints, test results and IPA hash. Production approval remains closed. Under-5-ms maximum and physical iPhone frame stability are NOT proven.

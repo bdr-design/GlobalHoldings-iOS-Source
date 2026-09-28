@@ -1,11 +1,11 @@
 {
-  "build": 344,
-  "version": "3.0.2",
+  "build": 345,
+  "version": "3.0.3",
   "save_schema": "2.0.0",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 231897,
-      "sha256": "d508d962d7c08561ee421f74cb2f9b6653a77c126aace79d98b87b81ee2da879"
+      "sha256": "ebc96e4f01ea74026ed1fc83621305fa10c8a0812e807cc20747a4efdb260991"
     },
     "WebApp/air-sea-network-core.js": {
       "bytes": 10998,
@@ -17,7 +17,7 @@
     },
     "WebApp/app.js": {
       "bytes": 677765,
-      "sha256": "60b7b152b6038d45a3f7d571f2f33c50dab3ed69870df487dd843da48ba773ce"
+      "sha256": "ac008aa6534233ad10042463da354941c43ece1de9217c082177a87c5c892b76"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1645,7 +1645,7 @@
     },
     "WebApp/control-plane-core.js": {
       "bytes": 31933,
-      "sha256": "0728d39f6126dbd560e681997efd2725ce0eb02d1f74b2afd39e0c2ef10cac98"
+      "sha256": "022d385f0e1ba8c7fbf6cdce412aa6dbe6971ac22ddf6b0aa98735865afac06b"
     },
     "WebApp/corporate-core.js": {
       "bytes": 23225,
@@ -1828,8 +1828,8 @@
       "sha256": "a4d25b40c18f4d84f6f4fb29f313bd804626707f1971d54233b3fd96d30c686b"
     },
     "WebApp/mobility-core.js": {
-      "bytes": 64707,
-      "sha256": "b5ffb95fabec7dc96cfca044fa64eeccc3ff73c2e35677b7f12cd18ea2cfc63d"
+      "bytes": 66877,
+      "sha256": "2ad85f60489a44a75423a75e4c7960f009be50ab443b0d99517271ee59645b9e"
     },
     "WebApp/operations-core.js": {
       "bytes": 2893,
@@ -1985,7 +1985,7 @@
     },
     "iOS/GlobalHoldings/GlobalGameStorage.swift": {
       "bytes": 66640,
-      "sha256": "8e8bffee288324a6546d110b608ffedba754eefa29e7455317a44b17a8736bf3"
+      "sha256": "1c9408605b6798db0ed5f080d89e021f39885c435d0eb2a0f853fc46d81a7497"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
       "bytes": 65956,
@@ -1997,111 +1997,17 @@
     },
     "project.yml": {
       "bytes": 2421,
-      "sha256": "768566af6b0153a6f49f94b3a6c8bed1628615a9bf63c08bcde6704d27737df1"
+      "sha256": "1c6f998d464a918f0bf261ef8ff74615c7dea63e3f122bb3e63009cc337d1517"
     },
     "BUILD": {
       "bytes": 4,
-      "sha256": "e65305e9101efdba6f7e202287d754cf3fbb4c904a63a9d7af7b6215ef2cc10e"
+      "sha256": "0c47cda934d53d7ca29d822a59531dcf6d36cbd9740a4fd0b867a0343910a715"
     },
     "VERSION": {
       "bytes": 6,
-      "sha256": "3fc0bf8d7ddbfe77eb4074c0b03d6567d7874a25ea4144aadea6686fcd5f6feb"
+      "sha256": "db65b7b653f7c33a2c1f9fd381f5fbe089a389f063567831785baf4b2e1497e9"
     }
   },
-  "latest_direct_source_ci": {
-    "status": "PENDING_BUILD343_CI",
-    "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
-    "ipa_built": false,
-    "physical_device_tested": false
-  },
-  "phase": "Build 343 — simulation progress and save performance diagnostic remediation",
-  "stage0_contracts": [
-    "record-alert hot path uses bounded delta validation and records measured Node p95/pmax",
-    "manual calendar failure counter maps one-to-one to CALENDAR_ADVANCE_FAILED evidence",
-    "calendar finish publication is blocked during map drag while an atomic slice remains pending",
-    "map viewport bounds, clustering, and unchanged-structure render work are bounded"
-  ],
-  "stage1_contracts": [
-    "exact Build 341 source commit acceptance runs unchanged in an isolated worktree on macOS CI",
-    "Build 342 retains and extends the declared acceptance set without replacing the baseline run"
-  ],
-  "stage2_contracts": [
-    "the ten-day 600x 3,380-asset application shadow still checks full-root equality after each of 240 commits",
-    "the live simulation asset Worker now reads and writes nine hot fields through its typed state kernel and returns patches read back from that kernel",
-    "the application transaction remains the cross-domain owner; independent finance/market kernel execution and full kernel promotion remain pending",
-    "the normalized migrated live state is installed into the kernel before diagnostics, event-ledger and control-plane bootstrap writes"
-  ],
-  "stage3_contracts": [
-    "Save Schema remains 2.0.0 while native physical storage uses independent storageVersion 2",
-    "native save sections are content-addressed, chunked, hash-verified, and published through A/B header plus atomic save-head",
-    "legacy inline Save Schema 2.0.0 payload remains readable and rollback uses the retained full snapshot fallback",
-    "normal transactions on the live owner use kernel reverse-write records and retain full-snapshot fallback for unsupported legacy paths"
-  ],
-  "stage4_contracts": [
-    "Mobility trip overflow is written through the production app path to the native A/B cold archive after each bounded 128-record flush",
-    "archive acknowledgements remove pending hot receipts only in a scoped atomic transaction; write or acknowledgement failure retains them for idempotent retry",
-    "archive indexes roll over at 4,096 receipts and historical reads merge verified segments; the under-12-MB hot-state and device gates remain pending"
-  ],
-  "stage5_contracts": [
-    "the simulation asset Worker owns tentative kernel transactions, returns patches read back from its typed kernel, and confirms or restores them after the application transaction",
-    "Worker bootstrap yields between at-most-128-row messages; Worker failure retains the existing main-thread fallback and full-snapshot outer rollback",
-    "finance, calendar and other domain callbacks still commit on the application thread; ten-minute physical frame/task acceptance remains pending"
-  ],
-  "stage6_contracts": [
-    "the production simulation Worker registers nine hot numeric asset fields in Float64Array columns with presence bytes and operates on the live 3,380-asset app path",
-    "the separate 20,000-row typed-kernel fixture and app transaction integration tests pass on Node",
-    "the application still publishes compatibility object rows; oldest-supported-iPhone memory, FPS and thermal acceptance remain pending",
-    "live object-backed asset rows contain zero duplicate copies of the nine typed hot fields while preserving exact Save Schema JSON key order"
-  ],
-  "source_tracking": {
-    "repository": "bdr-design/GlobalHoldings-iOS-Source",
-    "base_branch": "build341-hotpath-fix-20260926",
-    "base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
-    "verified_base_source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993",
-    "mode": "direct_git_tracked_tree",
-    "normal_ci_uses_overlay": false,
-    "repository_branch": "fix/build343-simulation-progress",
-    "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
-    "remote_branch_created_from_verified_base": true,
-    "current_candidate_source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
-    "current_candidate_webapp_tree_sha256": "8f37fe44506a8daf3336981b6ae8f7378b088e4e8980d87cd86c6510af275500",
-    "current_candidate_branch": "fix/build343-simulation-progress",
-    "latest_candidate_ci_matches_current_source": false,
-    "build343_base_branch": "fix/build342-asset-hotpath",
-    "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc"
-  },
-  "source_tree_sha256": "e81ce91e355c7ad7838b4dd19f347873aea8d8a581ed86f4f1e69f5d8b5b2fa9",
-  "webapp_tree_sha256": "6070d9297b4676346a29198c0ca2f25e28abf210f9e82b8caa9424f987f5d372",
-  "previous_passed_direct_source_ci": {
-    "run_id": "36315061990",
-    "commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
-    "result": "PASS_BUILD341_124_OF_124_BUILD342_140_OF_140_NATIVE_41_OF_41_WKWEBVIEW_6_OF_6_UNSIGNED_IPA_BUILT_SOURCE_VERIFIED_NOT_DELIVERED",
-    "source_tree_sha256": "84242178a4c28623dea01ee7efdc15d5f43e0e45d3494ecfcbf9956874fff58e",
-    "webapp_tree_sha256": "59832073ddd85373bbf12110114971e4895e72584cb8f0620484767e7e1ef988",
-    "nativeVaultCommitMs_macos_single_sample": 773.430958,
-    "nativeVaultCommitBytes": 29360245,
-    "ipa_built": true,
-    "ipa_uploaded_or_delivered": false,
-    "physical_iphone_tested": false
-  },
-  "previous_build342_direct_source_ci": {
-    "status": "FAILED_NATIVE_FIXTURE_ONLY_CURRENT_CANDIDATE_PENDING_CI",
-    "source_mode": "direct_git_tree_from_verified_build341_commit",
-    "run_id": "36320128185",
-    "commit_sha": "ecd8c17adfc5339610c414fc88da232109a5dba2",
-    "result": "FAILED_NATIVE_TEST_42_OF_43_AFTER_BUILD341_124_OF_124_AND_BUILD342_SOURCE_143_OF_143",
-    "failure": "The compact A/B recovery fixture created its next save with resetEpoch 0 instead of inheriting the active baseline resetEpoch; native test reported Stale native save rejected.",
-    "native_fixture_fix": "prepare_native_tests.py now copies resetEpoch from the verified current baseline object before incrementing saveRevision.",
-    "wkwebview_tests": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
-    "unsigned_iphoneos_release_app": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
-    "ipa_built": false,
-    "ipa_uploaded_or_delivered": false,
-    "device_tested": false,
-    "tested_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
-    "tested_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
-    "build341_baseline": "PASS_124_OF_124_UNCHANGED",
-    "build342_source_gates": "PASS_143_OF_143",
-    "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
-    "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
-  }
+  "source_tree_sha256": "6c8ff4552837430d56393c5723ccbe55cc34a02dcc33f38667ac6d2ffb39e638",
+  "webapp_tree_sha256": "140ba32bc0c377bd9c2a9397aa05fe7f20a5450f748b236babae5638c4978465"
 }

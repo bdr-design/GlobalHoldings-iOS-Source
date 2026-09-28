@@ -1,0 +1,39 @@
+{
+  "report": "Build345 Mobility time-conflict fix; experimental candidate",
+  "build": 345,
+  "version": "3.0.3",
+  "save_schema": "2.0.0",
+  "release_approved": false,
+  "base_build344_commit": "b2f74fae5ceaa126c8b6ecbb6ddc24ade0e24654",
+  "repository_branch": "fix/build345-time-frame-root",
+  "source_tree_sha256": "6c8ff4552837430d56393c5723ccbe55cc34a02dcc33f38667ac6d2ffb39e638",
+  "webapp_tree_sha256": "140ba32bc0c377bd9c2a9397aa05fe7f20a5450f748b236babae5638c4978465",
+  "changes": [
+    "Idempotent Mobility normalization preserves canonical arrays and KPI objects.",
+    "Only reliable kernel mutation stamps cache normalization; legacy objects are rechecked.",
+    "Missing state normalization is atomic and reads back the authoritative cloned kernel root.",
+    "App, settings, diagnostics and native bundle version raised to 3.0.3 / 345."
+  ],
+  "local_verification": {
+    "read_queries_60_revision_delta_before": 600,
+    "read_queries_60_revision_delta_after": 0,
+    "focused_node_suites_passed": 18,
+    "prepared_slice_assets": 900,
+    "real_mutation_rejection": true,
+    "finance_failure_full_rollback": true,
+    "prior_local_chromium_calendar": "focused six-company day/rollback/save-reload PASS; not 900-asset full game"
+  },
+  "current_ci": "PENDING; actual logs and IPA report are separate artifacts bound to the source commit",
+  "performance_acceptance": {
+    "target_max_stage_ms": 5,
+    "strict_max_under_5ms_verified": false,
+    "physical_iphone_tested": false,
+    "production_approved": false
+  },
+  "known_limits": [
+    "Strict under-5-ms maximum and elimination of frame drops are NOT proven; resident Worker ownership and chunked Native saving remain open.",
+    "Build345 fixes one reproduced read-induced time conflict; no physical iPhone test has been run.",
+    "Full WebKit 1800-asset performance fixture previously failed route setup; do not treat source acceptance as full-device performance approval.",
+    "Unsigned test IPA requires signing before installation. Production approval remains closed."
+  ]
+}

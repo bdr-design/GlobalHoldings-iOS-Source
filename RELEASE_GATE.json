@@ -1,131 +1,36 @@
 {
   "approved": false,
   "blocking_issues": [
-    "Strict under-5-ms maximum is not met in synthetic Node tests: the 3,380-asset chunk peaked at 13.81 ms and 10,000-asset chunk at 82.10 ms; the 8 MB ordinary JSON save still serializes on the main thread.",
-    "Combined Build 344 Native NACK and conference comment fixes passed focused local tests; full macOS/WebKit/unsigned iPhoneOS CI and physical 1,800/3,380/20,000-asset traces remain pending.",
-    "No Apple signing identity or provisioning profile is available; the CI test IPA is unsigned and cannot be installed as-is on an iPhone. Production approval remains closed."
+    "Strict under-5-ms maximum and elimination of frame drops are NOT proven; resident Worker ownership and chunked Native saving remain open.",
+    "Build345 fixes one reproduced read-induced time conflict; no physical iPhone test has been run.",
+    "Full WebKit 1800-asset performance fixture previously failed route setup; do not treat source acceptance as full-device performance approval.",
+    "Unsigned test IPA requires signing before installation. Production approval remains closed."
   ],
-  "build": 344,
-  "phase_status": {
-    "stage0_urgent_build342": "UNSIGNED_TEST_IPA_DELIVERED_RUN_36356730336; LATEST_FULL_ACCEPTANCE_RERUN_143_OF_144_CALENDAR_GATE_OPEN; PHYSICAL_IPHONE_PENDING",
-    "stage1_build341_baseline": "PASS_EXACT_SOURCE_124_OF_124_RUN_36353111793",
-    "stage2_shadow_state_kernel": "LIVE_KERNEL_OWNER_AND_BOUNDED_PARITY_PASS_CROSS_DOMAIN_KERNEL_PROMOTION_PENDING",
-    "stage3_delta_validation_and_incremental_storage": "CURRENT_SOURCE_NATIVE_CI_PASS_43_OF_43_RUN_36353111793; IPHONE_TIMING_PENDING",
-    "stage4_cold_archive": "PRODUCTION_MOBILITY_ARCHIVE_AND_ZERO_DUPLICATE_HOT_COLUMNS_DEVICE_HOT_STATE_GATE_PENDING",
-    "stage5_worker": "TENTATIVE_ASSET_WORKER_KERNEL_INTEGRATED_CROSS_DOMAIN_APP_THREAD_AND_DEVICE_GATE_PENDING",
-    "stage6_typed_asset_columns": "NINE_LIVE_COLUMNS_ZERO_DUPLICATE_HOT_OBJECT_FIELDS_20K_SYNTHETIC_PASS_DEVICE_GATE_PENDING",
-    "full_snapshot_fallback": "ON",
-    "save_schema": "2.0.0",
-    "production_approved": false,
-    "build344": "LOCAL_NACK_AND_COMMENTS_PASS_COMBINED_CI_PENDING_DEVICE_AND_SIGNING_PENDING_UNDER_5_MS_NOT_MET"
-  },
-  "point": "Build 344 — verified source fixes and measured frame-safety limits",
+  "build": 345,
+  "version": "3.0.3",
   "save_schema": "2.0.0",
+  "point": "Build345 time-conflict fix; frame work remains open",
+  "source_tree_sha256": "6c8ff4552837430d56393c5723ccbe55cc34a02dcc33f38667ac6d2ffb39e638",
+  "webapp_tree_sha256": "140ba32bc0c377bd9c2a9397aa05fe7f20a5450f748b236babae5638c4978465",
   "source_tracking": {
     "repository": "bdr-design/GlobalHoldings-iOS-Source",
-    "base_branch": "build341-hotpath-fix-20260926",
-    "base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
-    "branch": "fix/build344-frame-safety",
+    "base_commit_sha": "b2f74fae5ceaa126c8b6ecbb6ddc24ade0e24654",
+    "base_branch": "fix/build344-frame-safety",
+    "branch": "fix/build345-time-frame-root",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "current_candidate_source_tree_sha256": "e81ce91e355c7ad7838b4dd19f347873aea8d8a581ed86f4f1e69f5d8b5b2fa9",
-    "current_candidate_webapp_tree_sha256": "6070d9297b4676346a29198c0ca2f25e28abf210f9e82b8caa9424f987f5d372",
-    "current_candidate_ci_status": "PENDING_BUILD344_COMBINED_CI",
-    "latest_candidate_ci_matches_current_source": false,
-    "build343_base_branch": "fix/build342-asset-hotpath",
-    "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc",
-    "current_candidate_branch": "fix/build344-frame-safety",
-    "build344_base_branch": "fix/build343-simulation-progress",
-    "build344_base_commit_sha": "3d04836ef5360fde07969173f76eb664de90ccf2"
+    "current_candidate_source_tree_sha256": "6c8ff4552837430d56393c5723ccbe55cc34a02dcc33f38667ac6d2ffb39e638",
+    "current_candidate_webapp_tree_sha256": "140ba32bc0c377bd9c2a9397aa05fe7f20a5450f748b236babae5638c4978465"
   },
-  "source_tree_sha256": "e81ce91e355c7ad7838b4dd19f347873aea8d8a581ed86f4f1e69f5d8b5b2fa9",
-  "version": "3.0.2",
-  "webapp_tree_sha256": "6070d9297b4676346a29198c0ca2f25e28abf210f9e82b8caa9424f987f5d372",
-  "previous_passed_source_ci": {
-    "run_id": "36307934626",
-    "commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",
-    "source_tree_sha256": "1a95fc47734dc88981f7b483db2aad8f2082139826cbaac18b1bfffa05e5b44e"
-  },
-  "subsequent_full_ci_attempts": [
-    {
-      "run_id": "36355076486",
-      "commit_sha": "284368b6038650c2fd16df819b6ff915e4ef1b7f",
-      "build341": "124/124",
-      "build342": "143/144",
-      "failed_gate": "build334-calendar-journey-browser.cjs",
-      "reason": "fixture waited for a day-37 compaction marker even when there was no history to compact"
-    },
-    {
-      "run_id": "36355839842",
-      "commit_sha": "fa668b8e9ff3ff7edd208e44aee927b09ee3f480",
-      "build341": "124/124",
-      "build342": "143/144",
-      "failed_gate": "build334-calendar-journey-browser.cjs",
-      "reason": "30-day manual advance timed out after day 7; needs an independent repeat and investigation"
-    },
-    {
-      "run_id": "36393295600",
-      "commit_sha": "c1b02530e41931019672bf9b76332d7f918cc4da",
-      "build344": "156/157",
-      "failed_gate": "build334-durable-authorization-contract.cjs",
-      "reason": "first proof-cache revision lost frozen plain-state row cache hits; dependency epoch fix tested locally"
-    }
-  ],
-  "previous_build342_direct_source_ci": {
-    "run_id": "36353111793",
-    "commit_sha": "6c873e3de87cbd127c0774d3c5fbe899babda92b",
-    "status": "PASS_CURRENT_SOURCE_MACOS_CI_ALL_STEPS",
-    "source_mode": "direct_git_tree_from_verified_build341_commit",
-    "result": "PASS_BUILD341_BASELINE_124_OF_124; BUILD342_ACCEPTANCE_144_OF_144; NATIVE_43_OF_43; REAL_WKWEBVIEW_SMOKE_6_OF_6; FRESH_UNSIGNED_ARM64_IPHONEOS_RELEASE_BUILD_PASS; TEST_IPA_VERIFIED_NOT_UPLOADED; PHYSICAL_DEVICE_NOT_TESTED",
-    "build341_baseline": "PASS_124_OF_124_UNCHANGED",
-    "build342_source_gates": "PASS_144_OF_144",
-    "native_tests": "PASS_43_OF_43",
-    "wkwebview_tests": "PASS_REAL_WKWEBVIEW_6_OF_6",
-    "unsigned_iphoneos_release_app": "PASS_FRESH_UNSIGNED_ARM64_IPHONEOS_RELEASE",
-    "ipa_built": true,
-    "ipa_uploaded_or_delivered": false,
-    "ipa_name": "GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST.ipa",
-    "ipa_bytes": 13467562,
-    "ipa_sha256": "aca416b363042dcb5157fb5f6205f1aca9aaac04b5ffac311a346dc31defedde",
-    "verification_artifact_id": 10943520827,
-    "verification_artifact_sha256": "eae006dce264dbd20cd1994019ca6c596683d9a19dbd7fb49c1b9a98e326be5",
-    "device_tested": false,
-    "tested_source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
-    "tested_webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574"
+  "phase_status": {
+    "calendar_read_conflict": "LOCAL_REGRESSION_PASS_CI_PENDING",
+    "frame_max_under_5ms": "NOT_VERIFIED",
+    "physical_iphone": "NOT_TESTED"
   },
   "latest_direct_source_ci": {
-    "status": "PENDING_BUILD344_COMBINED_CI",
-    "source_tree_sha256": "e81ce91e355c7ad7838b4dd19f347873aea8d8a581ed86f4f1e69f5d8b5b2fa9",
+    "status": "PENDING_BUILD345_CI",
+    "source_tree_sha256": "6c8ff4552837430d56393c5723ccbe55cc34a02dcc33f38667ac6d2ffb39e638",
     "ipa_built": false,
     "physical_device_tested": false
-  },
-  "previous_build342_unsigned_test_ipa_delivery": {
-    "run_id": "36356730336",
-    "commit_sha": "d03c6258625cc46fd5b302674c34c749a64ec7cd",
-    "branch": "build342-ipa-delivery-20260927",
-    "source_tree_sha256": "e57aa9e47c6604036732836aee5bd3b51d5f747c878effb1a2d4dace224cfbe1",
-    "webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574",
-    "ipa_name": "GlobalHoldings_BUILD342_STATE_KERNEL_unsigned_TEST.ipa",
-    "ipa_bytes": 13467562,
-    "ipa_sha256": "26ab217c5568c80217c109a2b6ade9c29aa990bea0bad8d556024c46a3b6cadc",
-    "ipa_artifact_id": 10944216911,
-    "ipa_artifact_zip_sha256": "5cdb70ff4872cf183fdd721fadf8ab9924f8ef77c5ca735fa9ae41f2a3622b1e",
-    "source_inventory_pass": true,
-    "fresh_arm64_iphoneos_release_build_pass": true,
-    "ipa_webapp_files_verified": 490,
-    "ipa_delivered_to_requester": true,
-    "unsigned": true,
-    "full_acceptance_rerun_in_delivery_workflow": false,
-    "physical_iphone_tested": false,
-    "production_approved": false,
-    "save_schema": "2.0.0"
-  },
-  "latest_unsigned_test_ipa_delivery": null,
-  "previous_build343_direct_source_ci": {
-    "run_id": "36385903147",
-    "commit_sha": "3d04836ef5360fde07969173f76eb664de90ccf2",
-    "result": "PASS_152_SOURCE_GATES_NATIVE_WKWEBVIEW_ARM64_UNSIGNED_TEST_IPA",
-    "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
-    "physical_iphone_tested": false
   }
 }

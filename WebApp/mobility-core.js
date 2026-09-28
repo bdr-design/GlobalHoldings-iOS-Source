@@ -244,14 +244,43 @@
     }
   }
 
+  const normalizedMobility=new WeakMap();
+  const MOBILITY_ROW_KEYS=Object.freeze(['vehicles','drivers','rideRequests','activeTrips','tripArchive','tripArchivePending','events','capitalCenters']);
+  const MOBILITY_KPI_DEFAULTS=Object.freeze({requests:0,accepted:0,completed:0,cancelled:0,grossBookings:0,driverPayouts:0,platformRevenue:0,avgRating:4.91,acceptanceRate:100,completionRate:100});
+  const MOBILITY_ZONES_JSON=JSON.stringify(ZONES);
   function ensure(state,explicitOwner=''){
-    const ownerCompanyId=mobilityOwnerCompanyId(state,explicitOwner),m=state.mobility=state.mobility&&typeof state.mobility==='object'?state.mobility:{};
-    if(m.ownerCompanyId&&String(m.ownerCompanyId)!==ownerCompanyId)throw new Error('mobility-state-owner-conflict');m.ownerCompanyId=ownerCompanyId;
-    m.schema='gh-mobility-v4';m.version=VERSION;
-    for(const key of ['vehicles','drivers','rideRequests','activeTrips','tripArchive','tripArchivePending','events','capitalCenters'])m[key]=Array.isArray(m[key])?m[key].filter(Boolean):[];
-    for(const key of ['vehicles','drivers','rideRequests','activeTrips','tripArchive','tripArchivePending','events','capitalCenters'])for(const row of m[key]){if(row.ownerCompanyId&&String(row.ownerCompanyId)!==ownerCompanyId)throw new Error(`mobility-row-owner-conflict:${key}:${row.id||'unknown'}`);row.ownerCompanyId=ownerCompanyId;}
-    m.status=m.vehicles.length?'active':'not-launched';
-    m.zones=clone(ZONES);m.sequence=Math.max(0,Number(m.sequence)||0);
+    const ownerCompanyId=mobilityOwnerCompanyId(state,explicitOwner),kernel=globalThis.GH_KERNEL,tx=globalThis.GH_TRANSACTION_CORE;
+    const current=state.mobility,tracked=kernel?.isStateView?.(current)===true;
+    // Only kernel views have reliable mutation stamps. Raw legacy objects must
+    // be checked again, because callers can change them without the kernel.
+    if(tracked){const cached=normalizedMobility.get(current);if(cached?.owner===ownerCompanyId&&cached.stamp===kernel.stampOf(current))return current;}
+    const apply=()=>normalizeMobilityState(state,ownerCompanyId);
+    // Missing/legacy state is repaired as one owner transaction, never a series
+    // of partial writes from a presentation call. Nested calls join their owner.
+    let m;
+    if(tx?.isKernelOwner?.(state)===true&&!tx.isActive()){
+      const result=tx.execute(state,{label:'mobility:normalize',scope:['mobility'],apply});
+      if(!result.committed)throw new Error(result.reason||'mobility-normalization-rejected');
+      m=state.mobility;
+    }else m=apply();
+    if(kernel?.isStateView?.(m)===true)normalizedMobility.set(m,{owner:ownerCompanyId,stamp:kernel.stampOf(m)});
+    return m;
+  }
+  function normalizeMobilityState(state,ownerCompanyId){
+    if(!state.mobility||typeof state.mobility!=='object')state.mobility={};
+    // Assignment returns the caller's object, while the kernel stores a clone.
+    // Read the authoritative view back before populating a newly created root.
+    const m=state.mobility;
+    if(m.ownerCompanyId&&String(m.ownerCompanyId)!==ownerCompanyId)throw new Error('mobility-state-owner-conflict');if(m.ownerCompanyId!==ownerCompanyId)m.ownerCompanyId=ownerCompanyId;
+    if(m.schema!=='gh-mobility-v4')m.schema='gh-mobility-v4';if(m.version!==VERSION)m.version=VERSION;
+    for(const key of MOBILITY_ROW_KEYS){
+      const rows=m[key];if(!Array.isArray(rows)){m[key]=[];continue;}
+      // Do not replace canonical arrays (or allocate a copy) on every map frame.
+      for(let index=0;index<rows.length;index++)if(!rows[index]){m[key]=rows.filter(Boolean);break;}
+    }
+    for(const key of MOBILITY_ROW_KEYS)for(const row of m[key]){if(row.ownerCompanyId&&String(row.ownerCompanyId)!==ownerCompanyId)throw new Error(`mobility-row-owner-conflict:${key}:${row.id||'unknown'}`);if(row.ownerCompanyId!==ownerCompanyId)row.ownerCompanyId=ownerCompanyId;}
+    const status=m.vehicles.length?'active':'not-launched';if(m.status!==status)m.status=status;
+    if(JSON.stringify(m.zones)!==MOBILITY_ZONES_JSON)m.zones=clone(ZONES);const sequence=Math.max(0,Number(m.sequence)||0);if(m.sequence!==sequence)m.sequence=sequence;
     m.lastDemandAtByCenter=m.lastDemandAtByCenter&&typeof m.lastDemandAtByCenter==='object'?m.lastDemandAtByCenter:{};
     m.streetRoutes=m.streetRoutes&&typeof m.streetRoutes==='object'&&!Array.isArray(m.streetRoutes)?m.streetRoutes:{};
     for(const center of m.capitalCenters)if(center?.capitalId&&!(center.capitalId in m.lastDemandAtByCenter))m.lastDemandAtByCenter[center.capitalId]=now(state);
@@ -267,8 +296,10 @@
       for(const trip of m.activeTrips){trip.centerId=trip.centerId||'RUH';const zones=zonesFor(state,trip.centerId),from=zones.find(z=>z.id===trip.fromZone)||zones[0],key=streetRouteKey(trip.centerId,trip.fromZone,trip.toZone),cached=m.streetRoutes[key],verified=validStreetRoute(cached?.route);trip.route=verified?clone(cached.route):[[...from.coords],[...from.coords]];trip.routeLocked=true;trip.routeVersion=3;trip.routeVerified=verified;trip.progress=verified?Math.max(0,Math.min(1,Number(trip.progress)||0)):0;trip.dueAt=verified&&Number.isFinite(Number(trip.dueAt))?Number(trip.dueAt):null;trip.routeSource=verified?'OSRM · شبكة الشوارع الفعلية':'بانتظار مسار شارع موثّق';if(verified)trip.routingDeadlineAt=null;else{trip.acceptedAt=now(state);trip.routingDeadlineAt=trip.acceptedAt+ROUTE_WAIT_TIMEOUT_SECONDS;}if(!verified&&cached)delete m.streetRoutes[key];}
       m.routeSchemaVersion=3;
     }
-    const legacyKpis=m.kpis||{};m.kpis={requests:0,accepted:0,completed:0,cancelled:0,grossBookings:0,driverPayouts:0,platformRevenue:0,avgRating:4.91,acceptanceRate:100,completionRate:100,...legacyKpis};
-    if(!Number.isFinite(Number(legacyKpis.accepted)))m.kpis.accepted=Math.max(Number(m.kpis.completed)||0,(Number(m.kpis.requests)||0)-(Number(m.kpis.cancelled)||0)-m.rideRequests.filter(request=>request.status==='queued').length);
+    const legacyKpis=m.kpis||{},repairAccepted=!Number.isFinite(Number(legacyKpis.accepted));
+    if(!m.kpis||typeof m.kpis!=='object')m.kpis={...MOBILITY_KPI_DEFAULTS,...legacyKpis};
+    else for(const [key,value] of Object.entries(MOBILITY_KPI_DEFAULTS))if(!Object.prototype.hasOwnProperty.call(m.kpis,key))m.kpis[key]=value;
+    if(repairAccepted)m.kpis.accepted=Math.max(Number(m.kpis.completed)||0,(Number(m.kpis.requests)||0)-(Number(m.kpis.cancelled)||0)-m.rideRequests.filter(request=>request.status==='queued').length);
     m.kpisByCenter=m.kpisByCenter&&typeof m.kpisByCenter==='object'?m.kpisByCenter:{};
     return m;
   }
