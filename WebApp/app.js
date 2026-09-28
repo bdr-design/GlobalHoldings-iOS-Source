@@ -21,11 +21,11 @@
   };
   const fmtNumber = value => new Intl.NumberFormat('ar-SA', {maximumFractionDigits: 0}).format(value || 0);
   const fmtStars = value => { const full=Math.round(clamp(value,0,5)*2)/2; let s=''; for(let i=1;i<=5;i++){ s += i<=full?'★':(i-0.5===full?'⯨':'☆'); } return s; };
-  const APP_VERSION = '3.0.1';
+  const APP_VERSION = '3.0.2';
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 343;
+  const RUNTIME_BUILD = 344;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   const FOUNDER_PRINCIPAL_ID='PLAYER-FOUNDER';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
@@ -699,10 +699,16 @@
   if (!Array.isArray(state.leasedAssets)) state.leasedAssets=[];
   if (!state.routeCache || Array.isArray(state.routeCache) || typeof state.routeCache!=='object') state.routeCache={};
   function pruneRouteCache(maxEntries=160){
-    const active=new Set([...(state.assets||[]).map(a=>a.routeId).filter(Boolean),...(state.customRoutes||[]).map(r=>r.id).filter(Boolean)]);
-    const rows=Object.entries(state.routeCache).filter(([id,v])=>v&&Number.isFinite(Number(v.distanceKm))&&((Array.isArray(v.route)&&v.route.length>=2)||v.canonicalRouteId===id));
+    const prior=Object.entries(state.routeCache);
+    if(!prior.length)return false;
+    const active=new Set();
+    for(const asset of state.assets||[])if(asset?.routeId)active.add(asset.routeId);
+    for(const route of state.customRoutes||[])if(route?.id)active.add(route.id);
+    const rows=prior.filter(([id,v])=>v&&Number.isFinite(Number(v.distanceKm))&&((Array.isArray(v.route)&&v.route.length>=2)||v.canonicalRouteId===id));
     rows.sort((a,b)=>{const av=active.has(a[0])?1:0,bv=active.has(b[0])?1:0;if(av!==bv)return bv-av;const bs=Number(b[1].cachedAtSim),as=Number(a[1].cachedAtSim);if(Number.isFinite(bs)||Number.isFinite(as))return (Number.isFinite(bs)?bs:-1)-(Number.isFinite(as)?as:-1);return Date.parse(b[1].updated||0)-Date.parse(a[1].updated||0);});
-    state.routeCache=Object.fromEntries(rows.slice(0,Math.max(20,Math.min(160,maxEntries))));
+    const next=Object.fromEntries(rows.slice(0,Math.max(20,Math.min(160,maxEntries)))),entries=Object.entries(next);
+    if(prior.length===entries.length&&entries.every(([id,value],index)=>prior[index][0]===id&&Object.is(prior[index][1],value)))return false;
+    state.routeCache=next;return true;
   }
   pruneRouteCache();
   if(window.GH_ADVANCED)window.GH_ADVANCED.migrate(state);
@@ -2155,6 +2161,10 @@
   let simulationAssetWorker=null,simulationAssetWorkerFailed=false,simulationAssetWorkerPending=null,simulationAssetWorkerRequestId=0,simulationAssetWorkerAssetCount=-1,
     simulationAssetWorkerReady=false,simulationAssetWorkerSeedTimer=null,simulationAssetWorkerInitState=null,simulationAssetWorkerQueuedProcess=null;
   const SIMULATION_WORKER_SEED_CHUNK=128;
+  function simulationWorkerInputRevision(){
+    const tx=window.GH_TRANSACTION_CORE;
+    return (typeof tx?.inputRevision==='function'?tx.inputRevision(state):tx?.revision?.(state))??null;
+  }
   function disableSimulationAssetWorker(error){
     simulationAssetWorkerFailed=true;try{simulationAssetWorker?.terminate?.();}catch{}simulationAssetWorker=null;
     simulationAssetWorkerAssetCount=-1;simulationAssetWorkerReady=false;simulationAssetWorkerInitState=null;simulationAssetWorkerQueuedProcess=null;
@@ -2169,14 +2179,14 @@
   }
   function startSimulationAssetWorkerBootstrap(worker,assets){
     if(worker!==simulationAssetWorker||simulationAssetWorkerFailed)return false;
-    const source=Array.isArray(assets)?assets:[],revision=window.GH_TRANSACTION_CORE?.revision?.(state)??null;
+    const source=Array.isArray(assets)?assets:[],revision=simulationWorkerInputRevision();
     const init={source,revision,cursor:0,count:source.length};simulationAssetWorkerInitState=init;simulationAssetWorkerReady=false;simulationAssetWorkerAssetCount=source.length;
     try{worker.postMessage({type:'init-start',requestId:0,assetCount:init.count});}
     catch(error){disableSimulationAssetWorker(error);return false;}
     const pump=()=>{
       simulationAssetWorkerSeedTimer=null;
       if(worker!==simulationAssetWorker||simulationAssetWorkerFailed||simulationAssetWorkerInitState!==init)return;
-      const currentRevision=window.GH_TRANSACTION_CORE?.revision?.(state)??null;
+      const currentRevision=simulationWorkerInputRevision();
       if(state.assets!==source||(Array.isArray(state.assets)?state.assets.length:0)!==init.count||(revision!==null&&currentRevision!==revision)){
         startSimulationAssetWorkerBootstrap(worker,state.assets||[]);return;
       }
@@ -2201,7 +2211,7 @@
         if(message.type==='initialized'&&message.version==='GH-SIMULATION-ASSET-WORKER-340.1.0'){
           const init=simulationAssetWorkerInitState;
           if(!init||Number(message.assets)!==init.count||typeof message.fingerprint!=='string'||!Number.isSafeInteger(message.typedArrayBytes)){disableSimulationAssetWorker(new Error('simulation-asset-worker-bootstrap-result-invalid'));return;}
-          const currentRevision=window.GH_TRANSACTION_CORE?.revision?.(state)??null;
+          const currentRevision=simulationWorkerInputRevision();
           if(state.assets!==init.source||(init.revision!==null&&currentRevision!==init.revision)){startSimulationAssetWorkerBootstrap(worker,state.assets||[]);return;}
           simulationAssetWorkerInitState=null;simulationAssetWorkerReady=true;postQueuedSimulationAssetBatch();return;
         }
@@ -2631,7 +2641,10 @@
       return true;
     }
     function legacyRecord(row){
-      let draft=clone(row.asset),effects=makeSimulationEffects();
+      // Both the direct fallback and a failed Worker batch own these decoded
+      // asset DTOs exclusively. Process the DTO in place; the immutable guard
+      // remains available to reconstruct the original if this asset faults.
+      let draft=row.asset,effects=makeSimulationEffects();
       try{processAssetDraft(draft,sliceSeconds,effects,simMeta);}
       catch(error){
         draft=simulationAssetSnapshot({id:row.id,guard:row.guard},row.guard);effects=makeSimulationEffects();
@@ -2933,7 +2946,7 @@
   window.GH_CONTROL_PLANE?.installDOMObserver?.(()=>state);
   diag('DIAGNOSTICS_READY',{version:window.GH_DIAGNOSTICS.VERSION});
   window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'RUNTIME_READY',domain:'control',detail:{appVersion:APP_VERSION,simulationCore:window.GH_SIMULATION_CORE.VERSION,transactionCore:window.GH_TRANSACTION_CORE.VERSION}});
-  if($('runtimeBuildBadge'))$('runtimeBuildBadge').textContent=`BUILD${RUNTIME_BUILD} · SIM_PROGRESS_FIX · v${APP_VERSION}`;
+  if($('runtimeBuildBadge'))$('runtimeBuildBadge').textContent=`BUILD${RUNTIME_BUILD} · v${APP_VERSION}`;
   document.addEventListener('visibilitychange',()=>{diag(document.hidden?'WEBKIT_HIDDEN':'WEBKIT_VISIBLE');simulationEngine.setHidden(document.hidden);if(!document.hidden){requestVisualResync();updateMarkerPositions(true);}},{passive:true});
   let savePressureNoticeShown=false;
   window.addEventListener('gh-persistence-status',event=>{

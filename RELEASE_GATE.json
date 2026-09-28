@@ -1,11 +1,11 @@
 {
   "approved": false,
   "blocking_issues": [
-    "Build 343 exact source must pass macOS baseline/source/browser/native/iPhoneOS CI gates before its test IPA is treated as verified.",
-    "On-device 1,800 and 3,380-asset traces and a full calendar-hour advance after this fix remain unmeasured; the supplied Build 342 diagnostic recorded 138 conflicts, six failed advances, 4.77% estimated missed frames and a 199 ms synchronous save. Under-5-ms frame work is unproven.",
-    "The Build 343 IPA is an unsigned experimental artifact; installation and launch on a physical iPhone require Apple signing and on-device acceptance. Production approval remains closed."
+    "Strict under-5-ms maximum is not met in synthetic Node tests: the 3,380-asset chunk peaked at 13.81 ms and 10,000-asset chunk at 82.10 ms; the 8 MB ordinary JSON save still serializes on the main thread.",
+    "Build 344 full browser/macOS/unsigned iPhoneOS CI and physical 1,800/3,380/20,000-asset frame, calendar, memory, and rollback traces remain pending.",
+    "No Apple signing identity or provisioning profile is available; the CI test IPA is unsigned and cannot be installed as-is on an iPhone. Production approval remains closed."
   ],
-  "build": 343,
+  "build": 344,
   "phase_status": {
     "stage0_urgent_build342": "UNSIGNED_TEST_IPA_DELIVERED_RUN_36356730336; LATEST_FULL_ACCEPTANCE_RERUN_143_OF_144_CALENDAR_GATE_OPEN; PHYSICAL_IPHONE_PENDING",
     "stage1_build341_baseline": "PASS_EXACT_SOURCE_124_OF_124_RUN_36353111793",
@@ -16,27 +16,31 @@
     "stage6_typed_asset_columns": "NINE_LIVE_COLUMNS_ZERO_DUPLICATE_HOT_OBJECT_FIELDS_20K_SYNTHETIC_PASS_DEVICE_GATE_PENDING",
     "full_snapshot_fallback": "ON",
     "save_schema": "2.0.0",
-    "production_approved": false
+    "production_approved": false,
+    "build344": "LOCAL_FOCUSED_PASS_FULL_CI_PENDING_DEVICE_AND_SIGNING_PENDING_UNDER_5_MS_NOT_MET"
   },
-  "point": "Build 343 — simulation progress and save performance experimental verification",
+  "point": "Build 344 — verified source fixes and measured frame-safety limits",
   "save_schema": "2.0.0",
   "source_tracking": {
     "repository": "bdr-design/GlobalHoldings-iOS-Source",
     "base_branch": "build341-hotpath-fix-20260926",
     "base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
-    "branch": "fix/build343-simulation-progress",
+    "branch": "fix/build344-frame-safety",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "current_candidate_source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
-    "current_candidate_webapp_tree_sha256": "8f37fe44506a8daf3336981b6ae8f7378b088e4e8980d87cd86c6510af275500",
-    "current_candidate_ci_status": "PENDING_BUILD343_CI",
+    "current_candidate_source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
+    "current_candidate_webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
+    "current_candidate_ci_status": "PENDING_BUILD344_CI",
     "latest_candidate_ci_matches_current_source": false,
     "build343_base_branch": "fix/build342-asset-hotpath",
-    "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc"
+    "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc",
+    "current_candidate_branch": "fix/build344-frame-safety",
+    "build344_base_branch": "fix/build343-simulation-progress",
+    "build344_base_commit_sha": "3d04836ef5360fde07969173f76eb664de90ccf2"
   },
-  "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
-  "version": "3.0.1",
-  "webapp_tree_sha256": "8f37fe44506a8daf3336981b6ae8f7378b088e4e8980d87cd86c6510af275500",
+  "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
+  "version": "3.0.2",
+  "webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
   "previous_passed_source_ci": {
     "run_id": "36307934626",
     "commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",
@@ -83,8 +87,8 @@
     "tested_webapp_tree_sha256": "3c74bf388d879d19dd525013a5c244a516bf454b79b9eb77c7950c5957f76574"
   },
   "latest_direct_source_ci": {
-    "status": "PENDING_BUILD343_CI",
-    "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
+    "status": "PENDING_BUILD344_CI",
+    "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
     "ipa_built": false,
     "physical_device_tested": false
   },
@@ -109,5 +113,12 @@
     "production_approved": false,
     "save_schema": "2.0.0"
   },
-  "latest_unsigned_test_ipa_delivery": null
+  "latest_unsigned_test_ipa_delivery": null,
+  "previous_build343_direct_source_ci": {
+    "run_id": "36385903147",
+    "commit_sha": "3d04836ef5360fde07969173f76eb664de90ccf2",
+    "result": "PASS_152_SOURCE_GATES_NATIVE_WKWEBVIEW_ARM64_UNSIGNED_TEST_IPA",
+    "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
+    "physical_iphone_tested": false
+  }
 }

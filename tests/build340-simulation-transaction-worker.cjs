@@ -12,7 +12,7 @@ const SUPPORT=fragment('  const SIMULATION_ASSET_ENGINE=', '  function makeSimul
 const EFFECTS=fragment('  function makeSimulationEffects(){', '  // Pure simulation draft:');
 const JOB=fragment('  const SIMULATION_TRANSACTION_SCOPE=', "  if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core compatibility");
 
-function setup({assetCount=1}={}){
+function setup({assetCount=1,workerFailure=false}={}){
   const e=scenario(),s=e.s,state=e.state,route={id:'SIM-WORKER-R',type:'air',routeMode:'air',ownerCompanyId:'air',from:'ألف',to:'باء',fromFacility:'B1',toFacility:'B2',distanceKm:100,effectiveSpeedKmh:100,tripSeconds:4000,dwellHours:.1};
   e.load('simulation-time-core');e.load('simulation-pacing-core');e.load('simulation-core');e.load('simulation-asset-core');
   const asset={id:'SIM-WORKER-A',name:'اختبار محاكاة',type:'air',assetMode:'air',ownerCompanyId:'air',assetClass:'aircraft',operationProfileId:'air-operations',phase:'moving',routeId:route.id,routeSignature:'SIG',routeSlot:0,reverse:false,progress:.1,fuel:95,condition:99,from:route.from,to:route.to,baseFacility:'B1',load:'82 / 100 راكب',dwellRemaining:0,departureScheduled:false,salePending:false,tripSeconds:4000,specs:{capacity:100,capacityUnit:'راكب',speedKmh:100,fuelBurnKgPerKm:2,yieldMultiplier:1},staffing:{mode:'automatic-fixed',ready:true,monthlyPayroll:120000},simCarrySeconds:0,crewBlocked:false};
@@ -33,7 +33,7 @@ function setup({assetCount=1}={}){
   const workers=[],workerMessages=[];
   s.Worker=class MockSimulationWorker{
     constructor(){this.terminated=false;workers.push(this);}
-    postMessage(message){workerMessages.push(message);setTimeout(()=>{if(this.terminated)return;if(message.type==='init-start'){this.initAssets=new Array(message.assetCount);this.initCursor=0;return;}if(message.type==='init-chunk'){assert.equal(message.offset,this.initCursor);for(const row of message.assets)this.initAssets[this.initCursor++]=row;return;}if(message.type==='init-end'){assert.equal(this.initCursor,message.assetCount);this.onmessage?.({data:{type:'initialized',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',assets:this.initAssets.length,typedArrayBytes:this.initAssets.length*81,fingerprint:'test-initial-fingerprint'}});return;}if(message.type==='init'){this.onmessage?.({data:{type:'initialized',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',assets:message.assets.length,typedArrayBytes:message.assets.length*81,fingerprint:'test-initial-fingerprint'}});return;}if(message.type!=='process')return;const records=Core.processBatch(message);this.onmessage?.({data:{type:'result',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',coreVersion:Core.VERSION,records,kernelState:{revision:message.requestId,fingerprint:'test-kernel-fingerprint',typedArrayBytes:message.assetCount*81,commitMs:1}}});},5);}
+    postMessage(message){workerMessages.push(message);setTimeout(()=>{if(this.terminated)return;if(message.type==='init-start'){this.initAssets=new Array(message.assetCount);this.initCursor=0;return;}if(message.type==='init-chunk'){assert.equal(message.offset,this.initCursor);for(const row of message.assets)this.initAssets[this.initCursor++]=row;return;}if(message.type==='init-end'){assert.equal(this.initCursor,message.assetCount);this.onmessage?.({data:{type:'initialized',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',assets:this.initAssets.length,typedArrayBytes:this.initAssets.length*81,fingerprint:'test-initial-fingerprint'}});return;}if(message.type==='init'){this.onmessage?.({data:{type:'initialized',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',assets:message.assets.length,typedArrayBytes:message.assets.length*81,fingerprint:'test-initial-fingerprint'}});return;}if(message.type!=='process')return;if(workerFailure){this.onmessage?.({data:{type:'error',requestId:message.requestId,error:'injected-worker-failure'}});return;}const records=Core.processBatch(message);this.onmessage?.({data:{type:'result',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',coreVersion:Core.VERSION,records,kernelState:{revision:message.requestId,fingerprint:'test-kernel-fingerprint',typedArrayBytes:message.assetCount*81,commitMs:1}}});},5);}
     terminate(){this.terminated=true;}
   };
   vm.runInContext(SUPPORT,s,{filename:'build340-simulation-worker-support.js'});
@@ -97,6 +97,20 @@ async function run(){
     assert.equal(x.state.simulationKernel.lastAtomicCommit.assets,1);
     assert(x.workerMessages.some(message=>message.type==='confirm'&&message.requestIds.includes(1)),'successful application publication confirms the Worker kernel transaction');
     console.log('PASS worker plan crosses the existing validation and atomic simulation transaction before asset/time writes');
+  }
+  {
+    const x=setup({assetCount:2,workerFailure:true});
+    x.s.processAssetDraft=(asset,_seconds,effects)=>{if(asset.id==='SIM-WORKER-A'){asset.progress=.99;effects.todayProfit=555;throw new Error('injected-asset-fault');}asset.progress=.35;};
+    const before=JSON.stringify(x.state),job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});
+    await prepareFully(job);
+    assert.equal(JSON.stringify(x.state),before,'failed Worker fallback plans only on detached DTOs');
+    assert.equal(job.finish().committed,true);
+    assert.equal(x.state.assets[0].progress,.1,'faulty fallback asset replays from immutable guard');
+    assert.equal(x.state.assets[0].simulationFault.code,'ASSET_SIMULATION_ISOLATED');
+    assert.equal(x.state.assets[1].progress,.35,'healthy fallback asset still commits');
+    assert.equal(x.state.todayProfit,0,'effects from the faulty asset are discarded');
+    assert.equal(x.state.simSeconds,7230);
+    console.log('PASS failed Worker replays independent asset DTOs and preserves per-asset isolation');
   }
   {
     const x=setup(),job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:1,hour:3}});await prepare(job);

@@ -1,26 +1,16 @@
 {
   "authorized_at": "2026-09-26",
-  "build": 343,
+  "build": 344,
   "known_limits": [
-    "CI run 36331263988 on c3421813cfbc76c798751be5c9e96869e620ad38 passed source/package integrity and unchanged Build341 baseline 124/124; Build342 acceptance was 143/144. The bounded Worker fix passed in CI. Calendar reproduced journal-unbalanced at simSeconds 298800, but the test diagnostic used Array.map on a live-view kernel proxy and returned no rows. It now iterates with for...of; the production journal owner and offending row remain unknown. Native Swift, WKWebView and current-source iOS build were not reached.",
-    "The 10-day, 600x, 3,380-asset parity test compares the legacy application transaction path and uses controlled finance/market callbacks. Live kernel ownership is separately checked for one 3,380-asset commit and 24 commits across a financial-day boundary at 128 assets; full independent finance/market kernel promotion remains incomplete.",
-    "The normalized live save is now kernel-owned immediately after migration and before diagnostic/control-plane bootstrap. Nine hot asset values live only in Float64Array columns; rare fields remain in row objects, and Save Schema 2.0.0 JSON property order remains byte-compatible.",
-    "Native storageVersion 2 and Save Schema 2.0.0 passed 43/43 on current-source macOS CI run 36353111793. The 357.892625 ms sample for 29,360,245 bytes is macOS-only; iPhone timing remains unmeasured.",
-    "Mobility cold receipt archival is integrated through the app transaction and Native bridge with stable-ID retry and segmented A/B indexes. The under-12-MB physical hot-state target and long-session archive behavior remain unmeasured.",
-    "The simulation asset Worker owns tentative typed asset state and returns its kernel-readback patches; the full app transaction, state reads, finance, calendar and market callbacks remain on the main thread. The separate general kernel Worker protocol is not wired as the application state owner.",
-    "The app kernel stores nine hot asset columns without duplicate numeric fields in row objects. Synthetic 20,000-row Worker/kernel tests pass, but the app still exposes compatibility row views; iPhone 17 Pro Max FPS, task duration, memory and thermal measurements remain pending.",
-    "Physical acceptance still needs ten minutes at 600x with continuous drag: at least 58 FPS, under 1% frame drops, no main-thread task over 50 ms, under 12 MB hot state at 3,380 assets, and memory/thermal behavior at 20,000 assets on the oldest supported iPhone. The user reports iPhone 17 Pro Max as the only available device; the oldest supported model is unspecified.",
-    "The current local candidate updates live Proxy identity tracking so journal compaction can restore a retained row after array-index reuse. Its targeted regression passes locally; exact-current-source macOS CI passed 144/144 plus native and WKWebView gates in run 36353111793; iPhone 17 Pro Max timing remains pending.",
-    "Run 36351219317 on commit 3e32f4d1ea679440cf10df5247904926c7cdb14a passed source integrity and unchanged Build341 baseline 124/124, then failed Build342 acceptance at 143/144. The live-proxy identity fix cleared journal-unbalanced at hour 83 and the calendar journey reached days 7 and 37. The remaining failure was the UI-only date-selection snapshot racing a deferred idle compaction that moved day-34 records into the verified audit digest. The acceptance helper now waits for that persistence work to settle before asserting read-only selection. Swift, WKWebView and current-source iOS build were not reached.",
-    "Historical: run 36352181861 on commit 56643f2fc57338fc97d66e3cc0b0d640f93ef495 failed one calendar helper wait after baseline 124/124. The day-7 marker wait was removed; current-source run 36353111793 passed Build342 acceptance 144/144, native 43/43, real WKWebView smoke 6/6, and unsigned iPhoneOS build/IPA verification.",
-    "Current-source CI run 36353111793 on commit 6c873e3de87cbd127c0774d3c5fbe899babda92b passed Build341 124/124, Build342 144/144, native save vault 43/43 and real WKWebView smoke 6/6; fresh unsigned arm64 iPhoneOS Release build and test IPA were verified (IPA SHA-256 aca416b363042dcb5157fb5f6205f1aca9aaac04b5ffac311a346dc31defedde) but the IPA was not uploaded or delivered. No physical iPhone test was run.",
-    "Two later full CI reruns 36355076486 and 36355839842 passed Build341 124/124 but each failed one Build342 calendar journey browser gate (143/144). The first fixture required a day-37 compaction marker that can remain stale when no history needs pruning; after correcting that wait, the second run timed out during a 30-day manual advance. A separate build-only CI run 36356730336 verified the same exact runtime source, built a new unsigned arm64 iPhoneOS app and delivered the verified test IPA (SHA-256 26ab217c5568c80217c109a2b6ade9c29aa990bea0bad8d556024c46a3b6cadc). Full later-fixture acceptance and physical iPhone gates remain open.",
-    "The current staged-asset candidate has synthetic Node timings but a strict under-5-ms main-thread ceiling, browser CI, and physical iPhone 3,380-asset trace remain unverified; approval stays closed.",
-    "Build 342 diagnostic at 1,800 iPhone assets recorded 138 slice conflicts, six failed calendar advances, 512 estimated missed frames (4.77%) and up to 199 ms synchronous save. Build 343 iPhone outcomes and the requested under-5-ms target are unverified."
+    "Build 342 iPhone diagnostic at 1,800 assets recorded a 199 ms synchronous save and 4.77% estimated missing frames; no Build 344 physical-device measurement exists.",
+    "Build 344 conditional full-state validation is fast only when its kernel-owned saved roots and verifier identities are unchanged; changing assets or finance requires full validation. JSON.stringify and Native bridge costs remain on their existing paths.",
+    "3,380-asset synthetic Node chunk p95 2.92 ms/max 13.81 ms; 10,000-asset chunk p95 3.02 ms/max 82.10 ms. No strict under-5-ms or FPS/thermal guarantee is established.",
+    "An installable iPhone IPA requires Apple signing and a matching provisioning profile, neither present in the accessible source/materials. The generated artifact is explicitly unsigned.",
+    "Full Build 344 macOS acceptance, WebKit scenario, and iPhone 17 Pro Max 1,800/3,380-asset traces await CI/device runs; production gate remains closed."
   ],
   "minimum_acceptance_gates": 140,
   "production_approved": false,
-  "purpose": "Internal experimental Build 343 verification of simulation progress and save performance after the 1,800-asset iPhone diagnostic. Save Schema 2.0.0 and the production approval gate remain unchanged.",
+  "purpose": "Experimental Build 344 direct-source verification of save proof validation, transaction revisions, and simulation Worker bootstrap after the 1,800-asset iPhone diagnostic.",
   "rollback_and_ownership": {
     "authoritative_state_owner": "The kernel owns normalized live application state after migration; the app transaction wrapper coordinates cross-domain publication, while the simulation Worker owns tentative typed asset updates.",
     "full_snapshot_fallback": true,
@@ -36,21 +26,24 @@
     "repository": "bdr-design/GlobalHoldings-iOS-Source",
     "base_branch": "build341-hotpath-fix-20260926",
     "base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
-    "branch": "fix/build343-simulation-progress",
+    "branch": "fix/build344-frame-safety",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "current_candidate_source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
-    "current_candidate_webapp_tree_sha256": "8f37fe44506a8daf3336981b6ae8f7378b088e4e8980d87cd86c6510af275500",
-    "current_candidate_ci_status": "PENDING_BUILD343_CI",
+    "current_candidate_source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
+    "current_candidate_webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
+    "current_candidate_ci_status": "PENDING_BUILD344_CI",
     "latest_candidate_ci_matches_current_source": false,
     "build343_base_branch": "fix/build342-asset-hotpath",
-    "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc"
+    "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc",
+    "current_candidate_branch": "fix/build344-frame-safety",
+    "build344_base_branch": "fix/build343-simulation-progress",
+    "build344_base_commit_sha": "3d04836ef5360fde07969173f76eb664de90ccf2"
   },
-  "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
+  "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
   "test_build_authorized": true,
-  "user_request": "Raise the app version and investigate game lag using the newly supplied diagnostic. Experimental testing is authorized; production approval remains false.",
-  "version": "3.0.1",
-  "webapp_tree_sha256": "8f37fe44506a8daf3336981b6ae8f7378b088e4e8980d87cd86c6510af275500",
+  "user_request": "Fix remaining performance, save and Worker issues on Build 344; prior experimental build and repository work were authorized, while production approval remains false.",
+  "version": "3.0.2",
+  "webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
   "subsequent_full_ci_attempts": [
     {
       "run_id": "36355076486",
@@ -80,8 +73,9 @@
     "physical_device_tested": false
   },
   "latest_current_source_ci": {
-    "status": "PENDING_BUILD343_CI",
-    "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
+    "status": "PENDING_BUILD344_CI",
+    "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
+    "ipa_built": false,
     "physical_device_tested": false
   },
   "previous_build342_unsigned_test_ipa_delivery": {
@@ -105,5 +99,12 @@
     "production_approved": false,
     "save_schema": "2.0.0"
   },
-  "latest_unsigned_test_ipa_delivery": null
+  "latest_unsigned_test_ipa_delivery": null,
+  "previous_build343_direct_source_ci": {
+    "run_id": "36385903147",
+    "commit_sha": "3d04836ef5360fde07969173f76eb664de90ccf2",
+    "result": "PASS_152_SOURCE_GATES_NATIVE_WKWEBVIEW_ARM64_UNSIGNED_TEST_IPA",
+    "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
+    "physical_iphone_tested": false
+  }
 }

@@ -23,6 +23,54 @@
     return Object.isFrozen(value);
   }
   const verifiedProofStates=new WeakMap();
+  const verifiedFullStates=new WeakMap();
+  // A change to a verifier or its hash provider must invalidate both the
+  // whole proof result and every individually locked row, even if the saved
+  // state itself has not changed.
+  function proofVerificationDependencies(){
+    const kernel=globalThis.GH_KERNEL,transaction=globalThis.GH_TRANSACTION_CORE,
+      authorization=globalThis.GH_AUTHORIZATION,documents=globalThis.GH_DOCUMENT_PROOF,
+      controlPlane=globalThis.GH_CONTROL_PLANE,platform=globalThis.GH_COMPANY_PLATFORM,cloneCore=globalThis.GH_CLONE_CORE;
+    return [kernel,kernel?.identityOf,kernel?.versionOf,kernel?.stampOf,
+      transaction,transaction?.kernelOwnerProofRevisionDigest,
+      authorization,authorization?.validateVisualSeal,authorization?.verifyProof,authorization?.stable,authorization?.digest,
+      documents,documents?.stateDocuments,documents?.verifyRecord,documents?.verifyDocument,
+      controlPlane,controlPlane?.sha256,cloneCore,cloneCore?.clone,globalThis.structuredClone,
+      globalThis.JSON,globalThis.JSON?.stringify,globalThis.TextEncoder,
+      platform,platform?.resolveDocumentProfile];
+  }
+  // Only the live kernel view has a mutation stamp for every saved root. The
+  // company registry is another validation input, so it must be sealed before
+  // a successful full validation can be reused on an ordinary save.
+  function fullValidationDependencies(){
+    const platform=globalThis.GH_COMPANY_PLATFORM;
+    if(platform?.isSealed?.()!==true)return null;
+    const identity=globalThis.GH_IDENTITY,transaction=globalThis.GH_TRANSACTION_CORE;
+    return [...proofVerificationDependencies(),transaction?.isKernelOwner,
+      platform,platform.validateState,platform.isKnownRouteMode,platform.ownerForLegacyAssetMode,
+      identity,identity?.inspectPlainText,identity?.inspectCustomLogo];
+  }
+  function sameDependencies(left,right){return !!left&&!!right&&left.length===right.length&&left.every((value,index)=>value===right[index]);}
+  function fullValidationStamp(state,options,proofCacheKey){
+    // GH_KERNEL.isStateView identifies tracked *section* proxies; the root
+    // proxy itself is identified by transaction-core's private owner WeakMap.
+    if(options.lockVerifiedProofs!==true||!proofCacheKey||globalThis.GH_TRANSACTION_CORE?.isKernelOwner?.(state)!==true)return null;
+    const stamp=kernelApi()?.stampOf,dependencies=fullValidationDependencies();
+    if(typeof stamp!=='function'||!dependencies)return null;
+    // Include both key names and values, including new/deleted sections. Only
+    // saveRevision may be ignored: the cheap schema header checks it on EVERY
+    // call, and no other validator reads it.
+    const roots=Object.keys(state).filter(name=>name!=='saveRevision');
+    return {roots:JSON.stringify(roots.map(name=>[name,stamp(state[name])])),dependencies};
+  }
+  function sameFullValidationStamp(left,right){return !!left&&!!right&&left.roots===right.roots&&sameDependencies(left.dependencies,right.dependencies);}
+  function validateHeader(s,errors){
+    if(!object(s))errors.push('root-not-object');
+    if(String(s?.saveVersion||'')!==SAVE_SCHEMA_VERSION)errors.push('save-version');
+    if(s?.saveRevision!==undefined&&(!finite(s.saveRevision)||Number(s.saveRevision)<0||!Number.isSafeInteger(Number(s.saveRevision))))errors.push('save-revision');
+    if(s?.resetEpoch!==undefined&&(!finite(s.resetEpoch)||!Number.isSafeInteger(Number(s.resetEpoch))||Number(s.resetEpoch)<0))errors.push('reset-epoch');
+    if(!finite(s?.simSeconds)||Number(s.simSeconds)<0)errors.push('sim-seconds');
+  }
   // Phase 1B-B: wall-clock pacing/scheduler telemetry is runtime-only. Older
   // Build 339 saves may still contain the former simulationEngine.snapshot()
   // payload inside simulationKernel; retain only semantic/audit fields there.
@@ -288,7 +336,7 @@
       const strokes=row?.strokes,pointCount=Array.isArray(strokes)?strokes.reduce((sum,stroke)=>sum+(Array.isArray(stroke)?stroke.length:9000),0):9000;
       const basic=!id||!object(row)||row.id!==id||!people[row.ownerPersonId]||!Array.isArray(strokes)||!strokes.length||strokes.length>64||pointCount>8192||serializedBytes(strokes)>STATE_LIMITS.authorizationSealBytes||!validDigest(row.digest),validator=globalThis.GH_AUTHORIZATION?.validateVisualSeal;
       if(basic)errors.push('authorization-seal');
-      else if(proofLocked(row)&&verifiedAuthorizationSeals.has(proofIdentity(row))){if(metric)metric.authorizationSealCacheHits++;}
+      else if(verificationCache?.authorization?.allowCached&&proofLocked(row)&&verifiedAuthorizationSeals.has(proofIdentity(row))){if(metric)metric.authorizationSealCacheHits++;}
       else if(typeof validator!=='function'||!validator(row).ok)errors.push('authorization-seal');
     }
     for(const [personId,sealId] of Object.entries(active))if(!people[personId]||!seals[sealId]||seals[sealId].ownerPersonId!==personId||seals[sealId].status!=='active')errors.push('authorization-active-seal');
@@ -297,7 +345,7 @@
     const proofVerificationStart=metric?metricClock():0;for(const [id,row] of Object.entries(allProofs)){
       const seal=seals?.[row?.signatureAssetId||row?.visualSealAssetId],mandate=mandates?.[row?.mandateId];
       if(!id||!object(row)||row.id!==id||!people[row.signerPersonId]||!seal||!mandate||!validDigest(row.signatureDigest||row.visualSealDigest)||!validDigest(row.payloadDigest)||!validDigest(row.proofDigest)||!Array.isArray(row.documentDigests)||row.documentDigests.some(value=>!validDigest(value))){errors.push('authorization-proof');continue;}
-      if(authorizationProofCacheEntry(row,seal,mandate)){if(metric)metric.authorizationProofCacheHits++;continue;}
+      if(verificationCache?.authorization?.allowCached&&authorizationProofCacheEntry(row,seal,mandate)){if(metric)metric.authorizationProofCacheHits++;continue;}
       if(!verificationState)errors.push('authorization-proof-integrity');else if(!verifier(verificationState,id,verificationCache?.authorization).ok)errors.push('authorization-proof-integrity');
     }if(metric)metric.authorizationProofVerifyMs+=Math.max(0,metricClock()-proofVerificationStart);
   }
@@ -312,7 +360,7 @@
     if(Object.keys(records).length&&(!verificationState||typeof recordVerifier!=='function')){errors.push('document-proof-verifier-unavailable');return;}
     if(documentCache){documentCache.sharedRecordView=true;for(const [id,row] of Object.entries(records)){
       const authorizationProof=row?.authorizationProofId?(s.authorization?.proofsById?.[row.authorizationProofId]||s.authorization?.proofArchiveById?.[row.authorizationProofId]||null):null;
-      const verified=documentRecordCacheEntry(row,authorizationProof,records,s.authorization);
+      const verified=documentCache.allowCached?documentRecordCacheEntry(row,authorizationProof,records,s.authorization):null;
       if(verified){documentCache.records.set(id,verified);if(metric)metric.documentRecordCacheHits++;}
     }}
     const recordVerificationStart=metric?metricClock():0;if(verificationState&&typeof recordVerifier==='function')for(const id of Object.keys(records)){const check=recordVerifier(verificationState,id,new Set(),documentCache),acceptedLegacy=check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true;if(!check?.ok&&!acceptedLegacy)errors.push('document-proof-record-integrity');}if(metric)metric.documentRecordVerifyMs+=Math.max(0,metricClock()-recordVerificationStart);
@@ -323,13 +371,23 @@
       // a fully successful locked check, bound to the same unchanged record, and
       // only when that record re-verified (or cache-verified) in THIS run.
       const record=records[document.documentProofId],lock=isKernelView(document)?verifiedDocumentLocks.get(proofIdentity(document)):null;
-      if(lock&&lock.version===kernelApi().versionOf(document)&&lock.record===proofIdentity(record)&&lock.recordVersion===kernelApi().versionOf(record)&&accepted(documentCache?.records?.get(document.documentProofId))){if(metric)metric.documentVerifyCacheHits++;if(documentCache)documentCache.acceptedDocuments.push([document,record]);continue;}
+      if(documentCache?.allowCached&&lock&&lock.version===kernelApi().versionOf(document)&&lock.record===proofIdentity(record)&&lock.recordVersion===kernelApi().versionOf(record)&&accepted(documentCache?.records?.get(document.documentProofId))){if(metric)metric.documentVerifyCacheHits++;if(documentCache)documentCache.acceptedDocuments.push([document,record]);continue;}
       const verification=verifier(verificationState,document,verificationCache?.documents);if(!accepted(verification))errors.push('document-proof-integrity');else if(documentCache&&isKernelView(document))documentCache.acceptedDocuments.push([document,record]);}}if(metric)metric.documentVerifyMs+=Math.max(0,metricClock()-documentVerificationStart);
   }
   function validate(s,options={}){
-    const validationStart=metricClock(),proofCacheKey=proofValidationCacheKey(s),metric={totalMs:0,authorizationMs:0,authorizationSealCacheHits:0,authorizationProofVerifyMs:0,authorizationProofCacheHits:0,documentProofMs:0,documentCollectionMs:0,documentRecordVerifyMs:0,documentRecordCacheHits:0,documentVerifyMs:0,documentVerifyCacheHits:0,proofStateCacheHits:0,companyPlatformMs:0,otherMs:0,errors:0};
-    const verificationCache={authorization:{proofs:new Map(),sealDigests:new Map(),mandateDigests:new Map()},documents:{records:new Map(),signedContentStable:new Map(),acceptedDocuments:[]}};verificationCache.documents.authorization=verificationCache.authorization;
-    const errors=[];if(!object(s))errors.push('root-not-object');if(String(s?.saveVersion||'')!==SAVE_SCHEMA_VERSION)errors.push('save-version');if(s?.saveRevision!==undefined&&(!finite(s.saveRevision)||Number(s.saveRevision)<0||!Number.isSafeInteger(Number(s.saveRevision))))errors.push('save-revision');if(s?.resetEpoch!==undefined&&(!finite(s.resetEpoch)||!Number.isSafeInteger(Number(s.resetEpoch))||Number(s.resetEpoch)<0))errors.push('reset-epoch');if(!finite(s?.simSeconds)||Number(s.simSeconds)<0)errors.push('sim-seconds');
+    const validationStart=metricClock(),proofCacheKey=proofValidationCacheKey(s),metric={totalMs:0,authorizationMs:0,authorizationSealCacheHits:0,authorizationProofVerifyMs:0,authorizationProofCacheHits:0,documentProofMs:0,documentCollectionMs:0,documentRecordVerifyMs:0,documentRecordCacheHits:0,documentVerifyMs:0,documentVerifyCacheHits:0,proofStateCacheHits:0,fullStateCacheHits:0,companyPlatformMs:0,otherMs:0,errors:0};
+    const proofDependencies=proofVerificationDependencies(),previousProof=proofCacheKey?verifiedProofStates.get(s):null,
+      allowCachedProofRows=!!previousProof&&sameDependencies(previousProof.dependencies,proofDependencies);
+    const errors=[];validateHeader(s,errors);
+    const fullStamp=fullValidationStamp(s,options,proofCacheKey),verifiedFull=fullStamp?verifiedFullStates.get(s):null;
+    if((!fullStamp||verifiedFull&&!sameFullValidationStamp(fullStamp,verifiedFull))&&globalThis.GH_TRANSACTION_CORE?.isKernelOwner?.(s)===true)verifiedFullStates.delete(s);
+    if(!errors.length&&sameFullValidationStamp(fullStamp,verifiedFull)){
+      metric.fullStateCacheHits=1;
+      if(allowCachedProofRows&&previousProof.key===proofCacheKey)metric.proofStateCacheHits=1;
+      metric.totalMs=Math.max(0,metricClock()-validationStart);metric.otherMs=metric.totalMs;publishValidationMetric(metric);
+      return {ok:true,errors:[]};
+    }
+    const verificationCache={authorization:{proofs:new Map(),sealDigests:new Map(),mandateDigests:new Map(),allowCached:allowCachedProofRows},documents:{records:new Map(),signedContentStable:new Map(),acceptedDocuments:[],allowCached:allowCachedProofRows}};verificationCache.documents.authorization=verificationCache.authorization;
     validateIdentityState(s,errors);validateConferenceLogoState(s,errors);validatePresentationTextState(s,errors);
     for(const key of ['assets','market'])if(!Array.isArray(s?.[key]))errors.push(key);if(!object(s?.finance)||!Array.isArray(s.finance.invoices)||!Array.isArray(s.finance.cheques)||!Array.isArray(s.finance.payables)||!Array.isArray(s.finance.receivables)||!Array.isArray(s.finance.periods))errors.push('finance');if(!object(s?.companyFinance))errors.push('company-finance');if(!object(s?.advanced))errors.push('advanced');
     if(duplicateIds(s?.assets,x=>x?.id))errors.push('asset-id');if(duplicateIds(s?.customRoutes,x=>x?.id))errors.push('route-id');if(duplicateIds(s?.realism?.procurement?.deliveries,x=>x?.id))errors.push('delivery-id');
@@ -374,16 +432,24 @@
     const cp=s?.controlPlane;if(cp!==undefined){if(!object(cp)||String(cp.schema||'')!=='gh-control-plane-v1'||!Array.isArray(cp.events)||!Array.isArray(cp.commands)||!Array.isArray(cp.incidents)||!Array.isArray(cp.outbox)||!Array.isArray(cp.blackBox)||!object(cp.registry)||!object(cp.registry.engines)||!Array.isArray(cp.registry.links))errors.push('control-plane-shape');else{if(cp.events.length>STATE_LIMITS.controlEvents||cp.commands.length>STATE_LIMITS.controlCommands||cp.incidents.length>STATE_LIMITS.controlIncidents||cp.outbox.length>STATE_LIMITS.controlOutbox||cp.blackBox.length>STATE_LIMITS.controlBlackBox)errors.push('control-plane-capacity');for(const key of ['revision','commandSequence','eventSequence','incidentSequence','outboxSequence'])if(!finite(cp[key])||Number(cp[key])<0||!Number.isInteger(Number(cp[key])))errors.push('control-plane-sequence');if(!/^[a-f0-9]{64}$/i.test(String(cp.journalHeadHash||'')))errors.push('control-plane-journal-head');if(duplicateIds(cp.events,x=>x?.id)||duplicateIds(cp.commands,x=>x?.id)||duplicateIds(cp.incidents,x=>x?.id)||duplicateIds(cp.outbox,x=>x?.id))errors.push('control-plane-id');for(const e of cp.events){if(!Number.isInteger(Number(e?.sequence))||Number(e.sequence)<=0||!/^[a-f0-9]{64}$/i.test(String(e?.hash||''))||!/^[a-f0-9]{64}$/i.test(String(e?.previousHash||'')))errors.push('control-plane-event');}const eventIds=new Set(cp.events.map(x=>x?.id));for(const row of cp.outbox)if(row?.delivered!==true&&!eventIds.has(row?.eventId)&&row?.payload?.id!==row?.eventId)errors.push('control-plane-outbox-reference');}}
     if(Array.isArray(s?.domainRuntime?.commands)&&s.domainRuntime.commands.length>STATE_LIMITS.domainCommands)errors.push('domain-command-capacity');if(Array.isArray(s?.businessLedger?.events)&&s.businessLedger.events.length>STATE_LIMITS.businessEvents)errors.push('business-event-capacity');
     const bw=s?.businessWorld;if(bw!==undefined){if(!object(bw)||!object(bw.parties)||!object(bw.relationships)||!Number.isInteger(Number(bw.sequence))||Number(bw.sequence)<0)errors.push('business-world-shape');else{const caps={events:STATE_LIMITS.businessWorldEvents,opportunities:STATE_LIMITS.businessWorldOpportunities,sponsorships:STATE_LIMITS.businessWorldSponsorships,campaigns:STATE_LIMITS.businessWorldCampaigns,competitorActivity:STATE_LIMITS.businessWorldCompetitorActivity};for(const [key,limit] of Object.entries(caps)){const rows=bw[key];if(!Array.isArray(rows))errors.push('business-world-'+key+'-shape');else{if(rows.length>limit)errors.push('business-world-'+key+'-capacity');if(duplicateIds(rows,x=>x?.id))errors.push('business-world-'+key+'-id');}}if(Object.keys(bw.parties).length>STATE_LIMITS.businessWorldParties)errors.push('business-world-party-capacity');if(Object.keys(bw.relationships).length>STATE_LIMITS.businessWorldRelationships)errors.push('business-world-relationship-capacity');for(const [id,p] of Object.entries(bw.parties))if(!id||!object(p)||p.id!==id||!String(p.legalName||p.displayName||'').trim()||!Array.isArray(p.roles)||!Array.isArray(p.sectors))errors.push('business-world-party');for(const [id,r] of Object.entries(bw.relationships))if(!id||!object(r)||r.id!==id||!bw.parties[r.partyId]||!String(r.company||'').trim()||!Array.isArray(r.roles))errors.push('business-world-relationship');}}
-    const cachedProofKey=proofCacheKey?verifiedProofStates.get(s):null;
+    const verifiedProofStateHit=!!proofCacheKey&&allowCachedProofRows&&previousProof.key===proofCacheKey;
     let started=metricClock();
-    if(proofCacheKey&&cachedProofKey===proofCacheKey){metric.proofStateCacheHits=1;}
+    if(verifiedProofStateHit){metric.proofStateCacheHits=1;}
     else{
       started=metricClock();validateAuthorizationState(s,errors,verificationCache,metric);metric.authorizationMs=Math.max(0,metricClock()-started);
       started=metricClock();validateDocumentProofState(s,errors,verificationCache,metric);metric.documentProofMs=Math.max(0,metricClock()-started);
     }
     started=metricClock();const companyValidation=globalThis.GH_COMPANY_PLATFORM?.validateState?.(s);metric.companyPlatformMs=Math.max(0,metricClock()-started);if(companyValidation&&!companyValidation.ok)errors.push(...companyValidation.errors.map(error=>`company-platform:${error}`));
     const result={ok:errors.length===0,errors:[...new Set(errors)]};
-    if(result.ok&&options.lockVerifiedProofs===true){for(const [document,record] of verificationCache.documents.acceptedDocuments)verifiedDocumentLocks.set(proofIdentity(document),{version:kernelApi().versionOf(document),record:proofIdentity(record),recordVersion:kernelApi().versionOf(record)});cacheVerifiedProofState(s);if(proofCacheKey)verifiedProofStates.set(s,proofCacheKey);}
+    // A matching live mutation digest means the full proof state was already
+    // verified and locked. Relocking every stored proof here would reintroduce
+    // an O(number of signed documents) scan on every ordinary save.
+    if(result.ok&&options.lockVerifiedProofs===true&&!verifiedProofStateHit){for(const [document,record] of verificationCache.documents.acceptedDocuments)verifiedDocumentLocks.set(proofIdentity(document),{version:kernelApi().versionOf(document),record:proofIdentity(record),recordVersion:kernelApi().versionOf(record)});cacheVerifiedProofState(s);if(proofCacheKey)verifiedProofStates.set(s,{key:proofCacheKey,dependencies:proofDependencies});}
+    const currentProof=proofCacheKey?verifiedProofStates.get(s):null;
+    if(result.ok&&fullStamp&&currentProof?.key===proofCacheKey&&sameDependencies(currentProof.dependencies,proofDependencies)){
+      const finalStamp=fullValidationStamp(s,options,proofCacheKey);
+      if(sameFullValidationStamp(fullStamp,finalStamp))verifiedFullStates.set(s,fullStamp);
+    }
     metric.totalMs=Math.max(0,metricClock()-validationStart);metric.errors=result.errors.length;metric.otherMs=Math.max(0,metric.totalMs-metric.authorizationMs-metric.documentProofMs-metric.companyPlatformMs);publishValidationMetric(metric);
     return result;
   }

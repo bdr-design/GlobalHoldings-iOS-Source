@@ -1,10 +1,14 @@
 'use strict';
 // Runs JavaScript extracted from the native Swift string. The UI/WebKit bridge is controlled,
-// not a live iPhone. WebApp validator is the complete unchanged current Build335 module.
-const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert/strict'),crypto=require('crypto');
-const args=process.argv.slice(2),get=n=>args[args.indexOf(n)+1];
-const dir=get('--tests'),web=get('--web'),out=get('--out')||dir;
-if(!dir)throw Error('--tests required');fs.mkdirSync(out,{recursive:true});
+// not a live iPhone. The WebApp validator comes from the current source tree.
+const fs=require('fs'),path=require('path'),os=require('os'),vm=require('vm'),assert=require('assert/strict'),crypto=require('crypto'),{execFileSync}=require('child_process');
+const args=process.argv.slice(2),get=n=>{const index=args.indexOf(n);return index<0?undefined:args[index+1];};
+let dir=get('--tests');const web=get('--web');
+if(!dir){
+ dir=fs.mkdtempSync(path.join(os.tmpdir(),'gh-update-bridge-'));
+ execFileSync('python3',[path.join(__dirname,'prepare_native_tests.py'),'--source',path.resolve(__dirname,'../..'),'--output',dir]);
+}
+const out=get('--out')||dir;fs.mkdirSync(out,{recursive:true});
 const swiftString=fs.readFileSync(path.join(dir,'update-script.swift-string.txt'),'utf8');
 const genericPack={format:'global-holdings-update',manifest:{version:'3.0.0',build:335},operationsJSON:'[]'};
 const source=swiftString.replaceAll('\\(encoded)',Buffer.from(JSON.stringify(genericPack)).toString('base64')).replaceAll('\\(version)','3.0.0').replaceAll('\\(build)','335');
@@ -52,11 +56,35 @@ const rows=[];async function test(name,fn){try{await fn();rows.push({name,ok:tru
      emitted={format:'global-holdings-update',manifest:{version:'3.0.0',build:335,signaturePayloadVersion:3,packageType:'full-web',installMode:'clean-snapshot-v1',operationsSha256:crypto.createHash('sha256').update(operationsJSON).digest('hex')},build:335,replacedWebFiles:true};
      if(checks.raw_operations_forwarded)emitted.operationsJSON=operationsJSON;else emitted.operations=JSON.parse(operationsJSON);
    }
-   await test('current335 validator accepts exact native contract',async()=>assert.equal(await s.GH_ADVANCED.validateUpdatePack(emitted,{currentBuild:335,postInstall:true}),true));
-   const raw='[\n {"type":"content-config","label":"العساف / 海 🚢"}\n]';
-   const good={format:'global-holdings-update',manifest:{version:'3.0.0',build:335,signaturePayloadVersion:3,packageType:'full-web',installMode:'clean-snapshot-v1',operationsSha256:crypto.createHash('sha256').update(raw).digest('hex')},operationsJSON:raw};
-   for(const [name,alter] of [['tampered whitespace hash',p=>{p.operationsJSON+=' ';}],['separate mirror',p=>{p.operations=[];}],['wrong installed build',p=>{p.manifest.build=334;}],['overlay contract',p=>{p.manifest.installMode='overlay';}]])await test('current335 rejects '+name,async()=>{const p=JSON.parse(JSON.stringify(good));alter(p);await assert.rejects(s.GH_ADVANCED.validateUpdatePack(p,{currentBuild:335,postInstall:true}));});
+   const raw=emitted.operationsJSON;
+   await test('native owner forwards signed operationsJSON unchanged',()=>assert.equal(typeof raw,'string'));
+   // The extracted Swift bridge fixture represents the historic 3.0.0/335 build.
+   // Check the actual installed WebApp identity from this source, including future builds.
+   const sourceRoot=path.resolve(__dirname,'../..');
+   const currentVersion=fs.readFileSync(path.join(sourceRoot,'VERSION'),'utf8').trim();
+   const currentBuild=Number(fs.readFileSync(path.join(sourceRoot,'BUILD'),'utf8').trim());
+   const parts=currentVersion.split('.').map(Number);
+   assert.equal(parts.length,3);
+   const previousVersion=`${parts[0]}.${parts[1]}.${parts[2]-1}`;
+   const futureVersion=`${parts[0]}.${parts[1]}.${parts[2]+1}`;
+   const good={format:'global-holdings-update',manifest:{version:currentVersion,build:currentBuild,signaturePayloadVersion:3,packageType:'full-web',installMode:'clean-snapshot-v1',operationsSha256:crypto.createHash('sha256').update(raw).digest('hex')},operationsJSON:raw};
+   await test(`Build ${currentBuild} post-install accepts its exact version and signed operations bytes`,async()=>{
+     assert.equal(s.GH_ADVANCED.VERSION,currentVersion);
+     assert.equal(s.GH_ADVANCED.SAVE_SCHEMA_VERSION,'2.0.0');
+     assert.equal(await s.GH_ADVANCED.validateUpdatePack(good,{currentBuild,postInstall:true}),true);
+   });
+   for(const [name,alter] of [
+     ['tampered whitespace hash',p=>{p.operationsJSON+=' ';}],
+     ['separate mirror',p=>{p.operations=[];}],
+     ['wrong installed build',p=>{p.manifest.build=currentBuild-1;}],
+     ['old runtime version',p=>{p.manifest.version=previousVersion;}],
+     ['future runtime version',p=>{p.manifest.version=futureVersion;}],
+     ['overlay contract',p=>{p.manifest.installMode='overlay';}],
+   ])await test(`Build ${currentBuild} post-install rejects ${name}`,async()=>{
+     const p=JSON.parse(JSON.stringify(good));alter(p);
+     await assert.rejects(s.GH_ADVANCED.validateUpdatePack(p,{currentBuild,postInstall:true}));
+   });
  }
- const result={scope:'Extracted real native JS; controlled runtime/bridge. Full current335 validator if --web. This does NOT verify trusted Ed25519 signatures or install files.',native_payload_compiled:fs.existsSync(path.join(dir,'native-web-payload.json')),node:process.version,total:rows.length,passed:rows.filter(r=>r.ok).length,failed:rows.filter(r=>!r.ok).length,rows,source_checks:checks};
+ const result={scope:'Extracted real native JS; controlled runtime/bridge. Current WebApp version/build validator if --web. This does NOT verify trusted Ed25519 signatures or install files.',native_payload_compiled:fs.existsSync(path.join(dir,'native-web-payload.json')),node:process.version,total:rows.length,passed:rows.filter(r=>r.ok).length,failed:rows.filter(r=>!r.ok).length,rows,source_checks:checks};
  fs.writeFileSync(path.join(out,'update-bridge-tests.json'),JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify({total:result.total,passed:result.passed,failed:result.failed}));process.exitCode=result.failed?1:0;
 })().catch(e=>{console.error(e);process.exitCode=1;});

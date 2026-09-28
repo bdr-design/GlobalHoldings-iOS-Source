@@ -4,6 +4,7 @@ const app=fs.readFileSync(path.join(process.env.GH_TEST_SOURCE_DIR||path.resolve
 function fragment(start,end){const a=app.indexOf(start),b=app.indexOf(end,a);assert(a>=0&&b>a,`missing app fragment ${start}`);return app.slice(a,b);}
 const flushCode=fragment('  function flushMapDeferredSave(){','  function cancelSimulationPersistence(){');
 const saveCode=fragment('  function persistStateNow(options={}){','  function save(){');
+const pruneCode=fragment('  function pruneRouteCache(maxEntries=160){','  pruneRouteCache();');
 const mapInit=fragment('    const setInteractionState=active=>','    renderMap();');
 assert.match(mapInit,/map\.on\('movestart zoomstart dragstart'/);
 assert.match(mapInit,/map\.on\('moveend dragend'/);
@@ -29,3 +30,34 @@ sandbox.mapTest.busy(true);
 assert.equal(sandbox.mapTest.save({throwOnError:true,allowMapInteraction:true}),true,'background lifecycle saves retain their immediate durability path');
 assert.equal(calls.commit,2);
 console.log('Build342 map save interaction: defers expensive save work until gesture end and preserves background durability PASS');
+
+function pruneFixture(state){
+  const context={state};vm.runInNewContext(pruneCode+';globalThis.prune=pruneRouteCache;',context);return context.prune;
+}
+const route=(at)=>({distanceKm:100,cachedAtSim:at,route:[[0,0],[1,1]]});
+const empty={assets:[new Proxy({}, {get(){throw new Error('empty cache must not scan assets');}})],customRoutes:[],routeCache:{}};
+const emptyRef=empty.routeCache,pruneEmpty=pruneFixture(empty);
+assert.equal(pruneEmpty(),false,'an empty cache requires no write');
+assert.equal(empty.routeCache,emptyRef,'an empty cache keeps its original identity');
+
+const populated={assets:[{routeId:'ACTIVE'}],customRoutes:[],routeCache:{IDLE:route(20),ACTIVE:route(10),INVALID:{distanceKm:'bad',route:[]}}};
+const prunePopulated=pruneFixture(populated);
+assert.equal(prunePopulated(),true,'invalid entries and changed priority require a real cache update');
+assert.deepEqual(Object.keys(populated.routeCache),['ACTIVE','IDLE']);
+const populatedRef=populated.routeCache;
+assert.equal(prunePopulated(),false,'a second prune with the same ids, order and values is a no-op');
+assert.equal(populated.routeCache,populatedRef,'no-op pruning preserves the saved cache reference');
+
+globalThis.GH_KERNEL=require('../WebApp/kernel-core.js');
+const TX=require('../WebApp/transaction-core.js');
+const live=TX.enableKernelOwner({saveVersion:'2.0.0',assets:[{id:'A1',routeId:'ACTIVE'}],customRoutes:[],routeCache:{ACTIVE:route(10),IDLE:route(20)}});
+const pruneLive=pruneFixture(live),revisionBefore=TX.inputRevision(live),cacheBefore=live.routeCache;
+assert.equal(pruneLive(),false,'a canonical kernel cache remains unchanged');
+assert.equal(TX.inputRevision(live),revisionBefore,'ordinary save preparation does not invalidate a pending simulation slice');
+assert.equal(live.routeCache,cacheBefore);
+live.routeCache.INVALID={distanceKm:'bad',route:[]};
+const changedRevision=TX.inputRevision(live);
+assert.equal(pruneLive(),true,'genuine invalid cache data must still be removed');
+assert.equal(Object.hasOwn(live.routeCache,'INVALID'),false);
+assert.equal(TX.inputRevision(live),changedRevision+1,'real cache pruning records one kernel input change');
+console.log('Build343 route cache save pruning: unchanged kernel state stays stable; real removal commits PASS');

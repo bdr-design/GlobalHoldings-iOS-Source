@@ -1,11 +1,11 @@
 {
-  "build": 343,
-  "version": "3.0.1",
+  "build": 344,
+  "version": "3.0.2",
   "save_schema": "2.0.0",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 231897,
-      "sha256": "7bf5d7babc53eae9eb1687e26831c09704851b88aadab7134b078cdcb641edc4"
+      "sha256": "d508d962d7c08561ee421f74cb2f9b6653a77c126aace79d98b87b81ee2da879"
     },
     "WebApp/air-sea-network-core.js": {
       "bytes": 10998,
@@ -16,8 +16,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 676235,
-      "sha256": "4815d0d5e6bf1da13bcbbbfe88a2711108d66570c31df6599d07a5653d58a081"
+      "bytes": 676889,
+      "sha256": "f69735ee13bbedd49ba34bedc5d8238845dabba3609fbf8be0d7ab40cf60c442"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1645,7 +1645,7 @@
     },
     "WebApp/control-plane-core.js": {
       "bytes": 31933,
-      "sha256": "e3409f71e841a9a5f3b11985ffe1cb6cd6ab5258f81c8c9b7d0cbd8b24e3ee4e"
+      "sha256": "0728d39f6126dbd560e681997efd2725ce0eb02d1f74b2afd39e0c2ef10cac98"
     },
     "WebApp/corporate-core.js": {
       "bytes": 23225,
@@ -1700,8 +1700,8 @@
       "sha256": "6f6a2b651d960a5c0359eabc718d67998674efb0a54433d827a196a726ef9313"
     },
     "WebApp/finance-core.js": {
-      "bytes": 125183,
-      "sha256": "d1e3155ef9d00399839f36a88e8e085c45e83104681cafb6bfadc0b77482ca36"
+      "bytes": 125333,
+      "sha256": "ecaa5a28667c5579d91e89ca68629c68e5918e21feb6392fffb30ef6125a7254"
     },
     "WebApp/finance-presentation.css": {
       "bytes": 35222,
@@ -1872,8 +1872,8 @@
       "sha256": "14ea17a1bfe885b09633524b56f52a775d93eba4db367fe0417c239be00b0d55"
     },
     "WebApp/save-schema.js": {
-      "bytes": 70118,
-      "sha256": "93d5d93e699af368dea786f51af4dcf53681c9a756c5ae9063be3ddca8dcce53"
+      "bytes": 75006,
+      "sha256": "821613bf21b54cda080d3af0d7753706748e11f41aa718b1e1832a8df207f807"
     },
     "WebApp/section-identities.css": {
       "bytes": 2444,
@@ -1985,7 +1985,7 @@
     },
     "iOS/GlobalHoldings/GlobalGameStorage.swift": {
       "bytes": 66640,
-      "sha256": "d4e38b05fe80f4acacce561041115cfd6690a8bb2627b9dc84a093cae83a4e06"
+      "sha256": "8e8bffee288324a6546d110b608ffedba754eefa29e7455317a44b17a8736bf3"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
       "bytes": 65956,
@@ -1997,15 +1997,15 @@
     },
     "project.yml": {
       "bytes": 2421,
-      "sha256": "710b453c18d199addf238cb8622356bf313dcd7801a028cf6accdb41ffed8690"
+      "sha256": "6d07e6d555a937ec8ba820b4ee05e928d09180a9e29a0133904128bf2be07198"
     },
     "BUILD": {
       "bytes": 4,
-      "sha256": "965bec718645eb51a648264c473032afaa340715e0c302162670df109903f9c7"
+      "sha256": "e65305e9101efdba6f7e202287d754cf3fbb4c904a63a9d7af7b6215ef2cc10e"
     },
     "VERSION": {
       "bytes": 6,
-      "sha256": "06e3fe4a7a1884d20d81cc7065ca8cfd4c394ec602c4d180ddc39bbd4f7da521"
+      "sha256": "3fc0bf8d7ddbfe77eb4074c0b03d6567d7874a25ea4144aadea6686fcd5f6feb"
     }
   },
   "latest_direct_source_ci": {
@@ -2070,8 +2070,8 @@
     "build343_base_branch": "fix/build342-asset-hotpath",
     "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc"
   },
-  "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
-  "webapp_tree_sha256": "8f37fe44506a8daf3336981b6ae8f7378b088e4e8980d87cd86c6510af275500",
+  "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
+  "webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
   "previous_passed_direct_source_ci": {
     "run_id": "36315061990",
     "commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",

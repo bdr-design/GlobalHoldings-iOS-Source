@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '3.0.0';
+  const VERSION = '3.0.2';
   const SAVE_SCHEMA_VERSION = '2.0.0';
   const UPDATE_FORMAT = 'global-holdings-update';
   const UPDATE_LIMITS = Object.freeze({outerBytes:40*1024*1024,unpackedBytes:32*1024*1024,fileCount:1024,fileBytes:16*1024*1024,operationsBytes:2*1024*1024,pathLength:240});

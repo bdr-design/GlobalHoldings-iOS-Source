@@ -1,0 +1,100 @@
+{
+  "report": "Build 344 frame safety and save validation experimental verification",
+  "build": 344,
+  "version": "3.0.2",
+  "save_schema": "2.0.0",
+  "release_approved": false,
+  "repository_branch": "fix/build344-frame-safety",
+  "base_build343_commit": "3d04836ef5360fde07969173f76eb664de90ccf2",
+  "previous_build343_direct_source_ci": {
+    "run_id": "36385903147",
+    "commit_sha": "3d04836ef5360fde07969173f76eb664de90ccf2",
+    "result": "PASS_152_SOURCE_GATES_NATIVE_WKWEBVIEW_ARM64_UNSIGNED_TEST_IPA",
+    "source_tree_sha256": "7faaeedb025495905c88ffc58f0602dcaaa564a0fac025c70542b27598bb2c0d",
+    "physical_iphone_tested": false
+  },
+  "source_tree_sha256": "48bab7322e12cb7d914b75870e2e2f0679779db437e0523770b2442e04f457fb",
+  "webapp_tree_sha256": "5daacbf95f40f35d5024f5751004d5c689faf6edb35b7ab351c42d181663ba9b",
+  "input_diagnostic": {
+    "app_version": "3.0.0",
+    "recorder_build": 342,
+    "assets": 1800,
+    "recording_ms": 209811,
+    "game_time_advanced_seconds": 90,
+    "slice_conflicts": 138,
+    "slice_cancellations": 140,
+    "manual_advance_failures": 6,
+    "estimated_missed_frames": 512,
+    "visible_frame_intervals": 10217,
+    "estimated_missed_share_percent": 4.77,
+    "janky_frames": 316,
+    "p95_frame_interval_ms": 23.25,
+    "max_frame_interval_ms": 767,
+    "last_ordinary_save_sync_ms": 199,
+    "saved_utf8_bytes": 8015765,
+    "source_sha_in_diagnostic": false,
+    "iPhone_build343_measured": false
+  },
+  "changes": [
+    "Warm, unchanged live kernel saves reuse the full verified Save Schema result only while every saved root, sealed company validator and all verifier providers remain unchanged; tampering, imports, rollback or changed roots force full validation.",
+    "Signed proof hits no longer relock and reindex thousands of unchanged documents; provider identity changes invalidate both whole-state and per-row proof locks.",
+    "No-op finance reconciliation and unchanged route-cache pruning avoid unnecessary kernel writes and simulation conflicts.",
+    "The main-thread fallback processes owned decoded simulation DTOs without an extra copy; failure still restores from the immutable asset guard.",
+    "Simulation Worker bootstrap ignores save/observability-only revision changes while real asset changes still restart initialization.",
+    "Advanced update self-check uses the new app version so a correctly installed update is not rejected due to stale 3.0.0 metadata.",
+    "A full WebApp desktop WebKit scenario with 1,800 authorized assets, saved-state reload, dispatch, 30x map sampling and calendar advance is recorded as an optional diagnostic CI step."
+  ],
+  "local_verification": {
+    "build344_finance_noop": "PASS_NODE",
+    "build344_full_schema_cache_1800_assets_2500_invoices": "PASS_NODE_WARM_P95_APPROX_0_2_TO_0_3_MS",
+    "build343_proof_hit_1000_signed_documents": "PASS_NODE_TAMPER_AND_ROLLBACK",
+    "build344_worker_bootstrap_save_revision_and_asset_revision": "PASS_NODE",
+    "build340_worker_20000_assets_atomic_rollback": "PASS_NODE",
+    "native_update_bridge": "PASS_NODE_26_OF_26",
+    "browser_webkit_fullapp_1800": "PENDING_MACOS_CI",
+    "full_source_acceptance": "PENDING_MACOS_CI",
+    "physical_iphone": "NOT_TESTED"
+  },
+  "performance_acceptance": {
+    "target_max_stage_ms": 5,
+    "measured_iphone_build344": false,
+    "strict_max_under_5ms_verified": false,
+    "production_approved": false
+  },
+  "synthetic_node_performance": {
+    "limits": "Node v24.19.0 synthetic controlled air/finance workload, 24 slices per fleet; excludes DOM, save serialization, WKWebView and physical iPhone; max varies with GC.",
+    "assets_3380": {
+      "fleet": 3380,
+      "slices": 24,
+      "chunkBudgetMs": 4,
+      "chunkP95Ms": 2.92,
+      "chunkMaxMs": 13.81,
+      "finishP95Ms": 2.55,
+      "finishMaxMs": 4.17,
+      "planningTotalMs": 5973
+    },
+    "assets_10000": {
+      "fleet": 10000,
+      "slices": 24,
+      "chunkBudgetMs": 4,
+      "chunkP95Ms": 3.02,
+      "chunkMaxMs": 82.1,
+      "finishP95Ms": 4.05,
+      "finishMaxMs": 9.38,
+      "planningTotalMs": 17971.1
+    },
+    "max_stage_under_5ms_verified": false,
+    "worker_20000_assets_integration": "PASS_NODE_INTEGRITY_AND_ROLLBACK_NOT_A_FRAME_TIME"
+  },
+  "ordinary_save_limit": {
+    "input_diagnostic_utf8_bytes": 8015765,
+    "input_diagnostic_sync_ms": 199,
+    "build344_ios_sync_ms": null,
+    "json_stringify_moved_off_main_thread": false
+  },
+  "signing": {
+    "apple_identity_available": false,
+    "matching_provisioning_available": false,
+    "unsigned_ipa_installable_on_iphone": false
+  }
+}
