@@ -1,0 +1,33 @@
+name: Build346 Native stream staging tests
+on:
+  push:
+    branches: [fix/build346-time-frame-cleanup]
+    paths:
+      - 'iOS/GlobalHoldings/GlobalSaveStream.swift'
+      - 'tests/native/save_stream_main.swift'
+      - '.github/workflows/build346-native-stream.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stream:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile real Foundation and CryptoKit transport tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gh346-stream" evidence
+          cp tests/native/save_stream_main.swift "$RUNNER_TEMP/gh346-stream/main.swift"
+          swiftc -O iOS/GlobalHoldings/GlobalSaveStream.swift "$RUNNER_TEMP/gh346-stream/main.swift" -o "$RUNNER_TEMP/gh346-stream/test"
+          "$RUNNER_TEMP/gh346-stream/test" | tee evidence/native-stream.log
+          git rev-parse HEAD > evidence/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Build346_Native_Staging_Evidence
+          path: evidence
