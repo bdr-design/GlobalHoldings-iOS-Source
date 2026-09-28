@@ -9,7 +9,7 @@
   let lastSaveBreakdown=null,lastNativeAck=null;
   function rememberTiming(row){const value={...row,recordedAtMs:Date.now()};timingSamples.push(value);if(timingSamples.length>24)timingSamples.shift();return value;}
   const bootGeneration=Number(globalThis.__GH_NATIVE_SAVE_META__?.generation);
-  let sequence=0,slotSequence=0,generation=Number.isSafeInteger(bootGeneration)&&bootGeneration>=0?bootGeneration:0,locked=false,durableLocked=false,recoveryRequired=false,ordinaryInFlight=null,ordinaryDirty=false,ordinaryDirtyState=null,ordinaryDirtyOptions=null,ordinaryError=null;
+  let sequence=0,slotSequence=0,streamOrdinal=0,generation=Number.isSafeInteger(bootGeneration)&&bootGeneration>=0?bootGeneration:0,locked=false,durableLocked=false,recoveryRequired=false,ordinaryInFlight=null,ordinaryDirty=false,ordinaryDirtyState=null,ordinaryDirtyOptions=null,ordinaryError=null,ordinarySnapshotting=false;
   // The document-start Native bootstrap is authoritative even when WebKit has
   // an older compatibility cache. Retain its JSON for a delayed explicit NACK;
   // a timeout cannot use this checkpoint because Native may have committed.
@@ -58,12 +58,13 @@
   function bridgeFor(action){return globalThis.webkit?.messageHandlers?.[action==='resetGameSave'?'updateBridge':'saveBridge'];}
   function receiveAck(detail={}){
     const row=pending.get(detail.requestId);if(!row)return false;
-    if(detail.action!==row.envelope.action||detail.saveRevision!==row.envelope.saveRevision||detail.resetEpoch!==row.envelope.resetEpoch||detail.saveHash!==row.envelope.saveHash||detail.saveSchemaVersion!=='2.0.0'||typeof detail.success!=='boolean')return false;
+    const streamed=row.stream===true,hashOK=streamed?(typeof detail.saveHash==='string'&&/^[a-f0-9]{64}$/.test(detail.saveHash)):detail.saveHash===row.envelope.saveHash;
+    if(detail.action!==row.envelope.action||detail.saveRevision!==row.envelope.saveRevision||detail.resetEpoch!==row.envelope.resetEpoch||!hashOK||detail.saveSchemaVersion!=='2.0.0'||typeof detail.success!=='boolean')return false;
     if(detail.success&&(!Number.isSafeInteger(detail.generation)||detail.generation<=generation))return false;
     const ackAt=clock(),nativeVaultCommitMs=Number(detail.nativeVaultCommitMs);
     lastNativeAck=rememberTiming({kind:'native-ack',requestId:detail.requestId,action:detail.action,saveRevision:Number(detail.saveRevision)||0,generation:Number(detail.generation)||0,success:detail.success===true,bridgeDispatchMs:Number.isFinite(row.bridgeDispatchMs)?row.bridgeDispatchMs:null,nativeAckLatencyMs:Number.isFinite(row.dispatchedAt)?Math.max(0,ackAt-row.dispatchedAt):null,nativeVaultCommitMs:Number.isFinite(nativeVaultCommitMs)?Math.max(0,nativeVaultCommitMs):null});
     clearTimeout(row.timer);pending.delete(detail.requestId);
-    if(detail.success){generation=detail.generation;nativeConfirmedJSON=row.envelope.saveJSON;nativeConfirmedGeneration=generation;nativeConfirmedRevision=row.envelope.saveRevision;nativeConfirmedEpoch=row.envelope.resetEpoch;row.resolve({ok:true,native:true,...detail});}
+    if(detail.success){generation=detail.generation;nativeConfirmedJSON=typeof row.envelope.saveJSON==='string'?row.envelope.saveJSON:(typeof row.mirrorJSON==='string'?row.mirrorJSON:null);nativeConfirmedGeneration=nativeConfirmedJSON?generation:null;nativeConfirmedRevision=nativeConfirmedJSON?row.envelope.saveRevision:null;nativeConfirmedEpoch=nativeConfirmedJSON?row.envelope.resetEpoch:null;row.resolve({ok:true,native:true,...detail});}
     else{const e=new Error(detail.message||'native-save-nack');e.code='NATIVE_NACK';row.reject(e);}
     const statusDetail={...detail};delete statusDetail.nativeVaultCommitMs;status({ok:detail.success,validated:true,...statusDetail});return true;
   }
@@ -74,6 +75,120 @@
       try{return subtle.digest('SHA-256',new TextEncoder().encode(text)).then(digest=>[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join(''),()=>owner(text));}catch(_error){}
     }
     return owner(text);
+  }
+  const streamYield=()=>new Promise(resolve=>{
+    try{
+      const schedulerYield=globalThis.scheduler?.yield;
+      if(typeof schedulerYield==='function'){schedulerYield.call(globalThis.scheduler).then(resolve,()=>setTimeout(resolve,0));return;}
+      if(typeof globalThis.requestAnimationFrame==='function'){globalThis.requestAnimationFrame(()=>resolve());return;}
+    }catch(_error){}
+    setTimeout(resolve,0);
+  });
+  async function cooperativeJSONStream(root,onChunk,{budgetMs=3,guard=null}={}){
+    if(typeof onChunk!=='function')throw new TypeError('save-stream-chunk-sink-required');
+    const encoder=new TextEncoder(),seen=new Set(),stack=[{kind:'value',value:root,key:'',array:false,root:true}];
+    let buffer='',utf8Bytes=0,chunks=0,yields=0,cpuMs=0,maxSliceMs=0,sliceStart=clock(),ops=0;
+    const flush=()=>{
+      if(!buffer)return;
+      const text=buffer;buffer='';
+      const chunkBytes=encoder.encode(text).byteLength;
+      if(chunkBytes>PERSISTENCE_LIMITS.nativeHardBytes||utf8Bytes+chunkBytes>PERSISTENCE_LIMITS.nativeHardBytes)throw Object.assign(new Error('native-save-size-hard-limit'),{measurement:{utf8Bytes:utf8Bytes+chunkBytes,storageBytes:null}});
+      onChunk(text,chunks,chunkBytes);chunks++;utf8Bytes+=chunkBytes;
+    };
+    const emit=text=>{
+      text=String(text);
+      while(text.length){
+        const room=16384-buffer.length;
+        let take=Math.min(Math.max(1,room),text.length);
+        if(take<text.length&&take>0){const last=text.charCodeAt(take-1),next=text.charCodeAt(take);if(last>=0xD800&&last<=0xDBFF&&next>=0xDC00&&next<=0xDFFF)take--;}
+        if(take<=0){flush();continue;}
+        buffer+=text.slice(0,take);text=text.slice(take);
+        if(buffer.length>=16384)flush();
+      }
+    };
+    const checkpoint=async force=>{
+      const elapsed=Math.max(0,clock()-sliceStart);maxSliceMs=Math.max(maxSliceMs,elapsed);
+      if(force||elapsed>=budgetMs){
+        cpuMs+=elapsed;flush();
+        if(typeof guard==='function'&&guard()!==true){const error=new Error('save-snapshot-revision-conflict');error.code='SAVE_SNAPSHOT_RETRY';throw error;}
+        if(!force){yields++;await streamYield();sliceStart=clock();}
+      }
+    };
+    while(stack.length){
+      const frame=stack.pop();
+      if(frame.kind==='raw'){emit(frame.text);}
+      else if(frame.kind==='close'){seen.delete(frame.value);emit(frame.text);}
+      else if(frame.kind==='array'){
+        if(frame.index>=frame.value.length)continue;
+        if(frame.index>0)emit(',');
+        stack.push({kind:'array',value:frame.value,index:frame.index+1});
+        const value=frame.value[frame.index],type=typeof value;
+        stack.push({kind:'value',value:(value===undefined||type==='function'||type==='symbol')?null:value,key:String(frame.index),array:true,root:false});
+      }else if(frame.kind==='object'){
+        let index=frame.index,found=false;
+        while(index<frame.keys.length){
+          const key=frame.keys[index++],value=frame.value[key],type=typeof value;
+          if(value===undefined||type==='function'||type==='symbol')continue;
+          if(frame.wrote)emit(',');emit(JSON.stringify(key));emit(':');
+          stack.push({kind:'object',value:frame.value,keys:frame.keys,index,wrote:true});
+          stack.push({kind:'value',value,key,array:false,root:false});
+          found=true;break;
+        }
+        if(!found)continue;
+      }else{
+        let value=frame.value;
+        if(value&&typeof value==='object'&&typeof value.toJSON==='function')value=value.toJSON(frame.key);
+        const type=typeof value;
+        if(value===null){emit('null');}
+        else if(type==='string'){emit(JSON.stringify(value));}
+        else if(type==='number'){emit(Number.isFinite(value)?String(value):'null');}
+        else if(type==='boolean'){emit(value?'true':'false');}
+        else if(type==='bigint'){throw new TypeError('Do not know how to serialize a BigInt');}
+        else if(type==='undefined'||type==='function'||type==='symbol'){if(frame.root)return {jsonUndefined:true,utf8Bytes:0,chunks:0,yields,cpuMs,maxSliceMs};else if(frame.array)emit('null');}
+        else if(type==='object'){
+          if(seen.has(value))throw new TypeError('Converting circular structure to JSON');
+          seen.add(value);
+          if(Array.isArray(value)){emit('[');stack.push({kind:'close',value,text:']'});stack.push({kind:'array',value,index:0});}
+          else{emit('{');stack.push({kind:'close',value,text:'}'});stack.push({kind:'object',value,keys:Object.keys(value),index:0,wrote:false});}
+        }
+      }
+      if((++ops&127)===0)await checkpoint(false);
+    }
+    await checkpoint(true);
+    return {utf8Bytes,chunks,yields,cpuMs,maxSliceMs};
+  }
+  async function requestNativeStream(state,options={}){
+    const bridge=bridgeFor('commitSave');if(!bridge)throw new Error('native-save-stream-bridge-unavailable');
+    if(pending.size>=PERSISTENCE_LIMITS.pending)throw new Error('native-save-backpressure');
+    const saveRevision=Number(options.saveRevision),resetEpoch=Number(options.resetEpoch);
+    if(!Number.isSafeInteger(saveRevision)||saveRevision<0||!Number.isSafeInteger(resetEpoch)||resetEpoch<0)throw new Error('native-save-stream-envelope-invalid');
+    const ordinal=++streamOrdinal,requestId='commitSave-'+Date.now()+'-'+(++sequence),streamId='S'+Date.now().toString(36)+'-'+ordinal.toString(36)+'-'+sequence.toString(36),base={protocolVersion:1,requestId,streamId,streamOrdinal:ordinal,saveRevision,resetEpoch,saveSchemaVersion:'2.0.0',appVersion:options.appVersion||VERSION};
+    const inputRevision=globalThis.GH_TRANSACTION_CORE?.inputRevision,sourceRevision=typeof inputRevision==='function'?inputRevision(state):null;
+    const guard=()=>sourceRevision===null||inputRevision(state)===sourceRevision;
+    const mirrorParts=[];let mirrorBytes=0,mirrorEnabled=true,committed=false;
+    const abort=()=>{try{bridge.postMessage({...base,action:'saveStreamAbort'});}catch(_error){}};
+    ordinarySnapshotting=true;
+    try{
+      bridge.postMessage({...base,action:'saveStreamBegin'});
+      const stats=await cooperativeJSONStream(state,(text,index,chunkBytes)=>{
+        if(mirrorEnabled){mirrorBytes+=chunkBytes;if(mirrorBytes<=PERSISTENCE_LIMITS.hardBytes)mirrorParts.push(text);else{mirrorEnabled=false;mirrorParts.length=0;}}
+        bridge.postMessage({...base,action:'saveStreamChunk',index,text});
+      },{budgetMs:Math.max(1,Math.min(4,Number(options.streamBudgetMs)||3)),guard});
+      if(!guard()){const error=new Error('save-snapshot-revision-conflict');error.code='SAVE_SNAPSHOT_RETRY';throw error;}
+      if(stats.jsonUndefined)throw new Error('serialization-failed');
+      const mirrorJSON=mirrorEnabled?mirrorParts.join(''):null;
+      const envelope={action:'commitSave',requestId,saveRevision,resetEpoch,saveSchemaVersion:'2.0.0',appVersion:base.appVersion};
+      const ack=new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>{pending.delete(requestId);const error=new Error('native-save-ack-timeout');error.code='ACK_TIMEOUT';reject(error);},options.timeoutMs||PERSISTENCE_LIMITS.ackTimeoutMs);
+        pending.set(requestId,{resolve,reject,timer,envelope,stream:true,mirrorJSON,dispatchedAt:clock(),bridgeDispatchMs:null});
+      });
+      const dispatchStart=clock();bridge.postMessage({...base,action:'saveStreamCommit',chunks:stats.chunks,utf8Bytes:stats.utf8Bytes});const row=pending.get(requestId);if(row){row.bridgeDispatchMs=Math.max(0,clock()-dispatchStart);rememberTiming({kind:'bridge-stream-commit',requestId,action:'commitSave',saveRevision,bridgeDispatchMs:row.bridgeDispatchMs,streamChunks:stats.chunks});}
+      committed=true;
+      const result=await ack;return {...result,stream:true,stats,mirrorJSON};
+    }catch(error){
+      if(!committed){abort();const row=pending.get(requestId);if(row){clearTimeout(row.timer);pending.delete(requestId);}}
+      throw error;
+    }finally{ordinarySnapshotting=false;}
   }
   function requestNative(action,json,options={}){
     const bridge=bridgeFor(action);if(!bridge)return Promise.resolve({ok:true,native:false});
@@ -164,39 +279,33 @@
     if((locked&&!control.allowLocked)||durableLocked)return {ok:false,reason:'lifecycle-locked'};
     if(recoveryRequired)return {ok:false,reason:'memory-recovery-required'};
     const nativeBridge=!!bridgeFor('commitSave'),previousRevision=Math.max(0,Math.floor(Number(state?.saveRevision)||0)),nextRevision=previousRevision+1,syncStart=clock();
-    const timing={kind:'ordinary-save',saveRevision:nextRevision,nativeBridge,schemaMs:0,stringifyMs:0,measurementMs:0,browserCacheMs:0,totalSyncMs:0,utf8Bytes:null,cacheReason:null,ok:false};
-    let json,measurement,resetEpoch,cache=null;
+    const timing={kind:'ordinary-save',saveRevision:nextRevision,nativeBridge,schemaMs:0,stringifyMs:0,measurementMs:0,browserCacheMs:0,totalSyncMs:0,utf8Bytes:null,cacheReason:null,ok:false,streamed:nativeBridge};
+    let json=null,measurement=null,resetEpoch=0,cache=null;
     try{
       if(!state||typeof state!=='object')throw new Error('state-required');
       state.saveRevision=nextRevision;
-      // Ordinary saves of the kernel-owned live state may retain verified proof
-      // results. Imported saves and durable drafts stay on the uncached path:
-      // locking their raw proof objects would change their mutation contract.
       let stageStart=clock();assertState(state,globalThis.GH_TRANSACTION_CORE?.isKernelOwner?.(state)===true?{lockVerifiedProofs:true}:undefined);timing.schemaMs=Math.max(0,clock()-stageStart);
-      stageStart=clock();json=JSON.stringify(state);timing.stringifyMs=Math.max(0,clock()-stageStart);resetEpoch=Number(state.resetEpoch)||0;
-      stageStart=clock();measurement=nativeBridge?inspectNativeJSON(json):inspectJSON(json,storageKey,options);timing.measurementMs=Math.max(0,clock()-stageStart);timing.utf8Bytes=measurement.utf8Bytes;
-      stageStart=clock();
+      resetEpoch=Number(state.resetEpoch)||0;
       if(!nativeBridge){
-        cache=writeJSON(storageKey,json,options);if(!cache.ok)throw Object.assign(new Error(cache.reason),{measurement:cache});
+        stageStart=clock();json=JSON.stringify(state);timing.stringifyMs=Math.max(0,clock()-stageStart);
+        stageStart=clock();measurement=inspectJSON(json,storageKey,options);timing.measurementMs=Math.max(0,clock()-stageStart);timing.utf8Bytes=measurement.utf8Bytes;
+        stageStart=clock();cache=writeJSON(storageKey,json,options);if(!cache.ok)throw Object.assign(new Error(cache.reason),{measurement:cache});timing.browserCacheMs=Math.max(0,clock()-stageStart);
       }
-      timing.browserCacheMs=Math.max(0,clock()-stageStart);timing.cacheReason=cache?.ok===false?cache.reason:null;timing.ok=true;timing.totalSyncMs=Math.max(0,clock()-syncStart);lastSaveBreakdown=rememberTiming(timing);
-    }catch(error){state.saveRevision=previousRevision;timing.totalSyncMs=Math.max(0,clock()-syncStart);timing.error=String(error.message||error);lastSaveBreakdown=rememberTiming(timing);return {ok:false,reason:`serialization-or-schema:${error.message||error}`,...error.measurement};}
-    const out={ok:true,json,...measurement,browserCache:nativeBridge?null:cache.ok,cacheReason:null,previous:cache?.previous??null,saveRevision:nextRevision};
+      timing.cacheReason=cache?.ok===false?cache.reason:null;timing.ok=true;timing.totalSyncMs=Math.max(0,clock()-syncStart);lastSaveBreakdown=rememberTiming(timing);
+    }catch(error){if(Number(state?.saveRevision)===nextRevision)state.saveRevision=previousRevision;timing.totalSyncMs=Math.max(0,clock()-syncStart);timing.error=String(error.message||error);lastSaveBreakdown=rememberTiming(timing);return {ok:false,reason:'serialization-or-schema:'+String(error.message||error),...error.measurement};}
+    const out={ok:true,...(json!==null?{json}:{}),...(measurement||{}),browserCache:nativeBridge?null:cache.ok,cacheReason:null,previous:cache?.previous??null,saveRevision:nextRevision};
     if(!nativeBridge){ordinaryError=null;return out;}
     const nativeMetadata={appVersion,...options,saveRevision:nextRevision,resetEpoch};
-    const work=Promise.resolve().then(()=>{if(recoveryRequired)throw new Error('native-recovery-required');return requestNative('commitSave',json,nativeMetadata);});
-    ordinaryInFlight=work.then(ack=>{
-      ordinaryError=null;
-      // This cache is only a compatibility mirror. Never publish an unverified
-      // revision to it while the Native Vault is still deciding the commit.
-      const cacheStart=clock(),cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)
-        ?{ok:false,reason:'browser-cache-size-bypass'}:writeJSON(storageKey,json,options);
-      rememberTiming({kind:'ordinary-cache-after-ack',saveRevision:nextRevision,browserCacheMs:Math.max(0,clock()-cacheStart),ok:cache.ok,cacheReason:cache.ok?null:cache.reason});
-      if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,utf8Bytes:measurement.utf8Bytes});
-      return ack;
+    const work=Promise.resolve().then(()=>{if(recoveryRequired)throw new Error('native-recovery-required');return requestNativeStream(state,nativeMetadata);});
+    ordinaryInFlight=work.then(result=>{
+      ordinaryError=null;const stats=result.stats||{};timing.stringifyMs=Number(stats.cpuMs)||0;timing.maxSerializationSliceMs=Number(stats.maxSliceMs)||0;timing.serializationYields=Number(stats.yields)||0;timing.streamChunks=Number(stats.chunks)||0;timing.utf8Bytes=Number(stats.utf8Bytes)||0;lastSaveBreakdown=rememberTiming({...timing,kind:'ordinary-save-stream-complete'});
+      const mirror=result.mirrorJSON;
+      if(typeof mirror==='string'){const cacheStart=clock(),mirrorCache=writeJSON(storageKey,mirror,options);rememberTiming({kind:'ordinary-cache-after-ack',saveRevision:nextRevision,browserCacheMs:Math.max(0,clock()-cacheStart),ok:mirrorCache.ok,cacheReason:mirrorCache.ok?null:mirrorCache.reason});if(!mirrorCache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:mirrorCache.reason,utf8Bytes:stats.utf8Bytes});}
+      else status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:'browser-cache-size-bypass',utf8Bytes:stats.utf8Bytes});
+      return result;
     },error=>{
-      ordinaryError=error;
-      const uncertainNative=error.code==='ACK_TIMEOUT';recoveryRequired=true;clearOrdinaryDirty();status({ok:false,reason:error.message,critical:!!error.rollbackError,nativeNack:error.code==='NATIVE_NACK',requiresMemoryRollback:false,requiresNativeReconciliation:true,storageKey});return {ok:false,reason:error.message,uncertainNative};
+      if(error.code==='SAVE_SNAPSHOT_RETRY'){ordinaryError=null;if(Number(state?.saveRevision)===nextRevision)state.saveRevision=previousRevision;deferOrdinary(state,ordinarySnapshotOptions(storageKey,appVersion,options));status({ok:true,deferred:true,reason:'save-snapshot-retry',saveRevision:previousRevision});return {ok:false,retry:true,reason:error.message};}
+      ordinaryError=error;const uncertainNative=error.code==='ACK_TIMEOUT';recoveryRequired=true;clearOrdinaryDirty();status({ok:false,reason:error.message,critical:!!error.rollbackError,nativeNack:error.code==='NATIVE_NACK',requiresMemoryRollback:false,requiresNativeReconciliation:true,storageKey});return {ok:false,reason:error.message,uncertainNative};
     }).finally(()=>{
       ordinaryInFlight=null;
       if(!recoveryRequired&&!locked&&!durableLocked&&ordinaryDirty){const dirtyState=ordinaryDirtyState,dirtyOptions=ordinaryDirtyOptions;clearOrdinaryDirty();beginOrdinary(dirtyState,dirtyOptions);}
@@ -340,6 +449,6 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:'2.0.0',saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,confirmedNativeState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,receiveArchiveAck,createColdArchiveAdapter,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,archivePending:archivePending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
+  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,confirmedNativeState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,receiveArchiveAck,createColdArchiveAdapter,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,isSnapshotting:()=>ordinarySnapshotting,__testCooperativeJSONStream:cooperativeJSONStream,telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,archivePending:archivePending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,ordinarySnapshotting,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
