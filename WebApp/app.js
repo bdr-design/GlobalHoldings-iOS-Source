@@ -785,15 +785,13 @@
     if(mapInteractionActive&&!options.allowMapInteraction){mapSavePending=true;return true;}
     if(mapSavePending&&!options.mapDeferredFlush){cancelMapSaveFlush();mapSavePending=false;}
     const metricClock=()=>globalThis.performance?.now?.()??Date.now(),runtimeMetrics=window.__GH_APP_RUNTIME_INSTRUMENTATION__||null,pending=runtimeMetrics?.pendingCompaction||null;
-    const metric={kind:'save-preparation',simSeconds:Number(state.simSeconds)||0,saveRevisionBefore:Number(state.saveRevision)||0,compactionMs:Number(pending?.durationMs)||0,baselineIntegrityMs:0,prepareMs:0,finalIntegrityMs:0,persistenceSyncMs:0,totalMs:0,ok:false};
+    // Persistence is a read-only durability boundary. Gameplay cleanup/reconciliation
+    // belongs to its domain transaction, never to save. This removes duplicate full
+    // business-integrity scans and prevents save itself from invalidating simulation input.
+    const metric={kind:'save-preparation',simSeconds:Number(state.simSeconds)||0,saveRevisionBefore:Number(state.saveRevision)||0,compactionMs:Number(pending?.durationMs)||0,baselineIntegrityMs:0,prepareMs:0,finalIntegrityMs:0,persistenceSyncMs:0,totalMs:0,ok:false,readOnlySnapshot:true};
     if(runtimeMetrics)runtimeMetrics.pendingCompaction=null;const totalStart=metricClock();
     try{
-      let stageStart=metricClock();const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(x=>x.severity==='critical').map(x=>String(x.id||x.code||x.title)));metric.baselineIntegrityMs=Math.max(0,metricClock()-stageStart);
-      stageStart=metricClock();pruneRouteCache();reconcileConsolidatedCash();metric.prepareMs=Math.max(0,metricClock()-stageStart);
-      stageStart=metricClock();const integrity=window.GH_INTEGRITY_CORE.check(state);metric.finalIntegrityMs=Math.max(0,metricClock()-stageStart);
-      const introducedByThisSave=(integrity?.critical||(integrity?.issues||[]).filter(x=>x.severity==='critical')).filter(x=>!priorCriticalIds.has(String(x.id||x.code||x.title)));
-      if(introducedByThisSave.length)throw new Error(`Critical integrity failed: ${introducedByThisSave.map(x=>x.code||x.title).join(',')}`);
-      stageStart=metricClock();const out=window.GH_PERSISTENCE.commitState(state,{storageKey,appVersion:APP_VERSION});metric.persistenceSyncMs=Math.max(0,metricClock()-stageStart);
+      const stageStart=metricClock(),out=window.GH_PERSISTENCE.commitState(state,{storageKey,appVersion:APP_VERSION});metric.persistenceSyncMs=Math.max(0,metricClock()-stageStart);
       if(!out.ok)throw new Error(out.reason);
       metric.ok=true;metric.deferred=!!out.deferred;metric.saveRevisionAfter=Number(state.saveRevision)||0;metric.totalMs=Math.max(0,metricClock()-totalStart);if(runtimeMetrics)runtimeMetrics.lastSavePreparation={...metric};
       diag(out.deferred?'SAVE_COALESCED':'SAVE_OK',{bytes:out.utf8Bytes??null,saveRevision:state.saveRevision,deferred:!!out.deferred});return true;
