@@ -16,7 +16,7 @@
   // its ancestors up to the section root (and again on rollback). A cache that
   // records (raw identity, version) therefore has the same guarantee as an
   // Object.freeze lock: an unchanged version means unchanged content.
-  const rawByView=new WeakMap(),objectVersions=new WeakMap();
+  const rawByView=new WeakMap(),liveRawByView=new WeakMap(),objectVersions=new WeakMap();
   const bumpVersion=value=>{if(value&&typeof value==='object')objectVersions.set(value,(objectVersions.get(value)||0)+1);};
   const bumpChain=chain=>{for(const value of chain)bumpVersion(value);};
   const ARRAY_OPS=new Set(['push','pop','shift','unshift','splice','reverse','sort']);
@@ -152,6 +152,47 @@
       return column.type==='u8'&&column.enumValues?column.enumValues[column.data[index]]:column.data[index];
     }
     function columnDTO(section){return section.data.rows.map((_,index)=>columnRow(section,index));}
+    // A simulation slice prepares its complete next asset section over several
+    // frames. Only the final publish is performed inside the kernel transaction.
+    // The prepared section never aliases a writable live row or typed column.
+    const preparedColumns=new WeakMap();
+    function prepareColumnUpdate(name){
+      const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-row-kind:${name}`);
+      const source=section.data,sourceRevision=revisions.get(name),sourceRowsVersion=objectVersions.get(source.rows)||0,rows=source.rows.slice(),rowOrder=source.rowOrder.slice(),columns={};
+      for(const [field,column] of Object.entries(source.columns))columns[field]={...column,data:column.data.slice(),presence:column.presence.slice()};
+      const next={rows,columns,rowOrder},changed=new Set(),metadataOriginals=new Map();let published=false;const handle=Object.freeze({
+        length:rows.length,
+        patch(index,values){
+          if(published)throw new Error('kernel-prepared-section-already-published');
+          if(!Number.isSafeInteger(index)||index<0||index>=rows.length)throw new RangeError('kernel-prepared-row-index');
+          if(!values||typeof values!=='object'||Array.isArray(values))throw new TypeError('kernel-prepared-patch-invalid');
+          let row=rows[index],order=rowOrder[index],copied=false;
+          for(const [field,value] of Object.entries(values)){
+            if(['__proto__','constructor','prototype'].includes(field))throw new Error(`kernel-row-field-invalid:${field}`);
+            const column=columns[field];
+            if(column){
+              const previous=column.presence[index],encoded=column.type==='u8'&&column.enumValues?column.enumValues.indexOf(String(value)):Number(value);
+              let presence=2;if(value===null)presence=1;else if(value===undefined)presence=3;
+              else if(column.type==='f64'&&(typeof value!=='number'||!Number.isFinite(value)))throw new TypeError(`kernel-column-nonfinite:${field}`);
+              else if(column.type==='u8'&&(!Number.isSafeInteger(encoded)||encoded<0||encoded>255))throw new TypeError(`kernel-column-enum-invalid:${field}`);
+              if(previous===presence&&(presence!==2||Object.is(column.data[index],encoded)))continue;
+              changed.add(index);
+              if(!previous){order=[...order,field];rowOrder[index]=order;}
+              column.presence[index]=presence;if(presence===2)column.data[index]=encoded;
+              continue;
+            }
+            const had=own(row,field),prior=had?row[field]:undefined;
+            if(had&&Object.is(prior,value))continue;
+            if(had&&prior&&value&&typeof prior==='object'&&typeof value==='object'&&Array.isArray(prior)===Array.isArray(value)&&JSON.stringify(prior)===JSON.stringify(value))continue;
+            changed.add(index);if(!metadataOriginals.has(index))metadataOriginals.set(index,source.rows[index]);
+            if(!copied){row={...row};rows[index]=row;copied=true;}
+            if(!had){order=[...order,field];rowOrder[index]=order;}
+            row[field]=clone(value);
+          }
+        }
+      });
+      preparedColumns.set(handle,{section,source,sourceRevision,sourceRowsVersion,next,changed,metadataOriginals,close(){published=true;}});return handle;
+    }
     function sectionFingerprint(name){const section=ensure(name);if(!fingerprints.has(name))fingerprints.set(name,fingerprint(expose(section)));return fingerprints.get(name);}
     // A section digest is a tree of bounded chunks. Column updates invalidate
     // one chunk; appends invalidate only the last chunk unless a cap shifts rows.
@@ -243,6 +284,23 @@
         section.present=true;mark(name,{kind:'row-field',index,field,action});return action==='delete'?wasPresent:parent[key];
       }
       const writerAPI={
+        publishPreparedRows(name,handle){
+          const section=ensure(name);authorize(section,writer,writes);
+          const prepared=preparedColumns.get(handle);
+          if(!prepared||prepared.section!==section||prepared.source!==section.data||prepared.sourceRevision!==revisions.get(name)||prepared.sourceRowsVersion!==(objectVersions.get(section.data.rows)||0))throw new Error('kernel-prepared-section-conflict');
+          const stableRows=section.data.rows,oldData=section.data;
+          if(stableRows.length!==prepared.next.rows.length)throw new Error('kernel-prepared-section-length-conflict');
+          log(()=>{for(const [index,original] of prepared.metadataOriginals)stableRows[index]=original;section.data=oldData;for(const index of prepared.changed)bumpVersion(stableRows[index]);bumpVersion(stableRows);});
+          // Typed columns are replaced by the section pointer below. Preserve the
+          // long-lived rows array and touch only rows whose non-column metadata
+          // received a new backing object. The original references were captured
+          // while preparing, so rollback storage scales with metadata changes.
+          for(const index of prepared.metadataOriginals.keys())stableRows[index]=prepared.next.rows[index];
+          section.data={...prepared.next,rows:stableRows};
+          for(const index of prepared.changed)bumpVersion(stableRows[index]);
+          bumpVersion(stableRows);mark(name,{kind:'rows-prepared'});
+          prepared.close();preparedColumns.delete(handle);
+        },
         get(name){const section=ensure(name);return expose(section);},
         addRoot(name){name=String(name||'').trim();if(!name)throw new Error('kernel-root-name-required');if(!contracts.has(name))register(name,{owner:'transaction-core',kind:'object',path:[name]});writes.add(name);return name;},
         set(name,value){const section=ensure(name);authorize(section,writer,writes);if(section.kind!=='object')throw new Error(`kernel-set-kind:${name}`);const previous=section.data,wasPresent=section.present;log(()=>{section.data=previous;section.present=wasPresent;});section.data=clone(value);section.present=true;mark(name,{kind:'set'});return clone(section.data);},
@@ -350,7 +408,7 @@
         try{options.onCommit?.(committed);}catch(error){globalThis.console?.error?.('State Kernel commit observer failed',error);}
         return result;
       }
-      const rawAt=(name,path)=>{const section=contracts.get(name);if(!section||!section.present)return undefined;let value=section.data;for(const key of path){if(value==null)return undefined;value=value[key];}return value;};
+      const rawAt=(name,path)=>{const section=contracts.get(name);if(!section||!section.present)return undefined;let value=section.kind==='columns'?section.data.rows:section.data;for(const key of path){if(value==null)return undefined;value=value[key];}return value;};
       const tracked=(name,path,raw)=>{
         if(!raw||typeof raw!=='object')return raw;
         let paths=cache.get(raw);if(!paths){paths=new Map();cache.set(raw,paths);}const key=`${name}:${pathKey(path)}`,prior=paths.get(key);if(prior)return prior;
@@ -360,21 +418,24 @@
             if(section?.kind==='columns'&&path.length===0&&typeof prop==='string'&&arrayMutators.has(prop))return (...args)=>{const rows=columnDTO(section),result=Array.prototype[prop].apply(rows,args);write(name,[],'set',rows);return ['copyWithin','fill','reverse','sort'].includes(prop)?receiver:result;};
             if(section?.kind==='columns'&&path.length===1&&typeof prop==='string'&&own(section.data.columns,prop))return columnValue(section,prop,Number(path[0]));
             if(section?.kind==='object'&&Array.isArray(target)&&typeof prop==='string'&&ARRAY_OPS.has(prop))return (...args)=>{const result=arrayWrite(name,path,prop,args);return prop==='reverse'||prop==='sort'?receiver:result;};
-            if(prop==='__proto__')return Reflect.get(target,prop,receiver);const value=Reflect.get(target,prop,receiver);return value&&typeof value==='object'?tracked(name,[...path,String(prop)],value):value;
+            const live=section?.kind==='columns'&&path.length?rawAt(name,path)??target:target;
+            if(prop==='__proto__')return Reflect.get(live,prop,receiver);const value=Reflect.get(live,prop,receiver);return value&&typeof value==='object'?tracked(name,[...path,String(prop)],value):value;
           },
           set(_target,prop,value){if(typeof prop==='symbol')throw new TypeError('kernel-symbol-state-key');write(name,[...path,String(prop)],'set',value);return true;},
           deleteProperty(_target,prop){if(typeof prop==='symbol')throw new TypeError('kernel-symbol-state-key');write(name,[...path,String(prop)],'delete');return true;},
           defineProperty(_target,prop,descriptor){if(typeof prop==='symbol'||!Object.prototype.hasOwnProperty.call(descriptor,'value'))throw new TypeError('kernel-state-accessor-forbidden');write(name,[...path,String(prop)],'set',descriptor.value);return true;},
           ownKeys(target){
             const section=contracts.get(name);if(section?.kind!=='columns'||path.length!==1)return Reflect.ownKeys(target);
-            return columnKeys(section,Number(path[0]),target);
+            return columnKeys(section,Number(path[0]),rawAt(name,path)||target);
           },
-          has(target,prop){const section=contracts.get(name);if(section?.kind==='columns'&&path.length===1&&typeof prop==='string'&&own(section.data.columns,prop))return section.data.columns[prop].presence[Number(path[0])]!==0;return Reflect.has(target,prop);},
+          has(target,prop){const section=contracts.get(name);if(section?.kind==='columns'&&path.length===1&&typeof prop==='string'&&own(section.data.columns,prop))return section.data.columns[prop].presence[Number(path[0])]!==0;return Reflect.has(section?.kind==='columns'&&path.length?rawAt(name,path)??target:target,prop);},
           getOwnPropertyDescriptor(target,prop){
             const section=contracts.get(name);if(section?.kind==='columns'&&path.length===1&&typeof prop==='string'&&own(section.data.columns,prop)){const column=section.data.columns[prop];if(column.presence[Number(path[0])]===0)return undefined;return {configurable:true,enumerable:true,writable:true,value:columnValue(section,prop,Number(path[0]))};}
-            return Reflect.getOwnPropertyDescriptor(target,prop);
+            const descriptor=Reflect.getOwnPropertyDescriptor(section?.kind==='columns'&&path.length?rawAt(name,path)??target:target,prop);
+            if(descriptor&&own(descriptor,'value')&&descriptor.value&&typeof descriptor.value==='object')return {...descriptor,value:tracked(name,[...path,String(prop)],descriptor.value)};
+            return descriptor;
           }
-        });paths.set(key,proxy);proxyRefs.set(proxy,{name,path,raw});viewProxies.add(proxy);rawByView.set(proxy,raw);return proxy;
+        });paths.set(key,proxy);proxyRefs.set(proxy,{name,path,raw});viewProxies.add(proxy);rawByView.set(proxy,raw);liveRawByView.set(proxy,()=>contracts.get(name)?.kind==='columns'&&path.length?rawAt(name,path)??raw:raw);return proxy;
       };
       function write(name,path,action,value){
         const reference=action==='set'&&value&&typeof value==='object'?proxyRefs.get(value):null;
@@ -404,21 +465,34 @@
     function addAuditor(name,validator){ensure(name);if(typeof validator!=='function')throw new TypeError('kernel-auditor-required');if(!auditors.has(name))auditors.set(name,[]);auditors.get(name).push(validator);return ()=>{const rows=auditors.get(name)||[],index=rows.indexOf(validator);if(index>=0)rows.splice(index,1);};}
     function compareLegacy(candidate){const expected=legacyState(),path=firstDifference(expected,candidate);return {ok:path===null,path,fingerprints:{kernel:fingerprint(expected),legacy:fingerprint(candidate)}};}
     function snapshot(){const sections={};for(const name of contracts.keys())sections[name]={revision:revisions.get(name),fingerprint:sectionFingerprint(name),value:expose(ensure(name))};return {schemaVersion,revision:sequence,sections};}
-    const api={VERSION,schemaVersion,register,releaseRegisteredBase,tx,stateView,sectionNames:()=>[...contracts.keys()],read(name){return expose(ensure(name));},readRow(name,index){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-row-kind:${name}`);if(!Number.isInteger(index)||index<0||index>=section.data.rows.length)throw new RangeError(`kernel-row-index:${name}:${index}`);return columnRow(section,index);},columnSnapshot(name,columnName){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const column=section.data.columns[String(columnName)];if(!column)throw new Error(`kernel-column-unregistered:${name}.${columnName}`);return {type:column.type,data:new column.data.constructor(column.data),presence:new Uint8Array(column.presence),enumValues:clone(column.enumValues)};},columnStorageReport(name){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const rows=section.data.rows,columns=Object.entries(section.data.columns);let redundantObjectFields=0;for(let index=0;index<rows.length;index++){const row=rows[index];if(row&&typeof row==='object')for(const [field,column] of columns)if(column.presence[index]!==0&&own(row,field))redundantObjectFields++;}return {rows:rows.length,hotFields:columns.map(([field])=>field),redundantObjectFields,typedArrayBytes:columns.reduce((sum,[,column])=>sum+column.data.byteLength+column.presence.byteLength,0)};},revision(name){return arguments.length?revisions.get(String(name))??null:sequence;},fingerprint:sectionFingerprint,incrementalFingerprint,fingerprintChunkCalculations:()=>fingerprintChunkCalculations,addAuditor,compareLegacy,legacyState,snapshot,contracts(){return [...contracts.values()].map(({data,...row})=>clone(row));},baseStorageBytes(){return new TextEncoder().encode(JSON.stringify(base)).byteLength;},typedArrayBytes(){let bytes=0;for(const section of contracts.values())if(section.kind==='columns')for(const column of Object.values(section.data.columns))bytes+=column.data.byteLength+column.presence.byteLength;return bytes;}};
+    const api={VERSION,schemaVersion,register,releaseRegisteredBase,tx,stateView,prepareColumnUpdate,publishPreparedRows(name,handle){if(!activeWriter)throw new Error('kernel-prepared-publish-requires-transaction');return activeWriter.publishPreparedRows(name,handle);},sectionNames:()=>[...contracts.keys()],read(name){return expose(ensure(name));},readRow(name,index){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-row-kind:${name}`);if(!Number.isInteger(index)||index<0||index>=section.data.rows.length)throw new RangeError(`kernel-row-index:${name}:${index}`);return columnRow(section,index);},columnSnapshot(name,columnName){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const column=section.data.columns[String(columnName)];if(!column)throw new Error(`kernel-column-unregistered:${name}.${columnName}`);return {type:column.type,data:new column.data.constructor(column.data),presence:new Uint8Array(column.presence),enumValues:clone(column.enumValues)};},columnStorageReport(name){const section=ensure(name);if(section.kind!=='columns')throw new Error(`kernel-column-kind:${name}`);const rows=section.data.rows,columns=Object.entries(section.data.columns);let redundantObjectFields=0;for(let index=0;index<rows.length;index++){const row=rows[index];if(row&&typeof row==='object')for(const [field,column] of columns)if(column.presence[index]!==0&&own(row,field))redundantObjectFields++;}return {rows:rows.length,hotFields:columns.map(([field])=>field),redundantObjectFields,typedArrayBytes:columns.reduce((sum,[,column])=>sum+column.data.byteLength+column.presence.byteLength,0)};},revision(name){return arguments.length?revisions.get(String(name))??null:sequence;},fingerprint:sectionFingerprint,incrementalFingerprint,fingerprintChunkCalculations:()=>fingerprintChunkCalculations,addAuditor,compareLegacy,legacyState,snapshot,contracts(){return [...contracts.values()].map(({data,...row})=>clone(row));},baseStorageBytes(){return new TextEncoder().encode(JSON.stringify(base)).byteLength;},typedArrayBytes(){let bytes=0;for(const section of contracts.values())if(section.kind==='columns')for(const column of Object.values(section.data.columns))bytes+=column.data.byteLength+column.presence.byteLength;return bytes;}};
     return Object.freeze(api);
   }
   function fromLegacyState(legacy,contracts,options={}){
     const kernel=create({...options,legacyState:legacy});for(const contract of contracts||[])kernel.register(contract.name,contract);kernel.releaseRegisteredBase();return kernel;
   }
   const isStateView=value=>!!value&&typeof value==='object'&&viewProxies.has(value);
-  // identityOf: the stored object behind a state view (value itself otherwise).
-  // versionOf: that object's mutation version (see bumpVersion above).
-  const identityOf=value=>value&&typeof value==='object'&&rawByView.has(value)?rawByView.get(value):value;
-  const versionOf=value=>{const raw=identityOf(value);return raw&&typeof raw==='object'?objectVersions.get(raw)||0:0;};
+  // No caller may mutate a backing row around the transaction revision guard.
+  // Expose a stable read-only facade, including nested values and descriptors.
+  const readonlyViews=new WeakMap(),rawByReadonly=new WeakMap();
+  function readonly(raw){
+    if(!raw||typeof raw!=='object')return raw;
+    if(readonlyViews.has(raw))return readonlyViews.get(raw);
+    const reject=()=>{throw new TypeError('kernel-raw-mutation-forbidden');};
+    const view=new Proxy(raw,{
+      get(target,key){return readonly(Reflect.get(target,key));},
+      getOwnPropertyDescriptor(target,key){const descriptor=Reflect.getOwnPropertyDescriptor(target,key);return descriptor&&own(descriptor,'value')?{...descriptor,value:readonly(descriptor.value)}:descriptor;},
+      set:reject,deleteProperty:reject,defineProperty:reject,setPrototypeOf:reject,preventExtensions:reject
+    });
+    readonlyViews.set(raw,view);rawByReadonly.set(view,raw);return view;
+  }
+  const storedRaw=value=>value&&typeof value==='object'?(liveRawByView.get(value)?.()??rawByView.get(value)??rawByReadonly.get(value)??value):value;
+  const identityOf=value=>value&&typeof value==='object'&&rawByView.has(value)?readonly(storedRaw(value)):value;
+  const versionOf=value=>{const raw=storedRaw(value);return raw&&typeof raw==='object'?objectVersions.get(raw)||0:0;};
   // stampOf: "<identity serial>.<version>" of the stored object. Unlike section
   // revisions (which advance only at commit) it changes on every write, inside
   // an open transaction too, and a replaced object never reuses a stamp.
   const objectSerials=new WeakMap();let nextObjectSerial=0;
-  const stampOf=value=>{const raw=identityOf(value);if(!raw||typeof raw!=='object')return `v:${typeof raw}:${String(raw)}`;if(!objectSerials.has(raw))objectSerials.set(raw,++nextObjectSerial);return `${objectSerials.get(raw)}.${objectVersions.get(raw)||0}`;};
+  const stampOf=value=>{const raw=storedRaw(value);if(!raw||typeof raw!=='object')return `v:${typeof raw}:${String(raw)}`;if(!objectSerials.has(raw))objectSerials.set(raw,++nextObjectSerial);return `${objectSerials.get(raw)}.${objectVersions.get(raw)||0}`;};
   return Object.freeze({VERSION,create,fromLegacyState,fingerprint,firstDifference,stableStringify:stable,isStateView,identityOf,versionOf,stampOf});
 });

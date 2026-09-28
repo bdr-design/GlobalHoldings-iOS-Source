@@ -7,6 +7,12 @@
   const platform=()=>{const api=globalThis.GH_COMPANY_PLATFORM;if(!api?.requireCompany)throw new Error('company-platform-missing');return api;};
   const identity=()=>globalThis.GH_IDENTITY||null;
   const COMPANY_TYPES=Object.freeze(platform().companyIds({includeGroup:false}));
+  const GROUP_PLAN_KEYS=Object.freeze(['annualRevenueTarget','netMarginTarget','liquidityFloor','debtCeiling','capitalAllocationBudget','priority','lastReviewedAt']);
+  const COMPANY_MANAGEMENT_KEYS=Object.freeze(['annualRevenueTarget','netMarginTarget','expansionBudget','expansionTarget','priority','lastReviewedAt']);
+  const LEGACY_COMPANY_MODEL_KEYS=Object.freeze(['budget','growthTarget','capitalPlan','customerScore']);
+  const CORPORATE_OBJECT_ROOTS=Object.freeze(['companyRegistry','stakes','maDeals']);
+  const CORPORATE_ARRAY_ROOTS=Object.freeze(['openedCompanies','unlockedSectors']);
+  const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
 
   function checkedText(value,code,maximum,{minimum=1,allowEmpty=false}={}){
     const raw=typeof value==='string'?value:String(value??''),inspected=identity()?.inspectPlainText?.(raw,{minimum,maximum,allowEmpty});
@@ -37,11 +43,55 @@
   }
   function model(state,companyId){
     ensure(state);const current=state.advanced.companies[companyId]||(state.advanced.companies[companyId]={}),management=object(current.management)?current.management:{};
-    for(const legacy of ['budget','growthTarget','capitalPlan','customerScore'])delete current[legacy];
+    for(const legacy of LEGACY_COMPANY_MODEL_KEYS)delete current[legacy];
     current.serviceLevel=Math.max(0,Math.min(100,Number(current.serviceLevel)||0));current.automation=Math.max(0,Math.min(100,Number(current.automation)||0));current.riskLimit=Math.max(0,Math.min(100,Number.isFinite(Number(current.riskLimit))?Number(current.riskLimit):100));current.lastDecision=num(current.lastDecision);
     current.upgradeCooldowns=object(current.upgradeCooldowns)?current.upgradeCooldowns:{};current.history=Array.isArray(current.history)?current.history:[];
     current.management={annualRevenueTarget:num(management.annualRevenueTarget),netMarginTarget:Math.max(-50,Math.min(80,Number(management.netMarginTarget)||0)),expansionBudget:num(management.expansionBudget),expansionTarget:Math.max(0,Math.floor(Number(management.expansionTarget)||0)),priority:String(management.priority||'ربحية مستقرة وتوسع منضبط').slice(0,160),lastReviewedAt:num(management.lastReviewedAt)};
     return current;
+  }
+  function exactEnumerableKeys(value,keys){
+    if(!object(value))return false;let count=0;
+    for(const key in value)if(own(value,key)){if(!keys.includes(key))return false;count++;}
+    if(count!==keys.length)return false;for(const key of keys)if(!Object.prototype.propertyIsEnumerable.call(value,key))return false;return true;
+  }
+  function canonicalGroupPlan(plan){
+    return exactEnumerableKeys(plan,GROUP_PLAN_KEYS)&&
+      plan.annualRevenueTarget===num(plan.annualRevenueTarget)&&
+      plan.netMarginTarget===Math.max(-50,Math.min(80,Number(plan.netMarginTarget)||0))&&
+      plan.liquidityFloor===num(plan.liquidityFloor)&&
+      plan.debtCeiling===num(plan.debtCeiling)&&
+      plan.capitalAllocationBudget===num(plan.capitalAllocationBudget)&&
+      plan.priority===String(plan.priority||'نمو ربحي منضبط مع حماية السيولة').slice(0,180)&&
+      plan.lastReviewedAt===num(plan.lastReviewedAt);
+  }
+  function canonicalCompanyManagement(management){
+    return exactEnumerableKeys(management,COMPANY_MANAGEMENT_KEYS)&&
+      management.annualRevenueTarget===num(management.annualRevenueTarget)&&
+      management.netMarginTarget===Math.max(-50,Math.min(80,Number(management.netMarginTarget)||0))&&
+      management.expansionBudget===num(management.expansionBudget)&&
+      management.expansionTarget===Math.max(0,Math.floor(Number(management.expansionTarget)||0))&&
+      management.priority===String(management.priority||'ربحية مستقرة وتوسع منضبط').slice(0,160)&&
+      management.lastReviewedAt===num(management.lastReviewedAt);
+  }
+  function canonicalCompanyModel(current){
+    if(!object(current))return false;
+    for(const legacy of LEGACY_COMPANY_MODEL_KEYS)if(own(current,legacy))return false;
+    if(!own(current,'serviceLevel')||current.serviceLevel!==Math.max(0,Math.min(100,Number(current.serviceLevel)||0)))return false;
+    if(!own(current,'automation')||current.automation!==Math.max(0,Math.min(100,Number(current.automation)||0)))return false;
+    const risk=Math.max(0,Math.min(100,Number.isFinite(Number(current.riskLimit))?Number(current.riskLimit):100));
+    if(!own(current,'riskLimit')||current.riskLimit!==risk||!own(current,'lastDecision')||current.lastDecision!==num(current.lastDecision))return false;
+    if(!own(current,'upgradeCooldowns')||!object(current.upgradeCooldowns)||!own(current,'history')||!Array.isArray(current.history))return false;
+    return own(current,'management')&&canonicalCompanyManagement(current.management);
+  }
+  function hasSimulationModelWork(state,companyIds=[]){
+    if(!Array.isArray(companyIds))return true;if(!companyIds.length)return false;
+    if(!object(state))return true;
+    for(const key of CORPORATE_OBJECT_ROOTS)if(!own(state,key)||!object(state[key]))return true;
+    for(const key of CORPORATE_ARRAY_ROOTS)if(!own(state,key)||!Array.isArray(state[key]))return true;
+    if(!own(state,'advanced')||!object(state.advanced)||!own(state.advanced,'companies')||!object(state.advanced.companies)||!own(state.advanced,'groupManagement')||!object(state.advanced.groupManagement))return true;
+    const group=state.advanced.groupManagement;if(!own(group,'plan')||!canonicalGroupPlan(group.plan)||!own(group,'history')||!Array.isArray(group.history))return true;
+    for(const rawId of companyIds){const id=String(rawId),current=own(state.advanced.companies,id)?state.advanced.companies[id]:null;if(!canonicalCompanyModel(current))return true;}
+    return false;
   }
   function companyIdOf(payload={}){return String(payload.companyId||payload.type||'').trim();}
   function financeSupports(finance,state,companyId,definition=null){
@@ -80,7 +130,9 @@
     }catch(error){return {ok:false,reason:String(error?.message||error)};}
   }
   function execute(ctx,command,payload={}){
-    const state=ctx.state||ctx;ensure(state);
+    const state=ctx.state||ctx;
+    if(command==='adjust-group-value'){const delta=Number(payload.delta)||0;state.groupValue=Math.max(0,(Number(state.groupValue)||0)+delta);return state.groupValue;}
+    ensure(state);
     if(command==='found-group'){
       if(state.onboardingComplete)throw new Error('group-already-founded');
       if(!payload.profile?.name||!payload.registry?.formationContract)throw new Error('founding-identity-invalid');validateFoundingIdentity(payload);
@@ -126,7 +178,6 @@
     if(command==='unlock-sector'){
       const requested=String(payload.sectorId||payload.type||''),sectorId=platform().normalizeSectorId?.(requested)||requested;if(!platform().isKnownSector(sectorId))throw new Error('sector-not-found');if(!state.unlockedSectors.includes(sectorId))state.unlockedSectors.push(sectorId);return [...state.unlockedSectors];
     }
-    if(command==='adjust-group-value'){const delta=Number(payload.delta)||0;state.groupValue=Math.max(0,(Number(state.groupValue)||0)+delta);return state.groupValue;}
     if(command==='set-credit-rating'){state.profile=state.profile||{};state.profile.creditRating=String(payload.grade||'BBB');return state.profile.creditRating;}
     if(command==='set-reputation'){state.profile=state.profile||{};state.profile.reputation=Math.max(0,Math.min(100,Number(payload.value)||0));return state.profile.reputation;}
     if(command==='set-ipo'){state.ipo={listed:!!payload.listed,ticker:String(payload.ticker||'GH').toUpperCase()};return state.ipo;}
@@ -147,7 +198,7 @@
     throw new Error(`Unknown corporate command: ${command}`);
   }
 
-  const API=Object.freeze({VERSION,COMPANY_TYPES,ensure,model,planOpenCompany,validate,execute});
+  const API=Object.freeze({VERSION,COMPANY_TYPES,ensure,model,hasSimulationModelWork,planOpenCompany,validate,execute});
   globalThis.GH_CORPORATE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('corporate',API);
   if(globalThis.window&&window!==globalThis)globalThis.window.GH_CORPORATE_CORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

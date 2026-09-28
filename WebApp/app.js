@@ -673,6 +673,11 @@
 
   function creditCompany(type,amount,note='إيراد تشغيلي',method='تحويل عميل',taxable=true){const out=dispatchSystemCommand({state},'finance','credit',{company:type,amount,note,method,taxable},{actor:'simulation'});return !!out.result;}
   ensureCompanyFinance();reconcileConsolidatedCash();
+  window.GH_CORPORATE_CORE?.ensure?.(state);
+  // Normalize the optional Mobility root during startup. This preserves the
+  // same Save Schema migration that the first simulation slice used to perform,
+  // while keeping that one-time work out of the frame-critical commit.
+  window.GH_MOBILITY_CORE?.ensure?.(state);
   if(!window.GH_BUSINESS_WORLD?.execute)throw new Error('Business World Core failed to load before app.js');
   const competitorBusinessSectors=raw=>{const text=String(raw||'');if(/طيران/.test(text))return ['air'];if(/بحر|شحن بحري|خدمات بحرية/.test(text))return ['sea'];if(/لوجست|مستودع|نقل/.test(text))return ['road'];if(/طاقة|بنية تحتية/.test(text))return ['power'];if(/مصرف|بنك|تمويل/.test(text))return ['bank'];return [];};
   window.GH_BUSINESS_WORLD.execute({state},'sync-world',{
@@ -2257,21 +2262,31 @@
   }
 
   function makeSimulationEffects(){
-    return {todayProfit:0,groupValue:0,sectorProfit:{},tripProfit:{},tripRevenue:{},tripFuel:{},tripMaintenance:{},tripCount:{},cash:{},alerts:[],saleIds:[],retiredRouteIds:[]};
+    return {todayProfit:0,groupValue:0,sectorProfit:{},tripProfit:{},tripRevenue:{},tripFuel:{},tripMaintenance:{},tripCount:{},cash:{},alerts:[],alertCount:0,saleIds:[],retiredRouteIds:[]};
   }
+  const SIMULATION_ALERT_LIMIT=400;
   function mergeSimulationEffects(target,source){
     target.todayProfit+=Number(source.todayProfit)||0;target.groupValue+=Number(source.groupValue)||0;
     for(const key of ['sectorProfit','tripProfit','tripRevenue','tripFuel','tripMaintenance','tripCount','cash']){
       for(const companyId of Object.keys(source[key]||{}))target[key][companyId]=(target[key][companyId]||0)+(Number(source[key][companyId])||0);
     }
-    target.alerts.push(...source.alerts);target.saleIds.push(...source.saleIds);target.retiredRouteIds.push(...source.retiredRouteIds);
+    for(const item of source.alerts||[]){const text=String(item?.text??item??'').trim();if(!text)continue;const ordinal=target.alertCount++;if(target.alerts.length<SIMULATION_ALERT_LIMIT)target.alerts.push(item);else target.alerts[ordinal%SIMULATION_ALERT_LIMIT]=item;}
+    target.saleIds.push(...source.saleIds);target.retiredRouteIds.push(...source.retiredRouteIds);
+  }
+  function simulationAlertBatch(effects){
+    const alerts=Array.isArray(effects?.alerts)?effects.alerts:[],count=Math.max(alerts.length,Math.floor(Number(effects?.alertCount)||0));
+    if(count<=alerts.length)return {items:alerts,ordinalOffset:0};
+    const cursor=count%SIMULATION_ALERT_LIMIT;return {items:[...alerts.slice(cursor),...alerts.slice(0,cursor)],ordinalOffset:count-alerts.length};
   }
   const SIMULATION_ASSET_FIELDS=['phase','dwellRemaining','reverse','progress','fuel','condition','from','to','load','baseFacility','lastTrip','routeId','routeSignature','routeSlot','departureScheduled','departureScheduledAt','releaseExclusiveRouteOnArrival','simCarrySeconds','lastTransitionGuardDay','crewBlocked','simulationFault'];
   if(JSON.stringify(SIMULATION_ASSET_FIELDS)!==JSON.stringify(SIMULATION_ASSET_ENGINE.WRITE_FIELDS))throw new Error('Simulation Asset Core write contract does not match the transaction owner');
   const SIMULATION_ASSET_GUARD_FIELDS=[...SIMULATION_ASSET_FIELDS,'salePending','tripSeconds','type','assetMode','ownerCompanyId','assetClass','operationProfileId','name','ownership','monthlyLease','purchasePrice','catalogId','specs','staffing'];
   function simulationAssetGuard(asset,includeRoute=true){
     if(!asset)return 'missing';
-    const guarded={};for(const field of SIMULATION_ASSET_GUARD_FIELDS)guarded[field]=asset[field];
+    // Kernel metadata is exposed through a read-only facade. All actual writes
+    // advance the input revision, including writes between preparation frames.
+    const kernelAsset=window.GH_KERNEL?.isStateView?.(asset)===true,storedRow=kernelAsset?window.GH_KERNEL.identityOf(asset):asset;
+    const guarded={};for(const field of SIMULATION_ASSET_GUARD_FIELDS)guarded[field]=kernelAsset&&Object.prototype.hasOwnProperty.call(storedRow,field)?storedRow[field]:asset[field];
     if(includeRoute)guarded.routeTemplate=asset.routeId&&routeTemplates[asset.routeId]?routeTemplates[asset.routeId]:null;
     return JSON.stringify(guarded);
   }
@@ -2601,9 +2616,12 @@
     const simMeta={speed,from:Number(meta.from)||state.simSeconds,to:Number(meta.to)||(state.simSeconds+sliceSeconds),infiniteMoney:!!(state.godMoney&&state.infiniteMoney)};
     const boundary=meta.boundary||{};
     let snapshotCursor=0,assetCursor=0,competitorCursor=0,finished=false,cancelled=false,staleReason=null,activeWorkerBatch=null,localFallbackRows=null,localFallbackCursor=0;
+    let preparedAssets=null,preparedCursor=0,preparedRecordsReleased=false,preparedFinance=null,preparedFinanceSettled=false,preparedFinanceCompanyIds=null,preparedCorporateWorkPending=true,preparedCorporateSettled=false,preparedAlertItems=null,preparedAlertOffset=0,preparedEffectsSettled=false,preparedMapChange=false,preparedMoving=0,preparedIdle=0,preparedTurnaround=0,duplicateAssetIds=false;
+    const observedAssetIds=new Set(),preparedJournal=makeSimulationEffects(),preparedIsolations=[];
     const workerCommitIds=[];
     const pendingAssetRows=[];
     const workerBatchSize=SIMULATION_ASSET_ENGINE.MAX_BATCH_ITEMS;
+    function acceptRecord(record){mergeSimulationEffects(preparedJournal,record.effects);record.effects=null;records.push(record);return record;}
     function sourceStillCurrent(){return state.assets===sourceAssets&&(Array.isArray(sourceAssets)?sourceAssets.length:0)===snapshotAssetCount&&(sourceRevision===null||(typeof tx.inputRevision==='function'?tx.inputRevision(state):tx.revision(state))===sourceRevision);}
     function settleWorker(type){const ids=workerCommitIds.splice(0);return ids.length&&typeof settleSimulationAssetWorker==='function'?settleSimulationAssetWorker(type,ids):false;}
     function invalidateStaleSource(){
@@ -2633,7 +2651,7 @@
       if(batch.pending.status==='done'&&message?.version==='GH-SIMULATION-ASSET-WORKER-340.1.0'&&message?.coreVersion===SIMULATION_ASSET_ENGINE.VERSION&&Number.isSafeInteger(workerKernel?.revision)&&Number.isSafeInteger(workerKernel?.typedArrayBytes)&&typeof workerKernel?.fingerprint==='string'&&SIMULATION_ASSET_ENGINE.validateResults(batch.rows,results)){
         window.__GH_SIMULATION_WORKER_KERNEL__={revision:workerKernel.revision,typedArrayBytes:workerKernel.typedArrayBytes,fingerprint:workerKernel.fingerprint,commitMs:workerKernel.commitMs||0};
         workerCommitIds.push(batch.pending.requestId);
-        for(let index=0;index<results.length;index++)records.push({id:batch.rows[index].id,guard:batch.rows[index].guard,patch:results[index].patch,effects:results[index].effects});
+        for(let index=0;index<results.length;index++)acceptRecord({id:batch.rows[index].id,guard:batch.rows[index].guard,patch:results[index].patch,effects:results[index].effects});
         releaseSimulationAssetBatch(batch.pending);activeWorkerBatch=null;return true;
       }
       if(batch.pending.status==='pending')return false;
@@ -2651,7 +2669,8 @@
         while(snapshotCursor<snapshotAssetCount&&count<max&&withinBudget()){
           const asset=snapshotAssets[snapshotCursor++];
           if(asset?.routeId&&!routeGuards.has(asset.routeId))routeGuards.set(asset.routeId,JSON.stringify(routeTemplates[asset.routeId]||null));
-          assetSeeds.push({id:asset?.id,index:snapshotCursor-1,guard:simulationAssetGuard(asset,false)});count++;
+          const assetId=asset?.id;if(observedAssetIds.has(assetId))duplicateAssetIds=true;observedAssetIds.add(assetId);
+          assetSeeds.push({id:assetId,index:snapshotCursor-1,guard:simulationAssetGuard(asset,false)});count++;
         }
         if(snapshotCursor<snapshotAssetCount)return false;
         if(!sourceStillCurrent())return invalidateStaleSource();
@@ -2660,7 +2679,7 @@
           workerOutputReady(activeWorkerBatch);
         }
         while(localFallbackRows&&localFallbackCursor<localFallbackRows.length&&count<max&&withinBudget()){
-          const row=localFallbackRows[localFallbackCursor++];records.push(legacyRecord(row));count++;
+          const row=localFallbackRows[localFallbackCursor++];acceptRecord(legacyRecord(row));count++;
         }
         if(localFallbackRows&&localFallbackCursor>=localFallbackRows.length){localFallbackRows=null;localFallbackCursor=0;}
         if(localFallbackRows)return {pending:true};
@@ -2677,7 +2696,7 @@
           if(assetCursor<assetSeeds.length)return false;
         }else{
           while(assetCursor<assetSeeds.length&&count<max&&withinBudget()){
-            const seed=assetSeeds[assetCursor++],asset=simulationAssetSnapshot(seed,seed.guard);records.push(legacyRecord({id:seed.id,guard:seed.guard,asset}));count++;
+            const seed=assetSeeds[assetCursor++],asset=simulationAssetSnapshot(seed,seed.guard);acceptRecord(legacyRecord({id:seed.id,guard:seed.guard,asset}));count++;
           }
         }
         while(assetCursor>=assetSeeds.length&&competitorCursor<competitorSeeds.length&&count<max&&withinBudget()){
@@ -2685,7 +2704,47 @@
           if(Number.isFinite(trip)&&trip>0)a.progress=(a.progress+sliceSeconds/trip)%1;
           seed.draft=a;count++;
         }
-        finished=assetCursor>=assetSeeds.length&&competitorCursor>=competitorSeeds.length&&!pendingAssetRows.length&&!activeWorkerBatch&&!localFallbackRows;return finished;
+        if(assetCursor>=assetSeeds.length&&competitorCursor>=competitorSeeds.length&&!pendingAssetRows.length&&!activeWorkerBatch&&!localFallbackRows){
+          // Prepare the next column section without publishing it. This loop has
+          // the same per-frame deadline as snapshot and Worker result collection.
+          const ordinary=boundary.day==null&&boundary.hour==null&&window.GH_REALISM?.hasPendingDeliveries?.(state)===false;
+          if(ordinary&&tx.isKernelOwner?.(state)===true&&typeof tx.prepareAssetSection==='function'&&!duplicateAssetIds){
+            if(!preparedAssets)preparedAssets=tx.prepareAssetSection(state);
+            while(preparedCursor<records.length&&count<max&&withinBudget()){
+              const index=preparedCursor++,rec=records[index],planned=rec.patch||rec.draft,current=snapshotAssets[index];
+              if(rec.id!==assetSeeds[index]?.id)throw new Error('simulation-prepared-asset-order-conflict');
+              if(planned.phase==='moving')preparedMoving++;else if(planned.phase==='idle')preparedIdle++;else if(planned.phase==='turnaround')preparedTurnaround++;
+              if(current.phase!==planned.phase||current.baseFacility!==planned.baseFacility||current.routeId!==planned.routeId||current.deliveryStatus!==planned.deliveryStatus)preparedMapChange=true;
+              const patch={};for(const field of SIMULATION_ASSET_FIELDS)patch[field]=planned[field];
+              preparedAssets.patch(index,patch);
+              if(planned.simulationFault?.code==='ASSET_SIMULATION_ISOLATED'&&planned.simulationFault.at===simMeta.from)preparedIsolations.push({assetId:rec.id,reason:planned.simulationFault.detail});
+              records[index]=null;preparedRecordsReleased=true;
+              count++;
+            }
+            if(preparedCursor<records.length)return false;
+            // Validate and normalize the small financial delta before finish.
+            // The opaque plan is read-only and is guarded again inside the
+            // atomic transaction, so no financial state is published here.
+            if(!preparedFinanceSettled){
+              if(count>=max||!withinBudget())return false;
+              preparedFinanceSettled=true;
+              try{preparedFinance=window.GH_FINANCE_CORE?.prepareSimulationJournal?.(state,preparedJournal)||null;}catch(_error){preparedFinance=null;}
+              count++;
+            }
+            if(!preparedCorporateSettled){
+              if(count>=max||!withinBudget())return false;
+              preparedFinanceCompanyIds=Object.keys(preparedJournal.tripCount||{});
+              preparedCorporateWorkPending=window.GH_CORPORATE_CORE?.hasSimulationModelWork?.(state,preparedFinanceCompanyIds)!==false;
+              preparedCorporateSettled=true;count++;
+            }
+          }
+        }
+        const planningComplete=assetCursor>=assetSeeds.length&&competitorCursor>=competitorSeeds.length&&!pendingAssetRows.length&&!activeWorkerBatch&&!localFallbackRows;
+        if(planningComplete&&!preparedEffectsSettled){
+          if(count>=max||!withinBudget())return false;
+          const batch=simulationAlertBatch(preparedJournal);preparedAlertItems=batch.items;preparedJournal.alerts=batch.items;preparedAlertOffset=batch.ordinalOffset;preparedEffectsSettled=true;count++;
+        }
+        finished=planningComplete&&preparedEffectsSettled;return finished;
       },
       finish(info={}){
         if(cancelled||!finished)return {committed:false,reason:'job-not-finished'};
@@ -2698,8 +2757,10 @@
         // JavaScript cannot interleave a purchase between this probe and execute().
         // Boundaries still use full-state rollback; pending delivery slices keep the
         // original broad scope because delivery may mutate Fleet/HR/Realism atomically.
-        const deliveryWorkPending=hasBoundary?true:(window.GH_REALISM?.hasPendingDeliveries?.(state)!==false);
-        const declaredWriteRoots=hasBoundary?null:(deliveryWorkPending?SIMULATION_TRANSACTION_SCOPE:SIMULATION_STEADY_TRANSACTION_SCOPE),writeAudit=globalThis.__GH_BUILD339_WRITE_AUDIT__===true;
+        const deliveryWorkPending=hasBoundary?true:(window.GH_REALISM?.hasPendingDeliveries?.(state)!==false),usePrepared=!!preparedAssets&&!deliveryWorkPending&&preparedCursor===records.length,usePreparedFinance=usePrepared&&!!preparedFinance;
+        if(preparedRecordsReleased&&!usePrepared){settleWorker('rollback');return {committed:false,retry:true,reason:'simulation-prepared-mode-conflict'};}
+        const financeCompanyIds=usePrepared?(preparedFinanceCompanyIds||[]):[],corporateWorkPending=!usePrepared||preparedCorporateWorkPending;
+        const declaredWriteRoots=hasBoundary?null:((deliveryWorkPending||corporateWorkPending)?SIMULATION_TRANSACTION_SCOPE:SIMULATION_STEADY_TRANSACTION_SCOPE),writeAudit=globalThis.__GH_BUILD339_WRITE_AUDIT__===true;
         const profileActive=window.GH_DIAGNOSTICS?.recorderIsActive?.(state)===true;
         try{outcome=tx.execute(state,{
             label:`simulation:${simMeta.from}->${simMeta.to}`,
@@ -2716,41 +2777,73 @@
               if(cancelled)return {ok:false,reason:'cancelled-before-commit'};
               if(!sourceStillCurrent())return {ok:false,reason:'simulation-source-revision-conflict'};
               if(Number(state.simSeconds)!==Number(simMeta.from))return {ok:false,reason:'time-conflict'};
-              commitAssets=measure('simulation.validate.asset-index',()=>new Map((state.assets||[]).map(asset=>[asset.id,asset])));
-              const assetsMatch=measure('simulation.validate.asset-guards',()=>((state.assets?.length||0)===assetSeeds.length&&commitAssets.size===assetSeeds.length&&records.length===assetSeeds.length&&!records.some(rec=>simulationAssetGuard(commitAssets.get(rec.id),false)!==rec.guard)));
+              commitAssets=usePrepared?null:measure('simulation.validate.asset-index',()=>new Map((state.assets||[]).map(asset=>[asset.id,asset])));
+              // Read-only backing rows plus the transaction revision make a
+              // prepared input immutable until this synchronous publication.
+              const assetsMatch=usePrepared?((state.assets?.length||0)===assetSeeds.length&&!duplicateAssetIds&&records.length===assetSeeds.length&&preparedAssets.length===assetSeeds.length):measure('simulation.validate.asset-guards',()=>((state.assets?.length||0)===assetSeeds.length&&commitAssets.size===assetSeeds.length&&records.length===assetSeeds.length&&!records.some(rec=>simulationAssetGuard(commitAssets.get(rec.id),false)!==rec.guard)));
               if(!assetsMatch)return {ok:false,reason:'asset-conflict'};
               const routesMatch=measure('simulation.validate.route-guards',()=>{for(const [routeId,guard] of routeGuards)if(JSON.stringify(routeTemplates[routeId]||null)!==guard)return false;return true;});
               if(!routesMatch)return {ok:false,reason:'route-conflict'};
               if(!measure('simulation.validate.context-guard',()=>simulationContextGuard()===contextGuard))return {ok:false,reason:'simulation-context-conflict'};
               if(!measure('simulation.validate.competitor-guards',()=>competitorAssets.length===competitorSeeds.length&&!competitorSeeds.some((seed,i)=>JSON.stringify(competitorAssets[i])!==seed.guard)))return {ok:false,reason:'competitor-conflict'};
+              if(usePreparedFinance){const financeValidation=measure('simulation.validate.finance-plan',()=>window.GH_FINANCE_CORE.validatePreparedSimulationJournal(state,preparedFinance));if(!financeValidation?.ok)return financeValidation||{ok:false,reason:'finance-prepared-journal-invalid'};}
               return {ok:true};
             },
             apply:measure=>{
               movingAssetCount=0;idleAssetCount=0;turnaroundAssetCount=0;
               state.simSeconds=simMeta.to;
-              measure('simulation.apply.asset-patches',()=>{for(const rec of records){
+              if(usePrepared){
+                measure('simulation.apply.asset-patches',()=>tx.publishAssetSection(state,preparedAssets));
+                mapStructureChanged=preparedMapChange;
+                movingAssetCount=preparedMoving;idleAssetCount=preparedIdle;turnaroundAssetCount=preparedTurnaround;
+                for(const row of preparedIsolations)diag('ASSET_SIMULATION_ISOLATED',row);
+              }else measure('simulation.apply.asset-patches',()=>{for(const rec of records){
                 const current=commitAssets.get(rec.id);
                 if(!current)throw new Error(`Atomic asset disappeared during commit: ${rec.id}`);
                 const planned=rec.patch||rec.draft;
                 if(planned.phase==='moving')movingAssetCount++;else if(planned.phase==='idle')idleAssetCount++;else if(planned.phase==='turnaround')turnaroundAssetCount++;
                 if(current.phase!==planned.phase||current.baseFacility!==planned.baseFacility||current.routeId!==planned.routeId||current.deliveryStatus!==planned.deliveryStatus)mapStructureChanged=true;
-                for(const field of SIMULATION_ASSET_FIELDS){const value=planned[field];current[field]=value&&typeof value==='object'?clone(value):value;}
+                const kernelAsset=window.GH_KERNEL?.isStateView?.(current)===true;
+                // The kernel stores ordinary row metadata behind the view, while
+                // only its numeric columns require the view's typed-array getter.
+                // Reading the same metadata through 21 proxy traps per asset is
+                // avoidable; all writes still go through the atomic owner view.
+                const storedRow=kernelAsset?window.GH_KERNEL.identityOf(current):current;
+                for(const field of SIMULATION_ASSET_FIELDS){
+                  const value=planned[field],storedOnRow=Object.prototype.hasOwnProperty.call(storedRow,field),previous=storedOnRow?storedRow[field]:current[field];
+                  if(storedOnRow||Object.prototype.hasOwnProperty.call(current,field)){
+                    if(Object.is(previous,value))continue;
+                    // Worker DTOs clone lastTrip/simulationFault even when their
+                    // contents did not change. Comparing the JSON-safe record
+                    // avoids an extra clone and a journaled row write per asset.
+                    if(previous&&value&&typeof previous==='object'&&typeof value==='object'){
+                      const stored=kernelAsset?window.GH_KERNEL.identityOf(previous):previous;
+                      if(Array.isArray(stored)===Array.isArray(value)){
+                        const oldText=JSON.stringify(stored),newText=JSON.stringify(value);
+                        if(oldText!==undefined&&oldText===newText)continue;
+                      }
+                    }
+                  }
+                  // The kernel writer clones object values into its undo-tracked
+                  // row; the legacy owner still takes its own defensive copy.
+                  current[field]=value&&typeof value==='object'&&!kernelAsset?clone(value):value;
+                }
                 if(planned.simulationFault?.code==='ASSET_SIMULATION_ISOLATED'&&planned.simulationFault.at===simMeta.from)diag('ASSET_SIMULATION_ISOLATED',{assetId:rec.id,reason:planned.simulationFault.detail});
-                mergeSimulationEffects(journal,rec.effects);
               }});
-              measure('simulation.apply.corporate-and-routes',()=>{for(const companyId of Object.keys(journal.tripCount))window.GH_CORPORATE_CORE?.model?.(state,companyId);
+              Object.assign(journal,preparedJournal);journal.alerts=preparedAlertItems||[];journal.alertOffset=preparedAlertOffset;
+              measure('simulation.apply.corporate-and-routes',()=>{if(corporateWorkPending)for(const companyId of (usePrepared?financeCompanyIds:Object.keys(journal.tripCount)))window.GH_CORPORATE_CORE?.model?.(state,companyId);
                 for(const routeId of new Set(journal.retiredRouteIds))if(!state.assets.some(asset=>asset.routeId===routeId)&&(state.customRoutes||[]).some(route=>route.id===routeId))window.GH_ROUTE_CORE.execute({state},'delete',{id:routeId});
                 for(let i=0;i<competitorAssets.length;i++)competitorAssets[i].progress=competitorSeeds[i].draft.progress;
               });
-              measure('simulation.apply.finance-journal',()=>window.GH_FINANCE_CORE.execute({state},'apply-simulation-journal',{journal}));
-              measure('simulation.apply.group-value',()=>window.GH_CORPORATE_CORE.execute({state},'adjust-group-value',{delta:Number(journal.groupValue)||0}));
-              measure('simulation.apply.alerts',()=>{for(const text of journal.alerts)window.GH_OPERATIONS_CORE.execute({state},'record-alert',{text,type:'simulation'});});
+              measure('simulation.apply.finance-journal',()=>window.GH_FINANCE_CORE.execute({state},'apply-simulation-journal',usePreparedFinance?{prepared:preparedFinance}:{journal}));
+              const groupValueDelta=Number(journal.groupValue)||0;if(groupValueDelta||!Number.isFinite(Number(state.groupValue))||Number(state.groupValue)<0)measure('simulation.apply.group-value',()=>window.GH_CORPORATE_CORE.execute({state},'adjust-group-value',{delta:groupValueDelta}));
+              if(journal.alerts.length)measure('simulation.apply.alerts',()=>window.GH_OPERATIONS_CORE.execute({state},'record-alerts',{items:journal.alerts,type:'simulation',ordinalOffset:journal.alertOffset}));
               // Delivery cadence is slice-based, not day-based. This keeps procurement responsive under ×1…×4
               // while remaining inside the same atomic transaction as time and asset state.
               const assetCountBeforeDelivery=state.assets.length;
               if(deliveryWorkPending&&window.GH_REALISM?.onSimulationTime)measure('simulation.apply.delivery-work',()=>window.GH_REALISM.onSimulationTime(state,simMeta.to));
               if(state.assets.length!==assetCountBeforeDelivery){mapStructureChanged=true;for(let index=assetCountBeforeDelivery;index<state.assets.length;index++){const phase=state.assets[index]?.phase;if(phase==='moving')movingAssetCount++;else if(phase==='idle')idleAssetCount++;else if(phase==='turnaround')turnaroundAssetCount++;}}
-              measure('simulation.apply.mobility-time',()=>window.GH_MOBILITY_CORE?.onSimulationTime?.({state},simMeta.to));
+              if(window.GH_MOBILITY_CORE?.hasSimulationWork?.(state)!==false)measure('simulation.apply.mobility-time',()=>window.GH_MOBILITY_CORE?.onSimulationTime?.({state},simMeta.to));
 
               // Boundary work is inside the SAME transaction as assets and time. A failure rolls all of it back.
               // Midnight closes the financial day first, then the hourly market checkpoint at the same timestamp.
@@ -2763,6 +2856,7 @@
             }
           });}catch(error){settleWorker('rollback');throw error;}
         if(!outcome.committed){settleWorker('rollback');return {committed:false,retry:true,reason:outcome.reason||'transaction-rejected'};}
+        if(usePreparedFinance)window.GH_FINANCE_CORE.consumePreparedSimulationJournal(state,preparedFinance);
         settleWorker('confirm');
         if(mapStructureChanged){const mapRevision=((Number(window.GH_MAP_STRUCTURE_REVISION)||0)+1)>>>0;window.GH_MAP_STRUCTURE_REVISION=mapRevision;window.GH_MAP_ASSET_STATUS_SUMMARY=Object.freeze({saveRevision:Number(state.saveRevision)||0,mapRevision,assetCount:state.assets.length,moving:movingAssetCount,idle:idleAssetCount,turn:turnaroundAssetCount});}
         for(const routeId of new Set(journal.retiredRouteIds))if(!BASE_ROUTE_IDS.has(routeId)&&!(state.customRoutes||[]).some(route=>route.id===routeId))delete routeTemplates[routeId];

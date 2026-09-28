@@ -5,6 +5,8 @@ const clone=v=>typeof globalThis.GH_CLONE_CORE?.clone==='function'?globalThis.GH
 const num=v=>Math.max(0,Number(v)||0), now=s=>Number(s.simSeconds)||0;
 let activeExecutionMeta=null,activeEnsureTarget=null,activeEnsureComplete=false;
 const collectionBatches=new WeakMap();
+const preparedSimulationJournals=new WeakMap();
+const SIMULATION_FINANCE_ROOTS=Object.freeze(['finance','sectorProfitToday','tripProfitAccrued','tripRevenueAccrued','tripFuelAccrued','tripMaintenanceAccrued','tripCountAccrued','openedCompanies','companyRegistry','companyFinance','companyPlatform']);
 const COLLECTION_PROFILES=Object.freeze({
  group:{channel:'تحويل تحصيل عملاء المجموعة',source:'مركز تحصيل المجموعة · العملاء المعتمدون',service:'خدمات المجموعة'},
  air:{channel:'تسوية حجوزات وتذاكر وشحن جوي',source:'مركز تحصيل الطيران · وكلاء الحجز والعملاء',service:'تذاكر منفذة وشحن جوي وحجوزات شركات'},
@@ -45,7 +47,7 @@ function metricNumber(value,label,id){
 // route, or sector mode.  This is what lets two companies share an operational
 // profile without sharing a book or a daily settlement bucket.
 function companyMetricMap(s,source={},label='company-metric',options={}){
- const ids=companyIds(s,{includeGroup:false}),allowed=new Set(ids),result=Object.fromEntries(ids.map(id=>[id,0]));
+ const ids=options.companyIds||companyIds(s,{includeGroup:false}),allowed=new Set(ids),result=Object.fromEntries(ids.map(id=>[id,0]));
  if(source==null)return result;if(typeof source!=='object'||Array.isArray(source))throw new Error(`finance-${label}-map-invalid`);
  for(const [id,raw] of Object.entries(source)){
   const value=metricNumber(raw,label,id);
@@ -61,6 +63,57 @@ function companyMetricMap(s,source={},label='company-metric',options={}){
   result[id]=value;
  }
  return result;
+}
+function sameMetricMap(source,normalized){
+ if(!source||typeof source!=='object'||Array.isArray(source))return false;
+ const keys=Object.keys(source),expected=Object.keys(normalized);if(keys.length!==expected.length)return false;
+ for(let index=0;index<keys.length;index++){const key=keys[index];if(key!==expected[index]||!Object.is(source[key],normalized[key]))return false;}
+ return true;
+}
+function simulationFinanceGuard(s){
+ const tx=globalThis.GH_TRANSACTION_CORE,stamp=globalThis.GH_KERNEL?.stampOf;
+ if(!tx?.isKernelOwner?.(s)||typeof tx.inputRevision!=='function'||typeof tx.sectionRevision!=='function'||typeof stamp!=='function')return null;
+ return {inputRevision:tx.inputRevision(s),todayProfit:s.todayProfit,roots:SIMULATION_FINANCE_ROOTS.map(name=>[name,tx.sectionRevision(s,name),stamp(s[name])])};
+}
+function sameSimulationFinanceGuard(s,guard){
+ const current=simulationFinanceGuard(s);if(!current||!guard||current.inputRevision!==guard.inputRevision||!Object.is(current.todayProfit,guard.todayProfit)||current.roots.length!==guard.roots.length)return false;
+ for(let index=0;index<current.roots.length;index++){const left=current.roots[index],right=guard.roots[index];if(left[0]!==right[0]||left[1]!==right[1]||left[2]!==right[2])return false;}
+ return true;
+}
+function prepareSimulationJournal(s,journal={}){
+ const tx=globalThis.GH_TRANSACTION_CORE;if(!s||typeof s!=='object'||tx?.isActive?.())return null;
+ if(!journal||typeof journal!=='object'||Array.isArray(journal))throw new Error('finance-simulation-journal-invalid');
+ const types=companyIds(s,{includeGroup:false}),stateMaps=[
+  [s.finance?.pendingDailyCash,'pending-daily-cash',{preserveLegacyZero:true}],
+  [s.sectorProfitToday,'sector-profit-today',{preserveLegacyZero:true}],
+  [s.tripProfitAccrued,'trip-profit',{}],
+  [s.tripRevenueAccrued,'trip-revenue',{nonNegative:true}],
+  [s.tripFuelAccrued,'trip-fuel',{nonNegative:true}],
+  [s.tripMaintenanceAccrued,'trip-maintenance',{nonNegative:true}],
+  [s.tripCountAccrued,'trip-count',{integer:true}]
+ ];
+ // A non-canonical save keeps the existing command path so ensure() performs
+ // its migrations and validation inside the transaction before any posting.
+ try{for(const [source,label,options] of stateMaps)if(!sameMetricMap(source,companyMetricMap(s,source,label,{...options,companyIds:types})))return null;}catch(_error){return null;}
+ const todayProfit=journal.todayProfit===undefined?0:metricNumber(journal.todayProfit,'simulation-today-profit','group'),sectorProfit=companyMetricMap(s,journal.sectorProfit,'simulation-sector-profit',{companyIds:types}),tripProfit=companyMetricMap(s,journal.tripProfit,'simulation-trip-profit',{companyIds:types}),tripRevenue=companyMetricMap(s,journal.tripRevenue,'simulation-trip-revenue',{nonNegative:true,companyIds:types}),tripFuel=companyMetricMap(s,journal.tripFuel,'simulation-trip-fuel',{nonNegative:true,companyIds:types}),tripMaintenance=companyMetricMap(s,journal.tripMaintenance,'simulation-trip-maintenance',{nonNegative:true,companyIds:types}),tripCount=companyMetricMap(s,journal.tripCount,'simulation-trip-count',{integer:true,companyIds:types}),cash=companyMetricMap(s,journal.cash,'simulation-cash',{companyIds:types}),guard=simulationFinanceGuard(s);
+ if(!guard)return null;
+ const rows=types.map(type=>Object.freeze([type,sectorProfit[type],tripProfit[type],tripRevenue[type],tripFuel[type],tripMaintenance[type],tripCount[type],cash[type]])),handle=Object.freeze({version:'GH-FINANCE-SIMULATION-PLAN-1.0.0'});
+ preparedSimulationJournals.set(handle,{state:s,guard,todayProfit,rows,consumed:false});return handle;
+}
+function validatePreparedSimulationJournal(s,handle){
+ const plan=preparedSimulationJournals.get(handle);
+ if(!plan||plan.state!==s)return {ok:false,reason:'finance-prepared-journal-invalid'};
+ if(plan.consumed)return {ok:false,reason:'finance-prepared-journal-consumed'};
+ if(!sameSimulationFinanceGuard(s,plan.guard))return {ok:false,reason:'finance-prepared-journal-conflict'};
+ return {ok:true};
+}
+function consumePreparedSimulationJournal(s,handle){
+ const plan=preparedSimulationJournals.get(handle);
+ if(!plan||plan.state!==s||plan.consumed)return false;
+ // Consumption is deliberately separate from publication. The simulation
+ // owner calls this only after its outer transaction has committed, so a later
+ // owner failure and rollback never strands the otherwise opaque plan as used.
+ plan.consumed=true;return true;
 }
 function documentProfile(s,t){const platform=globalThis.GH_COMPANY_PLATFORM;if(platform?.resolveDocumentProfile)return platform.resolveDocumentProfile(s,t);const registry=t==='group'?(s.profile||s.companyRegistry?.group||{}):(s.companyRegistry?.[t]||{});return {legalName:registry.legalName||registry.name||(t==='group'?s.profile?.name:null),documentPrefix:registry.documentPrefix||registry.finance?.documentPrefix||(t==='group'?'GH':t.toUpperCase()),accountPrefix:registry.accountPrefix||registry.finance?.accountPrefix||(t==='group'?'GH':t.toUpperCase())};}
 function bindSystemDocument(s,document,record,companyId){
@@ -109,14 +162,15 @@ function pruneOrphanFinanceBooks(s){
 function ensure(s){
  if(activeEnsureTarget===s&&activeEnsureComplete)return s.companyFinance;
  s.finance=s.finance&&typeof s.finance==='object'?s.finance:{};for(const k of ['invoices','payables','receivables','cheques','periods','journalEntries','transfers','payrollReports','dailyCompanyReports','taxSettlements','debtRecords','debtSettlements','intercompanyLoans','intercompanyLoanSettlements','cashPoolSweeps'])s.finance[k]=Array.isArray(s.finance[k])?s.finance[k]:[];
- s.finance.pendingDailyCash=companyMetricMap(s,s.finance.pendingDailyCash,'pending-daily-cash',{preserveLegacyZero:true});
- s.sectorProfitToday=companyMetricMap(s,s.sectorProfitToday,'sector-profit-today',{preserveLegacyZero:true});
- s.tripProfitAccrued=companyMetricMap(s,s.tripProfitAccrued,'trip-profit');
- s.tripRevenueAccrued=companyMetricMap(s,s.tripRevenueAccrued,'trip-revenue',{nonNegative:true});
- s.tripFuelAccrued=companyMetricMap(s,s.tripFuelAccrued,'trip-fuel',{nonNegative:true});
- s.tripMaintenanceAccrued=companyMetricMap(s,s.tripMaintenanceAccrued,'trip-maintenance',{nonNegative:true});
- s.tripCountAccrued=companyMetricMap(s,s.tripCountAccrued,'trip-count',{integer:true});
- if(s.lastClosedSectorProfit!==undefined)s.lastClosedSectorProfit=companyMetricMap(s,s.lastClosedSectorProfit,'last-closed-sector-profit');
+ const activeCompanies=companyIds(s,{includeGroup:false});
+ s.finance.pendingDailyCash=companyMetricMap(s,s.finance.pendingDailyCash,'pending-daily-cash',{preserveLegacyZero:true,companyIds:activeCompanies});
+ s.sectorProfitToday=companyMetricMap(s,s.sectorProfitToday,'sector-profit-today',{preserveLegacyZero:true,companyIds:activeCompanies});
+ s.tripProfitAccrued=companyMetricMap(s,s.tripProfitAccrued,'trip-profit',{companyIds:activeCompanies});
+ s.tripRevenueAccrued=companyMetricMap(s,s.tripRevenueAccrued,'trip-revenue',{nonNegative:true,companyIds:activeCompanies});
+ s.tripFuelAccrued=companyMetricMap(s,s.tripFuelAccrued,'trip-fuel',{nonNegative:true,companyIds:activeCompanies});
+ s.tripMaintenanceAccrued=companyMetricMap(s,s.tripMaintenanceAccrued,'trip-maintenance',{nonNegative:true,companyIds:activeCompanies});
+ s.tripCountAccrued=companyMetricMap(s,s.tripCountAccrued,'trip-count',{integer:true,companyIds:activeCompanies});
+ if(s.lastClosedSectorProfit!==undefined)s.lastClosedSectorProfit=companyMetricMap(s,s.lastClosedSectorProfit,'last-closed-sector-profit',{companyIds:activeCompanies});
  s.finance.paymentSequence=Math.max(1,Math.floor(Number(s.finance.paymentSequence)||1));s.finance.invoiceSequence=Math.max(1,Math.floor(Number(s.finance.invoiceSequence)||1));s.finance.taxSettlementSequence=Math.max(1,Math.floor(Number(s.finance.taxSettlementSequence)||1));s.finance.debtSettlementSequence=Math.max(1,Math.floor(Number(s.finance.debtSettlementSequence)||1));
  if(!Number.isSafeInteger(Number(s.finance.journalSequence))||Number(s.finance.journalSequence)<0){const archived=s.finance.auditArchive?.records?.journalEntries,rows=[...s.finance.journalEntries,...(Array.isArray(archived)?archived:[])],digestMax=(s.finance.auditArchive?.digests||[]).filter(d=>d?.kind==='journalEntries').reduce((max,d)=>Math.max(max,Number(d?.maxSequence)||0),0);s.finance.journalSequence=Math.max(digestMax,rows.reduce((max,row)=>{const match=/^JE-(\d+)$/.exec(String(row?.id||''));return match?Math.max(max,Number(match[1])||0):max;},0));}else s.finance.journalSequence=Math.floor(Number(s.finance.journalSequence));
  s.treasury=s.treasury&&typeof s.treasury==='object'?s.treasury:{accounts:[],ledger:[],paymentQueue:[]};s.treasury.accounts=Array.isArray(s.treasury.accounts)?s.treasury.accounts:[];s.treasury.ledger=Array.isArray(s.treasury.ledger)?s.treasury.ledger:[];
@@ -504,7 +558,7 @@ function monthlyStatement(s,{months=12}={}){
 
 function applySimulationJournal(s,p={}){
   ensure(s);const j=p.journal===undefined?{}:p.journal;if(!j||typeof j!=='object'||Array.isArray(j))throw new Error('finance-simulation-journal-invalid');
-  const types=companyIds(s,{includeGroup:false}),todayProfit=j.todayProfit===undefined?0:metricNumber(j.todayProfit,'simulation-today-profit','group'),sectorProfit=companyMetricMap(s,j.sectorProfit,'simulation-sector-profit'),tripProfit=companyMetricMap(s,j.tripProfit,'simulation-trip-profit'),tripRevenue=companyMetricMap(s,j.tripRevenue,'simulation-trip-revenue',{nonNegative:true}),tripFuel=companyMetricMap(s,j.tripFuel,'simulation-trip-fuel',{nonNegative:true}),tripMaintenance=companyMetricMap(s,j.tripMaintenance,'simulation-trip-maintenance',{nonNegative:true}),tripCount=companyMetricMap(s,j.tripCount,'simulation-trip-count',{integer:true}),cash=companyMetricMap(s,j.cash,'simulation-cash');
+  const types=companyIds(s,{includeGroup:false}),todayProfit=j.todayProfit===undefined?0:metricNumber(j.todayProfit,'simulation-today-profit','group'),sectorProfit=companyMetricMap(s,j.sectorProfit,'simulation-sector-profit',{companyIds:types}),tripProfit=companyMetricMap(s,j.tripProfit,'simulation-trip-profit',{companyIds:types}),tripRevenue=companyMetricMap(s,j.tripRevenue,'simulation-trip-revenue',{nonNegative:true,companyIds:types}),tripFuel=companyMetricMap(s,j.tripFuel,'simulation-trip-fuel',{nonNegative:true,companyIds:types}),tripMaintenance=companyMetricMap(s,j.tripMaintenance,'simulation-trip-maintenance',{nonNegative:true,companyIds:types}),tripCount=companyMetricMap(s,j.tripCount,'simulation-trip-count',{integer:true,companyIds:types}),cash=companyMetricMap(s,j.cash,'simulation-cash',{companyIds:types});
   s.todayProfit=(Number(s.todayProfit)||0)+todayProfit;
   for(const type of types){
     s.sectorProfitToday[type]+=sectorProfit[type];
@@ -515,7 +569,25 @@ function applySimulationJournal(s,p={}){
     s.tripCountAccrued[type]+=tripCount[type];
     if(cash[type])s.finance.pendingDailyCash[type]+=cash[type];
   }
-  reconcile(s);return {todayProfit:Number(s.todayProfit)||0,cash:Number(s.cash)||0};
+  // execute() has already normalized and reconciled the books. This command
+  // posts to period accruals and pending cash; no account, debt, or tax balance
+  // changes until the daily settlement. Rewalking every book here repeated the
+  // same company-platform lookup on every simulation slice.
+  return {todayProfit:Number(s.todayProfit)||0,cash:Number(s.cash)||0};
+}
+function applyPreparedSimulationJournal(s,handle){
+ const tx=globalThis.GH_TRANSACTION_CORE,validation=validatePreparedSimulationJournal(s,handle),plan=preparedSimulationJournals.get(handle);
+ if(!tx?.isActive?.())throw new Error('finance-prepared-journal-transaction-required');
+ if(!validation.ok)throw new Error(validation.reason);
+ // Recheck immediately before the first write. Section revisions do not move
+ // until commit, while the kernel stamps also detect an earlier writer inside
+ // this same open transaction.
+ if(!sameSimulationFinanceGuard(s,plan.guard))throw new Error('finance-prepared-journal-conflict');
+ s.todayProfit=(Number(s.todayProfit)||0)+plan.todayProfit;
+ for(const row of plan.rows){const [type,sectorProfit,tripProfit,tripRevenue,tripFuel,tripMaintenance,tripCount,cash]=row;
+  s.sectorProfitToday[type]+=sectorProfit;s.tripProfitAccrued[type]+=tripProfit;s.tripRevenueAccrued[type]+=tripRevenue;s.tripFuelAccrued[type]+=tripFuel;s.tripMaintenanceAccrued[type]+=tripMaintenance;s.tripCountAccrued[type]+=tripCount;if(cash)s.finance.pendingDailyCash[type]+=cash;
+ }
+ return {todayProfit:Number(s.todayProfit)||0,cash:Number(s.cash)||0};
 }
 function initializeCapital(s,p){
  const capital=Number(p.capital);if(!Number.isFinite(capital)||capital<=0)throw new Error('invalid-initial-capital');
@@ -536,9 +608,10 @@ function execute(ctx,cmd,p={},meta={}){
  const s=ctx.state||ctx,previousMeta=activeExecutionMeta,previousEnsureTarget=activeEnsureTarget,previousEnsureComplete=activeEnsureComplete;
  activeExecutionMeta={...meta,name:cmd};activeEnsureTarget=s;activeEnsureComplete=false;
  try{
-  // Capital initialization replaces the finance roots, so its own ensure must be
+ // Capital initialization replaces the finance roots, so its own ensure must be
   // the first one in this command and must invalidate any transaction memo indexes.
   if(cmd==='initialize-capital')return initializeCapital(s,p);
+  if(cmd==='apply-simulation-journal'&&p?.prepared!==undefined)return applyPreparedSimulationJournal(s,p.prepared);
   ensure(s);activeEnsureComplete=true;
   switch(cmd){
    case'ensure':return ensure(s);
@@ -582,5 +655,5 @@ function execute(ctx,cmd,p={},meta={}){
   }
  }finally{activeExecutionMeta=previousMeta;activeEnsureTarget=previousEnsureTarget;activeEnsureComplete=previousEnsureComplete;}
 }
-const API={VERSION,COMPANY_METRIC_KEYSPACE:'company-instance-id/v1',annualPerformance,TYPES,companyIds,supportsCompany,requireCompany,companyMetricMap,collectionProfile,ensure,makeBook,book,operating,total,budget,remaining,lineRemaining,lineFor,canSpend,consumeBudget,reserveBudget,consumeReserved,releaseReserved,reconcile,journal,invoice,issueInvoice,payByCheque,performance,monthlyStatement,calendarMonthForDay,centralTreasuryPolicy,intercompanyLoanSnapshot,closeVatPeriod,withCollectionBatch,execute};globalThis.GH_FINANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('finance',API);if(globalThis.window&&window!==globalThis)window.GH_FINANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+const API={VERSION,COMPANY_METRIC_KEYSPACE:'company-instance-id/v1',annualPerformance,TYPES,companyIds,supportsCompany,requireCompany,companyMetricMap,collectionProfile,ensure,makeBook,book,operating,total,budget,remaining,lineRemaining,lineFor,canSpend,consumeBudget,reserveBudget,consumeReserved,releaseReserved,reconcile,journal,invoice,issueInvoice,payByCheque,performance,monthlyStatement,calendarMonthForDay,centralTreasuryPolicy,intercompanyLoanSnapshot,closeVatPeriod,withCollectionBatch,prepareSimulationJournal,validatePreparedSimulationJournal,consumePreparedSimulationJournal,execute};globalThis.GH_FINANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('finance',API);if(globalThis.window&&window!==globalThis)window.GH_FINANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

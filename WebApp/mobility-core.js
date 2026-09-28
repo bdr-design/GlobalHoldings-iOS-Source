@@ -360,6 +360,10 @@
     m.kpis.completionRate=m.kpis.requests?Math.round(m.kpis.completed/m.kpis.requests*1000)/10:100;
     return snapshot(state);
   }
+  // Pure admission query for the simulation owner. Missing or legacy Mobility
+  // data takes the normal path once so ensure() can preserve migration parity;
+  // only an already-normalized empty fleet can safely skip clock work.
+  function hasSimulationWork(state){const mobility=state?.mobility;return !mobility||!Array.isArray(mobility.vehicles)||mobility.vehicles.length>0;}
   // Mobility creates/completes work at sub-hour timestamps. Preserve the former
   // calendar polling ceiling while the service is active; inactive Mobility does
   // not force the rest of the group back to 600-second transactions.
@@ -403,5 +407,5 @@
     return `<article class="list-item"><div class="list-item-head"><div><h3>ربحية المدن</h3><p>كل مدينة مركز مستقل ماليًا وتشغيليًا؛ هذا ما جنته فعليًا حتى الآن، وليس تقديرًا.</p></div><span class="tag">${rows.length} مدينة نشطة</span></div>${rows.map(c=>`<div class="spec-row"><span>${ctx.esc?ctx.esc(c.city):c.city} · ${c.fin.vehicles} مركبة · ${c.fin.completed} رحلة</span><b class="${c.fin.platformRevenue>=0?'positive':'negative'}">${money(c.fin.platformRevenue)}</b></div>`).join('')}</article>`;
   }
   function execute(ctx,cmd,p={}){if(cmd==='buy-fleet')return buyFleet(ctx,p);if(cmd==='service-vehicle')return serviceVehicle(ctx,p);if(cmd==='sell-vehicle')return sellVehicle(ctx,p);if(cmd==='cache-street-route')return cacheStreetRoute(ctx,p);if(cmd==='launch')return launch(ctx);throw new Error(`Unknown Mobility command: ${cmd}`);}
-  const API={VERSION,purchaseCatalogs,ROUTE_WAIT_TIMEOUT_SECONDS,ZONES,CLASSES,CAPITALS,mobilityOwnerCompanyId,mapStructureRevision:()=>mapStructureVersion,ensure,launch,buyFleet,onSimulationTime,simulationSliceLimit,snapshot,centerSnapshot,centerClusters,liveVehicles,movingClusters,vehiclePosition,pendingStreetRoutes,cacheStreetRoute,routePosition,urbanPath,zonesFor,capitalMeta,centerMeta,findVehicle,serviceVehicle,sellVehicle,render,renderFleet,execute};globalThis.GH_MOBILITY_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('mobility',API);if(globalThis.window&&window!==globalThis)window.GH_MOBILITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API={VERSION,purchaseCatalogs,ROUTE_WAIT_TIMEOUT_SECONDS,ZONES,CLASSES,CAPITALS,mobilityOwnerCompanyId,mapStructureRevision:()=>mapStructureVersion,ensure,launch,buyFleet,onSimulationTime,hasSimulationWork,simulationSliceLimit,snapshot,centerSnapshot,centerClusters,liveVehicles,movingClusters,vehiclePosition,pendingStreetRoutes,cacheStreetRoute,routePosition,urbanPath,zonesFor,capitalMeta,centerMeta,findVehicle,serviceVehicle,sellVehicle,render,renderFleet,execute};globalThis.GH_MOBILITY_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('mobility',API);if(globalThis.window&&window!==globalThis)window.GH_MOBILITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
