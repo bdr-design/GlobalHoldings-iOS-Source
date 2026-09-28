@@ -7,8 +7,8 @@ const ROOT=path.resolve(__dirname,'..');
 const read=p=>fs.readFileSync(path.join(ROOT,p),'utf8');
 
 const build=Number(read('BUILD').trim());
-assert.equal(build,342,'Build 342 identity drifted');
-assert.equal(read('VERSION').trim(),'3.0.0','VERSION drifted');
+assert.equal(build,343,'Build 343 identity drifted');
+assert.equal(read('VERSION').trim(),'3.0.1','VERSION drifted');
 const project=read('project.yml');
 assert.match(project,new RegExp(`CURRENT_PROJECT_VERSION:\\s*["']?${build}["']?`),'native project build drifted');
 assert.match(project,new RegExp(`CFBundleVersion:\\s*["']?${build}["']?`),'native bundle build drifted');
@@ -16,7 +16,7 @@ const app=read('WebApp/app.js');
 assert.match(app,new RegExp(`const RUNTIME_BUILD\\s*=\\s*${build}\\s*;`),'WebApp runtime build drifted');
 assert.match(app,/const SAVE_SCHEMA_VERSION\s*=\s*['"]2\.0\.0['"]\s*;/,'Save Schema changed during bootstrap');
 const pkg=JSON.parse(read('package.json'));
-assert.equal(pkg.version,`3.0.0-build${build}`,'package build identity drifted');
+assert.equal(pkg.version,`3.0.1-build${build}`,'package build identity drifted');
 const gate=JSON.parse(read('RELEASE_GATE.json'));
 assert.equal(gate.build,build);assert.equal(gate.approved,false);assert.equal(gate.save_schema,'2.0.0');
 

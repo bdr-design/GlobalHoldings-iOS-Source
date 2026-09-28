@@ -7,6 +7,7 @@ const {ROOT}=require('./helpers/core-harness');
 const {scenario}=require('./helpers/business-scenario');
 const GH_KERNEL=require('../WebApp/kernel-core.js');
 const GH_SIMULATION_ASSET_CORE=require('../WebApp/simulation-asset-core.js');
+const GH_DIAGNOSTICS=require('../WebApp/diagnostics-core.js');
 
 const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8');
 function fragment(start,end){const a=app.indexOf(start),b=app.indexOf(end,a);assert(a>=0&&b>a,`missing app simulation fragment: ${start}`);return app.slice(a,b);}
@@ -86,6 +87,44 @@ function preparedOwnerJob(env){
     if(result===true)return job;
   }
   throw new Error('owner-slice-planning-did-not-finish');
+}
+
+// Field capture exposed a self-conflict: diagnostics.ensure() assigned unchanged
+// values to the live view, whose empty kernel commits still advanced inputRevision.
+// An in-flight slice must survive recorder traffic, but not a real asset edit.
+{
+  const env=makeEnvironment(true,2),tx=env.s.GH_TRANSACTION_CORE,state=env.state;
+  GH_DIAGNOSTICS.recorderStart(state,{frames:0,speed:30},{nowMs:Date.now()});
+  const job=preparedOwnerJob(env),inputBefore=tx.inputRevision(state),sectionBefore=tx.sectionRevision(state,'diagnostics'),assetIdentity=state.assets;
+  const emptyCommit=tx.execute(state,{label:'diagnostics-noop',scope:['diagnostics'],apply:()=>{state.diagnostics.lastHealth=state.diagnostics.lastHealth;}});
+  assert.equal(emptyCommit.committed,true);
+  assert.equal(tx.inputRevision(state),inputBefore,'an empty kernel transaction cannot invalidate the prepared slice');
+  assert.equal(tx.sectionRevision(state,'diagnostics'),sectionBefore,'an empty kernel transaction cannot advance a section revision');
+  for(let index=1;index<=25;index++){
+    GH_DIAGNOSTICS.record(state,'SIM_GOVERNOR',{level:'GREEN'});
+    GH_DIAGNOSTICS.recorderSample(state,{frames:index,speed:30,governor:'GREEN'},{nowMs:Date.now()+index*100});
+  }
+  assert.equal(tx.inputRevision(state),inputBefore,'read-only recorder sampling must not invalidate simulation input');
+  assert.equal(state.assets,assetIdentity,'diagnostic activity must preserve the prepared asset source');
+  assert(tx.sectionRevision(state,'diagnostics')>sectionBefore,'real diagnostic events still advance their own section revision');
+  const priorSaveRevision=state.saveRevision;
+  state.saveRevision=priorSaveRevision+1;
+  assert.equal(tx.inputRevision(state),inputBefore,'an ordinary-save revision alone does not change simulation input');
+  assert.equal(tx.sectionRevision(state,'saveRevision'),1,'the save section still tracks its own real write');
+  assert.equal(job.finish().committed,true,'prepared simulation slice commits despite diagnostic recorder sampling');
+
+  const conflicting=preparedOwnerJob(env),inputAfterPrepare=tx.inputRevision(state);
+  state.assets[0].fuel-=1;
+  assert(tx.inputRevision(state)>inputAfterPrepare,'real asset edits must still invalidate simulation input');
+  const rejected=conflicting.finish();assert.equal(rejected.committed,false);assert.equal(rejected.reason,'simulation-source-revision-conflict');
+  assert.equal(state.simSeconds,30,'rejected slice leaves the last committed simulation time unchanged');
+
+  const mixed=preparedOwnerJob(env),inputBeforeMixed=tx.inputRevision(state),cashRevision=tx.sectionRevision(state,'cash');
+  tx.execute(state,{label:'mixed-save-finance',scope:['saveRevision'],apply:()=>{state.saveRevision++;state.cash+=1;}});
+  assert(tx.inputRevision(state)>inputBeforeMixed,'a save plus finance transaction remains a gameplay conflict');
+  assert(tx.sectionRevision(state,'cash')>cashRevision,'actual kernel dirty roots override a narrower declared scope');
+  const mixedRejected=mixed.finish();assert.equal(mixedRejected.committed,false);assert.equal(mixedRejected.reason,'simulation-source-revision-conflict');
+  assert.equal(state.simSeconds,30,'a mixed save and finance write cannot partially publish a prepared slice');
 }
 
 // Raw metadata and its descriptors cannot bypass the transaction revision.

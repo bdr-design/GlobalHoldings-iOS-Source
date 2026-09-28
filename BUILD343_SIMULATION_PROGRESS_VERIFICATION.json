@@ -1,0 +1,73 @@
+{
+  "report": "Build 343 simulation progress and save performance experimental verification",
+  "build": 343,
+  "version": "3.0.1",
+  "save_schema": "2.0.0",
+  "release_approved": false,
+  "repository_branch": "fix/build343-simulation-progress",
+  "source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
+  "webapp_tree_sha256": "41ff981f2c0733b7749eb02843e1d29d93b0b0dde0475e9113c4b3e029c48ff3",
+  "base_build342_commit": "1235cdf3071d648ccb35cb2a53db10798886b1bc",
+  "input_diagnostic": {
+    "app_version": "3.0.0",
+    "recorder_build": 342,
+    "assets": 1800,
+    "recording_ms": 209811,
+    "game_time_advanced_seconds": 90,
+    "slice_conflicts": 138,
+    "slice_cancellations": 140,
+    "manual_advance_failures": 6,
+    "estimated_missed_frames": 512,
+    "visible_frame_intervals": 10217,
+    "estimated_missed_share_percent": 4.77,
+    "janky_frames": 316,
+    "p95_frame_interval_ms": 23.25,
+    "max_frame_interval_ms": 767,
+    "last_ordinary_save_sync_ms": 199,
+    "saved_utf8_bytes": 8015765,
+    "source_sha_in_diagnostic": false,
+    "iPhone_build343_measured": false
+  },
+  "changes": [
+    "No-op kernel commits no longer advance input revisions; actual dirty roots guard gameplay writes.",
+    "The diagnostics tree avoids unchanged assignments and health checks report actual engine backlog, conflicts, failed calendar advancement and stalls.",
+    "Ordinary kernel-owned saves may reuse signed-proof verification only while the proof-input root digest and reset epoch remain unchanged."
+  ],
+  "local_verification": {
+    "diagnostic_slice_conflict_regression": "PASS_SMALL_PREPARED_JOB",
+    "ordinary_save_proof_tamper_rollback": "PASS_NODE_FIXTURE",
+    "simulation_health_snapshot": "PASS_NODE_FIXTURE",
+    "full_acceptance": "PENDING_MACOS_CI",
+    "signed_device_trace": "NOT_TESTED",
+    "kernel_shadow_app_ten_days_3380_assets": "PASS_NODE_PARITY_240_COMMITS",
+    "kernel_owner_day_boundary_128_assets": "PASS_NODE_PARITY_24_COMMITS",
+    "kernel_fault_injection": "PASS_10000_CASES",
+    "source_layout": "PASS_11_OF_11"
+  },
+  "performance_acceptance": {
+    "target_max_stage_ms": 5,
+    "measured_iphone_build343": false,
+    "meets_target": null,
+    "production_approved": false
+  },
+  "synthetic_node_performance": {
+    "limits": "Node v24.19.0 controlled air/finance workload; excludes DOM, native saves, WKWebView and physical iPhone",
+    "assets_1800": {
+      "slices": 24,
+      "chunk_budget_ms": 4,
+      "chunk_p95_ms": 2.73,
+      "chunk_max_ms": 8.15,
+      "finish_p95_ms": 1.67,
+      "finish_max_ms": 3.98
+    },
+    "assets_3380": {
+      "slices": 24,
+      "chunk_budget_ms": 4,
+      "chunk_p95_ms": 3.04,
+      "chunk_max_ms": 14.74,
+      "finish_p95_ms": 2.43,
+      "finish_max_ms": 5.88
+    },
+    "max_stage_under_5ms_verified": false
+  }
+}

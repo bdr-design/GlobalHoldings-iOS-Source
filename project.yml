@@ -8,8 +8,8 @@ settings:
     SWIFT_VERSION: 5.0
     IPHONEOS_DEPLOYMENT_TARGET: 17.0
     TARGETED_DEVICE_FAMILY: "1"
-    MARKETING_VERSION: "3.0.0"
-    CURRENT_PROJECT_VERSION: "342"
+    MARKETING_VERSION: "3.0.1"
+    CURRENT_PROJECT_VERSION: "343"
 targets:
   GlobalHoldings:
     type: application
@@ -25,9 +25,9 @@ targets:
       properties:
         CFBundleDisplayName: "Global Holdings"
         CFBundleIconName: "AppIcon"
-        CFBundleShortVersionString: "3.0.0"
-        CFBundleVersion: "342"
-        GHSourceSnapshotSHA256: e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674
+        CFBundleShortVersionString: "3.0.1"
+        CFBundleVersion: "343"
+        GHSourceSnapshotSHA256: 41ff981f2c0733b7749eb02843e1d29d93b0b0dde0475e9113c4b3e029c48ff3
         LSRequiresIPhoneOS: true
         UIRequiresFullScreen: true
         UILaunchStoryboardName: LaunchScreen

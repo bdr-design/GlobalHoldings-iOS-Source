@@ -115,7 +115,7 @@ final class GlobalGameStorage {
     var hasPreviousVersion: Bool { fileManager.fileExists(atPath: previousWebURL.path) }
 
     var bundledVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "3.0.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "3.0.1"
     }
 
     var bundledBuild: Int {

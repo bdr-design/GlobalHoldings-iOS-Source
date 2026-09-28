@@ -1,5 +1,5 @@
 'use strict';
-// Run with: node tests/build342-asset-frame-benchmark.cjs
+// Run with: node tests/build342-asset-frame-benchmark.cjs [fleet-size]
 // Synthetic Node timing only. Run a separate WKWebView/iPhone trace for approval.
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -13,7 +13,8 @@ const GH_SIMULATION_ASSET_CORE=require('../WebApp/simulation-asset-core.js');
 const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8');
 function fragment(start,end){const a=app.indexOf(start),b=app.indexOf(end,a);assert(a>=0&&b>a,`missing app simulation fragment: ${start}`);return app.slice(a,b);}
 const route={id:'B342-R',type:'air',routeMode:'air',ownerCompanyId:'air',from:'Riyadh',to:'Jeddah',fromFacility:'F-A',toFacility:'F-B',distanceKm:100,effectiveSpeedKmh:100,tripSeconds:4000,dwellHours:.1};
-const count=3380,hours=10*24,ownerParityHours=1,longOwnerParityHours=24,longOwnerAssetCount=128;
+const count=Number(process.argv[2]||3380),hours=10*24,ownerParityHours=1,longOwnerParityHours=24,longOwnerAssetCount=128;
+assert(Number.isSafeInteger(count)&&count>0&&count<=10000,'fleet-size must be 1..10000');
 
 function makeEnvironment(kernelOwner=false,assetCount=count){
   const e=scenario();e.manualPurchase(1);e.s.GH_REALISM.onSimulationTime(e.state,60);
@@ -51,7 +52,7 @@ function makeEnvironment(kernelOwner=false,assetCount=count){
 
 
 const {performance}=require('node:perf_hooks');
-for(const fleet of [3380]){
+for(const fleet of [count]){
   const e=makeEnvironment(true,fleet),t=e.s.GH_TRANSACTION_CORE,rows=[],allChunks=[];e.s.GH_DIAGNOSTICS={recorderIsActive:()=>true};
   for(let hour=0;hour<24;hour++){
     const from=e.state.simSeconds,to=from+30,created=performance.now(),job=e.s.createSimulationSliceJob(30,{from,to,speed:30,boundary:{day:null,hour:null}}),createMs=performance.now()-created;
@@ -60,7 +61,7 @@ for(const fleet of [3380]){
     assert.equal(outcome.committed,true,JSON.stringify(outcome));rows.push({createMs,planMs,finishMs,turns,chunkMax:Math.max(...chunks),phases:(t.telemetry().lastSimulation?.phaseBreakdown||[]).filter(x=>x.durationMs>1).map(x=>[x.name,+x.durationMs.toFixed(2)])});
   }
   const sum=k=>rows.reduce((n,v)=>n+v[k],0),sort=k=>rows.map(v=>v[k]).sort((a,b)=>a-b),orderedChunks=allChunks.sort((a,b)=>a-b);
-  console.log(JSON.stringify({environment:`Node ${process.version}; controlled synthetic finance, 3,380 air assets, no DOM/native/iPhone`,fleet,slices:rows.length,chunkBudgetMs:4,
+  console.log(JSON.stringify({environment:`Node ${process.version}; controlled synthetic finance, ${fleet.toLocaleString('en-US')} air assets, no DOM/native/iPhone`,fleet,slices:rows.length,chunkBudgetMs:4,
     createTotalMs:+sum('createMs').toFixed(1),planningTotalMs:+sum('planMs').toFixed(1),
     chunkP95Ms:+orderedChunks[Math.floor(orderedChunks.length*.95)].toFixed(2),chunkMaxMs:+orderedChunks.at(-1).toFixed(2),
     finishP50Ms:+sort('finishMs')[12].toFixed(2),finishP95Ms:+sort('finishMs')[22].toFixed(2),finishMaxMs:+sort('finishMs').at(-1).toFixed(2),

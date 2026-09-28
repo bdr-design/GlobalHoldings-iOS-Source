@@ -75,7 +75,7 @@
         return target;
       }finally{owner.transactionDepth--;}
     });
-    owner.transactions++;owner.lastCommit={label:'state-owner:atomic-replace',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};{const __names=result.dirty.length?result.dirty:['*'];advanceSectionRevisions(target,__names);noteObservabilityCommit(target,__names);}advanceRevision(target);return target;
+    owner.transactions++;owner.lastCommit={label:'state-owner:atomic-replace',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};if(result.dirty.length){advanceSectionRevisions(target,result.dirty);noteObservabilityCommit(target,result.dirty);advanceRevision(target);}return target;
   }
   function sameOrder(keys,expected){return keys.length===expected.length&&keys.every((key,index)=>key===expected[index]);}
   function restoreRootOrder(target,rootOrder){
@@ -88,11 +88,10 @@
   }
   function isActive(){return !!activeContext;}
   function revision(target){return target&&typeof target==='object'?targetRevisions.get(target)||0:0;}
-  // Sections written only for observability. A commit that touches nothing
-  // else must not invalidate in-flight simulation work: slices read gameplay
-  // state, never diagnostics (measured: ~90% of slice conflicts were a
-  // diagnostics-only write discarding an otherwise valid slice).
-  const OBSERVABILITY_ONLY_SECTIONS=new Set(['diagnostics']);
+  // Diagnostics and the ordinary-save counter do not enter an in-flight
+  // simulation slice. A commit touching only these roots must not discard the
+  // prepared work; any gameplay root in the same commit still invalidates it.
+  const OBSERVABILITY_ONLY_SECTIONS=new Set(['diagnostics','saveRevision']);
   const observabilityRevisions=new WeakMap();
   function noteObservabilityCommit(target,names){if(!target||typeof target!=='object')return;const list=(names||[]).map(String);if(list.length&&list.every(name=>OBSERVABILITY_ONLY_SECTIONS.has(name)))observabilityRevisions.set(target,(observabilityRevisions.get(target)||0)+1);}
   // inputRevision: the global revision minus observability-only commits. Any
@@ -144,7 +143,7 @@
     }
     kernel.releaseRegisteredBase();const initial=kernel.compareLegacy(target);if(!initial.ok)throw new Error(`state-kernel-owner-bootstrap-mismatch:${initial.path||'$'}`);
     let state;const owner={kernel,transactionDepth:0,transactions:0,rollbacks:0,lastCommit:null};
-    state=kernel.stateView({onCommit:result=>{owner.transactions++;owner.lastCommit={label:'state-view:single-write',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};{const __names=result.dirty.length?result.dirty:['*'];advanceSectionRevisions(state,__names);noteObservabilityCommit(state,__names);}advanceRevision(state);}});
+    state=kernel.stateView({onCommit:result=>{owner.transactions++;owner.lastCommit={label:'state-view:single-write',revision:result.revision,undoRecords:result.undoRecords,ms:result.ms,dirty:result.dirty};if(result.dirty.length){advanceSectionRevisions(state,result.dirty);noteObservabilityCommit(state,result.dirty);advanceRevision(state);}}});
     kernelOwners.set(state,owner);targetRevisions.set(state,0);targetSectionRevisions.set(state,new Map());return state;
   }
   function kernelOwnerStatus(target){
@@ -415,7 +414,7 @@
         try{outcome=executeCore(target,{...options,kernelManaged:true});if(!outcome?.committed)throw new KernelTransactionRejected(outcome);return outcome;}
         finally{owner.transactionDepth--;}
       });
-      owner.transactions++;owner.lastCommit={label,revision:kernelCommit.revision,undoRecords:kernelCommit.undoRecords,ms:kernelCommit.ms,dirty:kernelCommit.dirty};{const __names=normalizeWriteRoots(options.writeRoots)||normalizeScope(options.scope)||kernelCommit.dirty||['*'];advanceSectionRevisions(target,__names);noteObservabilityCommit(target,__names);}advanceRevision(target);
+      owner.transactions++;owner.lastCommit={label,revision:kernelCommit.revision,undoRecords:kernelCommit.undoRecords,ms:kernelCommit.ms,dirty:kernelCommit.dirty};if(kernelCommit.dirty.length){advanceSectionRevisions(target,kernelCommit.dirty);noteObservabilityCommit(target,kernelCommit.dirty);advanceRevision(target);}
       const metric=runtimeTelemetry.last;if(metric?.label===label){Object.assign(metric,{rollbackStorage:'kernel-journal',fullSnapshot:false,fullSnapshotFallback:false,snapshotMs:0,kernelCommitMs:kernelCommit.ms,kernelUndoRecords:kernelCommit.undoRecords,kernelDirtySections:kernelCommit.dirty});}
       return outcome;
     }catch(error){

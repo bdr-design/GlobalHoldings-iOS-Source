@@ -1,6 +1,6 @@
 {
   "authorized_at": "2026-09-26",
-  "build": 342,
+  "build": 343,
   "known_limits": [
     "CI run 36331263988 on c3421813cfbc76c798751be5c9e96869e620ad38 passed source/package integrity and unchanged Build341 baseline 124/124; Build342 acceptance was 143/144. The bounded Worker fix passed in CI. Calendar reproduced journal-unbalanced at simSeconds 298800, but the test diagnostic used Array.map on a live-view kernel proxy and returned no rows. It now iterates with for...of; the production journal owner and offending row remain unknown. Native Swift, WKWebView and current-source iOS build were not reached.",
     "The 10-day, 600x, 3,380-asset parity test compares the legacy application transaction path and uses controlled finance/market callbacks. Live kernel ownership is separately checked for one 3,380-asset commit and 24 commits across a financial-day boundary at 128 assets; full independent finance/market kernel promotion remains incomplete.",
@@ -15,11 +15,12 @@
     "Historical: run 36352181861 on commit 56643f2fc57338fc97d66e3cc0b0d640f93ef495 failed one calendar helper wait after baseline 124/124. The day-7 marker wait was removed; current-source run 36353111793 passed Build342 acceptance 144/144, native 43/43, real WKWebView smoke 6/6, and unsigned iPhoneOS build/IPA verification.",
     "Current-source CI run 36353111793 on commit 6c873e3de87cbd127c0774d3c5fbe899babda92b passed Build341 124/124, Build342 144/144, native save vault 43/43 and real WKWebView smoke 6/6; fresh unsigned arm64 iPhoneOS Release build and test IPA were verified (IPA SHA-256 aca416b363042dcb5157fb5f6205f1aca9aaac04b5ffac311a346dc31defedde) but the IPA was not uploaded or delivered. No physical iPhone test was run.",
     "Two later full CI reruns 36355076486 and 36355839842 passed Build341 124/124 but each failed one Build342 calendar journey browser gate (143/144). The first fixture required a day-37 compaction marker that can remain stale when no history needs pruning; after correcting that wait, the second run timed out during a 30-day manual advance. A separate build-only CI run 36356730336 verified the same exact runtime source, built a new unsigned arm64 iPhoneOS app and delivered the verified test IPA (SHA-256 26ab217c5568c80217c109a2b6ade9c29aa990bea0bad8d556024c46a3b6cadc). Full later-fixture acceptance and physical iPhone gates remain open.",
-    "The current staged-asset candidate has synthetic Node timings but a strict under-5-ms main-thread ceiling, browser CI, and physical iPhone 3,380-asset trace remain unverified; approval stays closed."
+    "The current staged-asset candidate has synthetic Node timings but a strict under-5-ms main-thread ceiling, browser CI, and physical iPhone 3,380-asset trace remain unverified; approval stays closed.",
+    "Build 342 diagnostic at 1,800 iPhone assets recorded 138 slice conflicts, six failed calendar advances, 512 estimated missed frames (4.77%) and up to 199 ms synchronous save. Build 343 iPhone outcomes and the requested under-5-ms target are unverified."
   ],
   "minimum_acceptance_gates": 140,
   "production_approved": false,
-  "purpose": "Internal experimental Build 342 verification for kernel-owned live state, delta rollback, Save Schema 2.0.0 with storageVersion 2, production Mobility cold archiving, and Worker-owned tentative typed asset simulation. Cross-domain Worker promotion and device acceptance gates remain closed.",
+  "purpose": "Internal experimental Build 343 verification of simulation progress and save performance after the 1,800-asset iPhone diagnostic. Save Schema 2.0.0 and the production approval gate remain unchanged.",
   "rollback_and_ownership": {
     "authoritative_state_owner": "The kernel owns normalized live application state after migration; the app transaction wrapper coordinates cross-domain publication, while the simulation Worker owns tentative typed asset updates.",
     "full_snapshot_fallback": true,
@@ -30,28 +31,45 @@
     "kernel_reverse_write_log": true
   },
   "save_schema": "2.0.0",
-  "source_rule": "Build 342 starts from the exact verified Build 341 source commit 1cd0a914cf54a0db88c360e650242cc60618eb01. Preserve Save Schema 2.0.0, full-snapshot rollback fallback, legacy save compatibility, and closed release approval.",
+  "source_rule": "Build 343 starts from Build 342 commit 1235cdf3071d648ccb35cb2a53db10798886b1bc. Preserve Save Schema 2.0.0, atomic rollback, legacy save compatibility and closed device approval.",
   "source_tracking": {
     "repository": "bdr-design/GlobalHoldings-iOS-Source",
     "base_branch": "build341-hotpath-fix-20260926",
     "base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
-    "branch": "fix/build342-asset-hotpath",
+    "branch": "fix/build343-simulation-progress",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "current_candidate_source_tree_sha256": "80dc34fec2a216a2304921d2a4e0a331b3c970682fa31574ad96b716011a8c47",
-    "current_candidate_webapp_tree_sha256": "e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674",
-    "latest_candidate_ci_run": "36356730336",
-    "current_candidate_ci_status": "LOCAL_CANDIDATE_CI_AND_DEVICE_PENDING",
-    "latest_candidate_ci_commit": "d03c6258625cc46fd5b302674c34c749a64ec7cd",
-    "latest_candidate_ci_url": "https://github.com/bdr-design/GlobalHoldings-iOS-Source/actions/runs/36356730336",
-    "latest_candidate_ci_matches_current_source": false
+    "current_candidate_source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
+    "current_candidate_webapp_tree_sha256": "41ff981f2c0733b7749eb02843e1d29d93b0b0dde0475e9113c4b3e029c48ff3",
+    "current_candidate_ci_status": "PENDING_BUILD343_CI",
+    "latest_candidate_ci_matches_current_source": false,
+    "build343_base_branch": "fix/build342-asset-hotpath",
+    "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc"
   },
-  "source_tree_sha256": "80dc34fec2a216a2304921d2a4e0a331b3c970682fa31574ad96b716011a8c47",
+  "source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
   "test_build_authorized": true,
-  "user_request": "The user authorized implementation of all seven stages on an isolated Build 342 branch, preserving local changes, save compatibility, rollback, and truthful device acceptance.",
-  "version": "3.0.0",
-  "webapp_tree_sha256": "e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674",
-  "latest_current_source_ci": {
+  "user_request": "Raise the app version and investigate game lag using the newly supplied diagnostic. Experimental testing is authorized; production approval remains false.",
+  "version": "3.0.1",
+  "webapp_tree_sha256": "41ff981f2c0733b7749eb02843e1d29d93b0b0dde0475e9113c4b3e029c48ff3",
+  "subsequent_full_ci_attempts": [
+    {
+      "run_id": "36355076486",
+      "commit_sha": "284368b6038650c2fd16df819b6ff915e4ef1b7f",
+      "build341": "124/124",
+      "build342": "143/144",
+      "failed_gate": "build334-calendar-journey-browser.cjs",
+      "reason": "fixture waited for a day-37 compaction marker even when there was no history to compact"
+    },
+    {
+      "run_id": "36355839842",
+      "commit_sha": "fa668b8e9ff3ff7edd208e44aee927b09ee3f480",
+      "build341": "124/124",
+      "build342": "143/144",
+      "failed_gate": "build334-calendar-journey-browser.cjs",
+      "reason": "30-day manual advance timed out after day 7; needs an independent repeat and investigation"
+    }
+  ],
+  "previous_build342_source_ci": {
     "run_id": "36353111793",
     "commit_sha": "6c873e3de87cbd127c0774d3c5fbe899babda92b",
     "result": "PASS_BUILD341_BASELINE_124_OF_124; BUILD342_ACCEPTANCE_144_OF_144; NATIVE_43_OF_43; REAL_WKWEBVIEW_SMOKE_6_OF_6; FRESH_UNSIGNED_ARM64_IPHONEOS_RELEASE_BUILD_PASS; TEST_IPA_VERIFIED_NOT_UPLOADED; PHYSICAL_DEVICE_NOT_TESTED",
@@ -61,7 +79,12 @@
     "unsigned_test_ipa_uploaded": false,
     "physical_device_tested": false
   },
-  "latest_unsigned_test_ipa_delivery": {
+  "latest_current_source_ci": {
+    "status": "PENDING_BUILD343_CI",
+    "source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
+    "physical_device_tested": false
+  },
+  "previous_build342_unsigned_test_ipa_delivery": {
     "run_id": "36356730336",
     "commit_sha": "d03c6258625cc46fd5b302674c34c749a64ec7cd",
     "branch": "build342-ipa-delivery-20260927",
@@ -82,22 +105,5 @@
     "production_approved": false,
     "save_schema": "2.0.0"
   },
-  "subsequent_full_ci_attempts": [
-    {
-      "run_id": "36355076486",
-      "commit_sha": "284368b6038650c2fd16df819b6ff915e4ef1b7f",
-      "build341": "124/124",
-      "build342": "143/144",
-      "failed_gate": "build334-calendar-journey-browser.cjs",
-      "reason": "fixture waited for a day-37 compaction marker even when there was no history to compact"
-    },
-    {
-      "run_id": "36355839842",
-      "commit_sha": "fa668b8e9ff3ff7edd208e44aee927b09ee3f480",
-      "build341": "124/124",
-      "build342": "143/144",
-      "failed_gate": "build334-calendar-journey-browser.cjs",
-      "reason": "30-day manual advance timed out after day 7; needs an independent repeat and investigation"
-    }
-  ]
+  "latest_unsigned_test_ipa_delivery": null
 }

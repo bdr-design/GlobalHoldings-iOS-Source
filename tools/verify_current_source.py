@@ -49,7 +49,7 @@ def verify(root:Path,release:bool=False)->dict:
     if sha!=manifest.get('source_tree_sha256'):raise ValueError('Source tree digest mismatch')
     web_sha=tree_digest({name:row for name,row in actual.items() if name.startswith('WebApp/')})
     if web_sha!=manifest.get('webapp_tree_sha256'):raise ValueError('WebApp source digest mismatch')
-    if (root/'BUILD').read_text().strip()!=str(build) or version!='3.0.0':raise ValueError('BUILD/VERSION mismatch')
+    if (root/'BUILD').read_text().strip()!=str(build) or not re.fullmatch(r'\d+\.\d+\.\d+',version):raise ValueError('BUILD/VERSION mismatch')
     project=(root/'project.yml').read_text()
     for key,value in [('CURRENT_PROJECT_VERSION',str(build)),('CFBundleVersion',str(build)),('MARKETING_VERSION',version),('CFBundleShortVersionString',version)]:
         if not re.search(r'(?m)^\s*'+key+r':\s*[\"\x27]?'+re.escape(value)+r'[\"\x27]?\s*$',project):raise ValueError(f'Native project metadata mismatch: {key}')

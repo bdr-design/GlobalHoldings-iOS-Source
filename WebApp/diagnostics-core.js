@@ -5,16 +5,17 @@
   const faultRecorders=new WeakMap();
   const recorderFrameBuffers=new WeakMap();
   function ensure(state){
-    state.diagnostics=state.diagnostics&&typeof state.diagnostics==='object'?state.diagnostics:{};
+    if(!state.diagnostics||typeof state.diagnostics!=='object')state.diagnostics={};
+    const d=state.diagnostics;
     // Build 335 persisted the heavy fault recorder inside the game state. Adopt
     // it once into runtime-only storage, then remove it from the durable tree.
-    if(Object.prototype.hasOwnProperty.call(state.diagnostics,'faultRecorder')){if(state.diagnostics.faultRecorder&&!faultRecorders.has(state))faultRecorders.set(state,state.diagnostics.faultRecorder);delete state.diagnostics.faultRecorder;}
-    state.diagnostics.events=Array.isArray(state.diagnostics.events)?state.diagnostics.events:[];
-    state.diagnostics.lastHealth=state.diagnostics.lastHealth&&typeof state.diagnostics.lastHealth==='object'?state.diagnostics.lastHealth:null;
-    state.diagnostics.counters=state.diagnostics.counters&&typeof state.diagnostics.counters==='object'?state.diagnostics.counters:{};
-    state.diagnostics.activeIssues=state.diagnostics.activeIssues&&typeof state.diagnostics.activeIssues==='object'?state.diagnostics.activeIssues:{};
-    state.diagnostics.resolvedIssues=Array.isArray(state.diagnostics.resolvedIssues)?state.diagnostics.resolvedIssues:[];
-    return state.diagnostics;
+    if(Object.prototype.hasOwnProperty.call(d,'faultRecorder')){if(d.faultRecorder&&!faultRecorders.has(state))faultRecorders.set(state,d.faultRecorder);delete d.faultRecorder;}
+    if(!Array.isArray(d.events))d.events=[];
+    if(!d.lastHealth||typeof d.lastHealth!=='object'){if(d.lastHealth!==null)d.lastHealth=null;}
+    if(!d.counters||typeof d.counters!=='object')d.counters={};
+    if(!d.activeIssues||typeof d.activeIssues!=='object')d.activeIssues={};
+    if(!Array.isArray(d.resolvedIssues))d.resolvedIssues=[];
+    return d;
   }
   function recorderFor(state){ensure(state);return faultRecorders.get(state)||null;}
   function cleanDetail(value,depth=0){
@@ -168,8 +169,16 @@
     if(!ALLOWED_SPEEDS.includes(Number(state.speed)))add('SIM_SPEED_INVALID','critical','سرعة غير معتمدة','السرعة الحالية ليست ضمن الإيقاف أو مستويات التشغيل الخمسة المعتمدة.','simulation',{speed:state.speed});
     const sim=extra.simulation||{};
     if(sim.fatalError)add('SIM_FATAL_STATE','critical','المحرك في حالة خطأ قاتل',String(sim.fatalError),'simulation',sim);
-    if(Number(sim.backlogSeconds)>60)add('SIM_BACKLOG_HIGH','warning','تراكم محاكاة مرتفع','يوجد backlog مرتفع وقد يؤدي إلى تباطؤ أو خفض سرعة تلقائي.','simulation',{backlogSeconds:sim.backlogSeconds});
-    if(Number(sim.conflictRate)>0.1)add('SIM_CONFLICT_HIGH','warning','معدل تعارض معاملات مرتفع','تتكرر إلغاءات معاملات المحاكاة أكثر من المتوقع.','simulation',{conflictRate:sim.conflictRate});
+    // The live engine exposes `backlog`, `conflicts`, and `slices`. The old
+    // backlogSeconds/conflictRate checks silently missed real stalled runs.
+    const backlog=Number(sim.backlog??sim.backlogSeconds),conflicts=Math.max(0,Number(sim.conflicts)||0),slices=Math.max(0,Number(sim.slices)||0),conflictRate=Number.isFinite(Number(sim.conflictRate))?Number(sim.conflictRate):conflicts/(conflicts+slices||1);
+    if(!sim.manualAdvance&&Number.isFinite(backlog)&&backlog>60&&Number(state.speed)>0)add('SIM_BACKLOG_HIGH','warning','تراكم محاكاة مرتفع','تراكم الزمن المطلوب أثناء التشغيل المباشر وقد تتأخر حركة الأصول.','simulation',{backlogSeconds:backlog,requestedSpeed:sim.speed});
+    if(conflicts>=3&&conflictRate>0.1)add('SIM_CONFLICT_HIGH','warning','معدل تعارض معاملات مرتفع','تتكرر إلغاءات شرائح المحاكاة ويجب مراجعة سبب تعارض إصدار الحالة.','simulation',{conflicts,slices,conflictRate,lastCancelReason:sim.lastCancelReason||null});
+    const manualFailures=Math.max(0,Number(sim.manualFailures)||0),advanceFailure=sim.lastAdvanceFailure;
+    if(manualFailures>0&&advanceFailure)add('SIM_CALENDAR_ADVANCE_FAILED','warning','فشل تقديم التاريخ','توقف تقديم التاريخ عند آخر حالة معتمدة بعد فشل اعتماد شريحة محاكاة.','simulation',{manualFailures,lastAdvanceFailure:advanceFailure});
+    const perfNow=Number(globalThis.performance?.now?.()),lastProgressAt=Number(sim.lastProgressAt),stalledMs=perfNow-lastProgressAt;
+    const progressingSpeed=sim.manualAdvance?Number(sim.manualAdvance.speed):Number(state.speed);
+    if(progressingSpeed>0&&!sim.hidden&&Number.isFinite(perfNow)&&Number.isFinite(lastProgressAt)&&lastProgressAt>0&&Number.isFinite(stalledMs)&&stalledMs>=RECORDER_STALL_MS&&(sim.manualAdvance||Number.isFinite(backlog)&&backlog>0))add('SIM_PROGRESS_STALLED','warning','توقف تقدم زمن المحاكاة','لم تتقدم المحاكاة رغم وجود زمن مطلوب للتشغيل.','simulation',{stalledMs:Math.round(stalledMs),simSeconds:sim.simSeconds,backlog:sim.backlog,jobActive:sim.jobActive,lastCancelReason:sim.lastCancelReason||null});
     const recovery=state.simulationKernel?.boundaryRecovery;
     if(recovery?.failed)add('BOUNDARY_RECOVERY_FAILED','critical','فشل استرداد حدود الزمن','تم إيقاف الاسترداد بعد فشل سابق ويجب مراجعة التشخيص.','simulation',recovery);
     const lastCommit=state.simulationKernel?.lastAtomicCommit;

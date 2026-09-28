@@ -1,16 +1,8 @@
 {
-  "build": 342,
-  "version": "3.0.0",
+  "build": 343,
+  "version": "3.0.1",
   "save_schema": "2.0.0",
   "files": {
-    "BUILD": {
-      "bytes": 4,
-      "sha256": "8c80c1d95894af1d6b39590e0b2d0d9761caa096210587a8e3e16636297f2a40"
-    },
-    "VERSION": {
-      "bytes": 6,
-      "sha256": "2985be8b28d3ade858e8d8fb4bc22f565b1bf6020dff982dce141f7721b9999c"
-    },
     "WebApp/advanced-core.js": {
       "bytes": 231897,
       "sha256": "7bf5d7babc53eae9eb1687e26831c09704851b88aadab7134b078cdcb641edc4"
@@ -24,8 +16,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 676230,
-      "sha256": "5983aa8c2700795afdd09e7f8fdd5bf148b9af073817490b42d030387b606eb0"
+      "bytes": 676235,
+      "sha256": "4815d0d5e6bf1da13bcbbbfe88a2711108d66570c31df6599d07a5653d58a081"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1676,8 +1668,8 @@
       "sha256": "11650b4b91eebd66bf301e2f4682b07696618001760c7f7c074ff597f089469a"
     },
     "WebApp/diagnostics-core.js": {
-      "bytes": 54169,
-      "sha256": "61be9fe4703373146c98461383f5cd6d5fa82d7d3f863f0954dfd631f92ddd54"
+      "bytes": 55583,
+      "sha256": "8eef654bd09b19c2cb67cc78ab1d7278c8ece333952cf74aaacac4624e223b3a"
     },
     "WebApp/directory-core.js": {
       "bytes": 16330,
@@ -1844,8 +1836,8 @@
       "sha256": "ba21c9496c6c7b11bedd1fb5fab7662b1b0d15675afdc8af4bac6fcfd9bdf039"
     },
     "WebApp/persistence-core.js": {
-      "bytes": 33579,
-      "sha256": "a69eb58dbf885dc8fd2675f3145fa803b4e56a5bbac598469d3355af20c33c3d"
+      "bytes": 33948,
+      "sha256": "5694b24261ecd94b0732e7b6a6e0339757d7975c056e5938537c60ea91176217"
     },
     "WebApp/policy-core.js": {
       "bytes": 1915,
@@ -1880,8 +1872,8 @@
       "sha256": "14ea17a1bfe885b09633524b56f52a775d93eba4db367fe0417c239be00b0d55"
     },
     "WebApp/save-schema.js": {
-      "bytes": 69843,
-      "sha256": "90ea9fc80b9261cfdefdc9cd1bb684f2bdd4c63600d11a42c614e2102c356e1d"
+      "bytes": 70118,
+      "sha256": "93d5d93e699af368dea786f51af4dcf53681c9a756c5ae9063be3ddca8dcce53"
     },
     "WebApp/section-identities.css": {
       "bytes": 2444,
@@ -1920,8 +1912,8 @@
       "sha256": "73be32015076bdad2a6ab26066ddd5f71aee1048613d8a10a381bc02eec314fd"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 48934,
-      "sha256": "560f0a45d23c20e9e8dae367134ea03f19e9f033a51fbb1d5e055e9d4a8a195a"
+      "bytes": 48787,
+      "sha256": "d45bcdb432f8495e264a09a282c25ecdd2e9d85e4032b9a530f8652a51eb6f5a"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -1993,7 +1985,7 @@
     },
     "iOS/GlobalHoldings/GlobalGameStorage.swift": {
       "bytes": 66640,
-      "sha256": "cee936612b3017c810e5c904b617d96091046077400c2f9e187b7a020b81a44a"
+      "sha256": "d4e38b05fe80f4acacce561041115cfd6690a8bb2627b9dc84a093cae83a4e06"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
       "bytes": 65956,
@@ -2005,30 +1997,24 @@
     },
     "project.yml": {
       "bytes": 2421,
-      "sha256": "d810d2f9a90f8c8b9fe659400b9745e6a0f07956c19c31262b0edce3ca040f76"
+      "sha256": "d02632489715707819cdb3c066d1cd8686d3737f8f077acaf7e63c9a6ad78865"
+    },
+    "BUILD": {
+      "bytes": 4,
+      "sha256": "965bec718645eb51a648264c473032afaa340715e0c302162670df109903f9c7"
+    },
+    "VERSION": {
+      "bytes": 6,
+      "sha256": "06e3fe4a7a1884d20d81cc7065ca8cfd4c394ec602c4d180ddc39bbd4f7da521"
     }
   },
   "latest_direct_source_ci": {
-    "status": "FAILED_NATIVE_FIXTURE_ONLY_CURRENT_CANDIDATE_PENDING_CI",
-    "source_mode": "direct_git_tree_from_verified_build341_commit",
-    "run_id": "36320128185",
-    "commit_sha": "ecd8c17adfc5339610c414fc88da232109a5dba2",
-    "result": "FAILED_NATIVE_TEST_42_OF_43_AFTER_BUILD341_124_OF_124_AND_BUILD342_SOURCE_143_OF_143",
-    "failure": "The compact A/B recovery fixture created its next save with resetEpoch 0 instead of inheriting the active baseline resetEpoch; native test reported Stale native save rejected.",
-    "native_fixture_fix": "prepare_native_tests.py now copies resetEpoch from the verified current baseline object before incrementing saveRevision.",
-    "wkwebview_tests": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
-    "unsigned_iphoneos_release_app": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+    "status": "PENDING_BUILD343_CI",
+    "source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
     "ipa_built": false,
-    "ipa_uploaded_or_delivered": false,
-    "device_tested": false,
-    "tested_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
-    "tested_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
-    "build341_baseline": "PASS_124_OF_124_UNCHANGED",
-    "build342_source_gates": "PASS_143_OF_143",
-    "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
-    "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
+    "physical_device_tested": false
   },
-  "phase": "Build 342 — seven-stage state kernel and lag-root verification",
+  "phase": "Build 343 — simulation progress and save performance diagnostic remediation",
   "stage0_contracts": [
     "record-alert hot path uses bounded delta validation and records measured Node p95/pmax",
     "manual calendar failure counter maps one-to-one to CALENDAR_ADVANCE_FAILED evidence",
@@ -2074,16 +2060,18 @@
     "verified_base_source_tree_sha256": "35ba79725a992c2ad277bf97426e7760387c1b0f7871241e4ef62049ff6e5993",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "repository_branch": "build342-state-kernel-20260927",
+    "repository_branch": "fix/build343-simulation-progress",
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "remote_branch_created_from_verified_base": true,
-    "current_candidate_source_tree_sha256": "80dc34fec2a216a2304921d2a4e0a331b3c970682fa31574ad96b716011a8c47",
-    "current_candidate_webapp_tree_sha256": "e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674",
-    "current_candidate_branch": "fix/build342-asset-hotpath",
-    "latest_candidate_ci_matches_current_source": false
+    "current_candidate_source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
+    "current_candidate_webapp_tree_sha256": "41ff981f2c0733b7749eb02843e1d29d93b0b0dde0475e9113c4b3e029c48ff3",
+    "current_candidate_branch": "fix/build343-simulation-progress",
+    "latest_candidate_ci_matches_current_source": false,
+    "build343_base_branch": "fix/build342-asset-hotpath",
+    "build343_base_commit_sha": "1235cdf3071d648ccb35cb2a53db10798886b1bc"
   },
-  "source_tree_sha256": "80dc34fec2a216a2304921d2a4e0a331b3c970682fa31574ad96b716011a8c47",
-  "webapp_tree_sha256": "e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674",
+  "source_tree_sha256": "802573dbf74963fc4a0546eed814f24412b1b797838eec6c0bd2fcea2f907713",
+  "webapp_tree_sha256": "41ff981f2c0733b7749eb02843e1d29d93b0b0dde0475e9113c4b3e029c48ff3",
   "previous_passed_direct_source_ci": {
     "run_id": "36315061990",
     "commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",
@@ -2095,5 +2083,25 @@
     "ipa_built": true,
     "ipa_uploaded_or_delivered": false,
     "physical_iphone_tested": false
+  },
+  "previous_build342_direct_source_ci": {
+    "status": "FAILED_NATIVE_FIXTURE_ONLY_CURRENT_CANDIDATE_PENDING_CI",
+    "source_mode": "direct_git_tree_from_verified_build341_commit",
+    "run_id": "36320128185",
+    "commit_sha": "ecd8c17adfc5339610c414fc88da232109a5dba2",
+    "result": "FAILED_NATIVE_TEST_42_OF_43_AFTER_BUILD341_124_OF_124_AND_BUILD342_SOURCE_143_OF_143",
+    "failure": "The compact A/B recovery fixture created its next save with resetEpoch 0 instead of inheriting the active baseline resetEpoch; native test reported Stale native save rejected.",
+    "native_fixture_fix": "prepare_native_tests.py now copies resetEpoch from the verified current baseline object before incrementing saveRevision.",
+    "wkwebview_tests": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+    "unsigned_iphoneos_release_app": "SKIPPED_AFTER_NATIVE_TEST_FAILURE",
+    "ipa_built": false,
+    "ipa_uploaded_or_delivered": false,
+    "device_tested": false,
+    "tested_source_tree_sha256": "42915b6a03b31327b27563cbbce1dbbacfdafa8dceea839755369c2f108ecaf6",
+    "tested_webapp_tree_sha256": "c90533eb5a7f18d245fef9ceeacb52d6a752b68061d4e44561e1bf13aa39cfa3",
+    "build341_baseline": "PASS_124_OF_124_UNCHANGED",
+    "build342_source_gates": "PASS_143_OF_143",
+    "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
+    "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
   }
 }

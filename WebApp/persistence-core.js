@@ -12,8 +12,8 @@
   const nativeSlotMeta=new Map((Array.isArray(globalThis.__GH_NATIVE_SLOT_META__)?globalThis.__GH_NATIVE_SLOT_META__:[]).filter(row=>Number.isInteger(Number(row?.index))&&Number(row.index)>=0&&Number(row.index)<=2).map(row=>[Number(row.index),clone(row)]));
   function telemetry(row){samples.push(row);if(samples.length>32)samples.shift();return row;}
   function status(detail){if(globalThis.dispatchEvent&&globalThis.CustomEvent)globalThis.dispatchEvent(new CustomEvent('gh-persistence-status',{detail}));}
-  function validateState(state){return globalThis.GH_SAVE_SCHEMA?.validate?.(state)||{ok:false,errors:['save-schema-unavailable']};}
-  function assertState(state){const v=validateState(state);if(!v.ok)throw new Error(`invalid-save:${(v.errors||[]).join(',')}`);}
+  function validateState(state,options){return globalThis.GH_SAVE_SCHEMA?.validate?.(state,options)||{ok:false,errors:['save-schema-unavailable']};}
+  function assertState(state,options){const v=validateState(state,options);if(!v.ok)throw new Error(`invalid-save:${(v.errors||[]).join(',')}`);}
   function bytes(text){if(globalThis.TextEncoder)return new TextEncoder().encode(text).byteLength;let n=0;for(const c of text){const p=c.codePointAt(0);n+=p<128?1:p<2048?2:p<65536?3:4;}return n;}
   function inspectJSON(json,key='',options={}){
     if(typeof json!=='string')throw new Error('serialization-failed');
@@ -161,7 +161,10 @@
     try{
       if(!state||typeof state!=='object')throw new Error('state-required');
       state.saveRevision=nextRevision;
-      let stageStart=clock();assertState(state);timing.schemaMs=Math.max(0,clock()-stageStart);
+      // Ordinary saves of the kernel-owned live state may retain verified proof
+      // results. Imported saves and durable drafts stay on the uncached path:
+      // locking their raw proof objects would change their mutation contract.
+      let stageStart=clock();assertState(state,globalThis.GH_TRANSACTION_CORE?.isKernelOwner?.(state)===true?{lockVerifiedProofs:true}:undefined);timing.schemaMs=Math.max(0,clock()-stageStart);
       stageStart=clock();json=JSON.stringify(state);timing.stringifyMs=Math.max(0,clock()-stageStart);resetEpoch=Number(state.resetEpoch)||0;
       stageStart=clock();measurement=nativeBridge?inspectNativeJSON(json):inspectJSON(json,storageKey,options);timing.measurementMs=Math.max(0,clock()-stageStart);timing.utf8Bytes=measurement.utf8Bytes;
       stageStart=clock();

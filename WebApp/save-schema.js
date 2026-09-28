@@ -51,7 +51,11 @@
   function proofValidationCacheKey(state){
     const digest=globalThis.GH_TRANSACTION_CORE?.kernelOwnerProofRevisionDigest?.(state);
     if(typeof digest!=='string'||!digest)return null;
-    return `${Number(state?.saveRevision)||0}:${Number(state?.resetEpoch)||0}:${digest}`;
+    // Saving advances saveRevision even when none of the signed documents or
+    // proof inputs changed. The digest binds the four proof-input roots to
+    // their live mutation stamps, including writes inside open transactions
+    // and rollbacks; the revision of the save envelope is not a proof input.
+    return `${Number(state?.resetEpoch)||0}:${digest}`;
   }
   function authorizationProofCacheEntry(row,seal,mandate){
     if(!proofLocked(row)||!proofLocked(seal)||!proofLocked(mandate))return null;
