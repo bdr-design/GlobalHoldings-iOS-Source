@@ -197,6 +197,28 @@ async function buildFleet(page){
 async function depart(page){
   await captureContext(page);
   await page.evaluate(()=>qaPerfContext.openDrawer('routes','road'));
+  // The performance fixture must own one proven operational road before asking
+  // the bulk planner to fan the fleet out. Older fixtures created many centers
+  // but no route, so both real browsers stopped before measuring the game.
+  const hasRoad=await page.evaluate(()=>__GH_STATE__.customRoutes.some(route=>(route.routeMode||route.type)==='road'&&(route.ownerCompanyId||route.companyId||route.company)==='road'));
+  if(!hasRoad){
+    const manual=page.locator('.build-road-route[data-company="road"]').first();
+    await manual.waitFor({state:'visible',timeout:30000});
+    const selection=await page.evaluate(()=>{
+      const from=document.getElementById('roadFrom'),to=document.getElementById('roadTo');
+      if(!from||!to||from.options.length<2||to.options.length<2)return null;
+      const a=from.options[0].value,b=[...to.options].find(row=>row.value!==a)?.value;
+      if(!a||!b)return null;from.value=a;to.value=b;return {from:a,to:b};
+    });
+    assert(selection,'fixture requires two owned road facilities');
+    await manual.click();
+    try{
+      await page.waitForFunction(()=>__GH_STATE__.customRoutes.some(route=>(route.routeMode||route.type)==='road'&&(route.ownerCompanyId||route.companyId||route.company)==='road'),null,{timeout:120000});
+    }catch(error){
+      const evidence=await page.evaluate(()=>({routes:__GH_STATE__.customRoutes.length,alerts:(__GH_STATE__.alerts||[]).slice(0,8).map(row=>row.text||row.message||String(row)),drawer:document.getElementById('drawerBody')?.innerText?.slice(0,1200)||''}));
+      throw new Error('fixture-road-bootstrap-failed:'+JSON.stringify(evidence));
+    }
+  }
   const button=page.locator('.dispatch-existing-network[data-company="road"]').first();
   await button.waitFor({state:'visible',timeout:30000});
   await page.evaluate(()=>{window.__qaPerfDispatchStart=performance.now();});
