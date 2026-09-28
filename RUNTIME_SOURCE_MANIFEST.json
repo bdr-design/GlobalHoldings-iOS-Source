@@ -24,8 +24,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 667154,
-      "sha256": "cfb3b5cd0997fbe4255e96555fa825a402f31b90d0b2f11e9b56f02d23ed84df"
+      "bytes": 676230,
+      "sha256": "5983aa8c2700795afdd09e7f8fdd5bf148b9af073817490b42d030387b606eb0"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1656,8 +1656,8 @@
       "sha256": "f6f0565cd1293125ce163419d02a2f03c639dab73e30ef2e5ce3fd685e2e0cfc"
     },
     "WebApp/corporate-core.js": {
-      "bytes": 19068,
-      "sha256": "98675a89d2505086eb9766df04e11ca1174489d52c7581257347f5692d827558"
+      "bytes": 23225,
+      "sha256": "81a4fadf996e55a539868cdb7766b64f1f56aa8762d062997583aeaffb68b127"
     },
     "WebApp/delivery-monitor-core.js": {
       "bytes": 1442,
@@ -1708,8 +1708,8 @@
       "sha256": "6f6a2b651d960a5c0359eabc718d67998674efb0a54433d827a196a726ef9313"
     },
     "WebApp/finance-core.js": {
-      "bytes": 118352,
-      "sha256": "31f287b90d052875ea1501ebb42a0ac670f1e0471a41c232d5c30c8a3ead5987"
+      "bytes": 125183,
+      "sha256": "d1e3155ef9d00399839f36a88e8e085c45e83104681cafb6bfadc0b77482ca36"
     },
     "WebApp/finance-presentation.css": {
       "bytes": 35222,
@@ -1776,8 +1776,8 @@
       "sha256": "b5d93bbe265471a6fb1961a3f6cd0f3bfacf74c4779799b395288c35b76fb133"
     },
     "WebApp/kernel-core.js": {
-      "bytes": 46464,
-      "sha256": "d0798f8c0dc6658dc104ea98510e0a6a015fb7de81c293e832168bf36f06d7a7"
+      "bytes": 53064,
+      "sha256": "e023c130f42130d4e8fcb8106aed5460d6b790f09f76f93155e417822776511b"
     },
     "WebApp/kernel-worker-core.js": {
       "bytes": 10372,
@@ -1836,12 +1836,12 @@
       "sha256": "a4d25b40c18f4d84f6f4fb29f313bd804626707f1971d54233b3fd96d30c686b"
     },
     "WebApp/mobility-core.js": {
-      "bytes": 64309,
-      "sha256": "f944ae2c505cd47d39d876fc59cb999a9155b6d19275c5f267e860b2f1754ae4"
+      "bytes": 64707,
+      "sha256": "b5ffb95fabec7dc96cfca044fa64eeccc3ff73c2e35677b7f12cd18ea2cfc63d"
     },
     "WebApp/operations-core.js": {
-      "bytes": 1688,
-      "sha256": "d60c6da5cd6212abde476caa392977f3a9cfd8fd1ccd1126fbdb0ca200f4f531"
+      "bytes": 2893,
+      "sha256": "ba21c9496c6c7b11bedd1fb5fab7662b1b0d15675afdc8af4bac6fcfd9bdf039"
     },
     "WebApp/persistence-core.js": {
       "bytes": 33579,
@@ -1920,8 +1920,8 @@
       "sha256": "73be32015076bdad2a6ab26066ddd5f71aee1048613d8a10a381bc02eec314fd"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 48386,
-      "sha256": "4827244e6e566f7674c2a3225dd1ff1bb64455b457f85f350ca7d6df29ce43e3"
+      "bytes": 48934,
+      "sha256": "560f0a45d23c20e9e8dae367134ea03f19e9f033a51fbb1d5e055e9d4a8a195a"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -2005,7 +2005,7 @@
     },
     "project.yml": {
       "bytes": 2421,
-      "sha256": "0427b82c5cd47a43c2004472534e209447dac678bb49d221ea228c51655be0a8"
+      "sha256": "d810d2f9a90f8c8b9fe659400b9745e6a0f07956c19c31262b0edce3ca040f76"
     }
   },
   "latest_direct_source_ci": {
@@ -2077,11 +2077,13 @@
     "repository_branch": "build342-state-kernel-20260927",
     "local_baseline_head": "1d7d6988f0b9849c016521ad54d7e889f792088b",
     "remote_branch_created_from_verified_base": true,
-    "current_candidate_source_tree_sha256": "bc7d581853a6f8a5e917df592c140a5ee9cc01c6ec254edab45412feaf6eca35",
-    "current_candidate_webapp_tree_sha256": "4ef001c0ab40cc7b49dee39893849ced4bd632c282824ef357e3bc3db2ff8ada"
+    "current_candidate_source_tree_sha256": "80dc34fec2a216a2304921d2a4e0a331b3c970682fa31574ad96b716011a8c47",
+    "current_candidate_webapp_tree_sha256": "e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674",
+    "current_candidate_branch": "fix/build342-asset-hotpath",
+    "latest_candidate_ci_matches_current_source": false
   },
-  "source_tree_sha256": "d02f4abf54c45b361faa647018da00c09761a4e0d1edeabd98d9e7c9731bc040",
-  "webapp_tree_sha256": "d20972185bb4b9cb013e32324dfcc113b3e2e6f73d0c7950f2c2b45f26b1bde2",
+  "source_tree_sha256": "80dc34fec2a216a2304921d2a4e0a331b3c970682fa31574ad96b716011a8c47",
+  "webapp_tree_sha256": "e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674",
   "previous_passed_direct_source_ci": {
     "run_id": "36315061990",
     "commit_sha": "3f4feb10ac8b1e6049be7f6b40704e2a70532090",

@@ -8,7 +8,8 @@
     "The simulation Worker owns tentative typed asset updates and confirms or restores them after the app transaction. State reads, finance, calendar, market and the cross-domain commit remain on the main thread; the general kernel-worker protocol is not connected as the application owner.",
     "Nine live app hot fields use Float64Array columns and synthetic 20,000-row Worker/kernel tests pass. App behavior at 20,000 rows, physical memory/thermal behavior and the oldest-supported iPhone remain untested.",
     "Physical iPhone acceptance still needs ten minutes at 600x with continuous drag: at least 58 FPS, under 1% frame drops, no main-thread task over 50 ms, and under 12 MB hot state at 3,380 assets on the iPhone 17 Pro Max.",
-    "The oldest supported iPhone is not identified; the 20,000-asset oldest-device memory and thermal gate cannot close until that model is established."
+    "The oldest supported iPhone is not identified; the 20,000-asset oldest-device memory and thermal gate cannot close until that model is established.",
+    "The current staged-asset candidate has synthetic Node timings but a strict under-5-ms main-thread ceiling, browser CI, and physical iPhone 3,380-asset trace remain unverified; approval stays closed."
   ],
   "build": 342,
   "latest_direct_source_ci": {
@@ -51,19 +52,20 @@
     "repository": "bdr-design/GlobalHoldings-iOS-Source",
     "base_branch": "build341-hotpath-fix-20260926",
     "base_commit_sha": "1cd0a914cf54a0db88c360e650242cc60618eb01",
-    "branch": "build342-state-kernel-20260927",
+    "branch": "fix/build342-asset-hotpath",
     "mode": "direct_git_tracked_tree",
     "normal_ci_uses_overlay": false,
-    "current_candidate_source_tree_sha256": "d02f4abf54c45b361faa647018da00c09761a4e0d1edeabd98d9e7c9731bc040",
-    "current_candidate_webapp_tree_sha256": "d20972185bb4b9cb013e32324dfcc113b3e2e6f73d0c7950f2c2b45f26b1bde2",
+    "current_candidate_source_tree_sha256": "80dc34fec2a216a2304921d2a4e0a331b3c970682fa31574ad96b716011a8c47",
+    "current_candidate_webapp_tree_sha256": "e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674",
     "latest_candidate_ci_run": "36356730336",
-    "current_candidate_ci_status": "PASS_EXACT_RUNTIME_SOURCE_UNSIGNED_ARM64_IPHONEOS_IPA_DELIVERY; PRIOR_FULL_PASS_36353111793; TWO_LATER_CALENDAR_JOURNEY_RERUNS_143_OF_144; PHYSICAL_IPHONE_PENDING",
+    "current_candidate_ci_status": "LOCAL_CANDIDATE_CI_AND_DEVICE_PENDING",
     "latest_candidate_ci_commit": "d03c6258625cc46fd5b302674c34c749a64ec7cd",
-    "latest_candidate_ci_url": "https://github.com/bdr-design/GlobalHoldings-iOS-Source/actions/runs/36356730336"
+    "latest_candidate_ci_url": "https://github.com/bdr-design/GlobalHoldings-iOS-Source/actions/runs/36356730336",
+    "latest_candidate_ci_matches_current_source": false
   },
-  "source_tree_sha256": "d02f4abf54c45b361faa647018da00c09761a4e0d1edeabd98d9e7c9731bc040",
+  "source_tree_sha256": "80dc34fec2a216a2304921d2a4e0a331b3c970682fa31574ad96b716011a8c47",
   "version": "3.0.0",
-  "webapp_tree_sha256": "d20972185bb4b9cb013e32324dfcc113b3e2e6f73d0c7950f2c2b45f26b1bde2",
+  "webapp_tree_sha256": "e3805249f582b2ac29b2e3a331ea55be4e9e93425a116912c62de6acf5118674",
   "previous_passed_source_ci": {
     "run_id": "36307934626",
     "commit_sha": "580eff4b802e12e788f472a9bfeba5227338410f",
