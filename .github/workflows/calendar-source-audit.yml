@@ -1,0 +1,32 @@
+name: Calendar source audit
+on:
+  push:
+    branches: [investigate/calendar-revision-conflict-20260928]
+    paths: [.github/workflows/calendar-source-audit.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  export-sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export immutable original source trees (no IPA)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit-export
+          git archive --format=zip --output=audit-export/Build344_b2f74fa_original_source.zip b2f74fae5ceaa126c8b6ecbb6ddc24ade0e24654
+          git archive --format=zip --output=audit-export/Build340_80f697d_reference_only.zip 80f697d36e8166cc9eecf69524d106991d6e8443
+          git log --format='%H %s' -20 b2f74fae5ceaa126c8b6ecbb6ddc24ade0e24654 > audit-export/source-history.txt
+          git diff --stat 80f697d36e8166cc9eecf69524d106991d6e8443 b2f74fae5ceaa126c8b6ecbb6ddc24ade0e24654 -- WebApp > audit-export/reference-diff-stat.txt
+          sha256sum audit-export/*.zip > audit-export/archive-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Calendar_Exact_Source_Audit
+          path: audit-export/
+          retention-days: 3
