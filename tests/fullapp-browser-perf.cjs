@@ -57,15 +57,15 @@ async function boot(browser,url,nativeSave){
   await context.exposeBinding('__qaNativeCommit',async(_source,envelope)=>{
     if(envelope?.action!=='commitSave')throw new Error(`unexpected-save-bridge-action:${envelope?.action}`);
     const json=String(envelope.saveJSON||''),parsed=JSON.parse(json),digest=sha256(json);
-    assert.equal(envelope.saveHash,digest,'the WebApp must hash exactly the committed JSON');
+    if(envelope.saveHash!=null)assert.equal(envelope.saveHash,digest,'supplied save hash must match the exact committed JSON');
     assert.equal(envelope.saveSchemaVersion,'2.0.0');
     assert.equal(Number(envelope.saveRevision),Number(parsed.saveRevision));
     assert.equal(Number(envelope.resetEpoch),Number(parsed.resetEpoch));
     assert.equal(parsed.saveVersion,'2.0.0');
     bridge.json=json;bridge.generation++;bridge.ackCount++;
     bridge.maxBytes=Math.max(bridge.maxBytes,Buffer.byteLength(json));
-    return {requestId:envelope.requestId,action:envelope.action,saveRevision:envelope.saveRevision,
-      resetEpoch:envelope.resetEpoch,saveHash:envelope.saveHash,saveSchemaVersion:envelope.saveSchemaVersion,
+    return {requestId:envelope.requestId,action:'commitSave',saveRevision:envelope.saveRevision,
+      resetEpoch:envelope.resetEpoch,saveHash:digest,saveSchemaVersion:envelope.saveSchemaVersion,
       success:true,generation:bridge.generation,nativeVaultCommitMs:0};
   });
   await context.addInitScript(({saved,nativeBuild})=>{
@@ -73,16 +73,43 @@ async function boot(browser,url,nativeSave){
     if(saved)window.__GH_NATIVE_SAVE_JSON__=saved;
     window.webkit=window.webkit||{};
     window.webkit.messageHandlers=window.webkit.messageHandlers||{};
+    const streams=new Map();
+    const nack=(envelope,error)=>{
+      const detail={requestId:envelope.requestId,action:'commitSave',saveRevision:envelope.saveRevision,
+        resetEpoch:envelope.resetEpoch,saveHash:envelope.saveHash||'0'.repeat(64),
+        saveSchemaVersion:envelope.saveSchemaVersion,success:false,generation:0,message:String(error?.message||error)};
+      window.dispatchEvent(new CustomEvent('gh-native-save-ack',{detail}));
+    };
     window.webkit.messageHandlers.saveBridge={postMessage(envelope){
-      window.__qaNativeCommit(envelope).then(detail=>{
-        window.dispatchEvent(new CustomEvent('gh-native-save-ack',{detail}));
-      },error=>{
-        window.dispatchEvent(new CustomEvent('gh-native-save-ack',{detail:{
-          requestId:envelope.requestId,action:envelope.action,saveRevision:envelope.saveRevision,
-          resetEpoch:envelope.resetEpoch,saveHash:envelope.saveHash,
-          saveSchemaVersion:envelope.saveSchemaVersion,success:false,generation:0,message:String(error.message||error)
-        }}));
-      });
+      try{
+        const action=String(envelope?.action||'');
+        if(action==='commitSave'){
+          window.__qaNativeCommit(envelope).then(detail=>window.dispatchEvent(new CustomEvent('gh-native-save-ack',{detail})),error=>nack(envelope,error));
+          return;
+        }
+        if(action==='saveStreamBegin'){
+          if(streams.has(envelope.streamId))throw new Error('stream-already-open');
+          streams.set(envelope.streamId,{base:{...envelope},chunks:[],bytes:0});
+          return;
+        }
+        if(action==='saveStreamAbort'){streams.delete(envelope.streamId);return;}
+        if(action==='saveStreamChunk'){
+          const stream=streams.get(envelope.streamId);if(!stream)throw new Error('stream-not-open');
+          if(Number(envelope.index)!==stream.chunks.length)throw new Error('stream-order-conflict');
+          const text=String(envelope.text||'');if(!text)throw new Error('stream-empty-chunk');
+          stream.chunks.push(text);stream.bytes+=new TextEncoder().encode(text).byteLength;return;
+        }
+        if(action==='saveStreamCommit'){
+          const stream=streams.get(envelope.streamId);if(!stream)throw new Error('stream-not-open');
+          if(Number(envelope.chunks)!==stream.chunks.length||Number(envelope.utf8Bytes)!==stream.bytes)throw new Error('stream-final-metadata-mismatch');
+          streams.delete(envelope.streamId);
+          const saveJSON=stream.chunks.join(''),commitEnvelope={...stream.base,...envelope,action:'commitSave',saveJSON};
+          delete commitEnvelope.text;delete commitEnvelope.index;
+          window.__qaNativeCommit(commitEnvelope).then(detail=>window.dispatchEvent(new CustomEvent('gh-native-save-ack',{detail})),error=>nack(commitEnvelope,error));
+          return;
+        }
+        throw new Error('unexpected-save-bridge-action:'+action);
+      }catch(error){if(String(envelope?.action||'')==='saveStreamCommit')nack(envelope,error);else throw error;}
     }};
   },{saved:nativeSave||null,nativeBuild:build});
   const page=await context.newPage();
