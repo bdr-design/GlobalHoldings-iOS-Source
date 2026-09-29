@@ -1,10 +1,10 @@
 {
   "point": "Build 340 engine separation: immutable simulation and route plans, indexed procurement/disposal and finance batches, route-center read model, and payroll invoice join",
   "version": "3.0.0",
-  "build": 351,
+  "build": 352,
   "save_schema": "2.0.0",
-  "source_tree_sha256": "142133cb5b6ba275f27ac547f06e9ff38f20d5caea71b603e943fa545261b8e1",
-  "webapp_tree_sha256": "9501920d2725474659b1800ac0456a79eb0a8fc2643676d97b2bedd3f54764c0",
+  "source_tree_sha256": "01803006c17b22cf773ac3b190f9c4e1f4eaebe669d3cb36a0100fcedf69c313",
+  "webapp_tree_sha256": "62692f057e0dc01e4e7631ef017dda6bd4162fd9dfb6b4329de0755ccec35f98",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 231897,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 649155,
-      "sha256": "61f209a18e32cbb0230003426021e70f67249c16ae3cfa67681b247077eb1e79"
+      "bytes": 649272,
+      "sha256": "d38264ca446ef80d2f58d890931b86b0b080a53aad88db0c75e6f0f61c80d7ef"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1807,8 +1807,8 @@
       "sha256": "d2a47f6eacd38d4138d4ff7ab3866592c8c2a5d8896938192d55c08969d572a7"
     },
     "WebApp/mobility-core.js": {
-      "bytes": 64390,
-      "sha256": "4c3af628400b4e5b02f945402974ec3e77a0383f735c7c494ebc59b46d5ab192"
+      "bytes": 65418,
+      "sha256": "251064845dfc3d2c34861fce6856377d0271bf764638ead23982682f2817ff5d"
     },
     "WebApp/operations-core.js": {
       "bytes": 1716,
@@ -1980,11 +1980,11 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "d12c34131980878e0f21a645eaf7fc896e9336b3dd905611e22a3e9244186a27"
+      "sha256": "bc9c194d22334186238d0abc149cdf907f0d0bbde840418e96c6647b5a502225"
     },
     "BUILD": {
       "bytes": 4,
-      "sha256": "81648ca9fc259570270d372dc503656aea57fb7494f293fa0c0a2fae9dcf4fd3"
+      "sha256": "e76a6aa700839b90bfaa40900a8b74ec5cc9d9b3eecf5bf8d780b6376b8f63c2"
     },
     "VERSION": {
       "bytes": 6,

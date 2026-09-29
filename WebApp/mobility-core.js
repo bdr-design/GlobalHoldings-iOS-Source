@@ -354,10 +354,22 @@
     m.kpis.completionRate=m.kpis.requests?Math.round(m.kpis.completed/m.kpis.requests*1000)/10:100;
     return snapshot(state);
   }
-  // Mobility creates/completes work at sub-hour timestamps. Preserve the former
-  // calendar polling ceiling while the service is active; inactive Mobility does
-  // not force the rest of the group back to 600-second transactions.
-  function simulationSliceLimit(state){const m=state?.mobility;return m?.status==='active'&&Array.isArray(m?.vehicles)&&m.vehicles.length?600:3600;}
+  // Mobility creates, dispatches and completes work at sub-hour timestamps (demand every 30-105 s, a bounded queue, 10-minute
+  // request expiry). Its model therefore needs to be stepped every MOBILITY_STEP_SECONDS. Until Build 350 that was enforced by
+  // shrinking EVERY simulation slice of the whole group to 600 s while the service was active, which multiplied the fixed
+  // per-slice cost of the entire fleet by six (a 30-day calendar advance ran about five times slower once Mobility opened).
+  // Build 351 keeps the model's cadence exactly and moves it inside the slice: advanceThrough() runs the same sequence of
+  // onSimulationTime() calls, each with simSeconds set to that step, as consecutive 600-second slices used to.
+  const MOBILITY_STEP_SECONDS=600;
+  function advanceThrough(ctx,from,to){
+    const state=ctx.state||ctx,start=Number(from),end=Number(to),m=state?.mobility;
+    if(!(m?.status==='active'&&Array.isArray(m?.vehicles)&&m.vehicles.length)||!Number.isFinite(start)||!Number.isFinite(end)||end-start<=MOBILITY_STEP_SECONDS+1e-9)return onSimulationTime(ctx,end);
+    const restore=state.simSeconds;
+    try{for(let at=start+MOBILITY_STEP_SECONDS;at<end-1e-9;at+=MOBILITY_STEP_SECONDS){state.simSeconds=at;onSimulationTime(ctx,at);}}
+    finally{state.simSeconds=restore;}
+    return onSimulationTime(ctx,end);
+  }
+  function simulationSliceLimit(){return 3600;}
   function snapshot(state){const m=ensure(state),moving=m.vehicles.filter(v=>v.status==='moving').length,queued=m.rideRequests.filter(r=>r.status==='queued').length;return {ownerCompanyId:m.ownerCompanyId,status:m.status,vehicles:m.vehicles.length,available:m.vehicles.length-moving,moving,drivers:m.drivers.length,online:m.drivers.filter(d=>d.status==='online').length,queued,activeTrips:m.activeTrips.length,completed:m.kpis.completed,grossBookings:m.kpis.grossBookings,driverPayouts:m.kpis.driverPayouts,platformRevenue:m.kpis.platformRevenue,acceptanceRate:m.kpis.acceptanceRate,completionRate:m.kpis.completionRate,avgRating:m.kpis.avgRating,zones:m.zones.length,centers:activeCenters(state,m).length,monthlyPayroll:m.drivers.reduce((sum,driver)=>sum+(Number(driver.monthlySalary)||6000),0)};}
   // إحصاء محلي لمركز عاصمة واحد بعينه (يُستخدم في إدارة منشأة ذلك المركز تحديدًا، بدل الرقم الإجمالي العالمي).
   function centerSnapshot(state,capitalId){const m=ensure(state),vehicles=m.vehicles.filter(v=>v.centerId===capitalId),drivers=m.drivers.filter(d=>d.centerId===capitalId),moving=vehicles.filter(v=>v.status==='moving').length,fin=m.kpisByCenter[capitalId]||{completed:0,grossBookings:0,driverPayouts:0,platformRevenue:0};return {capitalId,vehicles:vehicles.length,moving,available:vehicles.length-moving,drivers:drivers.length,online:drivers.filter(d=>d.status==='online').length,activeTrips:m.activeTrips.filter(t=>t.centerId===capitalId).length,completed:fin.completed,grossBookings:fin.grossBookings,driverPayouts:fin.driverPayouts,platformRevenue:fin.platformRevenue};}
@@ -397,5 +409,5 @@
     return `<article class="list-item"><div class="list-item-head"><div><h3>ربحية المدن</h3><p>كل مدينة مركز مستقل ماليًا وتشغيليًا؛ هذا ما جنته فعليًا حتى الآن، وليس تقديرًا.</p></div><span class="tag">${rows.length} مدينة نشطة</span></div>${rows.map(c=>`<div class="spec-row"><span>${ctx.esc?ctx.esc(c.city):c.city} · ${c.fin.vehicles} مركبة · ${c.fin.completed} رحلة</span><b class="${c.fin.platformRevenue>=0?'positive':'negative'}">${money(c.fin.platformRevenue)}</b></div>`).join('')}</article>`;
   }
   function execute(ctx,cmd,p={}){if(cmd==='buy-fleet')return buyFleet(ctx,p);if(cmd==='service-vehicle')return serviceVehicle(ctx,p);if(cmd==='sell-vehicle')return sellVehicle(ctx,p);if(cmd==='cache-street-route')return cacheStreetRoute(ctx,p);if(cmd==='launch')return launch(ctx);throw new Error(`Unknown Mobility command: ${cmd}`);}
-  const API={VERSION,purchaseCatalogs,ROUTE_WAIT_TIMEOUT_SECONDS,ZONES,CLASSES,CAPITALS,mobilityOwnerCompanyId,mapStructureRevision:()=>mapStructureVersion,ensure,launch,buyFleet,onSimulationTime,simulationSliceLimit,snapshot,centerSnapshot,centerClusters,liveVehicles,movingClusters,vehiclePosition,pendingStreetRoutes,cacheStreetRoute,routePosition,urbanPath,zonesFor,capitalMeta,centerMeta,findVehicle,serviceVehicle,sellVehicle,render,renderFleet,execute};globalThis.GH_MOBILITY_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('mobility',API);if(globalThis.window&&window!==globalThis)window.GH_MOBILITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API={VERSION,purchaseCatalogs,ROUTE_WAIT_TIMEOUT_SECONDS,ZONES,CLASSES,CAPITALS,mobilityOwnerCompanyId,mapStructureRevision:()=>mapStructureVersion,ensure,launch,buyFleet,onSimulationTime,advanceThrough,simulationSliceLimit,snapshot,centerSnapshot,centerClusters,liveVehicles,movingClusters,vehiclePosition,pendingStreetRoutes,cacheStreetRoute,routePosition,urbanPath,zonesFor,capitalMeta,centerMeta,findVehicle,serviceVehicle,sellVehicle,render,renderFleet,execute};globalThis.GH_MOBILITY_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('mobility',API);if(globalThis.window&&window!==globalThis)window.GH_MOBILITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

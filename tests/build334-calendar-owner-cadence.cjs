@@ -25,8 +25,11 @@ for(let frame=0;frame<10000&&engine.snapshot().manualAdvance;frame++){wall+=16;e
 assert.equal(e.state.simSeconds,3600);assert.equal(engine.snapshot().manualAdvance,null);assert.equal(engine.snapshot().lastAdvanceFailure??null,null);
 const delivered=e.state.realism.procurement.deliveries.find(row=>row.id===orderId);assert.equal(delivered.status,'delivered','pending asset must be delivered before calendar widens its batch');assert(Number(delivered.deliveredAtSeconds)<=600,'delivery must not be delayed to the next hour by wide calendar batching');
 assert.deepEqual(intervals,[[0,600],[600,3600]],'after delivery clears, owner must release the calendar back to the next hourly boundary');assert.equal(commitCount,2);assert.equal(marketCalls,1);assert.equal(e.s.GH_REALISM.simulationSliceLimit(e.state),3600);
-e.state.mobility={status:'active',vehicles:[{id:'MOB-CADENCE-PROBE'}]};assert.equal(e.s.GH_MOBILITY_CORE.simulationSliceLimit(e.state),600,'active mobility fleet must preserve the former <=600 second calendar cadence');e.state.mobility={vehicles:[]};
+e.state.mobility={status:'active',vehicles:[{id:'MOB-CADENCE-PROBE'}]};// Build 351: Mobility keeps its 600-second model cadence by stepping INSIDE the slice (advanceThrough), so it no longer forces the
+  // whole group into 600-second slices; tests/build351-mobility-stepping.cjs proves the resulting state is identical.
+  assert.equal(e.s.GH_MOBILITY_CORE.simulationSliceLimit(e.state),3600,'active mobility fleet must not constrain unrelated fleet simulation');assert.equal(typeof e.s.GH_MOBILITY_CORE.advanceThrough,'function','mobility must expose its stepped advance');e.state.mobility={vehicles:[]};
 assert(advanceEvents.some(event=>event.completed===true));
+assert(/simulation\.apply\.mobility-time[\s\S]{0,240}advanceThrough\(\{state\},simMeta\.from,simMeta\.to\)/.test(app),'the slice commit must step Mobility through advanceThrough');
 // Static host guard: the real app adapter must combine both temporal owners.
 assert(/getManualSliceLimit:\(\)=>\{[\s\S]{0,600}GH_REALISM\?\.simulationSliceLimit[\s\S]{0,600}GH_MOBILITY_CORE\?\.simulationSliceLimit/.test(app),'app must consult both sub-hour owners before selecting a wide calendar slice');
 console.log(JSON.stringify({suite:'build334-calendar-owner-cadence',pendingDeliveryProtected:true,intervals,deliveredAtSeconds:delivered.deliveredAtSeconds,commitCount,marketCalls,scope:'actual delivery owner + actual simulation transaction; Node contract test, not iPhone performance'},null,2));

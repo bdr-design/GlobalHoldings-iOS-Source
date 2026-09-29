@@ -1,11 +1,11 @@
 {
   "approved": false,
-  "source_tree_sha256": "142133cb5b6ba275f27ac547f06e9ff38f20d5caea71b603e943fa545261b8e1",
+  "source_tree_sha256": "01803006c17b22cf773ac3b190f9c4e1f4eaebe669d3cb36a0100fcedf69c313",
   "version": "3.0.0",
-  "build": 351,
+  "build": 352,
   "save_schema": "2.0.0",
   "blocking_issues": [
-    "Build 351 has no direct-source CI run, no WebKit/WKWebView run and no manual-device profile; the latest_direct_source_ci entries below describe Build 340 only.",
+    "Build 352 has no direct-source CI run, no WebKit/WKWebView run and no manual-device profile; the latest_direct_source_ci entries below describe Build 340 only.",
     "The current local source revision must be committed to the direct-Git branch and pass the full CI verification before it is treated as a verified candidate.",
     "Physical iPhone pressure testing at 4,300 and 20,000 full assets with routes, purchase, delivery, sale, finance, save/restore and long-session interaction is required.",
     "90Hz/60Hz frame-time, touch-latency, task-at-least-50ms, memory and thermal targets have not been demonstrated on target iPhones.",
@@ -59,5 +59,5 @@
     "tested_commit_sha": "976c9aef615b5dd30c0967d8a81b63d96c374fc2",
     "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731"
   },
-  "point": "Build 351 root-cause candidate (bulk-purchase cost, exact-input slice guard, lossless save codec, slim trip archive, verified-once proof ledger); Node-only evidence plus one Build 350 device report, no CI/WKWebView evidence for 351 yet"
+  "point": "Build 352 root-cause candidate (bulk-purchase cost, exact-input slice guard, lossless save codec, slim trip archive, verified-once proof ledger, stepped Mobility inside wide slices); Node-only evidence plus Build 350/351 device reports, no CI/WKWebView evidence for 352 yet"
 }
