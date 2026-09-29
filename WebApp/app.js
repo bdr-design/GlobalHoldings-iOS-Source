@@ -25,7 +25,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 340;
+  const RUNTIME_BUILD = 350;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   const FOUNDER_PRINCIPAL_ID='PLAYER-FOUNDER';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
@@ -805,6 +805,7 @@
       window.__GH_DURABLE_COMMAND_CONTEXT__={name,liveState:state,draft};
       const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(row=>row.severity==='critical').map(row=>String(row.id||row.code||row.title)));
       const value=await apply({state:draft,routes:runtime});if(value===false)throw new Error(`${name}-rejected`);
+      if(window.__GH_DURABLE_COMMAND_CONTEXT__?.poisoned===true)throw new Error(`${name}-draft-poisoned`);
       draft.saveRevision=previousRevision+1;
       const shouldYieldForValidation=((draft.assets?.length||0)+(draft.mobility?.vehicles?.length||0))>=500;
       if(shouldYieldForValidation)await yieldForInteractivePaint();
@@ -2455,9 +2456,22 @@
     const simMeta={speed,from:Number(meta.from)||state.simSeconds,to:Number(meta.to)||(state.simSeconds+sliceSeconds),infiniteMoney:!!(state.godMoney&&state.infiniteMoney)};
     const boundary=meta.boundary||{};
     let snapshotCursor=0,assetCursor=0,competitorCursor=0,finished=false,cancelled=false,staleReason=null,activeWorkerBatch=null,localFallbackRows=null,localFallbackCursor=0;
+    // Build 350 exact-input guard: a plan produced from immutable DTOs by the Worker owner reads ONLY the inputs
+    // that validate() re-compares byte-for-byte at commit (per-asset guard, route guards, economy context, competitor
+    // guards, simulation time, fleet identity/length). A concurrent commit that touched none of them cannot change the
+    // plan, so it must not discard it. Any main-thread planning (compatibility fallback) may read live state through
+    // owners the guards do not enumerate, so such a job keeps the strict global-revision rule.
+    let legacyPlanning=false;
     const pendingAssetRows=[];
     const workerBatchSize=SIMULATION_ASSET_ENGINE.MAX_BATCH_ITEMS;
-    function sourceStillCurrent(){return state.assets===sourceAssets&&(Array.isArray(sourceAssets)?sourceAssets.length:0)===snapshotAssetCount&&(sourceRevision===null||tx.revision(state)===sourceRevision);}
+    function exactInputPlanning(){return !legacyPlanning&&assetEngineContext.workerCompatible===true&&!simulationAssetWorkerFailed&&typeof Worker==='function';}
+    function sourceStillCurrent(){
+      if(state.assets!==sourceAssets||(Array.isArray(sourceAssets)?sourceAssets.length:0)!==snapshotAssetCount)return false;
+      if(sourceRevision===null||tx.revision(state)===sourceRevision)return true;
+      // The global revision moved. Only an exact-input plan may survive an unrelated commit; validate() still
+      // rejects any change to a guarded input, so real conflicting writes remain rejected.
+      return exactInputPlanning();
+    }
     function invalidateStaleSource(){
       staleReason='simulation-source-revision-conflict';finished=true;
       if(activeWorkerBatch){releaseSimulationAssetBatch(activeWorkerBatch.pending,{cancel:true});activeWorkerBatch=null;}
@@ -2465,6 +2479,7 @@
       return true;
     }
     function legacyRecord(row){
+      legacyPlanning=true;
       let draft=clone(row.asset),effects=makeSimulationEffects();
       try{processAssetDraft(draft,sliceSeconds,effects,simMeta);}
       catch(error){
@@ -3814,7 +3829,7 @@
     const fundingGap=ownerCompanyId==='group'||canCompanySpend(ownerCompanyId,upfront,'capex')?0:Math.max(0,upfront-companyOperatingBalance(ownerCompanyId));
     const realism=window.GH_REALISM?.migrate(state),leadBase=Number(realism?.procurement?.leadTimes?.[type])||(type==='air'?120:type==='sea'?210:21),documentLeadDays=tab==='used'?Math.max(5,Math.round(leadBase*.12)):mode==='lease'?Math.max(7,Math.round(leadBase*.18)):leadBase;
     try{return await runAuthorizedCompositeCommand('asset-purchase',({state:draft,dispatch,recordAlert})=>{
-      const batch=window.GH_TRANSACTION_CORE.execute(draft,{label:'asset-purchase-composite',apply:()=>window.GH_PROCUREMENT_CORE.withPurchaseBatch(draft,()=>{
+      const batch=window.GH_TRANSACTION_CORE.execute(draft,{label:'asset-purchase-composite',discardableDraft:true,apply:()=>window.GH_PROCUREMENT_CORE.withPurchaseBatch(draft,()=>{
       if(fundingGap>0){
         if(companyOperatingBalanceFor(draft,'group')<fundingGap||dispatch('finance','transfer',{from:'group',to:ownerCompanyId,amount:fundingGap,note:`تمويل شراء أصول يدوي · ${item.name} × ${qty}`}).result?.transferred!==true)throw new Error('تعذر تمويل الشركة التابعة داخل معاملة الشراء.');
         recordAlert(`حُوِّل ${fmtMoney(fundingGap)} من الشركة القابضة إلى ${typeName(ownerCompanyId)} لتغطية شراء ${item.name}.`,'finance');

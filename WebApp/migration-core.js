@@ -15,7 +15,7 @@
     if(!raw){const pristine=globalThis.GH_GAME_LIFECYCLE?.pristine?globalThis.GH_GAME_LIFECYCLE.pristine(defaultState,0):clone(defaultState),companyUpgrade=migrateCompanyPlatform(pristine);return {state:saveSchema.normalize(companyUpgrade.state,defaultState),source:'default',migratedLegacyKey:null,needsCanonicalPersist:false};}
     // Validate the actual persisted root before merging defaults or normalizing.
     // A corrupt/future save remains untouched for recovery or explicit export.
-    let saved;try{saved=JSON.parse(raw);}catch{throw new Error('MIGRATION_JSON_INVALID');}
+    let saved;try{saved=JSON.parse(raw);if(globalThis.GH_STATE_CODEC?.decodeState)saved=globalThis.GH_STATE_CODEC.decodeState(saved);}catch{throw new Error('MIGRATION_JSON_INVALID');}
     if(nativeRaw)try{delete globalThis.__GH_NATIVE_SAVE_JSON__;}catch{globalThis.__GH_NATIVE_SAVE_JSON__=null;}
     const schemaUpgrade=saveSchema.migrateLegacy?.(saved)||{state:saved,changed:false},companyUpgrade=migrateCompanyPlatform(schemaUpgrade.state),legacyUpgrade={state:companyUpgrade.state,changed:schemaUpgrade.changed===true||companyUpgrade.changed===true};saved=legacyUpgrade.state;
     const validation=saveSchema.validate(saved);

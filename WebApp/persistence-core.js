@@ -4,6 +4,14 @@
   const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeHardBytes:30*1024*1024,ackTimeoutMs:10000,pending:16});
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+  // Storage encoding (Build 350). Large homogeneous collections are persisted as shape + positional-cell rows with an
+  // interned pool, so a 20,000-asset fleet no longer repeats every property name and crew table 20,000 times. This is a
+  // TRANSPORT encoding only: the live state and Save Schema are unchanged, parseState(serializeState(x)) is exactly
+  // JSON.parse(JSON.stringify(x)), and plain (pre-350) saves still load because decodeState passes them through.
+  const stateCodec=()=>globalThis.GH_STATE_CODEC||null;
+  function serializeState(state){const codec=stateCodec();return codec?codec.serialize(state):JSON.stringify(state);}
+  function decodeTree(tree){const codec=stateCodec();return codec?codec.decodeState(tree):tree;}
+  function parseState(json){return decodeTree(JSON.parse(json));}
   const clock=()=>globalThis.performance?.now?.()??Date.now();
   const pending=new Map(), slotPending=new Map(), samples=[],timingSamples=[];
   let lastSaveBreakdown=null,lastNativeAck=null;
@@ -46,7 +54,7 @@
       const out={ok:false,reason:String(error.message||error),rollbackError,...error.measurement};telemetry({operation:'write',...out,durationMs:clock()-start});return out;
     }
   }
-  function writeState(key,state,options={}){const start=clock();try{assertState(state);const json=JSON.stringify(state);const out=writeJSON(key,json,options);telemetry({operation:'serialize',ok:out.ok,utf8Bytes:out.utf8Bytes,durationMs:clock()-start});return out;}catch(e){const out={ok:false,reason:`serialization-or-schema:${e.message||e}`};telemetry({operation:'serialize',...out,durationMs:clock()-start});return out;}}
+  function writeState(key,state,options={}){const start=clock();try{assertState(state);const json=serializeState(state);const out=writeJSON(key,json,options);telemetry({operation:'serialize',ok:out.ok,utf8Bytes:out.utf8Bytes,durationMs:clock()-start});return out;}catch(e){const out={ok:false,reason:`serialization-or-schema:${e.message||e}`};telemetry({operation:'serialize',...out,durationMs:clock()-start});return out;}}
   function bridgeFor(action){return globalThis.webkit?.messageHandlers?.[action==='resetGameSave'?'updateBridge':'saveBridge'];}
   function receiveAck(detail={}){
     const row=pending.get(detail.requestId);if(!row)return false;
@@ -71,7 +79,7 @@
     const bridge=bridgeFor(action);if(!bridge)return Promise.resolve({ok:true,native:false});
     if(pending.size>=PERSISTENCE_LIMITS.pending)return Promise.reject(new Error('native-save-backpressure'));
     let saveRevision=Number(options.saveRevision),resetEpoch=Number(options.resetEpoch);
-    if(!Number.isSafeInteger(saveRevision)||saveRevision<0||!Number.isSafeInteger(resetEpoch)||resetEpoch<0){const state=JSON.parse(json);assertState(state);saveRevision=Number(state.saveRevision)||0;resetEpoch=Number(state.resetEpoch)||0;}
+    if(!Number.isSafeInteger(saveRevision)||saveRevision<0||!Number.isSafeInteger(resetEpoch)||resetEpoch<0){const state=parseState(json);assertState(state);saveRevision=Number(state.saveRevision)||0;resetEpoch=Number(state.resetEpoch)||0;}
     const post=saveHashValue=>{
       const envelope={action,requestId:`${action}-${Date.now()}-${++sequence}`,saveJSON:json,saveHash:saveHashValue,saveRevision,resetEpoch,saveSchemaVersion:'2.0.0',appVersion:options.appVersion||VERSION};
       if(options.transactionId)envelope.transactionId=String(options.transactionId).slice(0,120);
@@ -110,7 +118,7 @@
     if(slotPending.size>=PERSISTENCE_LIMITS.pending)return Promise.reject(new Error('native-slot-backpressure'));
     const requestId=`${action}-${Date.now()}-${++slotSequence}`,envelope={action,requestId,index};
     if(action==='saveManualSlot'){
-      assertState(state);const json=JSON.stringify(state),measurement=inspectNativeJSON(json),hash=globalThis.GH_CONTROL_PLANE?.sha256;if(!hash)return Promise.reject(new Error('save-hash-owner-unavailable'));
+      assertState(state);const json=serializeState(state),measurement=inspectNativeJSON(json),hash=globalThis.GH_CONTROL_PLANE?.sha256;if(!hash)return Promise.reject(new Error('save-hash-owner-unavailable'));
       Object.assign(envelope,{saveJSON:json,saveHash:hash(json),saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:'2.0.0',appVersion:meta.appVersion||VERSION,label:String(meta.label||'').slice(0,120)});
       envelope.measurement=measurement;
     }
@@ -133,7 +141,7 @@
       if(!state||typeof state!=='object')throw new Error('state-required');
       state.saveRevision=nextRevision;
       let stageStart=clock();assertState(state);timing.schemaMs=Math.max(0,clock()-stageStart);
-      stageStart=clock();json=JSON.stringify(state);timing.stringifyMs=Math.max(0,clock()-stageStart);resetEpoch=Number(state.resetEpoch)||0;
+      stageStart=clock();json=serializeState(state);timing.stringifyMs=Math.max(0,clock()-stageStart);resetEpoch=Number(state.resetEpoch)||0;
       stageStart=clock();measurement=nativeBridge?inspectNativeJSON(json):inspectJSON(json,storageKey,options);timing.measurementMs=Math.max(0,clock()-stageStart);timing.utf8Bytes=measurement.utf8Bytes;
       stageStart=clock();
       if(nativeBridge){
@@ -182,7 +190,7 @@
     durableLocked=true;
     let written=null;
     try{
-      await waitOrdinaryIdle({supersedeDirty:true});assertState(state);const json=JSON.stringify(state),nativeBridge=!!bridgeFor('commitSave');
+      await waitOrdinaryIdle({supersedeDirty:true});assertState(state);const json=serializeState(state),nativeBridge=!!bridgeFor('commitSave');
       if(nativeBridge){
         const measurement=inspectNativeJSON(json),ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0});ordinaryError=null;
         const cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,options);
@@ -199,7 +207,7 @@
   }
   function recoverBrowserState(storageKey='global-holdings-world-v2.0.0'){
     if(bridgeFor('commitSave'))return {ok:false,reason:'native-vault-reconciliation-required'};
-    try{const raw=localStorage.getItem(storageKey);if(!raw)return {ok:false,reason:'missing-durable-state'};const state=JSON.parse(raw);assertState(state);return {ok:true,state};}catch(error){return {ok:false,reason:String(error.message||error)};}
+    try{const raw=localStorage.getItem(storageKey);if(!raw)return {ok:false,reason:'missing-durable-state'};const state=parseState(raw);assertState(state);return {ok:true,state};}catch(error){return {ok:false,reason:String(error.message||error)};}
   }
   function markRecoveryRequired(reason='manual-recovery-required'){recoveryRequired=true;ordinaryError=ordinaryError||new Error(String(reason));status({ok:false,critical:true,reason:String(reason),requiresNativeReconciliation:!!bridgeFor('commitSave')});return true;}
   function acknowledgeRecovery(){if(bridgeFor('commitSave')&&recoveryRequired)return false;recoveryRequired=false;ordinaryError=null;return true;}
@@ -208,8 +216,8 @@
     let nativeAttempted=false,nativeCommitted=false,oldRaw=null,oldMarker=null,browserTouched=false;
     let oldJSON;
     try{
-      await drain({allowLockedFlush:true});assertState(next);assertState(previous);oldJSON=JSON.stringify(previous);
-      const json=JSON.stringify(next),nativeBridge=!!bridgeFor('resetGameSave'),nativeMeasurement=nativeBridge?inspectNativeJSON(json):null;if(!nativeBridge)inspectJSON(json,storageKey);oldRaw=localStorage.getItem(storageKey);oldMarker=resetMarkerKey?localStorage.getItem(resetMarkerKey):null;
+      await drain({allowLockedFlush:true});assertState(next);assertState(previous);oldJSON=serializeState(previous);
+      const json=serializeState(next),nativeBridge=!!bridgeFor('resetGameSave'),nativeMeasurement=nativeBridge?inspectNativeJSON(json):null;if(!nativeBridge)inspectJSON(json,storageKey);oldRaw=localStorage.getItem(storageKey);oldMarker=resetMarkerKey?localStorage.getItem(resetMarkerKey):null;
       // The current in-memory game is the compensating checkpoint. Native owns durability.
       nativeAttempted=nativeBridge;
       await requestNative('resetGameSave',json,{appVersion,timeoutMs,clearManualSlots,saveRevision:Number(next.saveRevision)||0,resetEpoch:Number(next.resetEpoch)||0});
@@ -243,7 +251,7 @@
       throw error;
     }finally{locked=false;}
   }
-  function parseSlot(raw){if(!raw)return {ok:false,reason:'empty'};try{const p=JSON.parse(raw),state=p?.format===SLOT_FORMAT?p.state:p;assertState(state);return {ok:true,state,meta:p?.format===SLOT_FORMAT?p.meta||{}:{legacy:true}};}catch(e){return {ok:false,reason:'invalid-save',error:String(e.message||e)};}}
+  function parseSlot(raw){if(!raw)return {ok:false,reason:'empty'};try{const p=JSON.parse(raw),state=decodeTree(p?.format===SLOT_FORMAT?p.state:p);assertState(state);return {ok:true,state,meta:p?.format===SLOT_FORMAT?p.meta||{}:{legacy:true}};}catch(e){return {ok:false,reason:'invalid-save',error:String(e.message||e)};}}
   function slotStatus(index){
     try{
       index=Number(index);if(!Number.isInteger(index)||index<0||index>2)throw new Error('invalid-save-slot');
@@ -255,7 +263,7 @@
     try{
       assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,label=meta.label||`اليوم ${day}`;
       if(bridgeFor('commitSave'))return requestManualSlot('saveManualSlot',index,state,{...meta,label}).catch(error=>({ok:false,reason:String(error.message||error)}));
-      const envelope={format:SLOT_FORMAT,version:VERSION,saveSchemaVersion:'2.0.0',meta:{appVersion:meta.appVersion||VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,label},state};const out=writeJSON(slotKey(index),JSON.stringify(envelope));return {...out,meta:envelope.meta};
+      const envelope={format:SLOT_FORMAT,version:VERSION,saveSchemaVersion:'2.0.0',meta:{appVersion:meta.appVersion||VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,label},state:stateCodec()?stateCodec().encodeState(state):state};const out=writeJSON(slotKey(index),JSON.stringify(envelope));return {...out,meta:envelope.meta};
     }catch(e){return {ok:false,reason:String(e.message||e)};}
   }
   function statusEventForSlot(error,storageKey){status({ok:false,reason:error.message,requiresNativeReconciliation:true,storageKey});}

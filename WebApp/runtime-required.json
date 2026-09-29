@@ -471,6 +471,7 @@
     "simulation-core.js",
     "simulation-pacing-core.js",
     "simulation-time-core.js",
+    "state-codec-core.js",
     "strategy-core.js",
     "styles.css",
     "transaction-core.js",

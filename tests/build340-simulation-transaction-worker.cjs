@@ -61,10 +61,51 @@ async function run(){
     assert.equal(reads,0,'creating a slice must not synchronously scan the full fleet');
     assert.equal(job.runChunk(1,{deadline:Infinity}),false,'slice-start guards are captured within the supplied chunk budget');
     assert(reads>0,'the first bounded chunk captures its immutable input before calculation');assert.equal(x.workerMessages.length,0,'asset calculation has not started while the snapshot is incomplete');
+    // Build 350 exact-input contract: a change to a GUARDED input still rejects at commit; the plan is never published stale.
     const changed=x.s.GH_TRANSACTION_CORE.execute(x.state,{label:'test:asset-mutation-during-snapshot',apply:()=>{x.state.assets[0].specs.capacity=101;return true;}});assert.equal(changed.committed,true);
-    assert.equal(job.runChunk(64,{deadline:Infinity}),true,'a transaction revision change invalidates a partial slice snapshot');const rejected=job.finish();
-    assert.equal(rejected.committed,false,'a worker plan computed from an older DTO cannot publish');assert.equal(x.state.simSeconds,7200,'a stale asset plan cannot advance time');assert.equal(x.state.assets[0].specs.capacity,101,'rejected commit preserves the newer live input');
-    console.log('PASS bounded slice snapshot yields to the frame budget and a transaction revision change rejects stale planning');
+    await prepareFully(job);const rejected=job.finish();
+    assert.equal(rejected.committed,false,'a worker plan computed from an older DTO cannot publish');assert.equal(rejected.reason,'asset-conflict','the per-asset input guard rejects the stale plan');assert.equal(rejected.retry,true);assert.equal(x.state.simSeconds,7200,'a stale asset plan cannot advance time');assert.equal(x.state.assets[0].specs.capacity,101,'rejected commit preserves the newer live input');
+    console.log('PASS bounded slice snapshot yields to the frame budget and a guarded-input change rejects stale planning');
+  }
+  {
+    // ---- Build 350: exact-input guard. Unrelated commits must not discard a Worker plan; guarded inputs still must. ----
+    const start=(assetCount=1)=>{const x=setup({assetCount});const job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});assert.equal(job.runChunk(1,{deadline:Infinity}),false);return {x,job};};
+    const commit=(x,label,apply)=>{const out=x.s.GH_TRANSACTION_CORE.execute(x.state,{label,apply:()=>{apply();return true;}});assert.equal(out.committed,true);return out;};
+    { // unrelated gameplay commit (alerts) mid-slice: revision moves, plan survives and commits exactly once
+      const {x,job}=start(),before=x.s.GH_TRANSACTION_CORE.revision(x.state);
+      commit(x,'test:unrelated-alert',()=>{x.state.alerts=x.state.alerts||[];x.state.alerts.unshift('unrelated');});
+      assert.equal(x.s.GH_TRANSACTION_CORE.revision(x.state),before+1,'the global revision really moved');
+      await prepareFully(job);const result=job.finish();
+      assert.equal(result.committed,true,'an unrelated commit must not discard an exact-input plan');assert.equal(x.state.simSeconds,7230);assert(x.asset.progress>.1,'the committed slice advanced the asset');
+    }
+    { // many unrelated commits in a row still commit (no livelock under a busy background writer)
+      const {x,job}=start(50);
+      for(let i=0;i<25;i++)commit(x,`test:noise-${i}`,()=>{x.state.eventLog=x.state.eventLog||[];x.state.eventLog.unshift(`noise ${i}`);if(x.state.eventLog.length>10)x.state.eventLog.length=10;});
+      await prepareFully(job);const result=job.finish();assert.equal(result.committed,true);assert.equal(x.state.simSeconds,7230);
+    }
+    { // guarded economy input changes: rejected with the context guard
+      const {x,job}=start();
+      commit(x,'test:economy-change',()=>{x.state.realism.economy=x.state.realism.economy||{};x.state.realism.economy.jetFuel=(Number(x.state.realism.economy.jetFuel)||0)+7;});
+      await prepareFully(job);const result=job.finish();assert.equal(result.committed,false);assert.equal(result.reason,'simulation-context-conflict');assert.equal(x.state.simSeconds,7200);
+    }
+    { // fleet identity/length changes (purchase, sale): rejected, never merged silently
+      const {x,job}=start();
+      commit(x,'test:fleet-append',()=>{x.state.assets.push({...x.asset,id:'SIM-WORKER-APPENDED'});});
+      const stale=job.runChunk(64,{deadline:Infinity});assert.equal(stale,true,'fleet length change invalidates the snapshot immediately');const result=job.finish();
+      assert.equal(result.committed,false);assert.equal(result.retry,true);assert.equal(x.state.simSeconds,7200);
+    }
+    { // a real route write is a guarded input too
+      const {x,job}=start();
+      commit(x,'test:route-write',()=>{x.s.routeTemplates[x.route.id].tripSeconds=x.route.tripSeconds+100;});
+      await prepareFully(job);const result=job.finish();assert.equal(result.committed,false);assert.equal(x.state.simSeconds,7200);assert(['route-conflict','asset-conflict'].includes(result.reason),result.reason);
+    }
+    { // compatibility (main-thread) planning may read live state through unenumerated owners: it keeps the strict revision rule
+      const {x,job}=start();x.s.Worker=undefined;
+      commit(x,'test:unrelated-during-compat',()=>{x.state.alerts=x.state.alerts||[];x.state.alerts.unshift('unrelated');});
+      assert.equal(job.runChunk(64,{deadline:Infinity}),true,'strict revision rule invalidates a compatibility-planned slice');const result=job.finish();
+      assert.equal(result.committed,false);assert.equal(result.reason,'simulation-source-revision-conflict');assert.equal(x.state.simSeconds,7200);
+    }
+    console.log('PASS Build 350 exact-input guard: unrelated commits keep the plan; asset/economy/fleet/route writes and compatibility planning stay strict');
   }
   {
     const x=setup({assetCount:20000}),started=performance.now();

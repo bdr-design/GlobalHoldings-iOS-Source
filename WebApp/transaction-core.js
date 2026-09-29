@@ -31,9 +31,39 @@
   }
   function jsonClone(value){if(value===undefined)return undefined;return JSON.parse(JSON.stringify(value));}
   function deepClone(value){if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
+  // Restores `target` in place from a structured-clone `snapshot`, preserving object identity.
+  // Fast path (same key sequence, unfrozen plain data object): no key Map, no delete/re-add and
+  // no write for unchanged primitives. Anything else uses the original delete/re-add path, so
+  // shape changes, key order and the resulting graph stay byte-for-byte equivalent.
   function restoreValue(target,snapshot){
-    if(Array.isArray(snapshot)){if(!Array.isArray(target))return deepClone(snapshot);target.length=snapshot.length;for(let i=0;i<snapshot.length;i++){const sv=snapshot[i],tv=target[i];target[i]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}return target;}
-    if(snapshot&&typeof snapshot==='object'){if(!target||typeof target!=='object'||Array.isArray(target))target={};const existing=new Map(Object.keys(target).map(key=>[key,target[key]]));for(const key of Object.keys(target))delete target[key];for(const [key,sv] of Object.entries(snapshot)){const tv=existing.get(key);target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}return target;}
+    if(Array.isArray(snapshot)){
+      if(!Array.isArray(target))return deepClone(snapshot);
+      if(target.length!==snapshot.length)target.length=snapshot.length;
+      for(let i=0;i<snapshot.length;i++){
+        const sv=snapshot[i],tv=target[i];
+        if(sv&&typeof sv==='object'){const next=restoreValue(tv,sv);if(next!==tv||!(i in target))target[i]=next;}
+        else if(tv!==sv||!(i in target))target[i]=sv;
+      }
+      return target;
+    }
+    if(snapshot&&typeof snapshot==='object'){
+      if(!target||typeof target!=='object'||Array.isArray(target))target={};
+      const targetKeys=Object.keys(target),snapshotKeys=Object.keys(snapshot);
+      let sameShape=targetKeys.length===snapshotKeys.length&&!Object.isFrozen(target);
+      if(sameShape)for(let i=0;i<snapshotKeys.length;i++)if(targetKeys[i]!==snapshotKeys[i]){sameShape=false;break;}
+      if(sameShape){
+        for(let i=0;i<snapshotKeys.length;i++){
+          const key=snapshotKeys[i],sv=snapshot[key],tv=target[key];
+          if(sv&&typeof sv==='object'){const next=restoreValue(tv,sv);if(next!==tv)target[key]=next;}
+          else if(tv!==sv||(sv!==sv))target[key]=sv;
+        }
+        return target;
+      }
+      const existing=new Map(targetKeys.map(key=>[key,target[key]]));
+      for(const key of targetKeys)delete target[key];
+      for(const [key,sv] of Object.entries(snapshot)){const tv=existing.get(key);target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}
+      return target;
+    }
     return snapshot;
   }
   function restoreObject(target,snapshot){if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw new TypeError('Transaction snapshot must be an object');return restoreValue(target,snapshot);}
@@ -213,13 +243,20 @@
     };
     const derivedProfileContext=profiled?{kind:label.startsWith('simulation:')?'simulation-slice':label.startsWith('boundary-recovery:')?'boundary-recovery':'state-transaction',assetCount:Array.isArray(target.assets)?target.assets.length:null,invoiceCount:Array.isArray(target.finance?.invoices)?target.finance.invoices.length:null,receivableCount:Array.isArray(target.finance?.receivables)?target.finance.receivables.length:null,payableCount:Array.isArray(target.finance?.payables)?target.finance.payables.length:null}:null;
     const timing={label,profiled,profileContext:profiled?compactProfileContext(options.profileContext||derivedProfileContext):null,phaseBreakdown,scopeSize:scope?scope.length:null,fullSnapshot:false,fullSnapshotFallback:false,fallbackReason:null,rollbackStorage:null,journalRecords:0,snapshotMs:0,validateMs:0,applyMs:0,postCommitCriticalMs:0,postCommitNonCriticalMs:0,postCommitCriticalTasks:[],postCommitNonCriticalTasks:[],writeAudit:auditWrites?{enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots:[],undeclaredRoots:[],declaredButUnchanged:[],stage:'pending'}:null,rollbackMs:0,totalMs:0,committed:false,stage:'snapshot'};
+    // A durable command runs on a private deep-cloned draft that is discarded whole when anything
+    // fails; live state is only replaced after schema/integrity/storage succeed. A second full-state
+    // snapshot of that draft therefore protects nothing. This is honored ONLY when the target is
+    // exactly the active durable draft; any failure poisons the command so the draft cannot publish.
+    const discardableDraft=options.discardableDraft===true&&!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__&&globalThis.__GH_DURABLE_COMMAND_CONTEXT__.draft===target&&!requestedJournal&&!scope;
     const snapshotStart=runtimeClock();
-    if(requestedJournal&&!fallbackReason){
+    if(discardableDraft){rollbackStorage='discardable-draft';}
+    else if(requestedJournal&&!fallbackReason){
       const captured=captureJournal(target,scope,writerContracts);
       if(captured.ok){journal=captured;rollbackStorage='journal';timing.journalRecords=captured.records;}
       else fallbackReason=captured.reason;
     }
-    if(requestedJournal&&fallbackReason){snapshot=deepClone(target);rollbackStorage='full-snapshot';}
+    if(discardableDraft){/* no snapshot by design */}
+    else if(requestedJournal&&fallbackReason){snapshot=deepClone(target);rollbackStorage='full-snapshot';}
     else if(!requestedJournal){snapshot=scope?captureScoped(target,scope):deepClone(target);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
     timing.snapshotMs=Math.max(0,runtimeClock()-snapshotStart);timing.rollbackStorage=rollbackStorage;timing.fullSnapshot=rollbackStorage==='full-snapshot';timing.fullSnapshotFallback=requestedJournal&&rollbackStorage==='full-snapshot';timing.fallbackReason=timing.fullSnapshotFallback?fallbackReason:null;
     // Write auditing is an architecture-development proof tool. Full transactions reuse
@@ -227,7 +264,7 @@
     // audit/enforcement is explicitly requested. Normal gameplay pays no audit cost.
     const auditBaseline=auditWrites?((rollbackStorage==='full-snapshot')?snapshot:deepClone(target)):null;
     const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null};
-    const rollback=()=>{if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot);};
+    const rollback=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot);};
     let phase='validate';activeContext=context;
     try{
       const validateStart=runtimeClock();let validation;
