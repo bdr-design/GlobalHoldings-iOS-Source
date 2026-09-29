@@ -25,7 +25,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 350;
+  const RUNTIME_BUILD = 351;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   const FOUNDER_PRINCIPAL_ID='PLAYER-FOUNDER';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
@@ -801,7 +801,7 @@
     let draft=null,committed=false,settleDurableCommand=null;
     durableCommandSettlement=new Promise(resolve=>{settleDurableCommand=resolve;});
     try{
-      draft=window.GH_TRANSACTION_CORE?.deepClone?window.GH_TRANSACTION_CORE.deepClone(state):clone(state);const runtime=routeRuntimeForState(draft),previousRevision=Math.max(0,Math.floor(Number(state.saveRevision)||0));
+      draft=window.GH_TRANSACTION_CORE?.deepClone?window.GH_TRANSACTION_CORE.deepClone(state):clone(state);window.GH_SAVE_SCHEMA?.inheritVerified?.(state,draft);const runtime=routeRuntimeForState(draft),previousRevision=Math.max(0,Math.floor(Number(state.saveRevision)||0));
       window.__GH_DURABLE_COMMAND_CONTEXT__={name,liveState:state,draft};
       const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(row=>row.severity==='critical').map(row=>String(row.id||row.code||row.title)));
       const value=await apply({state:draft,routes:runtime});if(value===false)throw new Error(`${name}-rejected`);

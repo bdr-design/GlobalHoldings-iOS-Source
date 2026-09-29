@@ -22,6 +22,15 @@
   function status(detail){if(globalThis.dispatchEvent&&globalThis.CustomEvent)globalThis.dispatchEvent(new CustomEvent('gh-persistence-status',{detail}));}
   function validateState(state){return globalThis.GH_SAVE_SCHEMA?.validate?.(state)||{ok:false,errors:['save-schema-unavailable']};}
   function assertState(state){const v=validateState(state);if(!v.ok)throw new Error(`invalid-save:${(v.errors||[]).join(',')}`);}
+  // Build 350: recurring saves of the live game use the verified-once ledger (see save-schema.js) and run a FULL validation
+  // every FULL_VALIDATION_EVERY-th save, so an in-place edit of an already verified proof is still found within minutes.
+  // Loads, imports, manual slots, exports and recovery keep using assertState() (always full).
+  const FULL_VALIDATION_EVERY=10;let recurringValidations=0;
+  function assertRecurringState(state){
+    const full=(++recurringValidations%FULL_VALIDATION_EVERY)===0,schema=globalThis.GH_SAVE_SCHEMA;
+    const v=(full?schema?.validate?.(state):schema?.validate?.(state,{trustVerified:true}))||{ok:false,errors:['save-schema-unavailable']};
+    if(!v.ok)throw new Error(`invalid-save:${(v.errors||[]).join(',')}`);
+  }
   function bytes(text){if(globalThis.TextEncoder)return new TextEncoder().encode(text).byteLength;let n=0;for(const c of text){const p=c.codePointAt(0);n+=p<128?1:p<2048?2:p<65536?3:4;}return n;}
   function inspectJSON(json,key='',options={}){
     if(typeof json!=='string')throw new Error('serialization-failed');
@@ -118,7 +127,7 @@
     if(slotPending.size>=PERSISTENCE_LIMITS.pending)return Promise.reject(new Error('native-slot-backpressure'));
     const requestId=`${action}-${Date.now()}-${++slotSequence}`,envelope={action,requestId,index};
     if(action==='saveManualSlot'){
-      assertState(state);const json=serializeState(state),measurement=inspectNativeJSON(json),hash=globalThis.GH_CONTROL_PLANE?.sha256;if(!hash)return Promise.reject(new Error('save-hash-owner-unavailable'));
+      assertRecurringState(state);const json=serializeState(state),measurement=inspectNativeJSON(json),hash=globalThis.GH_CONTROL_PLANE?.sha256;if(!hash)return Promise.reject(new Error('save-hash-owner-unavailable'));
       Object.assign(envelope,{saveJSON:json,saveHash:hash(json),saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:'2.0.0',appVersion:meta.appVersion||VERSION,label:String(meta.label||'').slice(0,120)});
       envelope.measurement=measurement;
     }
@@ -140,7 +149,7 @@
     try{
       if(!state||typeof state!=='object')throw new Error('state-required');
       state.saveRevision=nextRevision;
-      let stageStart=clock();assertState(state);timing.schemaMs=Math.max(0,clock()-stageStart);
+      let stageStart=clock();assertRecurringState(state);timing.schemaMs=Math.max(0,clock()-stageStart);
       stageStart=clock();json=serializeState(state);timing.stringifyMs=Math.max(0,clock()-stageStart);resetEpoch=Number(state.resetEpoch)||0;
       stageStart=clock();measurement=nativeBridge?inspectNativeJSON(json):inspectJSON(json,storageKey,options);timing.measurementMs=Math.max(0,clock()-stageStart);timing.utf8Bytes=measurement.utf8Bytes;
       stageStart=clock();
@@ -190,7 +199,7 @@
     durableLocked=true;
     let written=null;
     try{
-      await waitOrdinaryIdle({supersedeDirty:true});assertState(state);const json=serializeState(state),nativeBridge=!!bridgeFor('commitSave');
+      await waitOrdinaryIdle({supersedeDirty:true});assertRecurringState(state);const json=serializeState(state),nativeBridge=!!bridgeFor('commitSave');
       if(nativeBridge){
         const measurement=inspectNativeJSON(json),ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0});ordinaryError=null;
         const cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,options);

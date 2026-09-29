@@ -1,10 +1,10 @@
 {
   "point": "Build 340 engine separation: immutable simulation and route plans, indexed procurement/disposal and finance batches, route-center read model, and payroll invoice join",
   "version": "3.0.0",
-  "build": 350,
+  "build": 351,
   "save_schema": "2.0.0",
-  "source_tree_sha256": "210e3bcc8a36657e9a781264939f1bb699e51fbd91bcc13f9f34ceb7e91ffd55",
-  "webapp_tree_sha256": "2006542dbea0ec3f7b7d3db4b424b82c4e3dd2cf3fc96fb51258395de497b900",
+  "source_tree_sha256": "142133cb5b6ba275f27ac547f06e9ff38f20d5caea71b603e943fa545261b8e1",
+  "webapp_tree_sha256": "9501920d2725474659b1800ac0456a79eb0a8fc2643676d97b2bedd3f54764c0",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 231897,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 649101,
-      "sha256": "a76e2f811babf61b119e41807512b2079188721496b1a90f8817f735c14784ca"
+      "bytes": 649155,
+      "sha256": "61f209a18e32cbb0230003426021e70f67249c16ae3cfa67681b247077eb1e79"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1635,8 +1635,8 @@
       "sha256": "a0d207bf3511ea0db3f249526f115595297eded7d3b9b01dcdfda9401f10baaf"
     },
     "WebApp/control-plane-core.js": {
-      "bytes": 31907,
-      "sha256": "db1d1a3af239c53832a292b319c97e55dd3443188404b08aa4017b8bed735363"
+      "bytes": 31928,
+      "sha256": "37a81752edd7a4e4696ed8d2e60d23ca040b74285e2a7df5f08f4403600dff82"
     },
     "WebApp/corporate-core.js": {
       "bytes": 19068,
@@ -1807,16 +1807,16 @@
       "sha256": "d2a47f6eacd38d4138d4ff7ab3866592c8c2a5d8896938192d55c08969d572a7"
     },
     "WebApp/mobility-core.js": {
-      "bytes": 63761,
-      "sha256": "7d417dc741c0c040e389332e26c25384fb69593d398fe54ea832eec2cfbad2cb"
+      "bytes": 64390,
+      "sha256": "4c3af628400b4e5b02f945402974ec3e77a0383f735c7c494ebc59b46d5ab192"
     },
     "WebApp/operations-core.js": {
       "bytes": 1716,
       "sha256": "a60a12c745e33195b2eeb998a6118f9eae056e67c837eec672f42778181a75f4"
     },
     "WebApp/persistence-core.js": {
-      "bytes": 31223,
-      "sha256": "34dfa5a7f9cd4404e30fa90e39a64f66004185a2c603df5d894fc2ce3506218b"
+      "bytes": 32012,
+      "sha256": "6d6d3f5d4dabefd04e93f0a3d951afa86421f1ddced71b234ff541c5f5744d9d"
     },
     "WebApp/policy-core.js": {
       "bytes": 1915,
@@ -1851,8 +1851,8 @@
       "sha256": "8251290d36e9dbb009e1753667844b5ca51e85f6ae657b640a3329faeadf1d7f"
     },
     "WebApp/save-schema.js": {
-      "bytes": 58073,
-      "sha256": "f98c1bf2d99a0cf1fa10f04d94965dc0b36180d71ed22ebcc2ed0e812f773d66"
+      "bytes": 61565,
+      "sha256": "fac79b2b4888c2b0789ae4f989aca1f07ff4e81b6161cfde43ca6f7ddad897b7"
     },
     "WebApp/section-identities.css": {
       "bytes": 2444,
@@ -1895,8 +1895,8 @@
       "sha256": "2e69ee058343d89b2310384a46dcf75992e2376945fa153ce74786adaf30ce02"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 33997,
-      "sha256": "c2bf5375a3f38453aa0410484dfd150c1122c01102cbbefc75cdb55a67205476"
+      "bytes": 34018,
+      "sha256": "c040aed9d7e7d25b7965a33477bec7c86cb4f6fff30f5d51073cdf794fc1c509"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -1980,11 +1980,11 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "ac77206e9f30ebed235053b13cfd28dd89f532e9b0bcb0809ec8c5730c6cea5b"
+      "sha256": "d12c34131980878e0f21a645eaf7fc896e9336b3dd905611e22a3e9244186a27"
     },
     "BUILD": {
       "bytes": 4,
-      "sha256": "def320d779b5e2a5a6e071146cebcb70465b32dc57beef2a22059aabb0f0c8fb"
+      "sha256": "81648ca9fc259570270d372dc503656aea57fb7494f293fa0c0a2fae9dcf4fd3"
     },
     "VERSION": {
       "bytes": 6,

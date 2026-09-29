@@ -325,7 +325,7 @@
       const value=await options.apply(draft,context);if(value===false)throw rejection(`${label}-rejected`,label,phase);
       if(Number(draft.saveRevision||0)!==expectedRevision)throw rejection('draft-save-revision-mutated',label,phase);
       draft.saveRevision=expectedRevision+1;phase='validate';
-      const schema=globalThis.GH_SAVE_SCHEMA?.validate?.(draft);if(schema&&schema.ok===false)throw rejection(`invalid-draft:${(schema.errors||[]).join(',')}`,label,phase);
+      const schema=globalThis.GH_SAVE_SCHEMA?.validate?.(draft,{trustVerified:true});if(schema&&schema.ok===false)throw rejection(`invalid-draft:${(schema.errors||[]).join(',')}`,label,phase);
       if(options.integrity!==false&&globalThis.GH_INTEGRITY_CORE?.check){const integrity=globalThis.GH_INTEGRITY_CORE.check(draft),introduced=(((integrity?.critical)||((integrity?.issues)||[]).filter(row=>row.severity==='critical'))||[]).filter(row=>!priorCritical.has(String(row.id||row.code||row.title)));if(introduced.length)throw rejection(`critical-integrity:${introduced.map(row=>row.id||row.code||row.title).join(',')}`,label,phase);}
       if(typeof options.validate==='function'){const validation=await options.validate(draft,context);if(validation===false||validation?.ok===false)throw rejection(validation?.reason||'validation-rejected',label,phase);}
       if(Number(liveState.saveRevision||0)!==expectedRevision)throw rejection(`state-revision-conflict:${expectedRevision}:${Number(liveState.saveRevision)||0}`,label,'pre-persist');
