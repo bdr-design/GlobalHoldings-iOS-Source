@@ -1,6 +1,7 @@
 (()=>{'use strict';
   const VERSION='3.0.0';
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+  const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
   function migrateCompanyPlatform(input){
     if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('MIGRATION_COMPANY_STATE_INVALID');
     const platform=globalThis.GH_COMPANY_PLATFORM;if(!platform?.migrateState)return {state:clone(input),changed:false,errors:[],warnings:['company-platform-unavailable']};
@@ -39,7 +40,8 @@
   function structural(state,defaultState){
     if(!state||typeof state!=='object'||Array.isArray(state))throw new Error('MIGRATION_STATE_INVALID');
     const arrayKeys=['assets','unlockedSectors','openedCompanies','ownedCompanies','hired','acceptedContracts','failedBids','branches','globalBases','customHubs','customRoutes','leasedAssets','eventLog','alerts','constructionContracts','commercialTenders','supplierTransactions','insurancePolicies'];
-    for(const key of arrayKeys){if(!Array.isArray(state[key]))state[key]=clone(defaultState[key]||[]);else state[key]=state[key].filter(Boolean);}
+    // A columnar fleet store replaces the legacy asset array (Fleet Core v4).
+    for(const key of arrayKeys){if(key==='assets'&&fleetData().mode(state)==='store')continue;if(!Array.isArray(state[key]))state[key]=clone(defaultState[key]||[]);else state[key]=state[key].filter(Boolean);}
     const objectKeys=['stakes','maDeals','contractStartDays','portfolio','portfolioBook','routeEndpoints','routeCache','companyRegistry','companyModules','companyFinance','contractRegistry','governance','research','esg','ipo'];
     for(const key of objectKeys)if(!state[key]||typeof state[key]!=='object'||Array.isArray(state[key]))state[key]=clone(defaultState[key]||{});
     if(!state.profile||typeof state.profile!=='object')state.profile=clone(defaultState.profile);
@@ -85,7 +87,7 @@
   function completeBusinessState(state,{defaultState,initialStocks,crewRolesSeed}){
   const companyPlatform=globalThis.GH_COMPANY_PLATFORM,companyMetricMaps=normalizeCompanyMetricMaps(state,companyPlatform);
   // قائمة أصول فارغة بعد تأسيس لاعب جديد حالة صحيحة، وليست تلفًا يحتاج إعادة أسطول تجريبي.
-  if (!Array.isArray(state.assets)) state.assets = [];
+  fleetData().ensure(state);
   if (!Array.isArray(state.market)) state.market = clone(initialStocks);
   if (!Array.isArray(state.crew) || !state.crew.length) state.crew = clone(crewRolesSeed).map(role=>({...role,count:0}));
   if (!state.stakes) state.stakes = {};

@@ -4,6 +4,7 @@
   let installed=false,lastLongTaskAt=0,eventSeq=0,longTaskObserverStatus='unavailable';
   const faultRecorders=new WeakMap();
   const recorderFrameBuffers=new WeakMap();
+  const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
   function ensure(state){
     state.diagnostics=state.diagnostics&&typeof state.diagnostics==='object'?state.diagnostics:{};
     // Build 335 persisted the heavy fault recorder inside the game state. Adopt
@@ -82,10 +83,9 @@
     return Math.round(total*100)/100;
   };
   const recorderAssetSignal=state=>{
-    const assets=Array.isArray(state.assets)?state.assets:[],moving=assets.filter(a=>a&&a.phase==='moving');
-    let progress=0;
-    for(const a of moving)progress+=Number(a.progress)||0;
-    return {assets:assets.length,moving:moving.length,progress:Math.round(progress*1e6)/1e6};
+    let assets=0,moving=0,progress=0;
+    fleetData().forEach(state,a=>{assets++;if(a&&a.phase==='moving'){moving++;progress+=Number(a.progress)||0;}});
+    return {assets,moving,progress:Math.round(progress*1e6)/1e6};
   };
   function recorderEvent(state,type,detail={},severity='warning',meta={}){
     ensure(state);const r=recorderFor(state);if(!r?.active&&meta.force!==true)return null;
@@ -180,15 +180,14 @@
     for(const [key,label] of [['cash','السيولة الموحدة'],['debt','الدين الموحد'],['groupValue','قيمة المجموعة']]){const v=Number(state[key]);if(!Number.isFinite(v)||v<0)add(`STATE_${key.toUpperCase()}_INVALID`,'critical',`${label} غير صالحة`,`${key} يجب أن يكون رقمًا محدودًا وغير سالب.`,'finance',{value:state[key]});}
     if(String(state.saveVersion||'2.0.0')!=='2.0.0')add('SAVE_SCHEMA_UNEXPECTED','warning','نسخة الحفظ غير متوقعة','المشروع مصمم حاليًا لحفظ 2.0.0.','save',{saveVersion:state.saveVersion});
 
-    const assets=Array.isArray(state.assets)?state.assets:[];
     const assetIds=new Set(),dupAssets=[];
-    for(const a of assets){
-      if(!a||typeof a!=='object'){add('ASSET_INVALID_RECORD','critical','سجل أصل تالف','يوجد عنصر غير صالح داخل state.assets.','assets');continue;}
+    fleetData().forEach(state,a=>{
+      if(!a||typeof a!=='object'){add('ASSET_INVALID_RECORD','critical','سجل أصل تالف','يوجد عنصر غير صالح داخل state.assets.','assets');return;}
       const id=String(a.id||'');if(!id)add('ASSET_ID_MISSING','critical','أصل بلا معرف','كل أصل يجب أن يملك ID ثابتًا.','assets',{name:a.name,type:a.type});
       else if(assetIds.has(id))dupAssets.push(id);else assetIds.add(id);
       if(a.progress!=null&&(!finiteNumber(Number(a.progress))||Number(a.progress)<0))add('ASSET_PROGRESS_INVALID','warning','تقدم أصل غير صالح',`الأصل ${id||a.name||'؟'} يحمل progress غير صالح.`,'assets',{id,progress:a.progress});
       if(a.condition!=null&&(!finiteNumber(Number(a.condition))||Number(a.condition)<0||Number(a.condition)>100))add('ASSET_CONDITION_INVALID','warning','حالة أصل خارج النطاق',`Condition يجب أن تكون بين 0 و100.`,'assets',{id,condition:a.condition});
-    }
+    });
     if(dupAssets.length)add('ASSET_DUPLICATE_IDS','critical','معرفات أصول مكررة','تكرار ID قد يسبب overwrite أو بيع/توجيه الأصل الخطأ.','assets',{ids:[...new Set(dupAssets)].slice(0,20)});
 
     const books=state.finance?.companyBooks||state.companyBooks||{};
@@ -225,7 +224,7 @@
     const severityRank={critical:3,warning:2,info:1,ok:0};
     issues.sort((a,b)=>(severityRank[b.severity]||0)-(severityRank[a.severity]||0));
     const critical=issues.filter(x=>x.severity==='critical').length,warning=issues.filter(x=>x.severity==='warning').length;
-    const report={format:'gh-health-v3',version:VERSION,at:new Date().toISOString(),checkedAtMs:Date.now(),simSeconds:Number(state.simSeconds)||0,status:critical?'critical':warning?'warning':'healthy',counts:{critical,warning,total:issues.length},issues,summary:{assets:assets.length,events:(state.eventLog||[]).length,diagnosticEvents:(diag.events||[]).length,receivables:state.finance?.receivables?.length||0,payables:state.finance?.payables?.length||0,speed:Number(state.speed)||0},simulation:cleanDetail(sim),layout:cleanDetail(layout)};
+    const report={format:'gh-health-v3',version:VERSION,at:new Date().toISOString(),checkedAtMs:Date.now(),simSeconds:Number(state.simSeconds)||0,status:critical?'critical':warning?'warning':'healthy',counts:{critical,warning,total:issues.length},issues,summary:{assets:fleetData().size(state),events:(state.eventLog||[]).length,diagnosticEvents:(diag.events||[]).length,receivables:state.finance?.receivables?.length||0,payables:state.finance?.payables?.length||0,speed:Number(state.speed)||0},simulation:cleanDetail(sim),layout:cleanDetail(layout)};
     if(options.trackTransitions!==false){
       const previous=diag.activeIssues&&typeof diag.activeIssues==='object'?diag.activeIssues:{};
       const next={};
@@ -248,7 +247,7 @@
     if(options.recordEvent===true)record(state,'HEALTH_CHECK',{status:report.status,counts:report.counts},critical?'critical':warning?'warning':'info');
     return report;
   }
-  function stateSummary(state){const deliveries=state.realism?.procurement?.deliveries||[];return {profile:{name:state.profile?.name||null,creditRating:state.profile?.creditRating||null},simSeconds:Number(state.simSeconds)||0,speed:Number(state.speed)||0,cash:Number(state.cash)||0,debt:Number(state.debt)||0,groupValue:Number(state.groupValue)||0,assets:(state.assets||[]).length,openedCompanies:[...(state.openedCompanies||[])],globalBases:(state.globalBases||[]).length,customHubs:(state.customHubs||[]).length,branches:(state.branches||[]).length,finance:{invoices:state.finance?.invoices?.length||0,cheques:state.finance?.cheques?.length||0,receivables:state.finance?.receivables?.length||0,payables:state.finance?.payables?.length||0},execution:{commands:state.domainRuntime?.commands?.length||0,rolledBack:(state.domainRuntime?.commands||[]).filter(row=>row.status==='rolled_back').length},procurement:{manualOnly:state.advanced?.procurement?.manualOnly===true,pendingDeliveries:deliveries.filter(row=>row.status==='pending').length,completedDeliveries:deliveries.filter(row=>row.status==='delivered').length}};}
+  function stateSummary(state){const deliveries=state.realism?.procurement?.deliveries||[];return {profile:{name:state.profile?.name||null,creditRating:state.profile?.creditRating||null},simSeconds:Number(state.simSeconds)||0,speed:Number(state.speed)||0,cash:Number(state.cash)||0,debt:Number(state.debt)||0,groupValue:Number(state.groupValue)||0,assets:fleetData().size(state),openedCompanies:[...(state.openedCompanies||[])],globalBases:(state.globalBases||[]).length,customHubs:(state.customHubs||[]).length,branches:(state.branches||[]).length,finance:{invoices:state.finance?.invoices?.length||0,cheques:state.finance?.cheques?.length||0,receivables:state.finance?.receivables?.length||0,payables:state.finance?.payables?.length||0},execution:{commands:state.domainRuntime?.commands?.length||0,rolledBack:(state.domainRuntime?.commands||[]).filter(row=>row.status==='rolled_back').length},procurement:{manualOnly:state.advanced?.procurement?.manualOnly===true,pendingDeliveries:deliveries.filter(row=>row.status==='pending').length,completedDeliveries:deliveries.filter(row=>row.status==='delivered').length}};}
   const profilerClock=()=>globalThis.performance?.now?.()??Date.now();
   function profileNode(value,bytes,depth=0,budget={nodes:0},limits={maxDepth:3,topN:10,maxNodes:180,minChildBytes:1024}){
     const out={kind:Array.isArray(value)?'array':value&&typeof value==='object'?'object':typeof value,bytes:null};

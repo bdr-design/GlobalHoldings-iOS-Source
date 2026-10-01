@@ -2,6 +2,7 @@
 'use strict';
 const VERSION='3.1.0',TYPES=Object.freeze(['group','air','sea','road','power','bank','mobility']);
 const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+  const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
 const num=v=>Math.max(0,Number(v)||0), now=s=>Number(s.simSeconds)||0;
 let activeExecutionMeta=null,activeEnsureTarget=null,activeEnsureComplete=false;
 const collectionBatches=new WeakMap();
@@ -128,7 +129,7 @@ function ensure(s){
  for(const id of Object.keys(s.companyFinance))if(!ids.includes(id)&&!isZeroFinancePlaceholder(s.companyFinance[id]))throw new Error(`finance-company-unknown:${id}`);
  s.companyFinance.group.accounts=s.treasury.accounts;
  migrateFormalParties(s);backfillDebtRegister(s);
- if(!had&&(s.openedCompanies||[]).length){const opened=s.openedCompanies.map(t=>requireCompany(s,t)).filter(t=>t!=='group'),src=s.treasury.accounts[0],pool=num(src.balance)*.55,assetOwner=a=>String(a?.ownerCompanyId||a?.companyId||a?.company||globalThis.GH_COMPANY_PLATFORM?.ownerForLegacyAssetMode?.(a?.assetMode||a?.type)||''),weights=opened.map(t=>[t,Math.max(1,(s.assets||[]).filter(a=>assetOwner(a)===t).length*2+1)]),sw=weights.reduce((n,x)=>n+x[1],0)||1;let alloc=0;weights.forEach(([t,x],i)=>{const a=i===weights.length-1?Math.max(0,pool-alloc):Math.floor(pool*x/sw);s.companyFinance[t].accounts[0].balance=a;alloc+=a;});src.balance=Math.max(0,num(src.balance)-alloc);}
+ if(!had&&(s.openedCompanies||[]).length){const opened=s.openedCompanies.map(t=>requireCompany(s,t)).filter(t=>t!=='group'),src=s.treasury.accounts[0],pool=num(src.balance)*.55,assetOwner=a=>String(a?.ownerCompanyId||a?.companyId||a?.company||globalThis.GH_COMPANY_PLATFORM?.ownerForLegacyAssetMode?.(a?.assetMode||a?.type)||''),weights=opened.map(t=>[t,Math.max(1,fleetData().count(s,a=>assetOwner(a)===t)*2+1)]),sw=weights.reduce((n,x)=>n+x[1],0)||1;let alloc=0;weights.forEach(([t,x],i)=>{const a=i===weights.length-1?Math.max(0,pool-alloc):Math.floor(pool*x/sw);s.companyFinance[t].accounts[0].balance=a;alloc+=a;});src.balance=Math.max(0,num(src.balance)-alloc);}
  s.companyBudgets=s.companyBudgets&&typeof s.companyBudgets==='object'&&!Array.isArray(s.companyBudgets)?s.companyBudgets:{};
  s.finance.centralTreasury=s.finance.centralTreasury&&typeof s.finance.centralTreasury==='object'&&!Array.isArray(s.finance.centralTreasury)?s.finance.centralTreasury:{};const ct=s.finance.centralTreasury;ct.minOperatingCash=ct.minOperatingCash&&typeof ct.minOperatingCash==='object'&&!Array.isArray(ct.minOperatingCash)?ct.minOperatingCash:{};for(const t of ids.filter(x=>x!=='group'))ct.minOperatingCash[t]=num(ct.minOperatingCash[t]);ct.lastPolicyAt=num(ct.lastPolicyAt);ct.lastSweepAt=num(ct.lastSweepAt);backfillPayrollTransfers(s);reconcile(s);return s.companyFinance;
 }

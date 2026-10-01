@@ -2,6 +2,7 @@
   'use strict';
   const VERSION='3.0.0';
   const ROUTE_TYPES=Object.freeze(['air','sea','road']);
+  const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
   const LIMITS=Object.freeze({routes:240,endpoints:360,cacheEntries:160,pointsPerRoute:2048,routeBytes:256*1024,cacheBytes:512*1024});
   const NEAR_DUPLICATE=Object.freeze({sampleCount:33,endpointKm:2.5,meanKm:1.25,maxKm:3,lengthRatio:1.04});
   const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
@@ -142,7 +143,7 @@
   }
   function collectUnusedEndpoints(state){
     for(const [endpointId,endpoint] of Object.entries(state.routeEndpoints)){
-      const stillUsed=state.customRoutes.some(route=>route.fromFacility===endpointId||route.toFacility===endpointId)||(state.assets||[]).some(asset=>asset.baseFacility===endpointId);
+      const stillUsed=state.customRoutes.some(route=>route.fromFacility===endpointId||route.toFacility===endpointId)||fleetData().some(state,asset=>asset.baseFacility===endpointId);
       if(endpoint?.routeEndpoint&&!stillUsed)delete state.routeEndpoints[endpointId];
     }
   }
@@ -158,18 +159,18 @@
     }
     if(command==='replace'){
       const replaceId=text(payload.replaceId,80),assetId=text(payload.assetId,100),index=state.customRoutes.findIndex(route=>route.id===replaceId);if(index<0)throw new Error('route-replace-missing');
-      const foreignUse=(state.assets||[]).find(asset=>asset.routeId===replaceId&&asset.id!==assetId);if(foreignUse)throw new Error('route-replace-in-use');
+      const foreignUse=fleetData().find(state,asset=>asset.routeId===replaceId&&asset.id!==assetId);if(foreignUse)throw new Error('route-replace-in-use');
       const route=canonicalRoute(payload.route,state),existing=conflict(state.customRoutes,route,{ignoreId:replaceId});if(existing)throw new Error(existing.code);
       state.customRoutes[index]=route;delete state.routeCache[replaceId];collectUnusedEndpoints(state);return route;
     }
     if(command==='delete'){
-      const id=text(payload.id,80),used=(state.assets||[]).some(asset=>asset.routeId===id);if(used)throw new Error('route-in-use');
+      const id=text(payload.id,80),used=fleetData().some(state,asset=>asset.routeId===id);if(used)throw new Error('route-in-use');
       const before=state.customRoutes.length;state.customRoutes=state.customRoutes.filter(route=>route.id!==id);delete state.routeCache[id];
       collectUnusedEndpoints(state);
       return before!==state.customRoutes.length;
     }
     if(command==='dedupe'){
-      const used=new Set((state.assets||[]).map(asset=>asset.routeId).filter(Boolean)),kept=[],removedIds=[],conflicts=[];
+      const used=new Set(fleetData().map(state,asset=>asset.routeId).filter(Boolean)),kept=[],removedIds=[],conflicts=[];
       for(const raw of state.customRoutes){
         let route;try{route=canonicalRoute(raw,state);}catch(_error){kept.push(raw);continue;}
         const found=conflict(kept,route);

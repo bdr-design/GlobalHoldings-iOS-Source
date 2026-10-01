@@ -37,7 +37,7 @@ console.log(JSON.stringify({result:'passed',registeredAttributes:allowed.length,
  const render=vm.runInNewContext(source.slice(start,end)+'\nrenderCompanies',{
   companyInstances:()=>instances,identityName:(_s,id)=>id,assetOwnerCompanyId:a=>a.ownerCompanyId,
   tabs,metrics:rows=>JSON.stringify(rows),text:value=>String(value??''),findPhoto:()=>'',
-  nextStepButton:()=>'',platform:()=>null
+  nextStepButton:()=>'',platform:()=>null,fleetData:()=>require('../WebApp/fleet-access-core.js')
  });
  const state={hired:[],crew:[],assets:[],cash:90000000,companyRegistry:{},openedCompanies:[],companyFinance:{group:{balance:90000000}}};
  const ctx={state,fmtMoney:n=>String(n),companyPerformance:(id,days)=>{calls.push({id,days});if(!state.openedCompanies.includes(id))throw new Error('unfunded-finance-read:'+id);return {currentNet:17,lastDayNet:8};}};

@@ -12,6 +12,7 @@
   const ASSET_PATH=/^assets\/[A-Za-z0-9_./-]+$/;
   const source=globalThis.GH_COMPANY_DEFINITIONS;
   const capabilityRegistry=globalThis.GH_CAPABILITY_REGISTRY;
+  const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
   if(!source?.list)throw new Error('company-definitions-missing');
   if(!capabilityRegistry?.validate)throw new Error('capability-registry-missing');
 
@@ -233,13 +234,16 @@
     }
     return record;
   }
-  function migrateAsset(asset){
-    if(!object(asset))return;
+  // Canonical ownership fields a legacy asset lacks (null when complete).
+  function assetMigrationPatch(asset){
+    if(!object(asset))return null;const patch={};
     const mode=String(asset.assetMode||asset.type||'').trim(),companyId=String(asset.ownerCompanyId||asset.companyId||ownerForLegacyAssetMode(mode)||'').trim();
-    if(mode&&!asset.assetMode)asset.assetMode=mode;if(companyId&&!asset.ownerCompanyId)asset.ownerCompanyId=companyId;
-    const assetClass=String(asset.assetClass||asset.assetClassId||assetClassForLegacyMode(mode)||'').trim();if(assetClass&&!asset.assetClass)asset.assetClass=assetClass;
-    const operationProfileId=String(asset.operationProfileId||operationProfileForLegacyMode(mode)||'').trim();if(operationProfileId&&!asset.operationProfileId)asset.operationProfileId=operationProfileId;
+    if(mode&&!asset.assetMode)patch.assetMode=mode;if(companyId&&!asset.ownerCompanyId)patch.ownerCompanyId=companyId;
+    const assetClass=String(asset.assetClass||asset.assetClassId||assetClassForLegacyMode(mode)||'').trim();if(assetClass&&!asset.assetClass)patch.assetClass=assetClass;
+    const operationProfileId=String(asset.operationProfileId||operationProfileForLegacyMode(mode)||'').trim();if(operationProfileId&&!asset.operationProfileId)patch.operationProfileId=operationProfileId;
+    return Object.keys(patch).length?patch:null;
   }
+  function migrateAsset(asset){const patch=assetMigrationPatch(asset);if(patch)Object.assign(asset,patch);}
   function migrateRoute(route){
     if(!object(route))return;
     const routeMode=String(route.routeMode||route.type||'').trim(),companyId=String(route.ownerCompanyId||route.companyId||route.company||ownerForLegacyRouteMode(routeMode)||'').trim();
@@ -258,7 +262,7 @@
       state.companyRegistry[companyId]=enrichRecord(state,companyId,state.companyRegistry[companyId]);
       const definition=definitionFor(state,companyId);if(definition)for(const sectorId of definition.classification.sectorIds)if(!state.unlockedSectors.includes(sectorId)&&state.openedCompanies.includes(companyId))state.unlockedSectors.push(sectorId);
     }
-    for(const asset of Array.isArray(state.assets)?state.assets:[])migrateAsset(asset);
+    {const fleet=fleetData();fleet.forEach(state,asset=>{const patch=assetMigrationPatch(asset);if(patch)fleet.update(state,asset,patch);});}
     for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[])migrateAsset(delivery?.asset);
     for(const route of Array.isArray(state.customRoutes)?state.customRoutes:[])migrateRoute(route);
     for(const bucket of ['globalBases','customHubs','branches']){
@@ -272,7 +276,7 @@
     }
     const previous=object(state.companyPlatform)?state.companyPlatform:{},definitionVersions=object(previous.definitionVersions)?{...previous.definitionVersions}:{},features=unique(previous.features),components=object(previous.components)?{...previous.components}:{};
     for(const definition of listDefinitions())definitionVersions[definition.definitionId]=Math.max(Number(definitionVersions[definition.definitionId])||0,definition.definitionVersion);
-    const builtins=new Set(source.BUILTIN_COMPANY_IDS||[]),dynamic=[...ids].some(id=>id!=='group'&&!builtins.has(id)),separated=(state.customRoutes||[]).some(route=>route.ownerCompanyId&&route.routeMode&&route.ownerCompanyId!==ownerForLegacyRouteMode(route.routeMode))||(state.assets||[]).some(asset=>asset.ownerCompanyId&&asset.assetMode&&asset.ownerCompanyId!==ownerForLegacyAssetMode(asset.assetMode));
+    const builtins=new Set(source.BUILTIN_COMPANY_IDS||[]),dynamic=[...ids].some(id=>id!=='group'&&!builtins.has(id)),separated=(state.customRoutes||[]).some(route=>route.ownerCompanyId&&route.routeMode&&route.ownerCompanyId!==ownerForLegacyRouteMode(route.routeMode))||fleetData().some(state,asset=>asset.ownerCompanyId&&asset.assetMode&&asset.ownerCompanyId!==ownerForLegacyAssetMode(asset.assetMode));
     if(dynamic&&!features.includes('dynamic-company-instances-v1'))features.push('dynamic-company-instances-v1');if(separated&&!features.includes('separated-company-ownership-v1'))features.push('separated-company-ownership-v1');features.sort();
     state.companyPlatform={...previous,schema:STATE_SCHEMA,schemaVersion:STATE_SCHEMA_VERSION,components:{...components,registry:1,ownership:1,modules:1},definitionVersions,features};if(dynamic||separated)state.companyPlatform.minimumReaderBuild=Math.max(MINIMUM_DYNAMIC_COMPANY_BUILD,Number(previous.minimumReaderBuild)||0);
     const validation=validateState(state);return {state,changed:original!==JSON.stringify(state),errors:validation.errors,warnings:validation.warnings};
@@ -293,7 +297,7 @@
     for(const companyId of opened){if(!validId(companyId))errors.push(`opened-company-id:${companyId}`);else if(!registry?.[companyId])errors.push(`opened-company-record:${companyId}`);}
     const validReference=companyId=>validId(companyId)&&Boolean(registry?.[companyId]||getDefinition(companyId));
     const validateAsset=(asset,context='asset')=>{const companyId=String(asset?.ownerCompanyId||asset?.companyId||ownerForLegacyAssetMode(asset?.assetMode||asset?.type)||'');if(!validReference(companyId))errors.push(`${context}-company-reference:${asset?.id||'unknown'}`);if(asset?.assetClass!==undefined&&!validDataId(asset.assetClass))errors.push(`${context}-class:${asset?.id||'unknown'}`);};
-    for(const asset of Array.isArray(state.assets)?state.assets:[])validateAsset(asset);
+    fleetData().forEach(state,asset=>validateAsset(asset));
     for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[])if(delivery?.asset)validateAsset(delivery.asset,'delivery-asset');
     for(const route of Array.isArray(state.customRoutes)?state.customRoutes:[]){const companyId=String(route?.ownerCompanyId||route?.companyId||route?.company||ownerForLegacyRouteMode(route?.routeMode||route?.type)||''),routeMode=String(route?.routeMode||route?.type||'');if(!validReference(companyId))errors.push(`route-company-reference:${route?.id||'unknown'}`);if(!validDataId(routeMode))errors.push(`route-mode:${route?.id||'unknown'}`);}
     for(const bucket of ['globalBases','customHubs','branches'])for(const facility of Array.isArray(state[bucket])?state[bucket]:[]){const companyId=String(facility?.ownerCompanyId||facility?.companyId||facility?.company||'').trim();if(companyId&&!validReference(companyId))errors.push(`facility-company-reference:${facility?.id||'unknown'}`);}

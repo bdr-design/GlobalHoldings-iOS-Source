@@ -2,6 +2,7 @@
   'use strict';
   const VERSION='1.0.0',SCHEMA='gh-authorization-v1',MAX_SIGNATURE_BYTES=32768,LIMITS=Object.freeze({people:64,visualSeals:256,visualSealsPerPerson:32,mandates:512,proofs:4000,archiveBytes:8*1024*1024});
   const clone=value=>value===undefined?undefined:(globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value)));
+  const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
   const clean=(value,max=160)=>String(value??'').trim().slice(0,max);
   const now=state=>Math.max(0,Number(state?.simSeconds)||0);
   function stable(value){
@@ -85,7 +86,7 @@
     const owner=value=>String(value?.ownerCompanyId||value?.companyId||value?.company||'').trim();
     const assetOwner=value=>owner(value)||String(platform?.ownerForLegacyAssetMode?.(value?.assetMode||value?.type)||'');
     const routeOwner=value=>owner(value)||String(platform?.ownerForLegacyRouteMode?.(value?.routeMode||value?.type)||'');
-    const assetById=id=>(state?.assets||[]).find(row=>String(row?.id)===String(id));
+    const assetById=id=>(state?fleetData().find(state,row=>String(row?.id)===String(id)):null)||undefined;
     const routeById=id=>(state?.customRoutes||[]).find(row=>String(row?.id)===String(id));
     const facilityById=id=>[...(state?.globalBases||[]),...(state?.customHubs||[])].find(row=>String(row?.id)===String(id));
     const deliveryById=id=>(state?.realism?.procurement?.deliveries||[]).find(row=>String(row?.id)===String(id));

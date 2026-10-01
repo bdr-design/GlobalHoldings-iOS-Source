@@ -2,6 +2,7 @@
   'use strict';
   const VERSION='3.0.1';
   const platform=()=>globalThis.GH_COMPANY_PLATFORM||null;
+  const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
   const MANAGER_COMPANIES=Object.freeze(platform()?.listDefinitions?.({includeGroup:false}).filter(definition=>definition.capabilities.includes('hr.management')).map(definition=>definition.id)||['air','sea','road','power','bank','mobility']);
   const OFFICIAL_MANAGER_CANDIDATES=Object.freeze([
     {id:'M-AIR-01',company:'air',name:'ريم العتيبي',role:'الرئيس التنفيذي',city:'الرياض',nationality:'السعودية',salary:780000,skill:96,experience:18,specialty:'شبكات الطيران والنمو الدولي',style:'نمو منضبط'},
@@ -47,10 +48,10 @@
   const facilityOwner=f=>String(f?.ownerCompanyId||f?.companyId||f?.company||'');
   const EXECUTIVE_RULES=Object.freeze({
     H3:()=>true,
-    H4:s=>(s.assets||[]).some(a=>assetOwner(a)==='air')||(s.globalBases||[]).some(f=>facilityOwner(f)==='air'),
-    H2:s=>(s.assets||[]).some(a=>assetOwner(a)==='sea')||(s.globalBases||[]).some(f=>facilityOwner(f)==='sea'),
-    H1:s=>(s.assets||[]).some(a=>assetOwner(a)==='road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
-    H6:s=>(s.assets||[]).some(a=>assetOwner(a)==='road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
+    H4:s=>fleetData().some(s,a=>assetOwner(a)==='air')||(s.globalBases||[]).some(f=>facilityOwner(f)==='air'),
+    H2:s=>fleetData().some(s,a=>assetOwner(a)==='sea')||(s.globalBases||[]).some(f=>facilityOwner(f)==='sea'),
+    H1:s=>fleetData().some(s,a=>assetOwner(a)==='road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
+    H6:s=>fleetData().some(s,a=>assetOwner(a)==='road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
     H5:s=>(s.acceptedContracts||[]).length>0,
     H7:s=>Object.values(s.stakes||{}).some(v=>Number(v)>0),
     H8:s=>(s.openedCompanies||[]).includes('power'),

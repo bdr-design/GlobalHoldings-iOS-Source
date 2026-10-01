@@ -2,6 +2,7 @@
   'use strict';
   const VERSION='1.0.0';
   const APP_VERSION='3.0.0';
+  const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
   const SCHEMA='gh-control-plane-v1';
   const CONTROL_LIMITS=Object.freeze({events:240,commands:120,incidents:80,outbox:100,blackBox:120});
   const ENGINE_ORDER=['control','simulation','finance','procurement','assets','routes','staffing','save','update','nativeBridge','diagnostics'];
@@ -44,7 +45,7 @@
   function registerLink(state,from,to,contract,meta={}){const c=ensure(state),key=`${from}->${to}:${contract}`;let link=c.registry.links.find(x=>x.key===key);if(!link){link={key,from:String(from),to:String(to),contract:String(contract),critical:meta.critical!==false,status:'healthy',lastCheckedSim:Number(state.simSeconds)||0,detail:null};c.registry.links.push(link);}return link;}
   function summaryDigest(state){
     const accounts=Object.entries(state.companyFinance||{}).map(([k,b])=>[k,Number(b?.accounts?.[0]?.balance)||0,Number(b?.debt)||0,Number(b?.taxPayable)||0]);
-    return sha256(stable({sim:Number(state.simSeconds)||0,saveRevision:Number(state.saveRevision)||0,assets:(state.assets||[]).length,routes:(state.customRoutes||[]).length,bases:(state.globalBases||[]).length+(state.customHubs||[]).length,accounts,deliveries:(state.realism?.procurement?.deliveries||[]).length,controlRevision:Number(state.controlPlane?.revision)||0}));
+    return sha256(stable({sim:Number(state.simSeconds)||0,saveRevision:Number(state.saveRevision)||0,assets:fleetData().size(state),routes:(state.customRoutes||[]).length,bases:(state.globalBases||[]).length+(state.customHubs||[]).length,accounts,deliveries:(state.realism?.procurement?.deliveries||[]).length,controlRevision:Number(state.controlPlane?.revision)||0}));
   }
   function appendEvent(state,input={},options={}){
     const c=ensure(state);c.eventSequence+=1;

@@ -18,7 +18,8 @@ function harness(names = []) {
   };
   s.window = s; s.globalThis = s; vm.createContext(s);
   const loaded=new Set();
-  const load = n => {if(loaded.has(n))return;if(n==='simulation-core'){if(!loaded.has('simulation-time-core'))load('simulation-time-core');if(!loaded.has('simulation-pacing-core'))load('simulation-pacing-core');}vm.runInContext(fs.readFileSync(path.join(ROOT, 'WebApp', n + '.js'), 'utf8'), s, {filename: n + '.js'});loaded.add(n);};
+  // Every owner reads and writes the fleet through Fleet Data Access (Build 355).
+  const load = n => {if(loaded.has(n))return;if(n!=='fleet-store-core'&&n!=='fleet-access-core'&&!loaded.has('fleet-access-core')){load('fleet-store-core');load('fleet-access-core');}if(n==='simulation-core'){if(!loaded.has('simulation-time-core'))load('simulation-time-core');if(!loaded.has('simulation-pacing-core'))load('simulation-pacing-core');}vm.runInContext(fs.readFileSync(path.join(ROOT, 'WebApp', n + '.js'), 'utf8'), s, {filename: n + '.js'});loaded.add(n);};
   names.forEach(load);
   return {s, data, storage, load};
 }

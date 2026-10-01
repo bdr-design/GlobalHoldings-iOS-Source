@@ -9,10 +9,11 @@ const app=fs.readFileSync(path.join(__dirname,'../WebApp/app.js'),'utf8'),start=
 assert(start>=0&&end>start,'the route-center revision cache is present');
 const assets=Array.from({length:20000},(_,index)=>({id:`ASSET-${String(index).padStart(5,'0')}`,ownerCompanyId:`company-${index%5}`,type:index%3===0?'air':index%3===1?'sea':'road',baseFacility:`BASE-${index%100}`,routeId:index%4===0?`ROUTE-${index%900}`:null,phase:index%7===0?'moving':index%3===0?'turnaround':'idle',departureScheduled:index%11===0,salePending:index%37===0,deliveryStatus:index%43===0?'pending':'delivered',lastTrip:index%5===0?{margin:index,revenue:index*10}:null}));
 let sourcePasses=0,revision=1;const facilities=new Map(Array.from({length:100},(_,index)=>[`BASE-${index}`,{id:`BASE-${index}`,iata:`A${index%16}`,icao:`ICAO-${index%16}`,code:`C${index%16}`}]));
-const watchedAssets=new Proxy(assets,{get(target,key,receiver){if(key===Symbol.iterator){sourcePasses++;return Reflect.get(target,key,receiver);}return Reflect.get(target,key,receiver);}});
+// Fleet Data Access scans by index: one full fleet pass reads element 0 exactly once.
+const watchedAssets=new Proxy(assets,{get(target,key,receiver){if(key===Symbol.iterator||key==='0'){sourcePasses++;return Reflect.get(target,key,receiver);}return Reflect.get(target,key,receiver);}});
 const context={
   state:{saveRevision:7,assets:watchedAssets},
-  window:{GH_TRANSACTION_CORE:{revision:()=>revision},GH_MAP_STRUCTURE_REVISION:12},
+  window:{GH_TRANSACTION_CORE:{revision:()=>revision},GH_MAP_STRUCTURE_REVISION:12,GH_FLEET_DATA:require('../WebApp/fleet-access-core.js')},
   assetOwnerCompanyId:asset=>asset.ownerCompanyId,
   assetModeOf:asset=>asset.type,
   routeFacilityFor:(_state,id)=>facilities.get(String(id))||null,

@@ -13,10 +13,11 @@ const source=app.slice(start,end);
 const phases=['moving','idle','turnaround','delivery'];
 const assets=Array.from({length:20000},(_,i)=>({phase:phases[i%phases.length]}));
 let assetScans=0,mobilityScans=0,routeScans=0,facilityScans=0;
-const assetRows=new Proxy(assets,{get(target,key,receiver){if(key===Symbol.iterator){assetScans++;return Reflect.get(target,key,receiver);}return Reflect.get(target,key,receiver);}});
+// Fleet Data Access scans by index: one full fleet pass reads element 0 exactly once.
+const assetRows=new Proxy(assets,{get(target,key,receiver){if(key===Symbol.iterator||key==='0'){assetScans++;return Reflect.get(target,key,receiver);}return Reflect.get(target,key,receiver);}});
 const vehicles=new Proxy([{status:'moving'},{status:'available'},{status:'moving'}],{get(target,key,receiver){if(key===Symbol.iterator){mobilityScans++;return Reflect.get(target,key,receiver);}return Reflect.get(target,key,receiver);}});
 const state={saveRevision:7,activeFilter:'all',assets:assetRows,mobility:{vehicles}};
-const window={GH_MAP_STRUCTURE_REVISION:3,GH_MOBILITY_CORE:{mapStructureRevision:()=>11}};
+const window={GH_MAP_STRUCTURE_REVISION:3,GH_MOBILITY_CORE:{mapStructureRevision:()=>11},GH_FLEET_DATA:require('../WebApp/fleet-access-core.js')};
 const dom={mapStatus:{textContent:'',title:''}};
 const context={state,window,mapTilesOffline:false,mapCategoryVisible:()=>false,operationalRoutes:()=>{routeScans++;return [{routingSource:'OSRM'}];},getDynamicFacilities:()=>{facilityScans++;return [{owned:true},{owned:false}];},$:id=>dom[id]};
 const update=vm.runInNewContext(`(()=>{${source};return updateMapStatus;})()`,context,{filename:'map-status-cache.js'});

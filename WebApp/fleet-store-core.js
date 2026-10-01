@@ -217,7 +217,7 @@
   }
   // Shared (frozen) read without copying — only for read-only hot paths.
   function peek(store,index,field){
-    if(own(store.extras,index)&&own(store.extras[index],field))return store.extras[index][field];
+    if(store.columns.extra[index]===1){const extras=store.extras[index];if(extras&&own(extras,field))return extras[field];}
     if(HOT_INDEX.has(field)){if(!isPresent(store,index,field))return undefined;const kind=HOT_FIELDS[HOT_INDEX.get(field)][1];return kind==='ref'?value(store,store.columns[field][index]):readHot(store,index,field,kind);}
     if(PROFILE_SET.has(field))return groupObject(store,store.columns.profile[index])[field];
     if(BINDING_SET.has(field))return groupObject(store,store.columns.binding[index])[field];
@@ -281,6 +281,16 @@
     if(c.extra[index]===1&&own(store.extras,index)){const extras=store.extras[index];for(const key of Object.keys(extras))out[key]=copyValue(extras[key]);}
     return out;
   }
+  // Own keys of the materialized asset, in materialize order, without building it.
+  function keys(store,index){
+    const out=[],seen=new Set(),c=store.columns,present=c.present[index],push=key=>{if(!seen.has(key)){seen.add(key);out.push(key);}};
+    if(present&1)push('id');
+    for(const key of Object.keys(groupObject(store,c.profile[index])))push(key);
+    for(let i=1;i<HOT_FIELDS.length;i++)if(present&(1<<i))push(HOT_FIELDS[i][0]);
+    for(const key of Object.keys(groupObject(store,c.binding[index])))push(key);
+    if(c.extra[index]===1&&own(store.extras,index))for(const key of Object.keys(store.extras[index]))push(key);
+    return out;
+  }
   function fromAssets(assets,{at=0}={}){
     const list=Array.isArray(assets)?assets:[],store=create(list.length);
     for(let index=0;index<list.length;index++){store.length=index+1;ingestRow(store,index,list[index],at);}
@@ -319,7 +329,7 @@
   }
 
   const API=Object.freeze({VERSION,SCHEMA,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,COLUMN_NAMES,COLUMN_TYPES,
-    create,isStore,ensureCapacity,trimCapacity,add,replace,remove,removeMany,set,patch,touch,drainDirty,get,peek,setGroupField,materialize,fromAssets,toAssets,indexOf,find,idAt,
+    create,isStore,ensureCapacity,trimCapacity,add,replace,remove,removeMany,set,patch,touch,drainDirty,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,indexOf,find,idAt,
     intern,value,compact,stats,splitPattern,joinPattern,beginJournal,rollbackJournal,endJournal,isPresent});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;

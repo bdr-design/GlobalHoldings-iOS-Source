@@ -27,7 +27,8 @@ const item=globalThis.GH_ASSET_CATALOG.air.new[0];
 function fixture(){
   const rawAssets=Array.from({length:20000},(_,i)=>({id:`EX-${i}`,ownerCompanyId:'air',assetMode:'air',type:'air',baseFacility:bases[i%bases.length].id,phase:'idle'}));
   const rawDeliveries=Array.from({length:400},(_,i)=>({id:`PENDING-${i}`,status:'pending',ownerCompanyId:'air',assetMode:'air',type:'air',baseId:bases[i%bases.length].id}));
-  const assets=new Proxy(rawAssets,{get(target,key,receiver){if(key===Symbol.iterator||key==='reduce'||key==='filter'){assetPasses++;return Reflect.get(target,key,receiver);}return Reflect.get(target,key,receiver);}});
+  // Fleet Data Access scans by index: one full fleet pass reads element 0 exactly once.
+  const assets=new Proxy(rawAssets,{get(target,key,receiver){if(key===Symbol.iterator||key==='reduce'||key==='filter'||key==='0'){assetPasses++;return Reflect.get(target,key,receiver);}return Reflect.get(target,key,receiver);}});
   const deliveries=new Proxy(rawDeliveries,{get(target,key,receiver){if(key===Symbol.iterator||key==='reduce'||key==='filter'){deliveryPasses++;return Reflect.get(target,key,receiver);}return Reflect.get(target,key,receiver);}});
   return {assets,globalBases:bases,customHubs:[],sequences:{},simSeconds:0,infiniteMoney:true,realism:{procurement:{deliveries,pendingDeliveryCount:rawDeliveries.length}}};
 }
