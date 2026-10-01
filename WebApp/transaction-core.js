@@ -36,7 +36,10 @@
   // no write for unchanged primitives. Anything else uses the original delete/re-add path, so
   // shape changes, key order and the resulting graph stay byte-for-byte equivalent.
   function restoreValue(target,snapshot){
-    // Fleet Core v4 columns: restore typed arrays with one copy, never element by element.
+    // Fleet store records (one ArrayBuffer): always a fresh copy, so the store
+    // sees a new buffer and rebuilds every runtime index from restored data.
+    if(snapshot instanceof ArrayBuffer)return snapshot.slice(0);
+    // Typed arrays: restore with one copy, never element by element.
     if(ArrayBuffer.isView(snapshot)){
       if(ArrayBuffer.isView(target)&&target.constructor===snapshot.constructor&&target.length===snapshot.length&&!Object.isFrozen(target)){target.set(snapshot);return target;}
       return snapshot.slice();

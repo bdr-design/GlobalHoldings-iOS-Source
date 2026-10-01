@@ -1,6 +1,6 @@
 'use strict';
 // Fleet data access (Build 355): one API over the legacy `assets` array and the
-// columnar `fleet` store. Both representations must present the same assets,
+// record `fleet` store. Both representations must present the same assets,
 // reject every mutation through a view, and produce the same fleet for the
 // same sequence of writes; store writes checkpoint at the current time and
 // roll back inside the real Transaction Core.
@@ -8,7 +8,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
 const ROOT=path.resolve(__dirname,'..');
 global.window=global;require(path.join(ROOT,'WebApp/transaction-core.js'));
 const STORE=require(path.join(ROOT,'WebApp/fleet-store-core.js')),EVENTS=require(path.join(ROOT,'WebApp/fleet-event-core.js')),FLEET=require(path.join(ROOT,'WebApp/fleet-access-core.js'));
-const {fleet,context,resolveRoute,oldSlice,compareValue}=require('./helpers/fleet-fixture.js');
+const {fleet,context,resolveRoute,oldSlice,compareValue,comparable}=require('./helpers/fleet-fixture.js');
 const TX=global.GH_TRANSACTION_CORE;
 const results=[];function test(name,fn){try{results.push({name,ok:true,detail:fn()});}catch(error){results.push({name,ok:false,error:String(error.stack||error).slice(0,1500)});}}
 const json=value=>JSON.parse(JSON.stringify(value));
@@ -19,24 +19,44 @@ function pair(t0=1000){
  const assets=fleet();oldSlice(assets,t0-1,t0);
  return {array:{assets,simSeconds:t0},store:{fleet:STORE.fromAssets(json(assets),{at:t0}),simSeconds:t0}};
 }
+// Live assets position by position (store rows keep their index after a
+// removal, so positions, not row indexes, line the two representations up).
 function sameFleet(label,a,b,tol=1e-9){
- assert.equal(FLEET.size(a),FLEET.size(b),`${label}: size`);
- for(let i=0;i<FLEET.size(a);i++){const x=json(FLEET.viewAt(a,i)),y=json(FLEET.viewAt(b,i));assert.deepEqual(Object.keys(x).sort(),Object.keys(y).sort(),`${label}: keys of ${x.id}`);compareValue(`${label} ${x.id}`,x,y,tol);}
+ const x=FLEET.list(a),y=FLEET.list(b);
+ assert.equal(x.length,y.length,`${label}: size`);assert.equal(FLEET.size(a),x.length);assert.equal(FLEET.size(b),y.length);
+ for(let i=0;i<x.length;i++){const p=json(x[i]),q=json(y[i]);assert.deepEqual(Object.keys(p).sort(),Object.keys(q).sort(),`${label}: keys of ${p.id}`);compareValue(`${label} ${p.id}`,p,q,tol);}
+}
+// While the fleet runs, the array side follows the legacy slice engine and the
+// store side the event engine: their documented differences are set aside
+// (fleet fixture comparable()), as is a transition within legacy's 1e-6 s
+// end-of-slice tolerance.
+function sameRunningFleet(label,array,store,to,tol){
+ const x=FLEET.list(array),y=FLEET.list(store);assert.equal(x.length,y.length,`${label}: size`);let boundary=0;
+ for(let i=0;i<x.length;i++){
+  const row=FLEET.indexOf(store,y[i].id);
+  if(Math.abs(STORE.slot(store.fleet,'at',row)-to)<=1e-6||Math.abs(EVENTS.nextEventTime(store.fleet,row)-to)<=1e-6){boundary++;continue;}
+  const p=comparable(json(x[i])),q=comparable(json(y[i]));compareValue(`${label} ${p.id}`,p,q,tol);
+ }
+ return boundary;
 }
 
 test('store views equal legacy array views asset by asset while the fleet runs',()=>{
- const {array,store}=pair();let t=array.simSeconds,checks=0;
- const pattern=[600,3600,45,1800,3600,777.7,3600];
+ const {array,store}=pair();let t=array.simSeconds,checks=0,boundary=0;
+ // Slices stay below legacy's 96-transition cap for the 28 s TINY route
+ // (beyond it legacy defers the rest of the slice as simCarrySeconds).
+ const pattern=[600,1200,45,900,1200,777.7,1200];
  for(let slice=0;slice<pattern.length*3;slice++){
   const to=t+pattern[slice%pattern.length];oldSlice(array.assets,t,to);EVENTS.advance(store.fleet,{from:t,to,context:context(t),resolveRoute});
-  array.simSeconds=store.simSeconds=to;t=to;sameFleet(`slice ${slice}`,array,store,1e-7);checks++;
+  array.simSeconds=store.simSeconds=to;t=to;
+  assert(array.assets.every(asset=>!(asset.simCarrySeconds>0)),`slice ${slice}: legacy deferred no time`);
+  boundary+=sameRunningFleet(`slice ${slice}`,array,store,to,1e-7);checks++;
  }
  // Between slices a store view derives the current position from its checkpoint.
  const index=FLEET.find(store,view=>view.phase==='moving'&&!view.simulationFault&&view.progress<0.5)?.id;assert(index,'a moving asset exists');
  const before=FLEET.get(store,index).progress;store.simSeconds+=60;const after=FLEET.get(store,index).progress;
  assert(after>before,'progress advances with time without any write');
  assert.equal(after,EVENTS.currentAsset(store.fleet,FLEET.indexOf(store,index),store.simSeconds,{resolveRoute}).progress);
- return {slices:checks,assets:FLEET.size(array)};
+ return {slices:checks,assets:FLEET.size(array),boundary};
 });
 
 test('views are read-only in both representations but behave like plain objects for reads',()=>{
@@ -81,7 +101,7 @@ test('a store write checkpoints the row at the current time first',()=>{
  const index=FLEET.indexOf(store,id),t0=store.simSeconds;
  store.simSeconds=t0+600;const moved=json(FLEET.get(store,id));
  FLEET.update(store,id,{condition:100});
- assert.equal(store.fleet.columns.at[index],t0+600,'checkpoint moved to now');
+ assert.equal(STORE.slot(store.fleet,'at',index),t0+600,'checkpoint moved to now');
  assert.equal(STORE.get(store.fleet,index,'progress'),moved.progress,'derived progress written at the checkpoint');
  assert.equal(FLEET.get(store,id).condition,100);
  store.simSeconds=t0+1200;const later=FLEET.get(store,id);
@@ -90,14 +110,14 @@ test('a store write checkpoints the row at the current time first',()=>{
 });
 
 test('store writes roll back inside Transaction Core and views follow their asset',()=>{
- const {store}=pair(),before=canon(STORE.toAssets(store.fleet)),at=Array.from(store.fleet.columns.at.subarray(0,store.fleet.length));
+ const {store}=pair(),before=canon(STORE.toAssets(store.fleet)),at=Array.from({length:store.fleet.length},(_,i)=>STORE.slot(store.fleet,'at',i));
  store.cash=1;const keep=FLEET.viewAt(store,10),keepId=keep.id;
  assert.throws(()=>TX.execute(store,{label:'fleet-access-rollback',scope:['cash','simSeconds'],apply:()=>{
   store.cash=2;store.simSeconds+=900;FLEET.update(store,FLEET.viewAt(store,3),{condition:100,note:'x'});FLEET.remove(store,FLEET.viewAt(store,0));
   assert.equal(keep.id,keepId,'a view re-resolves its asset after a removal');
   FLEET.update(store,keep,{name:'Seen'});assert.equal(keep.name,'Seen','a view sees writes to its asset');
   FLEET.add(store,{id:'N-ROAD-77777777',type:'road'});FLEET.removeWhere(store,view=>view.assetMode==='air');throw new Error('late');}}),/late/);
- assert.equal(store.cash,1);assert.equal(canon(STORE.toAssets(store.fleet)),before);assert.deepEqual(Array.from(store.fleet.columns.at.subarray(0,store.fleet.length)),at);
+ assert.equal(store.cash,1);assert.equal(canon(STORE.toAssets(store.fleet)),before);assert.deepEqual(Array.from({length:store.fleet.length},(_,i)=>STORE.slot(store.fleet,'at',i)),at);
  assert.equal(keep.id,keepId);assert.notEqual(keep.name,'Seen');
  return {ok:true};
 });

@@ -65,4 +65,17 @@ function compareValue(label,a,b,tol=1e-7){
  if(a===undefined||b===undefined||a===null||b===null){assert.equal(a??null,b??null,label);return;}
  if(typeof a==='number')assert(close(a,b,tol),`${label}: old ${a} new ${b}`);else assert.deepEqual(a,b,label);
 }
-module.exports={ROOT,CORE,GUARD_FIELDS,WRITE,INTERVAL,routes,specs,crew,make,fleet,context,resolveRoute,oldSlice,close,compareValue};
+// Documented exact-time differences of the event engine from the legacy slice
+// engine (both comparisons apply them):
+// - a crew that is not ready blocks the asset at its departure instant with no
+//   dwell left (legacy re-waited its dwell every slice);
+// - a fault records the exact event time and freezes the asset there (legacy
+//   used the slice start);
+// - legacy-only slice bookkeeping (simCarrySeconds, lastTransitionGuardDay).
+function comparable(asset){
+ const out={...asset};delete out.simCarrySeconds;delete out.lastTransitionGuardDay;
+ if(out.simulationFault){out.simulationFault=out.simulationFault.code;delete out.progress;delete out.fuel;delete out.condition;delete out.dwellRemaining;}
+ if(out.crewBlocked===true&&!(out.staffing?.mode==='automatic-fixed'&&out.staffing.ready===true))delete out.dwellRemaining;
+ return out;
+}
+module.exports={ROOT,CORE,GUARD_FIELDS,WRITE,INTERVAL,routes,specs,crew,make,fleet,context,resolveRoute,oldSlice,close,compareValue,comparable};

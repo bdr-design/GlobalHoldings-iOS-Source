@@ -27,6 +27,7 @@
   }
   const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
   const isObject=value=>value!==null&&typeof value==='object';
+  const number0=value=>{const n=Number(value);return Number.isFinite(n)?n:0;};
   const jsonCopy=value=>value===undefined?undefined:JSON.parse(JSON.stringify(value));
   // Array-mode writes keep the legacy in-memory values (undefined, NaN, -0);
   // a value holding a read-only view can only be copied through JSON.
@@ -69,14 +70,14 @@
     set:readOnly,defineProperty:readOnly,deleteProperty:readOnly,setPrototypeOf:readOnly,preventExtensions:readOnly
   };
   function storeView(state,store,index){
-    const meta={state,store,index,id:STORE.idAt(store,index),structure:store.structure,derived:null,dIndex:-1,dRevision:-1,dTime:-1,keys:null,kIndex:-1,kRevision:-1,kTime:-1};
+    const meta={state,store,index,id:STORE.idAt(store,index),structure:store.structure,epoch:STORE.epoch(store),derived:null,dIndex:-1,dRevision:-1,dTime:-1,keys:null,kIndex:-1,kRevision:-1,kTime:-1};
     return new Proxy(meta,STORE_VIEW);
   }
   // A view survives structural changes by re-resolving its id.
   function rowOf(meta){
-    const store=meta.store;
-    if(meta.structure!==store.structure){meta.index=meta.id===undefined?-1:STORE.indexOf(store,meta.id);meta.structure=store.structure;}
-    return meta.index<store.length?meta.index:-1;
+    const store=meta.store,epoch=STORE.epoch(store);
+    if(meta.structure!==store.structure||meta.epoch!==epoch){meta.index=meta.id===undefined?-1:STORE.indexOf(store,meta.id);meta.structure=store.structure;meta.epoch=epoch;meta.dIndex=-1;meta.kIndex=-1;}
+    return STORE.isAlive(store,meta.index)?meta.index:-1;
   }
   function timeOf(state){return Math.max(0,Number(state?.simSeconds)||0);}
   function derivedOf(meta,index){
@@ -87,26 +88,26 @@
   // The six presentable fields of currentAsset (fleet-event-core), without
   // materializing the row: slice-engine defaults, then linear derivation from
   // the checkpoint. null for a faulted asset (presented exactly as stored).
-  // Rows whose hot fields all live in typed columns are read directly.
-  const HOT_SET=new Set(STORE.HOT_FIELDS.map(([name])=>name)),BIT=Object.fromEntries(STORE.HOT_FIELDS.map(([name],bit)=>[name,1<<bit]));
+  // Rows whose hot fields all live in their record slots are read directly.
+  const HOT_SET=new Set(STORE.HOT_FIELDS.map(([name])=>name)),BIT=Object.fromEntries(STORE.HOT_FIELDS.map(([name],bit)=>[name,1<<bit])),O=STORE.O;
   const scratch={phase:null,routeId:null,progress:0,fuel:0,condition:0,dwellRemaining:undefined,type:undefined};
   function hotInExtras(extras){for(const key in extras)if(HOT_SET.has(key))return true;return false;}
   function deriveRow(store,index,t){
-    const c=store.columns,extras=c.extra[index]===1?store.extras[index]:null;
+    const extras=STORE.extrasOf(store,index);
     if(extras&&hotInExtras(extras))return deriveRowGeneric(store,index,t);
     if(extras&&extras.simulationFault)return null;
-    const p=c.present[index],V=store.values,ref=column=>column[index]===0?null:V[column[index]];
-    const routeId=(p&BIT.routeId)?ref(c.routeId):undefined,phase=(p&BIT.phase)?ref(c.phase):undefined,out={};
+    const v=STORE.views(store),F=v.f64,W=v.u32,f=index*STORE.F64_PER_ROW,w=index*STORE.WORDS_PER_ROW,p=W[w+O.present],V=store.values,ref=slot=>W[w+slot]===0?null:V[W[w+slot]];
+    const routeId=(p&BIT.routeId)?ref(O.routeId):undefined,phase=(p&BIT.phase)?ref(O.phase):undefined,out={};
     out.phase=phase?phase:(routeId?'moving':'idle');
-    out.progress=(p&BIT.progress)?c.progress[index]:0;
-    out.fuel=(p&BIT.fuel)?c.fuel[index]:100;
-    out.condition=(p&BIT.condition)?c.condition[index]:100;
-    out.simCarrySeconds=(p&BIT.simCarrySeconds)?c.simCarrySeconds[index]:0;
-    if(p&BIT.dwellRemaining)out.dwellRemaining=c.dwellRemaining[index];
-    const at=c.at[index];
+    out.progress=(p&BIT.progress)?F[f+O.progress]:0;
+    out.fuel=(p&BIT.fuel)?F[f+O.fuel]:100;
+    out.condition=(p&BIT.condition)?F[f+O.condition]:100;
+    out.simCarrySeconds=(p&BIT.simCarrySeconds)?F[f+O.simCarrySeconds]:0;
+    if(p&BIT.dwellRemaining)out.dwellRemaining=F[f+O.dwellRemaining];
+    const at=F[f+O.at]-Math.max(0,(p&BIT.simCarrySeconds)&&Number.isFinite(F[f+O.simCarrySeconds])?F[f+O.simCarrySeconds]:0);
     if(t>at&&routeId&&out.phase!=='idle'){
-      const binding=V[c.binding[index]],profile=V[c.profile[index]];
-      const tripSeconds=Number((binding&&binding.tripSeconds)||(configuredRouteResolver?configuredRouteResolver(routeId,(p&BIT.baseFacility)?ref(c.baseFacility):undefined)?.tripSeconds:undefined));
+      const binding=V[W[w+O.binding]],profile=V[W[w+O.profile]];
+      const tripSeconds=Number((binding&&binding.tripSeconds)||(configuredRouteResolver?configuredRouteResolver(routeId,(p&BIT.baseFacility)?ref(O.baseFacility):undefined)?.tripSeconds:undefined));
       scratch.phase=out.phase;scratch.routeId=routeId;scratch.progress=out.progress;scratch.fuel=out.fuel;scratch.condition=out.condition;scratch.dwellRemaining=out.dwellRemaining;scratch.type=profile?profile.type:undefined;
       events().derive(scratch,at,t,tripSeconds);
       out.progress=scratch.progress;out.fuel=scratch.fuel;out.condition=scratch.condition;if(scratch.dwellRemaining!==undefined)out.dwellRemaining=scratch.dwellRemaining;
@@ -124,7 +125,7 @@
     out.condition=typeof condition==='number'?condition:100;
     const carry=peek('simCarrySeconds');out.simCarrySeconds=carry===undefined?0:carry;
     const dwell=peek('dwellRemaining');if(dwell!==undefined)out.dwellRemaining=dwell;
-    const at=store.columns.at[index];
+    const at=STORE.slot(store,'at',index)-Math.max(0,number0(carry));
     if(t>at&&routeId&&out.phase!=='idle'){
       const tripSeconds=Number(peek('tripSeconds')||(configuredRouteResolver?configuredRouteResolver(routeId,peek('baseFacility'))?.tripSeconds:undefined));
       const asset={phase:out.phase,routeId,progress:out.progress,fuel:out.fuel,condition:out.condition,dwellRemaining:out.dwellRemaining,type:peek('type')};
@@ -207,7 +208,10 @@
   // The container object, for identity-keyed caches.
   function source(state){return storeOf(state)||arrayOf(state)||null;}
   function ensure(state){if(!storeOf(state)&&!arrayOf(state))state.assets=[];return mode(state);}
-  function size(state){const store=storeOf(state);if(store)return store.length;const assets=arrayOf(state);return assets?assets.length:0;}
+  function size(state){const store=storeOf(state);if(store)return store.live;const assets=arrayOf(state);return assets?assets.length:0;}
+  // Row range to scan and the liveness test (store rows can be dead until compaction).
+  function scanLength(state){const store=storeOf(state);if(store)return store.length;const assets=arrayOf(state);return assets?assets.length:0;}
+  function rowAlive(state,index){const store=storeOf(state);return store?STORE.isAlive(store,index):true;}
   // Changes on any store write; null for the array (callers fall back to identity).
   function revision(state){const store=storeOf(state);return store?store.revision:null;}
 
@@ -232,7 +236,7 @@
     return i!==undefined&&matches(assets[i])?i:-1;
   }
   function viewAt(state,index){
-    const store=storeOf(state);if(store)return index>=0&&index<store.length?storeView(state,store,index):null;
+    const store=storeOf(state);if(store)return STORE.isAlive(store,index)?storeView(state,store,index):null;
     const assets=arrayOf(state),asset=assets?assets[index]:undefined;return isObject(asset)?nested(asset):(asset===undefined?null:asset);
   }
   function indexOfId(state,id){
@@ -256,17 +260,18 @@
   // ------------------------------------------------------------ reads ---
   function get(state,id){const index=indexOfId(state,id);return index<0?null:viewAt(state,index);}
   function has(state,id){return indexOfId(state,id)>=0;}
-  function forEach(state,fn){const n=size(state);for(let index=0;index<n;index++)fn(viewAt(state,index),index);}
-  function some(state,predicate){const n=size(state);for(let index=0;index<n;index++)if(predicate(viewAt(state,index),index))return true;return false;}
-  function every(state,predicate){const n=size(state);for(let index=0;index<n;index++)if(!predicate(viewAt(state,index),index))return false;return true;}
-  function find(state,predicate){const n=size(state);for(let index=0;index<n;index++){const view=viewAt(state,index);if(predicate(view,index))return view;}return null;}
-  function filter(state,predicate){const out=[],n=size(state);for(let index=0;index<n;index++){const view=viewAt(state,index);if(predicate(view,index))out.push(view);}return out;}
-  function count(state,predicate){let total=0;const n=size(state);for(let index=0;index<n;index++)if(predicate(viewAt(state,index),index))total++;return total;}
-  function sum(state,fn){let total=0;const n=size(state);for(let index=0;index<n;index++)total+=Number(fn(viewAt(state,index),index))||0;return total;}
-  function map(state,fn){const n=size(state),out=new Array(n);for(let index=0;index<n;index++)out[index]=fn(viewAt(state,index),index);return out;}
+  // Iteration visits live assets in array order; `index` is the row.
+  function forEach(state,fn){const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index))fn(viewAt(state,index),index);}
+  function some(state,predicate){const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index)&&predicate(viewAt(state,index),index))return true;return false;}
+  function every(state,predicate){const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index)&&!predicate(viewAt(state,index),index))return false;return true;}
+  function find(state,predicate){const n=scanLength(state);for(let index=0;index<n;index++){if(!rowAlive(state,index))continue;const view=viewAt(state,index);if(predicate(view,index))return view;}return null;}
+  function filter(state,predicate){const out=[],n=scanLength(state);for(let index=0;index<n;index++){if(!rowAlive(state,index))continue;const view=viewAt(state,index);if(predicate(view,index))out.push(view);}return out;}
+  function count(state,predicate){let total=0;const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index)&&predicate(viewAt(state,index),index))total++;return total;}
+  function sum(state,fn){let total=0;const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index))total+=Number(fn(viewAt(state,index),index))||0;return total;}
+  function map(state,fn){const out=[],n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index))out.push(fn(viewAt(state,index),index));return out;}
   function list(state){return map(state,view=>view);}
-  function ids(state){const store=storeOf(state);if(store){const out=new Array(store.length);for(let index=0;index<store.length;index++)out[index]=STORE.idAt(store,index);return out;}return (arrayOf(state)||[]).map(asset=>asset?.id);}
-  function indexById(state){const out=new Map(),n=size(state);for(let index=0;index<n;index++){const view=viewAt(state,index),id=view?.id;if(id!==undefined&&!out.has(id))out.set(id,view);}return out;}
+  function ids(state){const store=storeOf(state);if(store){const out=[];STORE.forEachLive(store,index=>out.push(STORE.idAt(store,index)));return out;}return (arrayOf(state)||[]).map(asset=>asset?.id);}
+  function indexById(state){const out=new Map(),n=scanLength(state);for(let index=0;index<n;index++){if(!rowAlive(state,index))continue;const view=viewAt(state,index),id=view?.id;if(id!==undefined&&!out.has(id))out.set(id,view);}return out;}
   // A mutable deep copy of a view (or of the asset with this id).
   function plain(stateOrView,id){
     if(arguments.length>1){const view=get(stateOrView,id);return view?plainOf(view):null;}
@@ -292,11 +297,14 @@
 
   // ----------------------------------------------------------- writes ---
   // Bring a store row's checkpoint to the current time before any change.
+  // Carried legacy slice time is already counted by the derivation, so the new
+  // checkpoint starts with none.
   function checkpoint(state,store,index){
-    const t=timeOf(state);if(store.columns.at[index]===t)return;
+    const t=timeOf(state),carry=STORE.isPresent(store,index,'simCarrySeconds')?number0(STORE.slot(store,'simCarrySeconds',index)):0;
+    if(STORE.slot(store,'at',index)===t&&carry<=0)return;
     const derived=deriveRow(store,index,t);STORE.touch(store,index);
-    if(derived)for(const field of DERIVED_KEYS){if(!own(derived,field))continue;const value=derived[field],stored=STORE.peek(store,index,field);if(!Object.is(stored,value))STORE.set(store,index,field,value);}
-    store.columns.at[index]=t;
+    if(derived){if(carry>0)derived.simCarrySeconds=0;for(const field of DERIVED_KEYS){if(!own(derived,field))continue;const value=derived[field],stored=STORE.peek(store,index,field);if(!Object.is(stored,value))STORE.set(store,index,field,value);}}
+    STORE.setSlot(store,'at',index,t);
   }
   function liveAsset(state,index){const assets=arrayOf(state);return assets&&isObject(assets[index])?assets[index]:null;}
   // Assign fields as a plain object would (undefined deletes the field).
