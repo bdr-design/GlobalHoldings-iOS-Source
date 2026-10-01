@@ -93,7 +93,7 @@
   // pre-transaction length, so a rollback is O(rows touched), never a fleet clone.
   let activeJournal=null;
   function beginJournal(store){
-    const journal={store,length:store.length,structure:store.structure,revision:store.revision,valuesLength:store.values.length,rows:new Map(),active:true,parent:activeJournal};
+    const journal={store,length:store.length,structure:store.structure,revision:store.revision,valuesLength:store.values.length,rows:new Map(),columns:null,extras:null,active:true,parent:activeJournal};
     activeJournal=journal;return journal;
   }
   function journalFor(store){
@@ -115,11 +115,24 @@
     if(row.extras===undefined)delete store.extras[index];else store.extras[index]=row.extras;
   }
   function remember(store,index){
-    const journal=journalFor(store);if(!journal||journal.rows.has(index))return;
+    const journal=journalFor(store);if(!journal||journal.columns||journal.rows.has(index))return;
     journal.rows.set(index,index<store.length?readRow(store,index):null);
+  }
+  // An order-preserving removal moves every later row. The journal then keeps
+  // one copy of the columns (a memcpy per column) instead of row preimages;
+  // rows remembered before that copy are still applied on rollback.
+  function rememberColumns(store){
+    const journal=journalFor(store);if(!journal||journal.columns)return;
+    const columns={};for(const name of COLUMN_NAMES)columns[name]=store.columns[name].slice(0,store.length);
+    journal.columns=columns;journal.columnsLength=store.length;journal.extras={...store.extras};
   }
   function rollbackJournal(journal){
     if(!journal.active)return;const store=journal.store;
+    if(journal.columns){
+      if(journal.columnsLength>store.capacity)ensureCapacity(store,journal.columnsLength);
+      for(const name of COLUMN_NAMES)store.columns[name].set(journal.columns[name],0);
+      store.extras=journal.extras;store.length=journal.columnsLength;
+    }
     if(journal.length>store.capacity)ensureCapacity(store,journal.length);
     for(const [index,row] of journal.rows){if(row)writeRow(store,index,row);}
     for(let index=journal.length;index<store.length;index++)delete store.extras[index];
@@ -230,14 +243,35 @@
     const index=store.length;remember(store,index);ensureCapacity(store,index+1);store.length=index+1;store.structure++;store.revision++;rt(store).dirty.push(index);
     ingestRow(store,index,asset,at);return index;
   }
-  // Removal moves the last row into the hole (O(1)); callers must not hold
-  // indices across a structural change — use indexOf(id).
-  function remove(store,index){
+  // Replace one row with a whole asset object (every field rewritten, like
+  // assigning a fresh object at the same position).
+  function replace(store,index,asset,{at=0}={}){
     if(!(index>=0&&index<store.length))throw new RangeError(`fleet-store-index:${index}`);
-    const last=store.length-1;remember(store,index);remember(store,last);
-    if(index!==last)writeRow(store,index,readRow(store,last));
-    delete store.extras[last];store.length=last;store.structure++;store.revision++;rt(store).dirty.push(index);return true;
+    if(!isObject(asset))throw new TypeError('fleet-store-asset-object-required');
+    const previousId=idAt(store,index);remember(store,index);store.revision++;rt(store).dirty.push(index);
+    ingestRow(store,index,asset,at);if(idAt(store,index)!==previousId)store.structure++;return index;
   }
+  // Order-preserving removal of any set of rows in one pass (the array
+  // splice/filter semantics the game relies on). Callers must not hold indices
+  // across a structural change — use indexOf(id).
+  function removeMany(store,indices){
+    const drop=new Uint8Array(store.length);let count=0;
+    for(const index of indices){if(!(index>=0&&index<store.length))throw new RangeError(`fleet-store-index:${index}`);if(!drop[index]){drop[index]=1;count++;}}
+    if(!count)return 0;
+    rememberColumns(store);
+    let first=0;while(!drop[first])first++;
+    const c=store.columns,extras={};for(const key of Object.keys(store.extras)){const index=Number(key);if(index<first)extras[index]=store.extras[key];}
+    let write=first;
+    for(let read=first;read<store.length;read++){
+      if(drop[read])continue;
+      if(write!==read){for(const name of COLUMN_NAMES)c[name][write]=c[name][read];}
+      if(own(store.extras,read))extras[write]=store.extras[read];
+      write++;
+    }
+    store.extras=extras;store.length=write;store.structure++;store.revision++;
+    return count;
+  }
+  function remove(store,index){return removeMany(store,[index])===1;}
   function materialize(store,index){
     const out={},c=store.columns,profile=groupObject(store,c.profile[index]),binding=groupObject(store,c.binding[index]),present=c.present[index];
     if(present&1)out.id=readHot(store,index,'id','pattern');
@@ -285,7 +319,7 @@
   }
 
   const API=Object.freeze({VERSION,SCHEMA,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,COLUMN_NAMES,COLUMN_TYPES,
-    create,isStore,ensureCapacity,trimCapacity,add,remove,set,patch,touch,drainDirty,get,peek,setGroupField,materialize,fromAssets,toAssets,indexOf,find,idAt,
+    create,isStore,ensureCapacity,trimCapacity,add,replace,remove,removeMany,set,patch,touch,drainDirty,get,peek,setGroupField,materialize,fromAssets,toAssets,indexOf,find,idAt,
     intern,value,compact,stats,splitPattern,joinPattern,beginJournal,rollbackJournal,endJournal,isPresent});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;

@@ -67,6 +67,33 @@ test('compaction drops unreferenced values without changing assets',()=>{
  const before=canon(STORE.toAssets(store)),out=STORE.compact(store);assert(out.removed>=30);assert.equal(canon(STORE.toAssets(store)),before);STORE.set(store,0,'lastTrip',{revenue:5});assert.equal(STORE.get(store,0,'lastTrip').revenue,5);return out;
 });
 
+test('removal preserves array order and per-asset extras, like splice/filter',()=>{
+ const assets=Array.from({length:12},(_,i)=>truck(i,i%3===0?{saleStatus:`s${i}`}:{})),store=STORE.fromAssets(assets);
+ assert.equal(STORE.removeMany(store,[7,2,2,11,5]),4);
+ const expected=assets.filter((_,i)=>![2,5,7,11].includes(i));
+ assert.equal(canon(STORE.toAssets(store)),canon(expected));
+ for(let i=0;i<expected.length;i++)assert.equal(STORE.indexOf(store,expected[i].id),i);
+ assert.equal(STORE.indexOf(store,assets[5].id),-1);
+ assert.equal(STORE.remove(store,0),true);assert.equal(STORE.idAt(store,0),expected[1].id);
+ assert.throws(()=>STORE.removeMany(store,[99]),RangeError);
+ return {length:store.length};
+});
+
+test('a failed transaction restores order-preserving removals, replacements and adds exactly',()=>{
+ const state={fleet:STORE.fromAssets(Array.from({length:40},(_,i)=>truck(i,i%4===0?{note:`n${i}`}:{}))),cash:1},store=state.fleet,before=canon(STORE.toAssets(store)),length=store.length;
+ assert.throws(()=>TX.execute(state,{label:'fleet-shift-rollback',scope:['cash'],apply:()=>{
+  state.cash=2;STORE.set(store,30,'progress',0.11);STORE.add(store,truck(900));STORE.replace(store,8,truck(800,{note:'replaced'}),{at:5});
+  STORE.removeMany(store,[0,3,4,39]);STORE.set(store,1,'specs',{capacity:7});STORE.removeMany(store,[2]);
+  for(let i=0;i<60;i++)STORE.add(store,truck(2000+i));STORE.replace(store,0,truck(801));throw new Error('shift-failure');}}),/shift-failure/);
+ assert.equal(state.cash,1);assert.equal(store.length,length);assert.equal(canon(STORE.toAssets(store)),before);
+ for(let i=0;i<length;i++)assert.equal(STORE.indexOf(store,truck(i).id),i);
+ assert.equal(STORE.indexOf(store,truck(800).id),-1);assert.equal(STORE.indexOf(store,truck(900).id),-1);
+ // committed: replace keeps the position and re-indexes the id
+ TX.execute(state,{label:'fleet-replace-commit',scope:['cash'],apply:()=>{STORE.replace(store,5,truck(700,{saleStatus:'returning'}),{at:9});STORE.removeMany(store,[1]);}});
+ assert.equal(STORE.indexOf(store,truck(700).id),4);assert.equal(STORE.get(store,4,'saleStatus'),'returning');assert.equal(store.columns.at[4],9);assert.equal(STORE.indexOf(store,truck(5).id),-1);
+ return {length:store.length};
+});
+
 test('100k rows stay compact and index lookups are fast',()=>{
  const base=truck(1),t0=performance.now(),store=STORE.create();for(let i=0;i<100000;i++)STORE.add(store,{...base,id:`N-ROAD-${String(i).padStart(8,'0')}`,name:`GH LOGISTICS ${100+i}`,progress:(i%100)/100});
  const built=performance.now()-t0,stats=STORE.stats(STORE.trimCapacity(store));const t1=performance.now();for(let i=0;i<1000;i++)assert.equal(STORE.indexOf(store,`N-ROAD-${String(i*97).padStart(8,'0')}`),i*97);
