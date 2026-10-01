@@ -1,10 +1,10 @@
 {
   "point": "Build 340 engine separation: immutable simulation and route plans, indexed procurement/disposal and finance batches, route-center read model, and payroll invoice join",
   "version": "3.0.0",
-  "build": 353,
+  "build": 354,
   "save_schema": "2.0.0",
-  "source_tree_sha256": "0137fc325834f9d69af56b605efe3dbfc6830e78e78529e53dbec37c5371bc54",
-  "webapp_tree_sha256": "7ee299c23288274a6e37ef6e77c1d710ea027d843e80f83ac1db57e84829dad7",
+  "source_tree_sha256": "137e7fe0e1c95bb781b84c39a8f432b148511fa094f5f3557df0b4d880feba77",
+  "webapp_tree_sha256": "6cecd2871e3bebf887c491aa919931f0827c9aa88b6a1a73c4d3028a4abb4b6f",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 231897,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 658809,
-      "sha256": "dd0ad3ce63f3b9889c8e720e22238d23142ba3e5d5a19fe171ddb3fe20914923"
+      "bytes": 659017,
+      "sha256": "ebad4ce14537c478d87c2616a6324530d6049a9c674daaf2e9b1031aa570cba9"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1714,6 +1714,14 @@
       "bytes": 38565,
       "sha256": "d238822e97c098886b9f9a809eeee60a59c58a461b9992612486c1403bfa2e4e"
     },
+    "WebApp/fleet-event-core.js": {
+      "bytes": 28655,
+      "sha256": "f0ebbf4f43535d595d546dc648d16b01257a23e73182c2e62556add85b116e74"
+    },
+    "WebApp/fleet-store-core.js": {
+      "bytes": 20432,
+      "sha256": "76eb6f84fb2edd896dd39e647b14e58a60601bc4021007bfdbb042008126be1d"
+    },
     "WebApp/formation-engine.js": {
       "bytes": 10555,
       "sha256": "bea329c7bf28faf22e4ef745203064eb38e8e3f331892865f5a628a633d0fb6b"
@@ -1863,8 +1871,8 @@
       "sha256": "a232973e5a74617d48f52b20e0eb9ec2a96583bfb6741400641eb118eb705182"
     },
     "WebApp/simulation-asset-core.js": {
-      "bytes": 19086,
-      "sha256": "8c8f2695ea8cbd3e0118ee150475384f40d9500b651b766a0dcc821048936502"
+      "bytes": 19343,
+      "sha256": "ed6fcb9edfd6e0873b42e37636ae2117ceb8929acd404ee5685e928e51e586a2"
     },
     "WebApp/simulation-asset-worker.js": {
       "bytes": 1677,
@@ -1895,8 +1903,8 @@
       "sha256": "2e69ee058343d89b2310384a46dcf75992e2376945fa153ce74786adaf30ce02"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 34500,
-      "sha256": "b054687ac96413cbeddfbb2ca61fa6f8127bce5e32cd2a08ad3340e4bb6c1c1a"
+      "bytes": 35875,
+      "sha256": "5378f46fa51a3f5f300e3a2bbbe9bd42fc20f13f176a1a44123d5aaeadd24e51"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5957,
@@ -1980,11 +1988,11 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "4c28756ed8fd30497638a3ff95c0a2d9714d94c0fbbad674ee66bdc8dc3b8d8c"
+      "sha256": "cb058e96899e13b186409ba38ebe759f279f3758e59e73f49029762a1e733656"
     },
     "BUILD": {
       "bytes": 4,
-      "sha256": "788a375d5055941786dd7e62bb7be0e986ad858a9b1cc84033fcf295634a9cf4"
+      "sha256": "61e524c097da910d3987cffec4e63ce8d477ab819c436e1d1fd23dc7a300f8fb"
     },
     "VERSION": {
       "bytes": 6,

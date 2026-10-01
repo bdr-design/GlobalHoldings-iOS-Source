@@ -19,13 +19,16 @@
     if (n >= 1e3) return `${sign}$${(n / 1e3).toFixed(1)}K`;
     return `${sign}$${n.toFixed(0)}`;
   };
-  const fmtNumber = value => new Intl.NumberFormat('ar-SA', {maximumFractionDigits: 0}).format(value || 0);
+  // One formatter for the whole session: constructing Intl.NumberFormat per call
+  // cost tens of microseconds on every label, list row and departure.
+  const ARABIC_INTEGER_FORMAT = new Intl.NumberFormat('ar-SA', {maximumFractionDigits: 0});
+  const fmtNumber = value => ARABIC_INTEGER_FORMAT.format(value || 0);
   const fmtStars = value => { const full=Math.round(clamp(value,0,5)*2)/2; let s=''; for(let i=1;i<=5;i++){ s += i<=full?'★':(i-0.5===full?'⯨':'☆'); } return s; };
   const APP_VERSION = '3.0.0';
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 353;
+  const RUNTIME_BUILD = 354;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   const FOUNDER_PRINCIPAL_ID='PLAYER-FOUNDER';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.

@@ -36,6 +36,11 @@
   // no write for unchanged primitives. Anything else uses the original delete/re-add path, so
   // shape changes, key order and the resulting graph stay byte-for-byte equivalent.
   function restoreValue(target,snapshot){
+    // Fleet Core v4 columns: restore typed arrays with one copy, never element by element.
+    if(ArrayBuffer.isView(snapshot)){
+      if(ArrayBuffer.isView(target)&&target.constructor===snapshot.constructor&&target.length===snapshot.length&&!Object.isFrozen(target)){target.set(snapshot);return target;}
+      return snapshot.slice();
+    }
     if(Array.isArray(snapshot)){
       if(!Array.isArray(target))return deepClone(snapshot);
       if(target.length!==snapshot.length)target.length=snapshot.length;
@@ -77,6 +82,14 @@
     return target;
   }
   function isActive(){return !!activeContext;}
+  // Fleet Core v4: an owner that journals its own writes registers an undo (run
+  // after the snapshot restore on rollback, newest first) and a release (run once
+  // the transaction has committed and its critical hooks succeeded).
+  function registerUndo(undo,release){
+    if(!activeContext)throw new Error('transaction-undo-requires-active-transaction');
+    if(typeof undo!=='function')throw new TypeError('transaction-undo-callback-required');
+    activeContext.undos.push({undo,release:typeof release==='function'?release:null});return true;
+  }
   function revision(target){return target&&typeof target==='object'?targetRevisions.get(target)||0:0;}
   function advanceRevision(target){const next=revision(target)>=Number.MAX_SAFE_INTEGER?1:revision(target)+1;targetRevisions.set(target,next);return next;}
   function transactionMemo(key,factory){if(!activeContext)return typeof factory==='function'?factory():undefined;key=String(key||'');if(activeContext.memo.has(key))return activeContext.memo.get(key);const value=typeof factory==='function'?factory():factory;activeContext.memo.set(key,value);return value;}
@@ -88,6 +101,7 @@
   function auditEqual(a,b,seen=new WeakMap()){
     if(Object.is(a,b))return true;
     if(!a||!b||typeof a!=='object'||typeof b!=='object')return false;
+    if(ArrayBuffer.isView(a)||ArrayBuffer.isView(b)){if(!ArrayBuffer.isView(a)||!ArrayBuffer.isView(b)||a.constructor!==b.constructor||a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!Object.is(a[i],b[i]))return false;return true;}
     if(Array.isArray(a)!==Array.isArray(b))return false;
     let peers=seen.get(a);if(peers?.has(b))return true;if(!peers){peers=new WeakSet();seen.set(a,peers);}peers.add(b);
     if(Array.isArray(a)){if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!auditEqual(a[i],b[i],seen))return false;return true;}
@@ -263,13 +277,14 @@
     // their rollback snapshot; scoped/journal transactions take an extra full baseline only when
     // audit/enforcement is explicitly requested. Normal gameplay pays no audit cost.
     const auditBaseline=auditWrites?((rollbackStorage==='full-snapshot')?snapshot:deepClone(target)):null;
-    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null};
+    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null,undos:[]};
     // Writer-owned undo (Build 353): a writer may keep its own exact preimage for writes it deliberately leaves
     // outside `scope` (the simulation slice keeps the previous asset field values instead of deep-cloning the
     // fleet). It always runs after the snapshot restore, so it also holds after a scoped -> full promotion.
     const undo=typeof options.undo==='function'?options.undo:null;
     const restore=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot);};
-    const rollback=()=>{const restored=restore();if(undo)undo();return restored;};
+    const releaseUndos=()=>{const rows=context.undos.splice(0);for(const row of rows)row.release?.();};
+    const rollback=()=>{const restored=restore();if(undo)undo();const rows=context.undos.splice(0);for(let i=rows.length-1;i>=0;i--)rows[i].undo();return restored;};
     let phase='validate';activeContext=context;
     try{
       const validateStart=runtimeClock();let validation;
@@ -299,6 +314,7 @@
         }
         phase='post-commit-irreversible';runCritical(irreversibleCritical);
       }finally{timing.postCommitCriticalMs=Math.max(0,runtimeClock()-criticalStart);}
+      releaseUndos();
       const nonCriticalStart=runtimeClock();for(const task of context.postCommit.filter(x=>!x.critical)){const taskStart=runtimeClock(),row={key:task.key||null,owner:task.owner||null,priority:task.priority,durationMs:0,ok:false};try{task.fn();row.ok=true;}catch(error){row.error=String(error?.message||error).slice(0,240);globalThis.console?.warn?.(`${label}: non-critical post-commit side effect failed`,error);}finally{row.durationMs=Math.max(0,runtimeClock()-taskStart);timing.postCommitNonCriticalTasks.push(row);}}timing.postCommitNonCriticalMs=Math.max(0,runtimeClock()-nonCriticalStart);
       advanceRevision(target);timing.committed=true;timing.stage='committed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);
       return {committed:true,value,label,scope:context.scope?[...context.scope]:null};
@@ -345,5 +361,5 @@
       throw error;
     }finally{if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

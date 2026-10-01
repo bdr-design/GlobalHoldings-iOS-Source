@@ -31,7 +31,8 @@
     if(n>=1e3)return `${sign}$${(n/1e3).toFixed(1)}K`;
     return `${sign}$${n.toFixed(0)}`;
   }
-  function fmtNumber(value){return new Intl.NumberFormat('ar-SA',{maximumFractionDigits:0}).format(value||0);}
+  const ARABIC_INTEGER_FORMAT=new Intl.NumberFormat('ar-SA',{maximumFractionDigits:0});
+  function fmtNumber(value){return ARABIC_INTEGER_FORMAT.format(value||0);}
   function formatDuration(seconds){
     if(seconds<=0)return 'الآن';
     if(seconds<3600)return `${Math.ceil(seconds/60)} دقيقة`;
@@ -170,6 +171,8 @@
     try{return processOne(row,input.simAdvance,input.simMeta,input.context);}
     catch(error){return isolate(row,input.simMeta,error);}
   }
-  const API=Object.freeze({VERSION,MAX_BATCH_ITEMS,WRITE_FIELDS,makeEffects,validateBatch,validateResults,processRow,processBatch(input){validateBatch(input);return input.rows.map(row=>processRow(row,input));}});
+  const API=Object.freeze({VERSION,MAX_BATCH_ITEMS,WRITE_FIELDS,makeEffects,validateBatch,validateResults,processRow,processBatch(input){validateBatch(input);return input.rows.map(row=>processRow(row,input));},
+    // Fleet Core v4 shares the exact trip economics and labels with the slice engine.
+    computeTripEconomics,loadLabel,normalizeAsset,assetOwner,assetMode,routeMode,routeOwner,fmtMoney,formatDuration});
   return API;
 });
