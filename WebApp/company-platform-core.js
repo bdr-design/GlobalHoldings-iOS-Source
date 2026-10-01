@@ -263,7 +263,7 @@
       const definition=definitionFor(state,companyId);if(definition)for(const sectorId of definition.classification.sectorIds)if(!state.unlockedSectors.includes(sectorId)&&state.openedCompanies.includes(companyId))state.unlockedSectors.push(sectorId);
     }
     {const fleet=fleetData();fleet.forEach(state,asset=>{const patch=assetMigrationPatch(asset);if(patch)fleet.update(state,asset,patch);});}
-    for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[])migrateAsset(delivery?.asset);
+    for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[])for(const asset of Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[])migrateAsset(asset);
     for(const route of Array.isArray(state.customRoutes)?state.customRoutes:[])migrateRoute(route);
     for(const bucket of ['globalBases','customHubs','branches']){
       for(const facility of Array.isArray(state[bucket])?state[bucket]:[]){
@@ -298,7 +298,7 @@
     const validReference=companyId=>validId(companyId)&&Boolean(registry?.[companyId]||getDefinition(companyId));
     const validateAsset=(asset,context='asset')=>{const companyId=String(asset?.ownerCompanyId||asset?.companyId||ownerForLegacyAssetMode(asset?.assetMode||asset?.type)||'');if(!validReference(companyId))errors.push(`${context}-company-reference:${asset?.id||'unknown'}`);if(asset?.assetClass!==undefined&&!validDataId(asset.assetClass))errors.push(`${context}-class:${asset?.id||'unknown'}`);};
     fleetData().forEach(state,asset=>validateAsset(asset));
-    for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[])if(delivery?.asset)validateAsset(delivery.asset,'delivery-asset');
+    for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[])for(const asset of Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[])validateAsset(asset,'delivery-asset');
     for(const route of Array.isArray(state.customRoutes)?state.customRoutes:[]){const companyId=String(route?.ownerCompanyId||route?.companyId||route?.company||ownerForLegacyRouteMode(route?.routeMode||route?.type)||''),routeMode=String(route?.routeMode||route?.type||'');if(!validReference(companyId))errors.push(`route-company-reference:${route?.id||'unknown'}`);if(!validDataId(routeMode))errors.push(`route-mode:${route?.id||'unknown'}`);}
     for(const bucket of ['globalBases','customHubs','branches'])for(const facility of Array.isArray(state[bucket])?state[bucket]:[]){const companyId=String(facility?.ownerCompanyId||facility?.companyId||facility?.company||'').trim();if(companyId&&!validReference(companyId))errors.push(`facility-company-reference:${facility?.id||'unknown'}`);}
     for(const companyId of Object.keys(object(state.companyFinance)?state.companyFinance:{}))if(!validReference(companyId))warnings.push(`company-finance-orphan:${companyId}`);

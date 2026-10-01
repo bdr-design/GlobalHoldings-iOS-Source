@@ -114,11 +114,11 @@
     }else if(domain==='contracts'){
       const doc=contractById(payload.id);if(doc)add(doc.company||doc.companyId||doc.sector);if(!ids.length)add(payload.sector);if(name==='tick-day')addAllCompanies();
     }else if(domain==='fleet'){
-      addAsset(payload.id||payload.assetId);for(const id of payload.ids||[])addAsset(id);for(const row of [...(payload.assignments||[]),...(payload.departures||[]),...(payload.deliveries||[])]){add(owner(row));add(owner(row?.asset));addAsset(row?.id||row?.assetId);}if(payload.asset)add(assetOwner(payload.asset));if(name==='reconcile-staffing')addAllCompanies();
+      addAsset(payload.id||payload.assetId);for(const id of payload.ids||[])addAsset(id);for(const row of [...(payload.assignments||[]),...(payload.departures||[]),...(payload.deliveries||[])]){add(owner(row));add(owner(row?.asset));addAsset(row?.id||row?.assetId);for(const asset of row?.assets||[]){add(owner(asset));addAsset(asset?.id);}}if(payload.asset)add(assetOwner(payload.asset));if(name==='reconcile-staffing')addAllCompanies();
     }else if(domain==='routes'){
       add(owner(payload.route));add(routeOwner(payload.route));addAsset(payload.assetId);addRoute(payload.id);addRoute(payload.replaceId);if(payload.routeId)addRoute(payload.routeId);
     }else if(domain==='procurement'){
-      add(owner(payload.asset));add(owner(payload.base));const construction=constructionById(payload.id);if(construction)add(construction.company||construction.ownerCompanyId);const delivery=deliveryById(payload.id||payload.deliveryId);if(delivery)add(owner(delivery)||owner(delivery.asset));if(!ids.length)add(platform?.ownerForLegacyAssetMode?.(payload.assetMode||payload.type));
+      add(owner(payload.asset));add(owner(payload.base));const construction=constructionById(payload.id);if(construction)add(construction.company||construction.ownerCompanyId);const delivery=deliveryById(payload.id||payload.deliveryId);if(delivery)add(owner(delivery)||owner(delivery.asset)||owner(delivery.assets?.[0]));if(!ids.length)add(platform?.ownerForLegacyAssetMode?.(payload.assetMode||payload.type));
     }else if(domain==='facilities'){
       add(owner(payload.facility));const facility=addFacility(payload.id||payload.facilityId);if(name==='open-regional-hq'&&!facility)add('group');if(name==='tick-day')addAllCompanies();
     }else if(domain==='banking'){add('bank');add(payload.borrower);}

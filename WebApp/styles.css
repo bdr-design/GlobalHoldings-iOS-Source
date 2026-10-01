@@ -81,6 +81,7 @@ small{color: var(--muted);}
 .drawer-body img{object-fit: cover;}
 .backdrop{display: none !important;}
 .list,.company-visual-grid,.official-manager-candidate-grid,.save-slots,.finance-company-list-v202,.doc-art-grid,.news-feed{display:grid;gap:12px;}
+.owned-virtual-list{display:block;position:relative;width:100%;contain:layout style}.owned-virtual-list>.owned-asset-row{margin:0 0 12px}.owned-virtual-spacer{display:block;width:100%;padding:0;border:0;pointer-events:none}
 .list-item,.sector-card,.ui-card,.company-visual-card,.finance-company-card-v202,.finance-section-v202,.document-card,.department-life-card,.news-card,.news-lead{background:rgba(255,255,255,.84);border:1px solid rgba(203,218,215,.82);border-radius:var(--radius);padding:14px;overflow:hidden;box-shadow:0 4px 14px rgba(13,59,87,.055);}
 .list-item:hover,.sector-card:hover,.ui-card:hover,.company-visual-card:hover,.finance-company-card-v202:hover{border-color:#b9cec9;box-shadow:var(--shadow-soft);}
 .list-item-head,.finance-section-head-v202,.finance-card-head-v202{display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 9px;}

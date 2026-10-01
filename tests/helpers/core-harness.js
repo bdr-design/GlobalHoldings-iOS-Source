@@ -10,7 +10,7 @@ function harness(names = []) {
     getItem(k) { return data.get(k) ?? null; }, setItem(k, v) { data.set(k, String(v)); },
     removeItem(k) { data.delete(k); }, clear() { data.clear(); }
   };
-  const s = {console, structuredClone, TextEncoder, TextDecoder, setTimeout, clearTimeout,
+  const s = {console, structuredClone, TextEncoder, TextDecoder, btoa, atob, setTimeout, clearTimeout,
     performance, Blob, URL, AbortController, localStorage: storage, sessionStorage: storage,
     addEventListener(n, fn) { const a = listeners.get(n) || []; a.push(fn); listeners.set(n, a); },
     dispatchEvent(e) { for (const fn of listeners.get(e.type) || []) fn(e); },

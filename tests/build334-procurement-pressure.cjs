@@ -13,15 +13,16 @@ for(const qty of [10,100,500,1000]){
   const out=s.GH_DOMAIN_COMMANDS.dispatch(ctx,'procurement','purchase-assets',payload,{actor:'pressure-test',idempotencyKey:`PRESSURE-${qty}`});
   const ms=performance.now()-start;
   assert(out.ok&&out.result.count===qty);
-  assert.strictEqual(state.realism.procurement.deliveries.length-beforeDeliveries,qty);
+  assert.strictEqual(state.realism.procurement.deliveries.length-beforeDeliveries,1,'one receipt is created for the purchase batch');
   assert.strictEqual(beforeCash-s.GH_FINANCE_CORE.operating(state,'air'),Number(item.price)*qty);
   assert.strictEqual(new Set(out.result.assetIds).size,qty);
-  assert.strictEqual(new Set(out.result.deliveryOrderIds).size,qty);
+  assert.strictEqual(out.result.deliveryOrderIds.length,1);
+  const receipt=state.realism.procurement.deliveries.at(-1);assert.strictEqual(receipt.assets.length,qty);assert.strictEqual(receipt.count,qty);assert(receipt.assets.every(asset=>asset.deliveryOrderId===receipt.id));assert.strictEqual(new Set(receipt.assets.map(asset=>asset.id)).size,qty);
   const retryStart=performance.now();
   const retry=s.GH_DOMAIN_COMMANDS.dispatch(ctx,'procurement','purchase-assets',payload,{actor:'pressure-test',idempotencyKey:`PRESSURE-${qty}`});
   const retryMs=performance.now()-retryStart;
   assert.strictEqual(retry.commandId,out.commandId);
-  assert.strictEqual(state.realism.procurement.deliveries.length-beforeDeliveries,qty);
+  assert.strictEqual(state.realism.procurement.deliveries.length-beforeDeliveries,1,'idempotent replay keeps one complete batch receipt');
   results.push({qty,ms:Number(ms.toFixed(2)),retryMs:Number(retryMs.toFixed(2)),stateBytes:Buffer.byteLength(JSON.stringify(state))});
 }
 console.log(JSON.stringify({suite:'procurement-pressure',environment:`node ${process.version}`,results},null,2));

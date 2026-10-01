@@ -72,6 +72,7 @@
   const PATTERN_SLOTS=Object.freeze({id:['idPattern','idNumber'],name:['namePattern','nameNumber']});
   const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
   const isObject=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
+  function defineData(target,key,value){Object.defineProperty(target,key,{value,writable:true,enumerable:true,configurable:true});}
 
   // --------------------------------------------------------------- runtime ---
   // Runtime-only indexes, rebuilt from the persisted data when missing. `epoch`
@@ -83,7 +84,7 @@
   function rt(store){
     let r=runtime.get(store);
     if(!r||r.values!==store.values||r.views.buffer!==store.rows){
-      r={values:store.values,views:makeViews(store.rows),index:new Map(),indexedTo:0,free:[],ids:null,
+      r={values:store.values,views:makeViews(store.rows),index:new Map(),indexedTo:0,free:[],ids:null,profileGroups:null,leaseGroups:null,payrollGroups:null,orderIds:new Uint32Array(store.capacity),orderPatterns:[],orderIndex:new Map(),
         dirty:[],dirtyFrom:store.revision,dirtyLost:false,dirtyColumns:null,suppressDirtyLog:false,
         dirtyChunks:new Uint8Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),allDirty:true,journal:null,epoch:++epochCounter,valuesGeneration:++epochCounter};
       runtime.set(store,r);
@@ -102,6 +103,7 @@
   // slot, a rolled-back table); owners caching per-ref data compare it.
   function valuesGeneration(store){return rt(store).valuesGeneration;}
   function bumpEpoch(store){const r=rt(store);r.epoch=++epochCounter;r.ids=null;return r.epoch;}
+  function invalidateProfiles(store){const r=runtime.get(store);if(r){r.profileGroups=null;r.leaseGroups=null;r.payrollGroups=null;}}
   // Generic slot access (owners on hot paths use views() with O offsets).
   function slot(store,name,index){const [view,k]=SLOTS[name];return views(store)[view][index*PER_ROW[view]+k];}
   function setSlot(store,name,index,value){const [view,k]=SLOTS[name];views(store)[view][index*PER_ROW[view]+k]=value;}
@@ -143,7 +145,7 @@
   function resize(store,cap){
     const next=new ArrayBuffer(cap*STRIDE);new Uint8Array(next).set(new Uint8Array(store.rows,0,Math.min(store.length,cap)*STRIDE));
     store.rows=next;store.capacity=cap;
-    const r=runtime.get(store);if(r)r.views=makeViews(next);
+    const r=runtime.get(store);if(r){r.views=makeViews(next);if(r.orderIds.length<cap){const orderIds=new Uint32Array(cap);orderIds.set(r.orderIds);r.orderIds=orderIds;}}
     return r;
   }
   function ensureCapacity(store,needed){
@@ -171,10 +173,10 @@
   // from the free list are returned to it on rollback, values appended are
   // removed from the index, and id lookups changed inside the transaction are
   // repaired row by row.
-  function newLog(capacity){return {count:0,capacity,rows:new Int32Array(capacity),words:new Uint32Array(capacity*WORDS_PER_ROW),extras:new Array(capacity)};}
+  function newLog(capacity){return {count:0,capacity,rows:new Int32Array(capacity),words:new Uint32Array(capacity*WORDS_PER_ROW),orders:new Uint32Array(capacity),extras:new Array(capacity)};}
   function growLog(log){
-    const capacity=Math.max(64,log.capacity*2),rows=new Int32Array(capacity),words=new Uint32Array(capacity*WORDS_PER_ROW);
-    rows.set(log.rows);words.set(log.words);log.rows=rows;log.words=words;log.extras.length=capacity;log.capacity=capacity;
+    const capacity=Math.max(64,log.capacity*2),rows=new Int32Array(capacity),words=new Uint32Array(capacity*WORDS_PER_ROW),orders=new Uint32Array(capacity);
+    rows.set(log.rows);words.set(log.words);orders.set(log.orders);log.rows=rows;log.words=words;log.orders=orders;log.extras.length=capacity;log.capacity=capacity;
   }
   function beginJournal(store){
     const r=rt(store);if(r.journal&&r.journal.active)return r.journal;
@@ -197,6 +199,7 @@
     journal.seen[index]=1;const log=journal.log;if(log.count===log.capacity)growLog(log);
     const slotIndex=log.count++,words=log.words,from=r.views.u32,src=index*WORDS_PER_ROW,dst=slotIndex*WORDS_PER_ROW;
     log.rows[slotIndex]=index;
+    log.orders[slotIndex]=r.orderIds[index]||0;
     for(let k=0;k<WORDS_PER_ROW;k++)words[dst+k]=from[src+k];
     log.extras[slotIndex]=(r.views.u8[index*STRIDE+O.flags]&EXTRAS)&&own(store.extras,index)?store.extras[index]:undefined;
   }
@@ -246,7 +249,7 @@
       endJournal(journal);return;
     }
     if(journal.length>store.capacity)ensureCapacity(store,journal.length);
-    const r=rt(store),v=r.views,log=journal.log;
+    const r=rt(store),v=r.views,log=journal.log;invalidateProfiles(store);
     // Id lookups: drop every mapping the transaction touched while the values
     // it interned still resolve, re-add the restored ids below.
     const idsKept=r.ids!==null&&r.ids===journal.ids&&!journal.idCollision;
@@ -267,11 +270,12 @@
     for(let slotIndex=0;slotIndex<log.count;slotIndex++){
       const index=log.rows[slotIndex],src=slotIndex*WORDS_PER_ROW,dst=index*WORDS_PER_ROW;
       for(let k=0;k<WORDS_PER_ROW;k++)words[dst+k]=log.words[src+k];
+      r.orderIds[index]=log.orders[slotIndex];
       for(const s of snaps)if(slotIndex>=s.logCount&&index<s.copy.length)s.target[index*s.per+s.k]=s.copy[index];
       const extras=log.extras[slotIndex];if(extras===undefined)delete store.extras[index];else store.extras[index]=extras;
       markDirty(r,index);logDirty(r,index);
     }
-    for(let index=journal.length;index<store.length;index++){delete store.extras[index];v.u8[index*STRIDE+O.flags]=0;markDirty(r,index);logDirty(r,index);}
+    for(let index=journal.length;index<store.length;index++){delete store.extras[index];r.orderIds[index]=0;v.u8[index*STRIDE+O.flags]=0;markDirty(r,index);logDirty(r,index);}
     const structureChanged=store.structure!==journal.structure;
     store.length=journal.length;store.live=journal.live;
     // Counters only grow: a value seen during the transaction is never reused.
@@ -329,11 +333,40 @@
     const current=groupObject(store,groupRef(store,index,group)),next={};
     let placed=false;for(const key of Object.keys(current)){if(key===field){placed=true;if(value!==undefined)next[key]=value;}else next[key]=current[key];}
     if(!placed&&value!==undefined)next[field]=value;
-    const ref=intern(store,next);views(store).u32[index*WORDS_PER_ROW+O[group]]=ref;
+    const ref=intern(store,next);views(store).u32[index*WORDS_PER_ROW+O[group]]=ref;if(group==='profile')invalidateProfiles(store);
+  }
+  function physicalKeys(store,index){
+    const out=[],seen=new Set(),present=presentOf(store,index),push=key=>{if(!seen.has(key)){seen.add(key);out.push(key);}};
+    if(present&1)push('id');
+    for(const key of Object.keys(groupObject(store,groupRef(store,index,'profile'))))push(key);
+    for(let i=1;i<HOT_FIELDS.length;i++)if(present&(1<<i))push(HOT_FIELDS[i][0]);
+    for(const key of Object.keys(groupObject(store,groupRef(store,index,'binding'))))push(key);
+    const extras=extrasOf(store,index);if(extras)for(const key of Object.keys(extras))push(key);
+    return out;
+  }
+  function orderPattern(store,index){
+    const r=rt(store),ref=r.orderIds[index]||0;return ref>0?r.orderPatterns[ref-1]||null:null;
+  }
+  function internOrder(store,keys){
+    const r=rt(store),signature=JSON.stringify(keys);let ref=r.orderIndex.get(signature);if(ref!==undefined)return ref;
+    ref=r.orderPatterns.length+1;r.orderPatterns.push(keys.slice());r.orderIndex.set(signature,ref);return ref;
+  }
+  function orderKeys(store,index,keys){
+    const pattern=orderPattern(store,index);if(!pattern)return keys;
+    const remaining=new Set(keys),ordered=[];for(const key of pattern)if(remaining.delete(key))ordered.push(key);
+    for(const key of keys)if(remaining.delete(key))ordered.push(key);
+    return ordered;
+  }
+  function rememberFieldOrder(store,index,field,value){
+    const r=rt(store),stored=orderPattern(store,index),order=stored?stored.slice():physicalKeys(store,index);
+    const position=order.indexOf(field);let changed=false;
+    if(value===undefined){if(position>=0){order.splice(position,1);changed=true;}}
+    else if(position<0){order.push(field);changed=true;}
+    if(!stored||changed)r.orderIds[index]=internOrder(store,order);
   }
   function setExtra(store,index,field,value){
     const current=extrasOf(store,index),next={...(current||{})},u8=views(store).u8;
-    if(value===undefined)delete next[field];else next[field]=jsonCopy(value);
+    if(value===undefined)delete next[field];else defineData(next,field,jsonCopy(value));
     if(Object.keys(next).length){store.extras[index]=next;u8[index*STRIDE+O.flags]|=EXTRAS;}else{delete store.extras[index];u8[index*STRIDE+O.flags]&=~EXTRAS;}
   }
   function checkRow(store,index){if(!isAlive(store,index))throw new RangeError(`fleet-store-row:${index}`);}
@@ -342,6 +375,7 @@
   function set(store,index,field,value){
     checkRow(store,index);remember(store,index);
     const idBefore=field==='id'?idAt(store,index):undefined;
+    rememberFieldOrder(store,index,field,value);
     const hot=HOT_KIND.get(field)||null,extras=extrasOf(store,index);
     if(extras&&own(extras,field))setExtra(store,index,field,undefined);
     if(hot){if(value===undefined)clearHot(store,index,field);else if(hotFits(hot,value))writeHot(store,index,field,hot,value);else{clearHot(store,index,field);setExtra(store,index,field,value);}}
@@ -394,18 +428,20 @@
 
   // ------------------------------------------------------ ingest/materialize ---
   function ingestRow(store,index,asset,at){
-    const profile={},binding={},extras={};
+    const profile={},binding={},extras={},fieldOrder=[];
     {const v=views(store),w=index*WORDS_PER_ROW;for(let k=0;k<WORDS_PER_ROW;k++)v.u32[w+k]=0;v.f64[index*F64_PER_ROW+O.at]=Number.isFinite(at)?at:0;v.u8[index*STRIDE+O.flags]=ALIVE;}
     for(const key of Object.keys(asset)){
       const value=asset[key];if(value===undefined||typeof value==='function'||typeof value==='symbol')continue;
+      fieldOrder.push(key);
       const hot=HOT_KIND.get(key)||null;
-      if(hot){if(hotFits(hot,value))writeHot(store,index,key,hot,value);else extras[key]=jsonCopy(value);}
-      else if(PROFILE_SET.has(key))profile[key]=value;
-      else if(BINDING_SET.has(key))binding[key]=value;
-      else extras[key]=jsonCopy(value);
+      if(hot){if(hotFits(hot,value))writeHot(store,index,key,hot,value);else defineData(extras,key,jsonCopy(value));}
+      else if(PROFILE_SET.has(key))defineData(profile,key,value);
+      else if(BINDING_SET.has(key))defineData(binding,key,value);
+      else defineData(extras,key,jsonCopy(value));
     }
     const profileRef=intern(store,profile),bindingRef=intern(store,binding),v=views(store),w=index*WORDS_PER_ROW;
-    v.u32[w+O.profile]=profileRef;v.u32[w+O.binding]=bindingRef;
+    v.u32[w+O.profile]=profileRef;v.u32[w+O.binding]=bindingRef;invalidateProfiles(store);
+    rt(store).orderIds[index]=internOrder(store,fieldOrder);
     if(Object.keys(extras).length){store.extras[index]=extras;v.u8[index*STRIDE+O.flags]|=EXTRAS;}else delete store.extras[index];
   }
   function add(store,asset,{at=0}={}){
@@ -425,28 +461,22 @@
   function removeMany(store,indices){
     const unique=new Set();for(const index of indices){checkRow(store,index);unique.add(index);}
     for(const index of unique){const id=idAt(store,index);remember(store,index);views(store).u8[index*STRIDE+O.flags]&=~ALIVE;store.live--;idsMove(store,index,id,undefined);}
-    if(unique.size)bumpStructure(store);
+    if(unique.size){bumpStructure(store);invalidateProfiles(store);}
     return unique.size;
   }
   function remove(store,index){return removeMany(store,[index])===1;}
   function materialize(store,index){
     const out={},present=presentOf(store,index),profile=groupObject(store,groupRef(store,index,'profile')),binding=groupObject(store,groupRef(store,index,'binding'));
     if(present&1)out.id=readHot(store,index,'id','pattern');
-    for(const key of Object.keys(profile))out[key]=copyValue(profile[key]);
+    for(const key of Object.keys(profile))defineData(out,key,copyValue(profile[key]));
     for(let i=1;i<HOT_FIELDS.length;i++){if(present&(1<<i)){const [field,kind]=HOT_FIELDS[i];out[field]=readHot(store,index,field,kind);}}
-    for(const key of Object.keys(binding))out[key]=copyValue(binding[key]);
-    const extras=extrasOf(store,index);if(extras)for(const key of Object.keys(extras))out[key]=copyValue(extras[key]);
-    return out;
+    for(const key of Object.keys(binding))defineData(out,key,copyValue(binding[key]));
+    const extras=extrasOf(store,index);if(extras)for(const key of Object.keys(extras))defineData(out,key,copyValue(extras[key]));
+    const result={};for(const key of orderKeys(store,index,Object.keys(out)))defineData(result,key,out[key]);return result;
   }
   // Own keys of the materialized asset, in materialize order, without building it.
   function keys(store,index){
-    const out=[],seen=new Set(),present=presentOf(store,index),push=key=>{if(!seen.has(key)){seen.add(key);out.push(key);}};
-    if(present&1)push('id');
-    for(const key of Object.keys(groupObject(store,groupRef(store,index,'profile'))))push(key);
-    for(let i=1;i<HOT_FIELDS.length;i++)if(present&(1<<i))push(HOT_FIELDS[i][0]);
-    for(const key of Object.keys(groupObject(store,groupRef(store,index,'binding'))))push(key);
-    const extras=extrasOf(store,index);if(extras)for(const key of Object.keys(extras))push(key);
-    return out;
+    return orderKeys(store,index,physicalKeys(store,index));
   }
   function fromAssets(assets,{at=0}={}){
     const list=Array.isArray(assets)?assets:[],store=create(list.length);
@@ -454,6 +484,30 @@
     store.structure=1;return store;
   }
   function forEachLive(store,fn){const u8=views(store).u8;for(let index=0;index<store.length;index++)if(u8[index*STRIDE+O.flags]&ALIVE)fn(index);}
+  // Immutable, interned profiles are shared by rows from the same purchase
+  // batch. Cache their live multiplicities so daily batch-level accounting can
+  // visit profiles instead of materializing one view per asset.
+  function forEachProfile(store,fn){
+    const r=rt(store);
+    if(!r.profileGroups){const groups=new Map(),u8=r.views.u8,W=r.views.u32;for(let index=0;index<store.length;index++){if(!(u8[index*STRIDE+O.flags]&ALIVE))continue;const ref=W[index*WORDS_PER_ROW+O.profile];groups.set(ref,(groups.get(ref)||0)+1);}r.profileGroups=groups;}
+    for(const [ref,count] of r.profileGroups)if(ref!==0&&count>0)fn(value(store,ref),count,ref);
+  }
+  function forEachLeaseGroup(store,fn){
+    const r=rt(store);
+    if(!r.leaseGroups){const groups=new Map(),u8=r.views.u8,W=r.views.u32;for(let index=0;index<store.length;index++){
+      if(!(u8[index*STRIDE+O.flags]&ALIVE))continue;const ref=W[index*WORDS_PER_ROW+O.profile];if(!ref)continue;const profile=value(store,ref);if(profile?.ownership!=='lease')continue;
+      const company=String(profile.ownerCompanyId||profile.companyId||''),monthlyLease=Number(profile.monthlyLease)||0;if(!company||monthlyLease<=0)continue;const key=`${company}\u0000${monthlyLease}`;let row=groups.get(key);if(!row){row={ownerCompanyId:company,monthlyLease,count:0};groups.set(key,row);}row.count++;
+    }r.leaseGroups=groups;}
+    for(const row of r.leaseGroups.values())if(row.count>0)fn(row,row.count);
+  }
+  function forEachPayrollGroup(store,fn){
+    const r=rt(store);
+    if(!r.payrollGroups){const groups=new Map(),u8=r.views.u8,W=r.views.u32;for(let index=0;index<store.length;index++){
+      if(!(u8[index*STRIDE+O.flags]&ALIVE))continue;const ref=W[index*WORDS_PER_ROW+O.profile];if(!ref)continue;const profile=value(store,ref),staff=profile?.staffing;if(staff?.ready!==true)continue;
+      const ownerCompanyId=String(profile.ownerCompanyId||profile.companyId||''),monthlyPayroll=Number(staff.monthlyPayroll)||0,headcount=Number(staff.total)||0;if(!ownerCompanyId)continue;const key=`${ownerCompanyId}\u0000${monthlyPayroll}\u0000${headcount}`;let row=groups.get(key);if(!row){row={ownerCompanyId,monthlyPayroll,headcount,count:0};groups.set(key,row);}row.count++;
+    }r.payrollGroups=groups;}
+    for(const row of r.payrollGroups.values())if(row.count>0)fn(row,row.count);
+  }
   function toAssets(store){const out=[];forEachLive(store,index=>out.push(materialize(store,index)));return out;}
 
   // ---------------------------------------------------------------- lookup ---
@@ -497,6 +551,7 @@
     if(index===undefined||!isAlive(store,index)||idAt(store,index)!==id)index=r.ids.strings.get(id);
     return index!==undefined&&isAlive(store,index)&&idAt(store,index)===id?index:-1;
   }
+  function buildIndex(store){const r=rt(store);if(!r.ids)r.ids=buildIds(store);return r.ids;}
   function find(store,id){const index=indexOf(store,id);return index<0?null:materialize(store,index);}
 
   // ------------------------------------------------------------ maintenance ---
@@ -510,9 +565,9 @@
     while(read<length){
       while(read<length&&!(u8[read*STRIDE+O.flags]&ALIVE))dead.push(read++);
       const start=read;while(read<length&&(u8[read*STRIDE+O.flags]&ALIVE))read++;
-      if(read>start){if(write!==start)u8.copyWithin(write*STRIDE,start*STRIDE,read*STRIDE);write+=read-start;}
+      if(read>start){if(write!==start){u8.copyWithin(write*STRIDE,start*STRIDE,read*STRIDE);r.orderIds.copyWithin(write,start,read);}write+=read-start;}
     }
-    u8.fill(0,write*STRIDE,length*STRIDE);
+    u8.fill(0,write*STRIDE,length*STRIDE);r.orderIds.fill(0,write,length);
     const extras={};
     for(const key of Object.keys(store.extras)){
       const index=Number(key);let lo=0,hi=dead.length;while(lo<hi){const mid=(lo+hi)>>1;if(dead[mid]<index)lo=mid+1;else hi=mid;}
@@ -547,8 +602,8 @@
   }
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
-    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,indexOf,find,idAt,
-    views,slot,setSlot,intern,value,valueKey,splitPattern,joinPattern,compactRows,collectValues,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks});
+    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
+    views,slot,setSlot,intern,value,valueKey,splitPattern,joinPattern,compactRows,collectValues,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

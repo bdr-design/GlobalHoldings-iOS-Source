@@ -34,11 +34,14 @@
     if(key==='finance:pay-by-cheque'&&(!object||!value.cheque?.id||value.cheque.status!=='مصروف'||value.invoice?.status!=='مسددة'||value.reference!==value.cheque.id))fail();
     if(key==='finance:transfer'&&(!object||value.transferred!==true||value.amount!==Number(payload.amount)||value.from!==payload.from||value.to!==payload.to))fail();
     if(key==='finance:settle-intercompany-interest'&&(!object||value.settled!==true||value.to!=='bank'||value.from!==(payload.from||payload.company)||!Number.isFinite(Number(value.cashPostedRevenue))))fail();
-    if(key==='procurement:purchase-assets'&&(!object||value.count!==Number(payload.qty)||value.baseId!==payload.base?.id||!Array.isArray(value.deliveryOrderIds)||!Array.isArray(value.assetIds)||value.deliveryOrderIds.length!==value.count||value.assetIds.length!==value.count||new Set(value.deliveryOrderIds).size!==value.count||new Set(value.assetIds).size!==value.count))fail();
+    if(key==='procurement:purchase-assets'&&(!object||value.count!==Number(payload.qty)||value.baseId!==payload.base?.id||!Array.isArray(value.deliveryOrderIds)||!value.deliveryOrderIds.length||value.deliveryOrderIds.length>value.count||!Array.isArray(value.assetIds)||value.assetIds.length!==value.count||new Set(value.deliveryOrderIds).size!==value.deliveryOrderIds.length||new Set(value.assetIds).size!==value.count))fail();
     if(key==='hr:hire'&&(!object||value.ok!==true||value.missingAfter!==0||!Number.isInteger(value.total)))fail();
     if(key==='facilities:hire'&&(!object||value.ok!==true||!Number.isFinite(value.staff)))fail();
     if(key==='fleet:record-delivery'&&(!object||value.baseFacility!==payload.baseId||value.deliveryOrderId!==payload.deliveryId||!value.id))fail();
-    if(key==='fleet:record-delivery-batch'&&(!Array.isArray(value)||value.length!==payload.deliveries?.length||value.some((asset,index)=>!asset?.id||asset.baseFacility!==payload.deliveries[index]?.baseId||asset.deliveryOrderId!==payload.deliveries[index]?.deliveryId)))fail();
+    if(key==='fleet:record-delivery-batch'){
+      const inputs=Array.isArray(payload.deliveries)?payload.deliveries:[],expected=new Map(inputs.map(input=>[input?.deliveryId,{baseId:input?.baseId,count:Array.isArray(input?.assets)?input.assets.length:input?.asset?1:0}])),total=[...expected.values()].reduce((sum,row)=>sum+row.count,0);
+      if(expected.size!==inputs.length||!Array.isArray(value)||value.length!==total||value.some(asset=>{const row=expected.get(asset?.deliveryOrderId);if(!asset?.id||!row||asset.baseFacility!==row.baseId)return true;row.count--;return false;})||[...expected.values()].some(row=>row.count!==0))fail();
+    }
     if(key==='fleet:assign-routes-batch'&&(!Array.isArray(value)||value.length!==payload.assignments?.length||value.some((asset,index)=>!asset?.id||asset.id!==payload.assignments[index]?.id||asset.routeId!==payload.assignments[index]?.routeId||asset.phase!=='turnaround')))fail();
     if(key==='fleet:depart-batch'&&(!Array.isArray(value)||value.length!==payload.departures?.length||value.some((asset,index)=>!asset?.id||asset.id!==payload.departures[index]?.id||!['moving','turnaround'].includes(asset.phase))))fail();
     if(['corporate:acquire-stake','market:acquire-stake'].includes(key)&&(!object||value.id!==payload.id||value.stake!==Number(payload.stake)))fail();return true;

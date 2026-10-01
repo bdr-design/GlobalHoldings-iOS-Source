@@ -144,7 +144,7 @@
       jobSlice=slice;jobStart=simNow();jobSpeed=speed;jobBoundary=boundaryFor(jobStart+slice);jobWorkMs=0;jobReadyToFinish=false;
       const createStart=clock();
       try{
-        job=adapter.createSliceJob(slice,{from:jobStart,to:jobStart+slice,speed,fast:fast(speed),boundary:{...jobBoundary}})||null;
+        job=adapter.createSliceJob(slice,{from:jobStart,to:jobStart+slice,speed,fast:fast(speed),manualAdvance:!!manualAdvance,boundary:{...jobBoundary}})||null;
         if(!job||typeof job.runChunk!=='function'||typeof job.finish!=='function'){
           health.lastError='adapter:createSliceJob-invalid';
           if(manualAdvance)failManualAdvance('create-job-invalid',{stage:'create',from:jobStart,to:jobStart+jobSlice});
@@ -193,7 +193,7 @@
     }
 
     function finishJob(speed){
-      const activeJob=job,from=jobStart,to=jobStart+jobSlice,slice=jobSlice,boundary={...jobBoundary};
+      const activeJob=job,from=jobStart,to=jobStart+jobSlice,boundary={...jobBoundary};
       let result,finishTook=0,finishError=null;const finishStart=clock();
       try{result=activeJob.finish({from,to,speed,boundary});}
       catch(error){finishError=error;if(manualAdvance)failManualAdvance('finish-error',{stage:'finish',from,to,error});report('sliceFinish',error,true);}
@@ -213,18 +213,21 @@
         if(conflictStreak>=cfg.conflictLimit&&fast(speed)){applyFallbackSpeed({reason:'conflict-watchdog'});pacing.limitBacklog(cfg.maxBacklogNormal);conflictStreak=0;}
         return {done:false,breakFrame:true};
       }
+      const actualTo=Number(result?.completeTo??to);
+      if(!Number.isFinite(actualTo)||actualTo<from-1e-6||actualTo>to+1e-6){health.lastCommitReason='invalid-complete-to';cancelJob('invalid-complete-to');report('sliceFinish',new Error(`adapter-complete-to-invalid:${actualTo}:${from}:${to}`),true);pacing.clearBacklog();return {done:false,breakFrame:true};}
+      const committedTo=Math.max(from,Math.min(to,actualTo)),committedSlice=committedTo-from,committedBoundary=boundaryFor(committedTo);
       conflictStreak=0;if(manualAdvance){manualAdvance.retries=0;manualAdvance.retryKey='';}
-      // The app transaction commits the same target time atomically with all state changes.
-      // This assignment is an invariant check/synchronization only; it must never precede finish().
-      setSim(to);
-      pacing.consume(slice);
-      health.slices++;health.lastSliceSeconds=slice;health.lastCommitReason='committed';health.lastProgressSim=to;health.lastProgressAt=clock();
-      health.lastCycleMs=jobWorkMs;health.maxCycleMs=Math.max(health.maxCycleMs,jobWorkMs);job=null;jobSlice=0;jobStart=to;jobSpeed=0;jobBoundary=null;jobWorkMs=0;jobReadyToFinish=false;
-      if(boundary.day!==null&&boundary.day>lastDayCommitted){lastDayCommitted=boundary.day;health.days++;health.lastBoundary=`day:${boundary.day}`;}
-      if(boundary.hour!==null&&boundary.hour>lastHourCommitted){lastHourCommitted=boundary.hour;health.hours++;health.lastBoundary=`hour:${boundary.hour}`;}
-      if(boundary.hour!==null&&boundary.hour-health.lastMaintenanceHour>=cfg.maintenanceEveryHours){
-        health.lastMaintenanceHour=boundary.hour;
-        try{adapter.onMaintenance?.(boundary.hour,{time:to,speed});}catch(error){report('maintenance',error,false);}
+      // A bounded event pass may commit only through its final fully processed timestamp.
+      // Keep both authoritative time and live backlog aligned to that exact checkpoint.
+      setSim(committedTo);
+      pacing.consume(committedSlice);
+      health.slices++;health.lastSliceSeconds=committedSlice;health.lastCommitReason='committed';health.lastProgressSim=committedTo;health.lastProgressAt=clock();
+      health.lastCycleMs=jobWorkMs;health.maxCycleMs=Math.max(health.maxCycleMs,jobWorkMs);job=null;jobSlice=0;jobStart=committedTo;jobSpeed=0;jobBoundary=null;jobWorkMs=0;jobReadyToFinish=false;
+      if(committedBoundary.day!==null&&committedBoundary.day>lastDayCommitted){lastDayCommitted=committedBoundary.day;health.days++;health.lastBoundary=`day:${committedBoundary.day}`;}
+      if(committedBoundary.hour!==null&&committedBoundary.hour>lastHourCommitted){lastHourCommitted=committedBoundary.hour;health.hours++;health.lastBoundary=`hour:${committedBoundary.hour}`;}
+      if(committedBoundary.hour!==null&&committedBoundary.hour-health.lastMaintenanceHour>=cfg.maintenanceEveryHours){
+        health.lastMaintenanceHour=committedBoundary.hour;
+        try{adapter.onMaintenance?.(committedBoundary.hour,{time:committedTo,speed});}catch(error){report('maintenance',error,false);}
       }
       return {done:true,breakFrame:false};
     }

@@ -14,7 +14,7 @@
   function task(id,title,domain,priority='normal',panel=null,reason=''){return {id,title,domain,priority,panel,reason};}
   function collectTasks(state){
     const out=[],diag=state?.diagnostics||{},now=Number(state?.simSeconds)||0;
-    (state?.realism?.procurement?.deliveries||[]).filter(d=>d?.status!=='delivered'&&Number(d?.dueSimSeconds||Infinity)<now).forEach(d=>out.push(task(`DEL:${d.id}`,`تسليم متأخر · ${d.asset?.model||d.catalogId||d.id}`,'التشغيل','critical','procurement',d.destination||'')));
+    (state?.realism?.procurement?.deliveries||[]).filter(d=>d?.status!=='delivered'&&Number(d?.dueSimSeconds||Infinity)<now).forEach(d=>{const asset=(Array.isArray(d.assets)?d.assets:d.asset?[d.asset]:[])[0];out.push(task(`DEL:${d.id}`,`تسليم متأخر · ${asset?.model||d.catalogId||d.id}${Number(d.count||d.assets?.length)>1?` · ${Number(d.count||d.assets.length)} أصل`:''}`,'التشغيل','critical','procurement',d.destination||''));});
     const activeIssues=diag.activeIssues&&typeof diag.activeIssues==='object'?Object.values(diag.activeIssues):[];
     activeIssues.forEach(i=>out.push(task(`DIAG:${i.id||i.type}`,i.message||i.title||i.id||'مشكلة نظام','النظام',i.severity==='critical'?'critical':'high','diagnostics',i.detail||'')));
     const audit=state?.advanced?.audit;if(Number(audit?.findings)>0)out.push(task('AUDIT:OPEN',`${audit.findings} ملاحظات تدقيق مفتوحة`,'الرقابة',audit.findings>=5?'critical':'high','audit','تحتاج متابعة وإغلاق.'));

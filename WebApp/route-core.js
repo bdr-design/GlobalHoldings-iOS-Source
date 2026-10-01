@@ -88,6 +88,7 @@
     state.routeCache=object(state.routeCache)?state.routeCache:{};
     return state;
   }
+  function bumpRoutesRevision(state){const current=Math.max(0,Math.floor(Number(state.routesRevision)||0));if(current>=Number.MAX_SAFE_INTEGER)throw new Error('route-revision-exhausted');state.routesRevision=current+1;return state.routesRevision;}
   function signature(route){
     const points=(Array.isArray(route?.route)?route.route:[]).filter(validPoint).map(point=>`${Number(point[0]).toFixed(5)},${Number(point[1]).toFixed(5)}`);
     if(points.length<2)return '';
@@ -155,18 +156,20 @@
       if(existing)throw new Error(existing.code);
       state.customRoutes.push(route);
       const cache=command==='create-with-cache'?cacheGeometry(state,{id:route.id,route:route.route,distanceKm:payload.distanceKm??route.distanceKm,durationSeconds:payload.durationSeconds??route.tripSeconds}):null;
+      bumpRoutesRevision(state);
       return command==='create-with-cache'?{route,cache}:route;
     }
     if(command==='replace'){
       const replaceId=text(payload.replaceId,80),assetId=text(payload.assetId,100),index=state.customRoutes.findIndex(route=>route.id===replaceId);if(index<0)throw new Error('route-replace-missing');
       const foreignUse=fleetData().find(state,asset=>asset.routeId===replaceId&&asset.id!==assetId);if(foreignUse)throw new Error('route-replace-in-use');
       const route=canonicalRoute(payload.route,state),existing=conflict(state.customRoutes,route,{ignoreId:replaceId});if(existing)throw new Error(existing.code);
-      state.customRoutes[index]=route;delete state.routeCache[replaceId];collectUnusedEndpoints(state);return route;
+      state.customRoutes[index]=route;delete state.routeCache[replaceId];collectUnusedEndpoints(state);bumpRoutesRevision(state);return route;
     }
     if(command==='delete'){
       const id=text(payload.id,80),used=fleetData().some(state,asset=>asset.routeId===id);if(used)throw new Error('route-in-use');
       const before=state.customRoutes.length;state.customRoutes=state.customRoutes.filter(route=>route.id!==id);delete state.routeCache[id];
       collectUnusedEndpoints(state);
+      if(before!==state.customRoutes.length)bumpRoutesRevision(state);
       return before!==state.customRoutes.length;
     }
     if(command==='dedupe'){
@@ -180,14 +183,14 @@
         if(routeUsed&&!existingUsed){const index=kept.findIndex(row=>row.id===existing.id);if(index>=0)kept.splice(index,1);delete state.routeCache[existing.id];removedIds.push(existing.id);kept.push(route);continue;}
         delete state.routeCache[route.id];removedIds.push(route.id);
       }
-      if(removedIds.length)state.customRoutes=kept;return {removed:removedIds.length,removedIds,conflicts};
+      if(removedIds.length){state.customRoutes=kept;bumpRoutesRevision(state);}return {removed:removedIds.length,removedIds,conflicts};
     }
     if(command==='register-endpoint'){
       const endpoint=validateEndpoint(payload.endpoint),exists=Object.prototype.hasOwnProperty.call(state.routeEndpoints,endpoint.id);
       if(!exists&&Object.keys(state.routeEndpoints).length>=LIMITS.endpoints)throw new Error('route-endpoint-capacity');
-      state.routeEndpoints[endpoint.id]=endpoint;return endpoint;
+      const changed=JSON.stringify(state.routeEndpoints[endpoint.id]||null)!==JSON.stringify(endpoint);state.routeEndpoints[endpoint.id]=endpoint;if(changed)bumpRoutesRevision(state);return endpoint;
     }
-    if(command==='cache-geometry')return cacheGeometry(state,payload);
+    if(command==='cache-geometry'){const before=JSON.stringify(state.routeCache[payload.id]||null),entry=cacheGeometry(state,payload);if(before!==JSON.stringify(entry))bumpRoutesRevision(state);return entry;}
     throw new Error(`Unknown route command: ${command}`);
   }
   const API=Object.freeze({VERSION,ROUTE_TYPES,LIMITS,NEAR_DUPLICATE,ensure,validPoint,splitAtDateline,routeMode,routeOwnerCompanyId,validateRouteOwnership,validateRoute,canonicalRoute,signature,sample,corridorMetrics,conflict,execute});

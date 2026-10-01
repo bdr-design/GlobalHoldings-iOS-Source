@@ -1,0 +1,12 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {harness}=require('./helpers/core-harness.js');
+const {s}=harness(['fleet-store-core','fleet-access-core']);
+const count=50_000,assets=Array.from({length:count},(_,index)=>({id:`LEASE-${index}`,ownerCompanyId:index%2?'sea':'air',assetMode:index%2?'sea':'air',ownership:'lease',monthlyLease:index%2?9000:6000,staffing:{mode:'automatic-fixed',ready:true,contractId:`EMP-${index}`,monthlyPayroll:index%2?9000:12000,total:index%2?5:4}}));
+const state={simSeconds:0,fleet:s.GH_FLEET_STORE.fromAssets(assets,{at:0})},fleet=s.GH_FLEET_DATA,companies=['air','sea'];
+const start=Date.now(),first=fleet.dailyLeaseCosts(state,companies);assert.equal(first.air,5_000_000);assert.equal(first.sea,7_500_000);
+let leaseGroups=0;s.GH_FLEET_STORE.forEachLeaseGroup(state.fleet,()=>leaseGroups++);assert.equal(leaseGroups,2,'batch-level rent cache collapses 50k distinct staffing profiles to two cost groups');
+const payroll=fleet.payrollTotals(state);assert.equal(payroll.air.amount,300_000_000);assert.equal(payroll.air.headcount,100_000);assert.equal(payroll.sea.amount,225_000_000);assert.equal(payroll.sea.headcount,125_000);
+fleet.update(state,'LEASE-0',{ownership:'cash'});const second=fleet.dailyLeaseCosts(state,companies);assert.equal(second.air,4_999_800);assert.equal(second.sea,7_500_000);
+fleet.remove(state,'LEASE-1');const third=fleet.dailyLeaseCosts(state,companies);assert.equal(third.air,4_999_800);assert.equal(third.sea,7_499_700);
+console.log(JSON.stringify({suite:'build357-fleet-profile-aggregation',passed:11,total:11,assets:count,leaseGroups,elapsedMs:Date.now()-start}));

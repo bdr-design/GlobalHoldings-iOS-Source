@@ -194,7 +194,9 @@
     r.insurance.claimsTrend=clamp((100-condition)*.12+incidents*1.4+openClaims*.8,0,35);r.insurance.renewalIndex=clamp(92+r.insurance.claimsTrend*2+(r.risk.register.length*1.5)+(reserve?paid/Math.max(1,reserve)*12:0),75,190);
   }
   function supplierScores(state){const r=migrate(state);for(const tx of (state.supplierTransactions||[])){const id=tx.supplierId||tx.supplier||'unknown';const x=r.procurement.supplierScores[id]||(r.procurement.supplierScores[id]={name:tx.supplier||id,spend:0,transactions:0,score:82});x.spend+=Number(tx.amount)||0;x.transactions++;x.score=clamp(88-rand(`${id}:${x.transactions}`,0,10),60,98);}}
-  function syncManualDeliveryPipeline(state,day){const r=migrate(state),deliveries=r.procurement.deliveries||[],existing=new Map((r.procurement.pipeline||[]).map(row=>[row.sourceId,row]));r.procurement.pipeline=deliveries.slice(-400).map(d=>{const prior=existing.get(d.id)||{},company=assetOwnerCompanyId(state,d.asset)||rowCompanyId(state,d,'');return {...prior,id:`PRC2-${d.id}`,sourceId:d.id,company,ownerCompanyId:company,title:d.asset?.name||d.assetName||d.catalogId||d.id,stage:d.status==='delivered'?'Delivered':d.status==='cancelled'?'Cancelled':d.blockedReason?'Destination blocked':'Paid / Delivery',createdDay:Number.isFinite(Number(d.orderedDay))?Number(d.orderedDay):day,leadDays:Math.max(0,Math.ceil((Number(d.dueAtSeconds)-Number(d.orderedAtSeconds))/86400)||0),manual:true};});return r.procurement.pipeline;}
+  function deliveryAssets(delivery){return Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[];}
+  function deliveryUnitCount(delivery){return Math.max(1,deliveryAssets(delivery).length||Math.floor(Number(delivery?.count)||0));}
+  function syncManualDeliveryPipeline(state,day){const r=migrate(state),deliveries=r.procurement.deliveries||[],existing=new Map((r.procurement.pipeline||[]).map(row=>[row.sourceId,row]));r.procurement.pipeline=deliveries.slice(-400).map(d=>{const prior=existing.get(d.id)||{},first=deliveryAssets(d)[0],company=assetOwnerCompanyId(state,first)||rowCompanyId(state,d,'');return {...prior,id:`PRC2-${d.id}`,sourceId:d.id,company,ownerCompanyId:company,title:first?.name||d.assetName||d.catalogId||d.id,count:deliveryUnitCount(d),stage:d.status==='delivered'?'Delivered':d.status==='cancelled'?'Cancelled':d.blockedReason?'Destination blocked':'Paid / Delivery',createdDay:Number.isFinite(Number(d.orderedDay))?Number(d.orderedDay):day,leadDays:Math.max(0,Math.ceil((Number(d.dueAtSeconds)-Number(d.orderedAtSeconds))/86400)||0),manual:true};});return r.procurement.pipeline;}
   function updateTaxFxAndDividends(state,day){const r=migrate(state),countries=new Set((state.globalBases||[]).map(x=>x.country||x.countryCode).filter(Boolean)),baseTax=.15+Math.min(.07,countries.size*.005);r.taxFx.taxRate=baseTax;r.taxFx.fxExposure=Number(state.advanced?.treasury?.fxExposure)||Math.max(0,(Number(state.debt)||0)*.28);r.taxFx.hedgedPct=Number(state.advanced?.treasury?.hedgeRatio)||0;const floor=r.risk.limits.minLiquidity,excess=Math.max(0,(Number(state.cash)||0)-floor);r.dividends.available=Math.round(excess*.35);}
   function updatePrograms(state,day){
     const r=migrate(state);globalThis.GH_GOVERNANCE_CORE?.execute?.({state},'tick-sustainability',{day});
@@ -214,23 +216,25 @@
   }
   function markDeliveryDelivered(state,delivery,day,at){const lifecycle=globalThis.GH_LIFECYCLE_CORE;if(lifecycle?.transition)lifecycle.transition(state,delivery,'deliveryOrder','delivered',{event:'ASSET_DELIVERED',domain:'operations',actor:'delivery-engine'});else delivery.status='delivered';delivery.deliveredDay=day;delivery.deliveredAtSeconds=at;}
   function compactDeliveredDelivery(delivery){
-    if(!delivery||delivery.status!=='delivered'||!delivery.asset)return delivery;
-    const asset=delivery.asset;delivery.assetId=delivery.assetId||asset.id;delivery.assetName=delivery.assetName||asset.name||asset.model||delivery.catalogId||delivery.id;delivery.purchasePrice=Number(delivery.purchasePrice??asset.purchasePrice)||0;
-    delivery.ownerCompanyId=delivery.ownerCompanyId||asset.ownerCompanyId||asset.companyId||null;delivery.assetMode=delivery.assetMode||asset.assetMode||asset.type||null;delivery.assetClass=delivery.assetClass||asset.assetClass||null;
+    if(!delivery||delivery.status!=='delivered')return delivery;
+    const assets=deliveryAssets(delivery);if(!assets.length)return delivery;
+    delivery.deliveryOrderId=delivery.id;delivery.assets=assets;delivery.count=assets.length;delivery.assetIds=assets.map(asset=>asset.id);delivery.assetId=assets.length===1?assets[0].id:null;
+    delivery.assetName=delivery.assetName||assets[0].name||assets[0].model||delivery.catalogId||delivery.id;delivery.purchasePrice=Number(delivery.purchasePrice)||assets.reduce((sum,asset)=>sum+(Number(asset.purchasePrice)||0),0);
+    delivery.ownerCompanyId=delivery.ownerCompanyId||assets[0].ownerCompanyId||assets[0].companyId||null;delivery.assetMode=delivery.assetMode||assets[0].assetMode||assets[0].type||null;delivery.assetClass=delivery.assetClass||assets[0].assetClass||null;
     delete delivery.asset;return delivery;
   }
   function deliveryCapacitySnapshot(state,deliveries){
     const occupied=new Map(),pending=new Map();
     fleetData().forEach(state,asset=>occupied.set(asset.baseFacility,(occupied.get(asset.baseFacility)||0)+1));
-    for(const delivery of deliveries)if(delivery?.status==='pending'&&delivery.baseId)pending.set(delivery.baseId,(pending.get(delivery.baseId)||0)+1);
+    for(const delivery of deliveries)if(delivery?.status==='pending'&&delivery.baseId)pending.set(delivery.baseId,(pending.get(delivery.baseId)||0)+deliveryUnitCount(delivery));
     return {occupied,pending};
   }
   function deliverySnapshotHasRoom(state,snapshot,facility,delivery){
-    const pendingForBase=Math.max(0,(snapshot.pending.get(facility.id)||0)-(delivery?.status==='pending'&&delivery.baseId===facility.id?1:0));
-    return (snapshot.occupied.get(facility.id)||0)+pendingForBase<deliveryCapacity(state,facility);
+    const units=deliveryUnitCount(delivery),pending=(snapshot.pending.get(facility.id)||0),reserved=pending+(snapshot.occupied.get(facility.id)||0);
+    return units>0&&pending>=units&&reserved<=deliveryCapacity(state,facility);
   }
   function normalizeDeliveryClock(state,d){
-    const now=Math.max(0,Number(state.simSeconds)||0),base=Math.max(60,DELIVERY_WINDOW_SECONDS[assetMode(d.asset)||d.assetMode||d.type]||600);
+    const now=Math.max(0,Number(state.simSeconds)||0),base=Math.max(60,DELIVERY_WINDOW_SECONDS[assetMode(deliveryAssets(d)[0])||d.assetMode||d.type]||600);
     if(!Number.isFinite(Number(d.orderedAtSeconds)))d.orderedAtSeconds=Math.max(0,Math.min(now,Number(d.orderedDay||0)*86400));
     if(!Number.isFinite(Number(d.dueAtSeconds))){
       const legacyDue=Number(d.dueDay);
@@ -249,36 +253,35 @@
     const outcome=(tx.isActive()?tx.join:tx.execute)(state,{label:'asset-delivery-poll',apply:()=>{
       const pendingDeliveries=deliveries.filter(row=>row?.status==='pending'),ready=[],alreadyDelivered=[];
       let assetById=null,snapshot=null;
-    for(const d of pendingDeliveries){normalizeDeliveryClock(state,d);if(Number(d.dueAtSeconds)>now)continue;
-      // Build once, only when needed; future reservations still count toward capacity.
-      if(!assetById){assetById=new Map(fleetData().map(state,asset=>[asset.id,asset]));snapshot=deliveryCapacitySnapshot(state,pendingDeliveries);}
-      const asset=d.asset||{},existing=assetById.get(asset.id);
-      if(existing){if(existing.baseFacility!==d.baseId||existing.deliveryOrderId!==d.id)throw new Error('existing-delivery-evidence-mismatch');alreadyDelivered.push(d);continue;}
-      const base=compatibleDeliveryFacilities(state,asset).find(f=>f.id===d.baseId);
-      if(!base||!deliverySnapshotHasRoom(state,snapshot,base,d)){
-        d.blockedReason='approved-destination-missing-or-full';d.lastCheckedAt=now;
-        if(!Number.isFinite(Number(d.lastBlockedAlertAt))||now-Number(d.lastBlockedAlertAt)>=300){d.lastBlockedAlertAt=now;if(Array.isArray(state.alerts))state.alerts.unshift(`${asset.name||'أصل جديد'}: التسليم بانتظار قاعدة/مركز مملوك متوافق مع ${companyLabel(state,assetOwnerCompanyId(state,asset))||assetMode(asset)}. لن يعيد النظام توجيه الأصل تلقائيًا؛ سيبقى الطلب معلقًا على نفس الوجهة ويعيد المحاولة بعد معالجة السعة.`);}
-        continue;
+      for(const d of pendingDeliveries){normalizeDeliveryClock(state,d);if(Number(d.dueAtSeconds)>now)continue;
+        const assets=deliveryAssets(d);if(!assets.length)throw new Error(`delivery-assets-missing:${d.id}`);
+        // Build once, only when needed; future reservations still count toward capacity.
+        if(!assetById){assetById=new Map();fleetData().forEach(state,asset=>assetById.set(asset.id,asset));snapshot=deliveryCapacitySnapshot(state,pendingDeliveries);}
+        const existing=assets.map(asset=>assetById.get(asset.id)),existingCount=existing.filter(Boolean).length;
+        if(existingCount){if(existingCount!==assets.length||existing.some(asset=>asset&&(asset.baseFacility!==d.baseId||asset.deliveryOrderId!==d.id)))throw new Error('existing-delivery-evidence-mismatch');alreadyDelivered.push({delivery:d,count:assets.length});continue;}
+        const base=compatibleDeliveryFacilities(state,assets[0]).find(f=>f.id===d.baseId),compatible=base&&assets.every(asset=>globalThis.GH_FACILITY_CORE.isAssetFacilityCompatible(asset,base,state));
+        if(!compatible||!deliverySnapshotHasRoom(state,snapshot,base,d)){
+          const asset=assets[0];d.blockedReason='approved-destination-missing-or-full';d.lastCheckedAt=now;
+          if(!Number.isFinite(Number(d.lastBlockedAlertAt))||now-Number(d.lastBlockedAlertAt)>=300){d.lastBlockedAlertAt=now;if(Array.isArray(state.alerts))state.alerts.unshift(`${asset.name||'دفعة أصول'}: تسليم ${assets.length} أصل بانتظار قاعدة/مركز مملوك متوافق مع ${companyLabel(state,assetOwnerCompanyId(state,asset))||assetMode(asset)}. لن يعيد النظام توجيه الأصول تلقائيًا؛ ستبقى الدفعة على وجهتها وتُعاد المحاولة بعد معالجة السعة.`);}
+          continue;
+        }
+        ready.push({delivery:d,assets,base});
       }
-      ready.push({delivery:d,asset,base});
-    }
         if(ready.length){
-          const inputs=ready.map(({delivery,asset,base})=>{const ownerCompanyId=assetOwnerCompanyId(state,asset);if(!ownerCompanyId)throw new Error(`delivery-company-invalid:${delivery.id}`);return {deliveryId:delivery.id,asset:{...asset,ownerCompanyId,companyName:companyLabel(state,ownerCompanyId)},baseId:base.id,phase:'idle',deliveredDay:day,deliveredAtSeconds:now};});
-          // Preserve the single-delivery owner contract; only a true multi-row
-          // batch uses the scalable Fleet Core command.
-          const delivered=inputs.length===1?commands.dispatchSystem({state},'fleet','record-delivery',inputs[0],{actor:'delivery-engine'}):commands.dispatchSystem({state},'fleet','record-delivery-batch',{deliveries:inputs},{actor:'delivery-engine'}),deliveredAssets=inputs.length===1?[delivered?.result]:delivered?.result;
-          if(!delivered?.ok||!Array.isArray(deliveredAssets)||deliveredAssets.length!==ready.length||deliveredAssets.some(asset=>asset.deliveryStatus!=='delivered'||asset.staffing?.ready!==true))throw new Error('delivery-owner-rejected-batch');
-          const valueDelta=ready.reduce((sum,{asset})=>sum+(asset.ownership==='lease'?(Number(asset.purchasePrice)||0)*.08:(Number(asset.purchasePrice)||0)*.86),0);
+          const inputs=ready.map(({delivery,assets,base})=>{const ownerCompanyId=assetOwnerCompanyId(state,assets[0]);if(!ownerCompanyId)throw new Error(`delivery-company-invalid:${delivery.id}`);return {deliveryId:delivery.id,baseId:base.id,assets:assets.map(asset=>({...asset,ownerCompanyId,companyName:companyLabel(state,ownerCompanyId)})),phase:'idle',deliveredDay:day,deliveredAtSeconds:now};});
+          const delivered=commands.dispatchSystem({state},'fleet','record-delivery-batch',{deliveries:inputs},{actor:'delivery-engine'}),deliveredAssets=delivered?.result,expectedAssets=ready.reduce((sum,row)=>sum+row.assets.length,0);
+          if(!delivered?.ok||!Array.isArray(deliveredAssets)||deliveredAssets.length!==expectedAssets||deliveredAssets.some(asset=>asset.deliveryStatus!=='delivered'||asset.staffing?.ready!==true))throw new Error('delivery-owner-rejected-batch');
+          const valueDelta=ready.reduce((sum,{assets})=>sum+assets.reduce((batchSum,asset)=>batchSum+(asset.ownership==='lease'?(Number(asset.purchasePrice)||0)*.08:(Number(asset.purchasePrice)||0)*.86),0),0);
           const adjusted=commands.dispatchSystem({state},'corporate','adjust-group-value',{delta:valueDelta},{actor:'delivery-engine'});if(!adjusted?.ok)throw new Error('delivery-value-owner-rejected');
-          const text=ready.length===1?`تم استلام ${ready[0].asset.name} فورًا في ${ready[0].base.name||ready[0].delivery.destination||'القاعدة'} وتجهيز طاقمه الثابت وراتبه آليًا. الأصل جاهز للتشغيل.`:`تم استلام ${ready.length} أصلًا فورًا داخل معاملة تسليم واحدة، وتجهيز طواقمها الثابتة ورواتبها آليًا. جميع الأصول جاهزة للتشغيل.`;
+          const readyCount=ready.reduce((sum,row)=>sum+row.assets.length,0),text=readyCount===1?`تم استلام ${ready[0].assets[0].name} فورًا في ${ready[0].base.name||ready[0].delivery.destination||'القاعدة'} وتجهيز طاقمه الثابت وراتبه آليًا. الأصل جاهز للتشغيل.`:`تم استلام ${readyCount} أصلًا ضمن ${ready.length} دفعة تسليم، وتجهيز طواقمها الثابتة ورواتبها آليًا. جميع الأصول جاهزة للتشغيل.`;
           for(const {delivery} of ready){delivery.blockedReason=null;markDeliveryDelivered(state,delivery,day,now);compactDeliveredDelivery(delivery);}
           const alert=commands.dispatchSystem({state},'operations','record-alert',{text,type:'delivery'},{actor:'delivery-engine'});if(!alert?.ok)throw new Error('delivery-alert-owner-rejected');
         }
-        for(const delivery of alreadyDelivered){markDeliveryDelivered(state,delivery,day,now);compactDeliveredDelivery(delivery);}
+        for(const {delivery} of alreadyDelivered){markDeliveryDelivered(state,delivery,day,now);compactDeliveredDelivery(delivery);}
       const pending=deliveries.filter(x=>x.status==='pending'),history=deliveries.filter(x=>x.status!=='pending');
       r.procurement.pendingDeliveryCount=pending.length;r.procurement.deliveries=[...pending,...history];
       syncManualDeliveryPipeline(state,day);
-      return ready.length+alreadyDelivered.length;
+      return ready.reduce((sum,row)=>sum+row.assets.length,0)+alreadyDelivered.reduce((sum,row)=>sum+row.count,0);
     }});
     if(!outcome?.committed)throw new Error(outcome?.reason||'delivery-batch-transaction-rejected');
     return outcome.value;

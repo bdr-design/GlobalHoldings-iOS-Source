@@ -1,0 +1,21 @@
+'use strict';
+const assert=require('node:assert/strict'),path=require('node:path'),ROOT=process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..');
+global.window=global;
+const TX=require(path.join(ROOT,'WebApp/transaction-core.js'));
+const STORE=require(path.join(ROOT,'WebApp/fleet-store-core.js'));
+const FLEET=require(path.join(ROOT,'WebApp/fleet-access-core.js'));
+TX.registerJournaledRoot('fleet',{begin:(target)=>FLEET.beginJournal(target),commit:(target,_root,journal)=>FLEET.commitJournal(target,journal),rollback:(target,_root,journal)=>FLEET.rollbackJournal(target,journal)});
+const state={cash:90,other:{value:1},simSeconds:100,fleet:STORE.fromAssets([{id:'A-1',type:'air',ownerCompanyId:'air',condition:83},{id:'A-2',type:'air',ownerCompanyId:'air',condition:91}],{at:100})};
+const rows=state.fleet.rows,before=JSON.stringify(STORE.toAssets(state.fleet)),revision=state.fleet.revision,structure=state.fleet.structure;
+const snapshot=TX.deepClone(state);
+assert.equal(Object.hasOwn(snapshot,'fleet'),false,'ordinary snapshots omit self-journaled roots');
+assert.equal(TX.deepClone(state,{shareJournaledRoots:true}).fleet,state.fleet,'durable drafts share the journal owner root');
+assert.throws(()=>TX.execute(state,{label:'journaled-fleet-rollback',apply:()=>{
+  state.cash=12;state.other.value=2;FLEET.update(state,'A-1',{condition:12,note:'transient'});FLEET.remove(state,'A-2');throw new Error('injected-failure');
+}}),/injected-failure/);
+assert.equal(state.cash,90);assert.equal(state.other.value,1);
+assert.equal(state.fleet.rows,rows,'rollback keeps the original fleet buffer; no 128-byte-per-row snapshot was restored');
+assert.equal(JSON.stringify(STORE.toAssets(state.fleet)),before,'fleet rows and extras restore exactly');
+assert.ok(state.fleet.revision>revision,'revision is monotonic through rollback');
+assert.ok(state.fleet.structure>structure,'structure is monotonic through rollback');
+console.log(JSON.stringify({suite:'build357-fleet-journal',passed:1,total:1,bufferIdentityPreserved:true,revisionMonotonic:true}));

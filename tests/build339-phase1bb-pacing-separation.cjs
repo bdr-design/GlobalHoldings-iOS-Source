@@ -71,7 +71,7 @@ assert.doesNotMatch(appSource,/state\.simulationKernel\s*=\s*\{\.\.\.\(state\.si
 
 // 8. Save normalization strips old runtime pacing residue while retaining semantic audit fields.
 {
-  const e=harness(['save-schema']),state=minimal();state.simulationKernel={
+  const e=harness(['save-schema']),state=minimal();state.saveVersion='3.0.0';state.simulationKernel={
     backlog:321,hidden:true,pacing:{backlog:321,lastReal:99},config:{frameBudgetMs:5.5},coreVersion:'3.0.0',transactionVersion:'3.0.0',
     lastAtomicCommit:{from:0,to:30},lastAtomicCancel:{reason:'test'},lastAdvanceFailure:{reason:'test'},lastCompactDay:7,boundaryRecovery:{hour:83}
   };

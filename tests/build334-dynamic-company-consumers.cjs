@@ -13,7 +13,7 @@ function test(name,run){run();results.push(name);console.log('PASS',name);}
     'capability-registry-core','company-definitions','company-platform-core','identity-system',
     'route-core','fleet-core','facility-core','hr-core','business-world-core','finance-core',
     'banking-core','directory-core','realism-core','procurement-core','lifecycle-core',
-    'integrity-core','save-schema','migration-core','advanced-core'
+    'integrity-core','state-codec-core','save-schema','migration-core','advanced-core'
   ]);
   const P=s.GH_COMPANY_PLATFORM,F=s.GH_FINANCE_CORE,Facility=s.GH_FACILITY_CORE,HR=s.GH_HR_CORE,
     Route=s.GH_ROUTE_CORE,Fleet=s.GH_FLEET_CORE,Procurement=s.GH_PROCUREMENT_CORE,
@@ -79,12 +79,12 @@ function test(name,run){run();results.push(name);console.log('PASS',name);}
 
   test('procurement emits canonical delivery and asset ownership for both instances',()=>{
     assert.equal(firstOrder.count,1);assert.equal(secondOrder.count,1);const deliveries=state.realism.procurement.deliveries;assert.equal(deliveries.length,2);
-    for(const row of deliveries){assert(['air-one','air-two'].includes(row.ownerCompanyId));assert.equal(row.asset.ownerCompanyId,row.ownerCompanyId);assert.equal(row.asset.assetMode,'air');assert.equal(row.asset.assetClass,'aircraft');assert.equal(row.asset.operationProfileId,'fleet-route-air-v1');assert.equal(row.payment.company,row.ownerCompanyId);}
+    for(const row of deliveries){const asset=row.assets[0];assert(['air-one','air-two'].includes(row.ownerCompanyId));assert.equal(row.assets.length,1);assert.equal(asset.ownerCompanyId,row.ownerCompanyId);assert.equal(asset.assetMode,'air');assert.equal(asset.assetClass,'aircraft');assert.equal(asset.operationProfileId,'fleet-route-air-v1');assert.equal(row.payment.company,row.ownerCompanyId);}
     assert.equal(state.supplierTransactions.length,2);assert.deepEqual(new Set(state.supplierTransactions.map(row=>row.ownerCompanyId)),new Set(['air-one','air-two']));assert(state.supplierTransactions.every(row=>!Object.prototype.hasOwnProperty.call(row,'company')));
     const before=JSON.stringify({books:state.companyFinance,deliveries});assert.throws(()=>buy('air-ghost','jet-small',bases['air-one-OERK']),/company-definition-unavailable:air-ghost/);assert.equal(JSON.stringify({books:state.companyFinance,deliveries}),before);
   });
 
-  for(const delivery of state.realism.procurement.deliveries){Fleet.execute({state},'record-delivery',{deliveryId:delivery.id,baseId:delivery.baseId,asset:delivery.asset,deliveredDay:0,deliveredAtSeconds:0});delivery.status='delivered';delivery.assetId=delivery.asset.id;delivery.deliveredDay=0;delivery.deliveredAtSeconds=0;}
+  for(const delivery of state.realism.procurement.deliveries){Fleet.execute({state},'record-delivery-batch',{deliveries:[{deliveryId:delivery.id,baseId:delivery.baseId,assets:delivery.assets,deliveredDay:0,deliveredAtSeconds:0}]});delivery.status='delivered';delivery.assetId=delivery.assets[0].id;delivery.deliveredDay=0;delivery.deliveredAtSeconds=0;}
   const assetOne=state.assets.find(row=>row.ownerCompanyId==='air-one'),assetTwo=state.assets.find(row=>row.ownerCompanyId==='air-two');assetOne.company='Air Two Holdings';assetTwo.company='Air One Holdings';
 
   test('fleet staffing follows canonical owner rather than display company or shared asset mode',()=>{
@@ -146,13 +146,13 @@ function test(name,run){run();results.push(name);console.log('PASS',name);}
   });
 
   test('save, schema migration, reload, and business completion preserve both dynamic owners and metrics',()=>{
-    state.tripProfitAccrued={'air-one':111,'air-two':222};state.tripRevenueAccrued={'air-one':333,'air-two':444};state.sectorProfitToday={'air-one':11,'air-two':22};F.reconcile(state);
-    assert.equal(Save.validate(state).ok,true,Save.validate(state).errors.join(','));const persisted=JSON.stringify(state),storageKey='GH_DYNAMIC_COMPANY_FIXTURE';storage.setItem(storageKey,persisted);
+    state.tripProfitAccrued={'air-one':111,'air-two':222};state.tripRevenueAccrued={'air-one':333,'air-two':444};state.sectorProfitToday={'air-one':11,'air-two':22};F.reconcile(state);if(!s.GH_FLEET_STORE.isStore(state.fleet)){state.fleet=s.GH_FLEET_STORE.fromAssets(state.assets,{at:state.simSeconds});s.GH_FLEET_STORE.buildIndex(state.fleet);delete state.assets;}state.saveVersion='3.0.0';
+    assert.equal(Save.validate(state).ok,true,Save.validate(state).errors.join(','));const persisted=JSON.stringify(s.GH_STATE_CODEC.encodeState(state)),storageKey='GH_DYNAMIC_COMPANY_FIXTURE';storage.setItem(storageKey,persisted);
     s.GH_PERSISTENCE={writeState:(key,value)=>{const json=JSON.stringify(value);storage.setItem(key,json);return {ok:true,json};}};
     const seed=minimal(),defaultState={...seed,profile:{name:'Default Group'},bank:{},energy:{},operations:{},companyRegistry:{},companyModules:{},finance:{...seed.finance},treasury:structuredClone(seed.treasury)};
     const loaded=Migration.load({defaultState,storageKey,legacyStorageKeys:[],saveSchema:Save}).state,reloaded=Migration.completeBusinessState(loaded,{defaultState,initialStocks:[],crewRolesSeed:[]});
     assert.equal(reloaded.tripProfitAccrued['air-one'],111);assert.equal(reloaded.tripProfitAccrued['air-two'],222);assert.equal(reloaded.tripRevenueAccrued['air-one'],333);assert.equal(reloaded.tripRevenueAccrued['air-two'],444);
-    assert.equal(reloaded.assets.filter(row=>row.ownerCompanyId==='air-one').length,1);assert.equal(reloaded.assets.filter(row=>row.ownerCompanyId==='air-two').length,1);assert.equal(reloaded.customRoutes.find(row=>row.id==='R-AIR-ONE').ownerCompanyId,'air-one');assert.equal(reloaded.customRoutes.find(row=>row.id==='R-AIR-TWO').ownerCompanyId,'air-two');
+    assert.equal(s.GH_FLEET_DATA.count(reloaded,row=>row.ownerCompanyId==='air-one'),1);assert.equal(s.GH_FLEET_DATA.count(reloaded,row=>row.ownerCompanyId==='air-two'),1);assert.equal(Object.prototype.hasOwnProperty.call(reloaded,'assets'),false);assert.equal(reloaded.customRoutes.find(row=>row.id==='R-AIR-ONE').ownerCompanyId,'air-one');assert.equal(reloaded.customRoutes.find(row=>row.id==='R-AIR-TWO').ownerCompanyId,'air-two');
     assert.equal(reloaded.globalBases.filter(row=>row.ownerCompanyId==='air-one').length,2);assert.equal(reloaded.globalBases.filter(row=>row.ownerCompanyId==='air-two').length,2);assert(reloaded.advanced.labor.employmentContracts.some(row=>row.assetId===assetOne.id&&row.ownerCompanyId==='air-one'));assert(reloaded.advanced.labor.employmentContracts.some(row=>row.assetId===assetTwo.id&&row.ownerCompanyId==='air-two'));assert.equal(HR.officialManager(reloaded,'air-one').company,'air-one');assert.equal(HR.officialManager(reloaded,'air-two').company,'air-two');assert.notEqual(HR.officialManager(reloaded,'air-one').candidateId,HR.officialManager(reloaded,'air-two').candidateId);assert.equal(Save.validate(reloaded).ok,true,Save.validate(reloaded).errors.join(','));
   });
 

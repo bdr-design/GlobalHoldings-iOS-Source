@@ -255,19 +255,24 @@
     synchronizeCrew(state);
     return staffing;
   }
-  // Large deliveries must retain one staffing contract per asset, but they must
-  // not rescan the entire fleet after every single contract. This batch helper
-  // is deliberately internal to Fleet Core so procurement and UI never own
-  // staffing or asset creation.
+  // A procurement receipt owns one employment contract for its entire batch.
+  // Each asset still keeps its own role plan and payroll amount for display and
+  // accounting; only the contract and hiring-log records are shared.
   function provisionStaffingBatch(state,rows,{synchronize=true}={}){
-    const labor=laborLedger(state),contracts=[],hiring=[];
+    const labor=laborLedger(state),groups=new Map(),contracts=[],hiring=[];
     for(const row of rows){
       const asset=row?.asset,base=row?.base;if(!asset)continue;
       if(asset.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true)continue;
-      const owner=requireFleetAsset(state,asset),plan=staffingPlan(asset,state),contractId=nextId(state,'EMP-AUTO'),center=base?.name||asset.baseLocation||asset.baseFacility||'المركز التشغيلي';
-      contracts.push({id:contractId,company:owner.companyId,ownerCompanyId:owner.companyId,assetId:asset.id,name:`طاقم ثابت · ${asset.name}`,role:'طاقم تشغيلي مرتبط بالأصل',count:plan.total,center,salary:plan.monthlyPayroll,startDay:simDay(state),termMonths:1200,status:'ساري',source:'توظيف آلي ثابت عند شراء الأصل',automaticAssetStaffing:true,permanent:true});
-      hiring.push({id:nextId(state,'HR-AUTO'),at:Number(state.simSeconds)||0,company:owner.companyId,source:'توظيف أصل آلي ثابت',assetId:asset.id,total:plan.total,monthlyPayroll:plan.monthlyPayroll,coverageBefore:100,coverageAfter:100});
-      asset.staffing={...plan,contractId,provisionedAt:Number(state.simSeconds)||0,center};asset.crewBlocked=false;
+      const owner=requireFleetAsset(state,asset),plan=staffingPlan(asset,state),deliveryOrderId=String(row.deliveryId||row.deliveryOrderId||asset.deliveryOrderId||asset.id),center=base?.name||asset.baseLocation||asset.baseFacility||'المركز التشغيلي';
+      let group=groups.get(deliveryOrderId);if(!group){group={deliveryOrderId,company:owner.companyId,center,rows:[],headcount:0,payroll:0};groups.set(deliveryOrderId,group);}
+      if(group.company!==owner.companyId)throw new Error('delivery-crew-company-mismatch');
+      group.rows.push({asset,plan,center});group.headcount+=plan.total;group.payroll+=plan.monthlyPayroll;
+    }
+    for(const group of groups.values()){
+      const contractId=nextId(state,'EMP-AUTO'),assetIds=group.rows.map(row=>row.asset.id),first=group.rows[0],contract={id:contractId,company:group.company,ownerCompanyId:group.company,assetId:assetIds[0],assetIds,deliveryOrderId:group.deliveryOrderId,assetCount:assetIds.length,name:`طاقم ثابت · ${first.asset.name}${assetIds.length>1?` + ${assetIds.length-1}`:''}`,role:'طاقم تشغيلي مرتبط بدفعة الأصول',count:group.headcount,center:group.center,salary:group.payroll,startDay:simDay(state),termMonths:1200,status:'ساري',source:'توظيف آلي ثابت عند شراء دفعة الأصول',automaticAssetStaffing:true,permanent:true};
+      contracts.push(contract);
+      hiring.push({id:nextId(state,'HR-AUTO'),at:Number(state.simSeconds)||0,company:group.company,source:'توظيف دفعة أصول آلي ثابت',deliveryOrderId:group.deliveryOrderId,assetIds,total:group.headcount,monthlyPayroll:group.payroll,coverageBefore:100,coverageAfter:100});
+      for(const row of group.rows){row.asset.staffing={...row.plan,contractId,provisionedAt:Number(state.simSeconds)||0,center:row.center};row.asset.crewBlocked=false;}
     }
     if(contracts.length)labor.employmentContracts.unshift(...contracts.reverse());
     if(hiring.length){labor.hiringLog.unshift(...hiring.reverse());labor.hiringLog=labor.hiringLog.slice(0,200);}
@@ -280,17 +285,21 @@
     fleet.forEach(state,asset=>occupancy.set(asset.baseFacility,(occupancy.get(asset.baseFacility)||0)+1));
     const requested=new Set();
     for(const input of rows){
-      if(!input?.asset||!input.baseId||!input.deliveryId||requested.has(input.deliveryId))throw new Error('delivery-contract');requested.add(input.deliveryId);
-      const delivery=deliveryById.get(input.deliveryId),base=baseById.get(input.baseId),snap=input.asset,payment=delivery?.payment,document=payment?.kind==='invoice'?invoiceByNumber.get(payment.ref):chequeById.get(payment?.ref);
-      const owner=requireFleetAsset(state,snap),baseOwner=String(base?.ownerCompanyId||base?.companyId||base?.company||'');
-      if(!delivery||delivery.status!=='pending'||delivery.asset?.id!==snap.id||delivery.baseId!==input.baseId||!base?.owned||baseOwner!==owner.companyId)throw new Error('delivery-destination-contract');
-      if(!document||!['مدفوعة','مسددة','مصروف'].includes(document.status)||document.company!==owner.companyId||Number(document.amount)<Number(payment.amount))throw new Error('delivery-payment-unverified');
-      if(assetIds.has(snap.id))throw new Error('duplicate-asset-id');assetIds.add(snap.id);additions.set(base.id,(additions.get(base.id)||0)+1);prepared.push({input,delivery,base,snap});
+      const snaps=Array.isArray(input?.assets)?input.assets:input?.asset?[input.asset]:[];
+      if(!snaps.length||!input.baseId||!input.deliveryId||requested.has(input.deliveryId))throw new Error('delivery-contract');requested.add(input.deliveryId);
+      const delivery=deliveryById.get(input.deliveryId),base=baseById.get(input.baseId),receiptAssets=Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[],payment=delivery?.payment,document=payment?.kind==='invoice'?invoiceByNumber.get(payment.ref):chequeById.get(payment?.ref),facilityOwner=globalThis.GH_FACILITY_CORE;
+      const receiptIds=new Set(receiptAssets.map(asset=>asset?.id));
+      if(!delivery||delivery.status!=='pending'||delivery.deliveryOrderId&&delivery.deliveryOrderId!==input.deliveryId||receiptAssets.length!==snaps.length||snaps.some(snap=>!snap?.id||!receiptIds.has(snap.id))||delivery.baseId!==input.baseId||!base?.owned)throw new Error('delivery-destination-contract');
+      const owners=new Set(snaps.map(snap=>requireFleetAsset(state,snap).companyId)),ownerCompanyId=owners.values().next().value,baseOwner=String(base?.ownerCompanyId||base?.companyId||base?.company||'');
+      if(owners.size!==1||!ownerCompanyId||baseOwner!==ownerCompanyId)throw new Error('delivery-destination-contract');
+      if(!document||!['مدفوعة','مسددة','مصروف'].includes(document.status)||document.company!==ownerCompanyId||Number(document.amount)<Number(payment.amount))throw new Error('delivery-payment-unverified');
+      for(const snap of snaps){if(assetIds.has(snap.id))throw new Error('duplicate-asset-id');if(snap.deliveryOrderId&&snap.deliveryOrderId!==input.deliveryId)throw new Error('delivery-order-asset-mismatch');if(facilityOwner?.isAssetFacilityCompatible&&!facilityOwner.isAssetFacilityCompatible(snap,base,state))throw new Error('delivery-facility-asset-incompatible');assetIds.add(snap.id);}
+      additions.set(base.id,(additions.get(base.id)||0)+snaps.length);prepared.push({input,delivery,base,snaps,ownerCompanyId});
     }
     const facilityOwner=globalThis.GH_FACILITY_CORE;if(!facilityOwner?.assetCapacity)throw new Error('facility-capacity-owner-missing');
     for(const [baseId,count] of additions){const base=baseById.get(baseId),capacity=facilityOwner.assetCapacity(base);if((occupancy.get(baseId)||0)+count>capacity)throw new Error('delivery-base-full');}
     const deliveredRows=[],leased=new Set(Array.isArray(state.leasedAssets)?state.leasedAssets:[]);
-    for(const {input,delivery,base,snap} of prepared){const delivered={...snap,deliveryOrderId:input.deliveryId,requestRef:delivery.requestRef,paymentRef:delivery.payment.ref,baseFacility:input.baseId,phase:input.phase||'idle',routeId:null,routeSignature:null,routeSlot:null,departureScheduled:false,progress:0,fuel:100,deliveryStatus:'delivered',deliveredDay:input.deliveredDay,deliveredAtSeconds:input.deliveredAtSeconds};deliveredRows.push({asset:delivered,base});if(delivered.ownership==='lease')leased.add(delivered.id);}
+    for(const {input,delivery,base,snaps,ownerCompanyId} of prepared)for(const snap of snaps){const delivered={...snap,ownerCompanyId,deliveryOrderId:input.deliveryId,requestRef:delivery.requestRef,paymentRef:delivery.payment.ref,baseFacility:input.baseId,phase:input.phase||'idle',routeId:null,routeSignature:null,routeSlot:null,departureScheduled:false,progress:0,fuel:100,deliveryStatus:'delivered',deliveredDay:input.deliveredDay,deliveredAtSeconds:input.deliveredAtSeconds};deliveredRows.push({asset:delivered,base,deliveryId:input.deliveryId});if(delivered.ownership==='lease')leased.add(delivered.id);}
     // Fixed crews are attached before the assets join the fleet; the crew roster is
     // then recounted once from the whole fleet.
     state.leasedAssets=[...leased];provisionStaffingBatch(state,deliveredRows,{synchronize:false});
@@ -299,15 +308,23 @@
   function releaseStaffing(state,asset,reason){
     const batch=disposalBatches.get(state);if(batch&&!batch.contractById)batch.contractById=new Map(laborLedger(state).employmentContracts.map(row=>[row.id,row]));
     const contractId=asset?.staffing?.contractId,contract=batch?.contractById?(batch.contractById.get(contractId)||null):laborLedger(state).employmentContracts.find(row=>row.id===contractId);
-    if(contract&&contract.status==='ساري'){contract.status='منتهي';contract.endedDay=simDay(state);contract.endReason=reason||'خروج الأصل من الملكية';}
+    if(contract&&contract.status==='ساري'){
+      if(Array.isArray(contract.assetIds)){
+        const index=contract.assetIds.indexOf(asset?.id);
+        if(index>=0){contract.assetIds.splice(index,1);contract.assetCount=contract.assetIds.length;contract.count=Math.max(0,(Number(contract.count)||0)-(Number(asset.staffing?.total)||0));contract.salary=Math.max(0,(Number(contract.salary)||0)-(Number(asset.staffing?.monthlyPayroll)||0));contract.assetId=contract.assetIds[0]||null;}
+      }
+      if(!Array.isArray(contract.assetIds)||contract.assetIds.length===0){contract.status='منتهي';contract.endedDay=simDay(state);contract.endReason=reason||'خروج الأصل من الملكية';}
+    }
     if(asset?.staffing){asset.staffing.ready=false;asset.staffing.releasedAt=Number(state.simSeconds)||0;}
     if(batch)batch.crewDirty=true;else synchronizeCrew(state);
   }
   function reconcileStaffing(state,facilityResolver){
     const assets=fleetData().list(state),assetById=new Map(assets.map(asset=>[asset.id,asset]));
     for(const contract of laborLedger(state).employmentContracts){
-      const asset=contract?.automaticAssetStaffing===true?assetById.get(contract.assetId):null;
-      if(asset?.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true&&Array.isArray(asset.staffing.roles)&&Object.prototype.hasOwnProperty.call(contract,'roles'))delete contract.roles;
+      if(contract?.automaticAssetStaffing!==true)continue;
+      const ids=Array.isArray(contract.assetIds)?contract.assetIds:[contract.assetId],linked=ids.map(id=>assetById.get(id)).filter(asset=>asset?.staffing?.contractId===contract.id&&asset.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true);
+      if(linked.length&&Array.isArray(contract.assetIds)){contract.assetIds=linked.map(asset=>asset.id);contract.assetId=contract.assetIds[0];contract.assetCount=linked.length;contract.count=linked.reduce((sum,asset)=>sum+(Number(asset.staffing.total)||0),0);contract.salary=linked.reduce((sum,asset)=>sum+(Number(asset.staffing.monthlyPayroll)||0),0);}
+      if(linked.length&&Array.isArray(contract.roles))delete contract.roles;
     }
     let provisioned=0;
     for(const asset of assets){
@@ -321,14 +338,7 @@
     return provisioned;
   }
   function payrollSummary(state){
-    const totals=Object.create(null);
-    fleetData().forEach(state,asset=>{
-      if(asset.staffing?.ready!==true)return;
-      const company=assetOwnerCompanyId(asset);if(!company)return;
-      const row=totals[company]||(totals[company]={amount:0,headcount:0});
-      row.amount+=Number(asset.staffing.monthlyPayroll)||0;row.headcount+=Number(asset.staffing.total)||0;
-    });
-    return totals;
+    return fleetData().payrollTotals(state);
   }
   function monthlyPayroll(state,company='all'){
     const summary=payrollSummary(state);return company==='all'?Object.values(summary).reduce((sum,row)=>sum+row.amount,0):Number(summary[company]?.amount)||0;

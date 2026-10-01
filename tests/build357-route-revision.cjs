@@ -1,0 +1,20 @@
+'use strict';
+const assert=require('node:assert/strict');
+const routeCore=require('../WebApp/route-core.js');
+const state={simSeconds:0,routesRevision:0,customRoutes:[],routeEndpoints:{},routeCache:{},assets:[]};
+const route=(id,to='B',shift=0)=>({id,type:'air',company:'air',fromFacility:'A',toFacility:to,from:'A',to,name:id,tripSeconds:3600,distanceKm:420,dwellHours:1,route:[[24.7,46.7],[25.1,47.2+shift]]});
+function command(name,payload,expected){const before=state.routesRevision,result=routeCore.execute({state},name,payload);assert.equal(state.routesRevision,expected,`${name} revision`);assert.equal(state.routesRevision-before,expected===before?0:1,`${name} increments at most once`);return result;}
+command('register-endpoint',{endpoint:{id:'A',coords:[24.7,46.7],routeEndpoint:true}},1);
+command('register-endpoint',{endpoint:{id:'A',coords:[24.7,46.7],routeEndpoint:true}},1);
+command('create',{route:route('R-1')},2);
+command('create-with-cache',{route:route('R-2','C',.5),distanceKm:500,durationSeconds:4000},3);
+command('replace',{replaceId:'R-1',route:route('R-1','D',.2)},4);
+state.customRoutes.push(route('R-3','C',.5));
+command('dedupe',{type:'air'},5);
+assert.equal(state.customRoutes.some(row=>row.id==='R-3'),false,'dedupe removes near duplicate');
+command('delete',{id:'R-1'},6);
+command('delete',{id:'missing'},6);
+command('cache-geometry',{id:'EXTERNAL',type:'air',company:'air',route:[[10,10],[11,12]],distanceKm:300,durationSeconds:1800},7);
+command('cache-geometry',{id:'EXTERNAL',type:'air',company:'air',route:[[10,10],[11,12]],distanceKm:300,durationSeconds:1800},7);
+command('dedupe',{type:'air'},7);
+console.log(JSON.stringify({suite:'build357-route-revision',passed:12,total:12,revision:state.routesRevision}));

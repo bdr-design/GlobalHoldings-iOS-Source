@@ -4,6 +4,7 @@
   let activeContext=null,durableSequence=0;
   const targetRevisions=new WeakMap();
   const durableTargets=new WeakSet();
+  const JOURNALED_ROOTS=new Map();
   const runtimeTelemetry={last:null,lastSimulation:null,samples:[],profiledSamples:[],profiledCount:0};
   const runtimeClock=()=>globalThis.performance?.now?.()??Date.now();
   function publishRuntimeMetric(row){
@@ -30,7 +31,30 @@
     return out;
   }
   function jsonClone(value){if(value===undefined)return undefined;return JSON.parse(JSON.stringify(value));}
-  function deepClone(value){if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
+  function cloneWithoutJournaledRoots(value,{shareJournaledRoots=false}={}){
+    if(!value||typeof value!=='object'||Array.isArray(value))return null;
+    const keys=Object.keys(value),excluded=keys.filter(key=>JOURNALED_ROOTS.has(key));if(!excluded.length)return null;
+    const source={};for(const key of keys)if(!JOURNALED_ROOTS.has(key))source[key]=value[key];
+    let cloned;if(typeof globalThis.structuredClone==='function'){try{cloned=globalThis.structuredClone(source);}catch(_error){cloned=jsonClone(source);}}else cloned=jsonClone(source);
+    const out={};for(const key of keys){if(JOURNALED_ROOTS.has(key)){if(shareJournaledRoots)out[key]=value[key];}else out[key]=cloned[key];}return out;
+  }
+  // State roots registered as self-journaled are excluded from transaction
+  // snapshots. Durable drafts may explicitly share them while their owner
+  // keeps a journal open until the save is committed.
+  function deepClone(value,options={}){const rootCopy=cloneWithoutJournaledRoots(value,options);if(rootCopy)return rootCopy;if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
+  function registerJournaledRoot(name,hooks={}){
+    name=String(name||'').trim();if(!/^[A-Za-z_$][\w$]*$/.test(name))throw new TypeError('transaction-journaled-root-name-invalid');
+    const normalized={begin:typeof hooks.begin==='function'?hooks.begin:null,commit:typeof hooks.commit==='function'?hooks.commit:null,rollback:typeof hooks.rollback==='function'?hooks.rollback:null};
+    const existing=JOURNALED_ROOTS.get(name);if(existing){if(existing.begin===normalized.begin&&existing.commit===normalized.commit&&existing.rollback===normalized.rollback)return true;throw new Error(`transaction-journaled-root-already-registered:${name}`);}
+    JOURNALED_ROOTS.set(name,normalized);return true;
+  }
+  function beginJournaledRoots(target){
+    const sessions=[];
+    try{for(const [name,hooks] of JOURNALED_ROOTS){if(!Object.prototype.hasOwnProperty.call(target||{},name)||!hooks.begin)continue;const token=hooks.begin(target,target[name]);if(token!==undefined&&token!==null)sessions.push({name,target,value:target[name],hooks,token});}return sessions;}
+    catch(error){rollbackJournaledRoots(sessions);throw error;}
+  }
+  function commitJournaledRoots(sessions){if(!Array.isArray(sessions))return;for(let i=sessions.length-1;i>=0;i--){const row=sessions[i];row.hooks.commit?.(row.target,row.value,row.token);}sessions.length=0;}
+  function rollbackJournaledRoots(sessions){if(!Array.isArray(sessions))return;let firstError=null;for(let i=sessions.length-1;i>=0;i--){const row=sessions[i];try{row.hooks.rollback?.(row.target,row.value,row.token);}catch(error){firstError=firstError||error;}}sessions.length=0;if(firstError)throw firstError;}
   // Restores `target` in place from a structured-clone `snapshot`, preserving object identity.
   // Fast path (same key sequence, unfrozen plain data object): no key Map, no delete/re-add and
   // no write for unchanged primitives. Anything else uses the original delete/re-add path, so
@@ -74,7 +98,16 @@
     }
     return snapshot;
   }
-  function restoreObject(target,snapshot){if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw new TypeError('Transaction snapshot must be an object');return restoreValue(target,snapshot);}
+  function restoreObject(target,snapshot,rootValues=null){
+    if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw new TypeError('Transaction snapshot must be an object');
+    const preserved=[...JOURNALED_ROOTS.keys()].filter(key=>Object.prototype.hasOwnProperty.call(target,key)||Object.prototype.hasOwnProperty.call(snapshot,key)||(rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key)));
+    if(!preserved.length)return restoreValue(target,snapshot);
+    const keep=new Set(preserved),current=Object.keys(target),wanted=Object.keys(snapshot);
+    for(const key of current)if(!keep.has(key)&&!Object.prototype.hasOwnProperty.call(snapshot,key))delete target[key];
+    for(const key of wanted){if(keep.has(key))continue;const sv=snapshot[key],tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}
+    for(const key of preserved)if(!Object.prototype.hasOwnProperty.call(target,key)&&rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key))target[key]=rootValues[key];
+    return target;
+  }
   function sameOrder(keys,expected){return keys.length===expected.length&&keys.every((key,index)=>key===expected[index]);}
   function restoreRootOrder(target,rootOrder){
     if(!Array.isArray(rootOrder)||!rootOrder.length)return target;
@@ -114,11 +147,11 @@
   }
   function diffRootKeys(target,baseline){
     const keys=new Set([...Object.keys(baseline||{}),...Object.keys(target||{})]),changed=[];
-    for(const key of keys){const hasA=Object.prototype.hasOwnProperty.call(target,key),hasB=Object.prototype.hasOwnProperty.call(baseline,key);if(hasA!==hasB||!auditEqual(target[key],baseline[key]))changed.push(key);}
+    for(const key of keys){if(JOURNALED_ROOTS.has(key))continue;const hasA=Object.prototype.hasOwnProperty.call(target,key),hasB=Object.prototype.hasOwnProperty.call(baseline,key);if(hasA!==hasB||!auditEqual(target[key],baseline[key]))changed.push(key);}
     return changed.sort();
   }
-  function captureScoped(target,scope){const snapshot={};for(const key of scope)snapshot[key]={exists:Object.prototype.hasOwnProperty.call(target,key),value:deepClone(target[key])};return snapshot;}
-  function restoreScoped(target,snapshot,scope){for(const key of scope){const entry=snapshot[key];if(!entry?.exists){delete target[key];continue;}const sv=entry.value,tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}return target;}
+  function captureScoped(target,scope){const snapshot={};for(const key of scope){if(JOURNALED_ROOTS.has(key))continue;snapshot[key]={exists:Object.prototype.hasOwnProperty.call(target,key),value:deepClone(target[key])};}return snapshot;}
+  function restoreScoped(target,snapshot,scope,rootValues=null){for(const key of scope){if(JOURNALED_ROOTS.has(key))continue;const entry=snapshot[key];if(!entry?.exists){delete target[key];continue;}const sv=entry.value,tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}for(const key of JOURNALED_ROOTS.keys())if(!Object.prototype.hasOwnProperty.call(target,key)&&rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key))target[key]=rootValues[key];return target;}
   function isJournalPrimitive(value){return value===null||typeof value==='string'||typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value));}
   function captureJournal(target,scope,contracts){
     const assetContract=contracts.find(row=>row.proven===true&&row.root==='assets'&&row.mode==='asset-fields'&&Array.isArray(row.fields)&&row.fields.length);
@@ -258,7 +291,7 @@
       try{const value=work();ok=true;return value;}
       finally{phaseBreakdown.push({name:String(name||'unnamed').slice(0,100),durationMs:Math.max(0,runtimeClock()-started),depth,ok});if(phaseBreakdown.length>64)phaseBreakdown.shift();phaseDepth--;}
     };
-    const derivedProfileContext=profiled?{kind:label.startsWith('simulation:')?'simulation-slice':label.startsWith('boundary-recovery:')?'boundary-recovery':'state-transaction',assetCount:Array.isArray(target.assets)?target.assets.length:null,invoiceCount:Array.isArray(target.finance?.invoices)?target.finance.invoices.length:null,receivableCount:Array.isArray(target.finance?.receivables)?target.finance.receivables.length:null,payableCount:Array.isArray(target.finance?.payables)?target.finance.payables.length:null}:null;
+    const derivedProfileContext=profiled?{kind:label.startsWith('simulation:')?'simulation-slice':label.startsWith('boundary-recovery:')?'boundary-recovery':'state-transaction',assetCount:globalThis.GH_FLEET_DATA?.size?.(target)??(Array.isArray(target.assets)?target.assets.length:null),invoiceCount:Array.isArray(target.finance?.invoices)?target.finance.invoices.length:null,receivableCount:Array.isArray(target.finance?.receivables)?target.finance.receivables.length:null,payableCount:Array.isArray(target.finance?.payables)?target.finance.payables.length:null}:null;
     const timing={label,profiled,profileContext:profiled?compactProfileContext(options.profileContext||derivedProfileContext):null,phaseBreakdown,scopeSize:scope?scope.length:null,fullSnapshot:false,fullSnapshotFallback:false,fallbackReason:null,rollbackStorage:null,journalRecords:0,snapshotMs:0,validateMs:0,applyMs:0,postCommitCriticalMs:0,postCommitNonCriticalMs:0,postCommitCriticalTasks:[],postCommitNonCriticalTasks:[],writeAudit:auditWrites?{enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots:[],undeclaredRoots:[],declaredButUnchanged:[],stage:'pending'}:null,rollbackMs:0,totalMs:0,committed:false,stage:'snapshot'};
     // A durable command runs on a private deep-cloned draft that is discarded whole when anything
     // fails; live state is only replaced after schema/integrity/storage succeed. A second full-state
@@ -280,12 +313,13 @@
     // their rollback snapshot; scoped/journal transactions take an extra full baseline only when
     // audit/enforcement is explicitly requested. Normal gameplay pays no audit cost.
     const auditBaseline=auditWrites?((rollbackStorage==='full-snapshot')?snapshot:deepClone(target)):null;
-    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null,undos:[]};
+    const journaledRootValues={};for(const key of JOURNALED_ROOTS.keys())if(Object.prototype.hasOwnProperty.call(target,key))journaledRootValues[key]=target[key];
+    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),journaledRootValues,postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null,undos:[]};
     // Writer-owned undo (Build 353): a writer may keep its own exact preimage for writes it deliberately leaves
     // outside `scope` (the simulation slice keeps the previous asset field values instead of deep-cloning the
     // fleet). It always runs after the snapshot restore, so it also holds after a scoped -> full promotion.
     const undo=typeof options.undo==='function'?options.undo:null;
-    const restore=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot);};
+    const restore=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope,context.journaledRootValues);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot,context.journaledRootValues);};
     const releaseUndos=()=>{const rows=context.undos.splice(0);for(const row of rows)row.release?.();};
     const rollback=()=>{const restored=restore();if(undo)undo();const rows=context.undos.splice(0);for(let i=rows.length-1;i>=0;i--)rows[i].undo();return restored;};
     let phase='validate';activeContext=context;
@@ -342,7 +376,9 @@
     const label=String(options.label||'durable-transaction'),actualRevision=Math.max(0,Math.floor(Number(liveState.saveRevision)||0)),expectedRevision=options.expectedRevision==null?actualRevision:Number(options.expectedRevision);
     if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)throw rejection('invalid-expected-save-revision',label,'admission');
     if(actualRevision!==expectedRevision)throw rejection(`state-revision-conflict:${expectedRevision}:${actualRevision}`,label,'admission');
-    const transactionId=String(options.transactionId||`DTX-${String(++durableSequence).padStart(9,'0')}`),draft=deepClone(liveState),priorCritical=criticalIds(globalThis.GH_INTEGRITY_CORE?.check?.(liveState)),afterPublishTasks=[];
+    const transactionId=String(options.transactionId||`DTX-${String(++durableSequence).padStart(9,'0')}`),rootSessions=beginJournaledRoots(liveState);let draft;
+    try{draft=deepClone(liveState,{shareJournaledRoots:true});}catch(error){rollbackJournaledRoots(rootSessions);throw error;}
+    const priorCritical=criticalIds(globalThis.GH_INTEGRITY_CORE?.check?.(liveState)),afterPublishTasks=[];
     const context={schema:'gh-durable-transaction-v1',transactionId,label,liveState,draft,expectedRevision,startedAtSim:Number(liveState.simSeconds)||0,afterPublish(fn){if(typeof fn==='function')afterPublishTasks.push(fn);},call(domain,name,payload={},commandOptions={}){const commands=globalThis.GH_DOMAIN_COMMANDS;if(!commands?.dispatch)throw new Error('domain-command-owner-unavailable');return commands.dispatch({state:draft},domain,name,payload,commandOptions);},callSystem(domain,name,payload={},commandOptions={}){const commands=globalThis.GH_DOMAIN_COMMANDS;if(!commands?.dispatchSystem)throw new Error('system-domain-command-owner-unavailable');return commands.dispatchSystem({state:draft},domain,name,payload,commandOptions);}};
     durableTargets.add(liveState);globalThis.__GH_DURABLE_COMMAND_CONTEXT__=context;let phase='apply',durableCommitted=false;
     try{
@@ -353,16 +389,17 @@
       if(options.integrity!==false&&globalThis.GH_INTEGRITY_CORE?.check){const integrity=globalThis.GH_INTEGRITY_CORE.check(draft),introduced=(((integrity?.critical)||((integrity?.issues)||[]).filter(row=>row.severity==='critical'))||[]).filter(row=>!priorCritical.has(String(row.id||row.code||row.title)));if(introduced.length)throw rejection(`critical-integrity:${introduced.map(row=>row.id||row.code||row.title).join(',')}`,label,phase);}
       if(typeof options.validate==='function'){const validation=await options.validate(draft,context);if(validation===false||validation?.ok===false)throw rejection(validation?.reason||'validation-rejected',label,phase);}
       if(Number(liveState.saveRevision||0)!==expectedRevision)throw rejection(`state-revision-conflict:${expectedRevision}:${Number(liveState.saveRevision)||0}`,label,'pre-persist');
-      phase='durable-commit';const persist=options.persist||((state,meta)=>{const owner=globalThis.GH_PERSISTENCE;if(!owner?.commitDurableState)throw new Error('durable-persistence-owner-unavailable');return owner.commitDurableState(state,meta);}),persisted=await persist(draft,{...(options.persistence||{}),expectedPreviousRevision:expectedRevision,transactionId,idempotencyKey:options.idempotencyKey||null});if(persisted===false||persisted?.ok===false)throw rejection(persisted?.reason||'durable-persistence-rejected',label,phase);durableCommitted=true;
+      phase='durable-commit';const persist=options.persist||((state,meta)=>{const owner=globalThis.GH_PERSISTENCE;if(!owner?.commitDurableState)throw new Error('durable-persistence-owner-unavailable');return owner.commitDurableState(state,meta);}),persisted=await persist(draft,{...(options.persistence||{}),expectedPreviousRevision:expectedRevision,transactionId,idempotencyKey:options.idempotencyKey||null});if(persisted===false||persisted?.ok===false)throw rejection(persisted?.reason||'durable-persistence-rejected',label,phase);durableCommitted=true;commitJournaledRoots(rootSessions);
       phase='publish';if(typeof options.publish==='function')await options.publish(liveState,draft,context);else restoreObject(liveState,draft);
       for(const task of afterPublishTasks)try{await task(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-publish side effect failed`,error);}
       if(typeof options.afterCommit==='function')try{await options.afterCommit(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-commit side effect failed`,error);}
       advanceRevision(liveState);return {committed:true,durable:true,transactionId,label,saveRevision:Number(liveState.saveRevision)||0,value,persistence:persisted};
     }catch(error){
       error.transactionLabel=error.transactionLabel||label;error.transactionStage=error.transactionStage||phase;error.durableCommitted=durableCommitted;
+      if(!durableCommitted)try{rollbackJournaledRoots(rootSessions);}catch(rollbackError){error.rollbackError=rollbackError;error.critical=true;globalThis.GH_PERSISTENCE?.markRecoveryRequired?.('durable-journaled-root-rollback-failed');}
       if(durableCommitted){error.critical=true;globalThis.GH_PERSISTENCE?.markRecoveryRequired?.('durable-publish-failed');}
       throw error;
-    }finally{if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
+    }finally{if(!durableCommitted&&rootSessions.length)try{rollbackJournaledRoots(rootSessions);}catch{}if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,execute,join,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,registerJournaledRoot,beginJournaledRoots,commitJournaledRoots,rollbackJournaledRoots,execute,join,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

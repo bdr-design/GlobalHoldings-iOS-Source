@@ -36,7 +36,7 @@ function isAssetFacilityCompatible(assetOrMode,f,state=null){
  if(P){const definition=companyDefinition(state,assetOwner);if(!definition||!definition.capabilities.includes('operations.fleet')||!definition.classification.routeModes.includes(mode)||!definition.facilities.allowedKinds.includes(f.kind))return false;const assetClass=String(descriptor.assetClass||P.assetClassForLegacyMode(mode)||definition.classification.assetClasses[0]||'');return definition.classification.assetClasses.includes(assetClass);}
  const kinds=ASSET_FACILITY_KINDS[mode];return assetOwner===mode&&Array.isArray(kinds)&&kinds.includes(f.kind);
 }
-function assetOccupancy(state,f){if(!f?.id)return 0;const delivered=fleetData().count(state,asset=>asset.baseFacility===f.id),pending=(state.realism?.procurement?.deliveries||[]).filter(row=>row.status==='pending'&&row.baseId===f.id).length;return delivered+pending;}
+function assetOccupancy(state,f){if(!f?.id)return 0;const delivered=fleetData().count(state,asset=>asset.baseFacility===f.id),pending=(state.realism?.procurement?.deliveries||[]).reduce((count,row)=>count+(row?.status==='pending'&&row.baseId===f.id?Math.max(1,Array.isArray(row.assets)?row.assets.length:row.asset?1:Math.floor(Number(row.count)||0)):0),0);return delivered+pending;}
 function availableAssetCapacity(state,f){return Math.max(0,assetCapacity(f)-assetOccupancy(state,f));}
 const DIRECTORY_KIND_BY_COMPANY=Object.freeze({road:'logistics',power:'power',bank:'bank',mobility:'mobility-center'});
 const GLOBAL_KIND_BY_COMPANY=Object.freeze({air:'airport-base',sea:'port-base'});

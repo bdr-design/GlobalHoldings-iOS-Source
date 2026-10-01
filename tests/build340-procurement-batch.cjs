@@ -39,14 +39,15 @@ function run(useBatch){
   const state=fixture();let results;
   if(useBatch)results=Procurement.withPurchaseBatch(state,()=>bases.map((base,index)=>purchase(state,index,base)));
   else results=bases.map((base,index)=>purchase(state,index,base));
-  return {state,results,names:state.realism.procurement.deliveries.slice(-400).map(row=>row.asset.name),assetIds:results.flatMap(row=>row.assetIds),deliveryIds:results.flatMap(row=>row.deliveryOrderIds)};
+  return {state,results,names:state.realism.procurement.deliveries.slice(-4).flatMap(row=>row.assets.map(asset=>asset.name)),assetIds:results.flatMap(row=>row.assetIds),deliveryIds:results.flatMap(row=>row.deliveryOrderIds)};
 }
 
 occupancyCalls=0;assetPasses=0;deliveryPasses=0;
 const batch=run(true),batchVisits={assetPasses,deliveryPasses,occupancyCalls};
 assert.equal(batch.results.reduce((sum,row)=>sum+row.count,0),400);
 assert.equal(new Set(batch.assetIds).size,400);
-assert.equal(new Set(batch.deliveryIds).size,400);
+assert.equal(new Set(batch.deliveryIds).size,4,'each base allocation creates one batch receipt');
+assert(batch.state.realism.procurement.deliveries.slice(-4).every(row=>row.assets.length===100&&row.assetIds.length===100));
 assert.equal(batch.names[0],'GH 20501','serial numbering counts all owned assets and pending orders');
 assert.equal(batch.names.at(-1),'GH 20900','serial numbering advances across base allocations');
 assert.deepEqual(batchVisits,{assetPasses:1,deliveryPasses:1,occupancyCalls:0},'a multi-base purchase builds one asset/order index and reuses facility occupancy');

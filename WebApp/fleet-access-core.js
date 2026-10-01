@@ -207,13 +207,35 @@
   function mode(state){return storeOf(state)?'store':arrayOf(state)?'array':'none';}
   // The container object, for identity-keyed caches.
   function source(state){return storeOf(state)||arrayOf(state)||null;}
-  function ensure(state){if(!storeOf(state)&&!arrayOf(state))state.assets=[];return mode(state);}
+  // New worlds start on the record store. The array branch remains available
+  // only while Save Migration reads and upgrades pre-v3 saves.
+  function ensure(state){if(!storeOf(state)&&!arrayOf(state))state.fleet=STORE.create();return mode(state);}
   function size(state){const store=storeOf(state);if(store)return store.live;const assets=arrayOf(state);return assets?assets.length:0;}
+  // Stable membership token for read models. It changes when rows are added,
+  // removed, or compacted, but not for ordinary simulation field writes.
+  function membershipRevision(state){const store=storeOf(state);if(store)return `${store.structure}:${STORE.epoch(store)}`;const assets=arrayOf(state);return assets?`array:${assets.length}`:'none';}
   // Row range to scan and the liveness test (store rows can be dead until compaction).
   function scanLength(state){const store=storeOf(state);if(store)return store.length;const assets=arrayOf(state);return assets?assets.length:0;}
   function rowAlive(state,index){const store=storeOf(state);return store?STORE.isAlive(store,index):true;}
   // Changes on any store write; null for the array (callers fall back to identity).
   function revision(state){const store=storeOf(state);return store?store.revision:null;}
+  function stats(state){const store=storeOf(state);return store?STORE.stats(store):{length:size(state),live:size(state),capacity:size(state),columnBytes:0,bytesPerAsset:0};}
+  // Transaction Core can hold a store journal across an asynchronous durable
+  // command. Keep these operations on the access boundary so game code never
+  // imports the Store core or inspects its record buffer.
+  function beginJournal(state){const store=storeOf(state);return store?STORE.beginJournal(store):null;}
+  function commitJournal(state,journal){if(!journal)return false;const store=storeOf(state);if(!store)return false;STORE.endJournal(journal);return true;}
+  function rollbackJournal(state,journal){if(!journal)return false;STORE.rollbackJournal(journal);return true;}
+  const maintenanceDays=new WeakMap();
+  function maintain(state,day){
+    const store=storeOf(state);if(!store)return {compacted:null,values:null};
+    if(globalThis.GH_TRANSACTION_CORE?.isActive?.())throw new Error('fleet-maintenance-inside-transaction');
+    const stats=STORE.stats(store),dead=Math.max(0,stats.length-stats.live);let compacted=null,values=null;
+    if(stats.length>0&&dead/stats.length>.1)compacted=STORE.compactRows(store);
+    const currentDay=day==null?Math.floor(timeOf(state)/86400):Math.max(0,Math.floor(Number(day)||0));
+    if(maintenanceDays.get(store)!==currentDay){values=STORE.collectValues(store);maintenanceDays.set(store,currentDay);}
+    return {compacted,values};
+  }
 
   // Array-mode lookups are O(1) through a cached object/id index. A hit is
   // verified against the array; a miss rebuilds once when the array changed.
@@ -268,6 +290,18 @@
   function filter(state,predicate){const out=[],n=scanLength(state);for(let index=0;index<n;index++){if(!rowAlive(state,index))continue;const view=viewAt(state,index);if(predicate(view,index))out.push(view);}return out;}
   function count(state,predicate){let total=0;const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index)&&predicate(viewAt(state,index),index))total++;return total;}
   function sum(state,fn){let total=0;const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index))total+=Number(fn(viewAt(state,index),index))||0;return total;}
+  function dailyLeaseCosts(state,companies){
+    const allowed=companies instanceof Set?companies:new Set(Array.isArray(companies)?companies:[]),out=Object.create(null),store=storeOf(state);
+    if(store){STORE.forEachLeaseGroup(store,(group,count)=>{const company=String(group.ownerCompanyId||'');if(!allowed.has(company))return;out[company]=(out[company]||0)+(Number(group.monthlyLease)||0)/30*count;});}
+    else forEach(state,asset=>{const company=String(asset?.ownerCompanyId||asset?.companyId||globalThis.GH_COMPANY_PLATFORM?.ownerForLegacyAssetMode?.(asset?.assetMode||asset?.type)||'');if(asset?.ownership==='lease'&&allowed.has(company))out[company]=(out[company]||0)+(Number(asset.monthlyLease)||0)/30;});
+    return out;
+  }
+  function payrollTotals(state){
+    const out=Object.create(null),store=storeOf(state),add=(company,amount,headcount,count=1)=>{if(!company)return;const row=out[company]||(out[company]={amount:0,headcount:0});row.amount+=amount*count;row.headcount+=headcount*count;};
+    if(store)STORE.forEachPayrollGroup(store,(group,count)=>add(group.ownerCompanyId,Number(group.monthlyPayroll)||0,Number(group.headcount)||0,count));
+    else forEach(state,asset=>{const staff=asset?.staffing;if(staff?.ready!==true)return;const company=String(asset?.ownerCompanyId||asset?.companyId||globalThis.GH_COMPANY_PLATFORM?.ownerForLegacyAssetMode?.(asset?.assetMode||asset?.type)||'');add(company,Number(staff.monthlyPayroll)||0,Number(staff.total)||0);});
+    return out;
+  }
   function map(state,fn){const out=[],n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index))out.push(fn(viewAt(state,index),index));return out;}
   function list(state){return map(state,view=>view);}
   function ids(state){const store=storeOf(state);if(store){const out=[];STORE.forEachLive(store,index=>out.push(STORE.idAt(store,index)));return out;}return (arrayOf(state)||[]).map(asset=>asset?.id);}
@@ -345,8 +379,8 @@
     const store=storeOf(state);if(store)return STORE.removeMany(store,doomed);
     const drop=new Set(doomed),assets=arrayOf(state);invalidateArrayIndex(assets);let write=0;for(let read=0;read<assets.length;read++){if(drop.has(read))continue;if(write!==read)assets[write]=assets[read];write++;}assets.length=write;return drop.size;}
 
-  const API=Object.freeze({VERSION,configure,mode,source,ensure,size,revision,storeOf,isView,
-    get,has,forEach,some,every,find,filter,count,sum,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
+  const API=Object.freeze({VERSION,configure,mode,source,ensure,size,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
+    get,has,forEach,some,every,find,filter,count,sum,dailyLeaseCosts,payrollTotals,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
     update,put,add,addMany,remove,removeMany,removeWhere,drafts,draft,commit});
   globalThis.GH_FLEET_DATA=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_DATA=API;

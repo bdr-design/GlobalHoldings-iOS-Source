@@ -30,6 +30,26 @@
   const MAX_SCAN_DEPTH=4;
 
   const own=(object,key)=>Object.prototype.hasOwnProperty.call(object,key);
+  function isArrayBuffer(value){return !!value&&Object.prototype.toString.call(value)==='[object ArrayBuffer]';}
+  function base64Encode(bytes){
+    if(typeof btoa==='function'){const parts=[];for(let start=0;start<bytes.length;start+=32768)parts.push(String.fromCharCode(...bytes.subarray(start,Math.min(bytes.length,start+32768))));return btoa(parts.join(''));}
+    if(typeof Buffer!=='undefined')return Buffer.from(bytes.buffer,bytes.byteOffset,bytes.byteLength).toString('base64');
+    throw new Error('state-codec-base64-unavailable');
+  }
+  function base64Decode(text){
+    if(typeof atob==='function')return atob(text);
+    if(typeof Buffer!=='undefined')return Buffer.from(text,'base64').toString('binary');
+    throw corrupt('binary-decoder-unavailable');
+  }
+  function binaryMarker(buffer){
+    const bytes=new Uint8Array(buffer);return {$ghBinary:'arraybuffer-v1',byteLength:bytes.length,base64:base64Encode(bytes)};
+  }
+  function binaryBuffer(marker){
+    if(!isPlain(marker)||marker.$ghBinary!=='arraybuffer-v1'||!Number.isSafeInteger(marker.byteLength)||marker.byteLength<0||marker.byteLength>536870912||typeof marker.base64!=='string')throw corrupt('binary-marker');
+    let raw;try{raw=base64Decode(marker.base64);}catch{throw corrupt('binary-base64');}if(raw.length!==marker.byteLength)throw corrupt('binary-length');
+    const buffer=new ArrayBuffer(raw.length),bytes=new Uint8Array(buffer);for(let start=0;start<raw.length;start+=32768){const end=Math.min(raw.length,start+32768);for(let i=start;i<end;i++)bytes[i]=raw.charCodeAt(i);}
+    return buffer;
+  }
   // A plain data object: prototype is null or a ROOT prototype (its own prototype is null). That accepts objects from
   // any realm (iframe, vm context, worker-cloned state) while still rejecting class instances, Maps, Dates, etc.
   function isPlain(value){
@@ -230,11 +250,14 @@
 
   function encodeState(state){
     if(!isPlain(state))return state;
-    const paths=selectPaths(state);
-    if(!paths.length)return state;
-    let out=state;
-    for(const path of paths)out=writePathCopy(out,path,encodeCollection(readPath(state,path)));
-    out.stateCodec={version:VERSION,paths};
+    const binaryPaths=[];let out=state;
+    // Fleet rows are the only ArrayBuffer in Save Schema 3. Preserve their
+    // bytes through the current JSON transport until binary chunk storage lands.
+    if(isArrayBuffer(state.fleet?.rows)){const path=['fleet','rows'];out=writePathCopy(out,path,binaryMarker(state.fleet.rows));binaryPaths.push(path);}
+    const paths=selectPaths(out);
+    if(!paths.length&&!binaryPaths.length)return state;
+    for(const path of paths)out=writePathCopy(out,path,encodeCollection(readPath(out,path)));
+    out.stateCodec={version:VERSION,paths,binaryPaths};
     return out;
   }
 
@@ -247,6 +270,12 @@
       if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('path');
       const node=readPath(out,path);if(node===undefined)throw corrupt('path-missing');
       out=writePathCopy(out,path,decodeCollection(node));
+    }
+    const binaryPaths=meta.binaryPaths===undefined?[]:meta.binaryPaths;if(!Array.isArray(binaryPaths))throw corrupt('binary-paths');
+    for(const path of binaryPaths){
+      if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('binary-path');
+      const node=readPath(out,path);if(node===undefined)throw corrupt('binary-path-missing');
+      out=writePathCopy(out,path,binaryBuffer(node));
     }
     return out;
   }

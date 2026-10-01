@@ -1,6 +1,6 @@
 (()=>{
   'use strict';
-  const VERSION='3.0.0', SLOT_FORMAT='global-holdings-save-slot-v2', EXPORT_FORMAT='global-holdings-save';
+  const VERSION='3.0.0', SAVE_SCHEMA_VERSION='3.0.0', SLOT_FORMAT='global-holdings-save-slot-v2', EXPORT_FORMAT='global-holdings-save';
   const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeSoftBytes:22.5*1024*1024,nativeHardBytes:30*1024*1024,ackTimeoutMs:10000,pending:16});
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
@@ -145,7 +145,7 @@
   function ordinarySnapshotOptions(storageKey,appVersion,options){return {storageKey,appVersion,...options};}
   function clearOrdinaryDirty(){ordinaryDirty=false;ordinaryDirtyState=null;ordinaryDirtyOptions=null;}
   function deferOrdinary(state,options){ordinaryDirty=true;ordinaryDirtyState=state;ordinaryDirtyOptions=options;status({ok:true,deferred:true,reason:'native-save-coalesced',saveRevision:Number(state?.saveRevision)||0});}
-  function beginOrdinary(state,{storageKey='global-holdings-world-v2.0.0',appVersion=VERSION,...options}={},control={}){
+  function beginOrdinary(state,{storageKey='global-holdings-world-v3.0.0',appVersion=VERSION,...options}={},control={}){
     if((locked&&!control.allowLocked)||durableLocked)return {ok:false,reason:'lifecycle-locked'};
     if(recoveryRequired)return {ok:false,reason:'memory-recovery-required'};
     const nativeBridge=!!bridgeFor('commitSave'),previousRevision=Math.max(0,Math.floor(Number(state?.saveRevision)||0)),nextRevision=previousRevision+1,syncStart=clock();
@@ -191,7 +191,7 @@
     }
     return {ok:true,generation};
   }
-  function commitState(state,{storageKey='global-holdings-world-v2.0.0',appVersion=VERSION,...options}={}){
+  function commitState(state,{storageKey='global-holdings-world-v3.0.0',appVersion=VERSION,...options}={}){
     if(locked||durableLocked)return {ok:false,reason:'lifecycle-locked'};
     if(recoveryRequired)return {ok:false,reason:'memory-recovery-required'};
     const snapshotOptions=ordinarySnapshotOptions(storageKey,appVersion,options),nativeBridge=!!bridgeFor('commitSave');
@@ -199,7 +199,7 @@
     return beginOrdinary(state,snapshotOptions);
   }
   async function drain(options={}){return waitOrdinaryIdle(options);}
-  async function commitDurableState(state,{storageKey='global-holdings-world-v2.0.0',appVersion=VERSION,...options}={}){
+  async function commitDurableState(state,{storageKey='global-holdings-world-v3.0.0',appVersion=VERSION,...options}={}){
     if(locked||durableLocked)throw new Error('lifecycle-locked');if(recoveryRequired)throw new Error('memory-recovery-required');
     if(options.expectedPreviousRevision!=null){const previous=Number(options.expectedPreviousRevision),next=Number(state?.saveRevision);if(!Number.isSafeInteger(previous)||previous<0||!Number.isSafeInteger(next)||next!==previous+1)throw new Error(`save-revision-conflict:${previous}:${next}`);}
     durableLocked=true;
@@ -220,13 +220,13 @@
       const uncertainNative=error.code==='ACK_TIMEOUT';if(error.rollbackError||uncertainNative){recoveryRequired=true;error.critical=true;}status({ok:false,reason:String(error.message||error),critical:!!error.critical,durable:true,requiresNativeReconciliation:uncertainNative,storageKey});throw error;
     }finally{durableLocked=false;}
   }
-  function recoverBrowserState(storageKey='global-holdings-world-v2.0.0'){
+  function recoverBrowserState(storageKey='global-holdings-world-v3.0.0'){
     if(bridgeFor('commitSave'))return {ok:false,reason:'native-vault-reconciliation-required'};
     try{const raw=localStorage.getItem(storageKey);if(!raw)return {ok:false,reason:'missing-durable-state'};const state=parseState(raw);assertState(state);return {ok:true,state};}catch(error){return {ok:false,reason:String(error.message||error)};}
   }
   function markRecoveryRequired(reason='manual-recovery-required'){recoveryRequired=true;ordinaryError=ordinaryError||new Error(String(reason));status({ok:false,critical:true,reason:String(reason),requiresNativeReconciliation:!!bridgeFor('commitSave')});return true;}
   function acknowledgeRecovery(){if(bridgeFor('commitSave')&&recoveryRequired)return false;recoveryRequired=false;ordinaryError=null;return true;}
-  async function replaceState(next,previous,{storageKey='global-holdings-world-v2.0.0',resetMarkerKey,appVersion=VERSION,timeoutMs,apply,cleanupKeys=[],clearManualSlots=false}={}){
+  async function replaceState(next,previous,{storageKey='global-holdings-world-v3.0.0',resetMarkerKey,appVersion=VERSION,timeoutMs,apply,cleanupKeys=[],clearManualSlots=false}={}){
     if(locked)throw new Error('lifecycle-locked');locked=true;
     let nativeAttempted=false,nativeCommitted=false,oldRaw=null,oldMarker=null,browserTouched=false;
     let oldJSON;
@@ -278,11 +278,11 @@
     try{
       assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,label=meta.label||`اليوم ${day}`;
       if(bridgeFor('commitSave'))return requestManualSlot('saveManualSlot',index,state,{...meta,label}).catch(error=>({ok:false,reason:String(error.message||error)}));
-      const envelope={format:SLOT_FORMAT,version:VERSION,saveSchemaVersion:'2.0.0',meta:{appVersion:meta.appVersion||VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,label},state:stateCodec()?stateCodec().encodeState(state):state};const out=writeJSON(slotKey(index),JSON.stringify(envelope));return {...out,meta:envelope.meta};
+      const envelope={format:SLOT_FORMAT,version:VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,meta:{appVersion:meta.appVersion||VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,label},state:stateCodec()?stateCodec().encodeState(state):state};const out=writeJSON(slotKey(index),JSON.stringify(envelope));return {...out,meta:envelope.meta};
     }catch(e){return {ok:false,reason:String(e.message||e)};}
   }
   function statusEventForSlot(error,storageKey){status({ok:false,reason:error.message,requiresNativeReconciliation:true,storageKey});}
-  function loadSlot(index,{storageKey='global-holdings-world-v2.0.0',appVersion=VERSION,previousState}={}){
+  function loadSlot(index,{storageKey='global-holdings-world-v3.0.0',appVersion=VERSION,previousState}={}){
     try{
       if(bridgeFor('commitSave')){
         const status=slotStatus(index);if(!status.exists)return status;
@@ -304,7 +304,7 @@
     }catch(e){return {ok:false,error:String(e.message||e)};}
   }
   function exportSave(state,{appVersion=VERSION}={}){
-    try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:'2.0.0',saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
+    try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:SAVE_SCHEMA_VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:stateCodec()?stateCodec().encodeState(state):clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
   const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});

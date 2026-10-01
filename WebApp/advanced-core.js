@@ -2,7 +2,7 @@
   'use strict';
 
   const VERSION = '3.0.0';
-  const SAVE_SCHEMA_VERSION = '2.0.0';
+  const SAVE_SCHEMA_VERSION = '3.0.0';
   const UPDATE_FORMAT = 'global-holdings-update';
   const UPDATE_LIMITS = Object.freeze({outerBytes:40*1024*1024,unpackedBytes:32*1024*1024,fileCount:1024,fileBytes:16*1024*1024,operationsBytes:2*1024*1024,pathLength:240});
   const photos = {
@@ -310,7 +310,7 @@
 
   function renderManualProcurement(ctx){
     const deliveries=(ctx.state.realism?.procurement?.deliveries||[]).filter(Boolean),pending=deliveries.filter(d=>d.status!=='delivered'),arrived=deliveries.filter(d=>d.status==='delivered');
-    return `${hero(photos.logistics,'الشراء اليدوي للأصول','تم حذف الطلبات والمحافظ الآلية. اختر بنفسك الأصل والعدد والقاعدة وطريقة التملك من السوق.','MANUAL ASSET PURCHASE')}<div class="list"><article class="list-item"><div class="list-item-head"><div><h3>السياسة التشغيلية</h3><p>كل قرار شراء يبدأ من اختيارك المباشر؛ لا توجد جهة آلية تختار أصلًا أو تنشئ أمر شراء أو توظف طاقمًا أو تعيّن مسارًا.</p></div><span class="tag positive">MANUAL ONLY</span></div>${metrics([['قيد الوصول',pending.length],['وصلت',arrived.length],['أصول مملوكة',fleetData().size(ctx.state)]])}<div class="action-row"><button class="primary-btn" data-open="assetMarket">فتح سوق الأصول اليدوي</button></div></article>${pending.slice().reverse().slice(0,30).map(d=>`<article class="list-item"><div class="list-item-head"><div><h3>${ctx.esc(d.asset?.name||d.catalogId||d.id)}</h3><p>${ctx.esc(d.destination||d.baseId||'')}</p></div><span class="tag">في الطريق</span></div></article>`).join('')||'<div class="empty positive-empty">لا توجد مشتريات يدوية قيد الوصول.</div>'}</div>`;
+    return `${hero(photos.logistics,'الشراء اليدوي للأصول','تم حذف الطلبات والمحافظ الآلية. اختر بنفسك الأصل والعدد والقاعدة وطريقة التملك من السوق.','MANUAL ASSET PURCHASE')}<div class="list"><article class="list-item"><div class="list-item-head"><div><h3>السياسة التشغيلية</h3><p>كل قرار شراء يبدأ من اختيارك المباشر؛ لا توجد جهة آلية تختار أصلًا أو تنشئ أمر شراء أو توظف طاقمًا أو تعيّن مسارًا.</p></div><span class="tag positive">MANUAL ONLY</span></div>${metrics([['قيد الوصول',pending.length],['وصلت',arrived.length],['أصول مملوكة',fleetData().size(ctx.state)]])}<div class="action-row"><button class="primary-btn" data-open="assetMarket">فتح سوق الأصول اليدوي</button></div></article>${pending.slice().reverse().slice(0,30).map(d=>{const assets=Array.isArray(d.assets)?d.assets:d.asset?[d.asset]:[];return `<article class="list-item"><div class="list-item-head"><div><h3>${ctx.esc(assets[0]?.name||d.catalogId||d.id)}${assets.length>1?` · ${ctx.fmtNumber(assets.length)} أصل`:''}</h3><p>${ctx.esc(d.destination||d.baseId||'')}</p></div><span class="tag">في الطريق</span></div></article>`;}).join('')||'<div class="empty positive-empty">لا توجد مشتريات يدوية قيد الوصول.</div>'}</div>`;
   }
 
   function renderEnergyDeep(ctx){
