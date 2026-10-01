@@ -270,7 +270,8 @@
       if(pacing.shouldRender(now,speed)){try{adapter.onRender?.({now,speed,backlog:pacing.backlog(),jobActive:!!job});}catch(error){report('render',error,false);}}
     }
     function maybePersist(now,speed){
-      if(pacing.shouldPersist(now,speed)){try{adapter.onPersist?.({now,speed});}catch(error){report('persist',error,false);}}
+      let minimum=0;try{minimum=Number(adapter.persistMinIntervalMs?.())||0;}catch(error){report('persist-interval',error,false);}
+      if(pacing.shouldPersist(now,speed,minimum)){try{adapter.onPersist?.({now,speed});}catch(error){report('persist',error,false);}}
     }
 
     function advanceTo(target,options={}){

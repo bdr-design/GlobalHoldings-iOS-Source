@@ -57,7 +57,8 @@
     function clearBacklog(){backlog=0;return 0;}
     function executionDeadline(manual=false){return clock()+(manual?cfg.manualFrameBudgetMs:cfg.frameBudgetMs);}
     function shouldRender(now,speed){const every=fast(speed)?cfg.renderEveryFastMs:cfg.renderEveryNormalMs;if(Number(now)-lastRender<every)return false;lastRender=Number(now);return true;}
-    function shouldPersist(now,speed){const every=fast(speed)?cfg.persistEveryFastMs:cfg.persistEveryNormalMs;if(Number(now)-lastPersist<every)return false;lastPersist=Number(now);return true;}
+    // minimumMs lets the host widen the cadence (e.g. when one save is expensive); it never shortens it.
+    function shouldPersist(now,speed,minimumMs=0){const every=Math.max(fast(speed)?cfg.persistEveryFastMs:cfg.persistEveryNormalMs,Number(minimumMs)>0?Number(minimumMs):0);if(Number(now)-lastPersist<every)return false;lastPersist=Number(now);return true;}
     function snapshot(){return {version:VERSION,lastReal,backlog,hidden,lastRender,lastPersist,droppedRealSeconds,backlogClamps,stallGaps,config:{...cfg}};}
 
     return {version:VERSION,reset,setHidden,observeLiveFrame,setManualBacklog,limitBacklog,consume,clearBacklog,backlog:()=>backlog,executionDeadline,shouldRender,shouldPersist,snapshot,config:()=>({...cfg})};

@@ -25,7 +25,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 352;
+  const RUNTIME_BUILD = 353;
   const SAVE_SCHEMA_VERSION = '2.0.0';
   const FOUNDER_PRINCIPAL_ID='PLAYER-FOUNDER';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
@@ -726,7 +726,8 @@
     }catch(error){console.warn('تعذر تنظيف التخزين القديم',error);}
   }
   cleanupObsoleteStorage();
-  let simulationPersistenceTask=null;
+  let simulationPersistenceTask=null,deferredPersistenceTimer=null;
+  const DEFERRED_PERSISTENCE_MS=3000,RECURRING_SAVE_COST_FACTOR=150,RECURRING_SAVE_MAX_GAP_MS=120000;
   const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]}};
   const appMetricClock=()=>globalThis.performance?.now?.()??Date.now();
   function recordRenderMetric(kind,durationMs,detail={}){const render=runtimeInstrumentation.render,row={kind,durationMs:Math.max(0,Number(durationMs)||0),recordedAtMs:Date.now(),...detail};if(kind==='frame'){render.lastFrame=row;render.maxFrameMs=Math.max(render.maxFrameMs,row.durationMs);}else if(kind==='target-update'){render.lastTargetUpdate=row;render.maxTargetUpdateMs=Math.max(render.maxTargetUpdateMs,row.durationMs);}else if(kind==='marker-animation'){render.lastMarkerAnimation=row;render.maxMarkerAnimationMs=Math.max(render.maxMarkerAnimationMs,row.durationMs);}else if(kind==='structural-render'){render.lastStructuralRender=row;render.maxStructuralRenderMs=Math.max(render.maxStructuralRenderMs,row.durationMs);}render.samples.push(row);if(render.samples.length>120)render.samples.shift();return row;}
@@ -756,6 +757,20 @@
     catch(error){simulationPersistenceTask=null;throw error;}
     return true;
   }
+  // Build 353: preferences (map focus/filters/layers, speed), derived caches (street/road
+  // geometry) and health-check events never need their own full save. On iPhone WebKit there
+  // is no requestIdleCallback, so "idle" persistence ran right after every tap. Coalesce them
+  // into one save a few seconds later; business commands keep their durable save, and hiding
+  // the app still saves immediately.
+  function scheduleDeferredPersistence(delayMs=DEFERRED_PERSISTENCE_MS){
+    if(deferredPersistenceTimer!==null)return true;
+    deferredPersistenceTimer=setTimeout(()=>{deferredPersistenceTimer=null;scheduleSimulationPersistence();},Math.max(0,Number(delayMs)||0));
+    return true;
+  }
+  // Recurring saves only checkpoint simulated progress (commands persist durably on their own).
+  // A save that blocked the main thread for C ms is spaced at least 150*C ms apart (<=0.7% of
+  // frame time), capped at 2 minutes. Hiding the app still saves immediately.
+  function recurringSaveMinIntervalMs(){const cost=Number(runtimeInstrumentation?.lastSavePreparation?.totalMs)||0;return Math.min(RECURRING_SAVE_MAX_GAP_MS,Math.max(0,cost)*RECURRING_SAVE_COST_FACTOR);}
   function persistStateNow(options={}){
     if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
     const metricClock=()=>globalThis.performance?.now?.()??Date.now(),runtimeMetrics=window.__GH_APP_RUNTIME_INSTRUMENTATION__||null,pending=runtimeMetrics?.pendingCompaction||null;
@@ -1260,7 +1275,7 @@
       if(geometry){applyRoadGeometry(tpl.id,geometry,true);changedRouteIds.add(tpl.id);stateChanged=true;}
       else if(cached?.route){applyRoadGeometry(tpl.id,cached,false);changedRouteIds.add(tpl.id);stateChanged=true;} // نستمر بالمسار المخزن القديم بدل خط مستقيم مفاجئ
     }));
-    if(stateChanged)save();
+    if(stateChanged)scheduleDeferredPersistence();
     if(changedRouteIds.size){
       const selected=selectedAssetId?state.assets.find(asset=>asset.id===selectedAssetId):null;
       // Moving marker targets can consume the new geometry directly. Rebuild only
@@ -1281,7 +1296,7 @@
         if(!result?.ok||!result.geometry?.route){const previous=mobilityStreetRetries.get(request.key),attempts=Math.min(8,(previous?.attempts||0)+1),delayMs=Math.min(120000,2500*(2**Math.min(5,attempts-1)));mobilityStreetRetries.set(request.key,{attempts,retryAt:Date.now()+delayMs});continue;}
         try{dispatchSystemCommand({state},'mobility','cache-street-route',{...request,...result.geometry},{actor:'system-mobility-routing-provider'});mobilityStreetRetries.delete(request.key);changed=true;}catch(error){nonCritical('mobility-street-route-cache',error);}
       }
-      if(changed){save();renderMap();}
+      if(changed){scheduleDeferredPersistence();renderMap();}
       return changed;
     })().finally(()=>{mobilityStreetHydration=null;});
     return mobilityStreetHydration;
@@ -2137,6 +2152,36 @@
     // the entire fleet twice before the first chunk can yield to the display.
     return {id:asset.id,...JSON.parse(guard)};
   }
+  // Build 353: commit-time guard check without re-serializing the whole fleet in
+  // one frame. `parsed` is JSON.parse(guard) kept from the snapshot. jsonSameAs()
+  // answers true ONLY when JSON.stringify(value) would equal JSON.stringify(parsed);
+  // anything it does not model (toJSON, boxed values, depth) answers false and the
+  // caller repeats the original string comparison, so accept/reject is unchanged.
+  const isJsonOmitted=value=>value===undefined||typeof value==='function'||typeof value==='symbol';
+  function jsonSameAs(value,parsed,depth){
+    const kind=typeof parsed;
+    if(kind==='string'||kind==='boolean'||kind==='number')return value===parsed;
+    if(kind!=='object')return false;
+    if(parsed===null)return value===null||(typeof value==='number'&&!Number.isFinite(value));
+    if(!value||typeof value!=='object'||depth>32||typeof value.toJSON==='function')return false;
+    if(Array.isArray(parsed)){
+      if(!Array.isArray(value)||value.length!==parsed.length)return false;
+      for(let index=0;index<parsed.length;index++){const item=value[index];if(isJsonOmitted(item)?parsed[index]!==null:!jsonSameAs(item,parsed[index],depth+1))return false;}
+      return true;
+    }
+    if(Array.isArray(value))return false;
+    const expected=Object.keys(parsed),keys=Object.keys(value);let matched=0;
+    for(let index=0;index<keys.length;index++){const key=keys[index],item=value[key];if(isJsonOmitted(item))continue;if(expected[matched]!==key||!jsonSameAs(item,parsed[key],depth+1))return false;matched++;}
+    return matched===expected.length;
+  }
+  function simulationAssetGuardMatches(asset,guard,parsed){
+    if(asset&&parsed&&typeof parsed==='object'){
+      let same=true;
+      for(const field of SIMULATION_ASSET_GUARD_FIELDS){const value=asset[field],captured=Object.prototype.hasOwnProperty.call(parsed,field);if(isJsonOmitted(value)?captured:(!captured||!jsonSameAs(value,parsed[field],1))){same=false;break;}}
+      if(same)return true;
+    }
+    return simulationAssetGuard(asset,false)===guard;
+  }
   function simulationContextGuard(){
     // Only inputs read by trip economics belong in this optimistic conflict
     // guard. Serializing logs, documents and UI state on every slice scaled
@@ -2385,6 +2430,7 @@
     // Build every fallible result before publishing state mutations. The outer transaction then protects all buckets atomically.
     const proofCopies=proofRows.map(row=>clone(row)),digest=buildAuditDigest(kind,aggregateRows);arr.length=0;for(const row of retained)arr.push(row);if(proofCopies.length)archiveFull(kind,proofCopies);if(digest)mergeAuditDigest(digest);return true;
   }
+  const HISTORY_COMPACTION_SCOPE=Object.freeze(['finance','companyFinance','supplierTransactions','treasury','alerts','eventLog','operations','bank','simulationKernel']);
   function compactSimulationState(force=false){
     const day=Math.floor((state.simSeconds||0)/86400);if(!force&&state.simulationKernel?.lastCompactDay===day)return;
     const detailCutoff=Math.max(0,(day-2)*86400),targets=[[state.finance?.invoices,2500,'invoices'],[state.finance?.cheques,1200,'cheques'],[state.finance?.transfers,1200,'transfers'],[state.finance?.periods,240,'taxPeriods'],[state.supplierTransactions,3000,'supplierTransactions']],tails=[[state.alerts,32],[state.eventLog,280],[state.operations?.dailyBriefs,24],[state.bank?.cashSweeps,48]];
@@ -2392,7 +2438,9 @@
     const hasHistory=ledgerHistory||targets.some(([rows,max,kind])=>{if(!Array.isArray(rows)||rows.length<=max)return false;const keep=archiveRetention(kind);for(let i=max;i<rows.length;i++)if(!keep(rows[i]))return true;return false;});if(!hasHistory&&!tails.some(([rows,max])=>Array.isArray(rows)&&rows.length>max))return;
     const tx=window.GH_TRANSACTION_CORE;if(!tx?.execute||!tx?.join)throw new Error('compaction-transaction-owner-unavailable');
     const apply=()=>{const trim=(arr,max)=>{if(Array.isArray(arr)&&arr.length>max)arr.length=max;};compactAggregatableHistory(state.finance?.journalEntries,'journalEntries',detailCutoff);for(const type of companyFinanceTypes())compactAggregatableHistory(companyBook(type)?.ledger,`companyLedger-${type}`,detailCutoff);for(const [rows,max,kind] of targets)archiveTrim(rows,max,kind);trim(state.treasury?.ledger,1200);trim(state.alerts,32);trim(state.eventLog,280);trim(state.operations?.dailyBriefs,24);trim(state.bank?.cashSweeps,48);state.simulationKernel=state.simulationKernel&&typeof state.simulationKernel==='object'?state.simulationKernel:{};state.simulationKernel.lastCompactDay=day;};
-    const result=(tx.isActive()?tx.join:tx.execute)(state,{label:'simulation-history-compaction',apply});if(!result.committed)throw new Error(result.reason||'compaction-rejected');
+    // Build 353: compaction only rewrites finance/ledger/log roots (archives live in finance.auditArchive).
+    // A scoped rollback snapshot avoids deep-cloning the whole fleet and every other store once per game day.
+    const result=(tx.isActive()?tx.join:tx.execute)(state,{label:'simulation-history-compaction',apply,scope:HISTORY_COMPACTION_SCOPE,writeRoots:HISTORY_COMPACTION_SCOPE,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true});if(!result.committed)throw new Error(result.reason||'compaction-rejected');
   }
 
   function normalizeSimulationClocks(){
@@ -2441,6 +2489,53 @@
   // the rollback snapshot removes megabytes of synchronous clone work without
   // weakening rollback for slices that can actually deliver assets.
   const SIMULATION_STEADY_TRANSACTION_SCOPE=Object.freeze(SIMULATION_TRANSACTION_SCOPE.filter(key=>key!=='realism'&&key!=='advanced'));
+  // Build 353: an ordinary slice writes only SIMULATION_ASSET_FIELDS of existing
+  // assets, always by assigning a fresh value. Its rollback therefore keeps the
+  // previous field values (the preimage) instead of deep-cloning the entire fleet
+  // on every slice, which was the dominant per-second frame stall. 'assets' stays
+  // a declared write root; boundary and delivery slices keep cloning it because
+  // their owners may add assets or write any field.
+  const SIMULATION_STEADY_ROLLBACK_SCOPE=Object.freeze(SIMULATION_STEADY_TRANSACTION_SCOPE.filter(key=>key!=='assets'));
+  if(SIMULATION_ASSET_FIELDS.length>31)throw new Error('Simulation asset undo mask supports at most 31 fields');
+  // Build 353: one alert per completed trip let a large fleet overwrite the 40-row alert list
+  // and the 400-row operations log within seconds (each row also copies both lists). Beyond a
+  // few trips in one slice, completions are summarized per company from the slice's own exact
+  // trip journal; every other alert (faults, released routes, sale stops) is kept verbatim.
+  const SIMULATION_TRIP_ALERT_LIMIT=3;
+  const isTripCompletionAlert=text=>/ أكمل (?:رحلة\.|\d+ رحلات )/.test(String(text));
+  function simulationAlertTexts(journal){
+    const alerts=Array.isArray(journal?.alerts)?journal.alerts:[];let trips=0;
+    for(const text of alerts)if(isTripCompletionAlert(text))trips++;
+    if(trips<=SIMULATION_TRIP_ALERT_LIMIT)return alerts;
+    const money=value=>typeof fmtMoney==='function'?fmtMoney(Number(value)||0):String(Math.round(Number(value)||0)),name=id=>typeof companyFinanceName==='function'?companyFinanceName(id):String(id),summaries=[];
+    for(const companyId of Object.keys(journal.tripCount||{})){
+      const count=Math.max(0,Math.floor(Number(journal.tripCount[companyId])||0));if(!count)continue;
+      summaries.push(`${name(companyId)}: اكتملت ${count.toLocaleString('en-US')} رحلة في هذه الفترة. إيراد ${money(journal.tripRevenue?.[companyId])} − وقود ${money(journal.tripFuel?.[companyId])} − صيانة ${money(journal.tripMaintenance?.[companyId])} = هامش ${money(journal.tripProfit?.[companyId])}. الرواتب الثابتة تُصرف في مسير 27.`);
+    }
+    // record-alert prepends, so operational exceptions recorded last stay on top.
+    return [...summaries,...alerts.filter(text=>!isTripCompletionAlert(text))];
+  }
+  function createSimulationAssetUndo(target){
+    const assets=target.assets,members=Array.isArray(assets)?assets.slice():null,entries=[];
+    return {
+      remember(asset){
+        const previous=new Array(SIMULATION_ASSET_FIELDS.length);let absent=0;
+        for(let index=0;index<SIMULATION_ASSET_FIELDS.length;index++){const field=SIMULATION_ASSET_FIELDS[index];if(Object.prototype.hasOwnProperty.call(asset,field))previous[index]=asset[field];else absent|=1<<index;}
+        entries.push(asset,previous,absent);
+      },
+      undo(){
+        for(let entry=entries.length-3;entry>=0;entry-=3){
+          const asset=entries[entry],previous=entries[entry+1],absent=entries[entry+2];
+          for(let index=0;index<SIMULATION_ASSET_FIELDS.length;index++){const field=SIMULATION_ASSET_FIELDS[index];if(absent&(1<<index))delete asset[field];else asset[field]=previous[index];}
+        }
+        entries.length=0;
+        // Defensive: no ordinary-slice owner changes fleet membership, but if one
+        // ever did, restore the exact array identity and members as well.
+        if(target.assets!==assets)target.assets=assets;
+        if(members&&(assets.length!==members.length||members.some((asset,index)=>assets[index]!==asset))){assets.length=members.length;for(let index=0;index<members.length;index++)assets[index]=members[index];}
+      }
+    };
+  }
 
   function createSimulationSliceJob(sliceSeconds,meta={}){
     if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core 2.2 is required before simulation starts');
@@ -2487,17 +2582,21 @@
         draft.simulationFault={code:'ASSET_SIMULATION_ISOLATED',at:simMeta.from,detail:String(error?.message||error).slice(0,180)};draft.crewBlocked=true;
         effects.alerts.push(`${draft.name||draft.id}: عُزل خلل هذا الأصل وحده وبقيت بقية الشركات والمحاكاة عاملة. أعد تعيين مساره أو نفّذ صيانته لإعادة الفحص.`);
       }
-      return {id:row.id,guard:row.guard,draft,effects};
+      return {id:row.id,guard:row.guard,parsed:row.parsed,draft,effects};
     }
+    // Same value as simulationAssetSnapshot(seed,seed.guard); the decoded guard is
+    // kept (never mutated: Worker DTOs are copies, legacy drafts are cloned) for
+    // the commit-time guard comparison.
+    function seedSnapshot(seed){const parsed=JSON.parse(seed.guard);seed.parsed=parsed;return {id:seed.id,...parsed};}
     function workerRow(seed){
-      const asset=simulationAssetSnapshot(seed,seed.guard);asset.ownerCompanyId=assetOwnerCompanyId(asset);
+      const asset=seedSnapshot(seed);asset.ownerCompanyId=assetOwnerCompanyId(asset);
       const catalogSpecs=asset.specs?null:catalogItem(asset.type,asset.catalogId)?.specs||null;
-      return {id:seed.id,guard:seed.guard,asset,route:simulationRouteForAsset(asset,routePlanCache),catalogSpecs,departureDelay:window.GH_FLEET_CORE.departureDelay(asset)};
+      return {id:seed.id,guard:seed.guard,parsed:seed.parsed,asset,route:simulationRouteForAsset(asset,routePlanCache),catalogSpecs,departureDelay:window.GH_FLEET_CORE.departureDelay(asset)};
     }
     function workerOutputReady(batch){
       const message=batch.pending.message,results=message?.records;
       if(batch.pending.status==='done'&&message?.version==='GH-SIMULATION-ASSET-WORKER-340.1.0'&&message?.coreVersion===SIMULATION_ASSET_ENGINE.VERSION&&SIMULATION_ASSET_ENGINE.validateResults(batch.rows,results)){
-        for(let index=0;index<results.length;index++)records.push({id:batch.rows[index].id,guard:batch.rows[index].guard,patch:results[index].patch,effects:results[index].effects});
+        for(let index=0;index<results.length;index++)records.push({id:batch.rows[index].id,guard:batch.rows[index].guard,parsed:batch.rows[index].parsed,patch:results[index].patch,effects:results[index].effects});
         releaseSimulationAssetBatch(batch.pending);activeWorkerBatch=null;return true;
       }
       if(batch.pending.status==='pending')return false;
@@ -2541,7 +2640,7 @@
           if(assetCursor<assetSeeds.length)return false;
         }else{
           while(assetCursor<assetSeeds.length&&count<max&&withinBudget()){
-            const seed=assetSeeds[assetCursor++],asset=simulationAssetSnapshot(seed,seed.guard);records.push(legacyRecord({id:seed.id,guard:seed.guard,asset}));count++;
+            const seed=assetSeeds[assetCursor++],asset=seedSnapshot(seed);records.push(legacyRecord({id:seed.id,guard:seed.guard,parsed:seed.parsed,asset}));count++;
           }
         }
         while(assetCursor>=assetSeeds.length&&competitorCursor<competitorSeeds.length&&count<max&&withinBudget()){
@@ -2564,14 +2663,18 @@
         // original broad scope because delivery may mutate Fleet/HR/Realism atomically.
         const deliveryWorkPending=hasBoundary?true:(window.GH_REALISM?.hasPendingDeliveries?.(state)!==false);
         const declaredWriteRoots=hasBoundary?null:(deliveryWorkPending?SIMULATION_TRANSACTION_SCOPE:SIMULATION_STEADY_TRANSACTION_SCOPE),writeAudit=globalThis.__GH_BUILD339_WRITE_AUDIT__===true;
+        // Device A/B switch: __GH_DISABLE_ASSET_PREIMAGE_ROLLBACK__=true restores the Build 352 asset clone.
+        const steadyRollback=declaredWriteRoots===SIMULATION_STEADY_TRANSACTION_SCOPE&&globalThis.__GH_DISABLE_ASSET_PREIMAGE_ROLLBACK__!==true;let assetUndo=null;
         const profileActive=window.GH_DIAGNOSTICS?.recorderIsActive?.(state)===true;
         outcome=tx.execute(state,{
             label:`simulation:${simMeta.from}->${simMeta.to}`,
             profile:profileActive,
-            profileContext:profileActive?{kind:'simulation-slice',from:Number(simMeta.from),to:Number(simMeta.to),speed:Number(speed),dayBoundary:boundary.day??null,hourBoundary:boundary.hour??null,assetCount:assetSeeds.length,plannedAssets:records.length,competitorCount:competitorSeeds.length,routeGuardCount:routeGuards.size,invoiceCount:state.finance?.invoices?.length||0,receivableCount:state.finance?.receivables?.length||0,payableCount:state.finance?.payables?.length||0,transferCount:state.finance?.transfers?.length||0,pendingDeliveryCount:state.realism?.procurement?.pendingDeliveryCount||0,hasBoundary,deliveryWorkPending,rollbackScope:declaredWriteRoots?declaredWriteRoots.length:'full-snapshot'}:null,
+            profileContext:profileActive?{kind:'simulation-slice',from:Number(simMeta.from),to:Number(simMeta.to),speed:Number(speed),dayBoundary:boundary.day??null,hourBoundary:boundary.hour??null,assetCount:assetSeeds.length,plannedAssets:records.length,competitorCount:competitorSeeds.length,routeGuardCount:routeGuards.size,invoiceCount:state.finance?.invoices?.length||0,receivableCount:state.finance?.receivables?.length||0,payableCount:state.finance?.payables?.length||0,transferCount:state.finance?.transfers?.length||0,pendingDeliveryCount:state.realism?.procurement?.pendingDeliveryCount||0,hasBoundary,deliveryWorkPending,rollbackScope:declaredWriteRoots?declaredWriteRoots.length:'full-snapshot',assetRollback:steadyRollback?'field-preimage':'snapshot'}:null,
             // Ordinary slices mutate a bounded domain. Hour/day callbacks can touch many
             // business systems, so boundaries deliberately retain full-state rollback.
-            scope:declaredWriteRoots,
+            // Ordinary slices restore assets from the field preimage below (Build 353).
+            scope:steadyRollback?SIMULATION_STEADY_ROLLBACK_SCOPE:declaredWriteRoots,
+            undo:steadyRollback?()=>assetUndo?.undo():undefined,
             // Build 339 architecture audit is opt-in and runtime-only. When enabled it
             // proves actual root writes against this declaration before we replace rollback storage.
             writeRoots:declaredWriteRoots,
@@ -2581,7 +2684,7 @@
               if(!sourceStillCurrent())return {ok:false,reason:'simulation-source-revision-conflict'};
               if(Number(state.simSeconds)!==Number(simMeta.from))return {ok:false,reason:'time-conflict'};
               commitAssets=measure('simulation.validate.asset-index',()=>new Map((state.assets||[]).map(asset=>[asset.id,asset])));
-              const assetsMatch=measure('simulation.validate.asset-guards',()=>((state.assets?.length||0)===assetSeeds.length&&commitAssets.size===assetSeeds.length&&records.length===assetSeeds.length&&!records.some(rec=>simulationAssetGuard(commitAssets.get(rec.id),false)!==rec.guard)));
+              const assetsMatch=measure('simulation.validate.asset-guards',()=>((state.assets?.length||0)===assetSeeds.length&&commitAssets.size===assetSeeds.length&&records.length===assetSeeds.length&&records.every(rec=>simulationAssetGuardMatches(commitAssets.get(rec.id),rec.guard,rec.parsed))));
               if(!assetsMatch)return {ok:false,reason:'asset-conflict'};
               const routesMatch=measure('simulation.validate.route-guards',()=>{for(const [routeId,guard] of routeGuards)if(JSON.stringify(routeTemplates[routeId]||null)!==guard)return false;return true;});
               if(!routesMatch)return {ok:false,reason:'route-conflict'};
@@ -2591,6 +2694,7 @@
             },
             apply:measure=>{
               movingAssetCount=0;idleAssetCount=0;turnaroundAssetCount=0;
+              if(steadyRollback)assetUndo=createSimulationAssetUndo(state);
               state.simSeconds=simMeta.to;
               measure('simulation.apply.asset-patches',()=>{for(const rec of records){
                 const current=commitAssets.get(rec.id);
@@ -2598,6 +2702,7 @@
                 const planned=rec.patch||rec.draft;
                 if(planned.phase==='moving')movingAssetCount++;else if(planned.phase==='idle')idleAssetCount++;else if(planned.phase==='turnaround')turnaroundAssetCount++;
                 if(current.phase!==planned.phase||current.baseFacility!==planned.baseFacility||current.routeId!==planned.routeId||current.deliveryStatus!==planned.deliveryStatus)mapStructureChanged=true;
+                if(assetUndo)assetUndo.remember(current);
                 for(const field of SIMULATION_ASSET_FIELDS){const value=planned[field];current[field]=value&&typeof value==='object'?clone(value):value;}
                 if(planned.simulationFault?.code==='ASSET_SIMULATION_ISOLATED'&&planned.simulationFault.at===simMeta.from)diag('ASSET_SIMULATION_ISOLATED',{assetId:rec.id,reason:planned.simulationFault.detail});
                 mergeSimulationEffects(journal,rec.effects);
@@ -2608,7 +2713,7 @@
               });
               measure('simulation.apply.finance-journal',()=>window.GH_FINANCE_CORE.execute({state},'apply-simulation-journal',{journal}));
               measure('simulation.apply.group-value',()=>window.GH_CORPORATE_CORE.execute({state},'adjust-group-value',{delta:Number(journal.groupValue)||0}));
-              measure('simulation.apply.alerts',()=>{for(const text of journal.alerts)window.GH_OPERATIONS_CORE.execute({state},'record-alert',{text,type:'simulation'});});
+              measure('simulation.apply.alerts',()=>{for(const text of simulationAlertTexts(journal))window.GH_OPERATIONS_CORE.execute({state},'record-alert',{text,type:'simulation'});});
               // Delivery cadence is slice-based, not day-based. This keeps procurement responsive under ×1…×4
               // while remaining inside the same atomic transaction as time and asset state.
               const assetCountBeforeDelivery=state.assets.length;
@@ -2676,9 +2781,10 @@
       if(!jobActive&&!document.hidden&&!hardResetInProgress){
         const now=performance.now();
         if(now-lastMobilityStreetHydrationMs>=1200){lastMobilityStreetHydrationMs=now;void hydrateMobilityStreetRoutes();}
-        if(now-lastRealtimeHealthMs>=REALTIME_HEALTH_MS){lastRealtimeHealthMs=now;try{const beforeEvents=state.diagnostics?.events?.length||0;window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:false,trackTransitions:true});const afterEvents=state.diagnostics?.events?.length||0;if(afterEvents!==beforeEvents)save();if(activeDrawerPanel==='diagnostics')openDrawer('diagnostics');}catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}}
+        if(now-lastRealtimeHealthMs>=REALTIME_HEALTH_MS){lastRealtimeHealthMs=now;try{const beforeEvents=state.diagnostics?.events?.length||0;window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:false,trackTransitions:true});const afterEvents=state.diagnostics?.events?.length||0;if(afterEvents!==beforeEvents)scheduleDeferredPersistence();if(activeDrawerPanel==='diagnostics')openDrawer('diagnostics');}catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}}
       }
     },
+    persistMinIntervalMs:()=>recurringSaveMinIntervalMs(),
     onPersist:()=>scheduleSimulationPersistence(),
     onAdvance:detail=>{
       const active=!!detail?.active;updateDayStepControl();if(!active)renderSimulationCalendar();
@@ -2703,7 +2809,7 @@
   window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'RUNTIME_READY',domain:'control',detail:{appVersion:APP_VERSION,simulationCore:window.GH_SIMULATION_CORE.VERSION,transactionCore:window.GH_TRANSACTION_CORE.VERSION}});
   if($('runtimeBuildBadge'))$('runtimeBuildBadge').textContent=`BUILD${RUNTIME_BUILD} · v${APP_VERSION}`;
   document.addEventListener('visibilitychange',()=>{diag(document.hidden?'WEBKIT_HIDDEN':'WEBKIT_VISIBLE');simulationEngine.setHidden(document.hidden);if(!document.hidden){requestVisualResync();updateMarkerPositions(true);}},{passive:true});
-  let savePressureNoticeShown=false;
+  let savePressureNoticeShown=false;const savePressureReasonsLogged=new Set();
   window.addEventListener('gh-persistence-status',event=>{
     const detail=event.detail||{};
     if(detail.validated)window.GH_CONTROL_PLANE.recordBridge(state,detail.ok?'SAVE_ACK':'SAVE_NACK',detail,detail.ok?'info':'critical');
@@ -2727,7 +2833,10 @@
       if(recovered.ok){replaceLiveState(recovered.state);window.GH_PERSISTENCE.acknowledgeRecovery();window.GH_CONTROL_PLANE.incident(state,{fingerprint:'NATIVE_SAVE_COMMIT_RECOVERED',severity:'warning',domain:'save',code:'NATIVE_SAVE_COMMIT_RECOVERED',title:'رُفضت مرآة الحفظ واستُعيدت آخر نسخة مكتملة',detail:String(detail.reason||detail.message||'Native save rejected'),autoManaged:true,evidence:detail});renderMap();updateKpis();if(activeDrawerPanel)openDrawer(activeDrawerPanel,activeDrawerArg);}
       else{state.speed=0;window.GH_CONTROL_PLANE.incident(state,{fingerprint:'NATIVE_SAVE_RECOVERY_FAILED',severity:'critical',domain:'save',code:'NATIVE_SAVE_RECOVERY_FAILED',title:'تعذر استرداد آخر حفظ مكتمل',detail:String(recovered.reason||detail.reason||'Recovery failed'),evidence:detail});}
     }else if(detail.ok===false&&(detail.critical||detail.rollbackError)){state.speed=0;window.GH_CONTROL_PLANE.incident(state,{fingerprint:'NATIVE_SAVE_COMMIT_FAILED',severity:'critical',domain:'save',code:'NATIVE_SAVE_COMMIT_FAILED',title:'تعذر تثبيت الحفظ واسترداده',detail:String(detail.reason||detail.message||'Native save rejected'),evidence:detail});}
-    if(detail.warning){diag('SAVE_SIZE_PRESSURE',detail,'warning');if(!savePressureNoticeShown){savePressureNoticeShown=true;notice('اقترب الحفظ من حد السعة. يُنصح بتصدير نسخة احتياطية؛ سيوقف النظام أي كتابة تتجاوز الحد الآمن.');}}
+    // Build 353: only the authoritative store warns the player. A native-mode browser mirror
+    // that outgrew WebStorage is recorded once; it never blocked a save. Diagnostics record
+    // each warning kind once per session instead of one event per recurring save.
+    if(detail.warning){const reason=String(detail.reason||'save-size-pressure');if(!savePressureReasonsLogged.has(reason)){savePressureReasonsLogged.add(reason);diag(detail.mirror===true?'SAVE_MIRROR_PRESSURE':'SAVE_SIZE_PRESSURE',detail,detail.mirror===true?'info':'warning');}if(detail.mirror!==true&&!savePressureNoticeShown){savePressureNoticeShown=true;notice('اقترب الحفظ من حد السعة. يُنصح بتصدير نسخة احتياطية؛ سيوقف النظام أي كتابة تتجاوز الحد الآمن.');}}
   });
   window.addEventListener('gh-native-recovery',()=>{state.speed=0;diag('WEBKIT_PROCESS_RECOVERY',{source:'native-save-vault'});window.GH_CONTROL_PLANE?.recordBridge?.(state,'WEBKIT_RECOVERY',{source:'native-save-vault'},'warning');pushAlert('تم استرداد آخر حفظ Native مكتمل بعد إعادة تشغيل محرك WebKit. المحاكاة متوقفة مؤقتًا للمراجعة.');save();});
   window.addEventListener('gh-update-lifecycle',event=>{const detail=event.detail||{},phase=String(detail.phase||'LIFECYCLE'),severity=['BOOT_CONFIRM_FAILED','FAILED'].includes(phase)?'critical':['ROLLBACK_STARTED','ROLLED_BACK'].includes(phase)?'warning':'info';diag(`UPDATE_${phase}`,detail,severity);window.GH_CONTROL_PLANE?.recordBridge?.(state,`UPDATE_${phase}`,detail,severity);if(severity==='critical')window.GH_CONTROL_PLANE?.incident?.(state,{fingerprint:`UPDATE:${phase}`,severity:'critical',domain:'update',code:`UPDATE_${phase}`,title:'خلل في دورة التحديث',detail:String(detail.message||detail.reason||phase||'Update lifecycle failure'),evidence:detail});save();});
@@ -3810,9 +3919,9 @@
     const release=beginButtonOperation(button,'جارٍ شراء وتسليم السيارات…');if(!release)return null;
     try{const result=(await runAuthorizedDomainCommand('mobility','buy-fleet',{quantity,centerId,classId})).result;if(!result)throw new Error('محرك Mobility غير متاح');pushAlert(`تم شراء وتسليم ${quantity} سيارة إلى ${window.GH_MOBILITY_CORE.centerMeta(state,centerId)?.city||centerId}، وتعيين ${quantity} سائق برواتب ثابتة تلقائيًا.`);updateKpis();renderMap();openDrawer('assets','mobility');return result;}catch(error){notice(`ألغي شراء سيارات Mobility بالكامل: ${error.message}`);return null;}finally{release();}
   }
-  function focusOwnedAsset(id){const asset=state.assets.find(row=>row.id===id);if(!asset)return;selectedMobilityId=null;selectedAssetId=id;setMapFilterSelection(assetOwnerCompanyId(asset)||'all');save();renderMap();panMapTo(assetPosition(asset),7);closeDrawer();showAsset(id);}
-  function focusMobilityAsset(id){const vehicle=window.GH_MOBILITY_CORE?.findVehicle?.(state,id),position=window.GH_MOBILITY_CORE?.vehiclePosition?.(state,id);if(!vehicle||!position)return;selectedAssetId=null;selectedMobilityId=id;setMapFilterSelection('mobility');save();renderMap();panMapTo(position,13);closeDrawer();}
-  function focusFacility(id){const facility=findFacility(id);if(!facility?.coords)return;selectedAssetId=null;selectedMobilityId=null;selectedFacilityId=facility.id;setMapFilterSelection('facility');save();renderMap();panMapTo(facility.coords,9);closeDrawer();}
+  function focusOwnedAsset(id){const asset=state.assets.find(row=>row.id===id);if(!asset)return;selectedMobilityId=null;selectedAssetId=id;setMapFilterSelection(assetOwnerCompanyId(asset)||'all');scheduleDeferredPersistence();renderMap();panMapTo(assetPosition(asset),7);closeDrawer();showAsset(id);}
+  function focusMobilityAsset(id){const vehicle=window.GH_MOBILITY_CORE?.findVehicle?.(state,id),position=window.GH_MOBILITY_CORE?.vehiclePosition?.(state,id);if(!vehicle||!position)return;selectedAssetId=null;selectedMobilityId=id;setMapFilterSelection('mobility');scheduleDeferredPersistence();renderMap();panMapTo(position,13);closeDrawer();}
+  function focusFacility(id){const facility=findFacility(id);if(!facility?.coords)return;selectedAssetId=null;selectedMobilityId=null;selectedFacilityId=facility.id;setMapFilterSelection('facility');scheduleDeferredPersistence();renderMap();panMapTo(facility.coords,9);closeDrawer();}
   async function serviceMobilityAsset(id){try{const result=(await runAuthorizedDomainCommand('mobility','service-vehicle',{id})).result;if(!result)throw new Error('سيارة غير موجودة');pushAlert(`اكتملت صيانة وشحن ${result.name} وأصبحت الحالة والبطارية 100%.`);updateKpis();openDrawer('mobilityAsset',id);return true;}catch(error){notice(`تعذر صيانة السيارة: ${error.message}`);return false;}}
   async function sellMobilityAsset(id){const vehicle=window.GH_MOBILITY_CORE?.findVehicle?.(state,id);if(!vehicle)return false;if(!ask(`بيع ${vehicle.name}؟\nلن يتم البيع أثناء الرحلة.`,'high'))return false;try{const result=(await runAuthorizedDomainCommand('mobility','sell-vehicle',{id})).result;if(!result?.vehicle)throw new Error('لم يرجع محرك Mobility إثبات البيع');pushAlert(`تم بيع ${result.vehicle.name} بقيمة ${fmtMoney(result.proceeds)} وإنهاء وظيفة السائق المرتبطة بها.`);if(selectedMobilityId===id)selectedMobilityId=null;updateKpis();renderMap();openDrawer('assets','mobility');return true;}catch(error){notice(`تعذر بيع السيارة: ${error.message}`);return false;}}
   async function buyAsset(type,tab,id,mode='cash',qty=1,baseId=null,silent=false,requestRef=null,requestedOwnerCompanyId=null){
@@ -4002,7 +4111,7 @@
     return requestCalendarAdvance(calendarAdvanceTargetDays(1),'calendar-next-day','بيوم واحد');
   }
   let resumeSpeed=startupSignatureResumeSpeed>0?startupSignatureResumeSpeed:(state.speed>0?state.speed:1);
-  function setSpeed(value,options={}){if(state.speed>0)resumeSpeed=state.speed;const next=Number(value);simulationEngine.cancelAdvance?.('user-speed-change');state.speed=SAFE_SPEED_VALUES.includes(next)?next:1;simulationEngine.reset(performance.now(),'user-speed-change');document.querySelectorAll('#speedMenu button[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===state.speed));$('speedLabel').textContent=SPEED_LABEL_BY_LEVEL[state.speed];$('speedToggle').querySelector('span').textContent=state.speed===0?'▶':'Ⅱ';$('speedToggle').setAttribute('aria-pressed',String(state.speed===0));updateDayStepControl();if(options.persist!==false)save();}
+  function setSpeed(value,options={}){if(state.speed>0)resumeSpeed=state.speed;const next=Number(value);simulationEngine.cancelAdvance?.('user-speed-change');state.speed=SAFE_SPEED_VALUES.includes(next)?next:1;simulationEngine.reset(performance.now(),'user-speed-change');document.querySelectorAll('#speedMenu button[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===state.speed));$('speedLabel').textContent=SPEED_LABEL_BY_LEVEL[state.speed];$('speedToggle').querySelector('span').textContent=state.speed===0?'▶':'Ⅱ';$('speedToggle').setAttribute('aria-pressed',String(state.speed===0));updateDayStepControl();if(options.persist!==false)scheduleDeferredPersistence();}
 
   function openWorld(){closeDrawer();closeGod();closeMapPopovers();$('assetCard').classList.add('hidden');setActiveNav('map');updateMapStatus();}
   document.querySelectorAll('[data-panel]').forEach(btn=>btn.addEventListener('click',()=>openDrawer(btn.dataset.panel)));
@@ -4029,12 +4138,12 @@
   $('simCalendarGo')?.addEventListener('click',e=>{e.stopPropagation();const selected=calendarDateFromKey(calendarSelectedKey);if(selected&&requestCalendarAdvance(calendarDayStartSeconds(selected),'calendar-date-picker',`إلى ${calendarSelectedKey}`))toggleSimulationCalendar(false);});
   $('fitWorldBtn').addEventListener('click',()=>{if(map)map.setView([22,28],3);closeMapPopovers();});
   document.addEventListener('click',e=>{if(!e.target.closest('.map-popover')&&!e.target.closest('.map-fab')&&!e.target.closest('.speed-dock'))closeMapPopovers();if(!e.target.closest('#simClockChip')&&!e.target.closest('#simCalendarPanel'))toggleSimulationCalendar(false);});
-  $('filterPopover').addEventListener('click',e=>{const btn=e.target.closest?.('.filter-btn');if(!btn||!$('filterPopover').contains(btn))return;e.stopPropagation();const camera=map?{center:map.getCenter(),zoom:map.getZoom()}:null;setMapFilterSelection(btn.dataset.filter);document.querySelectorAll('.filter-btn').forEach(b=>{const selected=b===btn;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});save();renderMap();if(camera&&map){const current=map.getCenter();if(map.getZoom()!==camera.zoom||Math.abs(current.lat-camera.center.lat)>1e-9||Math.abs(current.lng-camera.center.lng)>1e-9)map.setView(camera.center,camera.zoom,{animate:false});}});
-  $('competitorToggle').addEventListener('change',e=>{state.showCompetitors=e.target.checked;const next=clone(currentMapFilter());next.market.competitors=state.showCompetitors;state.mapFilterState=clone(MAP_FEATURE_CORE.normalizeFilterState(next,{state,companyPlatform:COMPANY_PLATFORM}));save();renderMap();});
+  $('filterPopover').addEventListener('click',e=>{const btn=e.target.closest?.('.filter-btn');if(!btn||!$('filterPopover').contains(btn))return;e.stopPropagation();const camera=map?{center:map.getCenter(),zoom:map.getZoom()}:null;setMapFilterSelection(btn.dataset.filter);document.querySelectorAll('.filter-btn').forEach(b=>{const selected=b===btn;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});scheduleDeferredPersistence();renderMap();if(camera&&map){const current=map.getCenter();if(map.getZoom()!==camera.zoom||Math.abs(current.lat-camera.center.lat)>1e-9||Math.abs(current.lng-camera.center.lng)>1e-9)map.setView(camera.center,camera.zoom,{animate:false});}});
+  $('competitorToggle').addEventListener('change',e=>{state.showCompetitors=e.target.checked;const next=clone(currentMapFilter());next.market.competitors=state.showCompetitors;state.mapFilterState=clone(MAP_FEATURE_CORE.normalizeFilterState(next,{state,companyPlatform:COMPANY_PLATFORM}));scheduleDeferredPersistence();renderMap();});
   document.querySelectorAll('.map-popover button,.map-popover input,.speed-menu button').forEach(el=>el.addEventListener('click',e=>e.stopPropagation()));
   window.addEventListener('resize',()=>requestAnimationFrame(refreshOpenMapPopoverPositions),{passive:true});
   window.addEventListener('orientationchange',()=>setTimeout(refreshOpenMapPopoverPositions,80),{passive:true});
-  document.querySelectorAll('#layerMenu button').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setMapLayer(btn.dataset.layer);save();/* keep menu open for consecutive choices */}));
+  document.querySelectorAll('#layerMenu button').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setMapLayer(btn.dataset.layer);scheduleDeferredPersistence();/* keep menu open for consecutive choices */}));
   document.querySelectorAll('#speedMenu button[data-speed]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setSpeed(btn.dataset.speed);/* keep menu open */}));
 
   function founderInvestmentDraft(draft,dispatch,recordAlert,type,amount,note='استثمار المؤسس عبر Good Mode'){

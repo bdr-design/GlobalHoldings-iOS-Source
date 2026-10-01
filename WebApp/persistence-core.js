@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
   const VERSION='3.0.0', SLOT_FORMAT='global-holdings-save-slot-v2', EXPORT_FORMAT='global-holdings-save';
-  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeHardBytes:30*1024*1024,ackTimeoutMs:10000,pending:16});
+  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeSoftBytes:22.5*1024*1024,nativeHardBytes:30*1024*1024,ackTimeoutMs:10000,pending:16});
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   // Storage encoding (Build 350). Large homogeneous collections are persisted as shape + positional-cell rows with an
@@ -31,31 +31,36 @@
     const v=(full?schema?.validate?.(state):schema?.validate?.(state,{trustVerified:true}))||{ok:false,errors:['save-schema-unavailable']};
     if(!v.ok)throw new Error(`invalid-save:${(v.errors||[]).join(',')}`);
   }
-  function bytes(text){if(globalThis.TextEncoder)return new TextEncoder().encode(text).byteLength;let n=0;for(const c of text){const p=c.codePointAt(0);n+=p<128?1:p<2048?2:p<65536?3:4;}return n;}
-  function inspectJSON(json,key='',options={}){
+  // Build 353: one save used to UTF-8 encode the same multi-megabyte JSON up to three times (native size check,
+  // browser cache size check, SHA-256). The encoded bytes are now produced once per save and shared; values are
+  // identical because the same TextEncoder output is measured and hashed.
+  function utf8(text){return globalThis.TextEncoder?new TextEncoder().encode(text):null;}
+  function bytes(text,encoded=null){if(encoded)return encoded.byteLength;if(globalThis.TextEncoder)return new TextEncoder().encode(text).byteLength;let n=0;for(const c of text){const p=c.codePointAt(0);n+=p<128?1:p<2048?2:p<65536?3:4;}return n;}
+  function inspectJSON(json,key='',options={},encoded=null){
     if(typeof json!=='string')throw new Error('serialization-failed');
-    const utf8Bytes=bytes(json),storageBytes=json.length*2,hard=Math.min(PERSISTENCE_LIMITS.hardBytes,options.hardBytes||PERSISTENCE_LIMITS.hardBytes);
+    const utf8Bytes=bytes(json,encoded),storageBytes=json.length*2,hard=Math.min(PERSISTENCE_LIMITS.hardBytes,options.hardBytes||PERSISTENCE_LIMITS.hardBytes);
     let totalStorageBytes=storageBytes+String(key).length*2;
     for(let i=0;i<(localStorage.length||0);i++){const k=localStorage.key(i);if(k!==key)totalStorageBytes+=(String(k).length+(localStorage.getItem(k)||'').length)*2;}
     const warning=utf8Bytes>=Math.min(PERSISTENCE_LIMITS.softBytes,options.softBytes||PERSISTENCE_LIMITS.softBytes)||storageBytes>=PERSISTENCE_LIMITS.softBytes;
     if(utf8Bytes>hard||storageBytes>hard||totalStorageBytes>PERSISTENCE_LIMITS.storageBytes){const e=new Error('save-size-hard-limit');e.measurement={utf8Bytes,storageBytes,totalStorageBytes};throw e;}
     return {utf8Bytes,storageBytes,totalStorageBytes,warning};
   }
-  function inspectNativeJSON(json){
+  function inspectNativeJSON(json,encoded=null){
     if(typeof json!=='string')throw new Error('serialization-failed');
-    const utf8Bytes=bytes(json),storageBytes=json.length*2,warning=utf8Bytes>=PERSISTENCE_LIMITS.softBytes;
+    const utf8Bytes=bytes(json,encoded),storageBytes=json.length*2,warning=utf8Bytes>=PERSISTENCE_LIMITS.softBytes;
     if(utf8Bytes>PERSISTENCE_LIMITS.nativeHardBytes){const e=new Error('native-save-size-hard-limit');e.measurement={utf8Bytes,storageBytes};throw e;}
     return {utf8Bytes,storageBytes,totalStorageBytes:null,warning};
   }
   function restoreRaw(key,raw){if(raw===null)localStorage.removeItem(key);else localStorage.setItem(key,raw);if(localStorage.getItem(key)!==raw)throw new Error('save-rollback-verification');}
-  function writeJSON(key,json,options={}){
+  function writeJSON(key,json,options={},encoded=null){
     const start=clock();let previous=null,attempted=false;
     try{
-      const measurement=inspectJSON(json,key,options);previous=localStorage.getItem(key);attempted=true;
+      const measurement=inspectJSON(json,key,options,encoded);previous=localStorage.getItem(key);attempted=true;
       localStorage.setItem(key,json);
       if(localStorage.getItem(key)!==json)throw new Error('save-readback-mismatch');
       telemetry({operation:'write',ok:true,...measurement,durationMs:clock()-start});
-      if(measurement.warning)status({ok:true,warning:true,reason:'save-size-soft-warning',...measurement});
+      // A native-mode browser mirror is redundancy only; its 2 MB WebStorage limit is not the player's save limit.
+      if(measurement.warning)status({ok:true,warning:true,reason:'save-size-soft-warning',...measurement,mirror:options.mirror===true});
       return {ok:true,json,previous,...measurement};
     }catch(error){
       let rollbackError=null;
@@ -76,11 +81,11 @@
     else{const e=new Error(detail.message||'native-save-nack');e.code='NATIVE_NACK';row.reject(e);}
     const statusDetail={...detail};delete statusDetail.nativeVaultCommitMs;status({ok:detail.success,validated:true,...statusDetail});return true;
   }
-  function saveHash(json){
+  function saveHash(json,encoded=null){
     const text=String(json),owner=globalThis.GH_CONTROL_PLANE?.sha256;if(!owner)throw new Error('save-hash-owner-unavailable');
     const subtle=globalThis.crypto?.subtle;
     if(text.length>=262144&&subtle&&typeof TextEncoder!=='undefined'){
-      try{return subtle.digest('SHA-256',new TextEncoder().encode(text)).then(digest=>[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join(''),()=>owner(text));}catch(_error){}
+      try{return subtle.digest('SHA-256',encoded||new TextEncoder().encode(text)).then(digest=>[...new Uint8Array(digest)].map(value=>value.toString(16).padStart(2,'0')).join(''),()=>owner(text));}catch(_error){}
     }
     return owner(text);
   }
@@ -103,7 +108,7 @@
         catch(e){row.bridgeDispatchMs=Math.max(0,clock()-dispatchStart);clearTimeout(timer);pending.delete(envelope.requestId);reject(e);}
       });
     };
-    try{const hashed=saveHash(json);return hashed&&typeof hashed.then==='function'?hashed.then(post):post(hashed);}catch(error){return Promise.reject(error);}
+    try{const hashed=saveHash(json,options.encoded||null);return hashed&&typeof hashed.then==='function'?hashed.then(post):post(hashed);}catch(error){return Promise.reject(error);}
   }
   globalThis.addEventListener?.('gh-native-save-ack',e=>receiveAck(e.detail));
   globalThis.addEventListener?.('gh-native-reset-ack',e=>receiveAck(e.detail));
@@ -145,17 +150,18 @@
     if(recoveryRequired)return {ok:false,reason:'memory-recovery-required'};
     const nativeBridge=!!bridgeFor('commitSave'),previousRevision=Math.max(0,Math.floor(Number(state?.saveRevision)||0)),nextRevision=previousRevision+1,syncStart=clock();
     const timing={kind:'ordinary-save',saveRevision:nextRevision,nativeBridge,schemaMs:0,stringifyMs:0,measurementMs:0,browserCacheMs:0,totalSyncMs:0,utf8Bytes:null,cacheReason:null,ok:false};
-    let json,measurement,resetEpoch,cache=null;
+    let json,measurement,resetEpoch,cache=null,encoded=null;
     try{
       if(!state||typeof state!=='object')throw new Error('state-required');
       state.saveRevision=nextRevision;
       let stageStart=clock();assertRecurringState(state);timing.schemaMs=Math.max(0,clock()-stageStart);
       stageStart=clock();json=serializeState(state);timing.stringifyMs=Math.max(0,clock()-stageStart);resetEpoch=Number(state.resetEpoch)||0;
-      stageStart=clock();measurement=nativeBridge?inspectNativeJSON(json):inspectJSON(json,storageKey,options);timing.measurementMs=Math.max(0,clock()-stageStart);timing.utf8Bytes=measurement.utf8Bytes;
+      stageStart=clock();encoded=nativeBridge?utf8(json):null;measurement=nativeBridge?inspectNativeJSON(json,encoded):inspectJSON(json,storageKey,options);timing.measurementMs=Math.max(0,clock()-stageStart);timing.utf8Bytes=measurement.utf8Bytes;
       stageStart=clock();
       if(nativeBridge){
-        cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,options);
-        if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,utf8Bytes:measurement.utf8Bytes});
+        cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
+        if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,utf8Bytes:measurement.utf8Bytes,mirror:true});
+        if(measurement.utf8Bytes>=PERSISTENCE_LIMITS.nativeSoftBytes)status({ok:true,warning:true,reason:'native-save-size-soft-warning',utf8Bytes:measurement.utf8Bytes,nativeHardBytes:PERSISTENCE_LIMITS.nativeHardBytes});
       }else{
         cache=writeJSON(storageKey,json,options);if(!cache.ok)throw Object.assign(new Error(cache.reason),{measurement:cache});
       }
@@ -164,7 +170,7 @@
     const out={ok:true,json,...measurement,browserCache:cache?.ok!==false,cacheReason:cache?.ok===false?cache.reason:null,previous:cache?.previous??null,saveRevision:nextRevision};
     if(!nativeBridge){ordinaryError=null;return out;}
     const nativeMetadata={appVersion,...options,saveRevision:nextRevision,resetEpoch};
-    const work=Promise.resolve().then(()=>{if(recoveryRequired)throw new Error('native-recovery-required');return requestNative('commitSave',json,nativeMetadata);});
+    const work=Promise.resolve().then(()=>{if(recoveryRequired)throw new Error('native-recovery-required');return requestNative('commitSave',json,{...nativeMetadata,encoded});});
     ordinaryInFlight=work.then(ack=>{ordinaryError=null;return ack;},error=>{
       ordinaryError=error;
       if(cache?.ok)try{if(localStorage.getItem(storageKey)===json)restoreRaw(storageKey,cache.previous);}catch(e){error.rollbackError=String(e.message||e);}
@@ -201,9 +207,9 @@
     try{
       await waitOrdinaryIdle({supersedeDirty:true});assertRecurringState(state);const json=serializeState(state),nativeBridge=!!bridgeFor('commitSave');
       if(nativeBridge){
-        const measurement=inspectNativeJSON(json),ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0});ordinaryError=null;
-        const cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,options);
-        if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,durable:true,utf8Bytes:measurement.utf8Bytes});
+        const encoded=utf8(json),measurement=inspectNativeJSON(json,encoded),ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,encoded});ordinaryError=null;
+        const cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
+        if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,durable:true,utf8Bytes:measurement.utf8Bytes,mirror:true});
         telemetry({operation:'durable-commit',ok:true,utf8Bytes:measurement.utf8Bytes,native:true,browserCache:cache.ok,durationMs:0});status({ok:true,validated:true,durable:true,native:true,saveRevision:Number(state.saveRevision)||0});return {ok:true,json,...measurement,ack,durable:true,browserCache:cache.ok,cacheReason:cache.ok?null:cache.reason};
       }
       written=writeJSON(storageKey,json,options);if(!written.ok)throw new Error(written.reason);
@@ -233,13 +239,13 @@
       nativeCommitted=nativeBridge;
       const out=(nativeBridge&&(nativeMeasurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||nativeMeasurement.storageBytes>PERSISTENCE_LIMITS.hardBytes))
         ? {ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}
-        : writeJSON(storageKey,json);
+        : writeJSON(storageKey,json,{mirror:nativeBridge});
       if(out.ok)browserTouched=true;
       else if(!nativeBridge){const writeError=new Error(out.reason);writeError.rollbackError=out.rollbackError;throw writeError;}
-      else status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:out.reason,reset:true});
+      else status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:out.reason,reset:true,mirror:true});
       if(resetMarkerKey){
         try{localStorage.setItem(resetMarkerKey,String(next.resetEpoch||0));if(localStorage.getItem(resetMarkerKey)!==String(next.resetEpoch||0))throw new Error('reset-marker-verification');}
-        catch(markerError){if(!nativeBridge)throw markerError;status({ok:true,warning:true,reason:'reset-marker-cache-skipped',message:String(markerError.message||markerError)});}
+        catch(markerError){if(!nativeBridge)throw markerError;status({ok:true,warning:true,reason:'reset-marker-cache-skipped',message:String(markerError.message||markerError),mirror:true});}
       }
       if(apply)apply(next);
       for(const key of cleanupKeys)if(key!==storageKey&&key!==resetMarkerKey)try{localStorage.removeItem(key);}catch{}

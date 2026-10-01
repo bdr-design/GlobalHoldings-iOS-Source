@@ -1,15 +1,16 @@
 {
   "approved": false,
-  "source_tree_sha256": "01803006c17b22cf773ac3b190f9c4e1f4eaebe669d3cb36a0100fcedf69c313",
+  "source_tree_sha256": "0137fc325834f9d69af56b605efe3dbfc6830e78e78529e53dbec37c5371bc54",
   "version": "3.0.0",
-  "build": 352,
+  "build": 353,
   "save_schema": "2.0.0",
   "blocking_issues": [
-    "Build 352 has no direct-source CI run, no WebKit/WKWebView run and no manual-device profile; the latest_direct_source_ci entries below describe Build 340 only.",
+    "Build 353 has no direct-source CI run, no WebKit/WKWebView run and no manual-device profile; the latest_direct_source_ci entries below describe Build 340 only.",
     "The current local source revision must be committed to the direct-Git branch and pass the full CI verification before it is treated as a verified candidate.",
     "Physical iPhone pressure testing at 4,300 and 20,000 full assets with routes, purchase, delivery, sale, finance, save/restore and long-session interaction is required.",
     "90Hz/60Hz frame-time, touch-latency, task-at-least-50ms, memory and thermal targets have not been demonstrated on target iPhones.",
     "Plan validation and state apply, financial close writes, authorized per-asset documents, route commit, Leaflet DOM construction, Full Snapshot capture and native persistence remain in main-thread owners.",
+    "Build 353 ordinary simulation slices restore assets from a writer-owned field preimage instead of a deep fleet clone, and validate asset guards with an exact parsed-guard comparison; hour/day boundary and delivery slices keep Full Snapshot/broad rollback. This needs physical-iPhone A/B confirmation (window.__GH_DISABLE_ASSET_PREIMAGE_ROLLBACK__=true restores the Build 352 path).",
     "Save Schema 2.0.0, Full Snapshot rollback and disabled live field journal remain required invariants.",
     "Production approval remains closed."
   ],
