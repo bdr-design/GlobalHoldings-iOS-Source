@@ -35,7 +35,8 @@
   // Hot fields own a record slot. Kinds: pattern (interned prefix + uint32
   // number), ref (interned value), f64, f32x (exactly representable in
   // float32), i32, bool. A value that does not fit its kind is kept verbatim
-  // in extras. Order is the materialized key order after the profile fields.
+  // in extras. Materialization always uses one stable physical field order;
+  // JSON object key insertion order is presentation detail, not save state.
   const HOT_FIELDS=Object.freeze([
     ['id','pattern'],['name','pattern'],['routeId','ref'],['baseFacility','ref'],['phase','ref'],
     ['progress','f64'],['fuel','f64'],['condition','f64'],['dwellRemaining','f64'],['reverse','bool'],
@@ -84,7 +85,7 @@
   function rt(store){
     let r=runtime.get(store);
     if(!r||r.values!==store.values||r.views.buffer!==store.rows){
-      r={values:store.values,views:makeViews(store.rows),index:new Map(),indexedTo:0,free:[],ids:null,profileGroups:null,leaseGroups:null,payrollGroups:null,orderIds:new Uint32Array(store.capacity),orderPatterns:[],orderIndex:new Map(),
+      r={values:store.values,views:makeViews(store.rows),index:new Map(),indexedTo:0,free:[],ids:null,profileGroups:null,leaseGroups:null,payrollGroups:null,
         dirty:[],dirtyFrom:store.revision,dirtyLost:false,dirtyColumns:null,suppressDirtyLog:false,
         dirtyChunks:new Uint8Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),allDirty:true,journal:null,epoch:++epochCounter,valuesGeneration:++epochCounter};
       runtime.set(store,r);
@@ -145,7 +146,7 @@
   function resize(store,cap){
     const next=new ArrayBuffer(cap*STRIDE);new Uint8Array(next).set(new Uint8Array(store.rows,0,Math.min(store.length,cap)*STRIDE));
     store.rows=next;store.capacity=cap;
-    const r=runtime.get(store);if(r){r.views=makeViews(next);if(r.orderIds.length<cap){const orderIds=new Uint32Array(cap);orderIds.set(r.orderIds);r.orderIds=orderIds;}}
+    const r=runtime.get(store);if(r)r.views=makeViews(next);
     return r;
   }
   function ensureCapacity(store,needed){
@@ -173,10 +174,10 @@
   // from the free list are returned to it on rollback, values appended are
   // removed from the index, and id lookups changed inside the transaction are
   // repaired row by row.
-  function newLog(capacity){return {count:0,capacity,rows:new Int32Array(capacity),words:new Uint32Array(capacity*WORDS_PER_ROW),orders:new Uint32Array(capacity),extras:new Array(capacity)};}
+  function newLog(capacity){return {count:0,capacity,rows:new Int32Array(capacity),words:new Uint32Array(capacity*WORDS_PER_ROW),extras:new Array(capacity)};}
   function growLog(log){
-    const capacity=Math.max(64,log.capacity*2),rows=new Int32Array(capacity),words=new Uint32Array(capacity*WORDS_PER_ROW),orders=new Uint32Array(capacity);
-    rows.set(log.rows);words.set(log.words);orders.set(log.orders);log.rows=rows;log.words=words;log.orders=orders;log.extras.length=capacity;log.capacity=capacity;
+    const capacity=Math.max(64,log.capacity*2),rows=new Int32Array(capacity),words=new Uint32Array(capacity*WORDS_PER_ROW);
+    rows.set(log.rows);words.set(log.words);log.rows=rows;log.words=words;log.extras.length=capacity;log.capacity=capacity;
   }
   function beginJournal(store){
     const r=rt(store);if(r.journal&&r.journal.active)return r.journal;
@@ -199,7 +200,6 @@
     journal.seen[index]=1;const log=journal.log;if(log.count===log.capacity)growLog(log);
     const slotIndex=log.count++,words=log.words,from=r.views.u32,src=index*WORDS_PER_ROW,dst=slotIndex*WORDS_PER_ROW;
     log.rows[slotIndex]=index;
-    log.orders[slotIndex]=r.orderIds[index]||0;
     for(let k=0;k<WORDS_PER_ROW;k++)words[dst+k]=from[src+k];
     log.extras[slotIndex]=(r.views.u8[index*STRIDE+O.flags]&EXTRAS)&&own(store.extras,index)?store.extras[index]:undefined;
   }
@@ -270,12 +270,11 @@
     for(let slotIndex=0;slotIndex<log.count;slotIndex++){
       const index=log.rows[slotIndex],src=slotIndex*WORDS_PER_ROW,dst=index*WORDS_PER_ROW;
       for(let k=0;k<WORDS_PER_ROW;k++)words[dst+k]=log.words[src+k];
-      r.orderIds[index]=log.orders[slotIndex];
       for(const s of snaps)if(slotIndex>=s.logCount&&index<s.copy.length)s.target[index*s.per+s.k]=s.copy[index];
       const extras=log.extras[slotIndex];if(extras===undefined)delete store.extras[index];else store.extras[index]=extras;
       markDirty(r,index);logDirty(r,index);
     }
-    for(let index=journal.length;index<store.length;index++){delete store.extras[index];r.orderIds[index]=0;v.u8[index*STRIDE+O.flags]=0;markDirty(r,index);logDirty(r,index);}
+    for(let index=journal.length;index<store.length;index++){delete store.extras[index];v.u8[index*STRIDE+O.flags]=0;markDirty(r,index);logDirty(r,index);}
     const structureChanged=store.structure!==journal.structure;
     store.length=journal.length;store.live=journal.live;
     // Counters only grow: a value seen during the transaction is never reused.
@@ -344,26 +343,6 @@
     const extras=extrasOf(store,index);if(extras)for(const key of Object.keys(extras))push(key);
     return out;
   }
-  function orderPattern(store,index){
-    const r=rt(store),ref=r.orderIds[index]||0;return ref>0?r.orderPatterns[ref-1]||null:null;
-  }
-  function internOrder(store,keys){
-    const r=rt(store),signature=JSON.stringify(keys);let ref=r.orderIndex.get(signature);if(ref!==undefined)return ref;
-    ref=r.orderPatterns.length+1;r.orderPatterns.push(keys.slice());r.orderIndex.set(signature,ref);return ref;
-  }
-  function orderKeys(store,index,keys){
-    const pattern=orderPattern(store,index);if(!pattern)return keys;
-    const remaining=new Set(keys),ordered=[];for(const key of pattern)if(remaining.delete(key))ordered.push(key);
-    for(const key of keys)if(remaining.delete(key))ordered.push(key);
-    return ordered;
-  }
-  function rememberFieldOrder(store,index,field,value){
-    const r=rt(store),stored=orderPattern(store,index),order=stored?stored.slice():physicalKeys(store,index);
-    const position=order.indexOf(field);let changed=false;
-    if(value===undefined){if(position>=0){order.splice(position,1);changed=true;}}
-    else if(position<0){order.push(field);changed=true;}
-    if(!stored||changed)r.orderIds[index]=internOrder(store,order);
-  }
   function setExtra(store,index,field,value){
     const current=extrasOf(store,index),next={...(current||{})},u8=views(store).u8;
     if(value===undefined)delete next[field];else defineData(next,field,jsonCopy(value));
@@ -375,7 +354,6 @@
   function set(store,index,field,value){
     checkRow(store,index);remember(store,index);
     const idBefore=field==='id'?idAt(store,index):undefined;
-    rememberFieldOrder(store,index,field,value);
     const hot=HOT_KIND.get(field)||null,extras=extrasOf(store,index);
     if(extras&&own(extras,field))setExtra(store,index,field,undefined);
     if(hot){if(value===undefined)clearHot(store,index,field);else if(hotFits(hot,value))writeHot(store,index,field,hot,value);else{clearHot(store,index,field);setExtra(store,index,field,value);}}
@@ -428,11 +406,10 @@
 
   // ------------------------------------------------------ ingest/materialize ---
   function ingestRow(store,index,asset,at){
-    const profile={},binding={},extras={},fieldOrder=[];
+    const profile={},binding={},extras={};
     {const v=views(store),w=index*WORDS_PER_ROW;for(let k=0;k<WORDS_PER_ROW;k++)v.u32[w+k]=0;v.f64[index*F64_PER_ROW+O.at]=Number.isFinite(at)?at:0;v.u8[index*STRIDE+O.flags]=ALIVE;}
     for(const key of Object.keys(asset)){
       const value=asset[key];if(value===undefined||typeof value==='function'||typeof value==='symbol')continue;
-      fieldOrder.push(key);
       const hot=HOT_KIND.get(key)||null;
       if(hot){if(hotFits(hot,value))writeHot(store,index,key,hot,value);else defineData(extras,key,jsonCopy(value));}
       else if(PROFILE_SET.has(key))defineData(profile,key,value);
@@ -441,7 +418,6 @@
     }
     const profileRef=intern(store,profile),bindingRef=intern(store,binding),v=views(store),w=index*WORDS_PER_ROW;
     v.u32[w+O.profile]=profileRef;v.u32[w+O.binding]=bindingRef;invalidateProfiles(store);
-    rt(store).orderIds[index]=internOrder(store,fieldOrder);
     if(Object.keys(extras).length){store.extras[index]=extras;v.u8[index*STRIDE+O.flags]|=EXTRAS;}else delete store.extras[index];
   }
   function add(store,asset,{at=0}={}){
@@ -472,11 +448,11 @@
     for(let i=1;i<HOT_FIELDS.length;i++){if(present&(1<<i)){const [field,kind]=HOT_FIELDS[i];out[field]=readHot(store,index,field,kind);}}
     for(const key of Object.keys(binding))defineData(out,key,copyValue(binding[key]));
     const extras=extrasOf(store,index);if(extras)for(const key of Object.keys(extras))defineData(out,key,copyValue(extras[key]));
-    const result={};for(const key of orderKeys(store,index,Object.keys(out)))defineData(result,key,out[key]);return result;
+    const result={};for(const key of Object.keys(out))defineData(result,key,out[key]);return result;
   }
   // Own keys of the materialized asset, in materialize order, without building it.
   function keys(store,index){
-    return orderKeys(store,index,physicalKeys(store,index));
+    return physicalKeys(store,index);
   }
   function fromAssets(assets,{at=0}={}){
     const list=Array.isArray(assets)?assets:[],store=create(list.length);
@@ -565,9 +541,9 @@
     while(read<length){
       while(read<length&&!(u8[read*STRIDE+O.flags]&ALIVE))dead.push(read++);
       const start=read;while(read<length&&(u8[read*STRIDE+O.flags]&ALIVE))read++;
-      if(read>start){if(write!==start){u8.copyWithin(write*STRIDE,start*STRIDE,read*STRIDE);r.orderIds.copyWithin(write,start,read);}write+=read-start;}
+      if(read>start){if(write!==start)u8.copyWithin(write*STRIDE,start*STRIDE,read*STRIDE);write+=read-start;}
     }
-    u8.fill(0,write*STRIDE,length*STRIDE);r.orderIds.fill(0,write,length);
+    u8.fill(0,write*STRIDE,length*STRIDE);
     const extras={};
     for(const key of Object.keys(store.extras)){
       const index=Number(key);let lo=0,hi=dead.length;while(lo<hi){const mid=(lo+hi)>>1;if(dead[mid]<index)lo=mid+1;else hi=mid;}

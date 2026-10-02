@@ -1,6 +1,14 @@
 (()=>{'use strict';
   const VERSION='3.0.0';
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+  // JSON object key insertion order is not part of the asset schema. Compare
+  // canonical JSON values so migration accepts the store's stable physical
+  // materialization order without losing or changing any field values.
+  function canonicalJSON(value){
+    const jsonValue=JSON.parse(JSON.stringify(value));
+    const sort=item=>Array.isArray(item)?item.map(sort):item&&typeof item==='object'?Object.fromEntries(Object.keys(item).sort().map(key=>[key,sort(item[key])])):item;
+    return JSON.stringify(sort(jsonValue));
+  }
   const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
   const fleetStore=()=>{const api=globalThis.GH_FLEET_STORE||(typeof require==='function'?require('./fleet-store-core.js'):null);if(!api)throw new Error('fleet-store-unavailable');return api;};
   const SAVE_V2='2.0.0',SAVE_V3='3.0.0';
@@ -51,7 +59,7 @@
     let changed=false,nextStore=existing?state.fleet:null;
     if(assets){
       const at=Math.max(0,Number(state.simSeconds)||0),next=STORE.fromAssets(assets,{at});
-      for(let row=0;row<assets.length;row++)if(JSON.stringify(STORE.materialize(next,row))!==JSON.stringify(assets[row]))throw new Error(`MIGRATION_FLEET_FIELD_MISMATCH:${row}`);
+      for(let row=0;row<assets.length;row++)if(canonicalJSON(STORE.materialize(next,row))!==canonicalJSON(assets[row]))throw new Error(`MIGRATION_FLEET_FIELD_MISMATCH:${row}`);
       STORE.buildIndex(next);nextStore=next;
     }else if(!existing){
       if(state.fleet!==undefined&&state.fleet!==null)throw new Error('MIGRATION_FLEET_STORE_INVALID');

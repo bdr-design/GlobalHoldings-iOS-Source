@@ -1,6 +1,6 @@
 {
   "format": "gh-runtime-required-v1",
-  "saveSchemaVersion": "2.0.0",
+  "saveSchemaVersion": "3.0.0",
   "files": [
     "advanced-core.js",
     "air-sea-network-core.js",
@@ -431,6 +431,7 @@
     "fleet-access-core.js",
     "fleet-core.js",
     "fleet-event-core.js",
+    "fleet-list-virtualizer.js",
     "fleet-store-core.js",
     "formation-engine.js",
     "founding.css",

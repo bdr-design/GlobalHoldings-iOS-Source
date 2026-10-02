@@ -27,7 +27,7 @@
   const MIN_POOL_CHARS=40;
   const MIN_CONSTANT_ROWS=4;
   const MAX_DEPTH=64;
-  const MAX_SCAN_DEPTH=4;
+  const MAX_SCAN_DEPTH=5;
 
   const own=(object,key)=>Object.prototype.hasOwnProperty.call(object,key);
   function isArrayBuffer(value){return !!value&&Object.prototype.toString.call(value)==='[object ArrayBuffer]';}
@@ -235,7 +235,7 @@
       for(const key of Object.keys(node)){
         const value=node[key];if(value===null||typeof value!=='object')continue;
         if(collectionCandidate(value)){paths.push([...path,key]);continue;}
-        if(depth<MAX_SCAN_DEPTH&&isPlain(value)&&typeof value.toJSON!=='function')visit(value,[...path,key],depth+1);
+        if(depth<MAX_SCAN_DEPTH&&typeof value.toJSON!=='function'&&(isPlain(value)||Array.isArray(value)&&value.length<MIN_ROWS))visit(value,[...path,key],depth+1);
       }
     })(state,[],1);
     return paths;
@@ -243,8 +243,8 @@
   function readPath(root,path){let node=root;for(const key of path){if(node===null||typeof node!=='object'||!own(node,key))return undefined;node=node[key];}return node;}
   function writePathCopy(root,path,value){
     // Structural sharing: copy only the objects on the path, never the (huge) collections beside it.
-    const copies=[{...root}];let cursor=copies[0];
-    for(let i=0;i<path.length-1;i++){const next={...cursor[path[i]]};cursor[path[i]]=next;cursor=next;}
+    const copy=value=>Array.isArray(value)?value.slice():{...value},copies=[copy(root)];let cursor=copies[0];
+    for(let i=0;i<path.length-1;i++){const next=copy(cursor[path[i]]);cursor[path[i]]=next;cursor=next;}
     cursor[path[path.length-1]]=value;return copies[0];
   }
 

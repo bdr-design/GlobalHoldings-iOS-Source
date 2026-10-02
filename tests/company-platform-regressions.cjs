@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const {harness,minimal}=require('./helpers/core-harness');
 const results=[];
 function test(name,run){run();results.push(name);console.log('PASS',name);}
-const {s,storage}=harness(['capability-registry-core','company-definitions','company-platform-core','identity-system','company-adapters-core','save-schema','migration-core']);
+const {s,storage}=harness(['capability-registry-core','company-definitions','company-platform-core','identity-system','company-adapters-core','save-schema','migration-core','persistence-core']);
 const P=s.GH_COMPANY_PLATFORM,S=s.GH_SAVE_SCHEMA,M=s.GH_MIGRATION_CORE;
 
 function hospitalityDefinition(id,definitionId,prefix,order){

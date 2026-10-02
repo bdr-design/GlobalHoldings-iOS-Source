@@ -1,7 +1,8 @@
 'use strict';
 // Build 350/357: the persistence + startup-loader path with the state codec. Proves (1) coded and plain v2 saves
 // migrate to identical v3 stores, (2) old plain saves still load, (3) corrupt encoded saves are rejected whole,
-// (4) the native bridge envelope remains schema 2.0.0, and (5) a 20,000-asset legacy fleet migrates without loss.
+// (4) the native bridge envelope remains compatible with legacy roots, and (5) the temporary Build 357 cap
+// admits an exact-size 1,600-asset fleet while rejecting the next persisted record without publishing it.
 // Node-only; no DOM, iPhone or real Native Vault.
 const assert=require('node:assert/strict');
 const path=require('node:path');
@@ -81,22 +82,25 @@ const api=x=>x.s.GH_PERSISTENCE;
   })().catch(error=>{console.error(error);process.exit(1);});
 }
 
-// ---------- G) 20,000 assets: impossible without the codec, comfortable with it ----------
+// ---------- G) exact temporary cap round trip and safe rejection above cap ----------
 async function bigFleet(){
-  const x=fleet(20,1000),messages=[];x.s.webkit={messageHandlers:{saveBridge:{postMessage:m=>messages.push(m)}}};
+  const x=fleet(8,200),messages=[];x.s.webkit={messageHandlers:{saveBridge:{postMessage:m=>messages.push(m)}}};
   const LIMIT=30*1024*1024;
-  const withoutCodec=withPlain(x.s,()=>api(x).commitState(x.state,{storageKey:'main'}));
-  assert.equal(withoutCodec.ok,false,'without the codec the 20k fleet exceeds the native limit');assert.match(String(withoutCodec.reason),/native-save-size-hard-limit/);
-  assert.equal(messages.length,0,'nothing was sent to the vault');
+  assert.equal(fleetAssets(x,x.state).length,1600);
+  assert.equal(x.s.GH_FLEET_DATA.persistenceRecordCount(x.state,x.state.realism.procurement.deliveries),3200,'the exact cap counts live assets and their full delivery receipt snapshots');
   const started=performance.now(),out=api(x).commitState(x.state,{storageKey:'main'}),syncMs=performance.now()-started;
-  assert.equal(out.ok,true,out.reason);assert.ok(out.utf8Bytes<LIMIT*.4,`20k save is ${(out.utf8Bytes/1048576).toFixed(1)} MB`);
+  assert.equal(out.ok,true,out.reason);assert.ok(out.utf8Bytes<LIMIT,`1,600-asset save is ${(out.utf8Bytes/1048576).toFixed(1)} MB`);
   for(let i=0;i<20&&!messages.length;i++)await new Promise(r=>setTimeout(r,5));
   const m=messages.at(-1);assert.ok(m&&Buffer.byteLength(m.saveJSON)===out.utf8Bytes);
   api(x).receiveAck({...m,success:true,generation:1});await out.native;
   x.s.__GH_NATIVE_SAVE_JSON__=m.saveJSON;const t0=performance.now(),restored=loadFrom(x),loadMs=performance.now()-t0;
-  assert.equal(fleetAssets(x,restored.state).length,20000);assert.equal(Object.hasOwn(restored.state,'assets'),false);
+  assert.equal(fleetAssets(x,restored.state).length,1600);assert.equal(Object.hasOwn(restored.state,'assets'),false);
   x.s.__GH_NATIVE_SAVE_JSON__=JSON.stringify(x.state);const viaPlain=loadFrom(x);
-  sameJSON(restored.state,viaPlain.state,'the 20,000-asset native save restores exactly what the plain JSON would have restored');
-  const migratedRows=fleetAssets(x,restored.state),legacyRows=norm(x.state.assets);assert.equal(migratedRows.length,legacyRows.length);for(let index=0;index<migratedRows.length;index++)assert.equal(firstFieldDifference(migratedRows[index],legacyRows[index]),null,`20k migration asset ${index} (${legacyRows[index]?.id})`);
-  console.log(JSON.stringify({suite:'build350-persistence-codec-20k',assets:20000,savedMB:+(out.utf8Bytes/1048576).toFixed(2),nativeLimitMB:30,withoutCodec:'rejected: native-save-size-hard-limit',saveSyncMs:Math.round(syncMs),startupLoadMs:Math.round(loadMs),environment:`node ${process.version}; synthetic fleet; not iPhone`}));
+  sameJSON(restored.state,viaPlain.state,'the exact-cap native save restores exactly what the plain JSON would have restored');
+  const migratedRows=fleetAssets(x,restored.state),sourceRows=fleetAssets(x,x.state);assert.equal(migratedRows.length,sourceRows.length);for(let index=0;index<migratedRows.length;index++)assert.equal(firstFieldDifference(migratedRows[index],sourceRows[index]),null,`exact-cap migration asset ${index} (${sourceRows[index]?.id})`);
+  const previous=x.store.get('main'),messagesBefore=messages.length,overflow={...sourceRows[0],id:'OVER-CAP-PROBE'};
+  const added=x.s.GH_TRANSACTION_CORE.execute(x.state,{label:'persistence-cap-overflow-probe',scope:['fleet'],apply:()=>x.s.GH_FLEET_DATA.add(x.state,overflow)});assert.equal(added.committed,true);
+  const rejected=api(x).commitState(x.state,{storageKey:'main'});assert.equal(rejected.ok,false);assert.match(rejected.reason,/fleet-persistence-record-cap/);
+  assert.equal(messages.length,messagesBefore,'over-cap state must not be sent to the native vault');assert.equal(x.store.get('main'),previous,'failed save must retain the last persisted browser snapshot');
+  console.log(JSON.stringify({suite:'build357-persistence-cap-1600',assets:1600,records:3200,savedMB:+(out.utf8Bytes/1048576).toFixed(2),nativeLimitMB:30,overflow:'rejected without replacing browser or native snapshots',saveSyncMs:Math.round(syncMs),startupLoadMs:Math.round(loadMs),environment:`node ${process.version}; synthetic fleet; not iPhone`}));
 }

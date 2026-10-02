@@ -211,6 +211,17 @@
   // only while Save Migration reads and upgrades pre-v3 saves.
   function ensure(state){if(!storeOf(state)&&!arrayOf(state))state.fleet=STORE.create();return mode(state);}
   function size(state){const store=storeOf(state);if(store)return store.live;const assets=arrayOf(state);return assets?assets.length:0;}
+  // Count the live store plus complete procurement receipts. Pending snapshots
+  // count twice to reserve their eventual live row before delivery is applied.
+  function persistenceRecordCount(state,receipts=[]){
+    let count=size(state);
+    for(const receipt of Array.isArray(receipts)?receipts:[]){
+      const assets=Array.isArray(receipt?.assets)?receipt.assets:receipt?.asset?[receipt.asset]:[];
+      count+=assets.length;
+      if(receipt?.status==='pending')count+=assets.length;
+    }
+    return count;
+  }
   // Stable membership token for read models. It changes when rows are added,
   // removed, or compacted, but not for ordinary simulation field writes.
   function membershipRevision(state){const store=storeOf(state);if(store)return `${store.structure}:${STORE.epoch(store)}`;const assets=arrayOf(state);return assets?`array:${assets.length}`:'none';}
@@ -284,6 +295,14 @@
   function has(state,id){return indexOfId(state,id)>=0;}
   // Iteration visits live assets in array order; `index` is the row.
   function forEach(state,fn){const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index))fn(viewAt(state,index),index);}
+  // Read-only projections keep validation and other narrow consumers off the
+  // per-row proxy path while preserving the store boundary. The projection is
+  // newly allocated and contains only the requested fields.
+  function forEachFields(state,fields,fn){
+    const names=Array.isArray(fields)?fields:[],store=storeOf(state);
+    if(store){const length=store.length;for(let index=0;index<length;index++){if(!STORE.isAlive(store,index))continue;const row={};for(const key of names){const value=STORE.peek(store,index,key);if(value!==undefined)row[key]=isObject(value)?nested(value):value;}fn(row,index);}return;}
+    const assets=arrayOf(state)||[];for(let index=0;index<assets.length;index++){const source=assets[index];if(!isObject(source))continue;const row={};for(const key of names)if(source[key]!==undefined)row[key]=isObject(source[key])?nested(source[key]):source[key];fn(row,index);}
+  }
   function some(state,predicate){const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index)&&predicate(viewAt(state,index),index))return true;return false;}
   function every(state,predicate){const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index)&&!predicate(viewAt(state,index),index))return false;return true;}
   function find(state,predicate){const n=scanLength(state);for(let index=0;index<n;index++){if(!rowAlive(state,index))continue;const view=viewAt(state,index);if(predicate(view,index))return view;}return null;}
@@ -379,8 +398,8 @@
     const store=storeOf(state);if(store)return STORE.removeMany(store,doomed);
     const drop=new Set(doomed),assets=arrayOf(state);invalidateArrayIndex(assets);let write=0;for(let read=0;read<assets.length;read++){if(drop.has(read))continue;if(write!==read)assets[write]=assets[read];write++;}assets.length=write;return drop.size;}
 
-  const API=Object.freeze({VERSION,configure,mode,source,ensure,size,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
-    get,has,forEach,some,every,find,filter,count,sum,dailyLeaseCosts,payrollTotals,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
+  const API=Object.freeze({VERSION,configure,mode,source,ensure,size,persistenceRecordCount,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
+    get,has,forEach,forEachFields,some,every,find,filter,count,sum,dailyLeaseCosts,payrollTotals,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
     update,put,add,addMany,remove,removeMany,removeWhere,drafts,draft,commit});
   globalThis.GH_FLEET_DATA=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_DATA=API;

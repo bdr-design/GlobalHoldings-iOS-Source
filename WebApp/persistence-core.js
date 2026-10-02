@@ -1,7 +1,11 @@
 (()=>{
   'use strict';
   const VERSION='3.0.0', SAVE_SCHEMA_VERSION='3.0.0', SLOT_FORMAT='global-holdings-save-slot-v2', EXPORT_FORMAT='global-holdings-save';
-  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeSoftBytes:22.5*1024*1024,nativeHardBytes:30*1024*1024,ackTimeoutMs:10000,pending:16});
+  // Save Schema still checks full receipt and asset graphs on every save. Keep
+  // the pre-chunked fleet ceiling uniform across browser and native paths so
+  // validation remains within the measured frame-time budget until Build 358.
+  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeSoftBytes:22.5*1024*1024,nativeHardBytes:30*1024*1024,browserFleetRecordLimit:3200,nativeFleetRecordLimit:3200,ackTimeoutMs:10000,pending:16});
+  const saveSchemaVersion=state=>['2.0.0','3.0.0'].includes(String(state?.saveVersion||''))?String(state.saveVersion):SAVE_SCHEMA_VERSION;
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   // Storage encoding (Build 350). Large homogeneous collections are persisted as shape + positional-cell rows with an
@@ -70,9 +74,10 @@
   }
   function writeState(key,state,options={}){const start=clock();try{assertState(state);const json=serializeState(state);const out=writeJSON(key,json,options);telemetry({operation:'serialize',ok:out.ok,utf8Bytes:out.utf8Bytes,durationMs:clock()-start});return out;}catch(e){const out={ok:false,reason:`serialization-or-schema:${e.message||e}`};telemetry({operation:'serialize',...out,durationMs:clock()-start});return out;}}
   function bridgeFor(action){return globalThis.webkit?.messageHandlers?.[action==='resetGameSave'?'updateBridge':'saveBridge'];}
+  function fleetRecordLimit(){return bridgeFor('commitSave')?PERSISTENCE_LIMITS.nativeFleetRecordLimit:PERSISTENCE_LIMITS.browserFleetRecordLimit;}
   function receiveAck(detail={}){
     const row=pending.get(detail.requestId);if(!row)return false;
-    if(detail.action!==row.envelope.action||detail.saveRevision!==row.envelope.saveRevision||detail.resetEpoch!==row.envelope.resetEpoch||detail.saveHash!==row.envelope.saveHash||detail.saveSchemaVersion!=='2.0.0'||typeof detail.success!=='boolean')return false;
+    if(detail.action!==row.envelope.action||detail.saveRevision!==row.envelope.saveRevision||detail.resetEpoch!==row.envelope.resetEpoch||detail.saveHash!==row.envelope.saveHash||detail.saveSchemaVersion!==row.envelope.saveSchemaVersion||typeof detail.success!=='boolean')return false;
     if(detail.success&&(!Number.isSafeInteger(detail.generation)||detail.generation<=generation))return false;
     const ackAt=clock(),nativeVaultCommitMs=Number(detail.nativeVaultCommitMs);
     lastNativeAck=rememberTiming({kind:'native-ack',requestId:detail.requestId,action:detail.action,saveRevision:Number(detail.saveRevision)||0,generation:Number(detail.generation)||0,success:detail.success===true,bridgeDispatchMs:Number.isFinite(row.bridgeDispatchMs)?row.bridgeDispatchMs:null,nativeAckLatencyMs:Number.isFinite(row.dispatchedAt)?Math.max(0,ackAt-row.dispatchedAt):null,nativeVaultCommitMs:Number.isFinite(nativeVaultCommitMs)?Math.max(0,nativeVaultCommitMs):null});
@@ -95,7 +100,7 @@
     let saveRevision=Number(options.saveRevision),resetEpoch=Number(options.resetEpoch);
     if(!Number.isSafeInteger(saveRevision)||saveRevision<0||!Number.isSafeInteger(resetEpoch)||resetEpoch<0){const state=parseState(json);assertState(state);saveRevision=Number(state.saveRevision)||0;resetEpoch=Number(state.resetEpoch)||0;}
     const post=saveHashValue=>{
-      const envelope={action,requestId:`${action}-${Date.now()}-${++sequence}`,saveJSON:json,saveHash:saveHashValue,saveRevision,resetEpoch,saveSchemaVersion:'2.0.0',appVersion:options.appVersion||VERSION};
+      const envelope={action,requestId:`${action}-${Date.now()}-${++sequence}`,saveJSON:json,saveHash:saveHashValue,saveRevision,resetEpoch,saveSchemaVersion:options.saveSchemaVersion||SAVE_SCHEMA_VERSION,appVersion:options.appVersion||VERSION};
       if(options.transactionId)envelope.transactionId=String(options.transactionId).slice(0,120);
       if(options.idempotencyKey)envelope.idempotencyKey=String(options.idempotencyKey).slice(0,160);
       if(options.expectedPreviousRevision!=null)envelope.expectedPreviousRevision=Number(options.expectedPreviousRevision);
@@ -133,7 +138,7 @@
     const requestId=`${action}-${Date.now()}-${++slotSequence}`,envelope={action,requestId,index};
     if(action==='saveManualSlot'){
       assertRecurringState(state);const json=serializeState(state),measurement=inspectNativeJSON(json),hash=globalThis.GH_CONTROL_PLANE?.sha256;if(!hash)return Promise.reject(new Error('save-hash-owner-unavailable'));
-      Object.assign(envelope,{saveJSON:json,saveHash:hash(json),saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:'2.0.0',appVersion:meta.appVersion||VERSION,label:String(meta.label||'').slice(0,120)});
+      Object.assign(envelope,{saveJSON:json,saveHash:hash(json),saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),appVersion:meta.appVersion||VERSION,label:String(meta.label||'').slice(0,120)});
       envelope.measurement=measurement;
     }
     return new Promise((resolve,reject)=>{
@@ -169,7 +174,7 @@
     }catch(error){state.saveRevision=previousRevision;timing.totalSyncMs=Math.max(0,clock()-syncStart);timing.error=String(error.message||error);lastSaveBreakdown=rememberTiming(timing);return {ok:false,reason:`serialization-or-schema:${error.message||error}`,...error.measurement};}
     const out={ok:true,json,...measurement,browserCache:cache?.ok!==false,cacheReason:cache?.ok===false?cache.reason:null,previous:cache?.previous??null,saveRevision:nextRevision};
     if(!nativeBridge){ordinaryError=null;return out;}
-    const nativeMetadata={appVersion,...options,saveRevision:nextRevision,resetEpoch};
+    const nativeMetadata={appVersion,...options,saveRevision:nextRevision,resetEpoch,saveSchemaVersion:saveSchemaVersion(state)};
     const work=Promise.resolve().then(()=>{if(recoveryRequired)throw new Error('native-recovery-required');return requestNative('commitSave',json,{...nativeMetadata,encoded});});
     ordinaryInFlight=work.then(ack=>{ordinaryError=null;return ack;},error=>{
       ordinaryError=error;
@@ -207,13 +212,13 @@
     try{
       await waitOrdinaryIdle({supersedeDirty:true});assertRecurringState(state);const json=serializeState(state),nativeBridge=!!bridgeFor('commitSave');
       if(nativeBridge){
-        const encoded=utf8(json),measurement=inspectNativeJSON(json,encoded),ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,encoded});ordinaryError=null;
+        const encoded=utf8(json),measurement=inspectNativeJSON(json,encoded),ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),encoded});ordinaryError=null;
         const cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
         if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,durable:true,utf8Bytes:measurement.utf8Bytes,mirror:true});
         telemetry({operation:'durable-commit',ok:true,utf8Bytes:measurement.utf8Bytes,native:true,browserCache:cache.ok,durationMs:0});status({ok:true,validated:true,durable:true,native:true,saveRevision:Number(state.saveRevision)||0});return {ok:true,json,...measurement,ack,durable:true,browserCache:cache.ok,cacheReason:cache.ok?null:cache.reason};
       }
       written=writeJSON(storageKey,json,options);if(!written.ok)throw new Error(written.reason);
-      const ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0});ordinaryError=null;
+      const ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state)});ordinaryError=null;
       telemetry({operation:'durable-commit',ok:true,utf8Bytes:written.utf8Bytes,native:false,durationMs:0});status({ok:true,validated:true,durable:true,native:false,saveRevision:Number(state.saveRevision)||0});return {...written,ack,durable:true};
     }catch(error){
       if(written?.ok)try{if(localStorage.getItem(storageKey)===written.json)restoreRaw(storageKey,written.previous);}catch(rollbackError){error.rollbackError=String(rollbackError.message||rollbackError);}
@@ -235,7 +240,7 @@
       const json=serializeState(next),nativeBridge=!!bridgeFor('resetGameSave'),nativeMeasurement=nativeBridge?inspectNativeJSON(json):null;if(!nativeBridge)inspectJSON(json,storageKey);oldRaw=localStorage.getItem(storageKey);oldMarker=resetMarkerKey?localStorage.getItem(resetMarkerKey):null;
       // The current in-memory game is the compensating checkpoint. Native owns durability.
       nativeAttempted=nativeBridge;
-      await requestNative('resetGameSave',json,{appVersion,timeoutMs,clearManualSlots,saveRevision:Number(next.saveRevision)||0,resetEpoch:Number(next.resetEpoch)||0});
+      await requestNative('resetGameSave',json,{appVersion,timeoutMs,clearManualSlots,saveRevision:Number(next.saveRevision)||0,resetEpoch:Number(next.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(next)});
       nativeCommitted=nativeBridge;
       const out=(nativeBridge&&(nativeMeasurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||nativeMeasurement.storageBytes>PERSISTENCE_LIMITS.hardBytes))
         ? {ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}
@@ -261,7 +266,7 @@
         status({ok:false,critical:true,reason:'native-reset-committed-reload-required',requiresNativeReconciliation:true,storageKey});
         throw error;
       }
-      if(nativeAttempted)try{await requestNative('resetGameSave',oldJSON,{appVersion,timeoutMs,clearManualSlots:false,saveRevision:Number(previous.saveRevision)||0,resetEpoch:Number(previous.resetEpoch)||0});}catch(e){error.compensationError=String(e.message||e);}
+      if(nativeAttempted)try{await requestNative('resetGameSave',oldJSON,{appVersion,timeoutMs,clearManualSlots:false,saveRevision:Number(previous.saveRevision)||0,resetEpoch:Number(previous.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(previous)});}catch(e){error.compensationError=String(e.message||e);}
       if(error.rollbackError||error.compensationError){error.critical=true;globalThis.GH_CONTROL_PLANE?.incident?.(previous,{fingerprint:'RESET_COMPENSATION_FAILED',code:'RESET_COMPENSATION_FAILED',severity:'critical',domain:'save',title:'فشل استرداد الحفظ بعد عملية الاستبدال',detail:String(error.compensationError||error.rollbackError)});}
       throw error;
     }finally{locked=false;}
@@ -307,6 +312,6 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:SAVE_SCHEMA_VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:stateCodec()?stateCodec().encodeState(state):clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
+  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

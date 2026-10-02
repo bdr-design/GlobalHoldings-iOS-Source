@@ -44,8 +44,8 @@
   function deepClone(value,options={}){const rootCopy=cloneWithoutJournaledRoots(value,options);if(rootCopy)return rootCopy;if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
   function registerJournaledRoot(name,hooks={}){
     name=String(name||'').trim();if(!/^[A-Za-z_$][\w$]*$/.test(name))throw new TypeError('transaction-journaled-root-name-invalid');
-    const normalized={begin:typeof hooks.begin==='function'?hooks.begin:null,commit:typeof hooks.commit==='function'?hooks.commit:null,rollback:typeof hooks.rollback==='function'?hooks.rollback:null};
-    const existing=JOURNALED_ROOTS.get(name);if(existing){if(existing.begin===normalized.begin&&existing.commit===normalized.commit&&existing.rollback===normalized.rollback)return true;throw new Error(`transaction-journaled-root-already-registered:${name}`);}
+    const normalized={begin:typeof hooks.begin==='function'?hooks.begin:null,commit:typeof hooks.commit==='function'?hooks.commit:null,rollback:typeof hooks.rollback==='function'?hooks.rollback:null,revision:typeof hooks.revision==='function'?hooks.revision:null};
+    const existing=JOURNALED_ROOTS.get(name);if(existing){if(existing.begin===normalized.begin&&existing.commit===normalized.commit&&existing.rollback===normalized.rollback&&existing.revision===normalized.revision)return true;throw new Error(`transaction-journaled-root-already-registered:${name}`);}
     JOURNALED_ROOTS.set(name,normalized);return true;
   }
   function beginJournaledRoots(target){
@@ -134,6 +134,16 @@
   function normalizeScope(scope){if(!Array.isArray(scope)||!scope.length)return null;return [...new Set(scope.map(String).filter(Boolean))];}
   function normalizeWriteRoots(roots){if(!Array.isArray(roots))return null;return [...new Set(roots.map(String).filter(Boolean))];}
   function normalizeWriterContracts(contracts){return Array.isArray(contracts)?contracts.filter(row=>row&&typeof row==='object').map(row=>({...row})):[];}
+  function journaledRevisionSnapshot(target,durableContext){
+    if(!durableContext||target!==durableContext.draft&&target!==durableContext.liveState)return null;
+    const roots=new Map();for(const [name,hooks] of JOURNALED_ROOTS){if(!hooks.revision||target[name]!==durableContext.liveState?.[name])continue;roots.set(name,hooks.revision(target,target[name]));}
+    return roots.size?{durableContext,roots}:null;
+  }
+  function changedJournaledRevisions(target,snapshot){
+    if(!snapshot)return [];
+    const changed=[];for(const [name,before] of snapshot.roots){const hooks=JOURNALED_ROOTS.get(name),after=hooks?.revision?.(target,target[name]);if(!Object.is(before,after))changed.push(name);}
+    return changed.sort();
+  }
   function auditEqual(a,b,seen=new WeakMap()){
     if(Object.is(a,b))return true;
     if(!a||!b||typeof a!=='object'||typeof b!=='object')return false;
@@ -281,6 +291,9 @@
     if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');
     if(typeof options.apply!=='function')throw new TypeError('Transaction apply callback is required');
     if(activeContext)throw new Error('Nested state transactions are forbidden; domain commands must join their owner');
+    const durableContext=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;
+    if(durableContext&&target===durableContext.liveState)throw new Error('durable-live-state-transaction-blocked');
+    const durableJournalBaseline=journaledRevisionSnapshot(target,durableContext);
     const label=String(options.label||'transaction'),scope=normalizeScope(options.scope),declaredWriteRoots=normalizeWriteRoots(options.writeRoots),writerContracts=normalizeWriterContracts(options.writerContracts),auditWrites=options.auditWrites===true||options.enforceWriteRoots===true,totalStart=runtimeClock(),requestedJournal=options.rollbackMode==='journal',profiled=options.profile===true||(options.profile!==false&&globalThis.GH_DIAGNOSTICS?.recorderIsActive?.(target)===true),phaseBreakdown=profiled?[]:null;
     let fallbackReason=journalAdmissionReason(options,scope,writerContracts),rollbackStorage='legacy-scoped',snapshot=null,journal=null;
     let phaseDepth=0;
@@ -360,6 +373,8 @@
       if(auditWrites&&timing.writeAudit?.stage==='pending'){const mutatedRoots=diffRootKeys(target,auditBaseline),declared=declaredWriteRoots?new Set(declaredWriteRoots):null;timing.writeAudit={enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots,undeclaredRoots:declared?mutatedRoots.filter(key=>!declared.has(key)):[],declaredButUnchanged:declaredWriteRoots?declaredWriteRoots.filter(key=>!mutatedRoots.includes(key)):[],stage:'failure-before-rollback'};}
       const rollbackStart=runtimeClock();
       try{rollback();timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);}catch(restoreError){timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);timing.stage='rollback-failed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);const fatal=new Error(`${label}: rollback failed`);fatal.cause=error;fatal.rollbackError=restoreError;fatal.transactionLabel=label;fatal.transactionStage='rollback';throw fatal;}
+      const unisolatedRoots=changedJournaledRevisions(target,durableJournalBaseline);
+      if(unisolatedRoots.length){const durable=durableJournalBaseline.durableContext;durable.poisoned=true;durable.poisonReason=`durable-journaled-root-write-failed:${unisolatedRoots.join(',')}`;const guarded=new Error(durable.poisonReason);guarded.cause=error;guarded.transactionLabel=label;guarded.transactionStage='durable-root-guard';timing.stage='durable-root-guard';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);throw guarded;}
       timing.stage=phase;timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);error.transactionLabel=label;error.transactionStage=phase;throw error;
     }finally{activeContext=null;}
   }
@@ -383,6 +398,7 @@
     durableTargets.add(liveState);globalThis.__GH_DURABLE_COMMAND_CONTEXT__=context;let phase='apply',durableCommitted=false;
     try{
       const value=await options.apply(draft,context);if(value===false)throw rejection(`${label}-rejected`,label,phase);
+      if(context.poisoned)throw rejection(context.poisonReason||'durable-command-poisoned',label,phase);
       if(Number(draft.saveRevision||0)!==expectedRevision)throw rejection('draft-save-revision-mutated',label,phase);
       draft.saveRevision=expectedRevision+1;phase='validate';
       const schema=globalThis.GH_SAVE_SCHEMA?.validate?.(draft,{trustVerified:true});if(schema&&schema.ok===false)throw rejection(`invalid-draft:${(schema.errors||[]).join(',')}`,label,phase);

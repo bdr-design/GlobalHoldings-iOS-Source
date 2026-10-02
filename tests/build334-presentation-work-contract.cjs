@@ -24,9 +24,11 @@ test('cluster grid coarsening computes each asset position once',()=>{
  assert.equal(calls,rows.length,'coarsening repeated full-fleet position calculations');return {assets:rows.length,positionReads:calls,groups:result.length};
 });
 test('asset lookup follows collection replacement without relying on save revision',()=>{
- const context={state:{saveRevision:9,assets:[{id:'A',progress:0}]},presentationAssetIndex:new Map(),presentationAssetIndexRevision:-1,presentationAssetIndexLength:-1,presentationAssetIndexSource:null};
- vm.runInNewContext(range('  function presentationAssetLookup()','  function movingAssetRenderGroups(')+'\nglobalThis.lookup=presentationAssetLookup;',context);
- const previous=context.lookup();for(let i=1;i<=50;i++){context.state.assets=[{id:'A',progress:i/100}];const next=context.lookup();assert.equal(next.get('A'),context.state.assets[0]);assert.equal(next.size,1);}assert.notEqual(context.lookup(),previous);return {replacements:50};
+ const {harness}=require('./helpers/core-harness'),{s}=harness(['fleet-store-core','fleet-access-core']);
+ const state={saveRevision:9,simSeconds:0,fleet:s.GH_FLEET_STORE.fromAssets([{id:'A',type:'air',progress:0}],{at:0})};s.state=state;
+ vm.runInContext(range('  let map, currentTile, layers = {}','  const mapAssetQueryEngine=')+'\nglobalThis.readFleetRows=fleetPresentationRows;',s);
+ vm.runInContext(range('  function presentationAssetLookup()','  function movingAssetRenderGroups(')+'\nglobalThis.lookup=presentationAssetLookup;',s);
+ const previous=s.lookup();for(let i=1;i<=50;i++){state.fleet=s.GH_FLEET_STORE.fromAssets([{id:'A',type:'air',progress:i/100}],{at:0});const next=s.lookup();assert.equal(next.get('A').progress,i/100);assert.equal(next.size,1);assert.equal(s.readFleetRows()[0].progress,i/100);}assert.notEqual(s.lookup(),previous);return {replacements:50,source:'Fleet Store + Fleet Data Access'};
 });
 function motion(interval,target=1000){
  let writes=0;const row={lastAt:1,current:[0,0],target:[target,0],marker:{_map:true,setLatLng:()=>{writes++;}},routeBridge:[]};

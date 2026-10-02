@@ -25,8 +25,12 @@ const {scenario}=require('./helpers/business-scenario');
   const operatingAfterFirst=s.GH_FINANCE_CORE.operating(state,'air');
   const deliveriesAfterFirst=state.realism.procurement.deliveries.length;
   const suppliersAfterFirst=state.supplierTransactions.length;
+  const purchaseReceipts=state.realism.procurement.deliveries.slice(deliveriesBefore);
   assert.strictEqual(operatingBefore-operatingAfterFirst,totalPrice,'first purchase must debit exactly once');
-  assert.strictEqual(deliveriesAfterFirst-deliveriesBefore,qty,'first purchase must create exactly the requested delivery rows');
+  assert.strictEqual(deliveriesAfterFirst-deliveriesBefore,1,'one purchase batch must create exactly one delivery receipt');
+  assert.strictEqual(purchaseReceipts[0].count,qty,'the single receipt must retain the full purchased quantity');
+  assert.strictEqual(purchaseReceipts[0].assets.length,qty,'the complete asset list remains in the batch receipt');
+  assert(purchaseReceipts[0].assets.every(asset=>asset.deliveryOrderId===purchaseReceipts[0].deliveryOrderId),'every receipt asset must refer to the same purchase order');
   assert.strictEqual(suppliersAfterFirst-suppliersBefore,1,'first purchase must create one supplier settlement');
 
   const retry=s.GH_DOMAIN_COMMANDS.dispatch(ctx,'procurement','purchase-assets',payload,{actor:'idempotency-regression',idempotencyKey:key});

@@ -28,7 +28,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 356;
+  const RUNTIME_BUILD = 357;
   const SAVE_SCHEMA_VERSION = '3.0.0';
   const FOUNDER_PRINCIPAL_ID='PLAYER-FOUNDER';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
@@ -526,7 +526,8 @@
   window.GH_TRANSACTION_CORE.registerJournaledRoot('fleet',{
     begin:target=>window.GH_FLEET_DATA.beginJournal(target),
     commit:(target,_root,journal)=>window.GH_FLEET_DATA.commitJournal(target,journal),
-    rollback:(target,_root,journal)=>window.GH_FLEET_DATA.rollbackJournal(target,journal)
+    rollback:(target,_root,journal)=>window.GH_FLEET_DATA.rollbackJournal(target,journal),
+    revision:(_target,root)=>Number(root?.revision)||0
   });
   try{
     if(window.webkit?.messageHandlers?.saveBridge&&Number(window.GH_NATIVE_BUILD||0)<251)throw new Error('Native Build251 is required');
@@ -849,7 +850,7 @@
       committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
       if(afterCommit){try{await afterCommit(value);}catch(error){diag('DURABLE_COMMAND_PRESENTATION_FAILED',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'warning');console.warn(`Durable command committed but presentation refresh failed [${name}]`,error);if(!silent)notice('تم حفظ العملية بنجاح، لكن تعذر تحديث العرض. أعد فتح القسم لرؤية الحالة المحفوظة.','warning');}}
       return value;
-    }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-publication-failed');state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed');diag('DURABLE_COMMAND_POST_COMMIT_FAILURE',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'critical');console.error(`Durable command failed after durable commit [${name}]`,error);if(!silent)notice('تم حفظ العملية، لكن حدث خطأ بعد الاعتماد. أوقف التشغيل وأعد فتح اللعبة للتحقق من الحالة المحفوظة.','warning');return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason:String(error.message||error)},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${String(error.message||error)}`);return false;}
+    }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-publication-failed');state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed');diag('DURABLE_COMMAND_POST_COMMIT_FAILURE',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'critical');console.error(`Durable command failed after durable commit [${name}]`,error);if(!silent)notice('تم حفظ العملية، لكن حدث خطأ بعد الاعتماد. أوقف التشغيل وأعد فتح اللعبة للتحقق من الحالة المحفوظة.','warning');return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
     finally{
       if(!committed&&rootSessions.length)try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');console.error('Durable command fleet rollback failed',rollbackError);}
       const context=window.__GH_DURABLE_COMMAND_CONTEXT__?.draft===draft?window.__GH_DURABLE_COMMAND_CONTEXT__:null;
@@ -2512,7 +2513,7 @@
 
 
   const SIMULATION_TRANSACTION_SCOPE=Object.freeze([
-    'simSeconds','fleet','simulationWorld','todayProfit','groupValue','sectorProfitToday',
+    'simSeconds','lastFinancialDay','lastMarketHour','fleet','simulationWorld','todayProfit','groupValue','sectorProfitToday',
     'tripProfitAccrued','tripRevenueAccrued','tripFuelAccrued','tripMaintenanceAccrued','tripCountAccrued',
     'companyFinance','finance','treasury','cash','debt','alerts','eventLog','diagnostics','sequences',
     'simulationKernel','realism','mobility','advanced','businessLedger','dependencyGraph','controlPlane',
@@ -2566,7 +2567,7 @@
           scope=boundaryRequested.day!=null||boundaryRequested.hour!=null||deliveryWorkPending?SIMULATION_TRANSACTION_SCOPE:SIMULATION_STEADY_TRANSACTION_SCOPE;
         let out=null,journal=makeSimulationEffects();
         const transaction=TX.execute(state,{
-          label:'simulation:'+from+'->'+to,scope,writeRoots:scope,
+          label:'simulation:'+from+'->'+to,scope,writeRoots:scope,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,
           profileContext:{kind:'simulation-slice',from,to,speed:Number(meta.speed)||0,order,eventsBudget:maxEvents||null},
           apply:measure=>{
             const context=simulationAssetRuntimeContext();

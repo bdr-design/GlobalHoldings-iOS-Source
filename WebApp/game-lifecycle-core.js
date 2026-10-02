@@ -47,11 +47,11 @@
     const s=clone(defaultState);
     Object.assign(s,{resetEpoch,saveRevision:1,onboardingComplete:false,speed:0,godMoney:false,infiniteMoney:false,assets:[],unlockedSectors:[],openedCompanies:[],ownedCompanies:[],branches:[],globalBases:[],customHubs:[],customRoutes:[],routeEndpoints:{},routeCache:{},companyRegistry:{},companyFinance:{},contractRegistry:{},constructionContracts:[],commercialTenders:[],supplierTransactions:[],eventLog:[],alerts:[]});
     s.energy={gasMW:0,solarMW:0,windMW:0,storageMWh:0,availability:100};
-    s.bank=bankZero(defaultState);s.treasury=clone(defaultState.treasury);for(const a of s.treasury.accounts)a.balance=0;s.cash=0;s.debt=0;s.groupValue=0;s.crew=(s.crew||[]).map(c=>({...c,count:0}));s.hired=[];s.finance=clone(defaultState.finance);s.operations=clone(defaultState.operations);s.saveVersion='2.0.0';
+    s.bank=bankZero(defaultState);s.treasury=clone(defaultState.treasury);for(const a of s.treasury.accounts)a.balance=0;s.cash=0;s.debt=0;s.groupValue=0;s.crew=(s.crew||[]).map(c=>({...c,count:0}));s.hired=[];s.finance=clone(defaultState.finance);s.operations=clone(defaultState.operations);s.saveVersion='2.0.0';globalThis.GH_MIGRATION_CORE?.migrateFleet?.(s);
     return s;
   }
   function foundGroup(state,input,defaultState,helpers={}){
-    if(!state||!input)throw new Error('FOUNDING_CONTRACT_INVALID');if(state.saveVersion!=='2.0.0')throw new Error('FOUNDING_SCHEMA_UNSUPPORTED');
+    if(!state||!input)throw new Error('FOUNDING_CONTRACT_INVALID');if(!['2.0.0','3.0.0'].includes(state.saveVersion))throw new Error('FOUNDING_SCHEMA_UNSUPPORTED');
     const formation=globalThis.GH_FORMATION_ENGINE,isPlan=Boolean(formation&&input.schema===formation.SCHEMA);
     if(isPlan)formation.validatePlan(input);
     const identityAssets=isPlan&&input.identity?.identity&&typeof input.identity.identity==='object'?input.identity.identity:{};
@@ -73,7 +73,6 @@
     state.companyRegistry.group.formationDocument={version:2,id:registry.formationContract,status:'signed',year,signedAt:Number(state.simSeconds)||0,name:profile.name,englishName:profile.englishName,shortName:profile.shortName,founder:profile.founder,country:profile.country,city:profile.city,legalForm:profile.legalForm,currency:'USD',capital,accountId:F.book(state,'group').accounts[0].id,riskAppetite:profile.riskAppetite,procurementPolicy:profile.procurementPolicy,signingAuthority:profile.signingAuthority,formationPlanId:isPlan?input.planId:null,formationPlanHash:isPlan?input.planHash:null,signature:isPlan?{signatureRef:input.signature.signatureRef,version:input.signature.version,digest:signatureSnapshot?.digest||null}:null,signatureSnapshot:signatureSnapshot||null,authorizationProofIds:[groupReceipt?.authorizationProofId,capitalReceipt?.authorizationProofId].filter(Boolean),articles:FOUNDING_ARTICLES.map(row=>({...row}))};
     state.companyRegistry.group.paidInCapital=capital;
     state.alerts=[`اعتمد عقد ${registry.formationContract} لتأسيس ${profile.name} في ${profile.city}، ${profile.country}.`,`أودع رأس المال ${helpers.fmtMoney?.(capital)||capital} في الحساب الجاري للمجموعة. افتح الشركات التابعة من قسم الشركات.`];
-    state.saveVersion='2.0.0';
     if(helpers.onCommit)tx.afterCommit(helpers.onCommit,{critical:true,priority:100,key:'save'});
     return {capital,profile,registry,planId:isPlan?input.planId:null};
     }});return outcome.value;

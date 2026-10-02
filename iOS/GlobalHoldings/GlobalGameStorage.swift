@@ -1019,7 +1019,7 @@ final class GlobalGameStorage {
         guard let data = try? Data(contentsOf: manifestURL),
               let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               manifest["format"] as? String == "gh-runtime-required-v1",
-              manifest["saveSchemaVersion"] as? String == "2.0.0",
+              ["2.0.0", "3.0.0"].contains(manifest["saveSchemaVersion"] as? String ?? ""),
               let minimumBuild = manifest["minimumNativeBuild"] as? Int, minimumBuild >= 251,
               (Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0") ?? 0) >= minimumBuild,
               let required = manifest["files"] as? [String], !required.isEmpty,

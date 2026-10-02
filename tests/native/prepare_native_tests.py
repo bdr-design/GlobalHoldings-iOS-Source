@@ -22,7 +22,15 @@ def main():
     tail=controller[controller.index('    private func applyPendingNativeOperationsIfNeeded()'):]
     script=tail.split('let script = """',1)[1].split('"""',1)[0]
     (a.output/'update-script.swift-string.txt').write_text(script)
-    (a.output/'source-checks.json').write_text(json.dumps({'moved_envelope_validation':changed,'handler_origin_gate': 'guard message.webView === webView, message.frameInfo.isMainFrame,' in controller,'raw_operations_forwarded': '"operationsJSON": operationsJSON,' in storage and 'operationsJSON: update.operationsJSON' in storage,'script_sha256':hashlib.sha256(script.encode()).hexdigest(),'swift_files':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (a.source/'iOS/GlobalHoldings').glob('*.swift')}},indent=2)+'\n')
+    origin_gate=all(token in controller for token in (
+        'message.webView === webView',
+        'message.frameInfo.isMainFrame',
+        'isTrustedGameDocument(message.frameInfo.request.url)',
+        'url.scheme?.lowercased() == "gh"',
+        'url.host?.lowercased() == "app"',
+        'url.user == nil && url.password == nil && url.port == nil'
+    ))
+    (a.output/'source-checks.json').write_text(json.dumps({'moved_envelope_validation':changed,'handler_origin_gate':origin_gate,'raw_operations_forwarded': '"operationsJSON": operationsJSON,' in storage and 'operationsJSON: update.operationsJSON' in storage,'script_sha256':hashlib.sha256(script.encode()).hexdigest(),'swift_files':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (a.source/'iOS/GlobalHoldings').glob('*.swift')}},indent=2)+'\n')
     commit='''vault.commitAsync(json, runtimeVersion: "3.0.0", envelope: envelope, completion: completion)''' if changed else '''if !probe.validSaveEnvelope(envelope, json: json) { completion(.failure(TestFailure(message:"Invalid envelope"))); return }
     vault.commitAsync(json, runtimeVersion: "3.0.0", completion: completion)'''
     save='vault.saveManualSlotAsync(index, json: json, label: "اختبار", runtimeVersion: "3.0.0", envelope: envelope, completion: completion)' if changed else '''if !probe.validSaveEnvelope(envelope, json: json) { completion(.failure(TestFailure(message:"Invalid envelope"))); return }
@@ -56,14 +64,14 @@ func wait<T>(_ body:(@escaping(Result<T,Error>)->Void)->Void) throws -> T {
     guard let result else {throw TestFailure(message:"Async completion timed out")}
     return try result.get()
 }
-func makeJSON(_ rev:Int,_ epoch:Int=0,extra:String="") throws -> String {
-    let obj:[String:Any]=["saveVersion":"2.0.0","saveRevision":rev,"resetEpoch":epoch,"simSeconds":Double(rev)*60,"label":"العساف / 海 🚢","extra":extra]
+func makeJSON(_ rev:Int,_ epoch:Int=0,extra:String="",saveVersion:String="2.0.0") throws -> String {
+    let obj:[String:Any]=["saveVersion":saveVersion,"saveRevision":rev,"resetEpoch":epoch,"simSeconds":Double(rev)*60,"label":"العساف / 海 🚢","extra":extra]
     return String(data:try JSONSerialization.data(withJSONObject:obj,options:[.sortedKeys]),encoding:.utf8)!
 }
 func hash(_ json:String)->String {SHA256.hash(data:Data(json.utf8)).map{String(format:"%02x",$0)}.joined()}
 func envelope(_ json:String,action:String="commitSave") throws->[String:Any] {
     let root=try JSONSerialization.jsonObject(with:Data(json.utf8)) as! [String:Any]
-    return ["action":action,"requestId":UUID().uuidString,"saveSchemaVersion":"2.0.0","saveRevision":root["saveRevision"]!,"resetEpoch":root["resetEpoch"] ?? 0,"saveHash":hash(json),"saveJSON":json]
+    return ["action":action,"requestId":UUID().uuidString,"saveSchemaVersion":root["saveVersion"]!,"saveRevision":root["saveRevision"]!,"resetEpoch":root["resetEpoch"] ?? 0,"saveHash":hash(json),"saveJSON":json]
 }
 func commit(_ json:String,_ envelope:[String:Any],_ completion:@escaping(Result<Int,Error>)->Void) {
     __COMMIT__
@@ -89,6 +97,8 @@ func reject(_ name:String, json:String, payload:[String:Any]) {
 }
 let first=try makeJSON(1)
 test("real UTF8 save, hash, A/B readback") {let gen:Int=try wait {commit(first,try! envelope(first),$0)};try check(gen==1 && vault.currentSave()==first,"Native roundtrip mismatch")}
+let currentSchema=try makeJSON(2,saveVersion:"3.0.0")
+test("Save Schema 3 uses the current JSON vault path") {let gen:Int=try wait {commit(currentSchema,try! envelope(currentSchema),$0)};try check(gen==2 && vault.currentSave()==currentSchema,"Save Schema 3 native roundtrip mismatch")}
 let next=try makeJSON(2)
 var p=try envelope(next);p["saveHash"]=String(repeating:"0",count:64);reject("bad hash leaves disk unchanged",json:next,payload:p)
 p=try envelope(next);p["saveRevision"]=999;reject("revision mismatch leaves disk unchanged",json:next,payload:p)
@@ -96,6 +106,7 @@ p=try envelope(next);p["resetEpoch"]=99;reject("epoch mismatch leaves disk uncha
 p=try envelope(next);p["requestId"]="";reject("empty request id",json:next,payload:p)
 p=try envelope(next);p["requestId"]=String(repeating:"x",count:201);reject("oversized request id",json:next,payload:p)
 p=try envelope(next);p["saveSchemaVersion"]="1.0.0";reject("wrong envelope schema",json:next,payload:p)
+p=try envelope(next);p["saveSchemaVersion"]="3.0.0";reject("payload schema must match JSON root",json:next,payload:p)
 p=try envelope(next);p["saveJSON"]=first;reject("raw envelope belongs to different JSON",json:next,payload:p)
 p=try envelope(next);p["action"]="resetGameSave";reject("cross-action envelope rejected by commit owner",json:next,payload:p)
 let bo="{\\"saveVersion\\":\\"2.0.0\\",\\"saveRevision\\":true,\\"resetEpoch\\":0,\\"simSeconds\\":0}"
@@ -106,6 +117,7 @@ var broken=try envelope(next);broken["saveJSON"]="{";broken["saveHash"]=hash("{"
 reject("malformed JSON rejected",json:"{",payload:broken)
 let huge=try makeJSON(2,extra:String(repeating:"x",count:30*1024*1024))
 reject("30 MiB byte limit enforced",json:huge,payload:try envelope(huge))
+let future=try makeJSON(3,saveVersion:"4.0.0");reject("unsupported future save schema",json:future,payload:try envelope(future))
 // Reset test fixture after negative probes; baseline failures may legitimately have mutated it.
 vault.reset()
 test("FIFO saves and main completion queue") {

@@ -76,7 +76,7 @@ function accrue(env){
   const legacy={...JSON.parse(JSON.stringify(canonical)),from:'ذمم رواتب مستحقة',kind:'payroll-accrual'};
   source.state.companyFinance.group.ledger=[legacy];source.state.treasury.ledger=[JSON.parse(JSON.stringify(legacy))];source.state.simSeconds=40800;source.state.saveRevision=37;
   const raw=JSON.stringify(source.state);
-  const boot=harness(['save-schema','authorization-core','document-proof-core','migration-core']);
+  const boot=harness(['save-schema','authorization-core','document-proof-core','state-codec-core','migration-core']);
   boot.s.__GH_NATIVE_SAVE_JSON__=raw;
   const defaults=minimal();defaults.profile={name:'Build336 Proof Regression',founder:'Founder'};
   const loaded=boot.s.GH_MIGRATION_CORE.load({defaultState:defaults,storageKey:'gh-test',legacyStorageKeys:[],resetMarkerKey:'gh-reset',saveSchema:boot.s.GH_SAVE_SCHEMA});
@@ -85,11 +85,11 @@ function accrue(env){
   assert.equal(loaded.state.simSeconds,40800);assert.equal(loaded.state.saveRevision,37);
   assert.equal(loaded.state.companyFinance.group.ledger[0].documentProofId,undefined);
   assert.equal(boot.s.GH_SAVE_SCHEMA.validate(loaded.state).ok,true,'cold native state must be valid before canonical persistence');
-  const canonicalRaw=JSON.stringify(loaded.state),boot2=harness(['save-schema','authorization-core','document-proof-core','migration-core']);
+  const canonicalRaw=boot.s.GH_STATE_CODEC.serialize(loaded.state),boot2=harness(['save-schema','authorization-core','document-proof-core','state-codec-core','migration-core']);
   boot2.s.__GH_NATIVE_SAVE_JSON__=canonicalRaw;
   const loaded2=boot2.s.GH_MIGRATION_CORE.load({defaultState:defaults,storageKey:'gh-test',legacyStorageKeys:[],resetMarkerKey:'gh-reset',saveSchema:boot2.s.GH_SAVE_SCHEMA});
   assert.equal(loaded2.needsCanonicalPersist,false,'second native boot from canonical state must not request another migration save');
-  assert.equal(JSON.stringify(loaded2.state),JSON.stringify(loaded.state),'second native boot must preserve the canonical state JSON exactly');
+  assert.equal(boot2.s.GH_STATE_CODEC.serialize(loaded2.state),boot.s.GH_STATE_CODEC.serialize(loaded.state),'second native boot must preserve the canonical encoded state exactly');
 }
 
 // RAM-at-hour-83 migration path: already-promoted company-ledger archive row is repaired atomically.

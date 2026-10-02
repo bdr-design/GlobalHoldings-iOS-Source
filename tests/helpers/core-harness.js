@@ -17,9 +17,27 @@ function harness(names = []) {
     CustomEvent: class { constructor(type, o) { this.type = type; this.detail = o.detail; } }
   };
   s.window = s; s.globalThis = s; vm.createContext(s);
+  // Test callbacks originate in Node's realm. Normalize cloned ArrayBuffers
+  // back into the VM realm so store type checks behave like browser globals.
+  const RealmArrayBuffer=vm.runInContext('ArrayBuffer',s),nativeStructuredClone=structuredClone;
+  s.structuredClone=value=>{
+    const copy=nativeStructuredClone(value),seen=new WeakMap();
+    const localize=node=>{
+      if(!node||typeof node!=='object')return node;
+      if(Object.prototype.toString.call(node)==='[object ArrayBuffer]'){
+        const buffer=new RealmArrayBuffer(node.byteLength);new Uint8Array(buffer).set(new Uint8Array(node));return buffer;
+      }
+      if(seen.has(node))return seen.get(node);seen.set(node,node);
+      for(const key of Object.keys(node)){
+        const child=node[key],localized=localize(child);if(localized!==child)node[key]=localized;
+      }
+      return node;
+    };
+    return localize(copy);
+  };
   const loaded=new Set();
   // Every owner reads and writes the fleet through Fleet Data Access (Build 355).
-  const load = n => {if(loaded.has(n))return;if(n!=='fleet-store-core'&&n!=='fleet-access-core'&&!loaded.has('fleet-access-core')){load('fleet-store-core');load('fleet-access-core');}if(n==='simulation-core'){if(!loaded.has('simulation-time-core'))load('simulation-time-core');if(!loaded.has('simulation-pacing-core'))load('simulation-pacing-core');}vm.runInContext(fs.readFileSync(path.join(ROOT, 'WebApp', n + '.js'), 'utf8'), s, {filename: n + '.js'});loaded.add(n);};
+  const load = n => {if(loaded.has(n))return;if(n!=='fleet-store-core'&&n!=='fleet-access-core'&&!loaded.has('fleet-access-core')){load('fleet-store-core');load('fleet-access-core');}if(n==='simulation-core'){if(!loaded.has('simulation-asset-core'))load('simulation-asset-core');if(!loaded.has('fleet-event-core'))load('fleet-event-core');if(!loaded.has('simulation-time-core'))load('simulation-time-core');if(!loaded.has('simulation-pacing-core'))load('simulation-pacing-core');}vm.runInContext(fs.readFileSync(path.join(ROOT, 'WebApp', n + '.js'), 'utf8'), s, {filename: n + '.js'});loaded.add(n);};
   names.forEach(load);
   return {s, data, storage, load};
 }

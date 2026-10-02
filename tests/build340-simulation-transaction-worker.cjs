@@ -1,154 +1,69 @@
 'use strict';
 
 const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const path=require('node:path');
-const vm=require('node:vm');
-const {scenario}=require('./helpers/business-scenario');
-const Core=require('../WebApp/simulation-asset-core.js');
-const ROOT=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8');
-function fragment(start,end){const a=app.indexOf(start),b=app.indexOf(end,a);assert(a>=0&&b>a,`missing app excerpt ${start}`);return app.slice(a,b);}
-const SUPPORT=fragment('  const SIMULATION_ASSET_ENGINE=', '  function makeSimulationEffects(){');
-const EFFECTS=fragment('  function makeSimulationEffects(){', '  // Pure simulation draft:');
-const JOB=fragment('  const SIMULATION_TRANSACTION_SCOPE=', "  if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core compatibility");
+const {createSimulationAdapter,makeAsset,fixture}=require('./helpers/fleet-simulation-adapter');
 
-function setup({assetCount=1}={}){
-  const e=scenario(),s=e.s,state=e.state,route={id:'SIM-WORKER-R',type:'air',routeMode:'air',ownerCompanyId:'air',from:'ألف',to:'باء',fromFacility:'B1',toFacility:'B2',distanceKm:100,effectiveSpeedKmh:100,tripSeconds:4000,dwellHours:.1};
-  e.load('simulation-time-core');e.load('simulation-pacing-core');e.load('simulation-core');e.load('simulation-asset-core');
-  const asset={id:'SIM-WORKER-A',name:'اختبار محاكاة',type:'air',assetMode:'air',ownerCompanyId:'air',assetClass:'aircraft',operationProfileId:'air-operations',phase:'moving',routeId:route.id,routeSignature:'SIG',routeSlot:0,reverse:false,progress:.1,fuel:95,condition:99,from:route.from,to:route.to,baseFacility:'B1',load:'82 / 100 راكب',dwellRemaining:0,departureScheduled:false,salePending:false,tripSeconds:4000,specs:{capacity:100,capacityUnit:'راكب',speedKmh:100,fuelBurnKgPerKm:2,yieldMultiplier:1},staffing:{mode:'automatic-fixed',ready:true,monthlyPayroll:120000},simCarrySeconds:0,crewBlocked:false};
-  state.assets=Array.from({length:assetCount},(_,index)=>index===0?asset:{...asset,id:`SIM-WORKER-A-${index}`});state.simSeconds=7200;state.speed=30;
-  Object.assign(s,{
-    state,COMPANY_PLATFORM:s.GH_COMPANY_PLATFORM,SIMULATION_ASSET_ENGINE:Core,GH_SIMULATION_ASSET_CORE:Core,
-    routeTemplates:{[route.id]:route},competitorAssets:[],BASE_ROUTE_IDS:new Set([route.id]),expansionSites:[],
-    getDynamicFacilities:()=>[...state.globalBases,...state.customHubs],catalogItem:()=>null,
-    clone:value=>value===undefined?undefined:JSON.parse(JSON.stringify(value)),
-    assetOwnerCompanyId:row=>row.ownerCompanyId||row.companyId||s.GH_COMPANY_PLATFORM.ownerForLegacyAssetMode?.(row.assetMode||row.type)||'',
-    routeOwnerCompanyId:row=>row.ownerCompanyId||row.companyId||row.company||s.GH_COMPANY_PLATFORM.ownerForLegacyRouteMode?.(row.routeMode||row.type)||'',
-    routeMatchingFacility:(id)=>id===route.id?route:null,
-    processAssetDraft:()=>{throw new Error('compatibility fallback should not run in the worker integration test');},
-    processFinancialDay:()=>{},processMarket:()=>{},routeDistance:()=>0,queueAssetSaleFinalize:()=>{},diag:()=>{},
-    GH_ADVANCED:{adjustTripEconomics:(_state,_asset,eco)=>eco}
-  });
-  s.window=s;s.GH_SIMULATION_ASSET_CORE=Core;
-  const workers=[],workerMessages=[];
-  s.Worker=class MockSimulationWorker{
-    constructor(){this.terminated=false;workers.push(this);}
-    postMessage(message){workerMessages.push(message);setTimeout(()=>{if(this.terminated)return;const records=Core.processBatch(message);this.onmessage?.({data:{type:'result',requestId:message.requestId,version:'GH-SIMULATION-ASSET-WORKER-340.1.0',coreVersion:Core.VERSION,records}});},5);}
-    terminate(){this.terminated=true;}
-  };
-  vm.runInContext(SUPPORT,s,{filename:'build340-simulation-worker-support.js'});
-  vm.runInContext(EFFECTS,s,{filename:'build340-simulation-worker-effects.js'});
-  vm.runInContext(JOB,s,{filename:'build340-simulation-worker-job.js'});
-  return {e,s,state,asset,route,workers,workerMessages};
+const canonicalJSON=value=>{
+  const jsonValue=JSON.parse(JSON.stringify(value));
+  const sort=item=>Array.isArray(item)?item.map(sort):item&&typeof item==='object'?Object.fromEntries(Object.keys(item).sort().map(key=>[key,sort(item[key])])):item;
+  return JSON.stringify(sort(jsonValue));
+};
+function exactFleet(x,store=x.state.fleet){
+  const rows=x.s.GH_FLEET_STORE.toAssets(store),at=[];
+  x.s.GH_FLEET_STORE.forEachLive(store,index=>at.push(x.s.GH_FLEET_STORE.slot(store,'at',index)));
+  return canonicalJSON({rows,at});
 }
-async function prepare(job){
-  const first=job.runChunk(64,{deadline:Infinity});assert.equal(first?.pending,true,'the main thread yields after submitting the bounded worker batch');
-  await new Promise(resolve=>setTimeout(resolve,20));
-  assert.equal(job.runChunk(64,{deadline:Infinity}),true,'worker plan completes the immutable asset set');
-}
-async function prepareFully(job){
-  for(let turn=0;turn<500;turn++){
-    if(job.runChunk(256,{deadline:Infinity})===true)return;
-    await new Promise(resolve=>setTimeout(resolve,2));
-  }
-  throw new Error('simulation-worker-integration-timeout');
-}
-async function run(){
-  {
-    const x=setup({assetCount:1});let reads=0;
-    x.state.assets=x.state.assets.map(asset=>new Proxy(asset,{get(target,key,receiver){if(typeof key==='string'&&key!=='toJSON')reads++;return Reflect.get(target,key,receiver);}}));
-    const job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});
-    assert.equal(reads,0,'creating a slice must not synchronously scan the full fleet');
-    assert.equal(job.runChunk(1,{deadline:Infinity}),false,'slice-start guards are captured within the supplied chunk budget');
-    assert(reads>0,'the first bounded chunk captures its immutable input before calculation');assert.equal(x.workerMessages.length,0,'asset calculation has not started while the snapshot is incomplete');
-    // Build 350 exact-input contract: a change to a GUARDED input still rejects at commit; the plan is never published stale.
-    const changed=x.s.GH_TRANSACTION_CORE.execute(x.state,{label:'test:asset-mutation-during-snapshot',apply:()=>{x.state.assets[0].specs.capacity=101;return true;}});assert.equal(changed.committed,true);
-    await prepareFully(job);const rejected=job.finish();
-    assert.equal(rejected.committed,false,'a worker plan computed from an older DTO cannot publish');assert.equal(rejected.reason,'asset-conflict','the per-asset input guard rejects the stale plan');assert.equal(rejected.retry,true);assert.equal(x.state.simSeconds,7200,'a stale asset plan cannot advance time');assert.equal(x.state.assets[0].specs.capacity,101,'rejected commit preserves the newer live input');
-    console.log('PASS bounded slice snapshot yields to the frame budget and a guarded-input change rejects stale planning');
-  }
-  {
-    // ---- Build 350: exact-input guard. Unrelated commits must not discard a Worker plan; guarded inputs still must. ----
-    const start=(assetCount=1)=>{const x=setup({assetCount});const job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});assert.equal(job.runChunk(1,{deadline:Infinity}),false);return {x,job};};
-    const commit=(x,label,apply)=>{const out=x.s.GH_TRANSACTION_CORE.execute(x.state,{label,apply:()=>{apply();return true;}});assert.equal(out.committed,true);return out;};
-    { // unrelated gameplay commit (alerts) mid-slice: revision moves, plan survives and commits exactly once
-      const {x,job}=start(),before=x.s.GH_TRANSACTION_CORE.revision(x.state);
-      commit(x,'test:unrelated-alert',()=>{x.state.alerts=x.state.alerts||[];x.state.alerts.unshift('unrelated');});
-      assert.equal(x.s.GH_TRANSACTION_CORE.revision(x.state),before+1,'the global revision really moved');
-      await prepareFully(job);const result=job.finish();
-      assert.equal(result.committed,true,'an unrelated commit must not discard an exact-input plan');assert.equal(x.state.simSeconds,7230);assert(x.asset.progress>.1,'the committed slice advanced the asset');
-    }
-    { // many unrelated commits in a row still commit (no livelock under a busy background writer)
-      const {x,job}=start(50);
-      for(let i=0;i<25;i++)commit(x,`test:noise-${i}`,()=>{x.state.eventLog=x.state.eventLog||[];x.state.eventLog.unshift(`noise ${i}`);if(x.state.eventLog.length>10)x.state.eventLog.length=10;});
-      await prepareFully(job);const result=job.finish();assert.equal(result.committed,true);assert.equal(x.state.simSeconds,7230);
-    }
-    { // guarded economy input changes: rejected with the context guard
-      const {x,job}=start();
-      commit(x,'test:economy-change',()=>{x.state.realism.economy=x.state.realism.economy||{};x.state.realism.economy.jetFuel=(Number(x.state.realism.economy.jetFuel)||0)+7;});
-      await prepareFully(job);const result=job.finish();assert.equal(result.committed,false);assert.equal(result.reason,'simulation-context-conflict');assert.equal(x.state.simSeconds,7200);
-    }
-    { // fleet identity/length changes (purchase, sale): rejected, never merged silently
-      const {x,job}=start();
-      commit(x,'test:fleet-append',()=>{x.state.assets.push({...x.asset,id:'SIM-WORKER-APPENDED'});});
-      const stale=job.runChunk(64,{deadline:Infinity});assert.equal(stale,true,'fleet length change invalidates the snapshot immediately');const result=job.finish();
-      assert.equal(result.committed,false);assert.equal(result.retry,true);assert.equal(x.state.simSeconds,7200);
-    }
-    { // a real route write is a guarded input too
-      const {x,job}=start();
-      commit(x,'test:route-write',()=>{x.s.routeTemplates[x.route.id].tripSeconds=x.route.tripSeconds+100;});
-      await prepareFully(job);const result=job.finish();assert.equal(result.committed,false);assert.equal(x.state.simSeconds,7200);assert(['route-conflict','asset-conflict'].includes(result.reason),result.reason);
-    }
-    { // compatibility (main-thread) planning may read live state through unenumerated owners: it keeps the strict revision rule
-      const {x,job}=start();x.s.Worker=undefined;
-      commit(x,'test:unrelated-during-compat',()=>{x.state.alerts=x.state.alerts||[];x.state.alerts.unshift('unrelated');});
-      assert.equal(job.runChunk(64,{deadline:Infinity}),true,'strict revision rule invalidates a compatibility-planned slice');const result=job.finish();
-      assert.equal(result.committed,false);assert.equal(result.reason,'simulation-source-revision-conflict');assert.equal(x.state.simSeconds,7200);
-    }
-    console.log('PASS Build 350 exact-input guard: unrelated commits keep the plan; asset/economy/fleet/route writes and compatibility planning stay strict');
-  }
-  {
-    const x=setup({assetCount:20000}),started=performance.now();
-    let snapshotReads=0;const guardAssets=x.state.assets.map(asset=>new Proxy(asset,{get(target,key,receiver){if(typeof key==='string'&&key!=='toJSON')snapshotReads++;return Reflect.get(target,key,receiver);}}));x.state.assets=guardAssets;
-    const job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});
-    assert.equal(snapshotReads,0,'large-fleet guards are not captured by the job constructor');
-    assert.equal(job.runChunk(32,{deadline:Infinity}),false,'large-fleet snapshot capture yields after the configured chunk count');
-    assert(snapshotReads>0&&snapshotReads<32*40,'the first chunk reads only its bounded portion of the fleet');assert.equal(x.workerMessages.length,0,'the worker starts only after a complete immutable input snapshot exists');
-    await prepareFully(job);assert.equal(x.asset.progress,.1,'no live asset changes before the owner transaction');
-    x.e.load('diagnostics-core');x.s.GH_DIAGNOSTICS.recorderStart(x.state,{speed:30},{nowMs:1000000000000,performanceNowMs:performance.now()});
-    const result=job.finish();assert.equal(result.committed,true);assert(x.asset.progress>.1);assert.equal(x.state.simSeconds,7230);assert.equal(x.state.simulationKernel.lastAtomicCommit.assets,20000);assert.equal(x.workerMessages.length,79,'20,000 assets stay within the 256-row Worker batch limit');
-    const profiled=x.s.GH_TRANSACTION_CORE.telemetry().profiledSamples.find(row=>row.label==='simulation:7200->7230');
-    assert.equal(profiled.profileContext.kind,'simulation-slice');assert.equal(profiled.profileContext.assetCount,20000);
-    assert(profiled.phaseBreakdown.some(row=>row.name==='simulation.validate.asset-index'));
-    assert(profiled.phaseBreakdown.some(row=>row.name==='simulation.apply.asset-patches'));
-    console.log(JSON.stringify({suite:'build340-simulation-app-worker-20k',assets:20000,workerBatches:x.workerMessages.length,nodeElapsedMs:+(performance.now()-started).toFixed(2),environment:`Node ${process.version}; app owner transaction integration; synthetic state only; no DOM, native persistence or iPhone`}));
-  }
-  {
-    const x=setup(),job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});await prepare(job);
-    const revisionBefore=x.s.GH_TRANSACTION_CORE.revision(x.state);
-    assert.equal(x.asset.progress,.1,'worker planning never mutates a live asset before commit');
-    const result=job.finish();assert.equal(result.committed,true);assert(x.asset.progress>.1);assert.equal(x.state.simSeconds,7230);assert.equal(x.workers.length,1);
-    assert.equal(x.s.GH_TRANSACTION_CORE.revision(x.state),revisionBefore+1,'only the atomic owner commit advances the runtime target revision');
-    assert.equal(x.state.simulationKernel.lastAtomicCommit.assets,1);
-    console.log('PASS worker plan crosses the existing validation and atomic simulation transaction before asset/time writes');
-  }
-  {
-    const x=setup(),job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:1,hour:3}});await prepare(job);
-    x.e.load('diagnostics-core');x.s.GH_DIAGNOSTICS.recorderStart(x.state,{speed:30},{nowMs:1000000000000,performanceNowMs:performance.now()});
-    const result=job.finish();assert.equal(result.committed,true);
-    const profiled=x.s.GH_TRANSACTION_CORE.telemetry().profiledSamples.find(row=>row.label==='simulation:7200->7230');
-    const names=profiled.phaseBreakdown.map(row=>row.name),dayIndex=names.indexOf('simulation.boundary.financial-day'),marketIndex=names.indexOf('simulation.boundary.market-hour');
-    assert(dayIndex>=0&&marketIndex>dayIndex,'financial close remains before hourly market work in the measured atomic commit');
-    assert.equal(profiled.rollbackStorage,'full-snapshot','boundary profiling keeps the full-state rollback mode');
-    console.log('PASS hot-path profile captures ordered financial and market boundaries without changing Full Snapshot rollback');
-  }
-  {
-    const x=setup(),job=x.s.createSimulationSliceJob(30,{from:x.state.simSeconds,to:x.state.simSeconds+30,speed:30,boundary:{day:null,hour:null}});await prepare(job);
-    const before=JSON.stringify(x.state),execute=x.s.GH_FINANCE_CORE.execute;
-    x.s.GH_FINANCE_CORE.execute=(ctx,command,...args)=>{if(command==='apply-simulation-journal')throw new Error('injected-finance-owner-failure');return execute(ctx,command,...args);};
-    let failure;try{job.finish();}catch(error){failure=error;}finally{x.s.GH_FINANCE_CORE.execute=execute;}
-    assert.match(String(failure?.message||failure),/injected-finance-owner-failure/);assert.equal(JSON.stringify(x.state),before,'a failed finance owner rolls the whole simulation transaction back byte-for-byte');
-    console.log('PASS worker-derived asset plan retains full transaction rollback when downstream finance application fails');
-  }
-}
-run().catch(error=>{console.error(error);process.exitCode=1;});
+function test(name,fn){try{console.log(JSON.stringify({test:name,ok:true,detail:fn()}));}catch(error){console.error(JSON.stringify({test:name,ok:false,error:String(error.stack||error)}));process.exitCode=1;}}
+
+test('a time conflict rejects the slice before changing the fleet or publishing its event plan',()=>{
+  const x=createSimulationAdapter({assets:[makeAsset('B340-CONFLICT',{progress:.995})]}),before=exactFleet(x),from=x.state.simSeconds;
+  const job=x.makeJob({from,to:from+30});assert.equal(job.runChunk(32),true);
+  const changed=x.s.GH_TRANSACTION_CORE.execute(x.state,{label:'test:advance-time-conflict',scope:['simSeconds'],apply:()=>{x.state.simSeconds=from+1;return true;}});
+  assert.equal(changed.committed,true);
+  const result=job.finish();assert.equal(result.committed,false);assert.equal(result.retry,true);assert.equal(result.reason,'time-conflict');
+  assert.equal(x.state.simSeconds,from+1);assert.equal(exactFleet(x),before,'conflicted planning never touches journaled rows');
+  return {reason:result.reason,simSeconds:x.state.simSeconds};
+});
+
+test('a downstream owner failure restores state and fleet rows exactly, then the event queue can retry',()=>{
+  const x=createSimulationAdapter({assets:[makeAsset('B340-ROLLBACK',{progress:.995})]}),beforeFleet=exactFleet(x),beforeRoots=x.s.GH_TRANSACTION_CORE.deepClone(x.state),buffer=x.state.fleet.rows,revision=x.state.fleet.revision,from=x.state.simSeconds;
+  const job=x.makeJob({to:from+30});assert.equal(job.runChunk(32),true);
+  const finance=x.s.GH_FINANCE_CORE,original=finance.execute;
+  finance.execute=(context,command,...args)=>{if(command==='apply-simulation-journal')throw new Error('injected-finance-owner-failure');return original(context,command,...args);};
+  let failure;try{job.finish();}catch(error){failure=error;}finally{finance.execute=original;}
+  assert.match(String(failure?.message||failure),/injected-finance-owner-failure/);
+  assert.deepEqual(x.s.GH_TRANSACTION_CORE.deepClone(x.state),beforeRoots,'every cloned non-fleet root returns to its pre-slice value');
+  assert.equal(exactFleet(x),beforeFleet,'the fleet journal restores all row fields and checkpoints');
+  assert.equal(x.state.fleet.rows,buffer,'rollback does not replace or clone the fleet buffer');
+  assert(x.state.fleet.revision>revision,'the fleet revision stays monotonic through rollback');
+  const retry=x.makeJob({from,to:from+30});assert.equal(retry.runChunk(32),true);const result=retry.finish();
+  assert.equal(result.committed,true);assert.equal(x.state.simSeconds,from+30);assert(x.state.fleet.revision>revision);
+  return {retryCommitted:result.committed,revisionBefore:revision,revisionAfter:x.state.fleet.revision};
+});
+
+test('cancelled jobs write nothing',()=>{
+  const x=createSimulationAdapter({assets:[makeAsset('B340-CANCEL',{progress:.995})]}),before=exactFleet(x),from=x.state.simSeconds;
+  const job=x.makeJob({to:from+30});job.cancel();assert.equal(job.runChunk(32),true);
+  const result=job.finish();assert.equal(result.committed,false);assert.equal(x.state.simSeconds,from);assert.equal(exactFleet(x),before);
+  return {reason:result.reason,simSeconds:x.state.simSeconds};
+});
+
+test('the 1500-event frame limit publishes completeTo and the next slice matches one unbounded advance',()=>{
+  const from=3590,to=3630,route={id:'B340-BUDGET',type:'air',routeMode:'air',ownerCompanyId:'air',from:'A',to:'B',fromFacility:'FA',toFacility:'FB',distanceKm:20,tripSeconds:1000,effectiveSpeedKmh:100,dwellHours:1.25};
+  const specs={...fixture.specs.air,speedKmh:80};
+  const early=Array.from({length:1500},(_,index)=>makeAsset(`B340-E-${index}`,{route,from,progress:.99,specs,baseFacility:'FA'}));
+  const late=Array.from({length:2},(_,index)=>makeAsset(`B340-L-${index}`,{route,from,progress:.98,specs,baseFacility:'FA'}));
+  const assets=[...early,...late],x=createSimulationAdapter({from,assets,routeOverrides:{[route.id]:route}}),reference=x.s.GH_FLEET_STORE.fromAssets(assets,{at:from});
+  const first=x.makeJob({from,to,boundary:{day:null,hour:1}});assert.equal(first.runChunk(32),true);
+  const firstResult=first.finish();assert.equal(firstResult.committed,true);assert.equal(firstResult.events,1500);
+  assert(Math.abs(firstResult.completeTo-3600)<1e-6,`expected the budget to stop at the hour boundary, got ${firstResult.completeTo}`);
+  assert.equal(x.state.simSeconds,firstResult.completeTo,'authoritative time advances only to completeTo');
+  assert.deepEqual(x.s.__marketHours,[1],'the boundary at completeTo is applied once');
+  const second=x.makeJob({from:firstResult.completeTo,to});assert.equal(second.runChunk(32),true);
+  const secondResult=second.finish();assert.equal(secondResult.committed,true);assert.equal(secondResult.completeTo,to);assert.equal(x.state.simSeconds,to);
+  assert.deepEqual(x.s.__marketHours,[1],'continuing after the boundary does not apply it twice');
+  const refOut=x.s.GH_FLEET_EVENTS.advance(reference,{from,to,context:fixture.context(from),resolveRoute:x.s.__resolveFleetRoute,tripAlertLimit:64,order:'events'});
+  assert.equal(firstResult.events+secondResult.events,refOut.events);
+  assert.equal(exactFleet(x),exactFleet(x,reference),'budgeted app slices match a single unbounded event advance bit for bit');
+  return {firstCompleteTo:firstResult.completeTo,firstEvents:firstResult.events,secondEvents:secondResult.events,totalEvents:refOut.events,marketHours:x.s.__marketHours};
+});

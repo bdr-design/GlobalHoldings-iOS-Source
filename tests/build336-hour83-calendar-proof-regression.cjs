@@ -9,8 +9,9 @@ const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8');
 function fragment(start,end){const a=app.indexOf(start),b=app.indexOf(end,a);assert(a>=0&&b>a,`${start} -> ${end}`);return app.slice(a,b);}
 
 function baseEnvironment(){
-  const {s}=harness(['save-schema','authorization-core','document-proof-core','transaction-core','domain-command-core','finance-core','control-plane-core','simulation-asset-core','simulation-core']);
+  const {s}=harness(['save-schema','authorization-core','document-proof-core','transaction-core','domain-command-core','finance-core','control-plane-core','simulation-asset-core','migration-core','simulation-core']);
   const state=minimal();state.profile={name:'Build336 Hour83 Regression',founder:'Founder'};state.lastMarketHour=0;state.lastFinancialDay=0;state.speed=0;state.groupValue=0;state.todayProfit=0;
+  s.GH_MIGRATION_CORE.migrateFleet(state);
   state.sectorProfitToday={};state.tripProfitAccrued={};state.tripRevenueAccrued={};state.tripFuelAccrued={};state.tripMaintenanceAccrued={};state.tripCountAccrued={};state.advanced={companies:{}};
   s.GH_FINANCE_CORE.ensure(state);s.GH_CONTROL_PLANE.ensure(state);
   Object.assign(s,{

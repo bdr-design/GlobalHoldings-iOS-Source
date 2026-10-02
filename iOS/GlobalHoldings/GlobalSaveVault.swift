@@ -66,6 +66,10 @@ final class GlobalSaveVault {
     private let fm = FileManager.default
     private let queue = DispatchQueue(label: "com.globalholdings.save-vault", qos: .utility)
     private let schemaVersion = "2.0.0"
+    // The vault's on-disk A/B envelope remains v2 while the game-state payload
+    // migrates independently. Save Schema 3 still uses the existing JSON path
+    // until the chunked binary store lands.
+    private let supportedSaveSchemaVersions: Set<String> = ["2.0.0", "3.0.0"]
     private init() {
         // A crash before reset commit returns to the independently pinned old save.
         // Keep the journal on recovery failure so bootstrap and writes fail closed.
@@ -538,14 +542,14 @@ final class GlobalSaveVault {
         }
         guard let requestId = payload["requestId"] as? String, !requestId.isEmpty, requestId.count <= 200,
               payload["action"] as? String == action,
-              payload["saveSchemaVersion"] as? String == schemaVersion,
+              let saveSchemaVersion = payload["saveSchemaVersion"] as? String, supportedSaveSchemaVersions.contains(saveSchemaVersion),
               payload["saveJSON"] as? String == json,
               let hash = payload["saveHash"] as? String, hash.utf8.count == 64,
               hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
               json.utf8.count <= 30 * 1024 * 1024,
               let data = json.data(using: .utf8),
               let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              root["saveVersion"] as? String == schemaVersion,
+              root["saveVersion"] as? String == saveSchemaVersion,
               let revision = integer(payload["saveRevision"]),
               let rootRevision = integer(root["saveRevision"]), revision == rootRevision,
               let epoch = integer(payload["resetEpoch"]),
@@ -558,7 +562,7 @@ final class GlobalSaveVault {
               let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw VaultError.message("Save payload is not valid JSON.")
         }
-        guard (root["saveVersion"] as? String) == schemaVersion else {
+        guard let saveSchemaVersion = root["saveVersion"] as? String, supportedSaveSchemaVersions.contains(saveSchemaVersion) else {
             throw VaultError.message("Unsupported save schema.")
         }
         func validNumber(_ key: String, fallback: Double?, strings: Bool = false) -> Double? {

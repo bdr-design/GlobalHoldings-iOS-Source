@@ -1,33 +1,46 @@
 'use strict';
-const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const {harness,minimal}=require('./helpers/core-harness');
-const app=fs.readFileSync(path.join(process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..'),'WebApp/app.js'),'utf8');
-function range(start,end){const a=app.indexOf(start),b=app.indexOf(end,a+start.length);assert(a>=0&&b>a,`missing source range ${start}`);return app.slice(a,b);}
-const helper=range('  function makeSimulationEffects()','  function simulationCalendarDate(');
-const job=range('  const SIMULATION_TRANSACTION_SCOPE=','  if(!window.GH_TRANSACTION_CORE?.execute)throw new Error(\'Transaction Core compatibility');
-function run({faultAt=1,lateFailure=false}={}){
-  const {s}=harness(['transaction-core']),state=minimal();Object.assign(state,{speed:1,todayProfit:0,groupValue:0,simulationWorld:{competitorAssets:[]},simSeconds:0});
-  const asset=id=>({id,name:id,type:'air',assetMode:'air',ownerCompanyId:'air',phase:'moving',progress:0,fuel:100,condition:100,tripSeconds:60,routeId:'R',dwellRemaining:0,staffing:{mode:'automatic-fixed',ready:true},specs:{seats:1}});
-  state.assets=[asset('faulted'),asset('healthy')];const before=structuredClone(state),calls={};
-  Object.assign(s,{state,clone:v=>v===undefined?undefined:JSON.parse(JSON.stringify(v)),routeTemplates:{R:{tripSeconds:60,dwellHours:0,fromFacility:'A',toFacility:'B'}},competitorAssets:state.simulationWorld.competitorAssets,
-    COMPANY_PLATFORM:{listInstances:()=>[]},SIMULATION_ASSET_ENGINE:require('../WebApp/simulation-asset-core.js'),simulationAssetRuntimeContext:()=>({workerCompatible:false}),normalizeAsset:()=>{},clamp:(n,a,b)=>Math.max(a,Math.min(b,n)),assetOwnerCompanyId:a=>a.ownerCompanyId,
-    computeTripEconomics:a=>{calls[a.id]=(calls[a.id]||0)+1;if(a.id==='faulted'&&calls[a.id]===faultAt)throw new Error('injected-trip-failure');return {revenue:10,fuelCost:1,maintReserve:1,crewCost:1,margin:7,cashContribution:8};},
-    diag:()=>{},fmtMoney:String,formatDuration:String,routeDistance:()=>1,routeMatchingFacility:()=>({}),loadLabel:()=>'',findFacility:()=>({owned:true}),BASE_ROUTE_IDS:new Set(['R']),queueAssetSaleFinalize:()=>{},
-    processFinancialDay:()=>{throw new Error('unexpected-boundary');},processMarket:()=>{throw new Error('unexpected-boundary');}
-  });
-  s.GH_FLEET_CORE={departureDelay:()=>0,departDraft:a=>{a.phase='moving';a.progress=0;}};
-  s.GH_FINANCE_CORE={execute:(_ctx,_name,{journal})=>{state.todayProfit+=journal.todayProfit;state.testJournal=structuredClone(journal);}};
-  s.GH_CORPORATE_CORE={execute:(_ctx,_name,{delta})=>{state.groupValue+=delta;}};
-  s.GH_OPERATIONS_CORE={execute:(_ctx,_name,{text})=>(state.alerts||=[]).push(text)};
-  s.GH_REALISM={onSimulationTime:()=>{if(lateFailure)throw new Error('injected-delivery-failure');}};
-  vm.runInContext(helper+'\n'+job+'\nglobalThis.createJob=createSimulationSliceJob;',s);
-  const to=faultAt===1?60:180,j=s.createJob(to,{speed:30,from:0,to,boundary:{day:null,hour:null}});
-  while(!j.runChunk(1)){};
-  if(lateFailure){assert.throws(()=>j.finish(),/injected-delivery-failure/);assert.deepEqual(JSON.parse(JSON.stringify(state.assets)),before.assets);assert.equal(state.simSeconds,0);assert.equal(state.todayProfit,0);return;}
-  assert.equal(j.finish().committed,true);
-  const broken=state.assets[0];assert.equal(broken.simulationFault.code,'ASSET_SIMULATION_ISOLATED');assert.equal(broken.crewBlocked,true);
-  for(const field of ['phase','progress','fuel','condition','routeId','dwellRemaining'])assert.equal(broken[field],before.assets[0][field],`faulted asset leaked partial field: ${field}`);
-  assert.equal(broken.lastTrip,undefined);assert.equal(state.todayProfit,7*calls.healthy,'only healthy trips may accrue');
-  assert.equal(state.simSeconds,to);assert.equal(state.assets[1].simulationFault,undefined);
+
+const assert=require('node:assert/strict');
+const {createSimulationAdapter,makeAsset,fixture}=require('./helpers/fleet-simulation-adapter');
+
+function stateSnapshot(s,state){
+  const copy=structuredClone(state);delete copy.fleet;
+  const at=[];s.GH_FLEET_STORE.forEachLive(state.fleet,row=>at.push(s.GH_FLEET_STORE.slot(state.fleet,'at',row)));
+  return JSON.stringify({state:copy,assets:s.GH_FLEET_STORE.toAssets(state.fleet),at});
 }
-run();run({faultAt:2});run({lateFailure:true});console.log(JSON.stringify({suite:'simulation-fault-isolation',passed:3,total:3}));
+
+function run({faultAt=1,lateFailure=false}={}){
+  const route={...fixture.routes.A1,id:'FAULT-ROUTE',tripSeconds:60,dwellHours:1.25};
+  const broken=makeAsset('faulted',{route,from:0,phase:'moving',progress:0,routeSlot:0,baseFacility:route.fromFacility,catalogId:'FAULT'});broken.tripSeconds=60;
+  delete broken.specs;
+  const healthy=makeAsset('healthy',{route,from:0,phase:'moving',progress:0,routeSlot:0,baseFacility:route.fromFacility,catalogId:'HEALTHY'});healthy.tripSeconds=60;
+  const {s,state}=createSimulationAdapter({from:0,assets:[broken,healthy],routeOverrides:{[route.id]:route},deliveryWork:lateFailure});
+  const calls={faulted:0};
+  s.catalogItem=(_type,catalogId)=>{
+    if(catalogId==='FAULT'&&++calls.faulted===faultAt)throw new Error('injected-trip-failure');
+    return null;
+  };
+  if(lateFailure){
+    s.GH_REALISM.hasPendingDeliveries=()=>true;
+    s.GH_REALISM.onSimulationTime=()=>{throw new Error('injected-delivery-failure');};
+  }
+  const to=faultAt===1?60:4560,job=s.__makeFleetSliceJob(to,{from:0,to,speed:30,manualAdvance:false,boundary:{day:null,hour:null}});
+  assert.equal(job.runChunk(64),true);
+  if(lateFailure){
+    const before=stateSnapshot(s,state);
+    assert.throws(()=>job.finish(),/injected-delivery-failure/);
+    assert.equal(stateSnapshot(s,state),before,'failed slice must restore non-fleet roots and exact fleet row content/checkpoints');
+    assert.equal(state.simSeconds,0);return;
+  }
+  const result=job.finish();assert.equal(result.committed,true);
+  const brokenView=s.GH_FLEET_DATA.get(state,'faulted'),healthyView=s.GH_FLEET_DATA.get(state,'healthy');
+  assert.equal(brokenView.simulationFault.code,'ASSET_SIMULATION_ISOLATED');
+  assert.equal(brokenView.crewBlocked,true);
+  assert.equal(healthyView.simulationFault,undefined,'one asset fault must not stop its peer');
+  assert.equal(state.simSeconds,to);
+  assert(calls.faulted>=faultAt,'the injected catalog failure must occur on the requested event');
+  assert(Object.values(state.tripCountAccrued||{}).some(count=>count>0),'healthy asset trips must still accrue');
+}
+
+run();run({faultAt:2});run({lateFailure:true});
+console.log(JSON.stringify({suite:'simulation-fault-isolation',passed:3,total:3,contract:'per-asset engine fault isolation plus exact transaction rollback',engine:'Fleet Event Core 4.2'}));
