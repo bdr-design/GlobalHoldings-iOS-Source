@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "418f409389faa0b0634821abe04728d0fc6bd45ca8064978bb26a62785179e34",
-  "webapp_tree_sha256": "e143443485c94d9112d8857c7177d78a40954ad8313df3d066cf079b5c3da7f4",
+  "source_tree_sha256": "461333cb0447c47095a9bbc35dc387c46135113d42f88e5807301612b83da7ab",
+  "webapp_tree_sha256": "0095b587d34e7036630f98b7d5236056c446862c0aadcb305b4ef967fbec3267",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 232246,
@@ -1727,8 +1727,8 @@
       "sha256": "4a0f925a3831754664e8c584617dbd91fd6ea67a97341eaac78123b66d862be9"
     },
     "WebApp/fleet-store-core.js": {
-      "bytes": 44469,
-      "sha256": "d0c85e50944b7de987c76b58f9b0bdfdaeeeff92547097edb08298bda4b20d14"
+      "bytes": 45268,
+      "sha256": "e5e79d3f7c120a670c35b9d137df422b7aad7147151d66b972b5044db93ce8e9"
     },
     "WebApp/formation-engine.js": {
       "bytes": 10555,
@@ -1899,8 +1899,8 @@
       "sha256": "7fba65430a479155bf423b5adca04c620bff3948b3da2c1bdab09927aecf6c15"
     },
     "WebApp/state-codec-core.js": {
-      "bytes": 19414,
-      "sha256": "f517e9c11bf7f9bc8e3544fb58a0eb549a4d29f9834e39d5992e021a63b11e62"
+      "bytes": 25116,
+      "sha256": "678e1d804ed780b63b50fa0796f86e2ec3606ce659e83aa2613c118b0dc93608"
     },
     "WebApp/strategy-core.js": {
       "bytes": 4799,
@@ -1996,7 +1996,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "c5235e21b849435580e08c9404147016abc10d03346d2cd5f2e6ce9704c708ee"
+      "sha256": "ae7145825ee52810ca27937e8eba9f999d0d58b06b2cbfda23b5ed57a5153627"
     },
     "BUILD": {
       "bytes": 4,

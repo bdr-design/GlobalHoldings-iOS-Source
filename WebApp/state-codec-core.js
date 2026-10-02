@@ -31,10 +31,40 @@
 
   const own=(object,key)=>Object.prototype.hasOwnProperty.call(object,key);
   function isArrayBuffer(value){return !!value&&Object.prototype.toString.call(value)==='[object ArrayBuffer]';}
+  // Build 358: base64 for the fleet record buffer (128 bytes per asset). The former String.fromCharCode + btoa path ran at
+  // ~45 ns/byte (1.15 s for 25 MB in V8); the native Uint8Array toBase64/fromBase64 (Safari 18.2+) is used when present,
+  // otherwise a 12-bit pair table writes ASCII bytes that TextDecoder turns into the string (~2 ns/byte). Output is
+  // identical to btoa. Decoding falls back to atob on anything but canonical base64, so errors are unchanged.
+  const B64='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',B64_CODES=new Uint8Array(64),B64_PAIRS=new Uint16Array(4096),B64_VALUES=new Int16Array(256).fill(-1);
+  for(let i=0;i<64;i++){B64_CODES[i]=B64.charCodeAt(i);B64_VALUES[B64_CODES[i]]=i;}
+  for(let i=0;i<4096;i++)B64_PAIRS[i]=B64_CODES[i>>6]|(B64_CODES[i&63]<<8);
+  const LITTLE_ENDIAN=new Uint8Array(new Uint16Array([1]).buffer)[0]===1,TEXT_STEP=1<<20;
+  function asciiText(bytes){const decoder=new TextDecoder('latin1');let text='';for(let at=0;at<bytes.length;at+=TEXT_STEP)text+=decoder.decode(bytes.subarray(at,Math.min(bytes.length,at+TEXT_STEP)));return text;}
+  function tableEncode(bytes){
+    const n=bytes.length,full=n-n%3,out=new Uint8Array(Math.ceil(n/3)*4),pairs=new Uint16Array(out.buffer,0,out.length>>1);let j=0;
+    for(let i=0;i<full;i+=3){const v=(bytes[i]<<16)|(bytes[i+1]<<8)|bytes[i+2];pairs[j++]=B64_PAIRS[v>>>12];pairs[j++]=B64_PAIRS[v&4095];}
+    let o=j*2;const rest=n-full;
+    if(rest){const v=(bytes[full]<<16)|(rest===2?bytes[full+1]<<8:0);out[o++]=B64_CODES[v>>>18];out[o++]=B64_CODES[(v>>>12)&63];out[o++]=rest===2?B64_CODES[(v>>>6)&63]:61;out[o++]=61;}
+    return asciiText(out);
+  }
   function base64Encode(bytes){
+    if(typeof bytes.toBase64==='function')return bytes.toBase64();
+    if(LITTLE_ENDIAN&&typeof TextDecoder==='function')return tableEncode(bytes);
     if(typeof btoa==='function'){const parts=[];for(let start=0;start<bytes.length;start+=32768)parts.push(String.fromCharCode(...bytes.subarray(start,Math.min(bytes.length,start+32768))));return btoa(parts.join(''));}
     if(typeof Buffer!=='undefined')return Buffer.from(bytes.buffer,bytes.byteOffset,bytes.byteLength).toString('base64');
     throw new Error('state-codec-base64-unavailable');
+  }
+  // Canonical base64 to bytes, or null (then the caller uses the atob path and its errors).
+  function tableDecode(text){
+    if(typeof TextEncoder!=='function'||text.length%4!==0)return null;
+    const codes=new TextEncoder().encode(text);if(codes.length!==text.length)return null;
+    const pad=text.length&&codes[codes.length-1]===61?(codes[codes.length-2]===61?2:1):0,n=text.length/4*3-pad,out=new Uint8Array(n);let o=0;
+    for(let i=0;i<codes.length;i+=4){
+      const a=B64_VALUES[codes[i]],b=B64_VALUES[codes[i+1]],last=i+4===codes.length,c=last&&pad===2?0:B64_VALUES[codes[i+2]],d=last&&pad>=1?0:B64_VALUES[codes[i+3]];
+      if((a|b|c|d)<0)return null;const v=(a<<18)|(b<<12)|(c<<6)|d;
+      out[o++]=v>>>16;if(o<n)out[o++]=(v>>>8)&255;if(o<n)out[o++]=v&255;
+    }
+    return out;
   }
   function base64Decode(text){
     if(typeof atob==='function')return atob(text);
@@ -44,8 +74,43 @@
   function binaryMarker(buffer){
     const bytes=new Uint8Array(buffer);return {$ghBinary:'arraybuffer-v1',byteLength:bytes.length,base64:base64Encode(bytes)};
   }
+  // Build 358: the fleet record buffer is encoded per segment of ROW_SEGMENT_CHUNKS store chunks. A segment is 12 MiB,
+  // a multiple of 3 bytes, so the base64 of the whole buffer is exactly the concatenation of the segments' base64. A
+  // segment whose chunks were not written since the last save (GH_FLEET_STORE.chunkStamp: same runtime, mass version and
+  // chunk versions) reuses its text. Each save re-encodes one reused segment (in rotation) and compares; a mismatch
+  // drops the cache and the save is encoded from scratch. The text equals JSON.stringify(binaryMarker(store.rows)).
+  const ROW_SEGMENT_CHUNKS=3,rowSegmentCache=new WeakMap();
+  let rowCacheStats={hits:0,misses:0,verified:0,mismatches:0};
+  function rowsMarkerText(store){
+    const STORE=globalThis.GH_FLEET_STORE,bytes=new Uint8Array(store.rows),whole=()=>JSON.stringify(binaryMarker(store.rows));
+    if(typeof STORE?.chunkStamp!=='function'||STORE.isStore?.(store)!==true)return whole();
+    const segmentBytes=STORE.CHUNK_ROWS*STORE.STRIDE*ROW_SEGMENT_CHUNKS;if(!Number.isSafeInteger(segmentBytes)||segmentBytes<=0||segmentBytes%3!==0)return whole();
+    const stamp=STORE.chunkStamp(store),count=Math.ceil(bytes.length/segmentBytes);let entry=rowSegmentCache.get(store);
+    if(!entry){entry={segments:[],rotation:0};rowSegmentCache.set(store,entry);}
+    const parts=new Array(count),reused=[];
+    for(let segment=0;segment<count;segment++){
+      const start=segment*segmentBytes,end=Math.min(bytes.length,start+segmentBytes),first=segment*ROW_SEGMENT_CHUNKS;
+      let key=`${stamp.runtime}:${stamp.mass}:${start}:${end}`;for(let chunk=first;chunk<first+ROW_SEGMENT_CHUNKS;chunk++)key+=':'+(stamp.versions[chunk]??0);
+      const cached=entry.segments[segment];
+      if(cached&&cached.key===key){parts[segment]=cached.text;reused.push(segment);rowCacheStats.hits++;}
+      else{const text=base64Encode(bytes.subarray(start,end));entry.segments[segment]={key,text};parts[segment]=text;rowCacheStats.misses++;}
+    }
+    entry.segments.length=count;
+    if(reused.length){
+      const segment=reused[entry.rotation++%reused.length],start=segment*segmentBytes;rowCacheStats.verified++;
+      if(base64Encode(bytes.subarray(start,Math.min(bytes.length,start+segmentBytes)))!==parts[segment]){
+        rowCacheStats.mismatches++;rowSegmentCache.delete(store);
+        try{globalThis.console?.warn?.('state-codec: fleet row cache mismatch; encoding the whole buffer');}catch{}
+        return whole();
+      }
+    }
+    return `{"$ghBinary":"arraybuffer-v1","byteLength":${bytes.length},"base64":"${parts.join('')}"}`;
+  }
   function binaryBuffer(marker){
     if(!isPlain(marker)||marker.$ghBinary!=='arraybuffer-v1'||!Number.isSafeInteger(marker.byteLength)||marker.byteLength<0||marker.byteLength>536870912||typeof marker.base64!=='string')throw corrupt('binary-marker');
+    let fast=null;
+    try{fast=typeof Uint8Array.fromBase64==='function'?Uint8Array.fromBase64(marker.base64):tableDecode(marker.base64);}catch{fast=null;}
+    if(fast){if(fast.length!==marker.byteLength)throw corrupt('binary-length');return fast.byteOffset===0&&fast.byteLength===fast.buffer.byteLength?fast.buffer:fast.slice().buffer;}
     let raw;try{raw=base64Decode(marker.base64);}catch{throw corrupt('binary-base64');}if(raw.length!==marker.byteLength)throw corrupt('binary-length');
     const buffer=new ArrayBuffer(raw.length),bytes=new Uint8Array(buffer);for(let start=0;start<raw.length;start+=32768){const end=Math.min(raw.length,start+32768);for(let i=start;i<end;i++)bytes[i]=raw.charCodeAt(i);}
     return buffer;
@@ -300,11 +365,13 @@
   }
   function serialize(state){
     if(!isPlain(state))return JSON.stringify(encodeState(state));
-    const binaryPaths=[];let out=state;
-    if(isArrayBuffer(state.fleet?.rows)){const path=['fleet','rows'];out=writePathCopy(out,path,binaryMarker(state.fleet.rows));binaryPaths.push(path);}
+    const binaryPaths=[],fragments=[],live=new Set();let out=state;
+    if(isArrayBuffer(state.fleet?.rows)){
+      const path=['fleet','rows'],token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;
+      fragments.push({token:JSON.stringify(token),text:rowsMarkerText(state.fleet)});out=writePathCopy(out,path,token);binaryPaths.push(path);
+    }
     const paths=selectPaths(out);
     if(!paths.length&&!binaryPaths.length)return JSON.stringify(state);
-    const fragments=[],live=new Set();
     for(const path of paths){
       const value=readPath(out,path),key=JSON.stringify(path),current=sealedMembers(value);
       if(!current){COLLECTION_TEXT.delete(key);out=writePathCopy(out,path,encodeCollection(value));continue;}
@@ -323,7 +390,7 @@
   }
   function deserialize(json){return decodeState(JSON.parse(json));}
 
-  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,deserialize,selectPaths,cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size}),isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
+  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,deserialize,selectPaths,cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size,rows:{...rowCacheStats}}),isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
   globalThis.GH_STATE_CODEC=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_STATE_CODEC=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

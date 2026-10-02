@@ -1,12 +1,12 @@
 {
   "approved": false,
-  "source_tree_sha256": "418f409389faa0b0634821abe04728d0fc6bd45ca8064978bb26a62785179e34",
+  "source_tree_sha256": "461333cb0447c47095a9bbc35dc387c46135113d42f88e5807301612b83da7ab",
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
   "blocking_issues": [
     "No physical iPhone profile exists for this candidate. Frame time, touch latency, memory, and thermal targets at 100,000 and 1,000,000 assets remain unverified on target hardware.",
-    "Build 358 has no direct-source CI run yet; the recorded CI evidence below belongs to Build 357 (commit af36368).",
+    "Build 358 direct-source CI passed on commit 1c618ad (run 37077522739: 147/147 source gates, unsigned arm64 iPhoneOS Release build); the recorded artifact block below still belongs to Build 357 (commit af36368). Later commits are verified by their own runs.",
     "Fleet JSON persistence admits purchases up to 6,000 records (live assets plus pending delivery snapshots; delivered receipts are compact since Build 358). Save Schema still scans every live asset on each save and durable command (~230 ms at 6,000 assets in Node on the development VM). Chunked binary persistence is not implemented, so million-asset save/load is not supported.",
     "The daily close still runs in one slice (~60 ms on the development VM with 300 aircraft and 100 Mobility vehicles, dominated by document-signed trip settlement); it is not frame-budgeted.",
     "Manual advance consults adapter.getManualSliceLimit and estimates a slice from a 1,500-event window, with 60-second and 3,600-second bounds; actual per-frame timing still needs iPhone profiling.",
@@ -29,7 +29,8 @@
     "build358_air_sea_dispatch": "LOCAL_PASS; store-mode air and sea bulk dispatch assigns every asset (browser test)",
     "build358_row_level_slice_snapshots": "LOCAL_PASS; steady/hour slices snapshot only written roots, enforced write sets over 288 slices, exact rollback of failed steady/hour/day slices",
     "build358_airport_capacity_3000": "LOCAL_PASS; default 3,000, idempotent load migration preserves upgrades, one purchase may deliver 3,000",
-    "build358_compact_receipts": "LOCAL_PASS; lossless receipts, 6,000-record purchase ceiling, no load-time lockout"
+    "build358_compact_receipts": "LOCAL_PASS; lossless receipts, 6,000-record purchase ceiling, no load-time lockout",
+    "build358_fleet_row_codec_cache": "LOCAL_PASS; per-chunk write versions, segment-cached row encoding byte-identical to a full encode, rotating re-encode self-check, fast base64; real game save 283->69 ms at 30,000 assets"
   },
   "latest_direct_source_ci": {
     "run_id": 36956423617,
@@ -64,7 +65,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "claude/vibrant-planck-irbtw6",
     "based_on": "build357-wip@38b21bc",
-    "source_tree_sha256": "418f409389faa0b0634821abe04728d0fc6bd45ca8064978bb26a62785179e34",
+    "source_tree_sha256": "461333cb0447c47095a9bbc35dc387c46135113d42f88e5807301612b83da7ab",
     "working_tree_clean": null
   },
   "point": "Build 358: air/sea dispatch fix, row-level simulation snapshots (no per-slice full-state copy), 3,000-aircraft airports with compact delivery receipts; RELEASE_GATE remains closed pending CI, physical iPhone profiling and owner approval."

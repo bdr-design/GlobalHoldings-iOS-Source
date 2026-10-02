@@ -87,7 +87,8 @@
     if(!r||r.values!==store.values||r.views.buffer!==store.rows){
       r={values:store.values,views:makeViews(store.rows),index:new Map(),indexedTo:0,free:[],ids:null,profileGroups:null,leaseGroups:null,payrollGroups:null,
         dirty:[],dirtyFrom:store.revision,dirtyLost:false,dirtyColumns:null,suppressDirtyLog:false,
-        dirtyChunks:new Uint8Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),allDirty:true,journal:null,epoch:++epochCounter,valuesGeneration:++epochCounter};
+        dirtyChunks:new Uint8Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),allDirty:true,journal:null,epoch:++epochCounter,valuesGeneration:++epochCounter,
+        uid:++epochCounter,chunkVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),massVersion:0};
       runtime.set(store,r);
     }
     if(r.indexedTo>store.values.length){r.index=new Map();r.indexedTo=0;r.free=[];r.valuesGeneration=++epochCounter;}
@@ -154,15 +155,20 @@
     const r=resize(store,cap);
     if(r){
       const chunks=Math.max(1,Math.ceil(cap/CHUNK_ROWS));if(r.dirtyChunks.length<chunks){const next=new Uint8Array(chunks);next.set(r.dirtyChunks);r.dirtyChunks=next;}
+      if(r.chunkVersions.length<chunks){const next=new Uint32Array(chunks);next.set(r.chunkVersions);r.chunkVersions=next;}
       if(r.journal&&r.journal.active&&r.journal.seen.length<cap){const seen=new Uint8Array(cap);seen.set(r.journal.seen);r.journal.seen=seen;}
     }
   }
   function trimCapacity(store){if(store.capacity!==store.length)resize(store,store.length);return store;}
   function isAlive(store,index){return index>=0&&index<store.length&&(views(store).u8[index*STRIDE+O.flags]&ALIVE)!==0;}
-  function markDirty(r,index){r.dirtyChunks[index>>>CHUNK_SHIFT]=1;}
+  function markDirty(r,index){const chunk=index>>>CHUNK_SHIFT;r.dirtyChunks[chunk]=1;r.chunkVersions[chunk]++;}
   // Chunks with rows changed since the last persistence checkpoint.
   function dirtyChunks(store){const r=rt(store),chunks=Math.ceil(store.length/CHUNK_ROWS),out=[];for(let chunk=0;chunk<chunks;chunk++)if(r.allDirty||r.dirtyChunks[chunk])out.push(chunk);return out;}
   function clearDirtyChunks(store){const r=rt(store);r.dirtyChunks.fill(0);r.allDirty=false;}
+  // Build 358: write versions per chunk for any number of independent consumers (dirtyChunks has one owner). A chunk's
+  // bytes are unchanged while (runtime, massVersion, its version) are unchanged; a new runtime (decoded or restored
+  // store, replaced values table) or a mass write (column write, column rollback, compaction) changes every chunk.
+  function chunkStamp(store){const r=rt(store);return {runtime:r.uid,mass:r.massVersion,versions:r.chunkVersions};}
 
   // --------------------------------------------------------------- journal ---
   // One journal per store per transaction (Transaction Core forbids nesting).
@@ -224,7 +230,7 @@
       if(journal!==null&&journal.active&&index<journal.length&&journal.seen[index]===0)logRow(journal,store,r,index);
       store.revision++;if(journal!==null)journal.high=store.revision;
       if(!r.suppressDirtyLog)logDirty(r,index);
-      r.dirtyChunks[index>>>CHUNK_SHIFT]=1;
+      markDirty(r,index);
     };
   }
   // Mass writers (one field of very many rows) snapshot that field once.
@@ -232,7 +238,7 @@
   function rememberColumn(store,name){
     if(!own(SLOTS,name))throw new RangeError(`fleet-store-column:${name}`);
     const journal=journalFor(store);if(journal&&!journal.fields.has(name))journal.fields.set(name,{copy:gatherField(store,name),logCount:journal.log.count});
-    const r=rt(store);r.allDirty=true;store.revision++;if(journal)journal.high=store.revision;
+    const r=rt(store);r.allDirty=true;r.massVersion++;store.revision++;if(journal)journal.high=store.revision;
     if(!r.suppressDirtyLog){if(!r.dirtyColumns)r.dirtyColumns=new Set();r.dirtyColumns.add(name);}
   }
   function bumpStructure(store){store.structure++;const r=runtime.get(store);if(r&&r.journal&&r.journal.active&&store.structure>r.journal.highStructure)r.journal.highStructure=store.structure;}
@@ -280,7 +286,7 @@
     // Counters only grow: a value seen during the transaction is never reused.
     if(structureChanged)store.structure++;
     store.revision++;
-    if(journal.fields.size){r.allDirty=true;if(!r.dirtyColumns)r.dirtyColumns=new Set();for(const name of journal.fields.keys())r.dirtyColumns.add(name);}
+    if(journal.fields.size){r.allDirty=true;r.massVersion++;if(!r.dirtyColumns)r.dirtyColumns=new Set();for(const name of journal.fields.keys())r.dirtyColumns.add(name);}
     if(idsKept){const rows=new Set();for(const [index] of journal.idOps)rows.add(index);for(const index of rows){if(isAlive(store,index)&&!idsMap(store,r,index,idAt(store,index))){r.ids=null;break;}}}
     if(valuesChanged)r.valuesGeneration=++epochCounter;
     endJournal(journal);
@@ -570,7 +576,7 @@
       if(lo<dead.length&&dead[lo]===index)continue;extras[index-lo]=store.extras[key];
     }
     store.extras=extras;const removed=length-write;store.length=write;store.live=write;store.structure++;store.revision++;
-    r.allDirty=true;r.dirty=[];r.dirtyLost=true;bumpEpoch(store);return {removed,length:write};
+    r.allDirty=true;r.massVersion++;r.dirty=[];r.dirtyLost=true;bumpEpoch(store);return {removed,length:write};
   }
   // Reclaim interned values no live row references (mark and sweep) onto the
   // free list. Refs never move, so rows and caches of live refs stay valid.
@@ -599,7 +605,7 @@
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
     create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
-    views,slot,setSlot,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
+    views,slot,setSlot,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;
