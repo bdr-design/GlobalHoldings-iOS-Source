@@ -4,8 +4,10 @@
 //  1. Plain validate(state) is unchanged: it verifies everything and catches every kind of tampering.
 //  2. validate(state,{trustVerified:true}) still fully verifies anything not yet in the ledger (new records, clones, loads)
 //     and still catches tampering of the LIVE business documents (an invoice edited after signing).
-//  3. Documented contract: an in-place edit of a record that was ALREADY verified is not seen by trusted validation, but is
-//     seen by the next plain validate() / a clone / a reload.
+//  3. Build 358: proof records and authorization proofs are sealed (deep-frozen) once a save or a full rollback snapshot
+//     has seen them, so an in-place edit is impossible (it throws). Tampering means a REPLACED object, which is not in the
+//     ledger and is verified even by trusted validation. (Before 358 the documented contract was that trusted validation
+//     missed an in-place edit of an already verified record until the next plain validate() / clone / reload.)
 //  4. Clones only inherit trust through inheritVerified(), and only for byte-identical records.
 //  5. Trusted validation is much cheaper than full validation once records are verified.
 const assert=require('node:assert/strict');
@@ -33,6 +35,8 @@ function build(commands){
 }
 const full=(x,st)=>x.schema.validate(st),trusted=(x,st)=>x.schema.validate(st,{trustVerified:true});
 const ids=st=>Object.keys(st.documentProofs.recordsById);
+// Replaces a row with an edited copy (an in-place edit of a sealed row throws); returns a function restoring the original.
+const replaceEdited=(container,id,edit)=>{const original=container[id],copy=structuredClone(original);edit(copy);container[id]=copy;return ()=>{container[id]=original;};};
 const median=a=>[...a].sort((p,q)=>p-q)[Math.floor(a.length/2)];
 const time=fn=>{const t=[];for(let i=0;i<7;i++){const s=performance.now();fn();t.push(performance.now()-s);}return median(t);};
 
@@ -53,32 +57,31 @@ assert.equal(trusted(x,state).ok,true,'trusted validation of an honest state');
 // (2b) editing a field that also feeds the live-document comparison (issuedAtSim) is caught even in trusted mode
 {
   assert.equal(full(x,state).ok,true);
-  const record=state.documentProofs.recordsById[ids(state)[1]],keep=record.signedContent.issuedAtSim;
-  record.signedContent.issuedAtSim=keep+7;
+  const restore=replaceEdited(state.documentProofs.recordsById,ids(state)[1],record=>{record.signedContent.issuedAtSim+=7;});
   assert.equal(full(x,state).ok,false);assert.equal(trusted(x,state).ok,false,'trusted mode still catches edits that break the signed-document comparison');
-  record.signedContent.issuedAtSim=keep;assert.equal(trusted(x,state).ok,true);
+  restore();assert.equal(trusted(x,state).ok,true);
 }
 // (2) a NEW record that was tampered before it was ever verified is rejected by trusted validation
 {
   x.issue(1);
-  const newest=state.documentProofs.recordsById[ids(state).at(-1)];
-  const keep=newest.signedContent.issuedAtSim;
-  newest.signedContent.issuedAtSim=keep+999;
+  const restore=replaceEdited(state.documentProofs.recordsById,ids(state).at(-1),record=>{record.signedContent.issuedAtSim+=999;});
   assert.equal(trusted(x,state).ok,false,'trusted validation verifies unverified records in full');
-  newest.signedContent.issuedAtSim=keep;
+  restore();
   assert.equal(trusted(x,state).ok,true);
 }
-// (3) documented contract: an already verified record edited in place
+// (3) an already verified record cannot be edited in place; a replaced one is verified again in both modes
 {
-  const record=state.documentProofs.recordsById[ids(state)[3]],payload=record.signedContent.material.payload,keep=payload.note;
+  const sealed=x.s.GH_TRANSACTION_CORE.sealCollections(state),record=state.documentProofs.recordsById[ids(state)[3]];void sealed;
   assert.equal(full(x,state).ok,true);                       // marks everything as verified
-  payload.note=keep+' (edited)';
-  assert.equal(full(x,state).ok,false,'plain validation catches an in-place edit of a verified record');
-  assert.equal(trusted(x,state).ok,true,'CONTRACT: trusted validation trusts records it already verified');
+  assert.equal(x.s.GH_TRANSACTION_CORE.isSealed(record),true,'verified proof records are sealed');
+  assert.throws(()=>{record.signedContent.material.payload.note='edited in place';},TypeError,'an in-place edit of a sealed record throws');
+  const restore=replaceEdited(state.documentProofs.recordsById,ids(state)[3],copy=>{copy.signedContent.material.payload.note=`${copy.signedContent.material.payload.note} (edited)`;});
+  assert.equal(full(x,state).ok,false,'plain validation catches a replaced (edited) record');
+  assert.equal(trusted(x,state).ok,false,'trusted validation catches it too: the copy is not in the ledger');
   // (4) a clone is a fresh object graph: it inherits nothing unless inheritVerified() is called
   const clone=structuredClone(state);
   assert.equal(trusted(x,clone).ok,false,'a clone of a tampered state is fully verified and rejected');
-  payload.note=keep;
+  restore();
   const honestClone=structuredClone(state);
   const inherited=x.schema.inheritVerified(state,honestClone);
   assert.ok(inherited.records>=80&&inherited.authorization>=80,`clone inherited trust for ${inherited.records}/${inherited.authorization} verified items`);
@@ -92,17 +95,21 @@ assert.equal(trusted(x,state).ok,true,'trusted validation of an honest state');
 }
 // authorization proofs: same contract
 {
-  const proofs=state.authorization.proofsById,id=Object.keys(proofs)[2],row=proofs[id],keep=row.payloadDigest;
+  const proofs=state.authorization.proofsById,id=Object.keys(proofs)[2];
   assert.equal(full(x,state).ok,true);
-  row.payloadDigest=keep.replace(/.$/,c=>c==='a'?'b':'a');
+  assert.throws(()=>{proofs[id].payloadDigest='0';},TypeError,'an authorization proof cannot be edited in place');
+  const restore=replaceEdited(proofs,id,row=>{row.payloadDigest=row.payloadDigest.replace(/.$/,c=>c==='a'?'b':'a');});
   assert.equal(full(x,state).ok,false,'plain validation catches an edited authorization proof');
+  assert.equal(trusted(x,state).ok,false,'and trusted validation (the copy is not in the ledger)');
   assert.equal(trusted(x,structuredClone(state)).ok,false,'a clone of it is rejected even in trusted mode');
-  row.payloadDigest=keep;assert.equal(full(x,state).ok,true);
+  restore();assert.equal(full(x,state).ok,true);
 }
 // (5) cost: trusted validation of an already verified state is much cheaper
 {
-  full(x,state);trusted(x,state);
-  const fullMs=time(()=>full(x,state)),trustedMs=time(()=>trusted(x,state));
+  // Full validation of an unsealed copy recomputes every digest; on the sealed live state it reuses sealed digests.
+  const plain=structuredClone(state);full(x,plain);full(x,state);trusted(x,state);
+  const fullMs=time(()=>full(x,plain)),sealedFullMs=time(()=>full(x,state)),trustedMs=time(()=>trusted(x,state));
   assert.ok(trustedMs<fullMs*.6,`trusted ${trustedMs.toFixed(1)}ms should be well below full ${fullMs.toFixed(1)}ms`);
-  console.log(JSON.stringify({suite:'build350-proof-ledger',records:ids(state).length,authorizationProofs:Object.keys(state.authorization.proofsById).length,fullValidateMs:+fullMs.toFixed(2),trustedValidateMs:+trustedMs.toFixed(2),speedup:+(fullMs/trustedMs).toFixed(1),environment:`node ${process.version}; not iPhone`}));
+  assert.ok(sealedFullMs<fullMs,`full validation of sealed rows ${sealedFullMs.toFixed(1)}ms should be below unsealed ${fullMs.toFixed(1)}ms`);
+  console.log(JSON.stringify({suite:'build350-proof-ledger',records:ids(state).length,authorizationProofs:Object.keys(state.authorization.proofsById).length,fullValidateMs:+fullMs.toFixed(2),sealedFullValidateMs:+sealedFullMs.toFixed(2),trustedValidateMs:+trustedMs.toFixed(2),speedup:+(fullMs/trustedMs).toFixed(1),environment:`node ${process.version}; not iPhone`}));
 }

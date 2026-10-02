@@ -243,6 +243,8 @@
   // edited after insertion. tests/build358-row-snapshot-rollback.cjs proves exact rollback of real simulation slices.
   const IMMUTABLE_ROWS=new Set(['tripArchive','events','streetRoutes']);
   const ROLLBACK_POLICY=Object.freeze({level:'rows',immutable:Object.freeze([...IMMUTABLE_ROWS])});
+  // The same rows are shared, sealed, between a durable draft and the live state.
+  (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('mobility',[...IMMUTABLE_ROWS]);
   function archivedTrip(trip,outcome){const {route,...rest}=trip;void route;return {...rest,...outcome};}
   function ensure(state,explicitOwner=''){
     const ownerCompanyId=mobilityOwnerCompanyId(state,explicitOwner),m=state.mobility=state.mobility&&typeof state.mobility==='object'?state.mobility:{};

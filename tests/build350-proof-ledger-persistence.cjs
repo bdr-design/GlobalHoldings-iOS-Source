@@ -19,17 +19,22 @@ assert.ok(recordIds.length>=2,'real document proofs exist');
 assert.equal(V.validate(state).ok,true,'honest state validates in full (and fills the ledger)');
 assert.equal(P.commitState(state,{storageKey:'main'}).ok,true,'a recurring save of an honest state succeeds');   // 1st recurring validation
 
-// in-place edit of an already verified record, in a field only the record itself carries
-const payload=state.documentProofs.recordsById[recordIds[0]].signedContent.material.payload;payload.__probe='edited-in-place';
-assert.equal(V.validate(state).ok,false,'plain validation sees the edit');
-assert.equal(V.validate(state,{trustVerified:true}).ok,true,'trusted validation does not (documented contract)');
+// Build 358: a recurring save seals the proof records first (GH_TRANSACTION_CORE.registerSealedCollections), so an
+// in-place edit of an already verified record is impossible: it throws and leaves the record intact.
+const TX=s.GH_TRANSACTION_CORE,original=state.documentProofs.recordsById[recordIds[0]];
+assert.equal(TX.isSealed(original),true,'the save sealed the proof record');
+assert.throws(()=>{original.signedContent.material.payload.__probe='edited-in-place';},TypeError,'an in-place edit throws');
+assert.equal(V.validate(state).ok,true,'the record is intact');
+// What remains is a replaced record (an edited save file, or a writer bypassing its owner): a new object is not in the
+// ledger, so the very next trusted save verifies and rejects it; a full pass and a manual slot do too.
+const edited=structuredClone(original);edited.signedContent.material.payload.__probe='edited-copy';state.documentProofs.recordsById[recordIds[0]]=edited;
+assert.equal(V.validate(state).ok,false,'plain validation sees the replaced record');
+assert.equal(V.validate(state,{trustVerified:true}).ok,false,'trusted validation sees it too (not in the ledger)');
 const results=[];for(let i=2;i<=12;i++)results.push([i,P.commitState(state,{storageKey:'main'}).ok]);
 const failures=results.filter(([,ok])=>!ok).map(([n])=>n);
-assert.deepEqual(failures,[10],`only the 10th recurring validation is full and rejects the edit (got ${JSON.stringify(failures)})`);
-delete payload.__probe;
-assert.equal(V.validate(state).ok,true);
-// manual slots, export and recovery never use the ledger: they always validate fully
-payload.__probe='edited-in-place';
+assert.deepEqual(failures,[2,3,4,5,6,7,8,9,10,11,12],`every recurring save rejects the replaced record (got ${JSON.stringify(failures)})`);
 assert.equal(P.saveSlot(1,state,{label:'t'}).ok,false,'a manual slot save validates in full');
-payload.__probe=undefined;delete payload.__probe;
-console.log(JSON.stringify({suite:'build350-proof-ledger-persistence',recurringSavesChecked:12,fullValidationEvery:10,rejectedAt:failures}));
+state.documentProofs.recordsById[recordIds[0]]=original;
+assert.equal(V.validate(state).ok,true);
+assert.equal(P.commitState(state,{storageKey:'main'}).ok,true,'the restored record saves again');
+console.log(JSON.stringify({suite:'build350-proof-ledger-persistence',recurringSavesChecked:12,fullValidationEvery:10,sealed:true,rejectedAt:failures}));

@@ -280,10 +280,50 @@
     return out;
   }
 
-  function serialize(state){return JSON.stringify(encodeState(state));}
+  // Build 358: encoded-collection cache. A collection whose members are all sealed (deep-frozen by their owners, see
+  // GH_TRANSACTION_CORE.registerSealedCollections) encodes to a pure function of its member sequence. When that
+  // sequence (and, for a map, its keys) is unchanged since the last save, the previous JSON text of the encoded
+  // collection is reused. The output is byte-for-byte what JSON.stringify(encodeState(state)) produces.
+  const COLLECTION_TEXT=new Map(),NONCE=`${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  let collectionCacheStats={hits:0,misses:0};
+  function sealedMembers(value){
+    const sealed=globalThis.GH_TRANSACTION_CORE?.isSealed;if(typeof sealed!=='function')return null;
+    const keys=Array.isArray(value)?null:Object.keys(value),members=keys?keys.map(key=>value[key]):value.slice();
+    for(let i=0;i<members.length;i++)if(!sealed(members[i]))return null;
+    return {keys,members};
+  }
+  function sameMembers(entry,current){
+    if(entry.members.length!==current.members.length||!!entry.keys!==!!current.keys)return false;
+    for(let i=0;i<current.members.length;i++)if(entry.members[i]!==current.members[i])return false;
+    if(current.keys)for(let i=0;i<current.keys.length;i++)if(entry.keys[i]!==current.keys[i])return false;
+    return true;
+  }
+  function serialize(state){
+    if(!isPlain(state))return JSON.stringify(encodeState(state));
+    const binaryPaths=[];let out=state;
+    if(isArrayBuffer(state.fleet?.rows)){const path=['fleet','rows'];out=writePathCopy(out,path,binaryMarker(state.fleet.rows));binaryPaths.push(path);}
+    const paths=selectPaths(out);
+    if(!paths.length&&!binaryPaths.length)return JSON.stringify(state);
+    const fragments=[],live=new Set();
+    for(const path of paths){
+      const value=readPath(out,path),key=JSON.stringify(path),current=sealedMembers(value);
+      if(!current){COLLECTION_TEXT.delete(key);out=writePathCopy(out,path,encodeCollection(value));continue;}
+      live.add(key);let entry=COLLECTION_TEXT.get(key);
+      if(entry&&sameMembers(entry,current))collectionCacheStats.hits++;
+      else{entry={keys:current.keys,members:current.members,text:JSON.stringify(encodeCollection(value))};COLLECTION_TEXT.set(key,entry);collectionCacheStats.misses++;}
+      const token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;fragments.push({token:JSON.stringify(token),text:entry.text});out=writePathCopy(out,path,token);
+    }
+    for(const key of [...COLLECTION_TEXT.keys()])if(!live.has(key))COLLECTION_TEXT.delete(key);
+    out.stateCodec={version:VERSION,paths,binaryPaths};
+    const text=JSON.stringify(out);if(!fragments.length)return text;
+    for(const fragment of fragments){fragment.at=text.indexOf(fragment.token);if(fragment.at<0||text.indexOf(fragment.token,fragment.at+1)>=0)throw new Error('state-codec-fragment-token');}
+    fragments.sort((a,b)=>a.at-b.at);const parts=[];let cursor=0;
+    for(const fragment of fragments){parts.push(text.slice(cursor,fragment.at),fragment.text);cursor=fragment.at+fragment.token.length;}
+    parts.push(text.slice(cursor));return parts.join('');
+  }
   function deserialize(json){return decodeState(JSON.parse(json));}
 
-  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,deserialize,selectPaths,isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
+  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,deserialize,selectPaths,cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size}),isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
   globalThis.GH_STATE_CODEC=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_STATE_CODEC=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

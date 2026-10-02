@@ -362,8 +362,12 @@
   // Read-only projections keep validation and other narrow consumers off the
   // per-row proxy path while preserving the store boundary. The projection is
   // newly allocated and contains only the requested fields.
-  function forEachFields(state,fields,fn){
+  // raw:true (read-only consumers that never write, e.g. save validation): nested values are passed as stored, without
+  // read-only proxy views; with a store, rows are read through GH_FLEET_STORE.forEachPeek.
+  function forEachFields(state,fields,fn,{raw=false}={}){
     const names=Array.isArray(fields)?fields:[],store=storeOf(state);
+    if(raw&&store&&typeof STORE.forEachPeek==='function'){STORE.forEachPeek(store,names,fn);return;}
+    if(raw&&!store){const assets=arrayOf(state)||[];for(let index=0;index<assets.length;index++){const source=assets[index];if(!isObject(source))continue;const row={};for(const key of names)if(source[key]!==undefined)row[key]=source[key];fn(row,index);}return;}
     if(store){const length=store.length;for(let index=0;index<length;index++){if(!STORE.isAlive(store,index))continue;const row={};for(const key of names){const value=STORE.peek(store,index,key);if(value!==undefined)row[key]=isObject(value)?nested(value):value;}fn(row,index);}return;}
     const assets=arrayOf(state)||[];for(let index=0;index<assets.length;index++){const source=assets[index];if(!isObject(source))continue;const row={};for(const key of names)if(source[key]!==undefined)row[key]=isObject(source[key])?nested(source[key]):source[key];fn(row,index);}
   }

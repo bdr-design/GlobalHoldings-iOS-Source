@@ -11,7 +11,8 @@
   // keeps the store behind its boundary and avoids constructing a full view.
   const FLEET_VALIDATION_FIELDS=Object.freeze(['id','name','model','status','city','country','code','iata','icao','detail','capacity','icon','year','gates','landingFeePerTon','jetA1Price','congestion','berths','maxDraftM','craneCount','bays','runwayM','elevationM','dryStorageTEU','reeferPlugs','crudeStorageBbl','fuelBunkerBbl','photo','coords','assetMode','type','ownerCompanyId','companyId','baseFacility','phase','progress','fuel','condition','routeId','releaseExclusiveRouteOnArrival']);
   function forEachSaveAsset(state,fn){
-    fleetData().forEachFields(state,FLEET_VALIDATION_FIELDS,fn);
+    // Validation only reads the projection (raw: no read-only proxies, one read plan per scan).
+    fleetData().forEachFields(state,FLEET_VALIDATION_FIELDS,fn,{raw:true});
   }
   const runtimeTelemetry={lastValidation:null,samples:[]};
   // Phase 1B-B: wall-clock pacing/scheduler telemetry is runtime-only. Older
@@ -29,7 +30,7 @@
   function normalizeSimulationKernel(value){const kernel=object(value)?value:{};for(const key of SIMULATION_KERNEL_RUNTIME_KEYS)delete kernel[key];return kernel;}
   function publishValidationMetric(metric){const row={...metric,recordedAtMs:Date.now()};runtimeTelemetry.lastValidation=row;runtimeTelemetry.samples.push(row);if(runtimeTelemetry.samples.length>32)runtimeTelemetry.samples.shift();return row;}
   function object(v){return !!v&&typeof v==='object'&&!Array.isArray(v);}
-  function finite(v){return v!==null&&v!==''&&typeof v!=='boolean'&&Number.isFinite(Number(v));}
+  function finite(v){if(typeof v==='number')return Number.isFinite(v);return v!==null&&v!==''&&typeof v!=='boolean'&&Number.isFinite(Number(v));}
   function dataId(v){return /^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$/.test(String(v||''));}
   function structured(v){if(typeof globalThis.structuredClone==='function')try{return globalThis.structuredClone(v);}catch(_e){}return JSON.parse(JSON.stringify(v));}
   function validPoint(point){return Array.isArray(point)&&point.length>=2&&typeof point[0]==='number'&&Number.isFinite(point[0])&&typeof point[1]==='number'&&Number.isFinite(point[1])&&point[0]>=-90&&point[0]<=90&&point[1]>=-180&&point[1]<=180;}
@@ -41,8 +42,21 @@
     const daily=Array.isArray(value.recentDaily)?value.recentDaily.filter(object).slice(-30).map(row=>({day:Math.max(0,Math.floor(Number(row.day)||0)),income:Math.max(0,Number(row.income)||0),expense:Math.max(0,Number(row.expense)||0),intercompany:Math.max(0,Number(row.intercompany)||0),count:Math.max(0,Math.floor(Number(row.count)||0)),total:Math.max(0,Number(row.total)||0)})):[];
     return {schema:'gh-finance-audit-digest-v2',id:String(value.id||`AUD-${String(value.kind||'legacy')}`),kind:String(value.kind||''),count:Math.max(1,Math.floor(Number(value.count)||sources.length||1)),total:Math.max(0,Number(value.total)||0),firstAt:Math.max(0,Number(value.firstAt)||0),lastAt:Math.max(0,Number(value.lastAt)||0),idRange:[firstId,lastId],checksum:String(value.checksum||''),maxSequence:Math.max(0,Math.floor(maxSequence)),intercompanyTotal:Math.max(0,Number(value.intercompanyTotal)||0),recentDaily:daily,at:Math.max(0,Number(value.at)||0)};
   }
+  // Build 358: the check is a pure function of the text, so each distinct value is inspected once (thousands of
+  // assets share model, status and icon texts; names are inspected once each instead of on every save).
+  // One memo per (inspector, allowEmpty, maximum), keyed by the text itself: no key string is built per call, and a
+  // repeated string hashes once.
+  const DISPLAY_TEXT_MEMO=new Map(),DISPLAY_TEXT_MEMO_LIMIT=50000;let displayTextMemoSize=0;
+  function displayTextMemo(maximum,allowEmpty,inspector=globalThis.GH_IDENTITY?.inspectPlainText){
+    const group=(inspector?2:0)+(allowEmpty?1:0);let byMaximum=DISPLAY_TEXT_MEMO.get(group);if(!byMaximum){byMaximum=new Map();DISPLAY_TEXT_MEMO.set(group,byMaximum);}
+    let memo=byMaximum.get(maximum);if(!memo){memo=new Map();byMaximum.set(maximum,memo);}return memo;
+  }
   function safeDisplayText(value,maximum=240,{allowEmpty=true}={}){
-    if(value==null)return allowEmpty;const raw=typeof value==='string'?value:String(value),inspected=globalThis.GH_IDENTITY?.inspectPlainText?.(raw,{minimum:allowEmpty?0:1,maximum,allowEmpty});if(inspected)return inspected.ok;const text=raw.trim();return (allowEmpty||Boolean(text))&&text.length<=maximum&&!/[<>\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(text);
+    if(value==null)return allowEmpty;const raw=typeof value==='string'?value:String(value),inspector=globalThis.GH_IDENTITY?.inspectPlainText;
+    let memo=null;if(raw.length<=512){memo=displayTextMemo(maximum,allowEmpty,inspector);const known=memo.get(raw);if(known!==undefined)return known;}
+    let result;const inspected=inspector?.(raw,{minimum:allowEmpty?0:1,maximum,allowEmpty});if(inspected)result=inspected.ok===true;else{const text=raw.trim();result=(allowEmpty||Boolean(text))&&text.length<=maximum&&!/[<>\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u.test(text);}
+    if(memo){if(displayTextMemoSize>=DISPLAY_TEXT_MEMO_LIMIT){DISPLAY_TEXT_MEMO.clear();displayTextMemoSize=0;}else{memo.set(raw,result);displayTextMemoSize++;}}
+    return result;
   }
   function safeAttributeText(value,maximum=240,{allowEmpty=false}={}){return safeDisplayText(value,maximum,{allowEmpty})&&!/"/.test(String(value??''));}
   function safeLocalImage(value){const text=String(value||'');return /^assets\/[a-zA-Z0-9_.\/-]+\.(?:svg|png|jpe?g|webp)$/i.test(text)&&!text.split('/').includes('..');}
@@ -67,7 +81,9 @@
   }
   function validatePresentationTextState(s,errors,includeFleet=true){
     const entityFields=[['name',180],['model',180],['status',80],['city',100],['country',100],['code',40],['iata',12],['icao',12],['detail',500],['capacity',180],['icon',16]],entityNumericFields=['year','gates','landingFeePerTon','jetA1Price','congestion','berths','maxDraftM','craneCount','bays','runwayM','elevationM','dryStorageTEU','reeferPlugs','crudeStorageBbl','fuelBunkerBbl'];
-    const validateEntity=(bucket,row)=>{if(!object(row))return;for(const [key,maximum] of entityFields)if(row[key]!=null&&!safeDisplayText(row[key],maximum))errors.push(`display-text-${bucket}-${key}`);for(const key of entityNumericFields)if(row[key]!=null&&!finite(row[key]))errors.push(`display-number-${bucket}-${key}`);if(row.id!=null&&!safeAttributeText(row.id,180))errors.push(`display-attribute-${bucket}-id`);if(row.name!=null&&!safeAttributeText(row.name,180,{allowEmpty:true}))errors.push(`display-attribute-${bucket}-name`);if(row.photo!=null&&row.photo!==''&&!safeLocalImage(row.photo))errors.push(`display-image-${bucket}-photo`);if(row.coords!=null&&!validPoint(row.coords))errors.push(`display-coords-${bucket}`);};
+    // Per-field memos resolved once per validation: a known text is answered with one lookup (same result as safeDisplayText).
+    const textChecks=entityFields.map(([key,maximum])=>[key,maximum,displayTextMemo(maximum,true)]);
+    const validateEntity=(bucket,row)=>{if(!object(row))return;for(const [key,maximum,memo] of textChecks){const value=row[key];if(value==null)continue;const known=typeof value==='string'?memo.get(value):undefined;if(known===true)continue;if(known===false||!safeDisplayText(value,maximum))errors.push(`display-text-${bucket}-${key}`);}for(const key of entityNumericFields)if(row[key]!=null&&!finite(row[key]))errors.push(`display-number-${bucket}-${key}`);if(row.id!=null&&!safeAttributeText(row.id,180))errors.push(`display-attribute-${bucket}-id`);if(row.name!=null&&!safeAttributeText(row.name,180,{allowEmpty:true}))errors.push(`display-attribute-${bucket}-name`);if(row.photo!=null&&row.photo!==''&&!safeLocalImage(row.photo))errors.push(`display-image-${bucket}-photo`);if(row.coords!=null&&!validPoint(row.coords))errors.push(`display-coords-${bucket}`);};
     if(includeFleet)forEachSaveAsset(s,row=>validateEntity('assets',row));for(const [bucket,rows] of [['globalBases',s?.globalBases],['customHubs',s?.customHubs],['branches',s?.branches]])for(const row of Array.isArray(rows)?rows:[])validateEntity(bucket,row);
     for(const row of Array.isArray(s?.simulationWorld?.competitors)?s.simulationWorld.competitors:[])if(object(row))for(const [key,maximum] of [['name',180],['sector',120],['hq',100],['strategy',240],['marketShare',40],['risk',40]])if(row[key]!=null&&!safeDisplayText(row[key],maximum))errors.push(`display-text-competitor-${key}`);
     for(const row of Array.isArray(s?.simulationWorld?.competitorAssets)?s.simulationWorld.competitorAssets:[])if(object(row))for(const [key,maximum] of [['name',180],['company',180],['type',40],['icon',16]])if(row[key]!=null&&!safeDisplayText(row[key],maximum))errors.push(`display-text-competitor-asset-${key}`);
@@ -246,6 +262,11 @@
     }catch(_error){/* trust is an optimisation; failing to inherit only costs a full verification */}
     return {authorization,records};
   }
+  // Verifiers normalize the top level of the store they are given (schema, version, alias maps) and only read below
+  // it, so a shallow copy keeps validation from writing to the game state. Build 357 deep-cloned both proof stores
+  // (~2 MB) whenever a single record or document needed verification. tests/build358-heaviness.cjs runs a full
+  // validation with every nested proof object frozen.
+  function verificationView(root){return root&&typeof root==='object'&&!Array.isArray(root)?{...root}:root;}
   function validateAuthorizationState(s,errors,verificationCache,metric,trust=false){
     const auth=s?.authorization;if(auth===undefined)return;
     if(!object(auth)||auth.schema!=='gh-authorization-v1'){errors.push('authorization-shape');return;}
@@ -261,7 +282,7 @@
     }
     for(const [personId,sealId] of Object.entries(active))if(!people[personId]||!seals[sealId]||seals[sealId].ownerPersonId!==personId||seals[sealId].status!=='active')errors.push('authorization-active-seal');
     for(const [id,row] of Object.entries(mandates))if(!id||!object(row)||row.id!==id||!people[row.principalId]||!Array.isArray(row.companyIds)||!row.companyIds.length||row.companyIds.length>120||!Array.isArray(row.scopes)||!row.scopes.length||row.scopes.length>120||!Number.isSafeInteger(Number(row.version))||Number(row.version)<1)errors.push('authorization-mandate');
-    const verifier=globalThis.GH_AUTHORIZATION?.verifyProof;let verificationState=null,verificationStateBuilt=false;const stateForVerification=()=>{if(!verificationStateBuilt){verificationStateBuilt=true;verificationState=typeof verifier==='function'?{...s,authorization:structured(auth)}:null;}return verificationState;};
+    const verifier=globalThis.GH_AUTHORIZATION?.verifyProof;let verificationState=null,verificationStateBuilt=false;const stateForVerification=()=>{if(!verificationStateBuilt){verificationStateBuilt=true;verificationState=typeof verifier==='function'?{...s,authorization:verificationView(auth)}:null;}return verificationState;};
     const proofVerificationStart=metric?metricClock():0;for(const [id,row] of Object.entries(allProofs)){if(!id||!object(row)||row.id!==id||!people[row.signerPersonId]||!seals[row.signatureAssetId||row.visualSealAssetId]||!mandates[row.mandateId]||!validDigest(row.signatureDigest||row.visualSealDigest)||!validDigest(row.payloadDigest)||!validDigest(row.proofDigest)||!Array.isArray(row.documentDigests)||row.documentDigests.some(value=>!validDigest(value)))errors.push('authorization-proof');else if(trust&&VERIFIED_AUTH_PROOFS.has(row)){/* verified earlier in this process */}else if(typeof verifier!=='function')errors.push('authorization-proof-integrity');else if(!verifier(stateForVerification(),id,verificationCache?.authorization).ok)errors.push('authorization-proof-integrity');else VERIFIED_AUTH_PROOFS.add(row);}if(metric)metric.authorizationProofVerifyMs+=Math.max(0,metricClock()-proofVerificationStart);
   }
   function validateDocumentProofState(s,errors,verificationCache,metric,trust=false){
@@ -271,7 +292,7 @@
     for(const [id,row] of Object.entries(records))if(!id||!object(row)||row.id!==id||!String(row.documentId||'').trim()||!validDigest(row.contentDigest)||!object(row.issuerSnapshot)||!object(row.signedContent)||row.authorizationProofId&&!(s.authorization?.proofsById?.[row.authorizationProofId]||s.authorization?.proofArchiveById?.[row.authorizationProofId]))errors.push('document-proof-record');
     const documentOwner=globalThis.GH_DOCUMENT_PROOF;if(typeof documentOwner?.stateDocuments!=='function'){errors.push('document-proof-owner-unavailable');return;}
     const documentCollectionStart=metric?metricClock():0,documents=documentOwner.stateDocuments(s);if(metric)metric.documentCollectionMs+=Math.max(0,metricClock()-documentCollectionStart);
-    const verifier=globalThis.GH_DOCUMENT_PROOF?.verifyDocument,recordVerifier=globalThis.GH_DOCUMENT_PROOF?.verifyRecord,documentCache=verificationCache?.documents;let fullState=null;const fullVerificationState=()=>{if(fullState===null&&typeof verifier==='function')fullState={...s,authorization:s.authorization?structured(s.authorization):s.authorization,documentProofs:structured(store)};return fullState;};
+    const verifier=globalThis.GH_DOCUMENT_PROOF?.verifyDocument,recordVerifier=globalThis.GH_DOCUMENT_PROOF?.verifyRecord,documentCache=verificationCache?.documents;let fullState=null;const fullVerificationState=()=>{if(fullState===null&&typeof verifier==='function')fullState={...s,authorization:s.authorization?verificationView(s.authorization):s.authorization,documentProofs:verificationView(store)};return fullState;};
     // Records already verified are answered from the cache without touching state, so only a read-only view is needed for them.
     const lightState={...s,documentProofs:{...store}};
     if(trust&&documentCache)for(const [id,row] of Object.entries(records)){const known=VERIFIED_DOC_RECORDS.get(row);if(known){documentCache.records.set(id,known.result);documentCache.signedContentStable.set(id,known.stable);}}
@@ -287,9 +308,12 @@
       let text=null;try{text=JSON.stringify(document);}catch(_error){text=null;}
       seenDocuments.add(proofId);const known=VERIFIED_DOCUMENTS.get(proofId);
       if(trust&&text!==null&&known&&known.digest===record.contentDigest&&known.text===text)continue;
+      // A full pass may skip it too when the record is the same sealed object (it cannot have changed) and that record
+      // verified in this pass: verification is then a pure function of the unchanged document JSON.
+      if(!trust&&text!==null&&known&&known.record===record&&known.text===text&&documentCache?.records?.get(proofId)?.ok===true&&globalThis.GH_TRANSACTION_CORE?.isSealed?.(record))continue;
       const verification=verifier(documentCache?.records?.has(proofId)?lightState:fullVerificationState(),document,documentCache),acceptedLegacy=verification?.legacy===true&&verification?.readOnly===true&&verification?.recordIntegrity===true;
       if(!verification?.ok&&!acceptedLegacy){errors.push('document-proof-integrity');VERIFIED_DOCUMENTS.delete(proofId);}
-      else if(text!==null)VERIFIED_DOCUMENTS.set(proofId,{digest:record.contentDigest,text});
+      else if(text!==null)VERIFIED_DOCUMENTS.set(proofId,{digest:record.contentDigest,text,record});
     }
     if(!trust||VERIFIED_DOCUMENTS.size>seenDocuments.size*2+64)for(const proofId of [...VERIFIED_DOCUMENTS.keys()])if(!seenDocuments.has(proofId))VERIFIED_DOCUMENTS.delete(proofId);
     if(metric)metric.documentVerifyMs+=Math.max(0,metricClock()-documentVerificationStart);
@@ -322,7 +346,7 @@
       if(!finite(asset.fuel)||Number(asset.fuel)<0||Number(asset.fuel)>100)errors.push('asset-fuel');
       if(!finite(asset.condition)||Number(asset.condition)<0||Number(asset.condition)>100)errors.push('asset-condition');
       if(asset.routeId!=null&&(!String(asset.routeId).trim()||!routeIds.has(asset.routeId)))errors.push('asset-route-reference');
-      if(['moving','turnaround'].includes(asset.phase)&&!asset.routeId)errors.push('asset-route-required');
+      if((asset.phase==='moving'||asset.phase==='turnaround')&&!asset.routeId)errors.push('asset-route-required');
       if(asset.routeId){const users=routeUsers.get(asset.routeId)||[];users.push(asset);routeUsers.set(asset.routeId,users);const route=routeById.get(asset.routeId);if(route&&(routeMode(route)!==mode||routeOwner(route)!==owner))errors.push('asset-route-company');}
     });
     if(duplicateAssetId)errors.push('asset-id');

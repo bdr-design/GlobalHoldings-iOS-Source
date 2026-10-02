@@ -32,16 +32,61 @@
     return out;
   }
   function jsonClone(value){if(value===undefined)return undefined;return JSON.parse(JSON.stringify(value));}
-  function cloneWithoutJournaledRoots(value,{shareJournaledRoots=false}={}){
+  // Build 358: sealed rows. An owner registers collections whose members are never edited after insertion
+  // (registerSealedCollections). A durable draft copies those collections' membership only and shares the members,
+  // deep-frozen, with the live state: a write to one throws (strict mode), so the draft can never reach live data.
+  // restoreValue adopts a sealed value instead of writing into it, so publishing the draft is a membership walk.
+  const SEALED_COLLECTIONS=new Map(),SEALED=new WeakSet();
+  function registerSealedCollections(root,keys){
+    root=String(root||'').trim();if(!/^[A-Za-z_$][\w$]*$/.test(root))throw new TypeError('transaction-sealed-root-name-invalid');
+    const list=[...new Set((Array.isArray(keys)?keys:[]).map(String).filter(Boolean))];if(!list.length)throw new TypeError('transaction-sealed-collections-required');
+    SEALED_COLLECTIONS.set(root,Object.freeze([...new Set([...(SEALED_COLLECTIONS.get(root)||[]),...list])]));return true;
+  }
+  const plainData=value=>{if(!value||typeof value!=='object')return true;if(Array.isArray(value))return true;const proto=Object.getPrototypeOf(value);return proto===Object.prototype||proto===null||(Object.getPrototypeOf(proto)===null&&typeof proto.constructor==='function'&&proto.constructor.name==='Object');};
+  function sealable(value,depth){
+    if(!value||typeof value!=='object'||SEALED.has(value))return true;
+    if(depth>64||!plainData(value)||Object.isFrozen(value)||Object.getOwnPropertySymbols(value).length)return false;
+    for(const key of Object.keys(value)){const child=value[key];if(child&&typeof child==='object'&&!sealable(child,depth+1))return false;}
+    return true;
+  }
+  function freezeSealed(value){if(!value||typeof value!=='object'||SEALED.has(value))return;for(const key of Object.keys(value))freezeSealed(value[key]);Object.freeze(value);SEALED.add(value);}
+  // Checked before anything is frozen: a member that is not plain JSON-like data is copied instead, untouched.
+  function sealValue(value){if(SEALED.has(value))return true;if(!sealable(value,0))return false;freezeSealed(value);return true;}
+  function sealedCopy(collection){
+    if(Array.isArray(collection)){const out=collection.slice();for(let i=0;i<out.length;i++){const member=out[i];if(member&&typeof member==='object'&&!sealValue(member))out[i]=deepClone(member);}return out;}
+    const out={...collection};for(const key of Object.keys(out)){const member=out[key];if(member&&typeof member==='object'&&!sealValue(member))out[key]=deepClone(member);}return out;
+  }
+  const isSealed=value=>!!value&&typeof value==='object'&&SEALED.has(value);
+  // Owners loaded before this module queue their registration.
+  for(const [root,keys] of Array.isArray(globalThis.__GH_PENDING_SEALED_COLLECTIONS__)?globalThis.__GH_PENDING_SEALED_COLLECTIONS__:[])registerSealedCollections(root,keys);delete globalThis.__GH_PENDING_SEALED_COLLECTIONS__;
+  // Seals the members of every registered collection in place (a quiescent live state, e.g. before a save).
+  function sealCollections(state){
+    let sealed=0;if(!state||typeof state!=='object')return sealed;
+    for(const [root,names] of SEALED_COLLECTIONS){const value=state[root];if(!value||typeof value!=='object'||Array.isArray(value)||JOURNALED_ROOTS.has(root))continue;for(const name of names){const collection=value[name];if(!collection||typeof collection!=='object'||!plainData(collection))continue;const members=Array.isArray(collection)?collection:Object.values(collection);for(const member of members)if(member&&typeof member==='object'&&!SEALED.has(member)&&sealValue(member))sealed++;}}
+    return sealed;
+  }
+  function cloneWithoutJournaledRoots(value,{shareJournaledRoots=false,shareSealed=shareJournaledRoots}={}){
     if(!value||typeof value!=='object'||Array.isArray(value))return null;
-    const keys=Object.keys(value),excluded=keys.filter(key=>JOURNALED_ROOTS.has(key));if(!excluded.length)return null;
-    const source={};for(const key of keys)if(!JOURNALED_ROOTS.has(key))source[key]=value[key];
+    const keys=Object.keys(value),excluded=keys.filter(key=>JOURNALED_ROOTS.has(key));if(!excluded.length&&!(shareSealed&&keys.some(key=>SEALED_COLLECTIONS.has(key))))return null;
+    // Sealed collections are shared by durable drafts and by full rollback snapshots (shareSealed): their rows cannot
+    // change, so the copy holds the same rows in a new collection.
+    const sealed=shareSealed?new Map():null,source={};
+    for(const key of keys){
+      if(JOURNALED_ROOTS.has(key))continue;const root=value[key],collections=sealed&&SEALED_COLLECTIONS.get(key);
+      if(collections&&root&&typeof root==='object'&&!Array.isArray(root)&&plainData(root)){
+        const shared=collections.filter(name=>{const item=root[name];return item&&typeof item==='object'&&plainData(item);});
+        if(shared.length){const rest={};for(const name of Object.keys(root))if(!shared.includes(name))rest[name]=root[name];sealed.set(key,{order:Object.keys(root),shared});source[key]=rest;continue;}
+      }
+      source[key]=root;
+    }
     let cloned;if(typeof globalThis.structuredClone==='function'){try{cloned=globalThis.structuredClone(source);}catch(_error){cloned=jsonClone(source);}}else cloned=jsonClone(source);
+    if(sealed)for(const [key,plan] of sealed){const rest=cloned[key],root=value[key],out={};for(const name of plan.order)out[name]=plan.shared.includes(name)?sealedCopy(root[name]):rest[name];cloned[key]=out;}
     const out={};for(const key of keys){if(JOURNALED_ROOTS.has(key)){if(shareJournaledRoots)out[key]=value[key];}else out[key]=cloned[key];}return out;
   }
   // State roots registered as self-journaled are excluded from transaction
   // snapshots. Durable drafts may explicitly share them while their owner
   // keeps a journal open until the save is committed.
+  const SNAPSHOT_OPTIONS=Object.freeze({shareSealed:true});
   function deepClone(value,options={}){const rootCopy=cloneWithoutJournaledRoots(value,options);if(rootCopy)return rootCopy;if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
   function registerJournaledRoot(name,hooks={}){
     name=String(name||'').trim();if(!/^[A-Za-z_$][\w$]*$/.test(name))throw new TypeError('transaction-journaled-root-name-invalid');
@@ -66,6 +111,8 @@
     if(snapshot instanceof ArrayBuffer)return snapshot.slice(0);
     // A shared subtree (row-level snapshots keep immutable leaves by reference) is already restored.
     if(target===snapshot)return target;
+    // A sealed value is never edited: adopt the snapshot's value instead of writing into a frozen target.
+    if(isSealed(snapshot)||isSealed(target))return snapshot;
     // Typed arrays: restore with one copy, never element by element.
     if(ArrayBuffer.isView(snapshot)){
       if(ArrayBuffer.isView(target)&&target.constructor===snapshot.constructor&&target.length===snapshot.length&&!Object.isFrozen(target)){target.set(snapshot);return target;}
@@ -270,7 +317,7 @@
   function promoteLegacyScoped(context){
     const target=context.target,scoped=new Set(context.scope),remaining={};
     for(const key of context.rootOrder)if(!scoped.has(key)&&Object.prototype.hasOwnProperty.call(target,key))remaining[key]=target[key];
-    const remainingClone=deepClone(remaining),full={};
+    const remainingClone=deepClone(remaining,SNAPSHOT_OPTIONS),full={};
     const rowEntries={};
     for(const key of context.rootOrder){if(scoped.has(key)){const entry=context.snapshot[key];if(entry?.rows){rowEntries[key]=entry;full[key]=entry.ref;}else if(entry?.exists)full[key]=entry.value;}else if(Object.prototype.hasOwnProperty.call(remainingClone,key))full[key]=remainingClone[key];}
     context.snapshot=full;context.scope=null;context.rowEntries=rowEntries;
@@ -279,7 +326,7 @@
     if(!context||context.rollbackStorage==='full-snapshot')return context;
     const start=runtimeClock();
     if(context.rollbackStorage==='journal'){
-      const baseline=applyJournalPreimageToBaseline(deepClone(context.target),context);
+      const baseline=applyJournalPreimageToBaseline(deepClone(context.target,SNAPSHOT_OPTIONS),context);
       context.snapshot=baseline;context.journal=null;context.scope=null;
     }else if(context.scope)promoteLegacyScoped(context);
     context.rollbackStorage='full-snapshot';
@@ -380,8 +427,8 @@
       else fallbackReason=captured.reason;
     }
     if(discardableDraft){/* no snapshot by design */}
-    else if(requestedJournal&&fallbackReason){snapshot=deepClone(target);rollbackStorage='full-snapshot';}
-    else if(!requestedJournal){snapshot=scope?captureScoped(target,scope,rowPolicies):deepClone(target);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
+    else if(requestedJournal&&fallbackReason){snapshot=deepClone(target,SNAPSHOT_OPTIONS);rollbackStorage='full-snapshot';}
+    else if(!requestedJournal){snapshot=scope?captureScoped(target,scope,rowPolicies):deepClone(target,SNAPSHOT_OPTIONS);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
     timing.snapshotMs=Math.max(0,runtimeClock()-snapshotStart);timing.rollbackStorage=rollbackStorage;timing.fullSnapshot=rollbackStorage==='full-snapshot';timing.fullSnapshotFallback=requestedJournal&&rollbackStorage==='full-snapshot';timing.fallbackReason=timing.fullSnapshotFallback?fallbackReason:null;
     // Write auditing is an architecture-development proof tool. Full transactions reuse
     // their rollback snapshot; scoped/journal transactions take an extra full baseline only when
@@ -489,5 +536,5 @@
       throw error;
     }finally{if(!durableCommitted&&rootSessions.length)try{rollbackJournaledRoots(rootSessions);}catch{}if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,registerJournaledRoot,beginJournaledRoots,commitJournaledRoots,rollbackJournaledRoots,execute,join,extendScope,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,registerJournaledRoot,registerSealedCollections,isSealed,sealCollections,beginJournaledRoots,commitJournaledRoots,rollbackJournaledRoots,execute,join,extendScope,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

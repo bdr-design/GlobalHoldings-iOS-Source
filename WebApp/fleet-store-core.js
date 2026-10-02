@@ -459,6 +459,26 @@
     for(let index=0;index<list.length;index++){store.length=index+1;store.live++;ingestRow(store,index,list[index],at);}
     store.structure=1;return store;
   }
+  // Build 358: peek() for many fields of every live row (save validation). The field kinds are resolved once per call and
+  // a row's profile and binding groups once per row; each value is exactly what peek(store,index,field) returns.
+  function forEachPeek(store,fields,fn){
+    const plan=(Array.isArray(fields)?fields:[]).map(field=>({field,inherited:field in Object.prototype,kind:HOT_KIND.get(field)||null,profile:PROFILE_SET.has(field),binding:BINDING_SET.has(field)}));
+    const length=store.length;
+    for(let index=0;index<length;index++){
+      if(!isAlive(store,index))continue;
+      const extras=(flagsOf(store,index)&EXTRAS)?store.extras[index]:null,row={};let profile=null,binding=null;
+      for(let k=0;k<plan.length;k++){
+        const step=plan[k],field=step.field;let value;
+        // `in` equals own() here: extras are plain data objects and no planned field is an Object.prototype name.
+        if(extras&&(step.inherited?own(extras,field):field in extras))value=extras[field];
+        else if(step.kind){if(isPresent(store,index,field))value=peekHot(store,index,field,step.kind);}
+        else if(step.profile){if(profile===null)profile=groupObject(store,groupRef(store,index,'profile'));value=profile[field];}
+        else if(step.binding){if(binding===null)binding=groupObject(store,groupRef(store,index,'binding'));value=binding[field];}
+        if(value!==undefined)row[field]=value;
+      }
+      fn(row,index);
+    }
+  }
   function forEachLive(store,fn){const u8=views(store).u8;for(let index=0;index<store.length;index++)if(u8[index*STRIDE+O.flags]&ALIVE)fn(index);}
   // Immutable, interned profiles are shared by rows from the same purchase
   // batch. Cache their live multiplicities so daily batch-level accounting can
@@ -579,7 +599,7 @@
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
     create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
-    views,slot,setSlot,intern,value,valueKey,splitPattern,joinPattern,compactRows,collectValues,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
+    views,slot,setSlot,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

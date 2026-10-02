@@ -33,6 +33,9 @@
   const FULL_VALIDATION_EVERY=10;let recurringValidations=0;
   // prevalidated: the caller validated this exact state (trusted) just before; only the scheduled full pass remains.
   function assertRecurringState(state,{prevalidated=false}={}){
+    // Build 358: the rows a save writes are sealed first (immutable by contract), so later full passes and durable drafts
+    // can rely on them not changing (see GH_TRANSACTION_CORE.registerSealedCollections).
+    try{globalThis.GH_TRANSACTION_CORE?.sealCollections?.(state);}catch(_error){/* sealing is an optimisation */}
     const full=(++recurringValidations%FULL_VALIDATION_EVERY)===0,schema=globalThis.GH_SAVE_SCHEMA;if(prevalidated&&!full)return;
     const v=(full?schema?.validate?.(state):schema?.validate?.(state,{trustVerified:true}))||{ok:false,errors:['save-schema-unavailable']};
     if(!v.ok)throw new Error(`invalid-save:${(v.errors||[]).join(',')}`);
