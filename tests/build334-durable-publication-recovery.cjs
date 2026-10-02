@@ -2,12 +2,13 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {ROOT}=require('./helpers/core-harness'),{scenario}=require('./helpers/business-scenario');
 const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8'),start=app.indexOf('  let durableCommandSettlement=')>=0?app.indexOf('  let durableCommandSettlement='):app.indexOf('  let durableCommandInProgress='),end=app.indexOf('  function authorizationIdempotencyKey',start);assert(start>=0&&end>start);
+const stagedStart=app.indexOf('  function stagedStateBusy('),stagedEnd=app.indexOf('  function scheduleSimulationPersistence(',stagedStart);assert(stagedStart>=0&&stagedEnd>stagedStart);
 function environment({failPublish=false,failPersist=false}={}){
  const e=scenario();e.load('persistence-core');const key='audit-durable-world',events=[];assert.equal(e.s.GH_PERSISTENCE.commitState(e.state,{storageKey:key}).ok,true);
  const persistence=e.s.GH_PERSISTENCE;
  Object.assign(e.s,{state:e.state,hardResetInProgress:false,durableCommandInProgress:false,storageKey:key,APP_VERSION:'3.0.0',clone:structuredClone,routeRuntimeForState:()=>({}),replaceLiveState:draft=>{if(failPublish)throw new Error('audit-publication-failure');e.s.GH_TRANSACTION_CORE.restoreObject(e.state,draft);},diag:(type,detail)=>events.push({type,detail}),notice:()=>{},yieldForInteractivePaint:()=>Promise.resolve(),simulationEngine:{cancelAdvance:()=>{}},console:{...console,warn:()=>{},error:()=>{}}});
  if(failPersist)e.s.GH_PERSISTENCE={...persistence,commitDurableState:async()=>{throw new Error('audit-persist-rejected');}};
- vm.runInContext(app.slice(start,end),e.s);return {...e,key,events,persistence};
+ vm.runInContext(app.slice(stagedStart,stagedEnd),e.s);vm.runInContext(app.slice(start,end),e.s);return {...e,key,events,persistence};
 }
 (async()=>{
  const results=[];

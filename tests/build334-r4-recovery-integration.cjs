@@ -31,6 +31,8 @@ async function scenario({label,version='R3',action='diagnostics-run',native='val
   s.GH_PERSISTENCE.receiveAck(ack);
  }}}};
  vm.runInContext(version==='original'?original:current,s,{filename:`${version}/persistence-core.js`});
+ const stagedStart=app.indexOf('  function stagedStateBusy('),stagedEnd=app.indexOf('  function scheduleSimulationPersistence(',stagedStart);assert(stagedStart>=0&&stagedEnd>stagedStart);
+ vm.runInContext(app.slice(stagedStart,stagedEnd),s,{filename:'app-staged-guard.js'});
  const ownerStart=app.indexOf('  function persistStateNow('),ownerEnd=app.indexOf('  if(startupLoadMeta',ownerStart);assert(ownerStart>=0&&ownerEnd>ownerStart);
  vm.runInContext(app.slice(ownerStart,ownerEnd),s,{filename:'app-save-owner.js'});
  const listenerStart=app.indexOf('  let savePressureNoticeShown=false;'),listenerEnd=app.indexOf("  window.addEventListener('gh-native-recovery'",listenerStart);assert(listenerStart>=0&&listenerEnd>listenerStart);
