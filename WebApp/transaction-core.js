@@ -63,6 +63,8 @@
     // Fleet store records (one ArrayBuffer): always a fresh copy, so the store
     // sees a new buffer and rebuilds every runtime index from restored data.
     if(snapshot instanceof ArrayBuffer)return snapshot.slice(0);
+    // A shared subtree (row-level snapshots keep immutable leaves by reference) is already restored.
+    if(target===snapshot)return target;
     // Typed arrays: restore with one copy, never element by element.
     if(ArrayBuffer.isView(snapshot)){
       if(ArrayBuffer.isView(target)&&target.constructor===snapshot.constructor&&target.length===snapshot.length&&!Object.isFrozen(target)){target.set(snapshot);return target;}
@@ -160,8 +162,52 @@
     for(const key of keys){if(JOURNALED_ROOTS.has(key))continue;const hasA=Object.prototype.hasOwnProperty.call(target,key),hasB=Object.prototype.hasOwnProperty.call(baseline,key);if(hasA!==hasB||!auditEqual(target[key],baseline[key]))changed.push(key);}
     return changed.sort();
   }
-  function captureScoped(target,scope){const snapshot={};for(const key of scope){if(JOURNALED_ROOTS.has(key))continue;snapshot[key]={exists:Object.prototype.hasOwnProperty.call(target,key),value:deepClone(target[key])};}return snapshot;}
-  function restoreScoped(target,snapshot,scope,rootValues=null){for(const key of scope){if(JOURNALED_ROOTS.has(key))continue;const entry=snapshot[key];if(!entry?.exists){delete target[key];continue;}const sv=entry.value,tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}for(const key of JOURNALED_ROOTS.keys())if(!Object.prototype.hasOwnProperty.call(target,key)&&rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key))target[key]=rootValues[key];return target;}
+  // Row-level snapshots (Build 358). A root's owner may certify that writes inside a transaction stay at row level:
+  //   root.key = value; a collection (root.key is an array or a plain object) gains, loses or replaces members;
+  //   a member's own field is assigned (root.key[i].field = value, root.key[id].field = value).
+  // Nothing deeper is edited in place: arrays and objects inside a member are replaced, never mutated. Under that
+  // contract three shallow levels restore the root exactly, and leaves (route geometry, archived rows) are shared
+  // instead of deep-copied. level:'containers' certifies writes never reach members' fields (two levels).
+  // immutable:[keys] names collections whose members are never edited after insertion (only the collection is copied).
+  const isPlainRecord=value=>!!value&&typeof value==='object'&&!ArrayBuffer.isView(value)&&!(value instanceof ArrayBuffer);
+  function captureMembers(value){return Array.isArray(value)?{ref:value,array:true,items:value.slice()}:{ref:value,array:false,keys:Object.keys(value),values:{...value}};}
+  function restoreMembers(entry){
+    const ref=entry.ref;
+    if(entry.array){
+      const items=entry.items;let same=ref.length===items.length;if(same)for(let i=0;i<items.length;i++)if(ref[i]!==items[i]||!(i in ref)){same=false;break;}
+      if(!same){ref.length=0;for(let i=0;i<items.length;i++)ref.push(items[i]);}
+      return;
+    }
+    const keys=entry.keys,values=entry.values,current=Object.keys(ref);let sameShape=current.length===keys.length;
+    if(sameShape)for(let i=0;i<keys.length;i++)if(current[i]!==keys[i]){sameShape=false;break;}
+    if(sameShape){for(let i=0;i<keys.length;i++){const key=keys[i],value=values[key];if(ref[key]!==value)ref[key]=value;}return;}
+    for(const key of current)delete ref[key];for(const key of keys)ref[key]=values[key];
+  }
+  function captureRows(root,policy){
+    const rows=policy?.level==='containers'?null:[],immutable=new Set(Array.isArray(policy?.immutable)?policy.immutable.map(String):[]),containers=[],seen=new Set([root]);
+    // An array root is itself the collection: its members are the rows.
+    if(Array.isArray(root)){if(rows)for(const member of root)if(isPlainRecord(member)&&!seen.has(member)){seen.add(member);rows.push(captureMembers(member));}return {root:captureMembers(root),containers,rows:rows||[]};}
+    for(const key of Object.keys(root)){
+      const value=root[key];if(!isPlainRecord(value)||seen.has(value))continue;seen.add(value);containers.push(captureMembers(value));
+      if(!rows||immutable.has(key))continue;
+      const members=Array.isArray(value)?value:Object.values(value);
+      for(const member of members)if(isPlainRecord(member)&&!seen.has(member)){seen.add(member);rows.push(captureMembers(member));}
+    }
+    return {root:captureMembers(root),containers,rows:rows||[]};
+  }
+  function restoreRows(capture){for(const row of capture.rows)restoreMembers(row);for(const container of capture.containers)restoreMembers(container);restoreMembers(capture.root);}
+  function captureEntry(target,key,policy=null){
+    const exists=Object.prototype.hasOwnProperty.call(target,key),value=exists?target[key]:undefined;
+    if(exists&&policy&&isPlainRecord(value))return {exists:true,ref:value,rows:captureRows(value,policy)};
+    return {exists,value:deepClone(value)};
+  }
+  function restoreEntry(target,key,entry){
+    if(!entry?.exists){delete target[key];return;}
+    if(entry.rows){if(target[key]!==entry.ref)target[key]=entry.ref;restoreRows(entry.rows);return;}
+    const sv=entry.value,tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;
+  }
+  function captureScoped(target,scope,policies=null){const snapshot={};for(const key of scope){if(JOURNALED_ROOTS.has(key))continue;snapshot[key]=captureEntry(target,key,policies?.[key]||null);}return snapshot;}
+  function restoreScoped(target,snapshot,scope,rootValues=null){for(const key of scope){if(JOURNALED_ROOTS.has(key))continue;restoreEntry(target,key,snapshot[key]);}for(const key of JOURNALED_ROOTS.keys())if(!Object.prototype.hasOwnProperty.call(target,key)&&rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key))target[key]=rootValues[key];return target;}
   function isJournalPrimitive(value){return value===null||typeof value==='string'||typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value));}
   function captureJournal(target,scope,contracts){
     const assetContract=contracts.find(row=>row.proven===true&&row.root==='assets'&&row.mode==='asset-fields'&&Array.isArray(row.fields)&&row.fields.length);
@@ -224,8 +270,9 @@
     const target=context.target,scoped=new Set(context.scope),remaining={};
     for(const key of context.rootOrder)if(!scoped.has(key)&&Object.prototype.hasOwnProperty.call(target,key))remaining[key]=target[key];
     const remainingClone=deepClone(remaining),full={};
-    for(const key of context.rootOrder){if(scoped.has(key)){const entry=context.snapshot[key];if(entry?.exists)full[key]=entry.value;}else if(Object.prototype.hasOwnProperty.call(remainingClone,key))full[key]=remainingClone[key];}
-    context.snapshot=full;context.scope=null;
+    const rowEntries={};
+    for(const key of context.rootOrder){if(scoped.has(key)){const entry=context.snapshot[key];if(entry?.rows){rowEntries[key]=entry;full[key]=entry.ref;}else if(entry?.exists)full[key]=entry.value;}else if(Object.prototype.hasOwnProperty.call(remainingClone,key))full[key]=remainingClone[key];}
+    context.snapshot=full;context.scope=null;context.rowEntries=rowEntries;
   }
   function promoteToFull(context,reason='journal-fallback'){
     if(!context||context.rollbackStorage==='full-snapshot')return context;
@@ -279,13 +326,25 @@
       // execute() admission and therefore begin on Full Snapshot until an upfront
       // scope-union contract is separately proven.
       if(ctx.rollbackStorage==='journal')throw new Error('transaction-journal-unexpected-join');
-      if(ctx.scope)promoteToFull(ctx,'joined-writer');
+      // A scoped writer that declares scopedJoin certifies its scope covers every root its joined writers touch
+      // (proved by write-set enforcement tests), so the join needs no full-state snapshot.
+      if(ctx.scope&&ctx.scopedJoin!==true)promoteToFull(ctx,'joined-writer');
       const validation=options.validate?options.validate(ctx.measure):true;
       if(validation===false||validation?.ok===false)throw new Error(validation?.reason||'validation-rejected');
       const value=options.apply(ctx.measure);
       if(value?.then)throw new Error('Asynchronous state mutation requires an explicit lifecycle');
       return {committed:true,value,label:ctx.label,joined:true};
     }catch(error){ctx.failure=error;throw error;}
+  }
+  // A scoped transaction may capture further roots it is about to write (for example an owner that only runs on some
+  // slices). Must be called before the first write to those roots; a full-snapshot transaction already covers them.
+  function extendScope(target,keys,policies=null){
+    const ctx=activeContext;if(!ctx)throw new Error('transaction-extend-scope-requires-active-transaction');if(ctx.target!==target)throw new Error('Cross-state transaction scope extension is forbidden');
+    if(!ctx.scope||ctx.rollbackStorage!=='legacy-scoped')return false;
+    const start=runtimeClock(),known=new Set(ctx.scope);let added=0;
+    for(const key of normalizeScope(keys)||[]){if(known.has(key))continue;known.add(key);ctx.scope.push(key);if(ctx.declaredWriteRoots&&!ctx.declaredWriteRoots.includes(key))ctx.declaredWriteRoots.push(key);if(!JOURNALED_ROOTS.has(key))ctx.snapshot[key]=captureEntry(target,key,policies?.[key]||null);added++;}
+    if(ctx.timing){ctx.timing.snapshotMs+=Math.max(0,runtimeClock()-start);ctx.timing.scopeSize=ctx.scope.length;}
+    return added>0;
   }
   function execute(target,options={}){
     if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');
@@ -296,6 +355,7 @@
     const durableJournalBaseline=journaledRevisionSnapshot(target,durableContext);
     const label=String(options.label||'transaction'),scope=normalizeScope(options.scope),declaredWriteRoots=normalizeWriteRoots(options.writeRoots),writerContracts=normalizeWriterContracts(options.writerContracts),auditWrites=options.auditWrites===true||options.enforceWriteRoots===true,totalStart=runtimeClock(),requestedJournal=options.rollbackMode==='journal',profiled=options.profile===true||(options.profile!==false&&globalThis.GH_DIAGNOSTICS?.recorderIsActive?.(target)===true),phaseBreakdown=profiled?[]:null;
     let fallbackReason=journalAdmissionReason(options,scope,writerContracts),rollbackStorage='legacy-scoped',snapshot=null,journal=null;
+    const rowPolicies=scope&&options.rowRoots&&typeof options.rowRoots==='object'&&!Array.isArray(options.rowRoots)?options.rowRoots:null;
     let phaseDepth=0;
     const measure=(name,work)=>{
       if(typeof work!=='function')throw new TypeError('Profile phase callback is required');
@@ -320,19 +380,20 @@
     }
     if(discardableDraft){/* no snapshot by design */}
     else if(requestedJournal&&fallbackReason){snapshot=deepClone(target);rollbackStorage='full-snapshot';}
-    else if(!requestedJournal){snapshot=scope?captureScoped(target,scope):deepClone(target);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
+    else if(!requestedJournal){snapshot=scope?captureScoped(target,scope,rowPolicies):deepClone(target);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
     timing.snapshotMs=Math.max(0,runtimeClock()-snapshotStart);timing.rollbackStorage=rollbackStorage;timing.fullSnapshot=rollbackStorage==='full-snapshot';timing.fullSnapshotFallback=requestedJournal&&rollbackStorage==='full-snapshot';timing.fallbackReason=timing.fullSnapshotFallback?fallbackReason:null;
     // Write auditing is an architecture-development proof tool. Full transactions reuse
     // their rollback snapshot; scoped/journal transactions take an extra full baseline only when
     // audit/enforcement is explicitly requested. Normal gameplay pays no audit cost.
     const auditBaseline=auditWrites?((rollbackStorage==='full-snapshot')?snapshot:deepClone(target)):null;
     const journaledRootValues={};for(const key of JOURNALED_ROOTS.keys())if(Object.prototype.hasOwnProperty.call(target,key))journaledRootValues[key]=target[key];
-    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),journaledRootValues,postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null,undos:[]};
+    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),journaledRootValues,postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null,undos:[],scopedJoin:rollbackStorage==='legacy-scoped'&&options.scopedJoin===true,rowEntries:null};
+    if(rowPolicies)timing.rowRoots=Object.keys(rowPolicies).filter(key=>context.snapshot?.[key]?.rows);
     // Writer-owned undo (Build 353): a writer may keep its own exact preimage for writes it deliberately leaves
     // outside `scope` (the simulation slice keeps the previous asset field values instead of deep-cloning the
     // fleet). It always runs after the snapshot restore, so it also holds after a scoped -> full promotion.
     const undo=typeof options.undo==='function'?options.undo:null;
-    const restore=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope,context.journaledRootValues);return restoreRootOrder(target,context.rootOrder);}return restoreObject(target,context.snapshot,context.journaledRootValues);};
+    const restore=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope,context.journaledRootValues);return restoreRootOrder(target,context.rootOrder);}const restored=restoreObject(target,context.snapshot,context.journaledRootValues);if(context.rowEntries)for(const [key,entry] of Object.entries(context.rowEntries))restoreEntry(target,key,entry);return restored;};
     const releaseUndos=()=>{const rows=context.undos.splice(0);for(const row of rows)row.release?.();};
     const rollback=()=>{const restored=restore();if(undo)undo();const rows=context.undos.splice(0);for(let i=rows.length-1;i>=0;i--)rows[i].undo();return restored;};
     let phase='validate';activeContext=context;
@@ -417,5 +478,5 @@
       throw error;
     }finally{if(!durableCommitted&&rootSessions.length)try{rollbackJournaledRoots(rootSessions);}catch{}if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,registerJournaledRoot,beginJournaledRoots,commitJournaledRoots,rollbackJournaledRoots,execute,join,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,registerJournaledRoot,beginJournaledRoots,commitJournaledRoots,rollbackJournaledRoots,execute,join,extendScope,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

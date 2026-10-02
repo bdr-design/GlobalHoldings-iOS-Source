@@ -28,7 +28,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 357;
+  const RUNTIME_BUILD = 358;
   const SAVE_SCHEMA_VERSION = '3.0.0';
   const FOUNDER_PRINCIPAL_ID='PLAYER-FOUNDER';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
@@ -52,11 +52,13 @@
   const facilityOwnerCompanyId=facility=>String(facility?.ownerCompanyId||facility?.companyId||facility?.company||'group').trim();
   const isKnownCompanyId=(id,target=window.__GH_STATE__||null)=>COMPANY_PLATFORM.isKnownCompany?.(String(id||'').trim(),target)===true;
   const companyDefinition=id=>COMPANY_PLATFORM.definitionFor?.(state,id)||COMPANY_PLATFORM.getDefinition?.(id)||null;
-  function normalizeCanonicalAsset(asset,target=window.__GH_STATE__||null){
+  // Resolves an asset's canonical ownership fields without writing to it, so
+  // read-only fleet views (store records) can be validated in place.
+  function canonicalAssetFields(asset,target=window.__GH_STATE__||null){
     if(!asset||typeof asset!=='object')throw new Error('asset-record-invalid');
     const assetMode=assetModeOf(asset),ownerCompanyId=assetOwnerCompanyId(asset),assetClass=String(asset.assetClass||COMPANY_PLATFORM.assetClassForLegacyMode?.(assetMode)||'').trim(),operationProfileId=String(asset.operationProfileId||(target?COMPANY_PLATFORM.getOperationProfile?.(target,ownerCompanyId):COMPANY_PLATFORM.getOperationProfile?.(ownerCompanyId))||COMPANY_PLATFORM.operationProfileForLegacyMode?.(assetMode)||'').trim();
     if(!assetMode||!ownerCompanyId||!assetClass||!isKnownCompanyId(ownerCompanyId,target))throw new Error(`asset-ownership-unresolved:${asset.id||'unknown'}`);
-    asset.assetMode=assetMode;asset.ownerCompanyId=ownerCompanyId;asset.assetClass=assetClass;if(operationProfileId)asset.operationProfileId=operationProfileId;return asset;
+    return {assetMode,ownerCompanyId,assetClass,operationProfileId};
   }
 
   // ---- اقتصاد حقيقي: أسعار ومعدلات مرجعية تُستخدم فعليًا في حساب كل رحلة ----
@@ -1438,7 +1440,7 @@
     return !range||leg<=range*1.005;
   }
   function buildPublicRoute(asset,origin,destination,target=state,routeId=null){
-    normalizeCanonicalAsset(asset,target);routeId=routeId||window.GH_DETERMINISM.nextId(target,assetModeOf(asset)==='air'?'AIRPUB':'SEAPUB');const type=assetModeOf(asset),ownerCompanyId=assetOwnerCompanyId(asset);
+    canonicalAssetFields(asset,target);routeId=routeId||window.GH_DETERMINISM.nextId(target,assetModeOf(asset)==='air'?'AIRPUB':'SEAPUB');const type=assetModeOf(asset),ownerCompanyId=assetOwnerCompanyId(asset);
     const geometry=type==='air'
       ? buildAirRouteWithTechnicalStops(origin.coords,destination.coords,assetRangeKm(asset))
       : buildMaritimeRoute(origin.coords,destination.coords);
@@ -2316,6 +2318,7 @@
     const currentDay=Math.floor(state.simSeconds/86400),day=processedDay==null?currentDay:Math.max(0,Math.floor(Number(processedDay)||0));let financialDaysProcessed=0;
     if(day<=state.lastFinancialDay)return;
     if(day-state.lastFinancialDay!==1)throw new Error(`Non-sequential financial boundary: ${state.lastFinancialDay} -> ${day}`);
+    globalThis.__GH_HOURLY_SCHEMA_DUE__=true;
     while(state.lastFinancialDay<day&&financialDaysProcessed<1){
       state.lastFinancialDay++;financialDaysProcessed++;
       phase('simulation.finance-day.cheque-settlement',()=>{for(const c of state.finance.cheques.filter(c=>c.status==='صادر'&&c.dueDay<=state.lastFinancialDay)){
@@ -2324,7 +2327,7 @@
         else pushAlert(`ارتجع الشيك ${result.id} لعدم كفاية رصيد أو ميزانية ${companyFinanceName(result.company)}.`);
       }});
 
-      const tripAccruals=dispatchSystemCommand({state},'finance','consume-trip-accruals',{}, {actor:'financial-close'}).result;
+      const tripAccruals=phase('simulation.finance-day.trip-accruals',()=>dispatchSystemCommand({state},'finance','consume-trip-accruals',{}, {actor:'financial-close'}).result);
       const tripProfit=tripAccruals.profit,tripRevenue=tripAccruals.revenue,tripFuel=tripAccruals.fuel,tripMaintenance=tripAccruals.maintenance,tripCount=tripAccruals.count,tripCash=tripAccruals.cash||{};
       // Scalable accounting source of truth: one daily settlement batch per company,
       // not three financial documents per individual trip. Trip cash stays in a
@@ -2332,14 +2335,14 @@
       // current account exactly once at this atomic day boundary.
       const companyIds=operationalCompanyIds(state),companyIdSet=new Set(companyIds),accrualCompanyIds=new Set([...Object.keys(tripProfit||{}),...Object.keys(tripRevenue||{}),...Object.keys(tripFuel||{}),...Object.keys(tripMaintenance||{}),...Object.keys(tripCount||{}),...Object.keys(tripCash||{})]);
       for(const companyId of accrualCompanyIds)if(!companyIdSet.has(companyId)&&[tripProfit,tripRevenue,tripFuel,tripMaintenance,tripCount,tripCash].some(bucket=>Math.abs(Number(bucket?.[companyId])||0)>.005))throw new Error(`trip-accrual-company-not-operational:${companyId}`);
-      for(const companyId of companyIds){
+      phase('simulation.finance-day.trip-settlement',()=>{for(const companyId of companyIds){
         const count=Math.max(0,Number(tripCount[companyId])||0),revenue=Math.max(0,Number(tripRevenue[companyId])||0),fuel=Math.max(0,Number(tripFuel[companyId])||0),maint=Math.max(0,Number(tripMaintenance[companyId])||0),taxable=companyTaxable(state,companyId),clearing='مركز التسوية التشغيلية اليومية',invoiceNumbers=[],profile=window.GH_FINANCE_CORE.collectionProfile(companyId,state),mobility=isMobilityCompany(companyId,state);
         const post=(...args)=>{const doc=postInvoice(...args);invoiceNumbers.push(doc.number);return doc;};
         if(revenue>0)post('دخل',revenue,`تسوية رحلات يومية ${typeName(companyId)} · ${count} رحلة`,'تسوية تشغيل يومية',taxable,'مدفوعة',companyId,profile.source,{settlementAccount:clearing});
         if(fuel>0)post('مصروف',fuel,`تكلفة تشغيل رحلات يومية ${typeName(companyId)} · ${count} رحلة`,'تسوية مورد تشغيل يومية',taxable,'مدفوعة',companyId,mobility?'السائقون ومزودو التشغيل':'موردو الوقود المعتمدون',{settlementAccount:clearing});
         if(maint>0)post('مصروف',maint,`مخصص صيانة رحلات يومية ${typeName(companyId)} · ${count} رحلة`,'مخصص صيانة يومي',false,'مدفوعة',companyId,'مراكز الصيانة المعتمدة',{settlementAccount:clearing});
         const amount=Number(tripCash[companyId])||0;if(Math.abs(amount)>=.005||revenue>0){const before=companyOperatingBalance(companyId),settlement=dispatchSystemCommand({state},'finance','settle-daily-cash',{company:companyId,amount,grossAmount:revenue,deductions:fuel+maint,tripCount:count,invoiceNumbers,day:state.lastFinancialDay,reference:`DAY-CASH-${companyId}-${state.lastFinancialDay}`,note:`تحويل صافي تشغيل اليوم ${state.lastFinancialDay} إلى الحساب الجاري · ${typeName(companyId)}`},{actor:'financial-close'}).result,after=companyOperatingBalance(companyId);if(Math.abs((after-before)-Number(settlement?.amount||0))>.01)throw new Error(`daily-profit-current-account-mismatch:${companyId}`);if(settlement?.shortfall>0)pushAlert(`رحّلت تسوية نقدية غير مغطاة بقيمة ${fmtMoney(settlement.shortfall)} في ${typeName(companyId)} إلى إقفال اليوم التالي دون إسقاطها.`);}
-      }
+      }});
       const companyContractRevenue=zeroCompanyMap(state),companyContractCost=zeroCompanyMap(state),contractDailyRows=[];
       const contractTerms={};for(const id of (state.acceptedContracts||[])){const c=contracts.find(x=>x.id===id);if(!c)continue;const companyId=contractOwnerCompanyId(c,state);if(!companyId)throw new Error(`contract-owner-unresolved-or-ambiguous:${id}`);const termDays=Math.max(1,Number(c.termMonths)||1)*30,dailyRevenue=c.value/termDays,dailyCost=c.cost/termDays;contractTerms[id]=termDays;companyContractRevenue[companyId]=(companyContractRevenue[companyId]||0)+dailyRevenue;companyContractCost[companyId]=(companyContractCost[companyId]||0)+dailyCost;contractDailyRows.push({id,companyId,sector:c.sector,client:c.client,name:c.name,revenue:dailyRevenue,cost:dailyCost});}const expiredContracts=dispatchSystemCommand({state},'contracts','tick-day',{day:state.lastFinancialDay,terms:contractTerms},{actor:'simulation'}).result?.expired||[];for(const id of expiredContracts){const c=contracts.find(x=>x.id===id);if(c)pushAlert(`اكتمل عقد ${c.name} وانتهت مدته التشغيلية بعد ${c.termMonths} شهرًا.`);}
       // Bank and energy daily owners must close first. The accounting read model
@@ -2411,6 +2414,10 @@
     else if(state.lastFinancialDay%7===0)pushAlert(`مؤشر التشغيل الأسبوعي: ${moving} أصلًا متحركًا، جاهزية الأسطول ${Math.round(readiness)}%، صافي اليوم ${fmtMoney(net)}.`);
   }
 
+  // The hourly cycle always runs the integrity check. Its full save-schema pass re-derives every signed document
+  // (O(documents), 10-25 ms on device), so it runs only when something since the last pass could have rewritten
+  // documents or proofs: game load, maintenance compaction or the daily close (globalThis.__GH_HOURLY_SCHEMA_DUE__).
+  // Durable commands validate their own drafts and every save validates the schema in full.
   function processMarket(processedHour=null,measure=null){
     const phase=typeof measure==='function'?measure:(_name,work)=>work();
     const currentHour=Math.floor(state.simSeconds/3600),hour=processedHour==null?currentHour:Math.max(0,Math.floor(Number(processedHour)||0));
@@ -2419,7 +2426,7 @@
     state.lastMarketHour=hour;
     phase('simulation.market.price-tick',()=>dispatchSystemCommand({state},'market','tick-prices',{hour},{actor:'simulation-market'}));
     if(window.GH_REALISM)phase('simulation.market.realism-hour',()=>window.GH_REALISM.onHour(state,hour));
-    if(window.GH_ADVANCED){const marketCycle=()=>{phase('simulation.market.advanced-hour',()=>window.GH_ADVANCED.onMarketHour(state,hour));phase('simulation.market.delivery-reconcile',()=>window.GH_DELIVERY_MONITOR?.reconcile?.(state));return {hour};};const cp=window.GH_CONTROL_PLANE;if(cp?.execute)phase('simulation.market.control-plane',()=>cp.execute(state,{name:'MARKET_HOURLY_CYCLE',domain:'market',actor:'simulation-market',correlationId:`MARKET-HOUR-${hour}`},marketCycle,{atomic:false,integrity:true,deferIntegrityToTransaction:window.GH_TRANSACTION_CORE?.isActive?.()===true}));else marketCycle();}
+    if(window.GH_ADVANCED){const marketCycle=()=>{phase('simulation.market.advanced-hour',()=>window.GH_ADVANCED.onMarketHour(state,hour));phase('simulation.market.delivery-reconcile',()=>window.GH_DELIVERY_MONITOR?.reconcile?.(state));return {hour};};const cp=window.GH_CONTROL_PLANE;if(cp?.execute){const tx=window.GH_TRANSACTION_CORE,active=tx?.isActive?.()===true,schemaDue=globalThis.__GH_HOURLY_SCHEMA_DUE__!==false;phase('simulation.market.control-plane',()=>cp.execute(state,{name:'MARKET_HOURLY_CYCLE',domain:'market',actor:'simulation-market',correlationId:`MARKET-HOUR-${hour}`},marketCycle,{atomic:false,integrity:true,schema:schemaDue,deferIntegrityToTransaction:active}));if(schemaDue){if(active)tx.afterCommit(()=>{globalThis.__GH_HOURLY_SCHEMA_DUE__=false;},{key:'hourly-schema-validated',owner:'simulation-market'});else globalThis.__GH_HOURLY_SCHEMA_DUE__=false;}}else marketCycle();}
   }
 
   // ---------------------------------------------------------------------------
@@ -2466,6 +2473,7 @@
   const HISTORY_COMPACTION_SCOPE=Object.freeze(['finance','companyFinance','supplierTransactions','treasury','alerts','eventLog','operations','bank','simulationKernel']);
   function compactSimulationState(force=false){
     const day=Math.floor((state.simSeconds||0)/86400);if(!force&&state.simulationKernel?.lastCompactDay===day)return;
+    globalThis.__GH_HOURLY_SCHEMA_DUE__=true;
     const detailCutoff=Math.max(0,(day-2)*86400),targets=[[state.finance?.invoices,2500,'invoices'],[state.finance?.cheques,1200,'cheques'],[state.finance?.transfers,1200,'transfers'],[state.finance?.periods,240,'taxPeriods'],[state.supplierTransactions,3000,'supplierTransactions']],tails=[[state.alerts,32],[state.eventLog,280],[state.operations?.dailyBriefs,24],[state.bank?.cashSweeps,48]];
     const ledgerHistory=(Array.isArray(state.finance?.journalEntries)&&state.finance.journalEntries.some(row=>(Number(row?.at)||0)<detailCutoff))||Object.entries(state.companyFinance||{}).some(([,book])=>Array.isArray(book?.ledger)&&book.ledger.some(row=>(Number(row?.at)||0)<detailCutoff));
     const hasHistory=ledgerHistory||targets.some(([rows,max,kind])=>{if(!Array.isArray(rows)||rows.length<=max)return false;const keep=archiveRetention(kind);for(let i=max;i<rows.length;i++)if(!keep(rows[i]))return true;return false;});if(!hasHistory&&!tails.some(([rows,max])=>Array.isArray(rows)&&rows.length>max))return;
@@ -2520,7 +2528,32 @@
     'leasedAssets','customRoutes','routeEndpoints','routeCache','routesRevision','crew','hr',
     'operations','bank','energy','insurancePolicies','contractRegistry','acceptedContracts'
   ]);
-  const SIMULATION_STEADY_TRANSACTION_SCOPE=Object.freeze(SIMULATION_TRANSACTION_SCOPE.filter(key=>key!=='realism'&&key!=='advanced'));
+  // Build 358: a slice snapshots only the roots it can write (measured by the write-set audit and enforced by
+  // tests/build358-row-snapshot-rollback.cjs). A steady slice (no boundary, no pending delivery) runs the fleet engine,
+  // the trip journal, alerts and GH Mobility; any other owner it reaches first extends the scope. The hourly cycle
+  // also writes through joined system commands (market tick, domain command records), so its scope covers them and
+  // the join needs no full-state snapshot. Daily close and delivery slices keep the full fallback.
+  const SIMULATION_STEADY_TRANSACTION_SCOPE=Object.freeze([
+    'simSeconds','fleet','todayProfit','groupValue','sectorProfitToday',
+    'tripProfitAccrued','tripRevenueAccrued','tripFuelAccrued','tripMaintenanceAccrued','tripCountAccrued',
+    'cash','debt','companyFinance','finance','treasury','alerts','eventLog','diagnostics','sequences',
+    'simulationKernel','simulationWorld','operations','mobility'
+  ]);
+  const SIMULATION_HOUR_TRANSACTION_SCOPE=Object.freeze([...SIMULATION_TRANSACTION_SCOPE,'market','portfolio','portfolioBook','maPortfolio','domainRuntime','determinism','deliveryClosure']);
+  // Row-level snapshots (Transaction Core rowRoots). Mobility certifies row-level writes everywhere
+  // (GH_MOBILITY_CORE.ROLLBACK_POLICY). The rest is certified for these slices only, from what their owners write:
+  // - finance/treasury: the trip journal posts fields of finance and of its pending-cash map; treasury is only normalized.
+  // - hourly cycle: domain command records are inserted whole (records, idempotency rows); the control plane appends
+  //   commands, events and outbox rows and edits fields of its own rows; the market tick edits price fields of each
+  //   stock row; realism moves economy fields, its event history and the pending-delivery count (an hour-only slice
+  //   has no pending delivery, so delivery rows are not edited).
+  // tests/build358-row-snapshot-rollback.cjs fails these slices mid-way and requires the whole state to come back exact.
+  function simulationRowRoots(kind){
+    const rows={},mobility=window.GH_MOBILITY_CORE?.ROLLBACK_POLICY;if(mobility)rows.mobility=mobility;
+    if(kind==='steady'||kind==='hour'){rows.finance={level:'containers'};rows.treasury={level:'containers'};}
+    if(kind==='hour'){rows.domainRuntime={level:'containers'};rows.controlPlane={level:'rows'};rows.market={level:'rows'};rows.realism={level:'rows'};}
+    return rows;
+  }
   const SIMULATION_TRIP_ALERT_LIMIT=3;
   const isTripCompletionAlert=text=>/ أكمل (?:رحلة\.|\d+ رحلات )/.test(String(text));
   function simulationAlertTexts(journal){
@@ -2564,10 +2597,12 @@
         if(cancelled||!ready)return {committed:false,reason:'job-not-finished'};
         if(Math.abs((Number(state.simSeconds)||0)-from)>1e-6)return {committed:false,retry:true,reason:'time-conflict'};
         const boundaryRequested=meta.boundary||{},deliveryWorkPending=window.GH_REALISM?.hasPendingDeliveries?.(state)!==false,
-          scope=boundaryRequested.day!=null||boundaryRequested.hour!=null||deliveryWorkPending?SIMULATION_TRANSACTION_SCOPE:SIMULATION_STEADY_TRANSACTION_SCOPE;
+          dayBoundary=boundaryRequested.day!=null,hourOnly=!dayBoundary&&boundaryRequested.hour!=null&&!deliveryWorkPending,steady=!dayBoundary&&boundaryRequested.hour==null&&!deliveryWorkPending,
+          scope=steady?SIMULATION_STEADY_TRANSACTION_SCOPE:hourOnly?SIMULATION_HOUR_TRANSACTION_SCOPE:SIMULATION_TRANSACTION_SCOPE;
         let out=null,journal=makeSimulationEffects();
         const transaction=TX.execute(state,{
-          label:'simulation:'+from+'->'+to,scope,writeRoots:scope,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,
+          label:'simulation:'+from+'->'+to,scope,writeRoots:scope,rowRoots:simulationRowRoots(steady?'steady':hourOnly?'hour':'full'),scopedJoin:hourOnly,
+          auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,enforceWriteRoots:globalThis.__GH_BUILD358_ENFORCE_SLICE_SCOPE__===true&&(steady||hourOnly),
           profileContext:{kind:'simulation-slice',from,to,speed:Number(meta.speed)||0,order,eventsBudget:maxEvents||null},
           apply:measure=>{
             const context=simulationAssetRuntimeContext();
@@ -2579,6 +2614,7 @@
             state.simSeconds=completeTo;
             mergeSimulationEffects(journal,out.effects);
             for(const companyId of Object.keys(journal.tripCount))window.GH_CORPORATE_CORE?.model?.(state,companyId);
+            if(journal.retiredRouteIds.length)TX.extendScope(state,SIMULATION_TRANSACTION_SCOPE);
             for(const routeId of new Set(journal.retiredRouteIds))if(!window.GH_FLEET_DATA.some(state,asset=>asset.routeId===routeId)&&(state.customRoutes||[]).some(route=>route.id===routeId))window.GH_ROUTE_CORE.execute({state},'delete',{id:routeId});
             window.GH_FINANCE_CORE.execute({state},'apply-simulation-journal',{journal});
             window.GH_CORPORATE_CORE.execute({state},'adjust-group-value',{delta:Number(journal.groupValue)||0});
@@ -2588,7 +2624,10 @@
             const mobility=window.GH_MOBILITY_CORE;if(mobility?.advanceThrough)mobility.advanceThrough({state},from,completeTo);else mobility?.onSimulationTime?.({state},completeTo);
             for(const asset of competitorAssets||[]){const distance=routeDistance(asset.route),trip=distance/(Number(asset.speed)||1)*3600;if(Number.isFinite(trip)&&trip>0)asset.progress=(Number(asset.progress)||0)+elapsed/trip-Math.floor((Number(asset.progress)||0)+elapsed/trip);}
             const boundary=TIME.boundaryAt(completeTo);
-            if(boundary.day!==null&&boundary.day!==undefined)measure('simulation.boundary.financial-day',()=>processFinancialDay(boundary.day));
+            // Slices never cross a boundary, so only a slice planned for one can reach an unprocessed boundary; anything
+            // else would write outside the snapshot scope chosen above and is rejected (rolled back and retried).
+            if((boundary.day!=null&&boundary.day>(Number(state.lastFinancialDay)||0)&&!dayBoundary)||(boundary.hour!=null&&boundary.hour>(Number(state.lastMarketHour)||0)&&steady))throw new Error('simulation-boundary-outside-scope');
+            if(boundary.day!==null&&boundary.day!==undefined)measure('simulation.boundary.financial-day',()=>processFinancialDay(boundary.day,measure));
             if(boundary.hour!==null&&boundary.hour!==undefined)measure('simulation.boundary.market-hour',()=>processMarket(boundary.hour,measure));
             state.simulationKernel=state.simulationKernel||{};
             state.simulationKernel.lastAtomicCommit={from,to:completeTo,requestedTo:to,events:out.events,day:boundary.day,hour:boundary.hour,at:completeTo,core:EVENTS.VERSION,order};
@@ -2829,7 +2868,7 @@
   function worldResultCard(row){
     const sourceKey=row.key,baseEntity=directoryWorldEntity(row),entity=baseEntity?{...baseEntity,company:row.company||row.companyId,ownerCompanyId:row.company||row.companyId,facilityKind:row.facilityKind}:directoryEntityByKey(sourceKey,row.company||row.companyId);if(!entity)return '';
     const {company,kind,daily,quote}=directoryOffer(entity),opened=entity.kind==='company-site'?directorySiteOwned(entity):globalBaseFor(entity.key,company),companyOpen=COMPANY_PLATFORM.resolveCompany(state,company)?.operational===true;
-    const account=state.companyFinance?.[company]?.accounts?.[0],gap=Math.max(0,quote-(Number(account?.balance)||0)),capacity=entity.capacity||(company==='air'?'300 طائرة':'120 سفينة');
+    const account=state.companyFinance?.[company]?.accounts?.[0],gap=Math.max(0,quote-(Number(account?.balance)||0)),capacity=entity.capacity||(company==='air'?`${(window.GH_FACILITY_CORE?.DEFAULT_ASSET_CAPACITY?.['airport-base']||3000).toLocaleString('en-US')} طائرة`:'120 سفينة');
     const status=opened?'منشأة مملوكة':companyOpen?'متاح للفتح':`أسس ${typeName(company)} أولًا`;
     return `<article class="list-item world-result" data-company="${company}" data-key="${esc(entity.key)}"><div class="list-item-head"><div><h3>${facilityVectorMarkup(entity.iconKey||kind)} ${esc(entity.name)}</h3><p>${esc(row.country)} · ${esc(row.city)} · ${esc(entity.code)}</p></div><span class="tag ${opened?'positive':''}">${esc(facilityKind(kind))}</span></div>
       <div class="directory-scope"><b>${esc(companyFinanceName(company))}</b><span>${esc(typeName(company))} · ${esc(status)}</span></div>
@@ -2863,7 +2902,7 @@
   }
   async function openGlobalBase(key,opts={}){
     const company=String(opts.companyId||''),entity=directoryEntityByKey(key,company);if(!entity||!['airport','port'].includes(entity.kind)){notice('تعذر فتح القاعدة: الموقع أو الشركة المالكة غير معروفين.');return false;}
-    const result=await runAuthorizedCompositeCommand(`open-global-base:${company}`,({state:draft,dispatch,recordAlert})=>{const instance=COMPANY_PLATFORM.requireCompany(draft,company,{registered:true,operational:true,capability:'finance.book'}),draftEntity=directoryEntityByKey(key,company,draft);if(!instance||!draftEntity)throw new Error('global-facility-company-invalid');if(globalBaseFor(key,company,draft))throw new Error('facility-already-open');const baseCost=facilityPrice(draftEntity),dailyCost=facilityDailyCost(draftEntity),facilityKind=draftEntity.facilityKind,build=awardConstructionDraft(draft,dispatch,recordAlert,company,facilityKind,`قاعدة ${draftEntity.name}`,baseCost);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=window.GH_DETERMINISM.nextId(draft,'BASE'),air=draftEntity.kind==='airport',airIdentity=air?{iata:String(draftEntity.iata||''),icao:String(draftEntity.icao||''),countryCode:String(draftEntity.countryCode||''),...(Number.isFinite(Number(draftEntity.elevationFt))?{elevationFt:Number(draftEntity.elevationFt)}:{})}:{terminal:Boolean(draftEntity.terminal)},facility={id,sourceKey:key,ownerCompanyId:company,kind:facilityKind,owned:true,deliveryCapacity:air?300:120,photo:air?PHOTOS.facility_airport:PHOTOS.facility_port,name:`قاعدة ${draftEntity.name}`,city:draftEntity.city,country:draftEntity.country,coords:[...draftEntity.coords],code:draftEntity.code,...airIdentity,cost:build.amount,dailyCost,capacity:air?'300 طائرة · تشغيل جوي وشحن':'120 سفينة · تشغيل بحري ولوجستي',contractor:build.contractor,constructionContractId:build.id,detail:`قاعدة عالمية تابعة لـ${COMPANY_PLATFORM.resolveIdentity(draft,company)?.legalName||company} في ${draftEntity.name}.`};const created=dispatch('facilities','create',{facility,bucket:'globalBases',groupValueAdd:build.amount*.76}).result;if(!created||created.ownerCompanyId!==company)throw new Error('facility-owner-mismatch');ensureFacilityWorkforceDraft(draft,dispatch,company,'فتح قاعدة جديدة');recordAlert(`افتتحت ${facility.name} بعقد ${build.id} وربطت وجهة التسليم والموارد البشرية بالشركة المالكة.`,'facility');return {id};},{silent:Boolean(opts.silent),afterCommit:({id})=>{updateKpis();renderMap();panMapTo(entity.coords,6);if(!opts.silent)openFacility(id);}});return Boolean(result);
+    const result=await runAuthorizedCompositeCommand(`open-global-base:${company}`,({state:draft,dispatch,recordAlert})=>{const instance=COMPANY_PLATFORM.requireCompany(draft,company,{registered:true,operational:true,capability:'finance.book'}),draftEntity=directoryEntityByKey(key,company,draft);if(!instance||!draftEntity)throw new Error('global-facility-company-invalid');if(globalBaseFor(key,company,draft))throw new Error('facility-already-open');const baseCost=facilityPrice(draftEntity),dailyCost=facilityDailyCost(draftEntity),facilityKind=draftEntity.facilityKind,build=awardConstructionDraft(draft,dispatch,recordAlert,company,facilityKind,`قاعدة ${draftEntity.name}`,baseCost);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=window.GH_DETERMINISM.nextId(draft,'BASE'),air=draftEntity.kind==='airport',airIdentity=air?{iata:String(draftEntity.iata||''),icao:String(draftEntity.icao||''),countryCode:String(draftEntity.countryCode||''),...(Number.isFinite(Number(draftEntity.elevationFt))?{elevationFt:Number(draftEntity.elevationFt)}:{})}:{terminal:Boolean(draftEntity.terminal)},facility={id,sourceKey:key,ownerCompanyId:company,kind:facilityKind,owned:true,deliveryCapacity:window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY[air?'airport-base':'port-base'],photo:air?PHOTOS.facility_airport:PHOTOS.facility_port,name:`قاعدة ${draftEntity.name}`,city:draftEntity.city,country:draftEntity.country,coords:[...draftEntity.coords],code:draftEntity.code,...airIdentity,cost:build.amount,dailyCost,capacity:air?`${window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['airport-base'].toLocaleString('en-US')} طائرة · تشغيل جوي وشحن`:'120 سفينة · تشغيل بحري ولوجستي',contractor:build.contractor,constructionContractId:build.id,detail:`قاعدة عالمية تابعة لـ${COMPANY_PLATFORM.resolveIdentity(draft,company)?.legalName||company} في ${draftEntity.name}.`};const created=dispatch('facilities','create',{facility,bucket:'globalBases',groupValueAdd:build.amount*.76}).result;if(!created||created.ownerCompanyId!==company)throw new Error('facility-owner-mismatch');ensureFacilityWorkforceDraft(draft,dispatch,company,'فتح قاعدة جديدة');recordAlert(`افتتحت ${facility.name} بعقد ${build.id} وربطت وجهة التسليم والموارد البشرية بالشركة المالكة.`,'facility');return {id};},{silent:Boolean(opts.silent),afterCommit:({id})=>{updateKpis();renderMap();panMapTo(entity.coords,6);if(!opts.silent)openFacility(id);}});return Boolean(result);
   }
   async function openLogisticsHub(site,opts={}){
     site=canonicalDirectorySite(site,'road');if(!site){notice('اختر موقع المركز من الدليل العالمي.');return false;}const coords=[...site.coords],place={city:site.city,country:site.country,label:site.city};

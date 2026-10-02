@@ -82,12 +82,14 @@ const api=x=>x.s.GH_PERSISTENCE;
   })().catch(error=>{console.error(error);process.exit(1);});
 }
 
-// ---------- G) exact temporary cap round trip and safe rejection above cap ----------
+// ---------- G) 1,600-asset round trip with compact receipts; a save above the purchase ceiling still persists and loads ----------
 async function bigFleet(){
   const x=fleet(8,200),messages=[];x.s.webkit={messageHandlers:{saveBridge:{postMessage:m=>messages.push(m)}}};
   const LIMIT=30*1024*1024;
   assert.equal(fleetAssets(x,x.state).length,1600);
-  assert.equal(x.s.GH_FLEET_DATA.persistenceRecordCount(x.state,x.state.realism.procurement.deliveries),3200,'the exact cap counts live assets and their full delivery receipt snapshots');
+  const receipts=x.state.realism.procurement.deliveries;assert.equal(receipts.length,8);assert.ok(receipts.every(row=>x.s.GH_FLEET_DATA.isCompactReceipt(row)&&!Object.hasOwn(row,'assets')),'delivered receipts are stored compactly (Build 358)');
+  assert.equal(receipts.reduce((sum,row)=>sum+x.s.GH_FLEET_DATA.receiptAssets(row).length,0),1600,'compact receipts still rebuild every delivered asset');
+  assert.equal(x.s.GH_FLEET_DATA.persistenceRecordCount(x.state,receipts),1600,'compact delivered receipts hold no asset copies, so only live assets count');
   const started=performance.now(),out=api(x).commitState(x.state,{storageKey:'main'}),syncMs=performance.now()-started;
   assert.equal(out.ok,true,out.reason);assert.ok(out.utf8Bytes<LIMIT,`1,600-asset save is ${(out.utf8Bytes/1048576).toFixed(1)} MB`);
   for(let i=0;i<20&&!messages.length;i++)await new Promise(r=>setTimeout(r,5));
@@ -100,7 +102,10 @@ async function bigFleet(){
   const migratedRows=fleetAssets(x,restored.state),sourceRows=fleetAssets(x,x.state);assert.equal(migratedRows.length,sourceRows.length);for(let index=0;index<migratedRows.length;index++)assert.equal(firstFieldDifference(migratedRows[index],sourceRows[index]),null,`exact-cap migration asset ${index} (${sourceRows[index]?.id})`);
   const previous=x.store.get('main'),messagesBefore=messages.length,overflow={...sourceRows[0],id:'OVER-CAP-PROBE'};
   const added=x.s.GH_TRANSACTION_CORE.execute(x.state,{label:'persistence-cap-overflow-probe',scope:['fleet'],apply:()=>x.s.GH_FLEET_DATA.add(x.state,overflow)});assert.equal(added.committed,true);
-  const rejected=api(x).commitState(x.state,{storageKey:'main'});assert.equal(rejected.ok,false);assert.match(rejected.reason,/fleet-persistence-record-cap/);
-  assert.equal(messages.length,messagesBefore,'over-cap state must not be sent to the native vault');assert.equal(x.store.get('main'),previous,'failed save must retain the last persisted browser snapshot');
-  console.log(JSON.stringify({suite:'build357-persistence-cap-1600',assets:1600,records:3200,savedMB:+(out.utf8Bytes/1048576).toFixed(2),nativeLimitMB:30,overflow:'rejected without replacing browser or native snapshots',saveSyncMs:Math.round(syncMs),startupLoadMs:Math.round(loadMs),environment:`node ${process.version}; synthetic fleet; not iPhone`}));
+  const saved=api(x).commitState(x.state,{storageKey:'main'});assert.equal(saved.ok,true,`a direct fleet write is never locked out of saving: ${saved.reason||''}`);
+  for(let i=0;i<20&&messages.length===messagesBefore;i++)await new Promise(r=>setTimeout(r,5));
+  assert.ok(messages.length>messagesBefore,'the state is sent to the native vault');assert.notEqual(x.store.get('main'),previous,'the browser snapshot is replaced');
+  const m2=messages.at(-1);api(x).receiveAck({...m2,success:true,generation:Number(m2.generation)||2});await saved.native;
+  x.s.__GH_NATIVE_SAVE_JSON__=m2.saveJSON;const reloaded=loadFrom(x);assert.equal(fleetAssets(x,reloaded.state).length,1601,'the save reloads with every asset');
+  console.log(JSON.stringify({suite:'build358-persistence-1600-compact-receipts',assets:1600,records:1600,savedMB:+(out.utf8Bytes/1048576).toFixed(2),nativeLimitMB:30,directWrite:'saved and reloaded (no load-time ceiling)',saveSyncMs:Math.round(syncMs),startupLoadMs:Math.round(loadMs),environment:`node ${process.version}; synthetic fleet; not iPhone`}));
 }

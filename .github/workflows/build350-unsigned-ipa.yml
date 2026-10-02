@@ -1,4 +1,4 @@
-name: Build 357 unsigned iPhone test IPA
+name: Build 358 unsigned iPhone test IPA
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 180
     steps:
-      - name: Check out the isolated Build 357 branch
+      - name: Check out the isolated Build 358 branch
         uses: actions/checkout@v4
 
       - name: Select Node 24
@@ -62,12 +62,12 @@ jobs:
           manifest=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())
           gate=json.loads((root/'RELEASE_GATE.json').read_text())
           project=(root/'project.yml').read_text()
-          if manifest.get('build')!=357 or manifest.get('version')!='3.0.0' or manifest.get('save_schema')!='3.0.0': raise SystemExit('Build 357 identity mismatch in the runtime manifest')
-          if gate.get('source_tree_sha256')!=manifest.get('source_tree_sha256') or gate.get('build')!=357: raise SystemExit('Release gate is bound to another source')
+          if manifest.get('build')!=358 or manifest.get('version')!='3.0.0' or manifest.get('save_schema')!='3.0.0': raise SystemExit('Build 358 identity mismatch in the runtime manifest')
+          if gate.get('source_tree_sha256')!=manifest.get('source_tree_sha256') or gate.get('build')!=358: raise SystemExit('Release gate is bound to another source')
           if gate.get('approved') is not False or gate.get('save_schema')!='3.0.0': raise SystemExit('Release gate must remain closed on Save Schema 3.0.0')
           snapshot=re.search(r'GHSourceSnapshotSHA256:\s*"([0-9a-f]{64})"',project)
           if not snapshot or snapshot.group(1)!=manifest.get('webapp_tree_sha256'): raise SystemExit('Native project snapshot fingerprint is not the WebApp fingerprint')
-          print('Build 357 / 3.0.0 / Save Schema 3.0.0; clean direct source; release approval stays closed: PASS')
+          print('Build 358 / 3.0.0 / Save Schema 3.0.0; clean direct source; release approval stays closed: PASS')
           PY
 
       - name: Install pinned test dependencies and browser engines
@@ -90,7 +90,7 @@ jobs:
           NODE
           npm run lint
 
-      - name: Run all declared Build 357 source acceptance gates
+      - name: Run all declared Build 358 source acceptance gates
         shell: bash
         run: |
           set -euo pipefail
@@ -102,7 +102,7 @@ jobs:
           from pathlib import Path
           root=Path(sys.argv[1]);result=json.loads(Path(sys.argv[2]).read_text())
           source=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())['source_tree_sha256']
-          required=143
+          required=146
           if result.get('completed') is not True or result.get('all_tests_passed') is not True or result.get('runtime_unchanged') is not True: raise SystemExit('Full source acceptance did not pass')
           if result.get('total',0)<required or result.get('passed')!=result.get('total'): raise SystemExit('Acceptance gates are missing or failed')
           if result.get('runtime_source',{}).get('source_tree_sha256')!=source: raise SystemExit('Acceptance result is bound to another runtime')
@@ -180,14 +180,14 @@ jobs:
           python3 "$SOURCE_DIR/tools/verify_current_source.py" --root "$SOURCE_DIR" | tee "$GITHUB_WORKSPACE/.ci-output/source-verification-after-build.json"
           printf 'fresh_unsigned_arm64_iphoneos_release=PASS\n' | tee "$GITHUB_WORKSPACE/.ci-output/native-build-verification.txt"
 
-      - name: Assemble and verify unsigned Build 357 test IPA
+      - name: Assemble and verify unsigned Build 358 test IPA
         if: success()
         shell: bash
         run: |
           set -euo pipefail
           APP="$RUNNER_TEMP/build350-derived-data/Build/Products/Release-iphoneos/GlobalHoldings.app"
           STAGE="$RUNNER_TEMP/build350-test-ipa"
-          IPA="$GITHUB_WORKSPACE/.ci-output/GlobalHoldings_BUILD357_unsigned_TEST.ipa"
+          IPA="$GITHUB_WORKSPACE/.ci-output/GlobalHoldings_BUILD358_unsigned_TEST.ipa"
           REPORT="$GITHUB_WORKSPACE/.ci-output/test-ipa-verification.json"
           mkdir -p "$STAGE/Payload" "$GITHUB_WORKSPACE/.ci-output"
           ditto "$APP" "$STAGE/Payload/GlobalHoldings.app"
@@ -206,7 +206,7 @@ jobs:
               rows={row.filename:row for row in archive.infolist() if not row.is_dir()}
               if not rows or any(not name.startswith(prefix) for name in rows): raise SystemExit('IPA root is not a clean Payload app')
               info=plistlib.loads(archive.read(prefix+'Info.plist'))
-              if (info.get('CFBundleIdentifier'),info.get('CFBundleShortVersionString'),info.get('CFBundleVersion'),info.get('UIDeviceFamily')) != ('com.example.globalholdings','3.0.0','357',[1]):
+              if (info.get('CFBundleIdentifier'),info.get('CFBundleShortVersionString'),info.get('CFBundleVersion'),info.get('UIDeviceFamily')) != ('com.example.globalholdings','3.0.0','358',[1]):
                   raise SystemExit('IPA bundle identity/version/device family mismatch')
               if info.get('GHSourceSnapshotSHA256') != runtime['webapp_tree_sha256']:
                   raise SystemExit('IPA app is not bound to the exact WebApp source snapshot')
@@ -266,19 +266,19 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: GlobalHoldings-Build357-verification
+          name: GlobalHoldings-Build358-verification
           path: .ci-output
           if-no-files-found: warn
           retention-days: 30
           include-hidden-files: true
 
-      - name: Upload unsigned Build 357 test IPA
+      - name: Upload unsigned Build 358 test IPA
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: GlobalHoldings_BUILD357_unsigned_TEST_ipa
+          name: GlobalHoldings_BUILD358_unsigned_TEST_ipa
           path: |
-            .ci-output/GlobalHoldings_BUILD357_unsigned_TEST.ipa
+            .ci-output/GlobalHoldings_BUILD358_unsigned_TEST.ipa
             .ci-output/test-ipa-verification.json
           if-no-files-found: error
           retention-days: 30

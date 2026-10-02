@@ -133,7 +133,12 @@ const encBytes=Buffer.byteLength(encoded),td=performance.now(),decoded=Codec.des
 same(decoded,norm(big.state),'real 20,000-asset state round-trips exactly');
 const LIMIT=30*1024*1024,BUDGET_BYTES_PER_ASSET=450;
 assert.equal(big.state.assets.length,20000);
-assert.ok(rawBytes>LIMIT,'the uncompressed 20k fleet really exceeds the native limit (proves the test is meaningful)');
+// Build 358 stores delivered receipts compactly; the precondition is measured on the Build 357 equivalent with every
+// receipt expanded to full asset copies, which is what the codec had to fit under the native limit.
+const fleetAccess=big.s.GH_FLEET_DATA,expandedReceipts=big.state.realism.procurement.deliveries.map(row=>{if(!fleetAccess.isCompactReceipt(row))return row;const {assetReceipt,...rest}=row;void assetReceipt;return {...rest,assets:fleetAccess.receiptAssets(row)};});
+const legacyRawBytes=Buffer.byteLength(JSON.stringify({...big.state,realism:{...big.state.realism,procurement:{...big.state.realism.procurement,deliveries:expandedReceipts}}}));
+assert.ok(legacyRawBytes>LIMIT,'the uncompressed 20k fleet with full receipts really exceeds the native limit (proves the test is meaningful)');
+assert.ok(rawBytes<legacyRawBytes,'compact receipts shrink the raw 20k state');
 assert.ok(encBytes<LIMIT*.4,`encoded 20k save must stay under 40% of the native hard limit (got ${(encBytes/1048576).toFixed(1)} MB)`);
 assert.ok(encBytes/20000<=BUDGET_BYTES_PER_ASSET,`per-asset budget ${BUDGET_BYTES_PER_ASSET} B exceeded: ${(encBytes/20000).toFixed(0)} B`);
 console.log(JSON.stringify({suite:'build350-state-codec',randomCases:cases,collectionsChecked:collections,assets:20000,rawMB:+(rawBytes/1048576).toFixed(2),encodedMB:+(encBytes/1048576).toFixed(2),bytesPerAsset:Math.round(encBytes/20000),ratio:+(encBytes/rawBytes).toFixed(3),encodeMs:Math.round(encodeMs),decodeMs:Math.round(decodeMs),environment:`node ${process.version}; synthetic fleet; not iPhone`}));

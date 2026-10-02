@@ -194,9 +194,9 @@
     r.insurance.claimsTrend=clamp((100-condition)*.12+incidents*1.4+openClaims*.8,0,35);r.insurance.renewalIndex=clamp(92+r.insurance.claimsTrend*2+(r.risk.register.length*1.5)+(reserve?paid/Math.max(1,reserve)*12:0),75,190);
   }
   function supplierScores(state){const r=migrate(state);for(const tx of (state.supplierTransactions||[])){const id=tx.supplierId||tx.supplier||'unknown';const x=r.procurement.supplierScores[id]||(r.procurement.supplierScores[id]={name:tx.supplier||id,spend:0,transactions:0,score:82});x.spend+=Number(tx.amount)||0;x.transactions++;x.score=clamp(88-rand(`${id}:${x.transactions}`,0,10),60,98);}}
-  function deliveryAssets(delivery){return Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[];}
-  function deliveryUnitCount(delivery){return Math.max(1,deliveryAssets(delivery).length||Math.floor(Number(delivery?.count)||0));}
-  function syncManualDeliveryPipeline(state,day){const r=migrate(state),deliveries=r.procurement.deliveries||[],existing=new Map((r.procurement.pipeline||[]).map(row=>[row.sourceId,row]));r.procurement.pipeline=deliveries.slice(-400).map(d=>{const prior=existing.get(d.id)||{},first=deliveryAssets(d)[0],company=assetOwnerCompanyId(state,first)||rowCompanyId(state,d,'');return {...prior,id:`PRC2-${d.id}`,sourceId:d.id,company,ownerCompanyId:company,title:first?.name||d.assetName||d.catalogId||d.id,count:deliveryUnitCount(d),stage:d.status==='delivered'?'Delivered':d.status==='cancelled'?'Cancelled':d.blockedReason?'Destination blocked':'Paid / Delivery',createdDay:Number.isFinite(Number(d.orderedDay))?Number(d.orderedDay):day,leadDays:Math.max(0,Math.ceil((Number(d.dueAtSeconds)-Number(d.orderedAtSeconds))/86400)||0),manual:true};});return r.procurement.pipeline;}
+  function deliveryAssets(delivery){return fleetData().receiptAssets(delivery);}
+  function deliveryUnitCount(delivery){return Math.max(1,fleetData().receiptAssetCount(delivery)||Math.floor(Number(delivery?.count)||0));}
+  function syncManualDeliveryPipeline(state,day){const r=migrate(state),deliveries=r.procurement.deliveries||[],existing=new Map((r.procurement.pipeline||[]).map(row=>[row.sourceId,row]));r.procurement.pipeline=deliveries.slice(-400).map(d=>{const prior=existing.get(d.id)||{},first=fleetData().receiptFirstAsset(d),company=assetOwnerCompanyId(state,first)||rowCompanyId(state,d,'');return {...prior,id:`PRC2-${d.id}`,sourceId:d.id,company,ownerCompanyId:company,title:first?.name||d.assetName||d.catalogId||d.id,count:deliveryUnitCount(d),stage:d.status==='delivered'?'Delivered':d.status==='cancelled'?'Cancelled':d.blockedReason?'Destination blocked':'Paid / Delivery',createdDay:Number.isFinite(Number(d.orderedDay))?Number(d.orderedDay):day,leadDays:Math.max(0,Math.ceil((Number(d.dueAtSeconds)-Number(d.orderedAtSeconds))/86400)||0),manual:true};});return r.procurement.pipeline;}
   function updateTaxFxAndDividends(state,day){const r=migrate(state),countries=new Set((state.globalBases||[]).map(x=>x.country||x.countryCode).filter(Boolean)),baseTax=.15+Math.min(.07,countries.size*.005);r.taxFx.taxRate=baseTax;r.taxFx.fxExposure=Number(state.advanced?.treasury?.fxExposure)||Math.max(0,(Number(state.debt)||0)*.28);r.taxFx.hedgedPct=Number(state.advanced?.treasury?.hedgeRatio)||0;const floor=r.risk.limits.minLiquidity,excess=Math.max(0,(Number(state.cash)||0)-floor);r.dividends.available=Math.round(excess*.35);}
   function updatePrograms(state,day){
     const r=migrate(state);globalThis.GH_GOVERNANCE_CORE?.execute?.({state},'tick-sustainability',{day});
@@ -221,7 +221,7 @@
     delivery.deliveryOrderId=delivery.id;delivery.assets=assets;delivery.count=assets.length;delivery.assetIds=assets.map(asset=>asset.id);delivery.assetId=assets.length===1?assets[0].id:null;
     delivery.assetName=delivery.assetName||assets[0].name||assets[0].model||delivery.catalogId||delivery.id;delivery.purchasePrice=Number(delivery.purchasePrice)||assets.reduce((sum,asset)=>sum+(Number(asset.purchasePrice)||0),0);
     delivery.ownerCompanyId=delivery.ownerCompanyId||assets[0].ownerCompanyId||assets[0].companyId||null;delivery.assetMode=delivery.assetMode||assets[0].assetMode||assets[0].type||null;delivery.assetClass=delivery.assetClass||assets[0].assetClass||null;
-    delete delivery.asset;return delivery;
+    delete delivery.asset;fleetData().compactReceipt(delivery);return delivery;
   }
   function deliveryCapacitySnapshot(state,deliveries){
     const occupied=new Map(),pending=new Map();
@@ -234,7 +234,7 @@
     return units>0&&pending>=units&&reserved<=deliveryCapacity(state,facility);
   }
   function normalizeDeliveryClock(state,d){
-    const now=Math.max(0,Number(state.simSeconds)||0),base=Math.max(60,DELIVERY_WINDOW_SECONDS[assetMode(deliveryAssets(d)[0])||d.assetMode||d.type]||600);
+    const now=Math.max(0,Number(state.simSeconds)||0),base=Math.max(60,DELIVERY_WINDOW_SECONDS[assetMode(fleetData().receiptFirstAsset(d))||d.assetMode||d.type]||600);
     if(!Number.isFinite(Number(d.orderedAtSeconds)))d.orderedAtSeconds=Math.max(0,Math.min(now,Number(d.orderedDay||0)*86400));
     if(!Number.isFinite(Number(d.dueAtSeconds))){
       const legacyDue=Number(d.dueDay);

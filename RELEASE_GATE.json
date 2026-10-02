@@ -1,12 +1,14 @@
 {
   "approved": false,
-  "source_tree_sha256": "93871ef51da15792c9768d287275bb4001f722166d678c58bbd14b4e3cd31568",
+  "source_tree_sha256": "8b807f6964dc03d61b248964801a3e93a8116b2c671b67098e10fdd6aa074c6b",
   "version": "3.0.0",
-  "build": 357,
+  "build": 358,
   "save_schema": "3.0.0",
   "blocking_issues": [
     "No physical iPhone profile exists for this candidate. Frame time, touch latency, memory, and thermal targets at 100,000 and 1,000,000 assets remain unverified on target hardware.",
-    "Fleet JSON persistence is temporarily capped at 1,600 assets and 3,200 live-plus-receipt records. Chunked binary persistence is not implemented, so million-asset save/load is not supported.",
+    "Build 358 has no direct-source CI run yet; the recorded CI evidence below belongs to Build 357 (commit af36368).",
+    "Fleet JSON persistence admits purchases up to 6,000 records (live assets plus pending delivery snapshots; delivered receipts are compact since Build 358). Save Schema still scans every live asset on each save and durable command (~230 ms at 6,000 assets in Node on the development VM). Chunked binary persistence is not implemented, so million-asset save/load is not supported.",
+    "The daily close still runs in one slice (~60 ms on the development VM with 300 aircraft and 100 Mobility vehicles, dominated by document-signed trip settlement); it is not frame-budgeted.",
     "Manual advance consults adapter.getManualSliceLimit and estimates a slice from a 1,500-event window, with 60-second and 3,600-second bounds; actual per-frame timing still needs iPhone profiling.",
     "The incremental spatial index and device-scale map/list rendering profile remain unverified."
   ],
@@ -16,14 +18,18 @@
     "build357_simulation_adapter": "DIRECT_SOURCE_CI_PASS; local 24h parity at rates 30/120/300/600; physical device profile pending",
     "build357_transaction_journal": "DIRECT_SOURCE_CI_PASS; rollback and durable journal guard tests pass",
     "build357_temporary_save_cap": "DIRECT_SOURCE_CI_PASS; save/load at 1,600 assets and over-cap rejection pass",
-    "full_source_acceptance": "DIRECT_CI_143_OF_143_PASS; runtime source unchanged",
+    "full_source_acceptance": "PENDING_BUILD358_CI",
     "native_swift_tests": "DIRECT_CI_PASS",
     "physical_iphone_profile": "PENDING",
     "chunked_binary_persistence": "NOT_IMPLEMENTED_BUILD358",
     "manual_advance_frame_budget": "SLICE_LIMIT_IMPLEMENTED; 1,500-event window estimate; target-device frame timing pending",
     "release_approval": "CLOSED",
     "browser_and_lint": "DIRECT_CI_CHROMIUM_WEBKIT_AND_ESLINT_PASS",
-    "native_bridge_extracted_js": "DIRECT_CI_PASS; native storage and WKWebView checks pass"
+    "native_bridge_extracted_js": "DIRECT_CI_PASS; native storage and WKWebView checks pass",
+    "build358_air_sea_dispatch": "LOCAL_PASS; store-mode air and sea bulk dispatch assigns every asset (browser test)",
+    "build358_row_level_slice_snapshots": "LOCAL_PASS; steady/hour slices snapshot only written roots, enforced write sets over 288 slices, exact rollback of failed steady/hour/day slices",
+    "build358_airport_capacity_3000": "LOCAL_PASS; default 3,000, idempotent load migration preserves upgrades, one purchase may deliver 3,000",
+    "build358_compact_receipts": "LOCAL_PASS; lossless receipts, 6,000-record purchase ceiling, no load-time lockout"
   },
   "latest_direct_source_ci": {
     "run_id": 36956423617,
@@ -55,11 +61,11 @@
     "physical_iphone_tested": false
   },
   "source_tracking": {
-    "mode": "direct_git_tracked_wip_branch",
-    "branch": "build357-wip",
-    "tested_commit_sha": "af3636853a6cd588665c05ec2040e8fda860b264",
-    "source_tree_sha256": "93871ef51da15792c9768d287275bb4001f722166d678c58bbd14b4e3cd31568",
-    "working_tree_clean": true
+    "mode": "direct_git_tracked_branch",
+    "branch": "claude/vibrant-planck-irbtw6",
+    "based_on": "build357-wip@38b21bc",
+    "source_tree_sha256": "8b807f6964dc03d61b248964801a3e93a8116b2c671b67098e10fdd6aa074c6b",
+    "working_tree_clean": null
   },
-  "point": "Build 357 Fleet Core integration candidate; RELEASE_GATE remains closed pending physical iPhone profiling and owner approval."
+  "point": "Build 358: air/sea dispatch fix, row-level simulation snapshots (no per-slice full-state copy), 3,000-aircraft airports with compact delivery receipts; RELEASE_GATE remains closed pending CI, physical iPhone profiling and owner approval."
 }

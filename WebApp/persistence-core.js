@@ -1,10 +1,11 @@
 (()=>{
   'use strict';
   const VERSION='3.0.0', SAVE_SCHEMA_VERSION='3.0.0', SLOT_FORMAT='global-holdings-save-slot-v2', EXPORT_FORMAT='global-holdings-save';
-  // Save Schema still checks full receipt and asset graphs on every save. Keep
-  // the pre-chunked fleet ceiling uniform across browser and native paths so
-  // validation remains within the measured frame-time budget until Build 358.
-  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeSoftBytes:22.5*1024*1024,nativeHardBytes:30*1024*1024,browserFleetRecordLimit:3200,nativeFleetRecordLimit:3200,ackTimeoutMs:10000,pending:16});
+  // Save Schema still scans every live asset on every save and durable command. Until chunked binary persistence, a
+  // purchase may not take the fleet past 6,000 records (live assets plus pending delivery snapshots; delivered receipts
+  // are stored compactly since Build 358 and do not count). It is an admission rule only: a save above it still loads.
+  // Measured in Node on the development VM at 6,000 assets: 1.5 MB save, ~230 ms full validation.
+  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeSoftBytes:22.5*1024*1024,nativeHardBytes:30*1024*1024,browserFleetRecordLimit:6000,nativeFleetRecordLimit:6000,ackTimeoutMs:10000,pending:16});
   const saveSchemaVersion=state=>['2.0.0','3.0.0'].includes(String(state?.saveVersion||''))?String(state.saveVersion):SAVE_SCHEMA_VERSION;
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));

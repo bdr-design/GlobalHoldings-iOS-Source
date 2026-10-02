@@ -211,14 +211,78 @@
   // only while Save Migration reads and upgrades pre-v3 saves.
   function ensure(state){if(!storeOf(state)&&!arrayOf(state))state.fleet=STORE.create();return mode(state);}
   function size(state){const store=storeOf(state);if(store)return store.live;const assets=arrayOf(state);return assets?assets.length:0;}
-  // Count the live store plus complete procurement receipts. Pending snapshots
-  // count twice to reserve their eventual live row before delivery is applied.
+  // ------------------------------------------------- delivery receipts ---
+  // Build 358: a delivered batch keeps every asset it delivered, stored once. Fields equal across the batch are kept
+  // in a template, fields that vary are columns (a numbered series such as "GH AIR 101".."GH AIR 3100" is one range),
+  // and ids come from delivery.assetIds. receiptAssets() rebuilds the complete rows (same keys, same order, fresh
+  // objects), so receipts display and audit exactly as before while a 3,000-asset batch costs a few hundred bytes plus
+  // its id list instead of 3,000 full copies. Compaction verifies the round trip and leaves the receipt full otherwise.
+  const RECEIPT_SCHEMA='gh-asset-receipt-v1';
+  const jsonClone=value=>value===null||typeof value!=='object'?value:JSON.parse(JSON.stringify(value));
+  function encodeReceiptColumn(values){
+    const first=values[0],match=values.length>1&&typeof first==='string'?/^(.*?)(\d+)$/.exec(first):null;
+    if(match&&match[2].length<=15){
+      const prefix=match[1],digits=match[2],start=Number(digits),width=digits.length>1&&digits[0]==='0'?digits.length:0;let series=true;
+      for(let index=0;index<values.length&&series;index++){let text=String(start+index);if(width){if(text.length>width)series=false;text=text.padStart(width,'0');}if(values[index]!==prefix+text)series=false;}
+      if(series)return {range:{prefix,start,width,count:values.length}};
+    }
+    return {values:values.slice()};
+  }
+  function receiptColumnValue(column,index){if(column.range){const text=String(column.range.start+index);return column.range.prefix+(column.range.width?text.padStart(column.range.width,'0'):text);}return column.values[index];}
+  function isCompactReceipt(delivery){return delivery?.assetReceipt?.schema===RECEIPT_SCHEMA;}
+  function receiptRow(delivery,index,fields=null){
+    const receipt=delivery.assetReceipt,row={},wanted=fields?new Set(fields):null;
+    for(const key of receipt.keys){
+      if(wanted&&!wanted.has(key))continue;
+      if(key==='id'&&receipt.idsFrom==='assetIds'){row.id=delivery.assetIds[index];continue;}
+      row[key]=Object.prototype.hasOwnProperty.call(receipt.columns,key)?receiptColumnValue(receipt.columns[key],index):wanted?receipt.template[key]:jsonClone(receipt.template[key]);
+    }
+    return row;
+  }
+  function compactReceipt(delivery){
+    if(!delivery||typeof delivery!=='object'||delivery.status!=='delivered'||isCompactReceipt(delivery)||!Array.isArray(delivery.assets)||!delivery.assets.length)return false;
+    const assets=delivery.assets,keys=Object.keys(assets[0]||{});
+    for(const asset of assets){if(!asset||typeof asset!=='object'||Array.isArray(asset))return false;const own=Object.keys(asset);if(own.length!==keys.length||own.some((key,index)=>key!==keys[index]))return false;}
+    const idsFromList=Array.isArray(delivery.assetIds)&&delivery.assetIds.length===assets.length&&assets.every((asset,index)=>asset.id===delivery.assetIds[index]&&typeof asset.id==='string'),template={},columns={};
+    for(const key of keys){
+      if(key==='id'&&idsFromList)continue;
+      const first=JSON.stringify(assets[0][key]);let same=true;for(let index=1;index<assets.length&&same;index++)if(JSON.stringify(assets[index][key])!==first)same=false;
+      if(same)template[key]=jsonClone(assets[0][key]);else columns[key]=encodeReceiptColumn(assets.map(asset=>jsonClone(asset[key])));
+    }
+    const candidate={...delivery,assetReceipt:{schema:RECEIPT_SCHEMA,count:assets.length,keys,template,columns,idsFrom:idsFromList?'assetIds':null}};
+    for(let index=0;index<assets.length;index++)if(JSON.stringify(receiptRow(candidate,index))!==JSON.stringify(assets[index]))return false;
+    delivery.assetReceipt=candidate.assetReceipt;delete delivery.assets;return true;
+  }
+  function receiptAssetCount(delivery){if(isCompactReceipt(delivery))return delivery.assetReceipt.count;return Array.isArray(delivery?.assets)?delivery.assets.length:delivery?.asset?1:0;}
+  // Complete rows; compact receipts are rebuilt as fresh objects on every call.
+  function receiptAssets(delivery){
+    if(isCompactReceipt(delivery)){const out=new Array(delivery.assetReceipt.count);for(let index=0;index<out.length;index++)out[index]=receiptRow(delivery,index);return out;}
+    return Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[];
+  }
+  function receiptFirstAsset(delivery){return isCompactReceipt(delivery)?(delivery.assetReceipt.count?receiptRow(delivery,0):null):(Array.isArray(delivery?.assets)?delivery.assets[0]:delivery?.asset)||null;}
+  // Distinct read-only projections of the given fields (no ids): a field kept in the template has one value for the
+  // whole batch, so a validator checks each distinct combination once instead of once per asset.
+  function receiptDistinctFields(delivery,fields){
+    if(!isCompactReceipt(delivery)){const seen=new Set(),out=[];for(const asset of receiptAssets(delivery)){const row={};for(const key of fields)if(key!=='id'&&asset&&Object.prototype.hasOwnProperty.call(asset,key))row[key]=asset[key];const signature=JSON.stringify(row);if(!seen.has(signature)){seen.add(signature);out.push(row);}}return out;}
+    const receipt=delivery.assetReceipt,wanted=fields.filter(key=>key!=='id'&&receipt.keys.includes(key)),varying=wanted.filter(key=>Object.prototype.hasOwnProperty.call(receipt.columns,key));
+    if(!varying.length){const row={};for(const key of wanted)row[key]=receipt.template[key];return [row];}
+    const seen=new Set(),out=[];for(let index=0;index<receipt.count;index++){const row=receiptRow(delivery,index,wanted),signature=JSON.stringify(row);if(!seen.has(signature)){seen.add(signature);out.push(row);}}return out;
+  }
+  // Read-only projection of a few fields for validators (template values are shared, never mutate them).
+  function receiptFields(delivery,fields){
+    if(isCompactReceipt(delivery)){const out=new Array(delivery.assetReceipt.count);for(let index=0;index<out.length;index++)out[index]=receiptRow(delivery,index,fields);return out;}
+    return receiptAssets(delivery);
+  }
+  // Count the live store plus receipts that still hold full copies. Pending snapshots
+  // count twice to reserve their eventual live row before delivery is applied; a
+  // compact delivered receipt holds no asset copies and is not counted.
   function persistenceRecordCount(state,receipts=[]){
     let count=size(state);
     for(const receipt of Array.isArray(receipts)?receipts:[]){
-      const assets=Array.isArray(receipt?.assets)?receipt.assets:receipt?.asset?[receipt.asset]:[];
-      count+=assets.length;
-      if(receipt?.status==='pending')count+=assets.length;
+      if(isCompactReceipt(receipt))continue;
+      const assets=receiptAssetCount(receipt);
+      count+=assets;
+      if(receipt?.status==='pending')count+=assets;
     }
     return count;
   }
@@ -398,7 +462,7 @@
     const store=storeOf(state);if(store)return STORE.removeMany(store,doomed);
     const drop=new Set(doomed),assets=arrayOf(state);invalidateArrayIndex(assets);let write=0;for(let read=0;read<assets.length;read++){if(drop.has(read))continue;if(write!==read)assets[write]=assets[read];write++;}assets.length=write;return drop.size;}
 
-  const API=Object.freeze({VERSION,configure,mode,source,ensure,size,persistenceRecordCount,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
+  const API=Object.freeze({VERSION,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
     get,has,forEach,forEachFields,some,every,find,filter,count,sum,dailyLeaseCosts,payrollTotals,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
     update,put,add,addMany,remove,removeMany,removeWhere,drafts,draft,commit});
   globalThis.GH_FLEET_DATA=API;

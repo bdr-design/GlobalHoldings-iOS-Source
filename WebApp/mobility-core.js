@@ -237,13 +237,20 @@
   // no screen renders; keeping the geometry made the 1,200-row archive ~10 MB (two thirds of every rollback snapshot and a
   // large part of every save). Everything else about the trip, including routeVersion/routeVerified/routeSource and
   // distanceKm, is kept exactly as before.
+  // Rollback contract for Transaction Core row-level snapshots: every write to state.mobility stays at row level
+  // (a field of mobility, a collection's membership, or a field of a collection member); nested arrays and objects
+  // inside a member are replaced, never edited in place. Archived trips, events and cached street routes are never
+  // edited after insertion. tests/build358-row-snapshot-rollback.cjs proves exact rollback of real simulation slices.
+  const IMMUTABLE_ROWS=new Set(['tripArchive','events','streetRoutes']);
+  const ROLLBACK_POLICY=Object.freeze({level:'rows',immutable:Object.freeze([...IMMUTABLE_ROWS])});
   function archivedTrip(trip,outcome){const {route,...rest}=trip;void route;return {...rest,...outcome};}
   function ensure(state,explicitOwner=''){
     const ownerCompanyId=mobilityOwnerCompanyId(state,explicitOwner),m=state.mobility=state.mobility&&typeof state.mobility==='object'?state.mobility:{};
     if(m.ownerCompanyId&&String(m.ownerCompanyId)!==ownerCompanyId)throw new Error('mobility-state-owner-conflict');m.ownerCompanyId=ownerCompanyId;
     m.schema='gh-mobility-v4';m.version=VERSION;
     for(const key of ['vehicles','drivers','rideRequests','activeTrips','tripArchive','events','capitalCenters'])m[key]=Array.isArray(m[key])?m[key].filter(Boolean):[];
-    for(const key of ['vehicles','drivers','rideRequests','activeTrips','tripArchive','events','capitalCenters'])for(const row of m[key]){if(row.ownerCompanyId&&String(row.ownerCompanyId)!==ownerCompanyId)throw new Error(`mobility-row-owner-conflict:${key}:${row.id||'unknown'}`);row.ownerCompanyId=ownerCompanyId;if(key==='tripArchive'&&Object.prototype.hasOwnProperty.call(row,'route'))delete row.route;}
+    // Archived trips and events are immutable once written (ROLLBACK_POLICY): a legacy row is replaced, not edited.
+    for(const key of ['vehicles','drivers','rideRequests','activeTrips','tripArchive','events','capitalCenters']){const rows=m[key];for(let index=0;index<rows.length;index++){const row=rows[index];if(row.ownerCompanyId&&String(row.ownerCompanyId)!==ownerCompanyId)throw new Error(`mobility-row-owner-conflict:${key}:${row.id||'unknown'}`);const strip=key==='tripArchive'&&Object.prototype.hasOwnProperty.call(row,'route');if(row.ownerCompanyId===ownerCompanyId&&!strip)continue;if(IMMUTABLE_ROWS.has(key)){const {route,...rest}=row;void route;rows[index]={...(strip?rest:row),ownerCompanyId};}else row.ownerCompanyId=ownerCompanyId;}}
     m.status=m.vehicles.length?'active':'not-launched';
     m.zones=clone(ZONES);m.sequence=Math.max(0,Number(m.sequence)||0);
     m.lastDemandAtByCenter=m.lastDemandAtByCenter&&typeof m.lastDemandAtByCenter==='object'?m.lastDemandAtByCenter:{};
@@ -409,5 +416,7 @@
     return `<article class="list-item"><div class="list-item-head"><div><h3>ربحية المدن</h3><p>كل مدينة مركز مستقل ماليًا وتشغيليًا؛ هذا ما جنته فعليًا حتى الآن، وليس تقديرًا.</p></div><span class="tag">${rows.length} مدينة نشطة</span></div>${rows.map(c=>`<div class="spec-row"><span>${ctx.esc?ctx.esc(c.city):c.city} · ${c.fin.vehicles} مركبة · ${c.fin.completed} رحلة</span><b class="${c.fin.platformRevenue>=0?'positive':'negative'}">${money(c.fin.platformRevenue)}</b></div>`).join('')}</article>`;
   }
   function execute(ctx,cmd,p={}){if(cmd==='buy-fleet')return buyFleet(ctx,p);if(cmd==='service-vehicle')return serviceVehicle(ctx,p);if(cmd==='sell-vehicle')return sellVehicle(ctx,p);if(cmd==='cache-street-route')return cacheStreetRoute(ctx,p);if(cmd==='launch')return launch(ctx);throw new Error(`Unknown Mobility command: ${cmd}`);}
-  const API={VERSION,purchaseCatalogs,ROUTE_WAIT_TIMEOUT_SECONDS,ZONES,CLASSES,CAPITALS,mobilityOwnerCompanyId,mapStructureRevision:()=>mapStructureVersion,ensure,launch,buyFleet,onSimulationTime,advanceThrough,simulationSliceLimit,snapshot,centerSnapshot,centerClusters,liveVehicles,movingClusters,vehiclePosition,pendingStreetRoutes,cacheStreetRoute,routePosition,urbanPath,zonesFor,capitalMeta,centerMeta,findVehicle,serviceVehicle,sellVehicle,render,renderFleet,execute};globalThis.GH_MOBILITY_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('mobility',API);if(globalThis.window&&window!==globalThis)window.GH_MOBILITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  // System commands that only write state.mobility (Domain Command Core snapshots this scope, not the whole game).
+  function transactionScope(name){return name==='cache-street-route'?{scope:['mobility'],rowRoots:{mobility:ROLLBACK_POLICY}}:null;}
+  const API={VERSION,ROLLBACK_POLICY,transactionScope,purchaseCatalogs,ROUTE_WAIT_TIMEOUT_SECONDS,ZONES,CLASSES,CAPITALS,mobilityOwnerCompanyId,mapStructureRevision:()=>mapStructureVersion,ensure,launch,buyFleet,onSimulationTime,advanceThrough,simulationSliceLimit,snapshot,centerSnapshot,centerClusters,liveVehicles,movingClusters,vehiclePosition,pendingStreetRoutes,cacheStreetRoute,routePosition,urbanPath,zonesFor,capitalMeta,centerMeta,findVehicle,serviceVehicle,sellVehicle,render,renderFleet,execute};globalThis.GH_MOBILITY_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('mobility',API);if(globalThis.window&&window!==globalThis)window.GH_MOBILITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
