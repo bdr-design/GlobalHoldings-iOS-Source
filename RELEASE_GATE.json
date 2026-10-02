@@ -7,7 +7,7 @@
   "blocking_issues": [
     "No physical iPhone profile exists for this candidate. Frame time, touch latency, memory, and thermal targets at 100,000 and 1,000,000 assets remain unverified on target hardware.",
     "Fleet JSON persistence is temporarily capped at 1,600 assets and 3,200 live-plus-receipt records. Chunked binary persistence is not implemented, so million-asset save/load is not supported.",
-    "Manual time advance uses atomic sweep slices without the planned adapter.getManualSliceLimit frame budgeting.",
+    "Manual advance consults adapter.getManualSliceLimit and estimates a slice from a 1,500-event window, with 60-second and 3,600-second bounds; actual per-frame timing still needs iPhone profiling.",
     "The incremental spatial index and device-scale map/list rendering profile remain unverified."
   ],
   "phase_status": {
@@ -20,7 +20,7 @@
     "native_swift_tests": "DIRECT_CI_PASS",
     "physical_iphone_profile": "PENDING",
     "chunked_binary_persistence": "NOT_IMPLEMENTED_BUILD358",
-    "manual_advance_frame_budget": "NOT_IMPLEMENTED_BUILD359",
+    "manual_advance_frame_budget": "SLICE_LIMIT_IMPLEMENTED; 1,500-event window estimate; target-device frame timing pending",
     "release_approval": "CLOSED",
     "browser_and_lint": "DIRECT_CI_CHROMIUM_WEBKIT_AND_ESLINT_PASS",
     "native_bridge_extracted_js": "DIRECT_CI_PASS; native storage and WKWebView checks pass"
