@@ -5,51 +5,61 @@
   "build": 357,
   "save_schema": "3.0.0",
   "blocking_issues": [
-    "Build 357 has no direct-source CI or compiled native IPA on this exact worktree. Local Chromium-based acceptance and lint pass 143/143; WebKit/WKWebView and compiled Swift storage tests remain pending.",
-    "No physical iPhone profile exists for this candidate. Frame time, touch latency, memory, and thermal targets at 100,000 or 1,000,000 assets are unverified on target hardware.",
+    "No physical iPhone profile exists for this candidate. Frame time, touch latency, memory, and thermal targets at 100,000 and 1,000,000 assets remain unverified on target hardware.",
     "Fleet JSON persistence is temporarily capped at 1,600 assets and 3,200 live-plus-receipt records. Chunked binary persistence is not implemented, so million-asset save/load is not supported.",
     "Manual time advance uses atomic sweep slices without the planned adapter.getManualSliceLimit frame budgeting.",
-    "The map and complete fleet views read through Fleet Data Access, but the incremental spatial index and device-scale rendering profile remain unverified."
+    "The incremental spatial index and device-scale map/list rendering profile remain unverified."
   ],
   "phase_status": {
-    "build357_fleet_store_and_access": "LOCAL_FULL_SUITE_PASS; CI_PENDING",
-    "build357_save_migration_and_field_parity": "LOCAL_MIGRATION_TESTS_PASS; CI_PENDING",
-    "build357_simulation_adapter": "LOCAL_24H_FOUR_SPEED_PARITY_PASS; DEVICE_PROFILE_PENDING",
-    "build357_transaction_journal": "LOCAL_ROLLBACK_AND_DURABLE_GUARD_TESTS_PASS; CI_PENDING",
-    "build357_temporary_save_cap": "LOCAL_SAVE_LOAD_AT_1600_ASSETS_AND_OVER_CAP_REJECTION_PASS",
-    "full_source_acceptance": "LOCAL_143_OF_143_PASS; RUNTIME_UNCHANGED; DIRECT_CI_PENDING",
-    "native_swift_tests": "NOT_RUN_LINUX_TOOLCHAIN_UNAVAILABLE",
+    "build357_fleet_store_and_access": "DIRECT_SOURCE_CI_143_OF_143_PASS",
+    "build357_save_migration_and_field_parity": "DIRECT_SOURCE_CI_PASS; legacy migration and exact save/load tests pass",
+    "build357_simulation_adapter": "DIRECT_SOURCE_CI_PASS; local 24h parity at rates 30/120/300/600; physical device profile pending",
+    "build357_transaction_journal": "DIRECT_SOURCE_CI_PASS; rollback and durable journal guard tests pass",
+    "build357_temporary_save_cap": "DIRECT_SOURCE_CI_PASS; save/load at 1,600 assets and over-cap rejection pass",
+    "full_source_acceptance": "DIRECT_CI_143_OF_143_PASS; runtime source unchanged",
+    "native_swift_tests": "DIRECT_CI_PASS",
     "physical_iphone_profile": "PENDING",
     "chunked_binary_persistence": "NOT_IMPLEMENTED_BUILD358",
     "manual_advance_frame_budget": "NOT_IMPLEMENTED_BUILD359",
     "release_approval": "CLOSED",
-    "browser_and_lint": "LOCAL_CHROMIUM_SUITE_AND_ESLINT_PASS; WEBKIT_PENDING",
-    "native_bridge_extracted_js": "LOCAL_23_OF_23_PASS; COMPILED_SWIFT_AND_WKWEBVIEW_PENDING"
+    "browser_and_lint": "DIRECT_CI_CHROMIUM_WEBKIT_AND_ESLINT_PASS",
+    "native_bridge_extracted_js": "DIRECT_CI_PASS; native storage and WKWebView checks pass"
   },
   "latest_direct_source_ci": {
-    "run_id": 36268965706,
-    "tested_commit_sha": "976c9aef615b5dd30c0967d8a81b63d96c374fc2",
+    "run_id": 36955442721,
+    "run_url": "https://github.com/bdr-design/GlobalHoldings-iOS-Source/actions/runs/36955442721",
+    "tested_commit_sha": "b2daeebcec56167cdab2d253ecf97fd1b6bd12ac",
     "result": "SUCCESS",
-    "source_tree_sha256": "0738fc96c4037c3d34a0b74a872d9ec5acf9ef07d509d667ee6d64024a5cc731",
+    "source_tree_sha256": "93871ef51da15792c9768d287275bb4001f722166d678c58bbd14b4e3cd31568",
     "source_mode": "direct_git_tracked_tree",
-    "source_gates": "124/124",
+    "source_gates": "143/143",
     "eslint": "PASS",
-    "chromium_webkit": "PASS",
+    "chromium": "PASS",
+    "webkit": "PASS",
     "native_storage": "PASS",
     "native_wkwebview": "PASS",
     "unsigned_arm64_iphoneos_release_app": "PASS",
     "ipa_built": true,
-    "test_ipa_name": "GlobalHoldings_BUILD340_unsigned_TEST.ipa",
-    "test_ipa_sha256": "70d07e00279b12b8d9e487590b1d76ccd75386b07cc88052ecb5326914000b8f",
-    "test_ipa_bytes": 13366460,
+    "test_ipa_artifact": {
+      "name": "GlobalHoldings_BUILD357_unsigned_TEST_ipa",
+      "artifact_id": 11205168161,
+      "archive_bytes": 13299171,
+      "expires_at": "2026-11-01T02:29:44Z"
+    },
+    "verification_artifact": {
+      "name": "GlobalHoldings-Build357-verification",
+      "artifact_id": 11205433016,
+      "archive_bytes": 13328621,
+      "expires_at": "2026-11-01T02:29:41Z"
+    },
     "physical_iphone_tested": false
   },
   "source_tracking": {
-    "mode": "local_worktree_candidate",
+    "mode": "direct_git_tracked_wip_branch",
     "branch": "build357-wip",
-    "tested_commit_sha": null,
+    "tested_commit_sha": "b2daeebcec56167cdab2d253ecf97fd1b6bd12ac",
     "source_tree_sha256": "93871ef51da15792c9768d287275bb4001f722166d678c58bbd14b4e3cd31568",
-    "working_tree_clean": false
+    "working_tree_clean": true
   },
-  "point": "Build 357 Fleet Core integration candidate; RELEASE_GATE remains closed until same-source CI, native/device validation, and owner approval."
+  "point": "Build 357 Fleet Core integration candidate; RELEASE_GATE remains closed pending physical iPhone profiling and owner approval."
 }
