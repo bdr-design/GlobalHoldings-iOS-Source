@@ -135,5 +135,19 @@ assert.equal(Schema.validate(state).ok,true,'seeded state validates in full');
   delete big.domainRuntime.idempotency.K3;big.domainRuntime.idempotency.K3={at:3,fingerprint:'f',result:{ok:true,n:3}};
   assert.equal(C.serialize(big),reference(),'after a replaced and reordered row: identical');
   assert.equal(JSON.stringify(C.deserialize(C.serialize(big))),JSON.stringify(big),'round trip');
+  // 6. Staged transactions: one transaction (one rollback point, one set of post-commit checks) stepped across frames.
+  {
+    const t=harness(['transaction-core']),ST=t.s.GH_TRANSACTION_CORE,box={a:1,list:[1,2],nested:{x:1}},json=()=>JSON.stringify(box);
+    let h=ST.beginStaged(box,{label:'staged-commit',apply:function*(){box.a=2;yield 'one';box.list.push(3);yield 'two';box.nested.x=5;return 'ok';}});
+    assert.equal(h.done,false,'the first call stops after the snapshot');assert.equal(ST.isStaged(box),true);assert.equal(ST.isActive(),false,'no transaction is active between steps');
+    assert.throws(()=>ST.execute(box,{apply:()=>{}}),/staged-transaction-in-progress/,'other transactions on the target wait');
+    h.step(Infinity);assert.equal(h.done,true);assert.equal(h.result.committed,true);assert.equal(h.result.value,'ok');assert.equal(ST.isStaged(box),false);assert.ok(h.steps>=4);
+    const before=json();
+    h=ST.beginStaged(box,{label:'staged-abort',apply:function*(){box.a=9;yield;box.nested.x=99;yield;}});h.step();h.step();assert.equal(box.nested.x,99);
+    assert.equal(ST.abortStaged(box,'cancelled'),true);assert.equal(json(),before,'abort rolls back every stage');assert.equal(h.error.code,'TRANSACTION_STAGED_ABORTED');assert.equal(ST.isStaged(box),false);
+    h=ST.beginStaged(box,{label:'staged-fault',apply:function*(){box.a=7;yield;throw new Error('stage-fault');}});h.step(Infinity);assert.match(h.error.message,/stage-fault/);assert.equal(json(),before);
+    h=ST.beginStaged(box,{label:'staged-critical',apply:function*(){box.a=3;ST.afterCommit(()=>{throw new Error('critical-fault');},{critical:true});yield;}});h.step(Infinity);assert.match(String(h.error),/critical-fault/);assert.equal(json(),before,'a failed post-commit check rolls back too');
+    h=ST.beginStaged(box,{label:'staged-join',apply:function*(){ST.join(box,{apply:()=>{box.a=11;}});yield;return 1;}});h.step(Infinity);assert.equal(h.result.committed,true);assert.equal(box.a,11,'writers join the staged transaction inside a step');
+  }
   console.log(JSON.stringify({suite:'build358-heaviness',documents:documents.length,records:Object.keys(state.documentProofs.recordsById).length,sealedRows:sealedNow,passed:true}));
 })().catch(error=>{console.error(error);process.exitCode=1;});

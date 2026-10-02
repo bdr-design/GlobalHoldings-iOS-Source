@@ -751,7 +751,19 @@
     if(task.idle&&typeof window.cancelIdleCallback==='function')window.cancelIdleCallback(task.handle);
     else if(!task.idle)clearTimeout(task.handle);
   }
+  // Build 358: while a staged day boundary is running (GH_TRANSACTION_CORE.isStaged) the state is mid-transaction and must
+  // not be saved; saves and player commands wait for it (a few frames) instead of failing or being dropped.
+  function stagedStateBusy(){return window.GH_TRANSACTION_CORE?.isStaged?.(state)===true;}
+  const stagedWaiters=[];let stagedWaitTimer=null;
+  function afterStagedState(fn){
+    stagedWaiters.push(fn);if(stagedWaitTimer!==null)return;
+    const poll=()=>{if(stagedStateBusy()){stagedWaitTimer=setTimeout(poll,16);return;}stagedWaitTimer=null;const ready=stagedWaiters.splice(0);for(const run of ready)try{run();}catch(error){console.warn('تعذر تنفيذ مهمة مؤجلة بعد الإقفال المرحلي',error);}};
+    stagedWaitTimer=setTimeout(poll,16);
+  }
+  function stagedStateSettled(){return stagedStateBusy()?new Promise(resolve=>afterStagedState(resolve)):Promise.resolve();}
+  let stagedSaveQueued=false;
   function scheduleSimulationPersistence(){
+    if(stagedStateBusy()){if(!stagedSaveQueued){stagedSaveQueued=true;afterStagedState(()=>{stagedSaveQueued=false;scheduleSimulationPersistence();});}return true;}
     if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
     if(simulationPersistenceTask)return true;
     const task={epoch:Number(state.resetEpoch)||0,idle:typeof window.requestIdleCallback==='function',handle:null};
@@ -760,6 +772,7 @@
       if(simulationPersistenceTask!==task)return;
       simulationPersistenceTask=null;
       if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked()||(Number(state.resetEpoch)||0)!==task.epoch)return;
+      if(stagedStateBusy()){scheduleSimulationPersistence();return;}
       try{
         const metricClock=()=>globalThis.performance?.now?.()??Date.now(),compactionStart=metricClock();compactSimulationState(false);
         const pending={durationMs:Math.max(0,metricClock()-compactionStart),simSeconds:Number(state.simSeconds)||0,saveRevision:Number(state.saveRevision)||0},sink=window.__GH_APP_RUNTIME_INSTRUMENTATION__;
@@ -792,6 +805,7 @@
   function recurringSaveMinIntervalMs(){const cost=Math.max(Number(runtimeInstrumentation?.lastSavePreparation?.totalMs)||0,Number(window.GH_PERSISTENCE?.saveCadence?.()?.lastSaveCostMs)||0);return Math.min(RECURRING_SAVE_MAX_GAP_MS,Math.max(0,cost)*RECURRING_SAVE_COST_FACTOR);}
   function persistStateNow(options={}){
     if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
+    if(stagedStateBusy()){if(!stagedSaveQueued){stagedSaveQueued=true;afterStagedState(()=>{stagedSaveQueued=false;persistStateNow({...options,throwOnError:false});});}diag('SAVE_DEFERRED_STAGED',{saveRevision:Number(state.saveRevision)||0});return true;}
     const metricClock=()=>globalThis.performance?.now?.()??Date.now(),runtimeMetrics=window.__GH_APP_RUNTIME_INSTRUMENTATION__||null,pending=runtimeMetrics?.pendingCompaction||null;
     const metric={kind:'save-preparation',simSeconds:Number(state.simSeconds)||0,saveRevisionBefore:Number(state.saveRevision)||0,compactionMs:Number(pending?.durationMs)||0,baselineIntegrityMs:0,prepareMs:0,finalIntegrityMs:0,persistenceSyncMs:0,totalMs:0,ok:false};
     if(runtimeMetrics)runtimeMetrics.pendingCompaction=null;const totalStart=metricClock();
@@ -822,6 +836,7 @@
     return runtime;
   }
   function replaceLiveState(snapshot){
+    window.GH_TRANSACTION_CORE?.abortStaged?.(state,'live-state-replaced');
     cancelSimulationPersistence();
     window.GH_TRANSACTION_CORE.restoreObject(state,snapshot);
     window.GH_REALISM?.reconcilePendingDeliveryCount?.(state,true);
@@ -830,6 +845,7 @@
   }
   let durableCommandSettlement=Promise.resolve({committed:false,saveRevision:Number(state.saveRevision)||0});
   async function runDurableStateCommand(name,apply,{afterCommit=null,silent=false}={}){
+    await stagedStateSettled();
     if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){if(!silent)notice('الحفظ مشغول بعملية ذرية أخرى. لم يتغير أي أصل؛ أعد المحاولة بعد لحظات.');return false;}
     durableCommandInProgress=true;
     let draft=null,committed=false,settleDurableCommand=null,rootSessions=[];
@@ -930,6 +946,7 @@
     if(domain&&typeof domain==='object'&&!Array.isArray(domain)){const request=domain;domain=request.domain;name=request.name;payload=request.payload||{};options={...request,...options};}
     domain=String(domain||'').trim();name=String(name||'').trim();if(!domain||!name)throw new Error('authorized-command-invalid');
     const authority=founderAuthorization(state);if(!authority.signature||!authority.mandate){openSignatureDialog?.({required:true});if(!options.silent)notice('اعتمد توقيعك المرئي أولًا. لم تُنفذ المعاملة.');throw new Error('active-visual-seal-required');}
+    await stagedStateSettled();
     if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked())throw new Error('durable-transaction-in-progress');
     const envelope=window.GH_AUTHORIZATION.buildActiveEnvelope(state,{domain,name,payload,principalId:FOUNDER_PRINCIPAL_ID,actor:{kind:'player',principalId:FOUNDER_PRINCIPAL_ID},idempotencyKey:options.idempotencyKey||authorizationIdempotencyKey(state,domain,name,payload)});
     durableCommandInProgress=true;let committed=false,settle=null;durableCommandSettlement=new Promise(resolve=>{settle=resolve;});
@@ -2324,7 +2341,11 @@
     return {settled,total,funded};
   }
 
-  function processFinancialDay(processedDay=null,measure=null){
+  function processFinancialDay(processedDay=null,measure=null){const stages=financialDayStages(processedDay,measure);while(!stages.next().done){}}
+  // Build 358: the daily close as stages (a generator). A live day-boundary slice runs it through a staged transaction
+  // (GH_TRANSACTION_CORE.beginStaged): the same transaction and the same order, one or more stages per frame, so the
+  // close never blocks a whole frame. processFinancialDay() runs every stage at once (recovery, calendar advance).
+  function* financialDayStages(processedDay=null,measure=null){
     const phase=typeof measure==='function'?measure:(_name,work)=>work();
     const currentDay=Math.floor(state.simSeconds/86400),day=processedDay==null?currentDay:Math.max(0,Math.floor(Number(processedDay)||0));let financialDaysProcessed=0;
     if(day<=state.lastFinancialDay)return;
@@ -2337,6 +2358,7 @@
         if(result.settled===true)pushAlert(`تم صرف الشيك ${result.id} من حساب ${companyFinanceName(result.company)} وتسجيله في الدفتر المالي.`);
         else pushAlert(`ارتجع الشيك ${result.id} لعدم كفاية رصيد أو ميزانية ${companyFinanceName(result.company)}.`);
       }});
+      yield 'finance-day.cheque-settlement';
 
       const tripAccruals=phase('simulation.finance-day.trip-accruals',()=>dispatchSystemCommand({state},'finance','consume-trip-accruals',{}, {actor:'financial-close'}).result);
       const tripProfit=tripAccruals.profit,tripRevenue=tripAccruals.revenue,tripFuel=tripAccruals.fuel,tripMaintenance=tripAccruals.maintenance,tripCount=tripAccruals.count,tripCash=tripAccruals.cash||{};
@@ -2346,19 +2368,21 @@
       // current account exactly once at this atomic day boundary.
       const companyIds=operationalCompanyIds(state),companyIdSet=new Set(companyIds),accrualCompanyIds=new Set([...Object.keys(tripProfit||{}),...Object.keys(tripRevenue||{}),...Object.keys(tripFuel||{}),...Object.keys(tripMaintenance||{}),...Object.keys(tripCount||{}),...Object.keys(tripCash||{})]);
       for(const companyId of accrualCompanyIds)if(!companyIdSet.has(companyId)&&[tripProfit,tripRevenue,tripFuel,tripMaintenance,tripCount,tripCash].some(bucket=>Math.abs(Number(bucket?.[companyId])||0)>.005))throw new Error(`trip-accrual-company-not-operational:${companyId}`);
-      phase('simulation.finance-day.trip-settlement',()=>{for(const companyId of companyIds){
+      yield 'finance-day.trip-accruals';
+      for(const companyId of companyIds){phase('simulation.finance-day.trip-settlement',()=>{
         const count=Math.max(0,Number(tripCount[companyId])||0),revenue=Math.max(0,Number(tripRevenue[companyId])||0),fuel=Math.max(0,Number(tripFuel[companyId])||0),maint=Math.max(0,Number(tripMaintenance[companyId])||0),taxable=companyTaxable(state,companyId),clearing='مركز التسوية التشغيلية اليومية',invoiceNumbers=[],profile=window.GH_FINANCE_CORE.collectionProfile(companyId,state),mobility=isMobilityCompany(companyId,state);
         const post=(...args)=>{const doc=postInvoice(...args);invoiceNumbers.push(doc.number);return doc;};
         if(revenue>0)post('دخل',revenue,`تسوية رحلات يومية ${typeName(companyId)} · ${count} رحلة`,'تسوية تشغيل يومية',taxable,'مدفوعة',companyId,profile.source,{settlementAccount:clearing});
         if(fuel>0)post('مصروف',fuel,`تكلفة تشغيل رحلات يومية ${typeName(companyId)} · ${count} رحلة`,'تسوية مورد تشغيل يومية',taxable,'مدفوعة',companyId,mobility?'السائقون ومزودو التشغيل':'موردو الوقود المعتمدون',{settlementAccount:clearing});
         if(maint>0)post('مصروف',maint,`مخصص صيانة رحلات يومية ${typeName(companyId)} · ${count} رحلة`,'مخصص صيانة يومي',false,'مدفوعة',companyId,'مراكز الصيانة المعتمدة',{settlementAccount:clearing});
         const amount=Number(tripCash[companyId])||0;if(Math.abs(amount)>=.005||revenue>0){const before=companyOperatingBalance(companyId),settlement=dispatchSystemCommand({state},'finance','settle-daily-cash',{company:companyId,amount,grossAmount:revenue,deductions:fuel+maint,tripCount:count,invoiceNumbers,day:state.lastFinancialDay,reference:`DAY-CASH-${companyId}-${state.lastFinancialDay}`,note:`تحويل صافي تشغيل اليوم ${state.lastFinancialDay} إلى الحساب الجاري · ${typeName(companyId)}`},{actor:'financial-close'}).result,after=companyOperatingBalance(companyId);if(Math.abs((after-before)-Number(settlement?.amount||0))>.01)throw new Error(`daily-profit-current-account-mismatch:${companyId}`);if(settlement?.shortfall>0)pushAlert(`رحّلت تسوية نقدية غير مغطاة بقيمة ${fmtMoney(settlement.shortfall)} في ${typeName(companyId)} إلى إقفال اليوم التالي دون إسقاطها.`);}
-      }});
+      });yield 'finance-day.trip-settlement';}
       const companyContractRevenue=zeroCompanyMap(state),companyContractCost=zeroCompanyMap(state),contractDailyRows=[];
       const contractTerms={};for(const id of (state.acceptedContracts||[])){const c=contracts.find(x=>x.id===id);if(!c)continue;const companyId=contractOwnerCompanyId(c,state);if(!companyId)throw new Error(`contract-owner-unresolved-or-ambiguous:${id}`);const termDays=Math.max(1,Number(c.termMonths)||1)*30,dailyRevenue=c.value/termDays,dailyCost=c.cost/termDays;contractTerms[id]=termDays;companyContractRevenue[companyId]=(companyContractRevenue[companyId]||0)+dailyRevenue;companyContractCost[companyId]=(companyContractCost[companyId]||0)+dailyCost;contractDailyRows.push({id,companyId,sector:c.sector,client:c.client,name:c.name,revenue:dailyRevenue,cost:dailyCost});}const expiredContracts=dispatchSystemCommand({state},'contracts','tick-day',{day:state.lastFinancialDay,terms:contractTerms},{actor:'simulation'}).result?.expired||[];for(const id of expiredContracts){const c=contracts.find(x=>x.id===id);if(c)pushAlert(`اكتمل عقد ${c.name} وانتهت مدته التشغيلية بعد ${c.termMonths} شهرًا.`);}
       // Bank and energy daily owners must close first. The accounting read model
       // below then consumes the report for this same day, never yesterday's values.
       const advancedCost=phase('simulation.finance-day.advanced-owner',()=>window.GH_ADVANCED?window.GH_ADVANCED.onFinancialDay(state,state.lastFinancialDay):0);
+      yield 'finance-day.advanced-owner';
       const payrollMeta=payrollCalendarMeta(state.lastFinancialDay),payrollPlan=phase('simulation.finance-day.payroll-plan',()=>monthlyPayrollSnapshot()),payrollDueToday=payrollMeta.dayOfMonth>=27&&!payrollReportForMonth(payrollMeta.monthKey);
       const leaseByCompany=window.GH_FLEET_DATA.dailyLeaseCosts(state,companyIdSet);
       const baseByCompany=zeroCompanyMap(state),facilityIncomeByCompany=zeroCompanyMap(state);
@@ -2376,18 +2400,24 @@
       const cashOperatingRevenue={...operatingRevenue},cashOperatingExpense={...operatingExpense};if(bankCompany)cashOperatingRevenue[bankCompany]=(companyContractRevenue[bankCompany]||0)+(facilityIncomeByCompany[bankCompany]||0)+Math.max(0,Number(ed.companyRevenue?.[bankCompany])||0)+Math.max(0,Number(ed.bankCashRevenueToPost??ed.bankRevenue)||0);if(energyCompany)cashOperatingExpense[energyCompany]=Math.max(0,Number(cashOperatingExpense[energyCompany]||0)-Math.max(0,Number(ed.takeOrPayAccrued)||0));
       // رواتب المنشآت لا تُخصم يوميًا هنا؛ تُصرف مرة واحدة في مسير يوم 27.
       const daily=Object.fromEntries(companyIds.map(companyId=>[companyId,(Number(operatingRevenue[companyId])||0)-(Number(operatingExpense[companyId])||0)]));
+      yield 'finance-day.sector-economics';
       phase('simulation.finance-day.operating-revenue-payments',()=>{for(const companyId of companyIds){
         const taxable=companyTaxable(state,companyId),revenue=Math.max(0,Number(cashOperatingRevenue[companyId])||0),expense=Math.max(0,Number(cashOperatingExpense[companyId])||0),contractRows=contractDailyRows.filter(row=>row.companyId===companyId),contractRevenue=contractRows.reduce((sum,row)=>sum+Math.max(0,Number(row.revenue)||0),0);
         for(const row of contractRows)if(row.revenue>0)dispatchSystemCommand({state},'finance','credit',{company:companyId,amount:row.revenue,note:`إيراد عقد يومي · ${row.name}`,taxable,reference:`CONTRACT-COLLECT-${row.id}-${state.lastFinancialDay}`,counterparty:row.client,sourceRefs:[row.id,`CONTRACT-DAY-${row.id}-${state.lastFinancialDay}`]},{actor:'financial-close'});
         const residualRevenue=Math.max(0,revenue-contractRevenue);if(residualRevenue>0)dispatchSystemCommand({state},'finance','credit',{company:companyId,amount:residualRevenue,note:`إيراد يومي ${typeName(companyId)} · منشآت/تشغيل غير تعاقدي`,taxable,reference:`OPER-COLLECT-${companyId}-${state.lastFinancialDay}`,periodDay:state.lastFinancialDay,sourceRefs:[`OPER-${companyId}-${state.lastFinancialDay}`]},{actor:'financial-close'});
         if(expense>0){const available=companyOperatingBalance(companyId),paid=Math.min(available,expense);if(paid>0)spendCompanySystem(companyId,paid,`مصروف يومي ${typeName(companyId)} · عقود/منشآت/إيجارات`,'قيد تشغيلي يومي',taxable);if(paid<expense){const due=expense-paid,number=`${companyId.toUpperCase()}-ACC-${state.lastFinancialDay}`;postAccruedExpense(companyId,due,'مصروف تشغيلي مستحق مرحّل من الإقفال اليومي','قيد مستحق',state.lastFinancialDay+7,number,'مصروف تشغيلي');}}
       }});
+      yield 'finance-day.operating-revenue-payments';
       const closedSectorProfit=Object.fromEntries(companyIds.map(companyId=>[companyId,(Number(tripProfit[companyId])||0)+(Number(daily[companyId])||0)]));
       if(payrollDueToday)for(const companyId of companyIds)closedSectorProfit[companyId]-=Number(payrollPlan[companyId]?.amount)||0;
       const companyDaily={};for(const companyId of companyIds){const tripGross=Math.max(0,Number(tripRevenue[companyId])||0),operatingGross=Math.max(0,Number(operatingRevenue[companyId])||0),companyNet=Number(closedSectorProfit[companyId])||0;companyDaily[companyId]={tripRevenue:tripGross,operatingRevenue:operatingGross,grossRevenue:tripGross+operatingGross,expenses:Math.max(0,tripGross+operatingGross-companyNet),net:companyNet,tripCount:Math.max(0,Number(tripCount[companyId])||0)};}
-      const overhead=42500+window.GH_FLEET_DATA.size(state)*80,realismCost=phase('simulation.finance-day.realism-close',()=>window.GH_REALISM?window.GH_REALISM.onDay(state,state.lastFinancialDay):0),groupCost=overhead+advancedCost+realismCost,groupPayrollExpense=payrollDueToday?payrollPlan.group.amount:0;
+      const overhead=42500+window.GH_FLEET_DATA.size(state)*80;let realismCost=0;
+      if(window.GH_REALISM&&typeof window.GH_REALISM.onDayStages==='function'){const realismDay=window.GH_REALISM.onDayStages(state,state.lastFinancialDay);for(;;){const step=phase('simulation.finance-day.realism-close',()=>realismDay.next());if(step.done){realismCost=step.value;break;}yield 'finance-day.realism-close';}}
+      else realismCost=phase('simulation.finance-day.realism-close',()=>window.GH_REALISM?window.GH_REALISM.onDay(state,state.lastFinancialDay):0);
+      yield 'finance-day.realism-close';
+      const groupCost=overhead+advancedCost+realismCost,groupPayrollExpense=payrollDueToday?payrollPlan.group.amount:0;
       if(groupCost>0){const paid=Math.min(companyOperatingBalance('group'),groupCost);if(paid>0)spendCompanySystem('group',paid,'إقفال يومي الشركة القابضة · إدارة وامتثال','قيد يومي',false);if(paid<groupCost){const due=groupCost-paid,number=`GH-ACC-${state.lastFinancialDay}`;postAccruedExpense('group',due,'عجز الشركة القابضة المرحّل','قيد مستحق',state.lastFinancialDay+7,number,'مصروفات إدارية وتشغيلية');}}
-      phase('simulation.finance-day.payroll-ar-settlement',()=>settleOutstandingPayroll());reconcileConsolidatedCash();const net=Object.values(closedSectorProfit).reduce((a,b)=>a+(Number(b)||0),0)-groupCost-groupPayrollExpense;phase('simulation.finance-day.daily-close-postings',()=>{dispatchSystemCommand({state},'finance','record-daily-close',{day:state.lastFinancialDay,sectors:closedSectorProfit,companies:companyDaily,net},{actor:'financial-close'});dispatchSystemCommand({state},'corporate','adjust-group-value',{delta:net*.03},{actor:'financial-close'});runOperationsCycle(net);});
+      phase('simulation.finance-day.payroll-ar-settlement',()=>settleOutstandingPayroll());reconcileConsolidatedCash();yield 'finance-day.payroll-ar-settlement';const net=Object.values(closedSectorProfit).reduce((a,b)=>a+(Number(b)||0),0)-groupCost-groupPayrollExpense;phase('simulation.finance-day.daily-close-postings',()=>{dispatchSystemCommand({state},'finance','record-daily-close',{day:state.lastFinancialDay,sectors:closedSectorProfit,companies:companyDaily,net},{actor:'financial-close'});dispatchSystemCommand({state},'corporate','adjust-group-value',{delta:net*.03},{actor:'financial-close'});runOperationsCycle(net);});
       // رواتب تقويمية في تاريخ 27؛ إذا وصل حفظ قديم بعد التاريخ تُنفّذ مرة واحدة للشهر نفسه.
       if(payrollDueToday){
         phase('simulation.finance-day.payroll-payments',()=>{
@@ -2509,7 +2539,7 @@
   normalizeSimulationClocks();
 
   function processOneRecoveryBoundary(){
-    const r=state.timeRecovery||{};if(!r.active)return false;
+    const r=state.timeRecovery||{};if(!r.active||stagedStateBusy())return false;
     const nextDay=state.lastFinancialDay<Number(r.financialTarget||0)?state.lastFinancialDay+1:null;
     const nextHour=state.lastMarketHour<Number(r.marketTarget||0)?state.lastMarketHour+1:null;
     if(nextDay===null&&nextHour===null){r.active=false;diag('BOUNDARY_RECOVERY_COMPLETE');return false;}
@@ -2596,26 +2626,26 @@
     fleetRouteCache.set(key,plan);return plan;
   }
 
+  let activeStagedSlice=null;
   function createSimulationSliceJob(sliceSeconds,meta={}){
     const TX=window.GH_TRANSACTION_CORE,EVENTS=window.GH_FLEET_EVENTS,TIME=window.GH_SIMULATION_TIME_CORE;
     if(!TX?.execute||!EVENTS?.advance||!TIME?.boundaryAt)throw new Error('Fleet event simulation owners unavailable');
     const from=Math.max(0,Number(meta.from)||0),to=Math.max(from,Number(meta.to)||from+Math.max(0,Number(sliceSeconds)||0)),
       manual=meta.manualAdvance===true,order=manual?'sweep':'events',maxEvents=manual?undefined:1500;
-    let ready=false,cancelled=false,completeTo=from;
-    return {
-      runChunk(){if(cancelled)return true;ready=true;return true;},
-      finish(){
-        if(cancelled||!ready)return {committed:false,reason:'job-not-finished'};
-        if(Math.abs((Number(state.simSeconds)||0)-from)>1e-6)return {committed:false,retry:true,reason:'time-conflict'};
+    let ready=false,cancelled=false,completeTo=from,staged=null,stagedConflict=false;
+    // Build 358: a live slice that reaches a day boundary is a STAGED transaction (GH_TRANSACTION_CORE.beginStaged): the
+    // same single transaction, rollback point, order of work and post-commit checks, run one or more stages per frame
+    // (snapshot, fleet advance, each step of the financial close, the market hour, each critical check). runChunk()
+    // reports {pending:true} until the transaction has finished; cancel() (pause, speed change, hidden app, another
+    // operation) aborts it, which rolls everything back exactly. Calendar advance keeps the one-call path.
+    const stagedDay=!manual&&meta.boundary?.day!=null&&meta.staged!==false&&typeof financialDayStages==='function'&&typeof TX.beginStaged==='function';
+    let out=null,journal=null;
+    const transactionOptions=()=>{
         const boundaryRequested=meta.boundary||{},deliveryWorkPending=window.GH_REALISM?.hasPendingDeliveries?.(state)!==false,
           dayBoundary=boundaryRequested.day!=null,hourOnly=!dayBoundary&&boundaryRequested.hour!=null&&!deliveryWorkPending,steady=!dayBoundary&&boundaryRequested.hour==null&&!deliveryWorkPending,
           scope=steady?SIMULATION_STEADY_TRANSACTION_SCOPE:hourOnly?SIMULATION_HOUR_TRANSACTION_SCOPE:SIMULATION_TRANSACTION_SCOPE;
-        let out=null,journal=makeSimulationEffects();
-        const transaction=TX.execute(state,{
-          label:'simulation:'+from+'->'+to,scope,writeRoots:scope,rowRoots:simulationRowRoots(steady?'steady':hourOnly?'hour':'full'),scopedJoin:hourOnly,
-          auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,enforceWriteRoots:globalThis.__GH_BUILD358_ENFORCE_SLICE_SCOPE__===true&&(steady||hourOnly),
-          profileContext:{kind:'simulation-slice',from,to,speed:Number(meta.speed)||0,order,eventsBudget:maxEvents||null},
-          apply:measure=>{
+        journal=makeSimulationEffects();
+        const sliceWork=function*(measure){
             const context=simulationAssetRuntimeContext();
             out=EVENTS.advance(state.fleet,{from,to,context,resolveRoute:fleetResolveRoute,
               catalogSpecs:asset=>asset?.specs?null:(catalogItem(asset?.type,asset?.catalogId)?.specs||null),
@@ -2638,13 +2668,41 @@
             // Slices never cross a boundary, so only a slice planned for one can reach an unprocessed boundary; anything
             // else would write outside the snapshot scope chosen above and is rejected (rolled back and retried).
             if((boundary.day!=null&&boundary.day>(Number(state.lastFinancialDay)||0)&&!dayBoundary)||(boundary.hour!=null&&boundary.hour>(Number(state.lastMarketHour)||0)&&steady))throw new Error('simulation-boundary-outside-scope');
-            if(boundary.day!==null&&boundary.day!==undefined)measure('simulation.boundary.financial-day',()=>processFinancialDay(boundary.day,measure));
+            if(stagedDay&&boundary.day!==null&&boundary.day!==undefined)yield* financialDayStages(boundary.day,measure);
+            else if(boundary.day!==null&&boundary.day!==undefined)measure('simulation.boundary.financial-day',()=>processFinancialDay(boundary.day,measure));
+            if(stagedDay&&boundary.day!==null&&boundary.day!==undefined)yield 'boundary.financial-day';
             if(boundary.hour!==null&&boundary.hour!==undefined)measure('simulation.boundary.market-hour',()=>processMarket(boundary.hour,measure));
             state.simulationKernel=state.simulationKernel||{};
             state.simulationKernel.lastAtomicCommit={from,to:completeTo,requestedTo:to,events:out.events,day:boundary.day,hour:boundary.hour,at:completeTo,core:EVENTS.VERSION,order};
             return true;
-          }
-        });
+        };
+        return {label:'simulation:'+from+'->'+to,scope,writeRoots:scope,rowRoots:simulationRowRoots(steady?'steady':hourOnly?'hour':'full'),scopedJoin:hourOnly,
+          auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,enforceWriteRoots:globalThis.__GH_BUILD358_ENFORCE_SLICE_SCOPE__===true&&(steady||hourOnly),
+          profileContext:{kind:'simulation-slice',from,to,speed:Number(meta.speed)||0,order,eventsBudget:maxEvents||null},
+          apply:stagedDay?sliceWork:measure=>{const steps=sliceWork(measure);let step;while(!(step=steps.next()).done){}return step.value;}
+        };
+      };
+    return {
+      runChunk(_items,options={}){
+        if(cancelled)return true;if(!stagedDay){ready=true;return true;}
+        if(!staged){
+          if(Math.abs((Number(state.simSeconds)||0)-from)>1e-6){stagedConflict=true;ready=true;return true;}
+          staged=TX.beginStaged(state,transactionOptions());activeStagedSlice=staged;
+        }else staged.step(Number(options?.deadline)||-Infinity);
+        if(staged.done){ready=true;return true;}
+        return {pending:true};
+      },
+      finish(){
+        if(cancelled||!ready)return {committed:false,reason:'job-not-finished'};
+        let transaction;
+        if(stagedDay){
+          if(stagedConflict)return {committed:false,retry:true,reason:'time-conflict'};
+          const handle=staged;staged=null;if(activeStagedSlice===handle)activeStagedSlice=null;
+          if(!handle?.done)return {committed:false,reason:'job-not-finished'};if(handle.error)throw handle.error;transaction=handle.result;
+        }else{
+          if(Math.abs((Number(state.simSeconds)||0)-from)>1e-6)return {committed:false,retry:true,reason:'time-conflict'};
+          transaction=TX.execute(state,transactionOptions());
+        }
         if(!transaction.committed)return {committed:false,retry:true,reason:transaction.reason||'transaction-rejected'};
         const completedBoundary=TIME.boundaryAt(completeTo);
         if(completedBoundary.day!==null){const maintenance=window.GH_FLEET_DATA.maintain(state,completedBoundary.day);if(maintenance.compacted){window.GH_MAP_STRUCTURE_REVISION=((Number(window.GH_MAP_STRUCTURE_REVISION)||0)+1)>>>0;}}
@@ -2656,7 +2714,7 @@
         for(const id of new Set(journal.saleIds))queueAssetSaleFinalize(id);
         return {committed:true,completeTo,boundary:completedBoundary,events:out.events,order};
       },
-      cancel(){cancelled=true;}
+      cancel(){cancelled=true;if(staged&&!staged.done)staged.abort('simulation-slice-cancelled');if(activeStagedSlice===staged)activeStagedSlice=null;staged=null;}
     };
   }
 
@@ -4283,6 +4341,8 @@
     if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){simulationEngine.reset(now,'lifecycle-lock');if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,'lifecycle-lock');requestAnimationFrame(loop);return;}
     if(processOneRecoveryBoundary()){simulationEngine.reset(now,'boundary-recovery');if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,'boundary-recovery');requestAnimationFrame(loop);return;}
     const renderMetrics=runtimeInstrumentation.render,measureFrame=frameRecorderActive||(++renderMetrics.frameCounter%30)===0,frameStarted=measureFrame?appMetricClock():0;let simulationMs=0,targetUpdateMs=0,markerAnimationMs=0,structuralRenderMs=0,targetUpdated=false,markerAnimated=false,structureRendered=false;
+    // A staged day boundary lives only as long as the engine's slice job; one without a job is rolled back.
+    if(stagedStateBusy()&&!simulationEngine.snapshot().jobActive)window.GH_TRANSACTION_CORE.abortStaged(state,'staged-transaction-orphaned');
     let stageStarted=measureFrame?appMetricClock():0;simulationEngine.frame(now);if(measureFrame)simulationMs=Math.max(0,appMetricClock()-stageStarted);
     // The simulation remains authoritative on every frame. Expensive target
     // collection is sampled separately from bounded visible-marker animation.

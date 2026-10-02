@@ -42,7 +42,7 @@ const {chromium}=require('playwright'),{boot}=require('./helpers/local-dom-app')
         if(failAfterWrites)window.GH_SIMULATION_TIME_CORE={...originalTime,boundaryAt(x){TX.afterCommit(()=>{throw new Error('build358-injected-failure');},{critical:true,key:'build358-injected',owner:'test'});return originalTime.boundaryAt(x);}};
         try{
           const job=a.createSimulationSliceJob(600,{from,to,speed:600,boundary:{day:b.day,hour:b.hour}});
-          while(!job.runChunk(64,{deadline:performance.now()+8})){}
+          while(job.runChunk(64,{deadline:performance.now()+8})!==true){}
           try{return job.finish();}catch(error){return {committed:false,error:String(error?.message||error)};}
         }finally{window.GH_SIMULATION_TIME_CORE=originalTime;}
       };

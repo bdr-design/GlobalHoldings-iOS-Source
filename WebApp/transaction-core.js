@@ -4,6 +4,7 @@
   let activeContext=null,durableSequence=0;
   const targetRevisions=new WeakMap();
   const durableTargets=new WeakSet();
+  const stagedTargets=new Map();
   const JOURNALED_ROOTS=new Map();
   const runtimeTelemetry={last:null,lastSimulation:null,samples:[],profiledSamples:[],profiledCount:0,lastDurable:null,durableSamples:[]};
   function publishDurableMetric(row){const metric={...row,recordedAtMs:Date.now()};for(const key of Object.keys(metric))if(typeof metric[key]==='number')metric[key]=Math.round(metric[key]*10)/10;runtimeTelemetry.lastDurable=metric;runtimeTelemetry.durableSamples.push(metric);if(runtimeTelemetry.durableSamples.length>16)runtimeTelemetry.durableSamples.shift();return metric;}
@@ -394,10 +395,42 @@
     if(ctx.timing){ctx.timing.snapshotMs+=Math.max(0,runtimeClock()-start);ctx.timing.scopeSize=ctx.scope.length;}
     return added>0;
   }
+  // Build 358: staged transactions. One transaction (one rollback point, one set of post-commit checks) whose apply is
+  // an iterator: beginStaged() runs it step by step, normally one step per frame, so a heavy boundary (the daily close)
+  // never blocks a frame for its whole length. Between steps no transaction is active and the target is locked: any other
+  // execute()/executeDurable() on it throws 'staged-transaction-in-progress'. abort() rolls everything back exactly like a
+  // failed execute(). execute() is the same machinery driven to completion in one call.
   function execute(target,options={}){
+    const steps=executeSteps(target,options,null),step=steps.next();
+    if(!step.done)throw new Error('transaction-unexpected-suspension');
+    return step.value;
+  }
+  function beginStaged(target,options={}){
+    if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');
+    if(activeContext)throw new Error('Nested state transactions are forbidden; domain commands must join their owner');
+    if(stagedTargets.has(target))throw new Error('staged-transaction-in-progress');
+    const token={label:String(options.label||'staged-transaction'),abort:null},steps=executeSteps(target,options,token);let done=false,result=null,error=null,stage='start',count=0;
+    const advance=resume=>{
+      if(done)return;stagedTargets.set(target,token);
+      try{const step=resume();count++;if(step.done){done=true;result=step.value;}else stage=String(step.value||'apply');}
+      catch(caught){done=true;error=caught;}
+      finally{if(done&&stagedTargets.get(target)===token)stagedTargets.delete(target);}
+    };
+    const abort=(reason='staged-transaction-aborted')=>{if(done)return false;const failure=new Error(String(reason));failure.code='TRANSACTION_STAGED_ABORTED';advance(()=>steps.throw(failure));return true;};
+    token.abort=abort;advance(()=>steps.next());
+    return {
+      label:token.label,
+      get done(){return done;},get result(){return result;},get error(){return error;},get stage(){return stage;},get steps(){return count;},
+      // Runs steps until the iterator finishes or the deadline passes (at least one step per call).
+      step(deadline=-Infinity){while(!done){advance(()=>steps.next());if(done||runtimeClock()>=deadline)break;}return done;},
+      abort
+    };
+  }
+  function* executeSteps(target,options,stageToken){
     if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');
     if(typeof options.apply!=='function')throw new TypeError('Transaction apply callback is required');
     if(activeContext)throw new Error('Nested state transactions are forbidden; domain commands must join their owner');
+    if(stagedTargets.has(target)&&stagedTargets.get(target)!==stageToken)throw new Error('staged-transaction-in-progress');
     const durableContext=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;
     if(durableContext&&target===durableContext.liveState)throw new Error('durable-live-state-transaction-blocked');
     const durableJournalBaseline=journaledRevisionSnapshot(target,durableContext);
@@ -450,19 +483,38 @@
       try{validation=typeof options.validate==='function'?options.validate(measure):true;}
       finally{timing.validateMs=Math.max(0,runtimeClock()-validateStart);timing.stage='validate';}
       if(validation===false||validation?.ok===false){const rollbackStart=runtimeClock();rollback();timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);timing.totalMs=Math.max(0,runtimeClock()-totalStart);timing.stage='validation-rejected';publishRuntimeMetric(timing);return {committed:false,reason:validation?.reason||'validation-rejected',label};}
+      // Staged: the snapshot frame ends here, before any write.
+      if(stageToken){activeContext=null;yield 'snapshot';if(activeContext)throw new Error('staged-transaction-resumed-inside-transaction');activeContext=context;}
       phase='commit';const applyStart=runtimeClock();let value;
       try{value=options.apply(measure);}
       finally{timing.applyMs=Math.max(0,runtimeClock()-applyStart);timing.stage='commit';}
+      if(stageToken){
+        // Staged apply: each iterator step runs inside this transaction; between steps nothing is active.
+        if(!value||typeof value.next!=='function')throw new TypeError('Staged transaction apply must return an iterator');
+        const iterator=value;timing.staged=true;timing.stagedSteps=0;
+        for(;;){
+          const stepStart=runtimeClock();let step;
+          try{step=iterator.next();}finally{timing.applyMs+=Math.max(0,runtimeClock()-stepStart);}
+          timing.stagedSteps++;if(context.failure)throw context.failure;
+          if(step.done){value=step.value;break;}
+          activeContext=null;yield step.value||'apply';
+          if(activeContext)throw new Error('staged-transaction-resumed-inside-transaction');activeContext=context;
+        }
+      }
       if(value?.then)throw new Error('Asynchronous state mutation requires an explicit lifecycle');
       if(context.failure)throw context.failure;
       if(context.rollbackStorage==='journal'){
         const postApply=validateJournalPostState(target,context.journal);if(!postApply.ok){const error=new Error(`transaction-journal-contract-violation:${postApply.reason}`);error.code='TRANSACTION_JOURNAL_CONTRACT_VIOLATION';throw error;}
       }
-      activeContext=null;phase='post-commit-critical';
+      activeContext=null;
+      if(stageToken)yield 'post-commit';
+      phase='post-commit-critical';
       const criticalTasks=context.postCommit.filter(x=>x.critical).sort((a,b)=>a.priority-b.priority),reversibleCritical=criticalTasks.filter(task=>!task.irreversible),irreversibleCritical=criticalTasks.filter(task=>task.irreversible);
       const runCritical=tasks=>{for(const task of tasks){const taskStart=runtimeClock(),row={key:task.key||null,owner:task.owner||null,priority:task.priority,durationMs:0,ok:false,irreversible:task.irreversible===true};try{task.fn();row.ok=true;}finally{row.durationMs=Math.max(0,runtimeClock()-taskStart);timing.postCommitCriticalTasks.push(row);}}};
       const criticalStart=runtimeClock();try{
-        runCritical(reversibleCritical);
+        // Staged: one reversible critical task per step (no transaction is active during post-commit either way).
+        if(stageToken){for(let i=0;i<reversibleCritical.length;i++){runCritical([reversibleCritical[i]]);if(i<reversibleCritical.length-1)yield 'post-commit';}}
+        else runCritical(reversibleCritical);
         if(context.rollbackStorage==='journal'){
           const postCritical=validateJournalPostState(target,context.journal);if(!postCritical.ok){const error=new Error(`transaction-journal-contract-violation:${postCritical.reason}`);error.code='TRANSACTION_JOURNAL_CONTRACT_VIOLATION';throw error;}
         }
@@ -496,6 +548,7 @@
     if(typeof options.apply!=='function')throw new TypeError('Durable transaction apply callback is required');
     if(activeContext)throw new Error('Durable transaction cannot start inside a synchronous transaction');
     if(durableTargets.has(liveState))throw new Error('durable-transaction-in-progress');
+    if(stagedTargets.has(liveState))throw new Error('staged-transaction-in-progress');
     if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__)throw new Error('durable-command-context-in-progress');
     const label=String(options.label||'durable-transaction'),actualRevision=Math.max(0,Math.floor(Number(liveState.saveRevision)||0)),expectedRevision=options.expectedRevision==null?actualRevision:Number(options.expectedRevision);
     if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)throw rejection('invalid-expected-save-revision',label,'admission');
@@ -536,5 +589,5 @@
       throw error;
     }finally{if(!durableCommitted&&rootSessions.length)try{rollbackJournaledRoots(rootSessions);}catch{}if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,registerJournaledRoot,registerSealedCollections,isSealed,sealCollections,beginJournaledRoots,commitJournaledRoots,rollbackJournaledRoots,execute,join,extendScope,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,beginStaged,isStaged:target=>target?stagedTargets.has(target):stagedTargets.size>0,abortStaged:(target,reason)=>stagedTargets.get(target)?.abort?.(reason)===true,registerJournaledRoot,registerSealedCollections,isSealed,sealCollections,beginJournaledRoots,commitJournaledRoots,rollbackJournaledRoots,execute,join,extendScope,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
