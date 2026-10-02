@@ -26,9 +26,9 @@
     "native_bridge_extracted_js": "DIRECT_CI_PASS; native storage and WKWebView checks pass"
   },
   "latest_direct_source_ci": {
-    "run_id": 36955442721,
-    "run_url": "https://github.com/bdr-design/GlobalHoldings-iOS-Source/actions/runs/36955442721",
-    "tested_commit_sha": "b2daeebcec56167cdab2d253ecf97fd1b6bd12ac",
+    "run_id": 36956423617,
+    "run_url": "https://github.com/bdr-design/GlobalHoldings-iOS-Source/actions/runs/36956423617",
+    "tested_commit_sha": "af3636853a6cd588665c05ec2040e8fda860b264",
     "result": "SUCCESS",
     "source_tree_sha256": "93871ef51da15792c9768d287275bb4001f722166d678c58bbd14b4e3cd31568",
     "source_mode": "direct_git_tracked_tree",
@@ -42,22 +42,22 @@
     "ipa_built": true,
     "test_ipa_artifact": {
       "name": "GlobalHoldings_BUILD357_unsigned_TEST_ipa",
-      "artifact_id": 11205168161,
-      "archive_bytes": 13299171,
-      "expires_at": "2026-11-01T02:29:44Z"
+      "artifact_id": 11206600011,
+      "archive_bytes": 13299228,
+      "expires_at": "2026-11-01T02:41:52Z"
     },
     "verification_artifact": {
       "name": "GlobalHoldings-Build357-verification",
-      "artifact_id": 11205433016,
-      "archive_bytes": 13328621,
-      "expires_at": "2026-11-01T02:29:41Z"
+      "artifact_id": 11205934828,
+      "archive_bytes": 13328190,
+      "expires_at": "2026-11-01T02:41:51Z"
     },
     "physical_iphone_tested": false
   },
   "source_tracking": {
     "mode": "direct_git_tracked_wip_branch",
     "branch": "build357-wip",
-    "tested_commit_sha": "b2daeebcec56167cdab2d253ecf97fd1b6bd12ac",
+    "tested_commit_sha": "af3636853a6cd588665c05ec2040e8fda860b264",
     "source_tree_sha256": "93871ef51da15792c9768d287275bb4001f722166d678c58bbd14b4e3cd31568",
     "working_tree_clean": true
   },
