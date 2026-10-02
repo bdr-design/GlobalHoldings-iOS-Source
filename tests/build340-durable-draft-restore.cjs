@@ -95,7 +95,7 @@ function withDurable(draft,fn){const previous=globalThis.__GH_DURABLE_COMMAND_CO
 const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8');
 assert.match(app,/label:'asset-purchase-composite',discardableDraft:true,/,'purchase opts into the discardable durable draft');
 assert.match(app,/__GH_DURABLE_COMMAND_CONTEXT__\?\.poisoned===true\)throw new Error\(`\$\{name\}-draft-poisoned`\)/,'runDurableStateCommand refuses to publish a poisoned draft');
-const poisonIndex=app.indexOf('-draft-poisoned'),schemaIndex=app.indexOf('GH_SAVE_SCHEMA.validate(draft)',poisonIndex);
+const poisonIndex=app.indexOf('-draft-poisoned'),schemaIndex=app.indexOf('GH_SAVE_SCHEMA.validate(draft',poisonIndex);
 assert.ok(poisonIndex>0&&schemaIndex>poisonIndex,'poison check runs before schema validation, integrity and storage commit');
 
 // 4) real-core parity: byte-identical state whether the purchase used the old full snapshot or the new draft path

@@ -19,7 +19,7 @@
   function parseState(json){return decodeTree(JSON.parse(json));}
   const clock=()=>globalThis.performance?.now?.()??Date.now();
   const pending=new Map(), slotPending=new Map(), samples=[],timingSamples=[];
-  let lastSaveBreakdown=null,lastNativeAck=null;
+  let lastSaveBreakdown=null,lastNativeAck=null,lastSaveAtMs=null;
   function rememberTiming(row){const value={...row,recordedAtMs:Date.now()};timingSamples.push(value);if(timingSamples.length>24)timingSamples.shift();return value;}
   let sequence=0,slotSequence=0,generation=0,locked=false,durableLocked=false,recoveryRequired=false,ordinaryInFlight=null,ordinaryDirty=false,ordinaryDirtyState=null,ordinaryDirtyOptions=null,ordinaryError=null;
   const nativeSlotMeta=new Map((Array.isArray(globalThis.__GH_NATIVE_SLOT_META__)?globalThis.__GH_NATIVE_SLOT_META__:[]).filter(row=>Number.isInteger(Number(row?.index))&&Number(row.index)>=0&&Number(row.index)<=2).map(row=>[Number(row.index),clone(row)]));
@@ -31,8 +31,9 @@
   // every FULL_VALIDATION_EVERY-th save, so an in-place edit of an already verified proof is still found within minutes.
   // Loads, imports, manual slots, exports and recovery keep using assertState() (always full).
   const FULL_VALIDATION_EVERY=10;let recurringValidations=0;
-  function assertRecurringState(state){
-    const full=(++recurringValidations%FULL_VALIDATION_EVERY)===0,schema=globalThis.GH_SAVE_SCHEMA;
+  // prevalidated: the caller validated this exact state (trusted) just before; only the scheduled full pass remains.
+  function assertRecurringState(state,{prevalidated=false}={}){
+    const full=(++recurringValidations%FULL_VALIDATION_EVERY)===0,schema=globalThis.GH_SAVE_SCHEMA;if(prevalidated&&!full)return;
     const v=(full?schema?.validate?.(state):schema?.validate?.(state,{trustVerified:true}))||{ok:false,errors:['save-schema-unavailable']};
     if(!v.ok)throw new Error(`invalid-save:${(v.errors||[]).join(',')}`);
   }
@@ -171,7 +172,7 @@
       }else{
         cache=writeJSON(storageKey,json,options);if(!cache.ok)throw Object.assign(new Error(cache.reason),{measurement:cache});
       }
-      timing.browserCacheMs=Math.max(0,clock()-stageStart);timing.cacheReason=cache?.ok===false?cache.reason:null;timing.ok=true;timing.totalSyncMs=Math.max(0,clock()-syncStart);lastSaveBreakdown=rememberTiming(timing);
+      timing.browserCacheMs=Math.max(0,clock()-stageStart);timing.cacheReason=cache?.ok===false?cache.reason:null;timing.ok=true;timing.totalSyncMs=Math.max(0,clock()-syncStart);lastSaveBreakdown=rememberTiming(timing);lastSaveAtMs=clock();
     }catch(error){state.saveRevision=previousRevision;timing.totalSyncMs=Math.max(0,clock()-syncStart);timing.error=String(error.message||error);lastSaveBreakdown=rememberTiming(timing);return {ok:false,reason:`serialization-or-schema:${error.message||error}`,...error.measurement};}
     const out={ok:true,json,...measurement,browserCache:cache?.ok!==false,cacheReason:cache?.ok===false?cache.reason:null,previous:cache?.previous??null,saveRevision:nextRevision};
     if(!nativeBridge){ordinaryError=null;return out;}
@@ -211,9 +212,11 @@
     durableLocked=true;
     let written=null;
     try{
-      await waitOrdinaryIdle({supersedeDirty:true});assertRecurringState(state);const json=serializeState(state),nativeBridge=!!bridgeFor('commitSave');
+      await waitOrdinaryIdle({supersedeDirty:true});
+      const durableTiming={kind:'durable-save',saveRevision:Number(state?.saveRevision)||0,schemaMs:0,stringifyMs:0,measurementMs:0,totalSyncMs:0,utf8Bytes:null,ok:false};let stageStart=clock();const syncStart=stageStart;
+      assertRecurringState(state,{prevalidated:options.prevalidated===true});durableTiming.schemaMs=Math.max(0,clock()-stageStart);stageStart=clock();const json=serializeState(state),nativeBridge=!!bridgeFor('commitSave');durableTiming.stringifyMs=Math.max(0,clock()-stageStart);lastSaveAtMs=clock();
       if(nativeBridge){
-        const encoded=utf8(json),measurement=inspectNativeJSON(json,encoded),ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),encoded});ordinaryError=null;
+        stageStart=clock();const encoded=utf8(json),measurement=inspectNativeJSON(json,encoded);durableTiming.measurementMs=Math.max(0,clock()-stageStart);durableTiming.utf8Bytes=measurement.utf8Bytes;durableTiming.totalSyncMs=Math.max(0,clock()-syncStart);durableTiming.ok=true;rememberTiming(durableTiming);const ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),encoded});ordinaryError=null;
         const cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
         if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,durable:true,utf8Bytes:measurement.utf8Bytes,mirror:true});
         telemetry({operation:'durable-commit',ok:true,utf8Bytes:measurement.utf8Bytes,native:true,browserCache:cache.ok,durationMs:0});status({ok:true,validated:true,durable:true,native:true,saveRevision:Number(state.saveRevision)||0});return {ok:true,json,...measurement,ack,durable:true,browserCache:cache.ok,cacheReason:cache.ok?null:cache.reason};
@@ -313,6 +316,8 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:SAVE_SCHEMA_VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:stateCodec()?stateCodec().encodeState(state):clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
+  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,
+    // Cheap per-frame read for save pacing: when the last save ran and what it blocked the main thread for.
+    saveCadence:()=>({lastSaveAtMs,lastSaveCostMs:Number(lastSaveBreakdown?.totalSyncMs)||0}),telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

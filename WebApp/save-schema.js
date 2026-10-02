@@ -229,6 +229,8 @@
   // never edited in place; an in-place edit of an already verified record is therefore caught by the next full validation
   // (load, import, every 10th save, any plain validate()), not by the trusted ones. Clones inherit trust via inheritVerified().
   const VERIFIED_AUTH_PROOFS=new WeakSet(),VERIFIED_DOC_RECORDS=new WeakMap();
+  // Build 358: documents verified against their records, by proof id: the record digest and the exact document JSON.
+  const VERIFIED_DOCUMENTS=new Map();
   function inheritVerified(source,target){
     let authorization=0,records=0;
     try{
@@ -274,7 +276,23 @@
     const lightState={...s,documentProofs:{...store}};
     if(trust&&documentCache)for(const [id,row] of Object.entries(records)){const known=VERIFIED_DOC_RECORDS.get(row);if(known){documentCache.records.set(id,known.result);documentCache.signedContentStable.set(id,known.stable);}}
     const recordVerificationStart=metric?metricClock():0;if(typeof verifier==='function'&&typeof recordVerifier==='function')for(const id of Object.keys(records)){const cached=documentCache?.records?.has(id)===true,check=recordVerifier(cached?lightState:fullVerificationState(),id,new Set(),documentCache),acceptedLegacy=check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true;if(!check?.ok&&!acceptedLegacy)errors.push('document-proof-record-integrity');else if(check?.ok===true&&check.modern===true&&!cached){const stableText=documentCache?.signedContentStable?.get(id),row=records[id];if(stableText!==undefined&&row&&!VERIFIED_DOC_RECORDS.has(row))VERIFIED_DOC_RECORDS.set(row,{stable:stableText,result:{ok:true,modern:true}});}}if(metric)metric.documentRecordVerifyMs+=Math.max(0,metricClock()-recordVerificationStart);
-    const documentVerificationStart=metric?metricClock():0;for(const document of documents)if(document?.documentProofId){if(!records[document.documentProofId]||document.contentDigest!==records[document.documentProofId].contentDigest)errors.push('document-proof-reference');else if(typeof verifier!=='function')errors.push('document-proof-integrity');else{const verification=verifier(documentCache?.records?.has(document.documentProofId)?lightState:fullVerificationState(),document,documentCache),acceptedLegacy=verification?.legacy===true&&verification?.readOnly===true&&verification?.recordIntegrity===true;if(!verification?.ok&&!acceptedLegacy)errors.push('document-proof-integrity');}}if(metric)metric.documentVerifyMs+=Math.max(0,metricClock()-documentVerificationStart);
+    const documentVerificationStart=metric?metricClock():0,seenDocuments=new Set();
+    for(const document of documents)if(document?.documentProofId){
+      const proofId=document.documentProofId,record=records[proofId];
+      if(!record||document.contentDigest!==record.contentDigest){errors.push('document-proof-reference');continue;}
+      if(typeof verifier!=='function'){errors.push('document-proof-integrity');continue;}
+      // Verification is a pure function of the document and its (separately verified) record, so a trusted pass skips
+      // a document whose exact JSON and record digest were already verified; any edit, even of an unsigned field,
+      // verifies it again. Full validations (load, import, every tenth save) always verify every document.
+      let text=null;try{text=JSON.stringify(document);}catch(_error){text=null;}
+      seenDocuments.add(proofId);const known=VERIFIED_DOCUMENTS.get(proofId);
+      if(trust&&text!==null&&known&&known.digest===record.contentDigest&&known.text===text)continue;
+      const verification=verifier(documentCache?.records?.has(proofId)?lightState:fullVerificationState(),document,documentCache),acceptedLegacy=verification?.legacy===true&&verification?.readOnly===true&&verification?.recordIntegrity===true;
+      if(!verification?.ok&&!acceptedLegacy){errors.push('document-proof-integrity');VERIFIED_DOCUMENTS.delete(proofId);}
+      else if(text!==null)VERIFIED_DOCUMENTS.set(proofId,{digest:record.contentDigest,text});
+    }
+    if(!trust||VERIFIED_DOCUMENTS.size>seenDocuments.size*2+64)for(const proofId of [...VERIFIED_DOCUMENTS.keys()])if(!seenDocuments.has(proofId))VERIFIED_DOCUMENTS.delete(proofId);
+    if(metric)metric.documentVerifyMs+=Math.max(0,metricClock()-documentVerificationStart);
   }
   function validate(s,options){
     const trust=!!options&&options.trustVerified===true;

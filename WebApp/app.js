@@ -740,12 +740,12 @@
   }
   cleanupObsoleteStorage();
   let simulationPersistenceTask=null,deferredPersistenceTimer=null;
-  const DEFERRED_PERSISTENCE_MS=3000,RECURRING_SAVE_COST_FACTOR=150,RECURRING_SAVE_MAX_GAP_MS=120000;
-  const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]}};
+  const DEFERRED_PERSISTENCE_MS=3000,DEFERRED_SAVE_MIN_GAP_MS=15000,RECURRING_SAVE_COST_FACTOR=150,RECURRING_SAVE_MAX_GAP_MS=120000;
+  const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,durable:{last:null,samples:[]},render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]}};
   const appMetricClock=()=>globalThis.performance?.now?.()??Date.now();
   function recordRenderMetric(kind,durationMs,detail={}){const render=runtimeInstrumentation.render,row={kind,durationMs:Math.max(0,Number(durationMs)||0),recordedAtMs:Date.now(),...detail};if(kind==='frame'){render.lastFrame=row;render.maxFrameMs=Math.max(render.maxFrameMs,row.durationMs);}else if(kind==='target-update'){render.lastTargetUpdate=row;render.maxTargetUpdateMs=Math.max(render.maxTargetUpdateMs,row.durationMs);}else if(kind==='marker-animation'){render.lastMarkerAnimation=row;render.maxMarkerAnimationMs=Math.max(render.maxMarkerAnimationMs,row.durationMs);}else if(kind==='structural-render'){render.lastStructuralRender=row;render.maxStructuralRenderMs=Math.max(render.maxStructuralRenderMs,row.durationMs);}render.samples.push(row);if(render.samples.length>120)render.samples.shift();return row;}
   window.__GH_APP_RUNTIME_INSTRUMENTATION__=runtimeInstrumentation;
-  window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,render:runtimeInstrumentation.render}))});
+  window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,durable:runtimeInstrumentation.durable,render:runtimeInstrumentation.render}))});
   function cancelSimulationPersistence(){
     const task=simulationPersistenceTask;simulationPersistenceTask=null;if(!task)return;
     if(task.idle&&typeof window.cancelIdleCallback==='function')window.cancelIdleCallback(task.handle);
@@ -775,15 +775,21 @@
   // is no requestIdleCallback, so "idle" persistence ran right after every tap. Coalesce them
   // into one save a few seconds later; business commands keep their durable save, and hiding
   // the app still saves immediately.
+  // Build 358: these saves are also spaced from the previous save of any kind by the same cost rule as recurring saves
+  // (at least 15 s). GH Mobility street-route results and diagnostics events used to chain a full save every ~3 s.
   function scheduleDeferredPersistence(delayMs=DEFERRED_PERSISTENCE_MS){
     if(deferredPersistenceTimer!==null)return true;
-    deferredPersistenceTimer=setTimeout(()=>{deferredPersistenceTimer=null;scheduleSimulationPersistence();},Math.max(0,Number(delayMs)||0));
+    const cadence=window.GH_PERSISTENCE?.saveCadence?.(),last=Number(cadence?.lastSaveAtMs),gap=Math.max(DEFERRED_SAVE_MIN_GAP_MS,recurringSaveMinIntervalMs()),
+      wait=Math.max(Math.max(0,Number(delayMs)||0),Number.isFinite(last)?last+gap-appMetricClock():0);
+    deferredPersistenceTimer=setTimeout(()=>{deferredPersistenceTimer=null;scheduleSimulationPersistence();},wait);
     return true;
   }
   // Recurring saves only checkpoint simulated progress (commands persist durably on their own).
   // A save that blocked the main thread for C ms is spaced at least 150*C ms apart (<=0.7% of
-  // frame time), capped at 2 minutes. Hiding the app still saves immediately.
-  function recurringSaveMinIntervalMs(){const cost=Number(runtimeInstrumentation?.lastSavePreparation?.totalMs)||0;return Math.min(RECURRING_SAVE_MAX_GAP_MS,Math.max(0,cost)*RECURRING_SAVE_COST_FACTOR);}
+  // frame time), capped at 2 minutes. Hiding the app still saves immediately. Build 358: C is the
+  // real cost of the last save (validation, serialization, measurement); a native save is
+  // prepared here in ~2 ms and serialized later, so the preparation time alone hid the real cost.
+  function recurringSaveMinIntervalMs(){const cost=Math.max(Number(runtimeInstrumentation?.lastSavePreparation?.totalMs)||0,Number(window.GH_PERSISTENCE?.saveCadence?.()?.lastSaveCostMs)||0);return Math.min(RECURRING_SAVE_MAX_GAP_MS,Math.max(0,cost)*RECURRING_SAVE_COST_FACTOR);}
   function persistStateNow(options={}){
     if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
     const metricClock=()=>globalThis.performance?.now?.()??Date.now(),runtimeMetrics=window.__GH_APP_RUNTIME_INSTRUMENTATION__||null,pending=runtimeMetrics?.pendingCompaction||null;
@@ -828,32 +834,37 @@
     durableCommandInProgress=true;
     let draft=null,committed=false,settleDurableCommand=null,rootSessions=[];
     durableCommandSettlement=new Promise(resolve=>{settleDurableCommand=resolve;});
+    // Build 358: phase timings of every player command (diagnostics: GH_APP_RUNTIME_METRICS.snapshot().durable).
+    const clockNow=()=>globalThis.performance?.now?.()??Date.now(),durableStart=clockNow(),timing={name,cloneMs:0,prepareMs:0,baselineIntegrityMs:0,applyMs:0,validateMs:0,integrityMs:0,persistMs:0,publishMs:0,afterMs:0,totalMs:0,committed:false};let mark=durableStart;const lap=key=>{const now=clockNow();timing[key]+=Math.max(0,now-mark);mark=now;};
     try{
       const transactionCore=window.GH_TRANSACTION_CORE;
       rootSessions=transactionCore?.beginJournaledRoots?.(state)||[];
-      draft=transactionCore?.deepClone?transactionCore.deepClone(state,{shareJournaledRoots:true}):clone(state);
-      window.GH_SAVE_SCHEMA?.inheritVerified?.(state,draft);const runtime=routeRuntimeForState(draft),previousRevision=Math.max(0,Math.floor(Number(state.saveRevision)||0));
+      draft=transactionCore?.deepClone?transactionCore.deepClone(state,{shareJournaledRoots:true}):clone(state);lap('cloneMs');
+      window.GH_SAVE_SCHEMA?.inheritVerified?.(state,draft);const runtime=routeRuntimeForState(draft),previousRevision=Math.max(0,Math.floor(Number(state.saveRevision)||0));lap('prepareMs');
       window.__GH_DURABLE_COMMAND_CONTEXT__={name,liveState:state,draft};
-      const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(row=>row.severity==='critical').map(row=>String(row.id||row.code||row.title)));
-      const value=await apply({state:draft,routes:runtime});if(value===false)throw new Error(`${name}-rejected`);
+      const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(row=>row.severity==='critical').map(row=>String(row.id||row.code||row.title)));lap('baselineIntegrityMs');
+      const value=await apply({state:draft,routes:runtime});lap('applyMs');if(value===false)throw new Error(`${name}-rejected`);
       if(window.__GH_DURABLE_COMMAND_CONTEXT__?.poisoned===true)throw new Error(`${name}-draft-poisoned`);
       draft.saveRevision=previousRevision+1;
       const shouldYieldForValidation=(window.GH_FLEET_DATA.size(draft)+(draft.mobility?.vehicles?.length||0))>=500;
       if(shouldYieldForValidation)await yieldForInteractivePaint();
-      const schema=window.GH_SAVE_SCHEMA.validate(draft);if(!schema.ok)throw new Error(`invalid-draft:${schema.errors.join(',')}`);
+      // The draft inherited the verified-once ledger above: proofs already verified are trusted, new or changed ones are
+      // verified now. Persistence repeats a full verification every tenth save, and loads always verify in full.
+      mark=clockNow();const schema=window.GH_SAVE_SCHEMA.validate(draft,{trustVerified:true});lap('validateMs');if(!schema.ok)throw new Error(`invalid-draft:${schema.errors.join(',')}`);
       if(shouldYieldForValidation)await yieldForInteractivePaint();
-      const integrity=window.GH_INTEGRITY_CORE.check(draft),critical=(integrity?.critical||(integrity?.issues||[]).filter(row=>row.severity==='critical'));
+      mark=clockNow();const integrity=window.GH_INTEGRITY_CORE.check(draft),critical=(integrity?.critical||(integrity?.issues||[]).filter(row=>row.severity==='critical'));lap('integrityMs');
       const introduced=critical.filter(row=>!priorCriticalIds.has(String(row.id||row.code||row.title)));
       if(introduced.length)throw new Error(`critical-integrity:${introduced.map(row=>row.code||row.id||row.title).join(',')}`);
       if(shouldYieldForValidation)await yieldForInteractivePaint();
-      await window.GH_PERSISTENCE.commitDurableState(draft,{storageKey,appVersion:APP_VERSION});
+      mark=clockNow();await window.GH_PERSISTENCE.commitDurableState(draft,{storageKey,appVersion:APP_VERSION,prevalidated:true});lap('persistMs');
       // Storage has already committed. A publication failure is a recovery
       // condition, never a successful rollback and never safe to retry blindly.
-      committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
+      committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);lap('publishMs');diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
       if(afterCommit){try{await afterCommit(value);}catch(error){diag('DURABLE_COMMAND_PRESENTATION_FAILED',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'warning');console.warn(`Durable command committed but presentation refresh failed [${name}]`,error);if(!silent)notice('تم حفظ العملية بنجاح، لكن تعذر تحديث العرض. أعد فتح القسم لرؤية الحالة المحفوظة.','warning');}}
       return value;
     }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-publication-failed');state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed');diag('DURABLE_COMMAND_POST_COMMIT_FAILURE',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'critical');console.error(`Durable command failed after durable commit [${name}]`,error);if(!silent)notice('تم حفظ العملية، لكن حدث خطأ بعد الاعتماد. أوقف التشغيل وأعد فتح اللعبة للتحقق من الحالة المحفوظة.','warning');return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
     finally{
+      lap('afterMs');timing.committed=committed;timing.totalMs=Math.max(0,clockNow()-durableStart);for(const key of Object.keys(timing))if(typeof timing[key]==='number')timing[key]=Math.round(timing[key]*10)/10;const durableSink=window.__GH_APP_RUNTIME_INSTRUMENTATION__?.durable;if(durableSink){durableSink.last=timing;durableSink.samples.push(timing);if(durableSink.samples.length>16)durableSink.samples.shift();}
       if(!committed&&rootSessions.length)try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');console.error('Durable command fleet rollback failed',rollbackError);}
       const context=window.__GH_DURABLE_COMMAND_CONTEXT__?.draft===draft?window.__GH_DURABLE_COMMAND_CONTEXT__:null;
       if(context)delete window.__GH_DURABLE_COMMAND_CONTEXT__;durableCommandInProgress=false;

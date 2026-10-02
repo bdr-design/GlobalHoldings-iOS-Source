@@ -5,7 +5,8 @@
   const targetRevisions=new WeakMap();
   const durableTargets=new WeakSet();
   const JOURNALED_ROOTS=new Map();
-  const runtimeTelemetry={last:null,lastSimulation:null,samples:[],profiledSamples:[],profiledCount:0};
+  const runtimeTelemetry={last:null,lastSimulation:null,samples:[],profiledSamples:[],profiledCount:0,lastDurable:null,durableSamples:[]};
+  function publishDurableMetric(row){const metric={...row,recordedAtMs:Date.now()};for(const key of Object.keys(metric))if(typeof metric[key]==='number')metric[key]=Math.round(metric[key]*10)/10;runtimeTelemetry.lastDurable=metric;runtimeTelemetry.durableSamples.push(metric);if(runtimeTelemetry.durableSamples.length>16)runtimeTelemetry.durableSamples.shift();return metric;}
   const runtimeClock=()=>globalThis.performance?.now?.()??Date.now();
   function publishRuntimeMetric(row){
     const metric={...row,recordedAtMs:Date.now()};
@@ -452,26 +453,36 @@
     const label=String(options.label||'durable-transaction'),actualRevision=Math.max(0,Math.floor(Number(liveState.saveRevision)||0)),expectedRevision=options.expectedRevision==null?actualRevision:Number(options.expectedRevision);
     if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)throw rejection('invalid-expected-save-revision',label,'admission');
     if(actualRevision!==expectedRevision)throw rejection(`state-revision-conflict:${expectedRevision}:${actualRevision}`,label,'admission');
+    // Build 358: phase timings of every durable command (diagnostics: telemetry().lastDurable / durableSamples).
+    const durableStart=runtimeClock(),durableTiming={label,cloneMs:0,inheritMs:0,baselineIntegrityMs:0,applyMs:0,validateMs:0,integrityMs:0,persistMs:0,publishMs:0,afterMs:0,totalMs:0,committed:false};let mark=durableStart;const lap=key=>{const now=runtimeClock();durableTiming[key]+=Math.max(0,now-mark);mark=now;};
     const transactionId=String(options.transactionId||`DTX-${String(++durableSequence).padStart(9,'0')}`),rootSessions=beginJournaledRoots(liveState);let draft;
     try{draft=deepClone(liveState,{shareJournaledRoots:true});}catch(error){rollbackJournaledRoots(rootSessions);throw error;}
-    const priorCritical=criticalIds(globalThis.GH_INTEGRITY_CORE?.check?.(liveState)),afterPublishTasks=[];
+    lap('cloneMs');
+    // Build 358: the draft's trusted validation below must not re-verify every proof the live state already verified.
+    try{globalThis.GH_SAVE_SCHEMA?.inheritVerified?.(liveState,draft);}catch(_error){/* trust is an optimisation */}
+    lap('inheritMs');
+    const priorCritical=criticalIds(globalThis.GH_INTEGRITY_CORE?.check?.(liveState)),afterPublishTasks=[];lap('baselineIntegrityMs');
     const context={schema:'gh-durable-transaction-v1',transactionId,label,liveState,draft,expectedRevision,startedAtSim:Number(liveState.simSeconds)||0,afterPublish(fn){if(typeof fn==='function')afterPublishTasks.push(fn);},call(domain,name,payload={},commandOptions={}){const commands=globalThis.GH_DOMAIN_COMMANDS;if(!commands?.dispatch)throw new Error('domain-command-owner-unavailable');return commands.dispatch({state:draft},domain,name,payload,commandOptions);},callSystem(domain,name,payload={},commandOptions={}){const commands=globalThis.GH_DOMAIN_COMMANDS;if(!commands?.dispatchSystem)throw new Error('system-domain-command-owner-unavailable');return commands.dispatchSystem({state:draft},domain,name,payload,commandOptions);}};
     durableTargets.add(liveState);globalThis.__GH_DURABLE_COMMAND_CONTEXT__=context;let phase='apply',durableCommitted=false;
     try{
-      const value=await options.apply(draft,context);if(value===false)throw rejection(`${label}-rejected`,label,phase);
+      mark=runtimeClock();const value=await options.apply(draft,context);lap('applyMs');if(value===false)throw rejection(`${label}-rejected`,label,phase);
       if(context.poisoned)throw rejection(context.poisonReason||'durable-command-poisoned',label,phase);
       if(Number(draft.saveRevision||0)!==expectedRevision)throw rejection('draft-save-revision-mutated',label,phase);
       draft.saveRevision=expectedRevision+1;phase='validate';
-      const schema=globalThis.GH_SAVE_SCHEMA?.validate?.(draft,{trustVerified:true});if(schema&&schema.ok===false)throw rejection(`invalid-draft:${(schema.errors||[]).join(',')}`,label,phase);
+      mark=runtimeClock();const schema=globalThis.GH_SAVE_SCHEMA?.validate?.(draft,{trustVerified:true});lap('validateMs');if(schema&&schema.ok===false)throw rejection(`invalid-draft:${(schema.errors||[]).join(',')}`,label,phase);
       if(options.integrity!==false&&globalThis.GH_INTEGRITY_CORE?.check){const integrity=globalThis.GH_INTEGRITY_CORE.check(draft),introduced=(((integrity?.critical)||((integrity?.issues)||[]).filter(row=>row.severity==='critical'))||[]).filter(row=>!priorCritical.has(String(row.id||row.code||row.title)));if(introduced.length)throw rejection(`critical-integrity:${introduced.map(row=>row.id||row.code||row.title).join(',')}`,label,phase);}
       if(typeof options.validate==='function'){const validation=await options.validate(draft,context);if(validation===false||validation?.ok===false)throw rejection(validation?.reason||'validation-rejected',label,phase);}
+      lap('integrityMs');
       if(Number(liveState.saveRevision||0)!==expectedRevision)throw rejection(`state-revision-conflict:${expectedRevision}:${Number(liveState.saveRevision)||0}`,label,'pre-persist');
-      phase='durable-commit';const persist=options.persist||((state,meta)=>{const owner=globalThis.GH_PERSISTENCE;if(!owner?.commitDurableState)throw new Error('durable-persistence-owner-unavailable');return owner.commitDurableState(state,meta);}),persisted=await persist(draft,{...(options.persistence||{}),expectedPreviousRevision:expectedRevision,transactionId,idempotencyKey:options.idempotencyKey||null});if(persisted===false||persisted?.ok===false)throw rejection(persisted?.reason||'durable-persistence-rejected',label,phase);durableCommitted=true;commitJournaledRoots(rootSessions);
-      phase='publish';if(typeof options.publish==='function')await options.publish(liveState,draft,context);else restoreObject(liveState,draft);
+      phase='durable-commit';const persist=options.persist||((state,meta)=>{const owner=globalThis.GH_PERSISTENCE;if(!owner?.commitDurableState)throw new Error('durable-persistence-owner-unavailable');return owner.commitDurableState(state,meta);}),persisted=await persist(draft,{...(options.persistence||{}),expectedPreviousRevision:expectedRevision,transactionId,idempotencyKey:options.idempotencyKey||null,prevalidated:true});if(persisted===false||persisted?.ok===false)throw rejection(persisted?.reason||'durable-persistence-rejected',label,phase);durableCommitted=true;commitJournaledRoots(rootSessions);
+      lap('persistMs');
+      phase='publish';if(typeof options.publish==='function')await options.publish(liveState,draft,context);else restoreObject(liveState,draft);lap('publishMs');
       for(const task of afterPublishTasks)try{await task(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-publish side effect failed`,error);}
       if(typeof options.afterCommit==='function')try{await options.afterCommit(value,context);}catch(error){globalThis.console?.warn?.(`${label}: after-commit side effect failed`,error);}
+      lap('afterMs');durableTiming.committed=true;durableTiming.totalMs=Math.max(0,runtimeClock()-durableStart);publishDurableMetric(durableTiming);
       advanceRevision(liveState);return {committed:true,durable:true,transactionId,label,saveRevision:Number(liveState.saveRevision)||0,value,persistence:persisted};
     }catch(error){
+      durableTiming.totalMs=Math.max(0,runtimeClock()-durableStart);durableTiming.stage=phase;publishDurableMetric(durableTiming);
       error.transactionLabel=error.transactionLabel||label;error.transactionStage=error.transactionStage||phase;error.durableCommitted=durableCommitted;
       if(!durableCommitted)try{rollbackJournaledRoots(rootSessions);}catch(rollbackError){error.rollbackError=rollbackError;error.critical=true;globalThis.GH_PERSISTENCE?.markRecoveryRequired?.('durable-journaled-root-rollback-failed');}
       if(durableCommitted){error.critical=true;globalThis.GH_PERSISTENCE?.markRecoveryRequired?.('durable-publish-failed');}
