@@ -14,6 +14,16 @@
     // Validation only reads the projection (raw: no read-only proxies, one read plan per scan).
     fleetData().forEachFields(state,FLEET_VALIDATION_FIELDS,fn,{raw:true});
   }
+  // Build 358 (million-asset validation): the asset checks run once per class of rows that read identically
+  // (GH_FLEET_STORE.forEachClass), with progress, fuel and condition at each class's extremes. Every asset check is a
+  // per-field interval check on those three or depends only on class-level values, and errors are a set, so the result
+  // is the per-row result. fn(asset,count,info) also gets the class size (0 for an extreme) and its first row index.
+  // options.assetScan==='rows' keeps the per-row scan (count 1 per asset) as the reference for equivalence tests.
+  const FLEET_NUMERIC_FIELDS=Object.freeze(['progress','fuel','condition']);
+  function forEachSaveAssetClass(state,fn,rows=false){
+    if(rows){forEachSaveAsset(state,(asset,index)=>fn(asset,1,{index}));return;}
+    fleetData().forEachFieldClasses(state,FLEET_VALIDATION_FIELDS,fn,{numeric:FLEET_NUMERIC_FIELDS});
+  }
   const runtimeTelemetry={lastValidation:null,samples:[]};
   // Phase 1B-B: wall-clock pacing/scheduler telemetry is runtime-only. Older
   // Build 339 saves may still contain the former simulationEngine.snapshot()
@@ -79,12 +89,12 @@
       const modes=row.presentation?.planBundle?.modes;if(object(modes))for(const mode of ['full','brief','manual']){const scenes=Array.isArray(modes[mode])?modes[mode]:[];if(scenes.length>2048)errors.push('identity-conference-scene-capacity');for(const [sceneIndex,scene] of scenes.slice(0,2048).entries()){if(scene?.logo!=null&&!validSavedLogo(scene.logo))errors.push(`identity-conference-plan-logo:${index}:${mode}:${sceneIndex}`);checkContribution(scene,`${index}:${mode}:${sceneIndex}`);checkText(scene?.chartUnit,100,`${index}:${mode}:${sceneIndex}:chartUnit`);}}
     }
   }
-  function validatePresentationTextState(s,errors,includeFleet=true){
+  function validatePresentationTextState(s,errors,includeFleet=true,rowScan=false){
     const entityFields=[['name',180],['model',180],['status',80],['city',100],['country',100],['code',40],['iata',12],['icao',12],['detail',500],['capacity',180],['icon',16]],entityNumericFields=['year','gates','landingFeePerTon','jetA1Price','congestion','berths','maxDraftM','craneCount','bays','runwayM','elevationM','dryStorageTEU','reeferPlugs','crudeStorageBbl','fuelBunkerBbl'];
     // Per-field memos resolved once per validation: a known text is answered with one lookup (same result as safeDisplayText).
     const textChecks=entityFields.map(([key,maximum])=>[key,maximum,displayTextMemo(maximum,true)]);
     const validateEntity=(bucket,row)=>{if(!object(row))return;for(const [key,maximum,memo] of textChecks){const value=row[key];if(value==null)continue;const known=typeof value==='string'?memo.get(value):undefined;if(known===true)continue;if(known===false||!safeDisplayText(value,maximum))errors.push(`display-text-${bucket}-${key}`);}for(const key of entityNumericFields)if(row[key]!=null&&!finite(row[key]))errors.push(`display-number-${bucket}-${key}`);if(row.id!=null&&!safeAttributeText(row.id,180))errors.push(`display-attribute-${bucket}-id`);if(row.name!=null&&!safeAttributeText(row.name,180,{allowEmpty:true}))errors.push(`display-attribute-${bucket}-name`);if(row.photo!=null&&row.photo!==''&&!safeLocalImage(row.photo))errors.push(`display-image-${bucket}-photo`);if(row.coords!=null&&!validPoint(row.coords))errors.push(`display-coords-${bucket}`);};
-    if(includeFleet)forEachSaveAsset(s,row=>validateEntity('assets',row));for(const [bucket,rows] of [['globalBases',s?.globalBases],['customHubs',s?.customHubs],['branches',s?.branches]])for(const row of Array.isArray(rows)?rows:[])validateEntity(bucket,row);
+    if(includeFleet)forEachSaveAssetClass(s,row=>validateEntity('assets',row),rowScan);for(const [bucket,rows] of [['globalBases',s?.globalBases],['customHubs',s?.customHubs],['branches',s?.branches]])for(const row of Array.isArray(rows)?rows:[])validateEntity(bucket,row);
     for(const row of Array.isArray(s?.simulationWorld?.competitors)?s.simulationWorld.competitors:[])if(object(row))for(const [key,maximum] of [['name',180],['sector',120],['hq',100],['strategy',240],['marketShare',40],['risk',40]])if(row[key]!=null&&!safeDisplayText(row[key],maximum))errors.push(`display-text-competitor-${key}`);
     for(const row of Array.isArray(s?.simulationWorld?.competitorAssets)?s.simulationWorld.competitorAssets:[])if(object(row))for(const [key,maximum] of [['name',180],['company',180],['type',40],['icon',16]])if(row[key]!=null&&!safeDisplayText(row[key],maximum))errors.push(`display-text-competitor-asset-${key}`);
     for(const [id,row] of Object.entries(object(s?.routeEndpoints)?s.routeEndpoints:{}))if(object(row)){if(!safeAttributeText(id,180)||row.id!=null&&!safeAttributeText(row.id,180))errors.push('display-attribute-route-endpoint-id');for(const [key,maximum] of [['name',180],['city',100],['country',100],['code',40],['iata',12],['icao',12],['detail',500],['kind',60],['icon',16]])if(row[key]!=null&&!safeDisplayText(row[key],maximum))errors.push(`display-text-route-endpoint-${key}`);if(row.name!=null&&!safeAttributeText(row.name,180,{allowEmpty:true}))errors.push('display-attribute-route-endpoint-name');for(const key of ['gates','landingFeePerTon','jetA1Price','congestion','berths','maxDraftM','craneCount','bays','runwayM','elevationM','dryStorageTEU','reeferPlugs','crudeStorageBbl','fuelBunkerBbl'])if(row[key]!=null&&!finite(row[key]))errors.push(`display-number-route-endpoint-${key}`);if(row.photo!=null&&row.photo!==''&&!safeLocalImage(row.photo))errors.push('display-image-route-endpoint-photo');}
@@ -327,7 +337,7 @@
     const fleetMode=fleetData().mode(s);if(legacyV2?fleetMode==='none':(fleetMode!=='store'||Object.prototype.hasOwnProperty.call(s,'assets')))errors.push('fleet-store');if(!Array.isArray(s?.market))errors.push('market');if(!object(s?.finance)||!Array.isArray(s.finance.invoices)||!Array.isArray(s.finance.cheques)||!Array.isArray(s.finance.payables)||!Array.isArray(s.finance.receivables)||!Array.isArray(s.finance.periods))errors.push('finance');if(!object(s?.companyFinance))errors.push('company-finance');if(!object(s?.advanced))errors.push('advanced');
     // The fleet record ceiling is an admission rule (procurement refuses a purchase that would cross it). It is not a
     // validity rule: Build 357 rejected loading any save above it, which locked players out of their own games.
-    const assetIds=new Set();let duplicateAssetId=false;if(duplicateIds(s?.customRoutes,x=>x?.id))errors.push('route-id');if(duplicateIds(s?.realism?.procurement?.deliveries,x=>x?.id))errors.push('delivery-id');
+    const rowScan=!!options&&options.assetScan==='rows',assetIds=new Set();let duplicateAssetId=false;if(duplicateIds(s?.customRoutes,x=>x?.id))errors.push('route-id');if(duplicateIds(s?.realism?.procurement?.deliveries,x=>x?.id))errors.push('delivery-id');
     if(s?.speed!==undefined&&![0,1,2,3,4].includes(Number(s.speed)))errors.push('speed');
     const routes=Array.isArray(s?.customRoutes)?s.customRoutes:[],routeIds=new Set(BUILTIN_ROUTES),routeById=new Map(),routeSignatureGroups=new Map();
     if(routes.length>STATE_LIMITS.customRoutes)errors.push('route-capacity');
@@ -337,9 +347,10 @@
       const signature=routeSignature(route);if(!signature)errors.push('route-geometry');else{const rows=routeSignatureGroups.get(signature)||[];rows.push(route);routeSignatureGroups.set(signature,rows);}
       if(route?.id){routeIds.add(route.id);if(!routeById.has(route.id))routeById.set(route.id,route);}
     }
+    // routeUsers: routeId -> {users, stable (users that are not transitional), first: index and mode of the first user}.
     const routeUsers=new Map();
-    forEachSaveAsset(s,asset=>{
-      validateAssetPresentation('assets',asset);const id=asset?.id;if(id===undefined||assetIds.has(id))duplicateAssetId=true;else assetIds.add(id);
+    forEachSaveAssetClass(s,(asset,count,info)=>{
+      validateAssetPresentation('assets',asset);if(rowScan){const id=asset?.id;if(id===undefined||assetIds.has(id))duplicateAssetId=true;else assetIds.add(id);}
       const mode=assetMode(asset),owner=assetOwner(asset)||globalThis.GH_COMPANY_PLATFORM?.ownerForLegacyAssetMode?.(mode)||mode;if(!object(asset)||!String(asset.id||'').trim()||!knownAssetMode(mode,s,owner)||!dataId(owner)||!String(asset.baseFacility||'').trim())errors.push('asset-shape');
       if(!ASSET_PHASES.has(asset.phase))errors.push('asset-phase');
       if(!finite(asset.progress)||Number(asset.progress)<0||Number(asset.progress)>1)errors.push('asset-progress');
@@ -347,11 +358,15 @@
       if(!finite(asset.condition)||Number(asset.condition)<0||Number(asset.condition)>100)errors.push('asset-condition');
       if(asset.routeId!=null&&(!String(asset.routeId).trim()||!routeIds.has(asset.routeId)))errors.push('asset-route-reference');
       if((asset.phase==='moving'||asset.phase==='turnaround')&&!asset.routeId)errors.push('asset-route-required');
-      if(asset.routeId){const users=routeUsers.get(asset.routeId)||[];users.push(asset);routeUsers.set(asset.routeId,users);const route=routeById.get(asset.routeId);if(route&&(routeMode(route)!==mode||routeOwner(route)!==owner))errors.push('asset-route-company');}
-    });
+      if(asset.routeId){
+        if(count>0){let users=routeUsers.get(asset.routeId);if(!users){users={users:0,stable:0,firstIndex:Infinity,firstMode:''};routeUsers.set(asset.routeId,users);}users.users+=count;if(!transitionalRouteUser(asset))users.stable+=count;if(info.index<users.firstIndex){users.firstIndex=info.index;users.firstMode=assetMode(asset);}}
+        const route=routeById.get(asset.routeId);if(route&&(routeMode(route)!==mode||routeOwner(route)!==owner))errors.push('asset-route-company');
+      }
+    },rowScan);
+    if(!rowScan){const ids=fleetData().idCollisions(s);if(ids.duplicate||ids.missing)duplicateAssetId=true;}
     if(duplicateAssetId)errors.push('asset-id');
-    for(const [routeId,users] of routeUsers){const stable=users.filter(asset=>!transitionalRouteUser(asset)),type=routeMode(routeById.get(routeId))||assetMode(users[0]),capacity=routeCapacity(type);if(stable.length>capacity)errors.push('asset-route-capacity');}
-    for(const group of routeSignatureGroups.values())if(group.length>1){const stable=group.filter(route=>{const users=routeUsers.get(route.id)||[];return !users.length||users.some(asset=>!transitionalRouteUser(asset));});if(stable.length!==1)errors.push('route-geometry-duplicate');}
+    for(const [routeId,users] of routeUsers){const type=routeMode(routeById.get(routeId))||users.firstMode,capacity=routeCapacity(type);if(users.stable>capacity)errors.push('asset-route-capacity');}
+    for(const group of routeSignatureGroups.values())if(group.length>1){const stable=group.filter(route=>{const users=routeUsers.get(route.id);return !users||users.stable>0;});if(stable.length!==1)errors.push('route-geometry-duplicate');}
     if(object(s?.routeEndpoints)){if(Object.keys(s.routeEndpoints).length>STATE_LIMITS.routeEndpoints)errors.push('route-endpoint-capacity');for(const [id,endpoint] of Object.entries(s.routeEndpoints))if(!id||!object(endpoint)||endpoint.id!==id||!validPoint(endpoint.coords))errors.push('route-endpoint');}
     else if(s?.routeEndpoints!==undefined)errors.push('route-endpoints-shape');
     if(object(s?.routeCache)){if(Object.keys(s.routeCache).length>STATE_LIMITS.routeCache||serializedBytes(s.routeCache)>STATE_LIMITS.routeCacheBytes)errors.push('route-cache-capacity');for(const [id,entry] of Object.entries(s.routeCache)){if(!id||!object(entry)||entry.route&&(!Array.isArray(entry.route)||entry.route.length<2||entry.route.length>STATE_LIMITS.routePoints||entry.route.some(point=>!validPoint(point))))errors.push('route-cache');}}
@@ -373,7 +388,7 @@
     const bw=s?.businessWorld;if(bw!==undefined){if(!object(bw)||!object(bw.parties)||!object(bw.relationships)||!Number.isInteger(Number(bw.sequence))||Number(bw.sequence)<0)errors.push('business-world-shape');else{const caps={events:STATE_LIMITS.businessWorldEvents,opportunities:STATE_LIMITS.businessWorldOpportunities,sponsorships:STATE_LIMITS.businessWorldSponsorships,campaigns:STATE_LIMITS.businessWorldCampaigns,competitorActivity:STATE_LIMITS.businessWorldCompetitorActivity};for(const [key,limit] of Object.entries(caps)){const rows=bw[key];if(!Array.isArray(rows))errors.push('business-world-'+key+'-shape');else{if(rows.length>limit)errors.push('business-world-'+key+'-capacity');if(duplicateIds(rows,x=>x?.id))errors.push('business-world-'+key+'-id');}}if(Object.keys(bw.parties).length>STATE_LIMITS.businessWorldParties)errors.push('business-world-party-capacity');if(Object.keys(bw.relationships).length>STATE_LIMITS.businessWorldRelationships)errors.push('business-world-relationship-capacity');for(const [id,p] of Object.entries(bw.parties))if(!id||!object(p)||p.id!==id||!String(p.legalName||p.displayName||'').trim()||!Array.isArray(p.roles)||!Array.isArray(p.sectors))errors.push('business-world-party');for(const [id,r] of Object.entries(bw.relationships))if(!id||!object(r)||r.id!==id||!bw.parties[r.partyId]||!String(r.company||'').trim()||!Array.isArray(r.roles))errors.push('business-world-relationship');}}
     let started=metricClock();validateAuthorizationState(s,errors,verificationCache,metric,trust);metric.authorizationMs=Math.max(0,metricClock()-started);
     started=metricClock();validateDocumentProofState(s,errors,verificationCache,metric,trust);metric.documentProofMs=Math.max(0,metricClock()-started);
-    started=metricClock();const companyValidation=globalThis.GH_COMPANY_PLATFORM?.validateState?.(s);metric.companyPlatformMs=Math.max(0,metricClock()-started);if(companyValidation&&!companyValidation.ok)errors.push(...companyValidation.errors.map(error=>`company-platform:${error}`));
+    started=metricClock();const companyValidation=globalThis.GH_COMPANY_PLATFORM?.validateState?.(s,{assetScan:rowScan?'rows':'classes'});metric.companyPlatformMs=Math.max(0,metricClock()-started);if(companyValidation&&!companyValidation.ok)errors.push(...companyValidation.errors.map(error=>`company-platform:${error}`));
     metric.totalMs=Math.max(0,metricClock()-validationStart);metric.errors=new Set(errors).size;metric.otherMs=Math.max(0,metric.totalMs-metric.authorizationMs-metric.documentProofMs-metric.companyPlatformMs);publishValidationMetric(metric);
     return {ok:errors.length===0,errors:[...new Set(errors)]};
   }

@@ -5,7 +5,8 @@
 //  - the close spans several frames with no long task (>50 ms) while it runs, and the day commits;
 //  - a save requested during the close is deferred (nothing is written until it ends), then written with the closed day;
 //  - a player command issued during the close waits for it and then commits;
-//  - pausing or hiding the app mid-close aborts the transaction and restores the state exactly.
+//  - pausing or hiding the app mid-close aborts the transaction and restores the state exactly (everything but the
+//    diagnostics log, which records the pause/hide itself and is never part of a transaction).
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright'),{boot}=require('./helpers/local-dom-app');
 const QTY=120;
@@ -94,19 +95,22 @@ const QTY=120;
         if(how==='hide'){__AUDIT__.setSpeed(0);setHidden(false);}
         await new Promise(resolve=>setTimeout(resolve,400));
         const after=encode(),A=JSON.parse(before),B=JSON.parse(after);
-        // Hiding the app also saves (setHidden -> onPersist) after the abort: saveRevision and the diagnostics log move.
-        const volatile=how==='hide'?['saveRevision','diagnostics']:[];
-        return {seen,stagedAfter,reason,identical:before===after,changed:Object.keys({...A,...B}).filter(k=>JSON.stringify(A[k])!==JSON.stringify(B[k])&&!volatile.includes(k)),
+        // The diagnostics log records the pause/hide (and, timing-dependent, governor samples) outside any transaction.
+        // Hiding the app also saves (setHidden -> onPersist) after the abort, which moves saveRevision.
+        const volatile=how==='hide'?['saveRevision','diagnostics']:['diagnostics'];
+        const types=log=>(log?.events||[]).map(e=>e.type),appended=types(B.diagnostics).slice(types(A.diagnostics).length);
+        const without=(tree,keys)=>JSON.stringify(Object.fromEntries(Object.entries(tree).filter(([k])=>!keys.includes(k))));
+        return {seen,stagedAfter,reason,identical:without(A,volatile)===without(B,volatile),appended,changed:Object.keys({...A,...B}).filter(k=>JSON.stringify(A[k])!==JSON.stringify(B[k])&&!volatile.includes(k)),
           revisionStep:s().saveRevision-revision,day:s().lastFinancialDay,day0:day,sim:s().simSeconds,sim0:sim};
       },how);
       assert.equal(out.seen,true,`${how}: the close must have started`);
       assert.equal(out.stagedAfter,false,`${how}: the staged transaction must be aborted at once`);
       assert.equal(out.reason,how==='pause'?'user-speed-change':'hidden');
-      assert.deepEqual(out.changed,[],`${how}: state restored exactly`);
+      assert.deepEqual(out.changed,[],`${how}: state restored exactly (diagnostics appended: ${JSON.stringify(out.appended)})`);
       assert.equal(out.day,out.day0);assert.equal(out.sim,out.sim0);
-      if(how==='pause')assert.equal(out.identical,true,'pause: byte-for-byte identical');
+      if(how==='pause')assert.equal(out.identical,true,'pause: byte-for-byte identical apart from the diagnostics log');
       else assert(out.revisionStep<=1,`hide: at most the one hide save: ${out.revisionStep}`);
-      console.log(`${how}: aborted (${out.reason}); state restored${how==='pause'?' byte for byte':' (only the hide save moved saveRevision/diagnostics)'}`);
+      console.log(`${how}: aborted (${out.reason}); state restored${how==='pause'?' byte for byte apart from the diagnostics log':' (only the hide save moved saveRevision/diagnostics)'}; diagnostics appended ${JSON.stringify(out.appended)}`);
     }
     assert.deepEqual(errors,[]);
     console.log('BUILD358_STAGED_DAY_BROWSER_PASS');

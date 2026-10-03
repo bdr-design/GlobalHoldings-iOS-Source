@@ -371,6 +371,21 @@
     if(store){const length=store.length;for(let index=0;index<length;index++){if(!STORE.isAlive(store,index))continue;const row={};for(const key of names){const value=STORE.peek(store,index,key);if(value!==undefined)row[key]=isObject(value)?nested(value):value;}fn(row,index);}return;}
     const assets=arrayOf(state)||[];for(let index=0;index<assets.length;index++){const source=assets[index];if(!isObject(source))continue;const row={};for(const key of names)if(source[key]!==undefined)row[key]=isObject(source[key])?nested(source[key]):source[key];fn(row,index);}
   }
+  // Build 358 (million-asset validation): read-only validation over classes of rows (GH_FLEET_STORE.forEachClass) and
+  // an exact duplicate/missing id check (GH_FLEET_STORE.idCollisions). Without a store every asset is its own class.
+  function forEachFieldClasses(state,fields,fn,options={}){
+    const names=Array.isArray(fields)?fields:[],store=storeOf(state);
+    if(store&&typeof STORE.forEachClass==='function')return STORE.forEachClass(store,names,fn,options);
+    const assets=arrayOf(state)||[];let rows=0;
+    for(let index=0;index<assets.length;index++){const source=assets[index];if(!isObject(source))continue;const row={};for(const key of names)if(source[key]!==undefined)row[key]=source[key];rows++;fn(row,1,{index,members:1,forEachMember:cb=>cb(row,index)});}
+    return {classes:rows,singles:0};
+  }
+  function idCollisions(state){
+    const store=storeOf(state);if(store&&typeof STORE.idCollisions==='function')return STORE.idCollisions(store);
+    const seen=new Set();let duplicate=false,missing=false;
+    for(const asset of arrayOf(state)||[]){if(!isObject(asset))continue;const id=asset.id;if(id===undefined){missing=true;continue;}if(seen.has(id))duplicate=true;else seen.add(id);}
+    return {duplicate,missing};
+  }
   function some(state,predicate){const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index)&&predicate(viewAt(state,index),index))return true;return false;}
   function every(state,predicate){const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index)&&!predicate(viewAt(state,index),index))return false;return true;}
   function find(state,predicate){const n=scanLength(state);for(let index=0;index<n;index++){if(!rowAlive(state,index))continue;const view=viewAt(state,index);if(predicate(view,index))return view;}return null;}
@@ -466,7 +481,7 @@
     const store=storeOf(state);if(store)return STORE.removeMany(store,doomed);
     const drop=new Set(doomed),assets=arrayOf(state);invalidateArrayIndex(assets);let write=0;for(let read=0;read<assets.length;read++){if(drop.has(read))continue;if(write!==read)assets[write]=assets[read];write++;}assets.length=write;return drop.size;}
 
-  const API=Object.freeze({VERSION,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
+  const API=Object.freeze({VERSION,forEachFieldClasses,idCollisions,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
     get,has,forEach,forEachFields,some,every,find,filter,count,sum,dailyLeaseCosts,payrollTotals,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
     update,put,add,addMany,remove,removeMany,removeWhere,drafts,draft,commit});
   globalThis.GH_FLEET_DATA=API;

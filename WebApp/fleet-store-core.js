@@ -485,6 +485,101 @@
       fn(row,index);
     }
   }
+  // Build 358 (million-asset validation): validation classes. Live rows without extras that agree on everything the
+  // requested fields read form one class: the presence bits of the requested hot fields, their refs / bools / i32 /
+  // f32 values, the profile and binding groups and, for a pattern field (id, name), the prefix ref and the digit count
+  // of the number. fn(row,count,info) runs once per class with the first member's projection (exactly what
+  // forEachPeek gives that row) and the class size, then once per extreme of the `numeric` fields (count 0): every
+  // numeric field at its class minimum, at its maximum, and (when one occurs) a NaN. Rows whose extras hold a requested
+  // field are visited one by one (count 1). info.forEachMember(cb) visits the class rows with their exact projections (a scan of the class
+  // map; meant for failure paths).
+  // Contract for exactness: a validator's result for a row may depend on a numeric field only through checks of that
+  // field alone that fail on an interval's outside (non-finite, below a bound, above a bound), and on a pattern field
+  // only through its characters' classes and its length (both identical for one prefix and one digit count). Then the
+  // set of results over the representatives equals the set over the rows.
+  function digitCount(n){return n<10?1:n<100?2:n<1e3?3:n<1e4?4:n<1e5?5:n<1e6?6:n<1e7?7:n<1e8?8:n<1e9?9:10;}
+  function projectRow(store,index,plan){
+    const extras=(flagsOf(store,index)&EXTRAS)?store.extras[index]:null,row={};let profile=null,binding=null;
+    for(let k=0;k<plan.length;k++){
+      const step=plan[k],field=step.field;let value;
+      if(extras&&(step.inherited?own(extras,field):field in extras))value=extras[field];
+      else if(step.kind){if(isPresent(store,index,field))value=peekHot(store,index,field,step.kind);}
+      else if(step.profile){if(profile===null)profile=groupObject(store,groupRef(store,index,'profile'));value=profile[field];}
+      else if(step.binding){if(binding===null)binding=groupObject(store,groupRef(store,index,'binding'));value=binding[field];}
+      if(value!==undefined)row[field]=value;
+    }
+    return row;
+  }
+  function forEachClass(store,fields,fn,{numeric=[]}={}){
+    const names=Array.isArray(fields)?fields:[],numericSet=new Set(numeric);
+    const plan=names.map(field=>({field,inherited:field in Object.prototype,kind:HOT_KIND.get(field)||null,profile:PROFILE_SET.has(field),binding:BINDING_SET.has(field)}));
+    let mask=0;const keyed=[],nums=[];
+    for(const step of plan){
+      if(!step.kind)continue;mask=(mask|HOT_BIT[step.field])>>>0;
+      if(step.kind==='f64'&&numericSet.has(step.field))nums.push({field:step.field,slot:O[step.field],bit:HOT_BIT[step.field]});
+      else keyed.push({field:step.field,kind:step.kind,bit:HOT_BIT[step.field],slot:step.kind==='pattern'?PATTERN_SLOTS[step.field]:O[step.field]});
+    }
+    const useProfile=plan.some(step=>!step.kind&&step.profile),useBinding=plan.some(step=>!step.kind&&step.binding);
+    const v=views(store),u8=v.u8,W=v.u32,F=v.f64,V=store.values,EX=store.extras,length=store.length,width=2+keyed.length*2+(useProfile?1:0)+(useBinding?1:0);
+    const classOf=new Int32Array(length).fill(-1),buckets=new Map(),comps=[],first=[],counts=[],key=new Uint32Array(width);
+    // Hot-loop builtins as locals: global lookups are slow where the game runs inside a vm context (Node tests).
+    const imul=Math.imul,larger=Math.max;
+    const nCount=nums.length,mins=[],maxs=[],nans=[],requested=new Set(plan.filter(step=>!step.inherited).map(step=>step.field)),inheritedSteps=plan.filter(step=>step.inherited);
+    const singles=[];
+    for(let index=0;index<length;index++){
+      const flags=u8[index*STRIDE+O.flags];if(!(flags&ALIVE))continue;
+      // Extras only matter when they hold a requested field (purchased assets carry routeSlot:null there, for example).
+      if(flags&EXTRAS){const extras=EX[index];if(extras){let relevant=false;for(const field in extras)if(requested.has(field)){relevant=true;break;}if(!relevant)for(const step of inheritedSteps)if(own(extras,step.field)){relevant=true;break;}if(relevant){singles.push(index);continue;}}}
+      const w=index*WORDS_PER_ROW,present=W[w+O.present]&mask;let at=0;key[at++]=present;
+      for(let k=0;k<keyed.length;k++){
+        const step=keyed[k];let a=0,b=0;
+        if(present&step.bit){
+          if(step.kind==='pattern'){const ref=W[w+O[step.slot[0]]],number=W[w+O[step.slot[1]]],pattern=V[ref];a=ref;b=larger(pattern&&pattern.w||0,digitCount(number));}
+          else if(step.kind==='bool')a=u8[index*STRIDE+step.slot];
+          else if(step.kind==='f64'){const f=index*F64_PER_ROW+step.slot;a=W[f*2];b=W[f*2+1];}
+          else a=W[w+step.slot];
+        }
+        key[at++]=a;key[at++]=b;
+      }
+      if(useProfile)key[at++]=W[w+O.profile];if(useBinding)key[at++]=W[w+O.binding];key[at++]=0;
+      let h=0x811c9dc5;for(let k=0;k<width;k++)h=imul(h^key[k],0x01000193);
+      let list=buckets.get(h),id=-1;
+      if(list)for(const candidate of list){const c=comps[candidate];let same=true;for(let k=0;k<width;k++)if(c[k]!==key[k]){same=false;break;}if(same){id=candidate;break;}}
+      if(id<0){id=comps.length;comps.push(key.slice());first.push(index);counts.push(0);if(list)list.push(id);else buckets.set(h,[id]);for(let k=0;k<nCount;k++){mins.push(Infinity);maxs.push(-Infinity);nans.push(false);}}
+      classOf[index]=id;counts[id]++;
+      for(let k=0;k<nCount;k++){const step=nums[k];if(!(present&step.bit))continue;const x=F[index*F64_PER_ROW+step.slot],slot=id*nCount+k;if(x!==x){nans[slot]=true;continue;}if(x<mins[slot])mins[slot]=x;if(x>maxs[slot])maxs[slot]=x;}
+    }
+    const members=id=>cb=>{for(let index=0;index<length;index++)if(classOf[index]===id)cb(projectRow(store,index,plan),index);};
+    for(let id=0;id<comps.length;id++){
+      const row=projectRow(store,first[id],plan),info={index:first[id],members:counts[id],forEachMember:members(id)};
+      fn(row,counts[id],info);
+      if(!nCount)continue;
+      const variant=pick=>{const out={...row};let changed=false;for(let k=0;k<nCount;k++){const field=nums[k].field;if(!own(row,field))continue;const x=pick(id*nCount+k);if(x===undefined)continue;if(!Object.is(out[field],x)){out[field]=x;changed=true;}}return changed?out:null;};
+      const low=variant(slot=>mins[slot]===Infinity?undefined:mins[slot]),high=variant(slot=>maxs[slot]===-Infinity?undefined:maxs[slot]),nan=variant(slot=>nans[slot]?NaN:undefined);
+      for(const extra of [low,high,nan])if(extra)fn(extra,0,info);
+    }
+    for(const index of singles)fn(projectRow(store,index,plan),1,{index,members:1,forEachMember:cb=>cb(projectRow(store,index,plan),index)});
+    return {classes:comps.length,singles:singles.length};
+  }
+  // Exact duplicate / missing id check over live rows, without building one string per row. A pattern id is
+  // prefix + digits; when the prefix does not end in a digit the trailing digit run is exactly those digits, so the id
+  // is identified by (prefix, number, digit count). Ids with a longer trailing digit run (the prefix then ends in a
+  // digit), ids in extras and non-string ids are compared as values. Both sets are disjoint by construction.
+  function idCollisions(store){
+    const v=views(store),u8=v.u8,W=v.u32,V=store.values,EX=store.extras,length=store.length,groups=new Map(),exact=new Set(),larger=Math.max,digitTail=/\d$/;let missing=false,duplicate=false;
+    const addKey=(prefix,number,digits)=>{let g=groups.get(prefix);if(!g){g={keys:new Float64Array(64),n:0,sorted:true};groups.set(prefix,g);}if(g.n===g.keys.length){const next=new Float64Array(g.keys.length*2);next.set(g.keys);g.keys=next;}const key=number*16+digits;if(g.n&&g.keys[g.n-1]>=key)g.sorted=false;g.keys[g.n++]=key;};
+    const addValue=id=>{if(typeof id==='string'){const m=/^([\s\S]*?)(\d*)$/.exec(id),run=m[2];if(run.length>=1&&run.length<=10){addKey(m[1],Number(run),run.length);return;}}if(exact.has(id))duplicate=true;else exact.add(id);};
+    for(let index=0;index<length&&!duplicate;index++){
+      const flags=u8[index*STRIDE+O.flags];if(!(flags&ALIVE))continue;
+      const extras=(flags&EXTRAS)?EX[index]:null;
+      if(extras&&own(extras,'id')){if(extras.id===undefined)missing=true;else addValue(extras.id);continue;}
+      const w=index*WORDS_PER_ROW;if(!(W[w+O.present]&HOT_BIT.id)){missing=true;continue;}
+      const pattern=V[W[w+O.idPattern]],number=W[w+O.idNumber],prefix=pattern.p,digits=larger(pattern.w||0,digitCount(number));
+      if(digits<=10&&!digitTail.test(prefix))addKey(prefix,number,digits);else addValue(joinPattern(pattern,number));
+    }
+    if(!duplicate)for(const g of groups.values()){const keys=g.keys.subarray(0,g.n);if(!g.sorted)keys.sort();for(let k=1;k<keys.length;k++)if(keys[k]===keys[k-1]){duplicate=true;break;}if(duplicate)break;}
+    return {duplicate,missing};
+  }
   function forEachLive(store,fn){const u8=views(store).u8;for(let index=0;index<store.length;index++)if(u8[index*STRIDE+O.flags]&ALIVE)fn(index);}
   // Immutable, interned profiles are shared by rows from the same purchase
   // batch. Cache their live multiplicities so daily batch-level accounting can
@@ -605,7 +700,7 @@
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
     create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
-    views,slot,setSlot,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
+    views,slot,setSlot,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

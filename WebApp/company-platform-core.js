@@ -281,7 +281,7 @@
     state.companyPlatform={...previous,schema:STATE_SCHEMA,schemaVersion:STATE_SCHEMA_VERSION,components:{...components,registry:1,ownership:1,modules:1},definitionVersions,features};if(dynamic||separated)state.companyPlatform.minimumReaderBuild=Math.max(MINIMUM_DYNAMIC_COMPANY_BUILD,Number(previous.minimumReaderBuild)||0);
     const validation=validateState(state);return {state,changed:original!==JSON.stringify(state),errors:validation.errors,warnings:validation.warnings};
   }
-  function validateState(state){
+  function validateState(state,options={}){
     const errors=[],warnings=[];
     if(!object(state))return {ok:false,errors:['company-platform-root'],warnings};
     if(state.companyPlatform!==undefined&&(!object(state.companyPlatform)||state.companyPlatform.schema!==STATE_SCHEMA||Number(state.companyPlatform.schemaVersion)!==STATE_SCHEMA_VERSION))errors.push('company-platform-schema');
@@ -300,7 +300,12 @@
     const validReference=companyId=>{let ok=referenceChecks.get(companyId);if(ok===undefined){ok=validId(companyId)&&Boolean(registry?.[companyId]||getDefinition(companyId));referenceChecks.set(companyId,ok);}return ok;};
     const validClass=value=>{if(typeof value!=='string')return validDataId(value);let ok=classChecks.get(value);if(ok===undefined){ok=validDataId(value);classChecks.set(value,ok);}return ok;};
     const validateAsset=(asset,context='asset')=>{const companyId=String(asset?.ownerCompanyId||asset?.companyId||ownerForLegacyAssetMode(asset?.assetMode||asset?.type)||'');if(!validReference(companyId))errors.push(`${context}-company-reference:${asset?.id||'unknown'}`);if(asset?.assetClass!==undefined&&!validClass(asset.assetClass))errors.push(`${context}-class:${asset?.id||'unknown'}`);};
-    fleetData().forEachFields(state,['id','ownerCompanyId','companyId','assetMode','type','assetClass'],asset=>validateAsset(asset),{raw:true});
+    // Build 358 (million-asset validation): one check per class of rows with the same owner, mode, type, class and id
+    // pattern (GH_FLEET_DATA.forEachFieldClasses). These checks read only class-level values, so a class either passes
+    // whole or fails for every member; a failing class is then reported member by member, exactly as a per-row scan.
+    const assetFields=['id','ownerCompanyId','companyId','assetMode','type','assetClass'];
+    if(options?.assetScan==='rows'||typeof fleetData().forEachFieldClasses!=='function')fleetData().forEachFields(state,assetFields,asset=>validateAsset(asset),{raw:true});
+    else fleetData().forEachFieldClasses(state,assetFields,(asset,count,info)=>{const before=errors.length;validateAsset(asset);if(errors.length===before||info.members<=1)return;errors.length=before;info.forEachMember(member=>validateAsset(member));});
     for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[])for(const asset of fleetData().isCompactReceipt(delivery)?fleetData().receiptDistinctFields(delivery,['ownerCompanyId','companyId','assetMode','type','assetClass']).map(row=>({...row,id:delivery.id})):Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[])validateAsset(asset,'delivery-asset');
     for(const route of Array.isArray(state.customRoutes)?state.customRoutes:[]){const companyId=String(route?.ownerCompanyId||route?.companyId||route?.company||ownerForLegacyRouteMode(route?.routeMode||route?.type)||''),routeMode=String(route?.routeMode||route?.type||'');if(!validReference(companyId))errors.push(`route-company-reference:${route?.id||'unknown'}`);if(!validDataId(routeMode))errors.push(`route-mode:${route?.id||'unknown'}`);}
     for(const bucket of ['globalBases','customHubs','branches'])for(const facility of Array.isArray(state[bucket])?state[bucket]:[]){const companyId=String(facility?.ownerCompanyId||facility?.companyId||facility?.company||'').trim();if(companyId&&!validReference(companyId))errors.push(`facility-company-reference:${facility?.id||'unknown'}`);}
