@@ -533,6 +533,32 @@ function closeVatPeriod(s,p={}){
  for(const t of companyIds(s)){const b=book(s,t),vat=b.vat||(b.vat={output:0,input:0,creditCarry:0,periodOutputStart:0,periodInputStart:0}),id=`TAX-${t}-${periodKey}`,existing=findFinanceDocument(s,'periods',row=>row.id===id);if(existing){if(Math.abs(num(existing.outputEnd)-num(vat.output))>.01||Math.abs(num(existing.inputEnd)-num(vat.input))>.01)throw new Error(`vat-period-already-closed:${id}`);rows.push(clone(existing));refreshBookTaxPayable(s,t);continue;}const deltaOutput=Math.max(0,num(vat.output)-num(vat.periodOutputStart)),deltaInput=Math.max(0,num(vat.input)-num(vat.periodInputStart)),openingCredit=num(vat.creditCarry),net=deltaOutput-deltaInput-openingCredit,periodTax=Math.max(0,net),closingCredit=Math.max(0,-net),outputEnd=num(vat.output),inputEnd=num(vat.input),fingerprint=JSON.stringify([t,periodKey,deltaOutput,deltaInput,openingCredit,closingCredit,periodTax,outputEnd,inputEnd]);vat.creditCarry=closingCredit;vat.periodOutputStart=outputEnd;vat.periodInputStart=inputEnd;const row={id,company:t,companyName:companyName(s,t),periodKey,period:`الفترة الضريبية ${periodKey}`,outputVAT:deltaOutput,inputVAT:deltaInput,openingCredit,closingCredit,amount:periodTax,outputEnd,inputEnd,dueDay:day+15,status:periodTax>0?'مستحق':'صفر',closeFingerprint:fingerprint,closedAt:now(s)};protectDocument(s,row,'vat-assessment');s.finance.periods.unshift(row);rows.push(row);refreshBookTaxPayable(s,t);}
  reconcile(s);return rows;
 }
+// Build 358: fleet purchases are zero-rated (procurement-core). Purchases saved before carried 15% input VAT, and the
+// credit could exceed months of output VAT on trips, so the tax stayed zero. On load that input VAT is reversed once, per
+// company: purchases after the company's last close from the open period, earlier ones from the credit still carried,
+// never more than either holds (credit already set against output VAT stays). Cash and documents are unchanged; a
+// reclassification journal entry records the amount.
+const FLEET_PURCHASE_NOTE=/^(?:شراء|دفعة إيجار) \d+ × /;
+function zeroRateFleetPurchaseVat(s){
+ const f=s?.finance;if(!f||typeof f!=='object'||f.fleetPurchaseVat==='zero-rated')return null;
+ const books=s.companyFinance&&typeof s.companyFinance==='object'?s.companyFinance:{},lastClose=new Map(),taxed=new Map(),seen=new Set();
+ for(const rows of [f.periods,f.auditArchive?.records?.taxPeriods])for(const row of Array.isArray(rows)?rows:[])if(row?.company&&!row.legacy&&Number.isFinite(Number(row.closedAt)))lastClose.set(row.company,Math.max(lastClose.get(row.company)??-Infinity,Number(row.closedAt)));
+ for(const rows of [f.invoices,f.auditArchive?.records?.invoices])for(const row of Array.isArray(rows)?rows:[]){
+  const tax=Number(row?.tax);if(!row||row.kind!=='مصروف'||!(tax>0)||!FLEET_PURCHASE_NOTE.test(String(row.note||''))||seen.has(row.number))continue;seen.add(row.number);
+  const sum=taxed.get(row.company)||{open:0,closed:0};if(Number(row.at)>(lastClose.get(row.company)??-Infinity))sum.open+=tax;else sum.closed+=tax;taxed.set(row.company,sum);
+ }
+ const adjusted={};
+ for(const [company,sum] of taxed){
+  const b=books[company],vat=b?.vat;if(!vat||typeof vat!=='object')continue;
+  const open=Math.min(sum.open,Math.max(0,num(vat.input)-num(vat.periodInputStart))),closed=Math.min(sum.closed,Math.max(0,num(vat.creditCarry))),amount=open+closed;if(!(amount>0))continue;
+  vat.input=num(vat.input)-open;vat.creditCarry=num(vat.creditCarry)-closed;
+  b.taxAccrued=Math.max(0,(num(vat.output)-num(vat.periodOutputStart))-(num(vat.input)-num(vat.periodInputStart))-num(vat.creditCarry));
+  if(Array.isArray(f.journalEntries)&&Number.isSafeInteger(Number(f.journalSequence))){const sequence=f.journalSequence=Number(f.journalSequence)+1;f.journalEntries.unshift({id:`JE-${String(sequence).padStart(8,'0')}`,company,description:'إعادة تصنيف ضريبة مدخلات شراء الأسطول (توريد معفى بنسبة صفر)',lines:[{account:'مصروف تشغيلي',debit:amount,credit:0},{account:'ضريبة مدخلات VAT',debit:0,credit:amount}],sourceRef:`VAT-FLEET-ZERO-${company}`,at:now(s)});}
+  adjusted[company]={open,closed,amount};
+ }
+ f.fleetPurchaseVat='zero-rated';if(Object.keys(adjusted).length)f.fleetPurchaseVatAdjustment={at:now(s),companies:adjusted};
+ return adjusted;
+}
 function execute(ctx,cmd,p={},meta={}){
  const s=ctx.state||ctx,previousMeta=activeExecutionMeta,previousEnsureTarget=activeEnsureTarget,previousEnsureComplete=activeEnsureComplete;
  activeExecutionMeta={...meta,name:cmd};activeEnsureTarget=s;activeEnsureComplete=false;
@@ -583,5 +609,5 @@ function execute(ctx,cmd,p={},meta={}){
   }
  }finally{activeExecutionMeta=previousMeta;activeEnsureTarget=previousEnsureTarget;activeEnsureComplete=previousEnsureComplete;}
 }
-const API={VERSION,COMPANY_METRIC_KEYSPACE:'company-instance-id/v1',annualPerformance,TYPES,companyIds,supportsCompany,requireCompany,companyMetricMap,collectionProfile,ensure,makeBook,book,operating,total,budget,remaining,lineRemaining,lineFor,canSpend,consumeBudget,reserveBudget,consumeReserved,releaseReserved,reconcile,journal,invoice,issueInvoice,payByCheque,performance,monthlyStatement,calendarMonthForDay,centralTreasuryPolicy,intercompanyLoanSnapshot,closeVatPeriod,withCollectionBatch,execute};globalThis.GH_FINANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('finance',API);if(globalThis.window&&window!==globalThis)window.GH_FINANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+const API={VERSION,zeroRateFleetPurchaseVat,FLEET_PURCHASE_NOTE,COMPANY_METRIC_KEYSPACE:'company-instance-id/v1',annualPerformance,TYPES,companyIds,supportsCompany,requireCompany,companyMetricMap,collectionProfile,ensure,makeBook,book,operating,total,budget,remaining,lineRemaining,lineFor,canSpend,consumeBudget,reserveBudget,consumeReserved,releaseReserved,reconcile,journal,invoice,issueInvoice,payByCheque,performance,monthlyStatement,calendarMonthForDay,centralTreasuryPolicy,intercompanyLoanSnapshot,closeVatPeriod,withCollectionBatch,execute};globalThis.GH_FINANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('finance',API);if(globalThis.window&&window!==globalThis)window.GH_FINANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

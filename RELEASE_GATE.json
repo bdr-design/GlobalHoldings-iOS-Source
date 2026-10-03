@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "source_tree_sha256": "0e2e1a5fe56689f789c351f1d46b10cd740935ac92e5ecbaeb234f806c86c3af",
+  "source_tree_sha256": "cd5fbd00927fc484b299ca50596e9f4cf7c18748e2e93aec48d9a76858548e7e",
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
@@ -40,7 +40,8 @@
     "build358_id_lists": "LOCAL_PASS; crew contracts, hiring log and receipts keep 64+ asset ids as canonical runs in live state (GH_FLEET_DATA.idLists), validated in Save Schema and read by migration",
     "build358_native_record_ceiling": "LOCAL_PASS; nativeFleetRecordLimit 1,000,000; physical iPhone profile pending",
     "build358_route_capacity": "LOCAL_PASS; routes carry route.fleetCapacity (up to 8,192) beyond the base 24/24/64 departure slots; bulk air/sea dispatch raises it when a fleet outgrows 240 routes; 12,000 aircraft dispatched through the native save path in 7.4 s and fly; 6,000-aircraft dispatch 82 s -> 5 s (id-index authorization, one route per batch, cached route geometry); road (240 x 64 trucks) unchanged",
-    "build358_player_requests": "LOCAL_PASS; 3,000 per purchase in every company and 3,000 per asset base (migrated on load); facility directory finds Arabic city names and ranks exact codes and main sites first; bulk payables (pay all by transfer, issue all cheques, cash all cheques) in one durable command each"
+    "build358_player_requests": "LOCAL_PASS; 3,000 per purchase in every company and 3,000 per asset base (migrated on load); facility directory finds Arabic city names and ranks exact codes and main sites first; bulk payables (pay all by transfer, issue all cheques, cash all cheques) in one durable command each",
+    "build358_fleet_purchase_vat": "LOCAL_PASS; aircraft, ship and truck purchases are zero-rated (as Mobility vehicles and asset sales were), so trip VAT accrues and comes due at the month close; older saves have the fleet-purchase input VAT reversed once on load (open period, then carried credit, never more than held; cash unchanged)"
   },
   "latest_direct_source_ci": {
     "run_id": 36956423617,
@@ -75,7 +76,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "claude/vibrant-planck-irbtw6",
     "based_on": "build357-wip@38b21bc",
-    "source_tree_sha256": "0e2e1a5fe56689f789c351f1d46b10cd740935ac92e5ecbaeb234f806c86c3af",
+    "source_tree_sha256": "cd5fbd00927fc484b299ca50596e9f4cf7c18748e2e93aec48d9a76858548e7e",
     "working_tree_clean": null
   },
   "point": "Build 358: air/sea dispatch fix, row-level simulation snapshots (no per-slice full-state copy), 3,000-aircraft airports with compact delivery receipts; RELEASE_GATE remains closed pending CI, physical iPhone profiling and owner approval."

@@ -246,6 +246,8 @@
     s.customRoutes=Array.isArray(s.customRoutes)?s.customRoutes:[];for(const route of s.customRoutes)if(object(route)){if(!route.routeMode&&route.type)route.routeMode=route.type;if(!route.ownerCompanyId){const owner=route.companyId||route.company||globalThis.GH_COMPANY_PLATFORM?.ownerForLegacyRouteMode?.(route.routeMode);if(owner)route.ownerCompanyId=owner;}}
     s.routeEndpoints=object(s.routeEndpoints)?s.routeEndpoints:{};s.routeCache=object(s.routeCache)?s.routeCache:{};migrationTrim(s);
     globalThis.GH_FACILITY_CORE?.migrateAssetCapacity?.(s);
+    // Build 358: fleet purchases are zero-rated; reverse the input VAT older saves carried for them (once, see finance-core).
+    if(object(s.finance)&&object(s.companyFinance))globalThis.GH_FINANCE_CORE?.zeroRateFleetPurchaseVat?.(s);
     // Build 358: delivered receipts saved with full asset copies are stored compactly (lossless, see fleet-access-core).
     for(const delivery of Array.isArray(s.realism?.procurement?.deliveries)?s.realism.procurement.deliveries:[])fleetData().compactReceipt(delivery);
     return s;
