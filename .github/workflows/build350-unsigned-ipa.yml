@@ -294,3 +294,15 @@ jobs:
             .ci-output/test-ipa-verification.json
           if-no-files-found: error
           retention-days: 30
+
+      # The artifact above downloads as a ZIP that wraps the IPA, which iPhone signing apps reject as an invalid archive.
+      # This one is the IPA file itself (upload-artifact v7, archive: false; the artifact takes the file's name).
+      - name: Upload the unsigned Build 358 test IPA as a single file
+        if: success()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          path: .ci-output/GlobalHoldings_BUILD358_unsigned_TEST.ipa
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
