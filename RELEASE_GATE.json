@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "source_tree_sha256": "2dba796d7eef8f5c455ee2a0ecf72e25ab5dec8085e2a2b54d82ff43b40c3a41",
+  "source_tree_sha256": "0e2e1a5fe56689f789c351f1d46b10cd740935ac92e5ecbaeb234f806c86c3af",
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
@@ -10,7 +10,8 @@
     "Native fleet persistence admits purchases up to 1,000,000 records (fleet records in 4 MiB native vault chunks outside the save JSON; the browser localStorage save keeps 6,000). Measured only in desktop Chromium with the full app at 1,000,000 assets: 150 s of play at 600x with 5 frames over 100 ms (longest 0.45 s), staged daily close 2.7 s with a 174 ms longest task, warm save 83 ms (0.73 MB JSON), purchase 0.28 s, boot 2.8 s.",
     "With a fully moving 1,000,000-asset fleet, saves (changed-chunk checksums and Save Schema class validation), command integrity checks and the periodic health check still rescan every chunk for classes that read engine fields: 100-280 ms tasks on desktop, unmeasured on iPhone. Incremental validation of engine fields is not implemented.",
     "Manual advance consults adapter.getManualSliceLimit and estimates a slice from a 1,500-event window, with 60-second and 3,600-second bounds; actual per-frame timing still needs iPhone profiling.",
-    "The incremental spatial index and device-scale map/list rendering profile remain unverified."
+    "The incremental spatial index and device-scale map/list rendering profile remain unverified.",
+    "Road fleets remain capped at 240 routes x 64 trucks (15,360) for bulk dispatch; air and sea routes scale their capacity, road planning (external road provider) does not yet."
   ],
   "phase_status": {
     "build357_fleet_store_and_access": "DIRECT_SOURCE_CI_143_OF_143_PASS",
@@ -37,7 +38,9 @@
     "build358_purchase_scale": "LOCAL_PASS; a purchase no longer walks the fleet: crew totals per staffing class, base occupancy per class, delivered assets and duplicate ids through the id index; a 1,000-asset purchase visits 0 assets through fleet walks at 4,010 and at 45,010 assets (was 10,030 and 133,030)",
     "build358_million_asset_paths": "LOCAL_PASS; per-chunk class tables (static versions survive a moving fleet), row scans without views, fused staged fleet day pass, map aggregation above 20,000 assets, route center and asset panel from classes and stopping row passes, boot repairs as row scans, caches kept across value GC; realism, engine and boot repairs equal to the previous code; 1,000,000 assets in desktop Chromium: play 392 -> 5 frames over 100 ms in 150 s, daily close 19.7 s -> 2.7 s, purchase 8.1 -> 0.28 s, routes panel 39.4 -> 0.53 s, boot 58.4 -> 2.8 s",
     "build358_id_lists": "LOCAL_PASS; crew contracts, hiring log and receipts keep 64+ asset ids as canonical runs in live state (GH_FLEET_DATA.idLists), validated in Save Schema and read by migration",
-    "build358_native_record_ceiling": "LOCAL_PASS; nativeFleetRecordLimit 1,000,000; physical iPhone profile pending"
+    "build358_native_record_ceiling": "LOCAL_PASS; nativeFleetRecordLimit 1,000,000; physical iPhone profile pending",
+    "build358_route_capacity": "LOCAL_PASS; routes carry route.fleetCapacity (up to 8,192) beyond the base 24/24/64 departure slots; bulk air/sea dispatch raises it when a fleet outgrows 240 routes; 12,000 aircraft dispatched through the native save path in 7.4 s and fly; 6,000-aircraft dispatch 82 s -> 5 s (id-index authorization, one route per batch, cached route geometry); road (240 x 64 trucks) unchanged",
+    "build358_player_requests": "LOCAL_PASS; 3,000 per purchase in every company and 3,000 per asset base (migrated on load); facility directory finds Arabic city names and ranks exact codes and main sites first; bulk payables (pay all by transfer, issue all cheques, cash all cheques) in one durable command each"
   },
   "latest_direct_source_ci": {
     "run_id": 36956423617,
@@ -72,7 +75,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "claude/vibrant-planck-irbtw6",
     "based_on": "build357-wip@38b21bc",
-    "source_tree_sha256": "2dba796d7eef8f5c455ee2a0ecf72e25ab5dec8085e2a2b54d82ff43b40c3a41",
+    "source_tree_sha256": "0e2e1a5fe56689f789c351f1d46b10cd740935ac92e5ecbaeb234f806c86c3af",
     "working_tree_clean": null
   },
   "point": "Build 358: air/sea dispatch fix, row-level simulation snapshots (no per-slice full-state copy), 3,000-aircraft airports with compact delivery receipts; RELEASE_GATE remains closed pending CI, physical iPhone profiling and owner approval."

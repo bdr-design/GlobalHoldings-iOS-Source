@@ -44,7 +44,10 @@
   const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
   const isObject=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
   const modeOf=asset=>String(asset?.assetMode||asset?.type||'').trim();
-  function slotDelay(routeSlot,mode){const slot=Math.max(0,Math.floor(Number(routeSlot)||0));return slot*(DEPARTURE_INTERVAL_SECONDS[mode]||0);}
+  // Departure slots per route (GH_FLEET_CORE.ROUTE_FLEET_CAPACITY): a route that carries more assets (Build 358
+  // route.fleetCapacity) reuses them, so a slot's delay stays within one cycle of the base slots.
+  const DEPARTURE_SLOTS=Object.freeze({air:24,sea:24,road:64});
+  function slotDelay(routeSlot,mode){const slot=Math.max(0,Math.floor(Number(routeSlot)||0));return slot%(DEPARTURE_SLOTS[mode]||1)*(DEPARTURE_INTERVAL_SECONDS[mode]||0);}
   function hotInExtras(extras){for(const key in extras)if(HOT_SET.has(key))return true;return false;}
   function same(a,b){return Object.is(a,b)||(a&&b&&typeof a==='object'&&typeof b==='object'&&JSON.stringify(a)===JSON.stringify(b));}
 

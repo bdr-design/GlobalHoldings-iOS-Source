@@ -1,9 +1,11 @@
 (()=>{'use strict';
 const VERSION='3.0.0',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
-// Build 358: an airport base takes 3,000 new aircraft (was 300). Saved airports keep the capacity they bought above the
-// old default: migrateAssetCapacity() lifts them to 3,000 plus their upgrades on load.
-const DEFAULT_ASSET_CAPACITY=Object.freeze({'airport-base':3000,'port-base':120,logistics:140,depot:80,'mobility-center':120});
-const LEGACY_AIRPORT_ASSET_CAPACITY=300;
+// Build 358: every asset base takes 3,000 new assets, so one purchase (3,000 in every company) fits one base. Was:
+// airports 300, ports 120, logistics hubs 140, depots 80, mobility centers 120. Saved bases keep the capacity they
+// bought above their old default: migrateAssetCapacity() lifts them to 3,000 plus their upgrades on load.
+const DEFAULT_ASSET_CAPACITY=Object.freeze({'airport-base':3000,'port-base':3000,logistics:3000,depot:3000,'mobility-center':3000});
+const LEGACY_ASSET_CAPACITY=Object.freeze({'airport-base':300,'port-base':120,logistics:140,depot:80,'mobility-center':120});
+const CAPACITY_UNIT=/^(\D*?)\d[\d,]*(?=\s*(?:طائرة|سفينة|شاحنة|سيارة))/;
 const ASSET_FACILITY_KINDS=Object.freeze({air:Object.freeze(['airport-base']),sea:Object.freeze(['port-base']),road:Object.freeze(['depot','logistics'])});
 const platform=()=>globalThis.GH_COMPANY_PLATFORM||null;
   const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
@@ -12,15 +14,17 @@ function ensure(s){s.globalBases=Array.isArray(s.globalBases)?s.globalBases:[];s
 function all(s){ensure(s);return [...s.globalBases,...s.customHubs];}
 function find(s,id){return all(s).find(x=>x.id===id)||null;}
 function model(s,f){ensure(s);if(!f)return null;const cap=Number(f.bays||f.capacityMW||parseFloat(f.capacity)||24)||24;const m=s.advanced.facilities[f.id]||(s.advanced.facilities[f.id]={});m.level=Math.max(1,Number(m.level)||1);m.staff=num(m.staff);m.capacity=Math.max(1,Number(m.capacity)||cap);const ownedAssetCapacity=assetCapacity(f);if(ownedAssetCapacity>0)m.assetCapacity=ownedAssetCapacity;m.utilization=Math.max(0,Math.min(100,Number(m.utilization)||0));m.serviceLevel=Math.max(0,Math.min(100,Number(m.serviceLevel)||88));m.maintenance=Math.max(0,Math.min(100,Number(m.maintenance)||88));m.safety=Math.max(0,Math.min(100,Number(m.safety)||91));m.compliance=Math.max(0,Math.min(100,Number(m.compliance)||86));m.security=Math.max(0,Math.min(100,Number(m.security)||84));m.budget=num(m.budget);m.history=Array.isArray(m.history)?m.history:[];m.tasks=Array.isArray(m.tasks)?m.tasks:[];m.slaContracts=Array.isArray(m.slaContracts)?m.slaContracts:[];m.departments=m.departments&&typeof m.departments==='object'?m.departments:{operations:70,maintenance:70,security:70,finance:70};m.manager=m.manager||f.manager||'مدير المنشأة';return m;}
-// Idempotent: an airport below the current default was sized by the old model (300 plus its upgrades).
+// Idempotent: a base below the current default was sized by the old model (its kind's old default plus upgrades).
+// A mobility center counts its vehicles against `bays` as well.
 function migrateAssetCapacity(s){
- let changed=0;const target=DEFAULT_ASSET_CAPACITY['airport-base'];
+ let changed=0;
  for(const f of [...(Array.isArray(s?.globalBases)?s.globalBases:[]),...(Array.isArray(s?.customHubs)?s.customHubs:[])]){
-  if(!f||typeof f!=='object'||f.kind!=='airport-base')continue;
-  const explicit=Math.floor(Number(f.deliveryCapacity??f.assetCapacity)),current=Number.isFinite(explicit)&&explicit>0?explicit:LEGACY_AIRPORT_ASSET_CAPACITY;
+  if(!f||typeof f!=='object'||!Object.prototype.hasOwnProperty.call(LEGACY_ASSET_CAPACITY,f.kind))continue;
+  const target=DEFAULT_ASSET_CAPACITY[f.kind],legacy=LEGACY_ASSET_CAPACITY[f.kind],stored=f.kind==='mobility-center'?Math.max(Number(f.deliveryCapacity??f.assetCapacity)||0,Number(f.bays)||0):Number(f.deliveryCapacity??f.assetCapacity);
+  const explicit=Math.floor(stored),current=Number.isFinite(explicit)&&explicit>0?explicit:legacy;
   if(current>=target)continue;
-  const next=target+Math.max(0,current-LEGACY_AIRPORT_ASSET_CAPACITY);f.deliveryCapacity=next;if(f.assetCapacity!=null)f.assetCapacity=next;
-  if(typeof f.capacity==='string')f.capacity=f.capacity.replace(/^\d[\d,]*(?=\s*طائرة)/,next.toLocaleString('en-US'));
+  const next=target+Math.max(0,current-legacy);f.deliveryCapacity=next;if(f.assetCapacity!=null)f.assetCapacity=next;if(f.kind==='mobility-center')f.bays=next;
+  if(typeof f.capacity==='string')f.capacity=f.capacity.replace(CAPACITY_UNIT,(_,prefix)=>`${prefix}${next.toLocaleString('en-US')}`);
   const m=s.advanced?.facilities?.[f.id];if(m&&typeof m==='object'&&Number(m.assetCapacity)>0)m.assetCapacity=next;
   changed++;
  }

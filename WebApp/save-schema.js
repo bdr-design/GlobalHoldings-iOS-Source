@@ -128,7 +128,12 @@
     return changed;
   }
   function transitionalRouteUser(asset){return asset?.phase==='moving'&&asset?.releaseExclusiveRouteOnArrival===true;}
-  function routeCapacity(type){return ROUTE_FLEET_CAPACITY[type]||1;}
+  // Build 358: a route may carry more than its mode's base capacity when its record says so (GH_FLEET_CORE.routeCapacity).
+  const ROUTE_MAX_FLEET_CAPACITY=Object.freeze({air:8192,sea:8192,road:8192});
+  function routeCapacity(routeOrType,fallbackType=''){
+    const type=typeof routeOrType==='string'?routeOrType:(routeMode(routeOrType)||fallbackType),base=ROUTE_FLEET_CAPACITY[type]||1,stored=routeOrType&&typeof routeOrType==='object'?routeOrType.fleetCapacity:undefined;
+    return Number.isSafeInteger(stored)&&stored>base?Math.min(stored,ROUTE_MAX_FLEET_CAPACITY[type]||base):base;
+  }
   function clearLegacyRouteAssignment(asset){asset.routeId=null;asset.routeSignature=null;asset.routeSlot=null;asset.departureScheduled=false;delete asset.departureScheduledAt;asset.releaseExclusiveRouteOnArrival=false;asset.phase='idle';asset.progress=0;asset.dwellRemaining=0;asset.reverse=false;}
   function migrationTrim(state){
     const cp=state.controlPlane;if(object(cp)){
@@ -179,7 +184,7 @@
     for(const [routeId,rows] of assignmentGroups)if(rows.length>1){
       const type=routeMode(routeById.get(routeId))||assetMode(rows[0]);
       if(['air','sea','road'].includes(type)){
-        const capacity=routeCapacity(type),used=new Set(),ordered=[...rows].sort((a,b)=>Number(b.phase==='moving')-Number(a.phase==='moving')||(Number.isInteger(a.routeSlot)?a.routeSlot:capacity)-(Number.isInteger(b.routeSlot)?b.routeSlot:capacity)||String(a.id).localeCompare(String(b.id)));
+        const capacity=routeCapacity(routeById.get(routeId)||type,type),used=new Set(),ordered=[...rows].sort((a,b)=>Number(b.phase==='moving')-Number(a.phase==='moving')||(Number.isInteger(a.routeSlot)?a.routeSlot:capacity)-(Number.isInteger(b.routeSlot)?b.routeSlot:capacity)||String(a.id).localeCompare(String(b.id)));
         for(const asset of ordered){
           if(assetMode(asset)!==type){clearLegacyRouteAssignment(asset);changed=true;continue;}
           let slot=Number.isInteger(asset.routeSlot)&&asset.routeSlot>=0&&asset.routeSlot<capacity&&!used.has(asset.routeSlot)?asset.routeSlot:0;while(slot<capacity&&used.has(slot))slot++;
@@ -196,7 +201,7 @@
     for(const routes of signatureGroups.values())if(routes.length>1){
       const ids=new Set(routes.map(route=>route.id)),users=assets.filter(asset=>ids.has(asset.routeId)),type=routeMode(routes[0]);
       if(['air','sea','road'].includes(type)){
-        const capacity=routeCapacity(type),canonical=routes.slice().sort((a,b)=>users.filter(asset=>asset.routeId===b.id).length-users.filter(asset=>asset.routeId===a.id).length||String(a.id).localeCompare(String(b.id)))[0],accepted=[],retained=new Set([canonical.id]);
+        const canonical=routes.slice().sort((a,b)=>users.filter(asset=>asset.routeId===b.id).length-users.filter(asset=>asset.routeId===a.id).length||String(a.id).localeCompare(String(b.id)))[0],capacity=routeCapacity(canonical,type),accepted=[],retained=new Set([canonical.id]);
         for(const asset of users.slice().sort((a,b)=>Number(b.phase==='moving')-Number(a.phase==='moving')||Number(b.routeId===canonical.id)-Number(a.routeId===canonical.id)||String(a.id).localeCompare(String(b.id)))){
           const compatible=assetMode(asset)===type&&routeOwner(canonical)===(assetOwner(asset)||globalThis.GH_COMPANY_PLATFORM?.ownerForLegacyAssetMode?.(assetMode(asset))||assetMode(asset))&&[canonical.fromFacility,canonical.toFacility].includes(asset.baseFacility);
           if(compatible&&accepted.length<capacity){asset.routeId=canonical.id;asset.routeSignature=routeSignature(canonical);asset.routeSlot=accepted.length;if(asset.releaseExclusiveRouteOnArrival===true)asset.releaseExclusiveRouteOnArrival=false;accepted.push(asset);changed=true;continue;}
@@ -342,7 +347,7 @@
     const routes=Array.isArray(s?.customRoutes)?s.customRoutes:[],routeIds=new Set(BUILTIN_ROUTES),routeById=new Map(),routeSignatureGroups=new Map();
     if(routes.length>STATE_LIMITS.customRoutes)errors.push('route-capacity');
     for(const route of routes){
-      const mode=routeMode(route),owner=routeOwner(route);if(!object(route)||!route.id||!knownRouteMode(mode,s,owner)||!dataId(owner)||!route.fromFacility||!route.toFacility||route.fromFacility===route.toFacility)errors.push('route-shape');
+      const mode=routeMode(route),owner=routeOwner(route);if(!object(route)||!route.id||!knownRouteMode(mode,s,owner)||!dataId(owner)||!route.fromFacility||!route.toFacility||route.fromFacility===route.toFacility)errors.push('route-shape');if(object(route)&&route.fleetCapacity!==undefined&&!(Number.isSafeInteger(route.fleetCapacity)&&route.fleetCapacity>=1&&route.fleetCapacity<=8192))errors.push('route-shape');
       if(!Array.isArray(route?.route)||route.route.length<2||route.route.length>STATE_LIMITS.routePoints||route.route.some(point=>!validPoint(point))||serializedBytes(route)>STATE_LIMITS.routeBytes)errors.push('route-geometry');
       const signature=routeSignature(route);if(!signature)errors.push('route-geometry');else{const rows=routeSignatureGroups.get(signature)||[];rows.push(route);routeSignatureGroups.set(signature,rows);}
       if(route?.id){routeIds.add(route.id);if(!routeById.has(route.id))routeById.set(route.id,route);}
@@ -365,7 +370,7 @@
     },rowScan);
     if(!rowScan){const ids=fleetData().idCollisions(s);if(ids.duplicate||ids.missing)duplicateAssetId=true;}
     if(duplicateAssetId)errors.push('asset-id');
-    for(const [routeId,users] of routeUsers){const type=routeMode(routeById.get(routeId))||users.firstMode,capacity=routeCapacity(type);if(users.stable>capacity)errors.push('asset-route-capacity');}
+    for(const [routeId,users] of routeUsers){const route=routeById.get(routeId),type=routeMode(route)||users.firstMode,capacity=routeCapacity(route||type,type);if(users.stable>capacity)errors.push('asset-route-capacity');}
     for(const group of routeSignatureGroups.values())if(group.length>1){const stable=group.filter(route=>{const users=routeUsers.get(route.id);return !users||users.stable>0;});if(stable.length!==1)errors.push('route-geometry-duplicate');}
     if(object(s?.routeEndpoints)){if(Object.keys(s.routeEndpoints).length>STATE_LIMITS.routeEndpoints)errors.push('route-endpoint-capacity');for(const [id,endpoint] of Object.entries(s.routeEndpoints))if(!id||!object(endpoint)||endpoint.id!==id||!validPoint(endpoint.coords))errors.push('route-endpoint');}
     else if(s?.routeEndpoints!==undefined)errors.push('route-endpoints-shape');

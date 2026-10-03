@@ -3,7 +3,8 @@
   const VERSION='3.0.0';
   const ROUTE_TYPES=Object.freeze(['air','sea','road']);
   const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
-  const LIMITS=Object.freeze({routes:240,endpoints:360,cacheEntries:160,pointsPerRoute:2048,routeBytes:256*1024,cacheBytes:512*1024});
+  // fleetCapacity: the most assets one route may carry (Build 358; GH_FLEET_CORE.routeCapacity reads it per mode).
+  const LIMITS=Object.freeze({routes:240,endpoints:360,cacheEntries:160,pointsPerRoute:2048,routeBytes:256*1024,cacheBytes:512*1024,fleetCapacity:8192});
   const NEAR_DUPLICATE=Object.freeze({sampleCount:33,endpointKm:2.5,meanKm:1.25,maxKm:3,lengthRatio:1.04});
   const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
   const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -68,6 +69,7 @@
     if(Array.isArray(points)&&points.length>=2&&points.every(validPoint)&&routeLength(points)<0.05)errors.push('route-length');
     try{if(bytes(route)>LIMITS.routeBytes)errors.push('route-size');}catch(_error){errors.push('route-serialization');}
     for(const key of ['effectiveSpeedKmh','distanceKm','tripSeconds','dwellHours'])if(route[key]!==undefined&&(!Number.isFinite(Number(route[key]))||Number(route[key])<0))errors.push(`route-${key}`);
+    if(route.fleetCapacity!==undefined&&!(Number.isSafeInteger(route.fleetCapacity)&&route.fleetCapacity>=1&&route.fleetCapacity<=LIMITS.fleetCapacity))errors.push('route-fleetCapacity');
     return {ok:errors.length===0,errors:[...new Set(errors)]};
   }
   function canonicalRoute(route,state=null){
@@ -89,12 +91,23 @@
     return state;
   }
   function bumpRoutesRevision(state){const current=Math.max(0,Math.floor(Number(state.routesRevision)||0));if(current>=Number.MAX_SAFE_INTEGER)throw new Error('route-revision-exhausted');state.routesRevision=current+1;return state.routesRevision;}
+  // Build 358 (million-asset): geometry results are kept per points array (route points are never edited in place:
+  // routes are canonicalized into new arrays), so duplicate checks against every registered route stop recomputing
+  // the same hashes and samples for each new route.
+  const geometrySignatures=new WeakMap(),geometrySamples=new WeakMap(),geometryLengths=new WeakMap();
+  function geometrySignature(rawPoints){
+    if(geometrySignatures.has(rawPoints))return geometrySignatures.get(rawPoints);
+    const points=rawPoints.filter(validPoint).map(point=>`${Number(point[0]).toFixed(5)},${Number(point[1]).toFixed(5)}`);let out='';
+    if(points.length>=2){
+      const forward=points.join(';'),reverse=[...points].reverse().join(';'),canonical=forward<reverse?forward:reverse;
+      const hash=(value,seed)=>{let result=seed>>>0;for(let i=0;i<value.length;i++){result^=value.charCodeAt(i);result=Math.imul(result,16777619)>>>0;}return result.toString(36);};
+      out=`${points.length}:${hash(canonical,2166136261)}:${hash(canonical,2246822519)}`;
+    }
+    geometrySignatures.set(rawPoints,out);return out;
+  }
   function signature(route){
-    const points=(Array.isArray(route?.route)?route.route:[]).filter(validPoint).map(point=>`${Number(point[0]).toFixed(5)},${Number(point[1]).toFixed(5)}`);
-    if(points.length<2)return '';
-    const forward=points.join(';'),reverse=[...points].reverse().join(';'),canonical=forward<reverse?forward:reverse;
-    const hash=(value,seed)=>{let result=seed>>>0;for(let i=0;i<value.length;i++){result^=value.charCodeAt(i);result=Math.imul(result,16777619)>>>0;}return result.toString(36);};
-    return `${routeOwnerCompanyId(route)}:${routeMode(route)}:${points.length}:${hash(canonical,2166136261)}:${hash(canonical,2246822519)}`;
+    const geometry=Array.isArray(route?.route)?geometrySignature(route.route):'';
+    return geometry?`${routeOwnerCompanyId(route)}:${routeMode(route)}:${geometry}`:'';
   }
   function sample(points,count=NEAR_DUPLICATE.sampleCount){
     if(!Array.isArray(points)||points.length<2||points.some(point=>!validPoint(point)))return [];
@@ -109,10 +122,12 @@
     }
     return output;
   }
+  const cachedSample=points=>{if(!Array.isArray(points))return sample(points);let out=geometrySamples.get(points);if(!out){out=sample(points);geometrySamples.set(points,out);}return out;};
+  const cachedLength=points=>{let out=geometryLengths.get(points);if(out===undefined){out=routeLength(points);geometryLengths.set(points,out);}return out;};
   function corridorMetrics(first,second){
     if(!first||!second||routeMode(first)!==routeMode(second)||routeOwnerCompanyId(first)!==routeOwnerCompanyId(second))return {comparable:false,duplicate:false};
-    const a=sample(first.route),b=sample(second.route);if(!a.length||!b.length)return {comparable:false,duplicate:false};
-    const lengthA=routeLength(first.route),lengthB=routeLength(second.route),ratio=Math.max(lengthA,lengthB)/Math.max(.001,Math.min(lengthA,lengthB));
+    const a=cachedSample(first.route),b=cachedSample(second.route);if(!a.length||!b.length)return {comparable:false,duplicate:false};
+    const lengthA=cachedLength(first.route),lengthB=cachedLength(second.route),ratio=Math.max(lengthA,lengthB)/Math.max(.001,Math.min(lengthA,lengthB));
     const score=right=>{const distances=a.map((point,index)=>haversine(point,right[index])),endpoint=Math.max(distances[0],distances[distances.length-1]),mean=distances.reduce((sum,value)=>sum+value,0)/distances.length,max=Math.max(...distances);return {endpoint,mean,max};};
     const forward=score(b),reverse=score([...b].reverse()),best=(forward.mean+forward.endpoint)<=(reverse.mean+reverse.endpoint)?forward:reverse;
     return {comparable:true,lengthA,lengthB,lengthRatio:ratio,...best,duplicate:ratio<=NEAR_DUPLICATE.lengthRatio&&best.endpoint<=NEAR_DUPLICATE.endpointKm&&best.mean<=NEAR_DUPLICATE.meanKm&&best.max<=NEAR_DUPLICATE.maxKm};
@@ -142,9 +157,14 @@
     const next={...state.routeCache,[id]:entry};if(bytes(next)>LIMITS.cacheBytes)throw new Error('route-cache-size-capacity');
     state.routeCache[id]=entry;return entry;
   }
+  // Build 358 (million-asset): the bases and routes assets use are read once from their columns (cached per chunk),
+  // not by walking the fleet per endpoint or per route.
+  const routeIdsInUse=state=>fleetData().distinctRefs(state,'routeId');
   function collectUnusedEndpoints(state){
+    let bases=null;
     for(const [endpointId,endpoint] of Object.entries(state.routeEndpoints)){
-      const stillUsed=state.customRoutes.some(route=>route.fromFacility===endpointId||route.toFacility===endpointId)||fleetData().some(state,asset=>asset.baseFacility===endpointId);
+      if(!endpoint?.routeEndpoint)continue;
+      const stillUsed=state.customRoutes.some(route=>route.fromFacility===endpointId||route.toFacility===endpointId)||(bases||(bases=fleetData().distinctRefs(state,'baseFacility'))).has(endpointId);
       if(endpoint?.routeEndpoint&&!stillUsed)delete state.routeEndpoints[endpointId];
     }
   }
@@ -161,12 +181,12 @@
     }
     if(command==='replace'){
       const replaceId=text(payload.replaceId,80),assetId=text(payload.assetId,100),index=state.customRoutes.findIndex(route=>route.id===replaceId);if(index<0)throw new Error('route-replace-missing');
-      const foreignUse=fleetData().find(state,asset=>asset.routeId===replaceId&&asset.id!==assetId);if(foreignUse)throw new Error('route-replace-in-use');
+      let foreignUse=false;if(routeIdsInUse(state).has(replaceId)){const fleet=fleetData();fleet.scan(state,['id','routeId'],row=>{if(row.routeId===replaceId&&row.id!==assetId){foreignUse=true;return fleet.STOP;}});}if(foreignUse)throw new Error('route-replace-in-use');
       const route=canonicalRoute(payload.route,state),existing=conflict(state.customRoutes,route,{ignoreId:replaceId});if(existing)throw new Error(existing.code);
       state.customRoutes[index]=route;delete state.routeCache[replaceId];collectUnusedEndpoints(state);bumpRoutesRevision(state);return route;
     }
     if(command==='delete'){
-      const id=text(payload.id,80),used=fleetData().some(state,asset=>asset.routeId===id);if(used)throw new Error('route-in-use');
+      const id=text(payload.id,80),used=routeIdsInUse(state).has(id);if(used)throw new Error('route-in-use');
       const before=state.customRoutes.length;state.customRoutes=state.customRoutes.filter(route=>route.id!==id);delete state.routeCache[id];
       collectUnusedEndpoints(state);
       if(before!==state.customRoutes.length)bumpRoutesRevision(state);
@@ -185,6 +205,14 @@
         delete state.routeCache[route.id];removedIds.push(route.id);
       }
       if(removedIds.length){state.customRoutes=kept;bumpRoutesRevision(state);}return {removed:removedIds.length,removedIds,conflicts};
+    }
+    if(command==='set-fleet-capacity'){
+      // Raise (or reset) the most assets one route carries. Lowering it below the route's current users is refused.
+      const id=text(payload.id,80),index=state.customRoutes.findIndex(route=>route.id===id);if(index<0)throw new Error('route-capacity-missing');
+      const capacity=Number(payload.capacity);if(!Number.isSafeInteger(capacity)||capacity<1||capacity>LIMITS.fleetCapacity)throw new Error('route-fleet-capacity-invalid');
+      const minimum=Math.max(0,Math.floor(Number(payload.inUse)||0));if(capacity<minimum)throw new Error('route-fleet-capacity-below-use');
+      const route=state.customRoutes[index];if(route.fleetCapacity===capacity)return route;
+      state.customRoutes[index]={...route,fleetCapacity:capacity};bumpRoutesRevision(state);return state.customRoutes[index];
     }
     if(command==='register-endpoint'){
       const endpoint=validateEndpoint(payload.endpoint),exists=Object.prototype.hasOwnProperty.call(state.routeEndpoints,endpoint.id);

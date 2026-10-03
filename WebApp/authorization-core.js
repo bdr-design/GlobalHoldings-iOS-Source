@@ -86,7 +86,9 @@
     const owner=value=>String(value?.ownerCompanyId||value?.companyId||value?.company||'').trim();
     const assetOwner=value=>owner(value)||String(platform?.ownerForLegacyAssetMode?.(value?.assetMode||value?.type)||'');
     const routeOwner=value=>owner(value)||String(platform?.ownerForLegacyRouteMode?.(value?.routeMode||value?.type)||'');
-    const assetById=id=>(state?fleetData().find(state,row=>String(row?.id)===String(id)):null)||undefined;
+    // Build 358 (million-asset): through the id index, not a pass over the fleet per id (a 6,000-asset batch was
+    // 6,000 passes). Asset ids are strings; a non-string reference is looked up as its text, as the former match did.
+    const assetById=id=>{if(!state||id===undefined||id===null)return undefined;return fleetData().get(state,String(id))||undefined;};
     const routeById=id=>(state?.customRoutes||[]).find(row=>String(row?.id)===String(id));
     const facilityById=id=>[...(state?.globalBases||[]),...(state?.customHubs||[])].find(row=>String(row?.id)===String(id));
     const deliveryById=id=>(state?.realism?.procurement?.deliveries||[]).find(row=>String(row?.id)===String(id));

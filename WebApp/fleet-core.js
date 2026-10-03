@@ -17,6 +17,11 @@
   // large fleets below route/save limits while retaining explicit capacity.
   const ROUTE_FLEET_CAPACITY=Object.freeze({air:24,sea:24,road:64});
   const ROUTE_DEPARTURE_INTERVAL_SECONDS=Object.freeze({air:180,sea:60,road:15});
+  // Build 358 (million-asset): ROUTE_FLEET_CAPACITY is a route's departure slots (slot x interval keeps aircraft
+  // apart) and its capacity unless its record carries more (route.fleetCapacity, at most ROUTE_MAX_FLEET_CAPACITY).
+  // The route registry holds 240 routes, so the base capacity alone stops at 5,760 aircraft; bulk dispatch raises a
+  // route's capacity when a fleet outgrows that. Slots past the base share the base slots' departure times.
+  const ROUTE_MAX_FLEET_CAPACITY=Object.freeze({air:8192,sea:8192,road:8192});
   // Hard capacity protects assignment integrity; automatic dispatch deliberately
   // targets a much lower density so normal fleets spread across the world
   // instead of filling one corridor to its safety ceiling.
@@ -107,11 +112,19 @@
     return globalThis.GH_ROUTE_CORE.signature(route);
   }
   function routeCapacity(routeOrType){
-    const type=typeof routeOrType==='string'?routeOrType:routeMode(routeOrType);
-    return ROUTE_FLEET_CAPACITY[type]||1;
+    const type=typeof routeOrType==='string'?routeOrType:routeMode(routeOrType),base=ROUTE_FLEET_CAPACITY[type]||1;
+    if(!routeOrType||typeof routeOrType!=='object')return base;
+    const stored=routeOrType.fleetCapacity;
+    return Number.isSafeInteger(stored)&&stored>base?Math.min(stored,ROUTE_MAX_FLEET_CAPACITY[type]||base):base;
   }
-  function automaticRouteTargetLoad(type,fleetCount,maxRoutes=Infinity){
-    const hard=routeCapacity(type),count=Math.max(0,Math.floor(Number(fleetCount)||0));
+  // The per-route capacity that `count` assets of a mode need over `routes` routes: the base when they fit, else
+  // the even share, never above the mode's maximum.
+  function requiredRouteCapacity(type,count,routes){
+    const base=ROUTE_FLEET_CAPACITY[type]||1,max=ROUTE_MAX_FLEET_CAPACITY[type]||base,n=Math.max(0,Math.floor(Number(count)||0)),r=Math.max(1,Math.floor(Number(routes)||0));
+    return Math.min(max,Math.max(base,Math.ceil(n/r)));
+  }
+  function automaticRouteTargetLoad(type,fleetCount,maxRoutes=Infinity,hardCapacity=null){
+    const hard=Number.isSafeInteger(hardCapacity)&&hardCapacity>0?hardCapacity:routeCapacity(type),count=Math.max(0,Math.floor(Number(fleetCount)||0));
     if(count<=1)return 1;
     const tiers=AUTOMATIC_ROUTE_DENSITY[type]||[{maxFleet:Infinity,target:hard}],preferred=Math.min(hard,(tiers.find(row=>count<=row.maxFleet)||tiers.at(-1)).target);
     const minimumRoutes=Math.ceil(count/hard),preferredRoutes=Math.ceil(count/preferred),limit=Number.isFinite(Number(maxRoutes))?Math.max(1,Math.floor(Number(maxRoutes))):preferredRoutes;
@@ -119,8 +132,8 @@
     return Math.min(hard,Math.max(1,Math.ceil(count/routeCount)));
   }
   function departureDelay(asset){
-    const slot=Math.max(0,Math.floor(Number(asset?.routeSlot)||0));
-    return slot*(ROUTE_DEPARTURE_INTERVAL_SECONDS[assetMode(asset)]||0);
+    const mode=assetMode(asset),slot=Math.max(0,Math.floor(Number(asset?.routeSlot)||0));
+    return slot%(ROUTE_FLEET_CAPACITY[mode]||1)*(ROUTE_DEPARTURE_INTERVAL_SECONDS[mode]||0);
   }
   // Build 358 (million-asset): the users of each (company, mode, route) are counted per class of rows (one cached class
   // scan per fleet revision) instead of listing every routed asset; a check needs only a group's size and its first
@@ -156,23 +169,44 @@
   }
   function routeConflict(state,assetId,routeId,route){return routeConflictWithContext(state,assetId,routeId,route,routeConflictContext(state));}
   function routeConflicts(state,routes){const ctx=routeConflictContext(state),out=new Map();for(const route of routes||[]){if(!route?.id)continue;out.set(route.id,routeConflictWithContext(state,null,route.id,route,ctx));}return out;}
-  function applyRouteAssignment(asset,p,slot){
-    asset.routeId=p.routeId||null;asset.routeSignature=routeSignature(p.route);asset.releaseExclusiveRouteOnArrival=false;asset.baseFacility=p.baseFacility??asset.baseFacility;asset.phase=p.phase||'turnaround';asset.progress=0;asset.dwellRemaining=0;asset.crewBlocked=false;asset.routeSlot=slot;asset.departureScheduled=false;delete asset.departureScheduledAt;delete asset.simulationFault;
+  function applyRouteAssignment(asset,p,slot,signature=routeSignature(p.route)){
+    asset.routeId=p.routeId||null;asset.routeSignature=signature;asset.releaseExclusiveRouteOnArrival=false;asset.baseFacility=p.baseFacility??asset.baseFacility;asset.phase=p.phase||'turnaround';asset.progress=0;asset.dwellRemaining=0;asset.crewBlocked=false;asset.routeSlot=slot;asset.departureScheduled=false;delete asset.departureScheduledAt;delete asset.simulationFault;
     const reverse=asset.baseFacility===p.route.toFacility;asset.reverse=reverse;asset.from=reverse?p.route.to:p.route.from;asset.to=reverse?p.route.from:p.route.to;return asset;
   }
-  function assignRoutesBatch(state,rows){
+  // Every live asset outside `skipIds`, in row order, with whether requireFleetAsset accepts it (asked once per owner,
+  // mode and class): what the former passes over drafts of the whole fleet read, without a draft per asset.
+  const ROUTE_HOLDER_FIELDS=Object.freeze(['id','routeId','routeSlot','phase','releaseExclusiveRouteOnArrival','ownerCompanyId','companyId','assetMode','type','assetClass']);
+  function scanRouteHolders(state,skipIds,fn){
+    const fleet=fleetData(),owners=new Map();
+    fleet.scan(state,ROUTE_HOLDER_FIELDS,row=>{
+      if(skipIds&&skipIds.has(row.id))return;
+      const key=`${row.ownerCompanyId}\u0000${row.companyId}\u0000${row.assetMode}\u0000${row.type}\u0000${row.assetClass}`;let owned=owners.get(key);
+      if(owned===undefined){try{requireFleetAsset(state,row);owned=true;}catch(_error){owned=false;}owners.set(key,owned);}
+      fn(row,owned);
+    });
+  }
+  // Build 358 (million-asset): a batch may name each distinct route once (`routes`, keyed by the row's routeRef)
+  // instead of carrying the route on every row, so a 12,000-asset command is not 12,000 copies of route geometry.
+  function batchRoute(row,routeTable){
+    if(row?.route)return row.route;
+    const ref=row?.routeRef;if(typeof ref!=='string'||!routeTable||typeof routeTable!=='object'||!Object.prototype.hasOwnProperty.call(routeTable,ref))return undefined;
+    return routeTable[ref];
+  }
+  function assignRoutesBatch(state,rows,routeTable=null){
     if(!Array.isArray(rows)||!rows.length)throw new Error('route-assignment-batch-empty');
-    // Drafts: the assignment below edits assets in place; commit() applies it.
-    const fleet=fleetData(),assets=fleet.drafts(state),assetById=new Map(assets.map(asset=>[asset.id,asset])),requested=new Set(),batchIds=new Set(rows.map(row=>row?.id).filter(Boolean));
+    // Drafts: the assignment below edits assets in place; commit() applies it. Build 358 (million-asset): only the
+    // assets being assigned get drafts; the slots the other assets hold come from one row pass in row order.
+    const fleet=fleetData(),requested=new Set(),batchIds=new Set(rows.map(row=>row?.id).filter(Boolean));
     if(batchIds.size!==rows.length)throw new Error('route-assignment-batch-duplicate');
-    const fixedAssets=assets.filter(asset=>!batchIds.has(asset.id)),prepared=[],slotUsage=new Map();
-    for(const other of fixedAssets){
-      if(!other?.routeId)continue;
-      try{requireFleetAsset(state,other);}catch(_error){continue;}
+    const assetById=new Map();for(const id of batchIds){const draft=fleet.draft(state,id);if(draft)assetById.set(id,draft);}
+    const prepared=[],slotUsage=new Map(),fixedAirRoutes=[];
+    scanRouteHolders(state,batchIds,(other,owned)=>{
+      if(assetMode(other)==='air'&&other.routeId)fixedAirRoutes.push([other.routeId,other.id]);
+      if(!other.routeId||!owned)return;
       let used=slotUsage.get(other.routeId);if(!used){used=new Set();slotUsage.set(other.routeId,used);}
       const preferred=Number.isInteger(other.routeSlot)&&other.routeSlot>=0?other.routeSlot:null;
       if(preferred!=null&&!used.has(preferred))used.add(preferred);else{let slot=0;while(used.has(slot))slot++;used.add(slot);}
-    }
+    });
 
     // Air corridor conflict validation is batch-indexed. The former path rebuilt a
     // shadow state and rescanned every aircraft for every assignment (O(n²)),
@@ -181,7 +215,7 @@
     // geometry across different route IDs and preserves the same invariant.
     const airRouteIndex=new Map((state.customRoutes||[]).filter(route=>routeMode(route)==='air').map(route=>[route.id,route])),
       airOccupiedByRoute=new Map(),airSignatureCache=new Map(),airValidatedRoutes=new Set();
-    for(const other of fixedAssets)if(assetMode(other)==='air'&&other.routeId&&!airOccupiedByRoute.has(other.routeId))airOccupiedByRoute.set(other.routeId,other.id);
+    for(const [routeId,assetId] of fixedAirRoutes)if(!airOccupiedByRoute.has(routeId))airOccupiedByRoute.set(routeId,assetId);
     const airSignature=route=>{
       if(!route)return '';
       if(airSignatureCache.has(route.id))return airSignatureCache.get(route.id);
@@ -200,7 +234,7 @@
     };
 
     for(const p of rows){
-      const asset=p?.id?assetById.get(p.id):null,route=p?.route;if(!asset||requested.has(asset.id))throw new Error('route-assignment-contract');requested.add(asset.id);
+      const asset=p?.id?assetById.get(p.id):null,route=batchRoute(p,routeTable);if(!asset||requested.has(asset.id))throw new Error('route-assignment-contract');requested.add(asset.id);
       const assetOwner=requireFleetAsset(state,asset),routeOwner=requireFleetRoute(state,route);
       if(!route||route.id!==p.routeId||routeOwner.mode!==assetOwner.mode||routeOwner.companyId!==assetOwner.companyId||asset.phase==='moving'||asset.salePending||asset.deliveryStatus==='pending'||(p.phase!=null&&p.phase!=='turnaround')||(p.baseFacility!=null&&p.baseFacility!==asset.baseFacility)||![route.fromFacility,route.toFacility].includes(asset.baseFacility))throw new Error('route-assignment-contract');
       if(assetOwner.mode==='air')validateAirRoute(route,asset.id);
@@ -208,9 +242,10 @@
       let slot=0;const preferred=asset.routeId===p.routeId&&Number.isInteger(asset.routeSlot)&&asset.routeSlot>=0?asset.routeSlot:null;
       if(preferred!=null&&!used.has(preferred))slot=preferred;else{while(used.has(slot))slot++;}
       if(slot>=routeCapacity(route))throw new Error(`asset-route-capacity:${p.routeId}`);used.add(slot);
-      prepared.push({asset,input:p,slot});
+      prepared.push({asset,input:p.route===route?p:{...p,route},slot});
     }
-    for(const row of prepared)applyRouteAssignment(row.asset,row.input,row.slot);
+    // One signature per route object (rows of one route share it), not one per asset.
+    const signatures=new Map();for(const row of prepared){let signature=signatures.get(row.input.route);if(signature===undefined){signature=routeSignature(row.input.route);signatures.set(row.input.route,signature);}applyRouteAssignment(row.asset,row.input,row.slot,signature);}
     fleet.commit(state,prepared.map(row=>row.asset));
     return prepared.map(row=>fleet.plain(row.asset));
   }
@@ -409,18 +444,19 @@
     asset.reverse=asset.baseFacility===route.toFacility;asset.phase='moving';asset.progress=0;asset.dwellRemaining=0;asset.fuel=100;asset.crewBlocked=false;asset.departureScheduled=false;delete asset.departureScheduledAt;delete asset.simulationFault;
     asset.from=asset.reverse?route.to:route.from;asset.to=asset.reverse?route.from:route.to;if(load!=null)asset.load=load;return asset;
   }
-  function departBatch(state,rows){
+  function departBatch(state,rows,routeTable=null){
     if(!Array.isArray(rows)||!rows.length)throw new Error('departure-batch-empty');
-    // Drafts: the departures below edit assets in place; commit() applies them.
-    const fleet=fleetData(),assets=fleet.drafts(state),assetById=new Map(assets.map(asset=>[asset.id,asset])),requested=new Set(),prepared=[],
+    // Drafts: the departures below edit assets in place; commit() applies them. Build 358 (million-asset): only the
+    // departing assets get drafts; route occupancy comes from one row pass in row order.
+    const fleet=fleetData(),assetById=new Map(),requested=new Set(),prepared=[],
       routeIndex=new Map((state.customRoutes||[]).filter(Boolean).map(route=>[route.id,route])),routeOccupancy=new Map(),routeOwner=new Map();
-    for(const asset of assets){
-      if(!asset?.routeId||asset.releaseExclusiveRouteOnArrival===true&&asset.phase==='moving')continue;
-      try{requireFleetAsset(state,asset);}catch(_error){continue;}
+    for(const p of rows)if(p?.id&&!assetById.has(p.id)){const draft=fleet.draft(state,p.id);if(draft)assetById.set(p.id,draft);}
+    scanRouteHolders(state,null,(asset,owned)=>{
+      if(!asset.routeId||asset.releaseExclusiveRouteOnArrival===true&&asset.phase==='moving'||!owned)return;
       routeOccupancy.set(asset.routeId,(routeOccupancy.get(asset.routeId)||0)+1);if(!routeOwner.has(asset.routeId))routeOwner.set(asset.routeId,asset.id);
-    }
-    for(const p of rows)if(p?.route?.id&&!routeIndex.has(p.route.id))routeIndex.set(p.route.id,p.route);
-    const affectedRoutes=new Set(rows.map(p=>p?.route?.id));
+    });
+    for(const p of rows){const route=batchRoute(p,routeTable);if(route?.id&&!routeIndex.has(route.id))routeIndex.set(route.id,route);}
+    const affectedRoutes=new Set(rows.map(p=>batchRoute(p,routeTable)?.id));
     for(const [routeId,count] of routeOccupancy){if(!affectedRoutes.has(routeId))continue;
       const route=routeIndex.get(routeId);if(route&&count>routeCapacity(route))throw new Error(`asset-route-capacity:${routeOwner.get(routeId)||routeId}`);
     }
@@ -433,7 +469,7 @@
       if((sa&&sb&&sa===sb)||globalThis.GH_ROUTE_CORE?.corridorMetrics?.(a,b)?.duplicate)throw new Error(`asset-route-capacity:${routeOwner.get(b.id)||b.id}`);
     }
     for(const p of rows){
-      const asset=p?.id?assetById.get(p.id):null,route=p?.route;if(!asset||requested.has(asset.id))throw new Error('departure-batch-contract');requested.add(asset.id);
+      const asset=p?.id?assetById.get(p.id):null,route=batchRoute(p,routeTable);if(!asset||requested.has(asset.id))throw new Error('departure-batch-contract');requested.add(asset.id);
       const assetOwner=requireFleetAsset(state,asset),routeOwner=requireFleetRoute(state,route);
       if(asset.phase!=='turnaround'||!route||route.id!==asset.routeId||routeOwner.mode!==assetOwner.mode||routeOwner.companyId!==assetOwner.companyId||![route.fromFacility,route.toFacility].includes(asset.baseFacility)||asset.staffing?.ready!==true)throw new Error('route-departure-contract');
       prepared.push({asset,route,load:p.load,delaySeconds:Math.max(0,Number(p.delaySeconds)||0)});
@@ -458,9 +494,9 @@
       const fleet=fleetData();return fleet.plain(fleet.update(state,asset,{fuel:100,condition:100,crewBlocked:false,simulationFault:undefined,lastMaintenanceAt:Number(state.simSeconds)||0,lastMaintenanceCost:cost,lastMaintenanceSupplier:supplier,lastMaintenanceCheque:payment?.cheque?.id||null,lastMaintenanceInvoice:payment?.invoice?.number||null}));
     }
     if(cmd==='assign-route')return assignRoutesBatch(state,[p])[0];
-    if(cmd==='assign-routes-batch')return assignRoutesBatch(state,p.assignments);
+    if(cmd==='assign-routes-batch')return assignRoutesBatch(state,p.assignments,p.routes);
     if(cmd==='depart')return departBatch(state,[p])[0];
-    if(cmd==='depart-batch')return departBatch(state,p.departures);
+    if(cmd==='depart-batch')return departBatch(state,p.departures,p.routes);
     if(cmd==='request-sale'){
       const fleet=fleetData(),draft=fleet.draft(state,asset);
       draft.salePending=true;draft.saleRequestedAt=Number(state.simSeconds)||0;draft.saleReturnMode=p.returnMode||'owned-center';draft.saleStatus=draft.phase==='moving'?'finish-current-trip':'returning';
@@ -495,6 +531,6 @@
     if(cmd==='reconcile-staffing')return reconcileStaffing(state,p.facilityResolver);
     throw new Error(`Unknown fleet command: ${cmd}`);
   }
-  const API={VERSION,purchaseCatalogs,ROLE_DEFAULTS,ROUTE_FLEET_CAPACITY,ROUTE_DEPARTURE_INTERVAL_SECONDS,AUTOMATIC_ROUTE_DENSITY,assetMode,assetOwnerCompanyId,routeMode,routeOwnerCompanyId,requireFleetAsset,requireFleetRoute,normalizeAsset,departDraft,departureDelay,routeCapacity,automaticRouteTargetLoad,routeSignature,routeConflict,routeConflicts,assignRoutesBatch,departBatch,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,payrollSummary,monthlyPayroll,headcount,recordDeliveryBatch,withDisposalBatch};
+  const API={VERSION,purchaseCatalogs,ROLE_DEFAULTS,ROUTE_FLEET_CAPACITY,ROUTE_MAX_FLEET_CAPACITY,requiredRouteCapacity,ROUTE_DEPARTURE_INTERVAL_SECONDS,AUTOMATIC_ROUTE_DENSITY,assetMode,assetOwnerCompanyId,routeMode,routeOwnerCompanyId,requireFleetAsset,requireFleetRoute,normalizeAsset,departDraft,departureDelay,routeCapacity,automaticRouteTargetLoad,routeSignature,routeConflict,routeConflicts,assignRoutesBatch,departBatch,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,payrollSummary,monthlyPayroll,headcount,recordDeliveryBatch,withDisposalBatch};
   globalThis.GH_FLEET_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('fleet',API);if(globalThis.window&&window!==globalThis)window.GH_FLEET_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
