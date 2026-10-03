@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "910529bad2e925abeb5cf01c900a86d3a0f9650e96e57096c3adda0f69f1b8cc",
-  "webapp_tree_sha256": "947a803c083072171716fa686cdc9f864e07f4efca2eee86b6fcf5046f33972d",
+  "source_tree_sha256": "f3573f5e540b39ea841b4e78c4e94c96bb330f249779f3d52f0d2fb6a8fb5aa1",
+  "webapp_tree_sha256": "b2cb624efa959d22421d7c24a1bb0cba7156772924585026cfbc5e5b6dd995f0",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 232246,
@@ -1711,12 +1711,12 @@
       "sha256": "2185b66024aa817032cbe2dcdaf804178962f05a552cf1b2230deb3725cd6a6e"
     },
     "WebApp/fleet-access-core.js": {
-      "bytes": 38037,
-      "sha256": "0705e8030fc67ae0cfdb3c703dfac57af5d33e870202aaf4f150bde24e52910d"
+      "bytes": 38477,
+      "sha256": "77b9f00960ef135581ec86ecaa833d5e4fbebe634b58adcedaab6641e2b48c9d"
     },
     "WebApp/fleet-core.js": {
-      "bytes": 42202,
-      "sha256": "a04405e20f57087db3a006d3c4005d73fad21932bffc9bc01e2ed8f4b96719ef"
+      "bytes": 43102,
+      "sha256": "03f258c3837bc50206a40b0a029d683da95cfa6530521d45c415c10d0bad21d2"
     },
     "WebApp/fleet-event-core.js": {
       "bytes": 45977,
@@ -1759,8 +1759,8 @@
       "sha256": "0fcc88a1c6ca9a80cfa17aeae2f4e2895e55016e7a1ea5e0639e08d449d7c004"
     },
     "WebApp/integrity-core.js": {
-      "bytes": 24610,
-      "sha256": "6682689080f1f27d19b3fb77a2b4de20653864487b4826d7eae577a930579c72"
+      "bytes": 24532,
+      "sha256": "45c5db40ec9b8e46005ca19b3b9cafdcf85039ff6da31c228a276d98e60c364b"
     },
     "WebApp/interaction-core.js": {
       "bytes": 4264,
@@ -1839,12 +1839,12 @@
       "sha256": "c4533a1e53328a2ddbda2bd064974d44cbea90bc46745c97b794d4b85b70574e"
     },
     "WebApp/procurement-core.js": {
-      "bytes": 15049,
-      "sha256": "27dd542d4bf6e88aadecac01e655adb8e0b3ba0da4a269b94deff05d751433d9"
+      "bytes": 15274,
+      "sha256": "f0647e864719c496cd899bc06b7b846681f969b6638abfe9137430b105160ead"
     },
     "WebApp/realism-core.js": {
-      "bytes": 72098,
-      "sha256": "c2d8d6bd58e40bc2be4fab4a63aef044cb31e57c18e19779ba08bfdeff28863f"
+      "bytes": 72323,
+      "sha256": "9ed2013b37fde334ddf935ffafc00f258f2542dfb3fba7241301165e54c54083"
     },
     "WebApp/road-planner-worker-core.js": {
       "bytes": 3528,
@@ -1996,7 +1996,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "0688cb9f5bfc4f644bcb6bb45ef61d1864157fc931d52e598c0b8453f6f551fa"
+      "sha256": "5a522ea46737740a963c93225f3b2a8c42b2843afb45e08e99a530277106c6cf"
     },
     "BUILD": {
       "bytes": 4,

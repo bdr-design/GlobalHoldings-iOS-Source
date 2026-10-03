@@ -380,6 +380,13 @@
     for(let index=0;index<assets.length;index++){const source=assets[index];if(!isObject(source))continue;const row={};for(const key of names)if(source[key]!==undefined)row[key]=source[key];rows++;fn(row,1,{index,members:1,forEachMember:cb=>cb(row,index)});}
     return {classes:rows,singles:0};
   }
+  // Counts of live assets per key, where keyOf reads only `fields` (then every row of a class has the same key and the
+  // count is exact). Without a store every asset is counted on its own.
+  function countByFields(state,fields,keyOf){
+    const counts=new Map();
+    forEachFieldClasses(state,fields,(row,count)=>{if(!count)return;const key=keyOf(row);counts.set(key,(counts.get(key)||0)+count);});
+    return counts;
+  }
   function idCollisions(state){
     const store=storeOf(state);if(store&&typeof STORE.idCollisions==='function')return STORE.idCollisions(store);
     const seen=new Set();let duplicate=false,missing=false;
@@ -481,7 +488,7 @@
     const store=storeOf(state);if(store)return STORE.removeMany(store,doomed);
     const drop=new Set(doomed),assets=arrayOf(state);invalidateArrayIndex(assets);let write=0;for(let read=0;read<assets.length;read++){if(drop.has(read))continue;if(write!==read)assets[write]=assets[read];write++;}assets.length=write;return drop.size;}
 
-  const API=Object.freeze({VERSION,forEachFieldClasses,idCollisions,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
+  const API=Object.freeze({VERSION,forEachFieldClasses,idCollisions,countByFields,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
     get,has,forEach,forEachFields,some,every,find,filter,count,sum,dailyLeaseCosts,payrollTotals,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
     update,put,add,addMany,remove,removeMany,removeWhere,drafts,draft,commit});
   globalThis.GH_FLEET_DATA=API;

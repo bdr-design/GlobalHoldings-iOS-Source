@@ -240,7 +240,8 @@
   }
   function deliveryCapacitySnapshot(state,deliveries){
     const occupied=new Map(),pending=new Map();
-    fleetData().forEach(state,asset=>occupied.set(asset.baseFacility,(occupied.get(asset.baseFacility)||0)+1));
+    // Build 358 (million-asset): counted per class of rows with the same base, not one view per asset.
+    for(const [base,count] of fleetData().countByFields(state,['baseFacility'],asset=>asset.baseFacility))occupied.set(base,count);
     for(const delivery of deliveries)if(delivery?.status==='pending'&&delivery.baseId)pending.set(delivery.baseId,(pending.get(delivery.baseId)||0)+deliveryUnitCount(delivery));
     return {occupied,pending};
   }
@@ -267,12 +268,14 @@
     // belong to one transaction. A late pipeline failure must roll back delivery.
     const outcome=(tx.isActive()?tx.join:tx.execute)(state,{label:'asset-delivery-poll',apply:()=>{
       const pendingDeliveries=deliveries.filter(row=>row?.status==='pending'),ready=[],alreadyDelivered=[];
-      let assetById=null,snapshot=null;
+      let snapshot=null;
       for(const d of pendingDeliveries){normalizeDeliveryClock(state,d);if(Number(d.dueAtSeconds)>now)continue;
         const assets=deliveryAssets(d);if(!assets.length)throw new Error(`delivery-assets-missing:${d.id}`);
         // Build once, only when needed; future reservations still count toward capacity.
-        if(!assetById){assetById=new Map();fleetData().forEach(state,asset=>assetById.set(asset.id,asset));snapshot=deliveryCapacitySnapshot(state,pendingDeliveries);}
-        const existing=assets.map(asset=>assetById.get(asset.id)),existingCount=existing.filter(Boolean).length;
+        // Build 358 (million-asset): the delivery's own assets are looked up through the fleet's id index instead of a
+        // map of every asset (ids are unique in a valid save).
+        if(!snapshot)snapshot=deliveryCapacitySnapshot(state,pendingDeliveries);
+        const existing=assets.map(asset=>fleetData().get(state,asset.id)||undefined),existingCount=existing.filter(Boolean).length;
         if(existingCount){if(existingCount!==assets.length||existing.some(asset=>asset&&(asset.baseFacility!==d.baseId||asset.deliveryOrderId!==d.id)))throw new Error('existing-delivery-evidence-mismatch');alreadyDelivered.push({delivery:d,count:assets.length});continue;}
         const base=compatibleDeliveryFacilities(state,assets[0]).find(f=>f.id===d.baseId),compatible=base&&assets.every(asset=>globalThis.GH_FACILITY_CORE.isAssetFacilityCompatible(asset,base,state));
         if(!compatible||!deliverySnapshotHasRoom(state,snapshot,base,d)){

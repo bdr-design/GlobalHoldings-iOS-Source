@@ -230,10 +230,18 @@
       if(!saved){const fallback=ROLE_DEFAULTS[id];saved={id,sector:['pilots','cabin','aeng'].includes(id)?'air':['captains','sailors','seng'].includes(id)?'sea':'road',name:fallback.name,count:0,salaryMin:fallback.dailyRate,salaryMax:fallback.dailyRate,morale:90};state.crew.push(saved);}
       saved.count=0;
     }
-    fleetData().forEach(state,asset=>{
-      if(asset.staffing?.mode!=='automatic-fixed'||asset.staffing.ready!==true)return;
-      for(const role of asset.staffing.roles||[]){const saved=state.crew.find(row=>row.id===role.id);if(saved)saved.count=(Number(saved.count)||0)+(Number(role.count)||0);}
-    });
+    // Build 358 (million-asset): staffing is a purchase-batch profile field, so assets are counted per class of rows
+    // with the same staffing (GH_FLEET_DATA.forEachFieldClasses) instead of one view per asset: a class adds its size
+    // times each role count. Integer sums do not depend on order, so that is the per-asset result; if any count is not
+    // an integer the per-asset loop runs instead, in row order.
+    const add=(staffing,times)=>{
+      if(staffing?.mode!=='automatic-fixed'||staffing.ready!==true)return;
+      for(const role of staffing.roles||[]){const saved=state.crew.find(row=>row.id===role.id);if(saved)saved.count=(Number(saved.count)||0)+(Number(role.count)||0)*times;}
+    };
+    const fleet=fleetData(),classes=[];let integral=typeof fleet.forEachFieldClasses==='function';
+    if(integral)fleet.forEachFieldClasses(state,['staffing'],(row,count)=>{if(!count)return;classes.push([row.staffing,count]);if(!(row.staffing?.roles||[]).every(role=>Number.isSafeInteger(Number(role.count)||0)))integral=false;});
+    if(integral)for(const [staffing,count] of classes)add(staffing,count);
+    else fleet.forEach(state,asset=>add(asset.staffing,1));
     return state.crew;
   }
   function provisionStaffing(state,asset,base){
@@ -281,8 +289,8 @@
   function recordDeliveryBatch(state,rows){
     if(!Array.isArray(rows)||!rows.length)throw new Error('delivery-batch-empty');
     const deliveries=state.realism?.procurement?.deliveries;if(!Array.isArray(deliveries))throw new Error('delivery-store-unavailable');
-    const deliveryById=new Map(deliveries.map(row=>[row.id,row])),baseById=new Map([...(state.globalBases||[]),...(state.customHubs||[])].map(base=>[base.id,base])),invoiceByNumber=new Map((state.finance?.invoices||[]).map(row=>[row.number,row])),chequeById=new Map((state.finance?.cheques||[]).map(row=>[row.id,row])),fleet=fleetData(),assetIds=new Set(fleet.ids(state)),occupancy=new Map(),additions=new Map(),prepared=[];
-    fleet.forEach(state,asset=>occupancy.set(asset.baseFacility,(occupancy.get(asset.baseFacility)||0)+1));
+    const deliveryById=new Map(deliveries.map(row=>[row.id,row])),baseById=new Map([...(state.globalBases||[]),...(state.customHubs||[])].map(base=>[base.id,base])),invoiceByNumber=new Map((state.finance?.invoices||[]).map(row=>[row.number,row])),chequeById=new Map((state.finance?.cheques||[]).map(row=>[row.id,row])),fleet=fleetData(),batchIds=new Set(),occupancy=new Map(),additions=new Map(),prepared=[];
+    for(const [base,count] of fleet.countByFields(state,['baseFacility'],asset=>asset.baseFacility))occupancy.set(base,count);
     const requested=new Set();
     for(const input of rows){
       const snaps=Array.isArray(input?.assets)?input.assets:input?.asset?[input.asset]:[];
@@ -293,7 +301,7 @@
       const owners=new Set(snaps.map(snap=>requireFleetAsset(state,snap).companyId)),ownerCompanyId=owners.values().next().value,baseOwner=String(base?.ownerCompanyId||base?.companyId||base?.company||'');
       if(owners.size!==1||!ownerCompanyId||baseOwner!==ownerCompanyId)throw new Error('delivery-destination-contract');
       if(!document||!['مدفوعة','مسددة','مصروف'].includes(document.status)||document.company!==ownerCompanyId||Number(document.amount)<Number(payment.amount))throw new Error('delivery-payment-unverified');
-      for(const snap of snaps){if(assetIds.has(snap.id))throw new Error('duplicate-asset-id');if(snap.deliveryOrderId&&snap.deliveryOrderId!==input.deliveryId)throw new Error('delivery-order-asset-mismatch');if(facilityOwner?.isAssetFacilityCompatible&&!facilityOwner.isAssetFacilityCompatible(snap,base,state))throw new Error('delivery-facility-asset-incompatible');assetIds.add(snap.id);}
+      for(const snap of snaps){if(batchIds.has(snap.id)||fleet.has(state,snap.id))throw new Error('duplicate-asset-id');if(snap.deliveryOrderId&&snap.deliveryOrderId!==input.deliveryId)throw new Error('delivery-order-asset-mismatch');if(facilityOwner?.isAssetFacilityCompatible&&!facilityOwner.isAssetFacilityCompatible(snap,base,state))throw new Error('delivery-facility-asset-incompatible');batchIds.add(snap.id);}
       additions.set(base.id,(additions.get(base.id)||0)+snaps.length);prepared.push({input,delivery,base,snaps,ownerCompanyId});
     }
     const facilityOwner=globalThis.GH_FACILITY_CORE;if(!facilityOwner?.assetCapacity)throw new Error('facility-capacity-owner-missing');
