@@ -106,7 +106,27 @@
     }
     return `{"$ghBinary":"arraybuffer-v1","byteLength":${bytes.length},"base64":"${parts.join('')}"}`;
   }
-  function binaryBuffer(marker){
+  // Build 358 (million-asset save): 'chunks-v1' keeps the record buffer out of the JSON text. The marker lists one id
+  // per 4 MiB store chunk; options.resolveChunk(id) returns that chunk's bytes (the native vault serves them), so the
+  // decoded buffer is assembled from memory. Every length is checked; a missing or short chunk is a corrupt save.
+  const CHUNK_ID=/^[A-Za-z0-9._-]{1,160}$/;
+  function chunkedBuffer(marker,options={}){
+    const {byteLength,chunkBytes,chunks}=marker;
+    if(!Number.isSafeInteger(byteLength)||byteLength<0||byteLength>536870912||!Number.isSafeInteger(chunkBytes)||chunkBytes<=0||!Array.isArray(chunks)||chunks.length!==Math.ceil(byteLength/chunkBytes)||chunks.some(id=>typeof id!=='string'||!CHUNK_ID.test(id)))throw corrupt('binary-chunks');
+    if(typeof options.resolveChunk!=='function')throw corrupt('binary-chunks-unresolved');
+    const buffer=new ArrayBuffer(byteLength),bytes=new Uint8Array(buffer);
+    for(let index=0;index<chunks.length;index++){
+      const start=index*chunkBytes,length=Math.min(chunkBytes,byteLength-start);let data;
+      try{data=options.resolveChunk(chunks[index],{index,byteOffset:start,byteLength:length});}catch{throw corrupt('binary-chunk-missing');}
+      // ArrayBuffer.isView / toString work across realms (a chunk may come from another context).
+      const view=ArrayBuffer.isView(data)?new Uint8Array(data.buffer,data.byteOffset,data.byteLength):isArrayBuffer(data)?new Uint8Array(data):null;
+      if(!view)throw corrupt('binary-chunk-missing');if(view.length!==length)throw corrupt('binary-chunk-length');
+      bytes.set(view,start);
+    }
+    return buffer;
+  }
+  function binaryBuffer(marker,options={}){
+    if(isPlain(marker)&&marker.$ghBinary==='chunks-v1')return chunkedBuffer(marker,options);
     if(!isPlain(marker)||marker.$ghBinary!=='arraybuffer-v1'||!Number.isSafeInteger(marker.byteLength)||marker.byteLength<0||marker.byteLength>536870912||typeof marker.base64!=='string')throw corrupt('binary-marker');
     let fast=null;
     try{fast=typeof Uint8Array.fromBase64==='function'?Uint8Array.fromBase64(marker.base64):tableDecode(marker.base64);}catch{fast=null;}
@@ -326,7 +346,7 @@
     return out;
   }
 
-  function decodeState(tree){
+  function decodeState(tree,options={}){
     if(!isPlain(tree)||!own(tree,'stateCodec'))return tree;
     const meta=tree.stateCodec;
     if(!isPlain(meta)||meta.version!==VERSION||!Array.isArray(meta.paths))throw corrupt('meta');
@@ -340,7 +360,7 @@
     for(const path of binaryPaths){
       if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('binary-path');
       const node=readPath(out,path);if(node===undefined)throw corrupt('binary-path-missing');
-      out=writePathCopy(out,path,binaryBuffer(node));
+      out=writePathCopy(out,path,binaryBuffer(node,options));
     }
     return out;
   }
@@ -363,12 +383,12 @@
     if(current.keys)for(let i=0;i<current.keys.length;i++)if(entry.keys[i]!==current.keys[i])return false;
     return true;
   }
-  function serialize(state){
+  function serialize(state,{rowsText=null}={}){
     if(!isPlain(state))return JSON.stringify(encodeState(state));
     const binaryPaths=[],fragments=[],live=new Set();let out=state;
     if(isArrayBuffer(state.fleet?.rows)){
       const path=['fleet','rows'],token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;
-      fragments.push({token:JSON.stringify(token),text:rowsMarkerText(state.fleet)});out=writePathCopy(out,path,token);binaryPaths.push(path);
+      fragments.push({token:JSON.stringify(token),text:rowsText===null?rowsMarkerText(state.fleet):rowsText});out=writePathCopy(out,path,token);binaryPaths.push(path);
     }
     const paths=selectPaths(out);
     if(!paths.length&&!binaryPaths.length)return JSON.stringify(state);
@@ -388,9 +408,55 @@
     for(const fragment of fragments){parts.push(text.slice(cursor,fragment.at),fragment.text);cursor=fragment.at+fragment.token.length;}
     parts.push(text.slice(cursor));return parts.join('');
   }
-  function deserialize(json){return decodeState(JSON.parse(json));}
+  function deserialize(json,options={}){return decodeState(JSON.parse(json),options);}
+  // Build 358 (million-asset save): the save text with the record buffer as a 'chunks-v1' manifest. A chunk keeps its
+  // id while its GH_FLEET_STORE.chunkStamp key (runtime, mass version, chunk version, length) is unchanged; a changed
+  // chunk gets a fresh id `${session nonce}.${salt}.${sequence}`, unique without hashing (the vault hashes on receipt).
+  // A store decoded from a chunked save adopts the ids it was read from (adoptChunkIds), so a fresh session uploads
+  // only what it changes. Returns {text, chunks:[{id,index,byteOffset,byteLength}]}: every chunk of this save; the
+  // caller uploads the ones the vault has not acknowledged. A checksum per id is kept and one reused chunk is
+  // re-checked per save in rotation; a mismatch (a write that bypassed the store) renames every chunk (new salt), so
+  // stale bytes are never referenced. Everything except fleet.rows is exactly serialize()'s text.
+  const chunkIdCache=new WeakMap();let chunkSalt=0,chunkSequence=0,chunkCacheStats={reused:0,named:0,adopted:0,verified:0,mismatches:0};
+  function chunkChecksum(bytes){const words=new Uint32Array(bytes.buffer,bytes.byteOffset,bytes.byteLength>>>2);let a=0x811c9dc5|0,b=0x01000193|0;const imul=Math.imul;for(let i=0;i<words.length;i++){a=imul(a^words[i],0x01000193);b=(b+a)|0;}for(let i=words.length*4;i<bytes.length;i++){a=imul(a^bytes[i],0x01000193);b=(b+a)|0;}return `${(a>>>0).toString(36)}.${(b>>>0).toString(36)}`;}
+  function chunkGeometry(store){const STORE=globalThis.GH_FLEET_STORE;if(typeof STORE?.chunkStamp!=='function'||STORE.isStore?.(store)!==true)throw new Error('state-codec-chunks-need-store');const chunkBytes=STORE.CHUNK_ROWS*STORE.STRIDE,bytes=new Uint8Array(store.rows);return {STORE,chunkBytes,bytes,count:Math.ceil(bytes.length/chunkBytes)};}
+  function chunkKey(stamp,index,length){return `${stamp.runtime}.${stamp.mass}.${stamp.versions[index]??0}.${length}`;}
+  function adoptChunkIds(store,marker){
+    if(!isPlain(marker)||marker.$ghBinary!=='chunks-v1'||!Array.isArray(marker.chunks))return false;
+    const {STORE,chunkBytes,bytes,count}=chunkGeometry(store);if(marker.chunkBytes!==chunkBytes||marker.chunks.length!==count||marker.byteLength!==bytes.length)return false;
+    const stamp=STORE.chunkStamp(store),entry={keys:[],ids:[],sums:[],rotation:0};
+    for(let index=0;index<count;index++){const start=index*chunkBytes,length=Math.min(chunkBytes,bytes.length-start);entry.keys[index]=chunkKey(stamp,index,length);entry.ids[index]=marker.chunks[index];entry.sums[index]=chunkChecksum(bytes.subarray(start,start+length));}
+    chunkIdCache.set(store,entry);chunkCacheStats.adopted+=count;return true;
+  }
+  function chunkManifest(store){
+    const {STORE,chunkBytes,bytes,count}=chunkGeometry(store);
+    let entry=chunkIdCache.get(store);if(!entry){entry={keys:[],ids:[],sums:[],rotation:0};chunkIdCache.set(store,entry);}
+    const name=()=>{const stamp=STORE.chunkStamp(store),reused=[];
+      for(let index=0;index<count;index++){
+        const start=index*chunkBytes,length=Math.min(chunkBytes,bytes.length-start),key=chunkKey(stamp,index,length);
+        if(entry.keys[index]===key&&entry.ids[index])reused.push(index);
+        else{entry.keys[index]=key;entry.ids[index]=`${NONCE}.${chunkSalt}.${(++chunkSequence).toString(36)}`;entry.sums[index]=chunkChecksum(bytes.subarray(start,start+length));chunkCacheStats.named++;}
+      }
+      entry.keys.length=count;entry.ids.length=count;entry.sums.length=count;return reused;};
+    const reused=name();chunkCacheStats.reused+=reused.length;
+    if(reused.length){
+      const index=reused[entry.rotation++%reused.length],start=index*chunkBytes;chunkCacheStats.verified++;
+      if(chunkChecksum(bytes.subarray(start,Math.min(bytes.length,start+chunkBytes)))!==entry.sums[index]){
+        chunkCacheStats.mismatches++;chunkSalt++;entry.keys=[];entry.ids=[];entry.sums=[];
+        try{globalThis.console?.warn?.('state-codec: fleet chunk changed behind the store; renaming every chunk');}catch{}
+        name();
+      }
+    }
+    const ids=entry.ids.slice();
+    return {marker:{$ghBinary:'chunks-v1',byteLength:bytes.length,chunkBytes,chunks:ids},chunks:ids.map((id,index)=>({id,index,byteOffset:index*chunkBytes,byteLength:Math.min(chunkBytes,bytes.length-index*chunkBytes)}))};
+  }
+  function serializeChunked(state){
+    if(!isPlain(state)||!isArrayBuffer(state.fleet?.rows))return {text:serialize(state),chunks:[]};
+    const manifest=chunkManifest(state.fleet),text=serialize(state,{rowsText:JSON.stringify(manifest.marker)});
+    return {text,chunks:manifest.chunks};
+  }
 
-  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,deserialize,selectPaths,cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size,rows:{...rowCacheStats}}),isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
+  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,deserialize,selectPaths,serializeChunked,adoptChunkIds,bytesToBase64:bytes=>base64Encode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)),cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size,rows:{...rowCacheStats},chunks:{...chunkCacheStats}}),isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
   globalThis.GH_STATE_CODEC=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_STATE_CODEC=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

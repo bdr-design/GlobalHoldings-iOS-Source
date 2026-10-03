@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "1e730c160559a5d5325f9a4637c5d5b347ef1cb28104b5ab70b37fff41d81086",
-  "webapp_tree_sha256": "8a6e608d8245e27b1aa0d535ea0e0a4679ab4ecfc62dfa3e39b4c1cfc27554bd",
+  "source_tree_sha256": "cdd61c5f8352ebbadfb6be6acb3ea23144d18a9a8721d8a08bf71a38edfe0984",
+  "webapp_tree_sha256": "2e018da52e739263a2b8c7996685f2f9b6b2cb57809123b3c37b70f08e7a116d",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 232246,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 667045,
-      "sha256": "b3309c70569ed0b72be8b215893455c11e72c757e44d7132fbb32aa9342261f3"
+      "bytes": 667535,
+      "sha256": "ae055c4672116d9e096907e5f87e196d46f4a21d27fe6fb05cf5c076f0314c5a"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -1819,8 +1819,8 @@
       "sha256": "766809780c747b3a896cdb04764c42a5349ce857953c338e8e0b7a0aeffab0c5"
     },
     "WebApp/migration-core.js": {
-      "bytes": 23726,
-      "sha256": "c67a802aec9438809d3a8a866642385781c1a84d0f26b15067f793efa3ab5857"
+      "bytes": 24708,
+      "sha256": "6e56014cee405cad2b0373363d47b865d61e294be1faf3332759a77849cdf9d6"
     },
     "WebApp/mobility-core.js": {
       "bytes": 66991,
@@ -1831,8 +1831,8 @@
       "sha256": "a60a12c745e33195b2eeb998a6118f9eae056e67c837eec672f42778181a75f4"
     },
     "WebApp/persistence-core.js": {
-      "bytes": 35800,
-      "sha256": "ba7ea193aec50dab5b44061ef3ea55aa4cdfe25e9c5bf30ecca139728bb2b132"
+      "bytes": 40822,
+      "sha256": "6cda71a03d0b1c6e917d6f42647aa47b720d6ad81867604e1bc3cf8568834908"
     },
     "WebApp/policy-core.js": {
       "bytes": 1915,
@@ -1899,8 +1899,8 @@
       "sha256": "7fba65430a479155bf423b5adca04c620bff3948b3da2c1bdab09927aecf6c15"
     },
     "WebApp/state-codec-core.js": {
-      "bytes": 25116,
-      "sha256": "678e1d804ed780b63b50fa0796f86e2ec3606ce659e83aa2613c118b0dc93608"
+      "bytes": 31689,
+      "sha256": "7233acc931a4a003a5769cf3bcbdc39452a678115eef2240f4f1b86b34398b8c"
     },
     "WebApp/strategy-core.js": {
       "bytes": 4799,
@@ -1979,16 +1979,16 @@
       "sha256": "0fd49ba3c3585c709678e0046a821c3c60685ec7063720d30d3a3448be3a208b"
     },
     "iOS/GlobalHoldings/GameViewController.swift": {
-      "bytes": 53691,
-      "sha256": "457557de23c61b7297518786372fcdb741453e7f094f0a42df9c74df5a567839"
+      "bytes": 57054,
+      "sha256": "7d3c16cbcc9b7de6a0b6d48d7385c6109f58e9b24a4eb63be04a03823ca47de3"
     },
     "iOS/GlobalHoldings/GlobalGameStorage.swift": {
       "bytes": 66664,
       "sha256": "63a17c82ccfaa52d0a2ef01bc484a3e80bc2080322dc039e763ca8b5359105a5"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
-      "bytes": 33777,
-      "sha256": "3991edede62b52cf48f8ab98021cdddcfd744824aacc5c607b0e28d4840a8274"
+      "bytes": 41830,
+      "sha256": "14796f577852a4ea718f5a22d176370834f0b55b5e57b8ef97a5a4e89cd74ac7"
     },
     "iOS/GlobalHoldings/LaunchScreen.storyboard": {
       "bytes": 1728,
@@ -1996,7 +1996,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "2c081534a676441665d87cb0d96be4c9aeda3206006ca112011bc0778e6ceb70"
+      "sha256": "ede2fbf1506f5bb736e15258bb75434feacc2257d029bd94d65dbecdf88aa0e6"
     },
     "BUILD": {
       "bytes": 4,

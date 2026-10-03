@@ -120,6 +120,46 @@
     };
     try{const hashed=saveHash(json,options.encoded||null);return hashed&&typeof hashed.then==='function'?hashed.then(post):post(hashed);}catch(error){return Promise.reject(error);}
   }
+  // Build 358 (million-asset save): with the native vault, the fleet record buffer is saved as 'chunks-v1' (one id per
+  // 4 MiB store chunk, GH_STATE_CODEC.serializeChunked) instead of base64 in the JSON. serializeNative copies the bytes
+  // of every chunk the vault has not acknowledged at the moment the save is taken (the simulation may write rows while
+  // the upload runs, and a save must be one consistent instant), and uploadChunks sends them before the commit that
+  // lists them. The vault refuses a commit whose chunks are missing; vaultChunks is cleared after any reset and any
+  // such refusal, so the next save uploads again (an upload of a chunk the vault holds is checked and accepted).
+  const vaultChunks=new Set(),chunkPending=new Map();let chunkSequence=0;
+  const CHUNK_ACK_TIMEOUT_MS=60000;
+  function noteVaultChunks(ids){for(const id of Array.isArray(ids)?ids:[])if(typeof id==='string'&&id)vaultChunks.add(id);}
+  function forgetVaultChunks(){vaultChunks.clear();}
+  function chunkedNative(state){return !!bridgeFor('commitSave')&&typeof stateCodec()?.serializeChunked==='function'&&Object.prototype.toString.call(state?.fleet?.rows)==='[object ArrayBuffer]';}
+  function serializeNative(state){
+    if(!chunkedNative(state))return {json:serializeState(state),uploads:[],chunked:false};
+    const out=stateCodec().serializeChunked(state),uploads=[];
+    for(const chunk of out.chunks)if(!vaultChunks.has(chunk.id))uploads.push({id:chunk.id,bytes:new Uint8Array(state.fleet.rows,chunk.byteOffset,chunk.byteLength).slice()});
+    return {json:out.text,uploads,chunked:true,chunkIds:out.chunks.map(chunk=>chunk.id)};
+  }
+  function receiveChunkAck(detail={}){
+    const row=chunkPending.get(detail.requestId);if(!row)return false;
+    clearTimeout(row.timer);chunkPending.delete(detail.requestId);
+    if(detail.success===true&&detail.id===row.id)row.resolve();else{const error=new Error(detail.message||'native-chunk-nack');error.code='CHUNK_NACK';row.reject(error);}
+    return true;
+  }
+  function uploadChunk(id,bytes){
+    const bridge=bridgeFor('commitSave');if(!bridge)return Promise.reject(new Error('native-chunk-bridge-unavailable'));
+    return new Promise((resolve,reject)=>{
+      const requestId=`storeSaveChunk-${Date.now()}-${++chunkSequence}`,timer=setTimeout(()=>{chunkPending.delete(requestId);const error=new Error('native-chunk-ack-timeout');error.code='ACK_TIMEOUT';reject(error);},CHUNK_ACK_TIMEOUT_MS);
+      chunkPending.set(requestId,{id,resolve,reject,timer});
+      try{bridge.postMessage({action:'storeSaveChunk',requestId,id,bytes:bytes.byteLength,base64:stateCodec().bytesToBase64(bytes)});}
+      catch(error){clearTimeout(timer);chunkPending.delete(requestId);reject(error);}
+    });
+  }
+  async function uploadChunks(uploads){
+    const started=clock();let bytes=0;
+    for(const upload of uploads||[]){if(vaultChunks.has(upload.id))continue;await uploadChunk(upload.id,upload.bytes);vaultChunks.add(upload.id);bytes+=upload.bytes.byteLength;}
+    if(uploads?.length)rememberTiming({kind:'chunk-upload',chunks:uploads.length,bytes,ms:Math.max(0,clock()-started)});
+  }
+  // A commit refused for a missing chunk means vaultChunks was stale: forget it so the next save uploads its chunks.
+  function noteNativeRefusal(error){if(/Missing save chunk/i.test(String(error?.message||'')))forgetVaultChunks();return error;}
+  globalThis.addEventListener?.('gh-native-chunk-ack',e=>receiveChunkAck(e.detail));
   globalThis.addEventListener?.('gh-native-save-ack',e=>receiveAck(e.detail));
   globalThis.addEventListener?.('gh-native-reset-ack',e=>receiveAck(e.detail));
   function receiveSlotAck(detail={}){
@@ -140,17 +180,17 @@
     index=Number(index);if(!Number.isInteger(index)||index<0||index>2)return Promise.reject(new Error('invalid-save-slot'));
     const bridge=bridgeFor('commitSave');if(!bridge)return Promise.reject(new Error('native-slot-bridge-unavailable'));
     if(slotPending.size>=PERSISTENCE_LIMITS.pending)return Promise.reject(new Error('native-slot-backpressure'));
-    const requestId=`${action}-${Date.now()}-${++slotSequence}`,envelope={action,requestId,index};
+    const requestId=`${action}-${Date.now()}-${++slotSequence}`,envelope={action,requestId,index};let nativeSave=null;
     if(action==='saveManualSlot'){
-      assertRecurringState(state);const json=serializeState(state),measurement=inspectNativeJSON(json),hash=globalThis.GH_CONTROL_PLANE?.sha256;if(!hash)return Promise.reject(new Error('save-hash-owner-unavailable'));
+      assertRecurringState(state);nativeSave=serializeNative(state);const json=nativeSave.json,measurement=inspectNativeJSON(json),hash=globalThis.GH_CONTROL_PLANE?.sha256;if(!hash)return Promise.reject(new Error('save-hash-owner-unavailable'));
       Object.assign(envelope,{saveJSON:json,saveHash:hash(json),saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),appVersion:meta.appVersion||VERSION,label:String(meta.label||'').slice(0,120)});
       envelope.measurement=measurement;
     }
-    return new Promise((resolve,reject)=>{
+    return uploadChunks(nativeSave?.uploads).then(()=>new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>{slotPending.delete(requestId);const error=new Error('native-slot-ack-timeout');error.code='ACK_TIMEOUT';reject(error);},meta.timeoutMs||PERSISTENCE_LIMITS.ackTimeoutMs);
       slotPending.set(requestId,{resolve,reject,timer,action,index});
       try{bridge.postMessage(envelope);}catch(error){clearTimeout(timer);slotPending.delete(requestId);reject(error);}
-    });
+    })).catch(error=>{throw noteNativeRefusal(error);});
   }
   function ordinarySnapshotOptions(storageKey,appVersion,options){return {storageKey,appVersion,...options};}
   function clearOrdinaryDirty(){ordinaryDirty=false;ordinaryDirtyState=null;ordinaryDirtyOptions=null;}
@@ -160,17 +200,18 @@
     if(recoveryRequired)return {ok:false,reason:'memory-recovery-required'};
     const nativeBridge=!!bridgeFor('commitSave'),previousRevision=Math.max(0,Math.floor(Number(state?.saveRevision)||0)),nextRevision=previousRevision+1,syncStart=clock();
     const timing={kind:'ordinary-save',saveRevision:nextRevision,nativeBridge,schemaMs:0,stringifyMs:0,measurementMs:0,browserCacheMs:0,totalSyncMs:0,utf8Bytes:null,cacheReason:null,ok:false};
-    let json,measurement,resetEpoch,cache=null,encoded=null;
+    let json,measurement,resetEpoch,cache=null,encoded=null,nativeSave=null;
     try{
       if(!state||typeof state!=='object')throw new Error('state-required');
       state.saveRevision=nextRevision;
       let stageStart=clock();assertRecurringState(state);timing.schemaMs=Math.max(0,clock()-stageStart);
-      stageStart=clock();json=serializeState(state);timing.stringifyMs=Math.max(0,clock()-stageStart);resetEpoch=Number(state.resetEpoch)||0;
+      stageStart=clock();nativeSave=nativeBridge?serializeNative(state):null;json=nativeSave?nativeSave.json:serializeState(state);timing.stringifyMs=Math.max(0,clock()-stageStart);timing.chunkUploads=nativeSave?.uploads.length||0;resetEpoch=Number(state.resetEpoch)||0;
       stageStart=clock();encoded=nativeBridge?utf8(json):null;measurement=nativeBridge?inspectNativeJSON(json,encoded):inspectJSON(json,storageKey,options);timing.measurementMs=Math.max(0,clock()-stageStart);timing.utf8Bytes=measurement.utf8Bytes;
       stageStart=clock();
       if(nativeBridge){
-        cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
-        if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,utf8Bytes:measurement.utf8Bytes,mirror:true});
+        // A chunked save is not self-contained (its records live in the vault), so it is never mirrored to WebStorage.
+        cache=nativeSave?.chunked?{ok:false,reason:'chunked-native-save',previous:null,bypassed:true}:(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
+        if(!cache.ok&&!nativeSave?.chunked)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,utf8Bytes:measurement.utf8Bytes,mirror:true});
         if(measurement.utf8Bytes>=PERSISTENCE_LIMITS.nativeSoftBytes)status({ok:true,warning:true,reason:'native-save-size-soft-warning',utf8Bytes:measurement.utf8Bytes,nativeHardBytes:PERSISTENCE_LIMITS.nativeHardBytes});
       }else{
         cache=writeJSON(storageKey,json,options);if(!cache.ok)throw Object.assign(new Error(cache.reason),{measurement:cache});
@@ -180,7 +221,7 @@
     const out={ok:true,json,...measurement,browserCache:cache?.ok!==false,cacheReason:cache?.ok===false?cache.reason:null,previous:cache?.previous??null,saveRevision:nextRevision};
     if(!nativeBridge){ordinaryError=null;return out;}
     const nativeMetadata={appVersion,...options,saveRevision:nextRevision,resetEpoch,saveSchemaVersion:saveSchemaVersion(state)};
-    const work=Promise.resolve().then(()=>{if(recoveryRequired)throw new Error('native-recovery-required');return requestNative('commitSave',json,{...nativeMetadata,encoded});});
+    const work=Promise.resolve().then(()=>{if(recoveryRequired)throw new Error('native-recovery-required');return uploadChunks(nativeSave?.uploads);}).then(()=>requestNative('commitSave',json,{...nativeMetadata,encoded})).catch(error=>{throw noteNativeRefusal(error);});
     ordinaryInFlight=work.then(ack=>{ordinaryError=null;return ack;},error=>{
       ordinaryError=error;
       if(cache?.ok)try{if(localStorage.getItem(storageKey)===json)restoreRaw(storageKey,cache.previous);}catch(e){error.rollbackError=String(e.message||e);}
@@ -217,11 +258,11 @@
     try{
       await waitOrdinaryIdle({supersedeDirty:true});
       const durableTiming={kind:'durable-save',saveRevision:Number(state?.saveRevision)||0,schemaMs:0,stringifyMs:0,measurementMs:0,totalSyncMs:0,utf8Bytes:null,ok:false};let stageStart=clock();const syncStart=stageStart;
-      assertRecurringState(state,{prevalidated:options.prevalidated===true});durableTiming.schemaMs=Math.max(0,clock()-stageStart);stageStart=clock();const json=serializeState(state),nativeBridge=!!bridgeFor('commitSave');durableTiming.stringifyMs=Math.max(0,clock()-stageStart);lastSaveAtMs=clock();
+      assertRecurringState(state,{prevalidated:options.prevalidated===true});durableTiming.schemaMs=Math.max(0,clock()-stageStart);stageStart=clock();const nativeBridge=!!bridgeFor('commitSave'),nativeSave=nativeBridge?serializeNative(state):null,json=nativeSave?nativeSave.json:serializeState(state);durableTiming.stringifyMs=Math.max(0,clock()-stageStart);durableTiming.chunkUploads=nativeSave?.uploads.length||0;lastSaveAtMs=clock();
       if(nativeBridge){
-        stageStart=clock();const encoded=utf8(json),measurement=inspectNativeJSON(json,encoded);durableTiming.measurementMs=Math.max(0,clock()-stageStart);durableTiming.utf8Bytes=measurement.utf8Bytes;durableTiming.totalSyncMs=Math.max(0,clock()-syncStart);durableTiming.ok=true;rememberTiming(durableTiming);const ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),encoded});ordinaryError=null;
-        const cache=(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
-        if(!cache.ok)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,durable:true,utf8Bytes:measurement.utf8Bytes,mirror:true});
+        stageStart=clock();const encoded=utf8(json),measurement=inspectNativeJSON(json,encoded);durableTiming.measurementMs=Math.max(0,clock()-stageStart);durableTiming.utf8Bytes=measurement.utf8Bytes;durableTiming.totalSyncMs=Math.max(0,clock()-syncStart);durableTiming.ok=true;rememberTiming(durableTiming);let ack;try{await uploadChunks(nativeSave?.uploads);ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),encoded});}catch(error){throw noteNativeRefusal(error);}ordinaryError=null;
+        const cache=nativeSave?.chunked?{ok:false,reason:'chunked-native-save',previous:null,bypassed:true}:(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
+        if(!cache.ok&&!nativeSave?.chunked)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,durable:true,utf8Bytes:measurement.utf8Bytes,mirror:true});
         telemetry({operation:'durable-commit',ok:true,utf8Bytes:measurement.utf8Bytes,native:true,browserCache:cache.ok,durationMs:0});status({ok:true,validated:true,durable:true,native:true,saveRevision:Number(state.saveRevision)||0});return {ok:true,json,...measurement,ack,durable:true,browserCache:cache.ok,cacheReason:cache.ok?null:cache.reason};
       }
       written=writeJSON(storageKey,json,options);if(!written.ok)throw new Error(written.reason);
@@ -241,20 +282,24 @@
   async function replaceState(next,previous,{storageKey='global-holdings-world-v3.0.0',resetMarkerKey,appVersion=VERSION,timeoutMs,apply,cleanupKeys=[],clearManualSlots=false}={}){
     if(locked)throw new Error('lifecycle-locked');locked=true;
     let nativeAttempted=false,nativeCommitted=false,oldRaw=null,oldMarker=null,browserTouched=false;
-    let oldJSON;
+    let oldJSON,oldNative=null;
     try{
-      await drain({allowLockedFlush:true});assertState(next);assertState(previous);oldJSON=serializeState(previous);
-      const json=serializeState(next),nativeBridge=!!bridgeFor('resetGameSave'),nativeMeasurement=nativeBridge?inspectNativeJSON(json):null;if(!nativeBridge)inspectJSON(json,storageKey);oldRaw=localStorage.getItem(storageKey);oldMarker=resetMarkerKey?localStorage.getItem(resetMarkerKey):null;
-      // The current in-memory game is the compensating checkpoint. Native owns durability.
+      await drain({allowLockedFlush:true});assertState(next);assertState(previous);
+      const nativeBridge=!!bridgeFor('resetGameSave');oldNative=nativeBridge?serializeNative(previous):null;oldJSON=oldNative?oldNative.json:serializeState(previous);
+      const nextNative=nativeBridge?serializeNative(next):null,json=nextNative?nextNative.json:serializeState(next),nativeMeasurement=nativeBridge?inspectNativeJSON(json):null;if(!nativeBridge)inspectJSON(json,storageKey);oldRaw=localStorage.getItem(storageKey);oldMarker=resetMarkerKey?localStorage.getItem(resetMarkerKey):null;
+      // The current in-memory game is the compensating checkpoint. Native owns durability. Both worlds' chunks are in
+      // the vault before the reset, so the compensation below can always be committed.
+      if(nativeBridge){await uploadChunks(oldNative.uploads);await uploadChunks(nextNative.uploads);}
       nativeAttempted=nativeBridge;
       await requestNative('resetGameSave',json,{appVersion,timeoutMs,clearManualSlots,saveRevision:Number(next.saveRevision)||0,resetEpoch:Number(next.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(next)});
       nativeCommitted=nativeBridge;
-      const out=(nativeBridge&&(nativeMeasurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||nativeMeasurement.storageBytes>PERSISTENCE_LIMITS.hardBytes))
+      const out=nextNative?.chunked?{ok:false,reason:'chunked-native-save',previous:null,bypassed:true}
+        :(nativeBridge&&(nativeMeasurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||nativeMeasurement.storageBytes>PERSISTENCE_LIMITS.hardBytes))
         ? {ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}
         : writeJSON(storageKey,json,{mirror:nativeBridge});
       if(out.ok)browserTouched=true;
       else if(!nativeBridge){const writeError=new Error(out.reason);writeError.rollbackError=out.rollbackError;throw writeError;}
-      else status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:out.reason,reset:true,mirror:true});
+      else if(!nextNative?.chunked)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:out.reason,reset:true,mirror:true});
       if(resetMarkerKey){
         try{localStorage.setItem(resetMarkerKey,String(next.resetEpoch||0));if(localStorage.getItem(resetMarkerKey)!==String(next.resetEpoch||0))throw new Error('reset-marker-verification');}
         catch(markerError){if(!nativeBridge)throw markerError;status({ok:true,warning:true,reason:'reset-marker-cache-skipped',message:String(markerError.message||markerError),mirror:true});}
@@ -276,7 +321,7 @@
       if(nativeAttempted)try{await requestNative('resetGameSave',oldJSON,{appVersion,timeoutMs,clearManualSlots:false,saveRevision:Number(previous.saveRevision)||0,resetEpoch:Number(previous.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(previous)});}catch(e){error.compensationError=String(e.message||e);}
       if(error.rollbackError||error.compensationError){error.critical=true;globalThis.GH_CONTROL_PLANE?.incident?.(previous,{fingerprint:'RESET_COMPENSATION_FAILED',code:'RESET_COMPENSATION_FAILED',severity:'critical',domain:'save',title:'فشل استرداد الحفظ بعد عملية الاستبدال',detail:String(error.compensationError||error.rollbackError)});}
       throw error;
-    }finally{locked=false;}
+    }finally{locked=false;forgetVaultChunks();}
   }
   function parseSlot(raw){if(!raw)return {ok:false,reason:'empty'};try{const p=JSON.parse(raw),state=decodeTree(p?.format===SLOT_FORMAT?p.state:p);assertState(state);return {ok:true,state,meta:p?.format===SLOT_FORMAT?p.meta||{}:{legacy:true}};}catch(e){return {ok:false,reason:'invalid-save',error:String(e.message||e)};}}
   function slotStatus(index){
@@ -319,7 +364,7 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:SAVE_SCHEMA_VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:stateCodec()?stateCodec().encodeState(state):clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,
+  const API=Object.freeze({VERSION,noteVaultChunks,forgetVaultChunks,vaultChunkCount:()=>vaultChunks.size,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,
     // Cheap per-frame read for save pacing: when the last save ran and what it blocked the main thread for.
     saveCadence:()=>({lastSaveAtMs,lastSaveCostMs:Number(lastSaveBreakdown?.totalSyncMs)||0}),telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;

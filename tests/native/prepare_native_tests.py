@@ -187,6 +187,72 @@ test("AppliedUpdate preserves exact operationsJSON and no mirror"){
     try check(applied.webPayload["operationsJSON"] as? String==operationsJSON,"Signed text missing or changed")
     try check(applied.webPayload["operations"]==nil,"Forbidden operations mirror present")
 }
+// Build 358 (million-asset save): chunked fleet records in the native vault.
+do {
+vault.reset()
+let chunkFolder=folder.appendingPathComponent("chunks",isDirectory:true)
+func chunkFiles()->Set<String>{Set(((try? fm.contentsOfDirectory(atPath:chunkFolder.path)) ?? []).filter{$0.hasSuffix(".chunk")})}
+func hex(_ d:Data)->String{SHA256.hash(data:d).map{String(format:"%02x",$0)}.joined()}
+func chunkJSON(_ rev:Int,_ ids:[String]) throws -> String {
+    let rows:[String:Any]=["$ghBinary":"chunks-v1","byteLength":ids.count*8,"chunkBytes":8,"chunks":ids]
+    let obj:[String:Any]=["saveVersion":"3.0.0","saveRevision":rev,"resetEpoch":0,"simSeconds":Double(rev)*60,"fleet":["rows":rows]]
+    return String(data:try JSONSerialization.data(withJSONObject:obj,options:[.sortedKeys]),encoding:.utf8)!
+}
+let chunkA=Data((0..<4_194_304).map{UInt8(truncatingIfNeeded:($0 &* 2654435761) >> 24)}),chunkB=Data(repeating:7,count:131_072)
+test("chunk store round-trips bytes, compressed and SHA-256 checked") {
+    let digest=try vault.storeChunk(id:"s1.a.1",data:chunkA)
+    try check(digest==hex(chunkA),"Digest mismatch")
+    try check(try vault.chunkData(id:"s1.a.1")==chunkA,"Chunk bytes differ")
+    let size=((try fm.attributesOfItem(atPath:chunkFolder.appendingPathComponent("s1.a.1.chunk").path))[.size] as? NSNumber)?.intValue ?? Int.max
+    try check(size<chunkA.count,"Chunk file is not compressed: \\(size)")
+}
+test("re-uploading the same bytes is accepted; other bytes under the id are refused") {
+    _=try vault.storeChunk(id:"s1.a.1",data:chunkA)
+    var refused=false;do{_=try vault.storeChunk(id:"s1.a.1",data:chunkB)}catch{refused=true}
+    try check(refused,"Id reuse with other bytes accepted")
+    try check(try vault.chunkData(id:"s1.a.1")==chunkA,"Stored chunk changed")
+}
+test("unsafe chunk ids are refused") {
+    for id in ["","..",".","a/b","../x","a b",String(repeating:"x",count:200)] {
+        var refused=false;do{_=try vault.storeChunk(id:id,data:chunkB)}catch{refused=true}
+        try check(refused && !vault.isValidChunkId(id),"Unsafe id accepted: \\(id)")
+    }
+}
+test("a corrupt chunk file is detected on read") {
+    _=try vault.storeChunk(id:"s1.corrupt",data:chunkB)
+    let url=chunkFolder.appendingPathComponent("s1.corrupt.chunk");var bytes=try Data(contentsOf:url);bytes[bytes.count-1]^=0xff;try bytes.write(to:url)
+    var failed=false;do{_=try vault.chunkData(id:"s1.corrupt")}catch{failed=true}
+    try check(failed,"Corrupt chunk accepted")
+    try fm.removeItem(at:url)
+}
+test("a commit that lists a missing chunk is refused and leaves the disk unchanged") {
+    let ok=try chunkJSON(1,["s1.a.1"]);let _:Int=try wait{commit(ok,try! envelope(ok),$0)}
+    // The vault folder now holds the chunks/ directory, so compare the save files themselves.
+    func saveFiles() throws -> [String:Data] {var out:[String:Data]=[:];for name in ["save-A.json","save-B.json"] {let url=folder.appendingPathComponent(name);if fm.fileExists(atPath:url.path) {out[name]=try Data(contentsOf:url)}};return out}
+    let before=try saveFiles(),missing=try chunkJSON(2,["s1.a.1","s1.nothere"])
+    var refused=false;do{let _:Int=try wait{commit(missing,try! envelope(missing),$0)}}catch{refused=true}
+    try check(refused,"Commit with a missing chunk accepted")
+    try check(try saveFiles()==before,"Refused commit changed the disk")
+    try check(vault.currentSave()==ok,"Current save changed")
+}
+test("collection keeps chunks only because a vault file lists them, and removes stale ones") {
+    _=try vault.storeChunk(id:"s1.b.2",data:chunkB)
+    // Chunks from an earlier session: on disk but never uploaded by this process, so only a reference keeps them.
+    let source=chunkFolder.appendingPathComponent("s1.b.2.chunk")
+    for id in ["prev.ab.5","prev.slot.6","old.session.9"] {try fm.copyItem(at:source,to:chunkFolder.appendingPathComponent(id+".chunk"))}
+    let slot=try chunkJSON(2,["prev.slot.6"]);let _:GlobalSaveVault.ManualSlotMetadata=try wait{manual(0,slot,try! envelope(slot,action:"saveManualSlot"),$0)}
+    let next=try chunkJSON(3,["s1.a.1","prev.ab.5"]);let _:Int=try wait{commit(next,try! envelope(next),$0)}
+    let files=chunkFiles()
+    try check(files.contains("prev.ab.5.chunk"),"A/B-referenced chunk collected: \\(files.sorted())")
+    try check(files.contains("prev.slot.6.chunk"),"Manual-slot chunk collected: \\(files.sorted())")
+    try check(!files.contains("old.session.9.chunk"),"Stale chunk kept: \\(files.sorted())")
+    try check(try vault.chunkData(id:"prev.ab.5")==chunkB,"Kept chunk unreadable")
+}
+test("bootstrap of a chunked save installs the boot gate") {
+    let script=vault.bootstrapJavaScript(force:false)
+    try check(script.contains("__GH_BOOT_GATE__") && script.contains("gh://app/save-chunk/"),"Boot gate missing")
+}
+}
 // Baseline validation runs in the main-thread probe; candidate enqueues it on the real vault queue.
 vault.reset()
 let perf=try makeJSON(1,extra:String(repeating:"x",count:14_000_000)),perfEnvelope=try envelope(perf)

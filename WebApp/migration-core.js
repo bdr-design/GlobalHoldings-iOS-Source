@@ -90,8 +90,12 @@
     if(!raw){const pristine=globalThis.GH_GAME_LIFECYCLE?.pristine?globalThis.GH_GAME_LIFECYCLE.pristine(defaultState,0):clone(defaultState),companyUpgrade=migrateCompanyPlatform(pristine),fleetUpgrade=migrateFleet(companyUpgrade.state);return {state:saveSchema.normalize(fleetUpgrade.state,defaultState),source:'default',migratedLegacyKey:null,needsCanonicalPersist:false};}
     // Validate the actual persisted root before merging defaults or normalizing.
     // A corrupt/future save remains untouched for recovery or explicit export.
-    let saved;try{saved=JSON.parse(raw);if(globalThis.GH_STATE_CODEC?.decodeState)saved=globalThis.GH_STATE_CODEC.decodeState(saved);}catch{throw new Error('MIGRATION_JSON_INVALID');}
+    // Build 358: a native save may keep the fleet records in vault chunks ('chunks-v1'); the native bootstrap fetched
+    // them into __GH_NATIVE_SAVE_CHUNKS__ (id -> ArrayBuffer). A missing chunk is a corrupt save, like invalid JSON.
+    const nativeChunks=nativeRaw&&typeof globalThis.__GH_NATIVE_SAVE_CHUNKS__?.get==='function'?globalThis.__GH_NATIVE_SAVE_CHUNKS__:null;let chunkManifest=null;
+    let saved;try{saved=JSON.parse(raw);chunkManifest=saved?.fleet?.rows?.$ghBinary==='chunks-v1'?saved.fleet.rows:null;if(globalThis.GH_STATE_CODEC?.decodeState)saved=globalThis.GH_STATE_CODEC.decodeState(saved,{resolveChunk:id=>nativeChunks?.get(id)});}catch{throw new Error('MIGRATION_JSON_INVALID');}
     if(nativeRaw)try{delete globalThis.__GH_NATIVE_SAVE_JSON__;}catch{globalThis.__GH_NATIVE_SAVE_JSON__=null;}
+    if(nativeChunks)try{delete globalThis.__GH_NATIVE_SAVE_CHUNKS__;}catch{globalThis.__GH_NATIVE_SAVE_CHUNKS__=null;}
     const currentFleet=globalThis.GH_FLEET_STORE?.isStore?.(saved.fleet)===true&&saved.saveVersion===SAVE_V3,
       schemaUpgrade=currentFleet?{state:saved,changed:false}:(saveSchema.migrateLegacy?.(saved)||{state:saved,changed:false}),
       // A current store may contain a 128 MB ArrayBuffer. Company migration
@@ -120,6 +124,9 @@
       if(localStorage.getItem(storageKey)!==out.json)throw new Error('MIGRATION_READBACK_FAILED');
       if(migratedLegacyKey)localStorage.removeItem(migratedLegacyKey);
     }
+    // The loaded fleet keeps the chunk ids it was read from, and the vault already holds them: the first save of the
+    // session uploads only the chunks it changes.
+    if(chunkManifest&&state?.fleet&&globalThis.GH_STATE_CODEC?.adoptChunkIds?.(state.fleet,chunkManifest))globalThis.GH_PERSISTENCE?.noteVaultChunks?.(chunkManifest.chunks);
     return {state,source,migratedLegacyKey,needsCanonicalPersist};
   }
   function structural(state,defaultState){

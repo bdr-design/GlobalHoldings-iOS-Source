@@ -201,6 +201,7 @@ final class GlobalSaveVault {
     private func commitLocked(_ json: String, runtimeVersion: String? = nil, allowRegression: Bool = false) throws -> Int {
         if !allowRegression && fm.fileExists(atPath: resetCheckpointURL.path) { throw VaultError.message("Reset recovery is pending.") }
         let validation = try validatePayload(json)
+        try requireChunksLocked(json)
         try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         let current = bestEnvelope()
         if !allowRegression && current == nil && ["A", "B"].contains(where: { fm.fileExists(atPath: url($0).path) }) { throw VaultError.message("No valid native save remains; recovery required.") }
@@ -239,6 +240,7 @@ final class GlobalSaveVault {
               (verified.saveRevision ?? 0) == validation.saveRevision else {
             throw VaultError.message("Native save verification failed after write.")
         }
+        collectChunkGarbageLocked()
         return generation
     }
 
@@ -340,6 +342,7 @@ final class GlobalSaveVault {
                 if let envelope { try self.validateBridgeEnvelope(envelope, json: json, action: "saveManualSlot") }
                 let index = try self.validatedManualSlotIndex(index)
                 let validation = try self.validatePayload(json)
+                try self.requireChunksLocked(json)
                 try self.fm.createDirectory(at: self.folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
                 let metadata = ManualSlotMetadata(
                     index: index,
@@ -506,6 +509,16 @@ final class GlobalSaveVault {
           // payload out of WebKit localStorage so large worlds are not constrained
           // by the browser quota. Migration Core consumes this value once at boot.
           window.__GH_NATIVE_SAVE_JSON__=raw;
+          // Build 358 (million-asset save): fleet records kept in vault chunks are fetched before app.js runs.
+          // app.js defers itself to __GH_BOOT_GATE__ until every chunk has arrived (or one failed: the load then
+          // reports a corrupt save and the recovery path takes over).
+          try{if(raw.includes('"$ghBinary":"chunks-v1"')){const rows=JSON.parse(raw)?.fleet?.rows;if(rows&&rows.$ghBinary==='chunks-v1'&&Array.isArray(rows.chunks)){
+            const chunks=new Map(),gate={ready:false,failed:null,deferred:null,defer(script){this.deferred=(script&&script.src)||'app.js';}};
+            window.__GH_NATIVE_SAVE_CHUNKS__=chunks;window.__GH_BOOT_GATE__=gate;
+            Promise.all(rows.chunks.map(id=>fetch('gh://app/save-chunk/'+encodeURIComponent(id),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('save-chunk-'+r.status);return r.arrayBuffer();}).then(buffer=>{chunks.set(id,buffer);})))
+              .catch(error=>{gate.failed=String(error&&error.message||error);console.error('GH native save chunks failed',error);})
+              .finally(()=>{gate.ready=true;if(gate.deferred){const s=document.createElement('script');s.src=gate.deferred;(document.body||document.documentElement).appendChild(s);}});
+          }}}catch(e){console.error('GH native save chunk manifest failed',e);}
           window.__GH_NATIVE_SAVE_META__=Object.freeze({source:'native-save-vault',generation:\(nativeGeneration),saveRevision:\(nativeRevision),resetEpoch:Number(\(nativeReset)),simSeconds:Number(\(nativeSim)),forced:\(forceValue),paused:\(pauseValue)});
           window.__GH_NATIVE_SLOT_META__=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('\(slotB64)'),c=>c.charCodeAt(0))));
           try{sessionStorage.setItem('gh-native-save-restored','1');}catch(_e){}
@@ -576,6 +589,114 @@ final class GlobalSaveVault {
         let revision = Int(revisionValue)
         guard let reset = validNumber("resetEpoch", fallback: 0), reset.isFinite, reset >= 0, reset <= 9_007_199_254_740_991, reset.rounded(.down) == reset else { throw VaultError.message("Invalid reset epoch.") }
         return (sim, revision, reset)
+    }
+
+    // MARK: - Build 358 chunked fleet records (million-asset saves)
+    //
+    // A Save Schema 3 payload may hold the fleet record buffer as a 'chunks-v1' manifest (fleet.rows.chunks: ids of
+    // 4 MiB chunks) instead of base64 inside the JSON. Chunks are stored once per id in `chunks/<id>.chunk`:
+    //   "GHCHUNK1" | SHA-256 of the raw bytes (32) | raw length (UInt64 LE) | LZFSE-compressed bytes
+    // Every read decompresses and checks length and SHA-256. A payload is committed only when every chunk it lists is
+    // on disk. After each commit, chunks no vault file mentions (A/B, manual slots and their reset backups, rollback and
+    // reset checkpoints) and that were not uploaded in the last 10 minutes are deleted; a chunk is kept if its id
+    // appears anywhere in those files, so a referenced chunk is never collected.
+    private var chunkFolder: URL { folder.appendingPathComponent("chunks", isDirectory: true) }
+    private var recentChunkUploads: [String: Date] = [:]
+    private static let chunkMagic = Data("GHCHUNK1".utf8)
+    private static let chunkGracePeriod: TimeInterval = 600
+
+    func isValidChunkId(_ id: String) -> Bool {
+        guard !id.isEmpty, id.utf8.count <= 160, id != ".", id != ".." else { return false }
+        return id.utf8.allSatisfy { (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 46 || $0 == 95 || $0 == 45 }
+    }
+    private func chunkURL(_ id: String) -> URL { chunkFolder.appendingPathComponent(id + ".chunk", isDirectory: false) }
+
+    func storeChunkAsync(id: String, data: Data, completion: ((Result<String, Error>) -> Void)? = nil) {
+        queue.async {
+            let result = Result<String, Error> { try self.storeChunkLocked(id: id, data: data) }
+            if let completion { DispatchQueue.main.async { completion(result) } }
+        }
+    }
+
+    @discardableResult
+    func storeChunk(id: String, data: Data) throws -> String { try queue.sync { try storeChunkLocked(id: id, data: data) } }
+
+    private func storeChunkLocked(id: String, data: Data) throws -> String {
+        guard isValidChunkId(id) else { throw VaultError.message("Invalid save chunk id.") }
+        guard !data.isEmpty, data.count <= 64 * 1024 * 1024 else { throw VaultError.message("Invalid save chunk size.") }
+        let digest = sha256(data)
+        if fm.fileExists(atPath: chunkURL(id).path) {
+            guard let existing = try? readChunkLocked(id: id), existing == data else { throw VaultError.message("Save chunk id reused with other bytes.") }
+            recentChunkUploads[id] = Date()
+            return digest
+        }
+        try fm.createDirectory(at: chunkFolder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+        let compressed = try (data as NSData).compressed(using: .lzfse) as Data
+        var file = Data(GlobalSaveVault.chunkMagic)
+        file.append(contentsOf: SHA256.hash(data: data))
+        var length = UInt64(data.count).littleEndian
+        withUnsafeBytes(of: &length) { file.append(contentsOf: $0) }
+        file.append(compressed)
+        try file.write(to: chunkURL(id), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        guard let verified = try? readChunkLocked(id: id), verified == data else {
+            try? fm.removeItem(at: chunkURL(id))
+            throw VaultError.message("Save chunk verification failed after write.")
+        }
+        recentChunkUploads[id] = Date()
+        return digest
+    }
+
+    func chunkData(id: String) throws -> Data { try queue.sync { try readChunkLocked(id: id) } }
+    func chunkDataAsync(id: String, completion: @escaping (Result<Data, Error>) -> Void) {
+        queue.async {
+            let result = Result<Data, Error> { try self.readChunkLocked(id: id) }
+            DispatchQueue.main.async { completion(result) }
+        }
+    }
+
+    private func readChunkLocked(id: String) throws -> Data {
+        guard isValidChunkId(id) else { throw VaultError.message("Invalid save chunk id.") }
+        let file = try Data(contentsOf: chunkURL(id))
+        guard file.count >= 48, file.prefix(8) == GlobalSaveVault.chunkMagic else { throw VaultError.message("Save chunk is corrupt.") }
+        let digest = file.subdata(in: 8..<40)
+        var length: UInt64 = 0
+        _ = withUnsafeMutableBytes(of: &length) { file.subdata(in: 40..<48).copyBytes(to: $0) }
+        length = UInt64(littleEndian: length)
+        let raw = try (file.subdata(in: 48..<file.count) as NSData).decompressed(using: .lzfse) as Data
+        guard UInt64(raw.count) == length, Data(SHA256.hash(data: raw)) == digest else { throw VaultError.message("Save chunk is corrupt.") }
+        return raw
+    }
+
+    /// Chunk ids a payload lists (fleet.rows.chunks of a 'chunks-v1' manifest); [] for a payload without one.
+    func referencedChunks(_ json: String) throws -> [String] {
+        guard let data = json.data(using: .utf8), let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw VaultError.message("Save payload is not valid JSON.")
+        }
+        guard let fleet = root["fleet"] as? [String: Any], let rows = fleet["rows"] as? [String: Any],
+              rows["$ghBinary"] as? String == "chunks-v1" else { return [] }
+        guard let ids = rows["chunks"] as? [String], ids.allSatisfy({ isValidChunkId($0) }) else {
+            throw VaultError.message("Invalid save chunk manifest.")
+        }
+        return ids
+    }
+
+    private func requireChunksLocked(_ json: String) throws {
+        for id in try referencedChunks(json) where !fm.fileExists(atPath: chunkURL(id).path) {
+            throw VaultError.message("Missing save chunk: \(id)")
+        }
+    }
+
+    private func collectChunkGarbageLocked() {
+        guard let names = try? fm.contentsOfDirectory(atPath: chunkFolder.path) else { return }
+        let vaultFiles = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        let corpus = vaultFiles.filter { $0.pathExtension == "json" }.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
+        let cutoff = Date().addingTimeInterval(-GlobalSaveVault.chunkGracePeriod)
+        recentChunkUploads = recentChunkUploads.filter { $0.value > cutoff }
+        for name in names where name.hasSuffix(".chunk") {
+            let id = String(name.dropLast(6))
+            if recentChunkUploads[id] != nil || corpus.contains(where: { $0.contains(id) }) { continue }
+            try? fm.removeItem(at: chunkFolder.appendingPathComponent(name))
+        }
     }
 
     private func sha256(_ data: Data) -> String {

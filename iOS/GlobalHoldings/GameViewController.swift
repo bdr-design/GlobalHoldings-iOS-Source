@@ -486,6 +486,24 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                         self?.reportSaveAck(payload: payload, success: false, generation: nil, message: error.localizedDescription, nativeVaultCommitMs: nativeVaultCommitMs)
                     }
                 }
+            case "storeSaveChunk":
+                // Build 358 (million-asset save): one 4 MiB fleet record chunk, uploaded before the commit that lists it.
+                guard let requestId = payload["requestId"] as? String, !requestId.isEmpty, requestId.count <= 200,
+                      let id = payload["id"] as? String, GlobalSaveVault.shared.isValidChunkId(id),
+                      let text = payload["base64"] as? String, text.utf8.count <= 96 * 1024 * 1024,
+                      let data = Data(base64Encoded: text) else {
+                    reportBridgeEvent("gh-native-chunk-ack", detail: ["requestId": payload["requestId"] as? String ?? "", "id": payload["id"] as? String ?? "", "success": false, "message": "Invalid save chunk upload."])
+                    return
+                }
+                GlobalSaveVault.shared.storeChunkAsync(id: id, data: data) { [weak self] result in
+                    guard self?.isCurrentDocument(requestDocument) == true else { return }
+                    switch result {
+                    case .success(let digest):
+                        self?.reportBridgeEvent("gh-native-chunk-ack", detail: ["requestId": requestId, "id": id, "success": true, "sha256": digest])
+                    case .failure(let error):
+                        self?.reportBridgeEvent("gh-native-chunk-ack", detail: ["requestId": requestId, "id": id, "success": false, "message": error.localizedDescription])
+                    }
+                }
             case "saveManualSlot":
                 guard let index = payloadInteger(payload["index"]), (0...2).contains(index),
                       let json = payload["saveJSON"] as? String else {
@@ -904,6 +922,9 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
 }
 
 private final class GlobalGameSchemeHandler: NSObject, WKURLSchemeHandler {
+    // Tasks still waiting for an asynchronous reply (save chunks). A stopped task must never receive data.
+    private var pendingTasks = Set<ObjectIdentifier>()
+
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         guard let url = urlSchemeTask.request.url else {
             finish404(urlSchemeTask, url: URL(string: "gh://app/")!)
@@ -912,6 +933,10 @@ private final class GlobalGameSchemeHandler: NSObject, WKURLSchemeHandler {
         var path = url.path.removingPercentEncoding ?? url.path
         if path.hasPrefix("/") { path.removeFirst() }
         if path.isEmpty { path = "index.html" }
+        if url.host?.lowercased() == "app", path.hasPrefix("save-chunk/") {
+            serveSaveChunk(urlSchemeTask, url: url, id: String(path.dropFirst("save-chunk/".count)))
+            return
+        }
         guard let file = GlobalGameStorage.shared.fileURL(for: path), let data = try? Data(contentsOf: file) else {
             finish404(urlSchemeTask, url: url)
             return
@@ -928,7 +953,36 @@ private final class GlobalGameSchemeHandler: NSObject, WKURLSchemeHandler {
         urlSchemeTask.didFinish()
     }
 
-    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
+        pendingTasks.remove(ObjectIdentifier(urlSchemeTask as AnyObject))
+    }
+
+    /// Build 358 (million-asset save): the fleet record chunks of the native save, read (decompressed and SHA-256
+    /// checked) on the vault queue. The boot gate fetches them before app.js assembles the saved fleet.
+    private func serveSaveChunk(_ task: WKURLSchemeTask, url: URL, id: String) {
+        guard (task.request.httpMethod ?? "GET").uppercased() == "GET", GlobalSaveVault.shared.isValidChunkId(id) else {
+            finish404(task, url: url)
+            return
+        }
+        let key = ObjectIdentifier(task as AnyObject)
+        pendingTasks.insert(key)
+        GlobalSaveVault.shared.chunkDataAsync(id: id) { [weak self] result in
+            guard let self, self.pendingTasks.remove(key) != nil else { return }
+            switch result {
+            case .success(let data):
+                let headers = ["Content-Type": "application/octet-stream", "Content-Length": String(data.count), "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"]
+                guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers) else {
+                    self.finish404(task, url: url)
+                    return
+                }
+                task.didReceive(response)
+                task.didReceive(data)
+                task.didFinish()
+            case .failure:
+                self.finish404(task, url: url)
+            }
+        }
+    }
 
     private func finish404(_ task: WKURLSchemeTask, url: URL) {
         let body = Data("Game files not found.".utf8)

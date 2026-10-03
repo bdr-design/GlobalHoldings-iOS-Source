@@ -1,5 +1,9 @@
 (() => {
   'use strict';
+  // Build 358 (million-asset save): a native save whose fleet records live in vault chunks is assembled before the
+  // game starts. The native bootstrap installs __GH_BOOT_GATE__ while it fetches the chunks; until the gate is ready
+  // this script returns at once, and the gate runs it again (same file) when the chunks have arrived or failed.
+  {const gate=window.__GH_BOOT_GATE__;if(gate&&gate.ready!==true&&typeof gate.defer==='function'){gate.defer(document.currentScript);return;}}
 
   const $ = id => document.getElementById(id);
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
