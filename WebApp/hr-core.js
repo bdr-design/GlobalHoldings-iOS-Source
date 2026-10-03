@@ -46,12 +46,15 @@
   const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,'mobility-center':18,power:32,bank:16,acquired:28});
   const assetOwner=a=>String(a?.ownerCompanyId||a?.companyId||platform()?.ownerForLegacyAssetMode?.(a?.assetMode||a?.type)||(!platform()?a?.type:'')||'');
   const facilityOwner=f=>String(f?.ownerCompanyId||f?.companyId||f?.company||'');
+  // Build 358 (million-asset): whether any asset belongs to an owner, counted per class of rows (one cached class scan
+  // per fleet revision) instead of visiting every asset until one matches.
+  const ownsAssets=(s,owner)=>(fleetData().countByFields(s,['ownerCompanyId','companyId','assetMode','type'],assetOwner).get(owner)||0)>0;
   const EXECUTIVE_RULES=Object.freeze({
     H3:()=>true,
-    H4:s=>fleetData().some(s,a=>assetOwner(a)==='air')||(s.globalBases||[]).some(f=>facilityOwner(f)==='air'),
-    H2:s=>fleetData().some(s,a=>assetOwner(a)==='sea')||(s.globalBases||[]).some(f=>facilityOwner(f)==='sea'),
-    H1:s=>fleetData().some(s,a=>assetOwner(a)==='road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
-    H6:s=>fleetData().some(s,a=>assetOwner(a)==='road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
+    H4:s=>ownsAssets(s,'air')||(s.globalBases||[]).some(f=>facilityOwner(f)==='air'),
+    H2:s=>ownsAssets(s,'sea')||(s.globalBases||[]).some(f=>facilityOwner(f)==='sea'),
+    H1:s=>ownsAssets(s,'road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
+    H6:s=>ownsAssets(s,'road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
     H5:s=>(s.acceptedContracts||[]).length>0,
     H7:s=>Object.values(s.stakes||{}).some(v=>Number(v)>0),
     H8:s=>(s.openedCompanies||[]).includes('power'),

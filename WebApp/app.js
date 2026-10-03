@@ -706,7 +706,7 @@
   if (!Array.isArray(state.leasedAssets)) state.leasedAssets=[];
   if (!state.routeCache || Array.isArray(state.routeCache) || typeof state.routeCache!=='object') state.routeCache={};
   function pruneRouteCache(maxEntries=160){
-    const active=new Set((state.customRoutes||[]).map(route=>route?.id).filter(Boolean));window.GH_FLEET_DATA.forEach(state,asset=>{if(asset.routeId)active.add(asset.routeId);});
+    const active=new Set((state.customRoutes||[]).map(route=>route?.id).filter(Boolean));for(const id of window.GH_FLEET_DATA.distinctRefs(state,'routeId'))active.add(id);
     const rows=Object.entries(state.routeCache).filter(([id,v])=>v&&Number.isFinite(Number(v.distanceKm))&&((Array.isArray(v.route)&&v.route.length>=2)||v.canonicalRouteId===id));
     rows.sort((a,b)=>{const av=active.has(a[0])?1:0,bv=active.has(b[0])?1:0;if(av!==bv)return bv-av;const bs=Number(b[1].cachedAtSim),as=Number(a[1].cachedAtSim);if(Number.isFinite(bs)||Number.isFinite(as))return (Number.isFinite(bs)?bs:-1)-(Number.isFinite(as)?as:-1);return Date.parse(b[1].updated||0)-Date.parse(a[1].updated||0);});
     state.routeCache=Object.fromEntries(rows.slice(0,Math.max(20,Math.min(160,maxEntries))));
@@ -722,7 +722,11 @@
   if(dedupeCustomRoutes()||legacyBankMigration.changed||legacyRouteExclusivity.changed) save();
   // ترحيل المسارات البحرية القديمة التي كانت خطوطًا عامة إلى شبكة الممرات البحرية الحالية.
   let maritimeMigrationChanged=false;
-  Object.values(routeTemplates).filter(route=>route.type==='sea'&&route.maritimeGeometryVersion!==310&&!window.GH_FLEET_DATA.some(state,asset=>asset.routeId===route.id&&asset.phase==='moving')).forEach(route=>{
+  // Routes with a moving asset, counted once per class of rows (phase as views present it), only when a sea route
+  // still needs the migration.
+  let movingRouteIds=null;
+  const routeHasMovingAsset=routeId=>{if(!movingRouteIds){const fleet=window.GH_FLEET_DATA;movingRouteIds=new Set();fleet.forEachFieldClasses(state,['phase','routeId','simulationFault'],(row,count)=>{if(count&&row.routeId&&fleet.presentedPhase(state,row)==='moving')movingRouteIds.add(row.routeId);});}return movingRouteIds.has(routeId);};
+  Object.values(routeTemplates).filter(route=>route.type==='sea'&&route.maritimeGeometryVersion!==310&&!routeHasMovingAsset(route.id)).forEach(route=>{
     if(rebuildMaritimeRoute(route)){maritimeMigrationChanged=true;const saved=state.customRoutes.find(r=>r.id===route.id);if(saved)Object.assign(saved,clone(route));}
   });
   if(maritimeMigrationChanged){state.routesRevision=(Math.max(0,Math.floor(Number(state.routesRevision)||0))+1);save();}
@@ -1051,7 +1055,7 @@
     onFailure:error=>nonCritical('map-asset-query-worker-disabled',error),
     onResult:result=>{
       const current=mapAssetQueryRequest;
-      if(!map||!current||current.assets!==fleetPresentationRows()||current.revision!==(Number(state.saveRevision)||0)||current.filterKey!==result.filterKey)return;
+      if(!map||!current||mapAggregateMode()||current.assets!==fleetPresentationRows()||current.revision!==(Number(state.saveRevision)||0)||current.filterKey!==result.filterKey)return;
       if(current.filterKey!==window.GH_MAP_ASSET_QUERY_CORE.filterKey(currentMapFilter().companies))return;
       renderMap();
     }
@@ -1062,7 +1066,7 @@
     onFailure:error=>nonCritical('map-presentation-worker-disabled',error),
     onPlan:result=>{
       const current=mapPresentationPlanRequest;
-      if(!map||!current||current.key!==result.key||current.assets!==fleetPresentationRows()||current.revision!==(Number(state.saveRevision)||0)||!mapPresentationEngine)return;
+      if(!map||!current||mapAggregateMode()||current.key!==result.key||current.assets!==fleetPresentationRows()||current.revision!==(Number(state.saveRevision)||0)||!mapPresentationEngine)return;
       renderMap();
     },
     onPositions:result=>{
@@ -1132,14 +1136,21 @@
   function normalizeAsset(asset){return window.GH_FLEET_CORE.normalizeAsset(asset,{route:routeTemplates[asset.routeId],catalogItem:catalogItem(asset.type,asset.catalogId)});}
   function normalizedAssetView(asset){return normalizeAsset(window.GH_FLEET_DATA.plain(asset));}
   {
+    // Build 358 (million-asset): one row pass (GH_FLEET_DATA.scan presents exactly what a view presents) finds the
+    // assets that need a patch; only those are written, in row order, each through its own view as before.
     const fleet=window.GH_FLEET_DATA,TX=window.GH_TRANSACTION_CORE;
-    const normalized=TX.execute(state,{label:'fleet-startup-normalization',scope:['fleet'],apply:()=>fleet.forEach(state,asset=>{
+    const STARTUP_FIELDS=['routeId','reverse','assetMode','type','catalogId','specs','distanceKm','dwellHours','from','to','effectiveSpeedKmh','tripSeconds','phase','progress','fuel','condition'];
+    const startupPatch=asset=>{
       const route=routeTemplates[asset.routeId],specs=asset.specs||catalogItem(asset.type,asset.catalogId)?.specs||null,patch={},set=(key,value)=>{if(!Object.is(asset[key],value))patch[key]=value;};
       if(route){set('distanceKm',route.distanceKm);set('dwellHours',route.dwellHours);set('from',asset.reverse?route.to:route.from);set('to',asset.reverse?route.from:route.to);set('effectiveSpeedKmh',route.effectiveSpeedKmh);set('tripSeconds',route.tripSeconds);
         if(specs){const mode=assetModeOf(asset),rated=mode==='air'?(specs.speedKmh||route.effectiveSpeedKmh)*.9:mode==='sea'?(specs.speedKn||route.effectiveSpeedKmh/1.852)*1.852*.88:(specs.speedKmh||route.effectiveSpeedKmh)*.76,effective=Math.max(20,Math.min(rated,route.effectiveSpeedKmh*1.08));set('effectiveSpeedKmh',effective);set('tripSeconds',route.distanceKm/effective*3600);}}
       if(!asset.phase)set('phase',asset.routeId?'moving':'idle');if(typeof asset.progress!=='number')set('progress',0);if(typeof asset.fuel!=='number')set('fuel',100);if(typeof asset.condition!=='number')set('condition',100);if(!asset.specs&&specs)set('specs',fleet.plain(specs));
-      if(Object.keys(patch).length)fleet.update(state,asset,patch);
-    })});
+      return patch;
+    };
+    const normalized=TX.execute(state,{label:'fleet-startup-normalization',scope:['fleet'],apply:()=>{
+      const pending=[];fleet.scan(state,STARTUP_FIELDS,(asset,index)=>{const patch=startupPatch(asset);if(Object.keys(patch).length)pending.push([index,patch]);});
+      for(const [index,patch] of pending)fleet.update(state,fleet.viewAt(state,index),patch);
+    }});
     if(!normalized.committed)throw new Error(normalized.reason||'fleet-startup-normalization-failed');
   }
 
@@ -1316,7 +1327,8 @@
   function operationalRouteIds(type=null){
     const ids=new Set();
     (state.customRoutes||[]).forEach(r=>{if(r?.id&&(!type||r.type===type))ids.add(r.id);});
-    window.GH_FLEET_DATA.forEach(state,a=>{if(a?.routeId&&(!type||a.type===type))ids.add(a.routeId);});
+    // Build 358 (million-asset): the assets' routes from the routeId column, in first-occurrence order.
+    for(const id of window.GH_FLEET_DATA.distinctRefs(state,'routeId',type?['type',type]:null))ids.add(id);
     return ids;
   }
   function operationalRoutes(type=null){
@@ -1768,9 +1780,80 @@
     return picked;
   }
 
+  function addIndividualAssetMarkers(individual){
+    const uniqueIndividuals=[...new Map(individual.map(asset=>[asset.id,asset])).values()];
+    for(const asset of uniqueIndividuals){
+      const position=assetPosition(asset);if(!position){nonCritical('asset-position-missing',new Error(`Missing position for ${asset.id}`));continue;}
+      const moving=asset.phase==='moving',icon=L.divIcon({className:`asset-marker ${asset.type}${moving?' is-moving':''}`,html:vehicleMarkerHtml(asset),iconSize:[42,42],iconAnchor:[21,21]});
+      const marker=L.marker(markerDisplayStart(`own:${asset.id}`,position),{icon,zIndexOffset:selectedAssetId===asset.id?760:700}).addTo(map);
+      marker.on('click',()=>showAsset(asset.id));ownMarkers.set(asset.id,marker);renderedAssetIds.add(asset.id);
+    }
+  }
+  // Build 358 (million-asset): above MAP_AGGREGATE_ASSETS the map draws the fleet from classes of rows (exact counts,
+  // one cached class scan per fleet revision) instead of one view per asset: parked assets as clusters per owner and
+  // base (a group of at most three shown one by one while the budget allows, as before), moving assets as clusters per
+  // owner, mode and grid cell of their routes' midpoints (thousands of assets spread along a route average there), and
+  // one moving asset per owner and route as an individually animated hero (round robin across owners by id, as
+  // movingHeroSelection). Only heroes, small groups and the selected asset get views.
+  const MAP_AGGREGATE_ASSETS=20000;
+  const MAP_CLASS_FIELDS=Object.freeze(['ownerCompanyId','companyId','assetMode','type','baseFacility','routeId','reverse','phase','simulationFault']);
+  function mapAggregateMode(){return (window.GH_FLEET_DATA.size(state)||0)>MAP_AGGREGATE_ASSETS;}
+  // The company filter of mapVisibleAssetRows for one owner.
+  function mapOwnerVisibility(filterState){
+    const companies=filterState?.companies||{mode:'all',included:[],excluded:[]},included=new Set(Array.isArray(companies.included)?companies.included:[]),excluded=new Set(Array.isArray(companies.excluded)?companies.excluded:[]),knownByOwner=new Map(),allCompaniesFilter=MAP_FEATURE_CORE.normalizeFilterState({...filterState,companies:{mode:'all',included:[],excluded:[]}},{state,companyPlatform:COMPANY_PLATFORM});
+    return owner=>{
+      if(!owner)return false;let known=knownByOwner.get(owner);if(known===undefined){known=MAP_FEATURE_CORE.companyVisible(allCompaniesFilter,owner,{state,companyPlatform:COMPANY_PLATFORM});knownByOwner.set(owner,known);}
+      if(!known)return false;return companies.mode==='include'?included.has(owner):!excluded.has(owner);
+    };
+  }
+  function mapAggregateSelectedAsset(filterState,accept=()=>true){
+    if(!selectedAssetId)return null;const asset=window.GH_FLEET_DATA.get(state,selectedAssetId);
+    return asset&&mapOwnerVisibility(filterState)(assetOwnerCompanyId(asset))&&accept(asset)?asset:null;
+  }
+  function renderAggregatedFleet(filterState,zoom){
+    const fleet=window.GH_FLEET_DATA,visible=mapOwnerVisibility(filterState),standardBudget=mapRenderBudget(zoom,'standard'),stationary=new Map(),moving=new Map(),representatives=new Map();
+    fleet.forEachFieldClasses(state,MAP_CLASS_FIELDS,(row,count,info)=>{
+      if(!count)return;const owner=assetOwnerCompanyId(row);if(!visible(owner))return;
+      if(fleet.presentedPhase(state,row)==='moving'){
+        const mode=assetModeOf(row)||'asset',key=`${owner}|${mode}|${row.routeId}|${row.reverse?1:0}`;let group=moving.get(key);
+        if(!group){group={key,owner,mode,routeId:row.routeId,reverse:row.reverse===true,type:row.type,count:0};moving.set(key,group);}group.count+=count;
+        const repKey=row.routeId?`${owner}:${row.routeId}`:null;if(repKey){const rep=representatives.get(repKey);if(!rep||info.index<rep.index)representatives.set(repKey,{index:info.index,owner,mode});}
+      }else{
+        const key=`${owner}:${row.baseFacility||'unbased'}`;let group=stationary.get(key);
+        if(!group){group={key,type:assetModeOf(row),ownerCompanyId:owner,baseFacility:row.baseFacility,count:0,first:info.index};stationary.set(key,group);}
+        group.count+=count;if(info.index<group.first){group.first=info.index;group.type=assetModeOf(row);}
+      }
+    });
+    const selected=mapAggregateSelectedAsset(filterState),selectedMoving=selected?.phase==='moving';
+    // Heroes: one per owner and route, picked fairly across owners (fairAssetSelection reads id and owner).
+    const candidates=[...representatives.values()].map(rep=>({id:fleet.idAtRow(state,rep.index),ownerCompanyId:rep.owner,assetMode:rep.mode})).filter(row=>row.id!==undefined);
+    if(selectedMoving&&!candidates.some(row=>row.id===selected.id))candidates.push({id:selected.id,ownerCompanyId:assetOwnerCompanyId(selected),assetMode:assetModeOf(selected)});
+    const heroes=fairAssetSelection(candidates,standardBudget,selectedMoving?selectedAssetId:null).map(row=>row.id===selected?.id?selected:fleet.get(state,row.id)).filter(Boolean),individual=[...heroes];
+    for(const hero of heroes){const group=moving.get(`${assetOwnerCompanyId(hero)}|${assetModeOf(hero)||'asset'}|${hero.routeId}|${hero.reverse===true?1:0}`);if(group)group.count--;}
+    // Moving clusters per owner, mode and grid cell of route midpoints, coarsened to the budget.
+    const movingClusterBudget=Math.max(4,standardBudget-heroes.length),positioned=[];
+    for(const group of moving.values()){if(group.count<=0)continue;const route=currentAssetRoute(group),point=route?interpolatePresentationRoute(route,.5):null;if(Array.isArray(point)&&Number.isFinite(point[0])&&Number.isFinite(point[1]))positioned.push({group,point});}
+    let cell=zoom<4?28:zoom<6?12:zoom<9?4:1.2,clusters=[];
+    const build=()=>{const out=new Map();for(const {group,point} of positioned){const key=`${group.owner}:${group.mode}:${Math.floor((point[0]+90)/cell)}:${Math.floor((point[1]+180)/cell)}`;let cluster=out.get(key);if(!cluster){cluster={key,owner:group.owner,mode:group.mode,count:0,lat:0,lng:0};out.set(key,cluster);}cluster.count+=group.count;cluster.lat+=point[0]*group.count;cluster.lng+=point[1]*group.count;}return [...out.values()];};
+    clusters=build();while(clusters.length>Math.max(4,movingClusterBudget)&&cell<180){cell*=1.7;clusters=build();}
+    for(const cluster of clusters){const key=`moving:${cluster.key}`,label=`${companyFinanceName(cluster.owner)} · أصول متحركة`,marker=addFleetCluster(key,[cluster.lat/cluster.count,cluster.lng/cluster.count],cluster.mode,cluster.count,label,()=>openDrawer('assets',cluster.mode));if(marker)movingFleetClusters.set(key,{marker,assetIds:null});}
+    // Parked groups: the selected asset's group first, then by size; a group of at most three goes one by one while
+    // the budget allows (their rows are found by one pass that stops when all are found).
+    let stationarySlots=Math.max(0,standardBudget-individual.length);
+    const selectedKey=selected&&!selectedMoving?`${assetOwnerCompanyId(selected)}:${selected.baseFacility||'unbased'}`:null,ordered=[...stationary.values()].sort((a,b)=>Number(b.key===selectedKey)-Number(a.key===selectedKey)||b.count-a.count),singles=new Map(),clustersToDraw=[];
+    for(const group of ordered){
+      let clustered=group.count;
+      if(group.key===selectedKey){individual.push(selected);stationarySlots=Math.max(0,stationarySlots-1);clustered--;}
+      else if(group.count<=3&&stationarySlots>=group.count){singles.set(group.key,group);stationarySlots-=group.count;continue;}
+      if(clustered>0)clustersToDraw.push({group,count:clustered});
+    }
+    if(singles.size){let wanted=[...singles.values()].reduce((n,group)=>n+group.count,0);fleet.scan(state,['ownerCompanyId','companyId','assetMode','type','baseFacility','phase'],(row,index)=>{if(row.phase==='moving')return;const group=singles.get(`${assetOwnerCompanyId(row)}:${row.baseFacility||'unbased'}`);if(!group)return;const view=fleet.viewAt(state,index);if(view)individual.push(view);if(--wanted===0)return fleet.STOP;});}
+    for(const {group,count} of clustersToDraw){const base=findFacility(group.baseFacility),firstAsset=base?.coords?null:fleet.get(state,fleet.idAtRow(state,group.first)),coords=base?.coords||(firstAsset?assetPosition(firstAsset):null),label=base?.name||'مركز تشغيل';addFleetCluster(`cluster:${group.key}`,coords,group.type,count,label,()=>openDrawer('assets',group.type));}
+    addIndividualAssetMarkers(individual);
+  }
   function renderMap(){
     if(!map)return;
-    const filter=state.activeFilter||'all',filterState=currentMapFilter(),zoom=map.getZoom(),visibleAssets=mapCategoryVisible('assets')?mapVisibleAssetRows(filterState):[];
+    const filter=state.activeFilter||'all',filterState=currentMapFilter(),zoom=map.getZoom(),aggregate=mapAggregateMode(),visibleAssets=!aggregate&&mapCategoryVisible('assets')?mapVisibleAssetRows(filterState):[];
     captureMarkerVisualPositions();markerMotionStates.clear();
     routeLayers.forEach(layer=>{try{map.removeLayer(layer)}catch(error){nonCritical('map-route-remove',error);}}); routeLayers=[];
     ownMarkers.forEach(marker=>{try{map.removeLayer(marker)}catch(error){nonCritical('map-layer-remove',error);}}); ownMarkers.clear();
@@ -1784,12 +1867,14 @@
     // into continuous Leaflet/polyline work. Only the explicitly selected asset
     // may own a visible route layer.
     const selectedRouteAsset=mapCategoryVisible('routes')&&selectedAssetId
-      ? visibleAssets.find(asset=>asset.id===selectedAssetId&&asset.routeId)
+      ? (aggregate?mapAggregateSelectedAsset(filterState,asset=>Boolean(asset.routeId)):visibleAssets.find(asset=>asset.id===selectedAssetId&&asset.routeId))
       : null;
     if(selectedRouteAsset){
       const route=currentAssetRoute(selectedRouteAsset),color=identityRouteColor(assetOwnerCompanyId(selectedRouteAsset),assetModeOf(selectedRouteAsset));
       const line=L.polyline(window.GH_ROUTE_CORE.splitAtDateline(route),{color,weight:3.4,opacity:.96,dashArray:selectedRouteAsset.type==='air'?'7 9':null,lineCap:'round',smoothFactor:1.8,interactive:false}).addTo(map);routeLayers.push(line);
     }
+    if(aggregate){mapPresentationPlanRequest=null;mapPresentationPlanGeneration=0;if(mapCategoryVisible('assets'))renderAggregatedFleet(filterState,zoom);}
+    else{
     const standardBudget=mapRenderBudget(zoom,'standard'),movingAssets=visibleAssets.filter(asset=>asset.phase==='moving'),presentationInput=movingAssets.length&&mapPresentationEngine&&!mapPresentationEngine.isDisabled()?mapMovingPlanInput(movingAssets,zoom,standardBudget):null,presentationRequest=presentationInput?mapPresentationEngine.requestPlan(presentationInput):{ready:false,worker:false},presentationPlan=presentationRequest.ready?presentationRequest.plan:null;
     mapPresentationPlanRequest=presentationInput?{key:presentationInput.key,assets:fleetPresentationRows(),revision:Number(state.saveRevision)||0}:null;
     mapPresentationPlanGeneration=presentationPlan?.generation||0;
@@ -1813,12 +1898,7 @@
       const base=findFacility(group.baseFacility),coords=base?.coords||assetPosition(group.assets[0]),label=base?.name||'مركز تشغيل';
       addFleetCluster(`cluster:${key}`,coords,group.type,clusteredAssets.length,label,()=>openDrawer('assets',group.type));
     }
-    const uniqueIndividuals=[...new Map(individual.map(asset=>[asset.id,asset])).values()];
-    for(const asset of uniqueIndividuals){
-      const position=assetPosition(asset);if(!position){nonCritical('asset-position-missing',new Error(`Missing position for ${asset.id}`));continue;}
-      const moving=asset.phase==='moving',icon=L.divIcon({className:`asset-marker ${asset.type}${moving?' is-moving':''}`,html:vehicleMarkerHtml(asset),iconSize:[42,42],iconAnchor:[21,21]});
-      const marker=L.marker(markerDisplayStart(`own:${asset.id}`,position),{icon,zIndexOffset:selectedAssetId===asset.id?760:700}).addTo(map);
-      marker.on('click',()=>showAsset(asset.id));ownMarkers.set(asset.id,marker);renderedAssetIds.add(asset.id);
+    addIndividualAssetMarkers(individual);
     }
 
     if(mapLayerVisible('assets','mobility','mobility-fleet')){
@@ -1847,7 +1927,7 @@
     }
 
     if(mapCategoryVisible('facilities')){
-      const assetBaseIds=new Set(window.GH_FLEET_DATA.map(state,a=>a.baseFacility).filter(Boolean));
+      const assetBaseIds=new Set([...window.GH_FLEET_DATA.countByFields(state,['baseFacility'],a=>a.baseFacility).keys()].filter(Boolean));
       const visibleFacilities=getDynamicFacilities().filter(f=>{
         // المنشآت المرجعية تخدم الحسابات والدليل فقط؛ لا تظهر كملكية عند بداية لعبة جديدة.
         const belongsToPlayer=f.owned===true||assetBaseIds.has(f.id);
@@ -1893,7 +1973,7 @@
     if(mapStatusCache.assetKey!==assetKey){
       const summary=window.GH_MAP_ASSET_STATUS_SUMMARY;
       if(summary&&summary.saveRevision===revision&&summary.mapRevision===mapRevision&&summary.assetCount===assetLength){mapStatusCache.moving=summary.moving;mapStatusCache.idle=summary.idle;mapStatusCache.turn=summary.turn;}
-      else{let moving=0,idle=0,turn=0;window.GH_FLEET_DATA.forEach(state,asset=>{if(asset.phase==='moving')moving++;else if(asset.phase==='idle')idle++;else if(asset.phase==='turnaround')turn++;});mapStatusCache.moving=moving;mapStatusCache.idle=idle;mapStatusCache.turn=turn;}
+      else{const phases=window.GH_FLEET_DATA.countByPhase(state);mapStatusCache.moving=phases.get('moving')||0;mapStatusCache.idle=phases.get('idle')||0;mapStatusCache.turn=phases.get('turnaround')||0;}
       mapStatusCache.assetKey=assetKey;
     }
     if(mapStatusCache.ownerKey!==ownerKey){mapStatusCache.routed=operationalRoutes('road').filter(r=>r.routingSource).length;mapStatusCache.ownedFacilities=getDynamicFacilities().filter(f=>f?.owned).length;mapStatusCache.ownerKey=ownerKey;}
@@ -2014,7 +2094,9 @@
       if(now-lastMarkerFrameAt<markerInterval)return;
     }
     const previousMarkerFrameAt=lastMarkerFrameAt;lastMarkerFrameAt=now;
-    const assetIndex=presentationAssetLookup();
+    // Aggregate map (mapAggregateMode): the few individual markers are looked up by id, not through an index of every
+    // asset; its moving clusters stand at route midpoints (no member list to follow).
+    const assetIndex=mapAggregateMode()?{get:id=>window.GH_FLEET_DATA.get(state,id)}:presentationAssetLookup();
     // Visual targets are derived from committed simulation state, but interpolation
     // is presentation-only and never writes progress, simSeconds, finance or saves.
     for(const id of renderedAssetIds){const a=assetIndex.get(id),m=ownMarkers.get(id);if(a&&m){const onRoute=a.phase==='moving'||a.phase==='turnaround',route=onRoute?currentAssetRoute(a):null,progress=route?(a.phase==='turnaround'?1:a.progress):null,motionKey=`own:${id}`;setMapMarkerTarget(motionKey,m,assetPosition(a),now,force,{route,routeKey:route?`${a.routeId}:${a.reverse?1:0}`:null,progress,type:a.type,moving:a.phase==='moving'});const bridge=markerMotionStates.get(motionKey)?.routeBridge?.[0];refreshVehicleMarker(m,a.type,bridge?routeBearing(bridge.route,bridge.visualProgress):assetBearing(a),a.phase==='moving'||!!bridge);}}
@@ -2022,7 +2104,7 @@
     if(mapPresentationEngine&&!mapPresentationEngine.isDisabled()&&mapPresentationPlanGeneration){
       const ids=mapPresentationEngine.getAssetIds();if(ids.length){const progress=new Float32Array(ids.length);for(let index=0;index<ids.length;index++){const asset=assetIndex.get(ids[index]);progress[index]=asset?.phase==='turnaround'?1:Math.max(0,Math.min(1,Number(asset?.progress)||0));}movingCentersQueued=mapPresentationEngine.requestPositions(progress);}
     }
-    if(!movingCentersQueued)for(const [key,cluster] of movingFleetClusters){const assets=cluster.assetIds.map(id=>assetIndex.get(id)).filter(Boolean),point=averageMapPoint(assets,assetPosition);if(point)setMapMarkerTarget(`own:${key}`,cluster.marker,point,now,force);}
+    if(!movingCentersQueued)for(const [key,cluster] of movingFleetClusters){if(!cluster.assetIds)continue;const assets=cluster.assetIds.map(id=>assetIndex.get(id)).filter(Boolean),point=averageMapPoint(assets,assetPosition);if(point)setMapMarkerTarget(`own:${key}`,cluster.marker,point,now,force);}
     const liveIds=[...renderedMobilityIds];for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,Math.max(1,liveIds.length),{onlyIds:liveIds})||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){const motionKey=`own:mobility:${vehicle.id}`,route=vehicle.phase==='moving'?vehicle.route:null;setMapMarkerTarget(motionKey,m,interpolatePresentationRoute(vehicle.route,vehicle.progress),now,force,{route,routeKey:route?`${vehicle.id}:${vehicle.routeKey||vehicle.route?.length||0}`:null,progress:route?vehicle.progress:null,type:'mobility',moving:vehicle.phase==='moving'});const row=markerMotionStates.get(motionKey),bridge=row?.routeBridge?.[0],visualProgress=bridge?.visualProgress??row?.visualProgress??vehicle.progress;refreshVehicleMarker(m,'mobility',routeBearing(bridge?.route||vehicle.route,visualProgress),vehicle.phase==='moving'||!!bridge);}}
     const mobilityClusterIndex=new Map((window.GH_MOBILITY_CORE?.movingClusters?.(state,liveIds)||[]).map(cluster=>[cluster.centerId,cluster]));for(const [key,cluster] of movingMobilityClusters){const live=mobilityClusterIndex.get(cluster.centerId);if(live?.coords)setMapMarkerTarget(`own:${key}`,cluster.marker,live.coords,now,force);}
     competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){setMapMarkerTarget(`competitor:${a.id}`,m,interpolatePresentationRoute(a.route,a.progress),now,force,{route:a.route,routeKey:`${a.id}:${a.route?.length||0}`,progress:a.progress,type:a.type,moving:true});refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
@@ -2421,7 +2503,12 @@
       yield 'finance-day.realism-close';
       const groupCost=overhead+advancedCost+realismCost,groupPayrollExpense=payrollDueToday?payrollPlan.group.amount:0;
       if(groupCost>0){const paid=Math.min(companyOperatingBalance('group'),groupCost);if(paid>0)spendCompanySystem('group',paid,'إقفال يومي الشركة القابضة · إدارة وامتثال','قيد يومي',false);if(paid<groupCost){const due=groupCost-paid,number=`GH-ACC-${state.lastFinancialDay}`;postAccruedExpense('group',due,'عجز الشركة القابضة المرحّل','قيد مستحق',state.lastFinancialDay+7,number,'مصروفات إدارية وتشغيلية');}}
-      phase('simulation.finance-day.payroll-ar-settlement',()=>settleOutstandingPayroll());reconcileConsolidatedCash();yield 'finance-day.payroll-ar-settlement';const net=Object.values(closedSectorProfit).reduce((a,b)=>a+(Number(b)||0),0)-groupCost-groupPayrollExpense;phase('simulation.finance-day.daily-close-postings',()=>{dispatchSystemCommand({state},'finance','record-daily-close',{day:state.lastFinancialDay,sectors:closedSectorProfit,companies:companyDaily,net},{actor:'financial-close'});dispatchSystemCommand({state},'corporate','adjust-group-value',{delta:net*.03},{actor:'financial-close'});runOperationsCycle(net);});
+      phase('simulation.finance-day.payroll-ar-settlement',()=>settleOutstandingPayroll());reconcileConsolidatedCash();yield 'finance-day.payroll-ar-settlement';
+      // Build 358 (million-asset): the fleet condition total the operations cycle reports (GH_FLEET_DATA.sum, row order):
+      // from the realism close's fleet pass when the fleet is unchanged since, else read in slices of rows across
+      // frames; the postings below do not touch the fleet.
+      let fleetConditionTotal=window.GH_REALISM?.fleetReadinessTotal?.(state)??null;if(fleetConditionTotal===null){fleetConditionTotal=0;yield* window.GH_FLEET_DATA.scanStages(state,['condition'],a=>{fleetConditionTotal+=Number(a.condition)||0;},32768,'finance-day.fleet-readiness');}
+      const net=Object.values(closedSectorProfit).reduce((a,b)=>a+(Number(b)||0),0)-groupCost-groupPayrollExpense;phase('simulation.finance-day.daily-close-postings',()=>{dispatchSystemCommand({state},'finance','record-daily-close',{day:state.lastFinancialDay,sectors:closedSectorProfit,companies:companyDaily,net},{actor:'financial-close'});dispatchSystemCommand({state},'corporate','adjust-group-value',{delta:net*.03},{actor:'financial-close'});runOperationsCycle(net,fleetConditionTotal);});
       // رواتب تقويمية في تاريخ 27؛ إذا وصل حفظ قديم بعد التاريخ تُنفّذ مرة واحدة للشهر نفسه.
       if(payrollDueToday){
         phase('simulation.finance-day.payroll-payments',()=>{
@@ -2452,8 +2539,8 @@
     }
   }
 
-  function runOperationsCycle(net){
-    const fleetSize=window.GH_FLEET_DATA.size(state),moving=window.GH_FLEET_DATA.count(state,a=>a.phase==='moving'),readiness=fleetSize?window.GH_FLEET_DATA.sum(state,a=>a.condition)/fleetSize:100;
+  function runOperationsCycle(net,conditionTotal=null){
+    const fleetSize=window.GH_FLEET_DATA.size(state),moving=window.GH_FLEET_DATA.countByPhase(state).get('moving')||0,readiness=fleetSize?(conditionTotal??window.GH_FLEET_DATA.sum(state,a=>a.condition))/fleetSize:100;
     const brief=dispatchSystemCommand({state},'operations','daily-brief',{day:state.lastFinancialDay,net,moving,readiness,debt:state.debt,groupValue:state.groupValue},{actor:'simulation'}).result;
     if(brief.risk>=55)pushAlert(`مؤشر التشغيل: مخاطر تشغيلية مرتفعة (${brief.risk}/100). افحص الصيانة والسيولة قبل فتح التزامات جديدة.`);
     else if(state.lastFinancialDay%7===0)pushAlert(`مؤشر التشغيل الأسبوعي: ${moving} أصلًا متحركًا، جاهزية الأسطول ${Math.round(readiness)}%، صافي اليوم ${fmtMoney(net)}.`);
@@ -3420,6 +3507,19 @@
     drawOwnedVirtualWindow();
   }
 
+  // A company tab's ids (the virtual list reads ids[i] and ids.length), resolved from row numbers on access while the
+  // fleet's rows have not moved (GH_FLEET_DATA.membershipRevision); after a move nothing stale is shown and the panel
+  // is rendered again once.
+  function ownedRowIds(rows){
+    const fleet=window.GH_FLEET_DATA,token=fleet.membershipRevision(state);let rerender=false;
+    const ids=new Proxy(rows,{get(target,key){
+      if(key==='length')return target.length;
+      if(typeof key!=='string'||!/^\d+$/.test(key))return undefined;
+      if(fleet.membershipRevision(state)!==token){if(!rerender){rerender=true;requestAnimationFrame(()=>{if(activeDrawerPanel==='assets'&&ownedVirtualModel?.ids===ids)renderOwnedAssetsInto(false);});}return undefined;}
+      const index=Number(key);return index<target.length?fleet.idAtRow(state,target[index]):undefined;
+    }});
+    return ids;
+  }
   function renderOwnedAssets(arg){
     const assetCompanies=operationalCompanyInstances(state).filter(company=>company.definition?.capabilities?.includes('operations.fleet')||company.definition?.capabilities?.includes('operations.mobility'));
     const assetCompanyIds=new Set(assetCompanies.map(company=>company.id));
@@ -3429,7 +3529,13 @@
     }
     if(ownedFilterType!=='all'&&!assetCompanyIds.has(ownedFilterType))ownedFilterType='all';
     const mobilityCompany=uniqueOperationalCompanyForCapability(state,'operations.mobility'),companyStats=new Map(assetCompanies.map(company=>[company.id,{count:0,moving:0,service:0}])),allMobility=mobilityCompany?(state.mobility?.vehicles||[]):[];let total=0,moving=0;
-    window.GH_FLEET_DATA.forEach(state,asset=>{const owner=assetOwnerCompanyId(asset),stats=companyStats.get(owner);if(!stats)return;stats.count++;total++;if(asset.phase==='moving'){stats.moving++;moving++;}if(Number(asset.condition)<85)stats.service++;});
+    // Build 358 (million-asset): counts per company from classes of rows (exact; one cached class scan per fleet
+    // revision). "Needs service" reads each row's condition (derived from the simulated time), so it is one pass over
+    // the rows, and only on the summary tab that shows it. A company tab keeps the matching row numbers, not one id
+    // string per asset (ownedRowIds).
+    const fleet=window.GH_FLEET_DATA;
+    fleet.forEachFieldClasses(state,['ownerCompanyId','companyId','assetMode','type','phase','routeId','simulationFault'],(row,count)=>{if(!count)return;const stats=companyStats.get(assetOwnerCompanyId(row));if(!stats)return;stats.count+=count;total+=count;if(fleet.presentedPhase(state,row)==='moving'){stats.moving+=count;moving+=count;}});
+    if(ownedFilterType==='all')fleet.scan(state,['ownerCompanyId','companyId','assetMode','type','condition'],row=>{const stats=companyStats.get(assetOwnerCompanyId(row));if(stats&&Number(row.condition)<85)stats.service++;});
     for(const vehicle of allMobility){total++;if(vehicle.status==='moving')moving++;}
     const tabs=[['all','الكل'],...assetCompanies.map(company=>[company.id,COMPANY_PLATFORM.resolveIdentity(state,company.id)?.shortName||companyFinanceName(company.id)])].map(([id,label])=>`<button class="tab-btn ${ownedFilterType===id?'active':''}" data-ownedtype="${esc(id)}">${esc(label)}</button>`).join('');
     const summary=assetCompanies.map(company=>{const stats=company.id===mobilityCompany?{count:allMobility.length,moving:allMobility.filter(row=>row.status==='moving').length,service:allMobility.filter(row=>Number(row.condition)<85).length}:companyStats.get(company.id)||{count:0,moving:0,service:0},short=COMPANY_PLATFORM.resolveIdentity(state,company.id)?.shortName||company.id;return `<button class="command-btn owned-sector-summary" data-ownedtype="${esc(company.id)}"><span>${esc(short)}</span><div><b>${esc(companyFinanceName(company.id))}</b><small>${fmtNumber(stats.count)} أصل · ${fmtNumber(stats.moving)} متحرك · ${fmtNumber(stats.service)} يحتاج صيانة</small></div></button>`;}).join('');
@@ -3443,12 +3549,15 @@
         ownedVirtualModel={kind,ids,vehicleById:new Map(vehicles.map(vehicle=>[vehicle.id,vehicle])),measured:new Map(),index:window.GH_FLEET_LIST_VIRTUALIZER.create(ids.length,{estimate:310,overscan:6}),listElement:null,baseIndex:0};
         ownedVirtualModel.segmentEnd=Math.min(ids.length,ownedVirtualModel.index.indexAt(4_000_000));
       }else{
-        const bases=new Map(getDynamicFacilities().map(base=>[base.id,base]));
-        window.GH_FLEET_DATA.forEach(state,asset=>{if(assetOwnerCompanyId(asset)!==ownedFilterType||!matchesStatus(asset))return;if(q&&!normalizeSearch(`${asset.name} ${asset.model} ${asset.id} ${bases.get(asset.baseFacility)?.name||''}`).includes(q))return;if(asset.id!==undefined)ids.push(asset.id);});
-        ownedVirtualModel={kind,ids,measured:new Map(),index:window.GH_FLEET_LIST_VIRTUALIZER.create(ids.length,{estimate:330,overscan:6}),listElement:null,baseIndex:0};
-        ownedVirtualModel.segmentEnd=Math.min(ids.length,ownedVirtualModel.index.indexAt(4_000_000));
+        const bases=new Map(getDynamicFacilities().map(base=>[base.id,base])),fields=['ownerCompanyId','companyId','assetMode','type','phase','status','id'];
+        if(ownedFilterStatus==='service')fields.push('condition');if(q)fields.push('name','model','baseFacility');
+        let rows=new Int32Array(1024),count=0;
+        fleet.scan(state,fields,(asset,index)=>{if(assetOwnerCompanyId(asset)!==ownedFilterType||!matchesStatus(asset))return;if(q&&!normalizeSearch(`${asset.name} ${asset.model} ${asset.id} ${bases.get(asset.baseFacility)?.name||''}`).includes(q))return;if(asset.id===undefined)return;if(count===rows.length){const grown=new Int32Array(rows.length*2);grown.set(rows);rows=grown;}rows[count++]=index;});
+        const fleetIds=ownedRowIds(rows.subarray(0,count));
+        ownedVirtualModel={kind,ids:fleetIds,measured:new Map(),index:window.GH_FLEET_LIST_VIRTUALIZER.create(count,{estimate:330,overscan:6}),listElement:null,baseIndex:0};
+        ownedVirtualModel.segmentEnd=Math.min(count,ownedVirtualModel.index.indexAt(4_000_000));
       }
-      matchingCount=ids.length;virtualRows=`<div id="ownedVirtualList" class="owned-virtual-list" role="list" aria-label="سجل الأصول" aria-setsize="${matchingCount}"></div>`;
+      matchingCount=ownedVirtualModel.ids.length;virtualRows=`<div id="ownedVirtualList" class="owned-virtual-list" role="list" aria-label="سجل الأصول" aria-setsize="${matchingCount}"></div>`;
     }else ownedVirtualModel=null;
     const resultLabel=ownedFilterType==='all'?'':`<p class="section-mini">${fmtNumber(matchingCount)} أصل — تظهر البطاقات المرئية فقط مع بقاء السجل كاملًا للتمرير والبحث.</p>`;
     const content=ownedFilterType==='all'?`<div class="command-grid grouped workspace-card-grid">${summary}</div>`:`${filters}${resultLabel}${matchingCount?virtualRows:'<div class="empty">لا توجد أصول مملوكة تطابق هذا القسم والفلتر.</div>'}`;
@@ -3489,46 +3598,62 @@
   let lastDepartureBlocked=[];
   function routeGeometrySignature(route){return window.GH_ROUTE_CORE.signature(route)||String(route?.id||'');}
   function normalizeLegacyRouteAssignments(){
-    // Drafts: this repair edits assets in place; commit() applies it at the end.
-    const fleet=window.GH_FLEET_DATA,assets=fleet.drafts(state),sharedSlots=new Map();let changed=false,released=0,pending=0;
-    const clearAssignment=asset=>{asset.routeId=null;asset.routeSignature=null;asset.routeSlot=null;asset.departureScheduled=false;delete asset.departureScheduledAt;asset.releaseExclusiveRouteOnArrival=false;asset.phase='idle';asset.progress=0;asset.dwellRemaining=0;changed=true;released++;};
+    // Build 358 (million-asset): one row pass (GH_FLEET_DATA.scan, what views present) decides every repair in row
+    // order exactly as the former pass over drafts of every asset did; only the assets it repairs get drafts, and
+    // commit() applies those at the end. Route signatures and capacities are computed once per route.
+    const fleet=window.GH_FLEET_DATA,sharedSlots=new Map(),signatures=new Map(),capacities=new Map(),repairs=new Map();let changed=false,released=0,pending=0;
+    const repairsOf=index=>{let ops=repairs.get(index);if(!ops){ops=[];repairs.set(index,ops);}return ops;};
+    const clearAssignment=asset=>{asset.routeId=null;asset.routeSignature=null;asset.routeSlot=null;asset.departureScheduled=false;delete asset.departureScheduledAt;asset.releaseExclusiveRouteOnArrival=false;asset.phase='idle';asset.progress=0;asset.dwellRemaining=0;};
+    const clear=index=>{repairsOf(index).push(['clear']);changed=true;released++;};
+    const assign=(index,field,value)=>{repairsOf(index).push(['set',field,value]);changed=true;};
+    // The values a row holds after the repairs decided so far.
+    const current=(asset,index)=>{const now={routeId:asset.routeId,phase:asset.phase,release:asset.releaseExclusiveRouteOnArrival};for(const op of repairs.get(index)||[]){if(op[0]==='clear'){now.routeId=null;now.phase='idle';now.release=false;}else if(op[1]==='releaseExclusiveRouteOnArrival')now.release=op[2];}return now;};
     // All transport modes now use bounded route slots, including aviation.
     // This pass repairs duplicate/missing slots on one canonical route without
     // conflating shared use of the same route with duplicate route geometry.
-    for(const asset of assets){
-      if(!asset?.routeId)continue;
-      const route=routeTemplates[asset.routeId],signature=route?window.GH_ROUTE_CORE.signature(route):String(asset.routeSignature||asset.routeId);
-      if(asset.routeSignature!==signature){asset.routeSignature=signature;changed=true;}
+    const airRouteIds=new Set();
+    fleet.scan(state,['routeId','routeSignature','routeSlot','phase','releaseExclusiveRouteOnArrival','type'],(asset,index)=>{
+      if(!asset?.routeId)return;
+      const route=routeTemplates[asset.routeId];let signature;
+      if(route){signature=signatures.get(asset.routeId);if(signature===undefined){signature=window.GH_ROUTE_CORE.signature(route);signatures.set(asset.routeId,signature);}}else signature=String(asset.routeSignature||asset.routeId);
+      if(asset.routeSignature!==signature)assign(index,'routeSignature',signature);
       let used=sharedSlots.get(asset.routeId);if(!used){used=new Set();sharedSlots.set(asset.routeId,used);}
       let slot=Number.isInteger(asset.routeSlot)&&asset.routeSlot>=0&&!used.has(asset.routeSlot)?asset.routeSlot:0;while(used.has(slot))slot++;
-      const capacity=window.GH_FLEET_CORE.routeCapacity(route||asset.type);
+      const capacityKey=route?`route:${asset.routeId}`:`type:${asset.type}`;let capacity=capacities.get(capacityKey);if(capacity===undefined){capacity=window.GH_FLEET_CORE.routeCapacity(route||asset.type);capacities.set(capacityKey,capacity);}
       if(slot>=capacity){
-        if(asset.phase==='moving'){if(asset.releaseExclusiveRouteOnArrival!==true){asset.releaseExclusiveRouteOnArrival=true;changed=true;}pending++;}
-        else clearAssignment(asset);
-        continue;
+        if(asset.phase==='moving'){if(asset.releaseExclusiveRouteOnArrival!==true)assign(index,'releaseExclusiveRouteOnArrival',true);pending++;if(asset.type==='air')airRouteIds.add(asset.routeId);}
+        else clear(index);
+        return;
       }
-      used.add(slot);if(asset.routeSlot!==slot){asset.routeSlot=slot;changed=true;}if(asset.releaseExclusiveRouteOnArrival===true){asset.releaseExclusiveRouteOnArrival=false;changed=true;}
-    }
+      used.add(slot);if(asset.routeSlot!==slot)assign(index,'routeSlot',slot);if(asset.releaseExclusiveRouteOnArrival===true)assign(index,'releaseExclusiveRouteOnArrival',false);
+      if(asset.type==='air')airRouteIds.add(asset.routeId);
+    });
     // Legacy aviation saves may contain two different route IDs that describe
     // the same/near-same corridor. Sharing one route ID is valid; duplicating
     // the corridor under different IDs is not. Moving duplicates finish safely,
     // while stationary duplicates are released for a fresh canonical assignment.
-    const airRouteIds=[...new Set(assets.filter(asset=>asset?.type==='air'&&asset.routeId).map(asset=>asset.routeId))],groups=[];
+    const groups=[];
     for(const routeId of airRouteIds){
       const route=routeTemplates[routeId];if(!route)continue;
       const signature=window.GH_ROUTE_CORE.signature(route),group=groups.find(row=>{const other=routeTemplates[row[0]];return other&&(window.GH_ROUTE_CORE.signature(other)===signature||window.GH_ROUTE_CORE.corridorMetrics(other,route).duplicate);});
       if(group)group.push(routeId);else groups.push([routeId]);
     }
-    for(const routeIds of groups){
-      if(routeIds.length<2)continue;
-      const users=assets.filter(asset=>asset?.type==='air'&&routeIds.includes(asset.routeId)),moving=users.find(asset=>asset.phase==='moving'),canonicalId=moving?.routeId||routeIds[0];
-      for(const asset of users){
-        if(asset.routeId===canonicalId){if(asset.releaseExclusiveRouteOnArrival===true){asset.releaseExclusiveRouteOnArrival=false;changed=true;}continue;}
-        if(asset.phase==='moving'){if(asset.releaseExclusiveRouteOnArrival!==true){asset.releaseExclusiveRouteOnArrival=true;changed=true;}pending++;}
-        else clearAssignment(asset);
-      }
+    const duplicates=groups.filter(routeIds=>routeIds.length>=2);
+    if(duplicates.length){
+      const groupOf=new Map(),users=duplicates.map(()=>[]);duplicates.forEach((routeIds,group)=>{for(const routeId of routeIds)groupOf.set(routeId,group);});
+      fleet.scan(state,['routeId','phase','releaseExclusiveRouteOnArrival','type'],(asset,index)=>{if(asset?.type!=='air')return;const now=current(asset,index),group=now.routeId?groupOf.get(now.routeId):undefined;if(group!==undefined)users[group].push({index,...now});});
+      duplicates.forEach((routeIds,group)=>{
+        const rows=users[group],moving=rows.find(row=>row.phase==='moving'),canonicalId=moving?.routeId||routeIds[0];
+        for(const row of rows){
+          if(row.routeId===canonicalId){if(row.release===true)assign(row.index,'releaseExclusiveRouteOnArrival',false);continue;}
+          if(row.phase==='moving'){if(row.release!==true)assign(row.index,'releaseExclusiveRouteOnArrival',true);pending++;}
+          else clear(row.index);
+        }
+      });
     }
-    fleet.commit(state,assets);
+    const drafts=[];
+    for(const index of [...repairs.keys()].sort((a,b)=>a-b)){const draft=fleet.draft(state,fleet.viewAt(state,index));for(const op of repairs.get(index)){if(op[0]==='clear')clearAssignment(draft);else draft[op[1]]=op[2];}drafts.push(draft);}
+    fleet.commit(state,drafts);
     return {changed,released,pending};
   }
   function dedupeCustomRoutes(type=null){try{const result=dispatchSystemCommand({state},'routes','dedupe',{type},{actor:'system-route-maintenance'}).result||{};for(const id of result.removedIds||[])delete routeTemplates[id];return Number(result.removed||0);}catch(error){console.warn('route dedupe rejected',error);return 0;}}
@@ -3544,44 +3669,84 @@
   function routeCenterFleetSnapshot(){
     const fleet=window.GH_FLEET_DATA,source=fleet.source(state),transactionRevision=window.GH_TRANSACTION_CORE?.revision?.(state)||0,key=`${Number(state.saveRevision)||0}:${transactionRevision}:${Number(window.GH_MAP_STRUCTURE_REVISION)||0}:${fleet.size(state)}:${fleet.revision(state)??''}`;
     if(routeCenterFleetCache?.key===key&&routeCenterFleetCache.source===source)return routeCenterFleetCache;
-    const assets=fleet.list(state);
-    const byCompany=new Map(),summaryByCompany=new Map(),byCompanyRoute=new Map(),assignableByCompanyFacility=new Map(),facilityAliasCache=new Map();let order=0;
-    for(const asset of assets){
-      const company=assetOwnerCompanyId(asset);if(!company)continue;
-      let companyAssets=byCompany.get(company);if(!companyAssets){companyAssets=[];byCompany.set(company,companyAssets);summaryByCompany.set(company,{total:0,assigned:0,idle:0,moving:0,movingPhase:0,ready:0,internationalReady:0,idleAssets:[]});}
-      companyAssets.push(asset);const summary=summaryByCompany.get(company);summary.total++;
-      if(asset.routeId){summary.assigned++;const routeKey=JSON.stringify([company,asset.routeId]);let linked=byCompanyRoute.get(routeKey);if(!linked){linked=[];byCompanyRoute.set(routeKey,linked);}linked.push(asset);}
-      else{summary.idle++;if(summary.idleAssets.length<60)summary.idleAssets.push(asset);}
-      if(asset.phase==='moving'||asset.status==='moving')summary.moving++;if(asset.phase==='moving')summary.movingPhase++;
-      if(asset.routeId&&asset.phase==='turnaround'&&!asset.departureScheduled)summary.ready++;
-      if(['air','sea'].includes(assetModeOf(asset))&&asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.departureScheduled&&!asset.salePending)summary.internationalReady++;
-      if(!asset.routeId&&asset.phase!=='moving'&&!asset.salePending&&asset.deliveryStatus!=='pending'&&asset.baseFacility){
-        let facilities=assignableByCompanyFacility.get(company);if(!facilities){facilities=new Map();assignableByCompanyFacility.set(company,facilities);}
-        for(const alias of routeCenterFacilityAliases(state,asset.baseFacility,facilityAliasCache)){let candidates=facilities.get(alias);if(!candidates){candidates=[];facilities.set(alias,candidates);}candidates.push({asset,order});}
-      }
-      order++;
-    }
-    routeCenterFleetCache={key,source,byCompany,summaryByCompany,byCompanyRoute,assignableByCompanyFacility,facilityAliasCache};return routeCenterFleetCache;
+    // Build 358 (million-asset): the route center no longer lists every asset. Per company counts come from classes of
+    // rows (GH_FLEET_DATA.forEachFieldClasses: exact, one cached class scan per fleet revision); the rows it shows (the
+    // first 60 idle assets per company here, then the ready assets offered for a manual route, the assets on the routes
+    // on screen and their assignable candidates) are found by passes over the rows (GH_FLEET_DATA.scan) that stop once
+    // every list is full, and only those rows get views. Every list keeps row order, as the full lists had.
+    const summaryByCompany=new Map(),facilityAliasCache=new Map();
+    fleet.forEachFieldClasses(state,ROUTE_CENTER_CLASS_FIELDS,(row,count)=>{
+      if(!count)return;const company=assetOwnerCompanyId(row);if(!company)return;
+      let summary=summaryByCompany.get(company);if(!summary){summary={total:0,assigned:0,idle:0,moving:0,movingPhase:0,ready:0,internationalReady:0,manualReady:0,idleAssets:[]};summaryByCompany.set(company,summary);}
+      const phase=fleet.presentedPhase(state,row);
+      summary.total+=count;if(row.routeId)summary.assigned+=count;else summary.idle+=count;
+      if(phase==='moving'||row.status==='moving')summary.moving+=count;if(phase==='moving')summary.movingPhase+=count;
+      if(row.routeId&&phase==='turnaround'&&!row.departureScheduled)summary.ready+=count;
+      if(['air','sea'].includes(assetModeOf(row))&&row.deliveryStatus!=='pending'&&phase!=='moving'&&!row.departureScheduled&&!row.salePending)summary.internationalReady+=count;
+      if(row.deliveryStatus!=='pending'&&phase!=='moving'&&!row.departureScheduled&&!row.salePending)summary.manualReady+=count;
+    });
+    let idleWanted=0;for(const summary of summaryByCompany.values())idleWanted+=Math.min(60,summary.idle);
+    if(idleWanted)fleet.scan(state,ROUTE_CENTER_ROUTE_FIELDS,(row,index)=>{if(row.routeId)return;const summary=summaryByCompany.get(assetOwnerCompanyId(row));if(!summary||summary.idleAssets.length>=60)return;summary.idleAssets.push(fleet.viewAt(state,index));if(--idleWanted===0)return fleet.STOP;});
+    routeCenterFleetCache={key,source,summaryByCompany,facilityAliasCache};return routeCenterFleetCache;
   }
-  function routeCenterAssignableCandidates(index,companyId,route){
-    const facilities=index.assignableByCompanyFacility.get(companyId);if(!facilities)return [];
-    const found=new Map();for(const id of [route.fromFacility,route.toFacility])for(const alias of routeCenterFacilityAliases(state,id,index.facilityAliasCache))for(const row of facilities.get(alias)||[])found.set(row.asset.id,row);
-    return [...found.values()].sort((a,b)=>a.order-b.order).map(row=>row.asset);
+  const ROUTE_CENTER_CLASS_FIELDS=Object.freeze(['ownerCompanyId','companyId','assetMode','type','routeId','phase','simulationFault','status','departureScheduled','deliveryStatus','salePending']);
+  const ROUTE_CENTER_ROUTE_FIELDS=Object.freeze(['ownerCompanyId','companyId','assetMode','type','routeId']);
+  const ROUTE_CENTER_READY_FIELDS=Object.freeze(['ownerCompanyId','companyId','assetMode','type','routeId','phase','departureScheduled','deliveryStatus','salePending','baseFacility','name','id','catalogId']);
+  // What the route cards show about the company's assets on `routeIds`, per route, from one row pass (no view per
+  // asset): how many, ready / scheduled / moving counts, the first asset's id, and the trip margin and revenue sums in
+  // row order over assets with a last trip (the former per-card filters and reduces over the views, in the same order).
+  const ROUTE_CENTER_LINKED_FIELDS=Object.freeze(['ownerCompanyId','companyId','assetMode','type','routeId','phase','departureScheduled','lastTrip','id']);
+  function routeCenterLinkedSummary(companyId,routeIds){
+    const fleet=window.GH_FLEET_DATA,wanted=new Set(routeIds),out=new Map();if(!wanted.size)return out;
+    fleet.scan(state,ROUTE_CENTER_LINKED_FIELDS,row=>{
+      if(!row.routeId||!wanted.has(row.routeId)||assetOwnerCompanyId(row)!==companyId)return;
+      let card=out.get(row.routeId);if(!card){card={count:0,turn:0,scheduled:0,inMotion:0,primaryId:row.id,scored:0,margin:0,revenue:0};out.set(row.routeId,card);}
+      card.count++;if(row.phase==='turnaround'){if(row.departureScheduled)card.scheduled++;else card.turn++;}else if(row.phase==='moving')card.inMotion++;
+      if(row.lastTrip){card.scored++;card.margin=card.margin+(Number(row.lastTrip.margin)||0);card.revenue=card.revenue+(Number(row.lastTrip.revenue)||0);}
+    });
+    return out;
+  }
+  // The first `limit` assets of the company ready for a manual route (not pending delivery, not moving, no departure
+  // scheduled, not for sale) whose name, id or catalog id matches `needle` (views, row order).
+  function routeCenterManualAssets(companyId,needle,limit){
+    const fleet=window.GH_FLEET_DATA,out=[];if(limit<=0)return out;
+    fleet.scan(state,ROUTE_CENTER_READY_FIELDS,(row,index)=>{if(row.deliveryStatus==='pending'||row.phase==='moving'||row.departureScheduled||row.salePending||assetOwnerCompanyId(row)!==companyId)return;if(needle&&!normalizeSearch(`${row.name||''} ${row.id||''} ${row.catalogId||''}`).includes(needle))return;out.push(fleet.viewAt(state,index));if(out.length>=limit)return fleet.STOP;});
+    return out;
+  }
+  // Assignable candidates of the route cards that want them: the company's idle rows (no route, not moving, not for
+  // sale, delivered, at a base) whose base shares an alias with one end of the card's route, in row order, kept while
+  // accept(view,card) holds, until each card has `limit` and knows whether one more exists (assignableMore).
+  function routeCenterFillAssignable(fleetIndex,companyId,cards,accept,limit){
+    const fleet=window.GH_FLEET_DATA,open=cards.filter(card=>card.wantsAssignable);if(!open.length)return;
+    for(const card of open)card.aliases=new Set([card.r.fromFacility,card.r.toFacility].flatMap(id=>routeCenterFacilityAliases(state,id,fleetIndex.facilityAliasCache)));
+    let remaining=open.length;
+    fleet.scan(state,ROUTE_CENTER_READY_FIELDS,(row,index)=>{
+      if(row.routeId||row.phase==='moving'||row.salePending||row.deliveryStatus==='pending'||!row.baseFacility||assetOwnerCompanyId(row)!==companyId)return;
+      const aliases=routeCenterFacilityAliases(state,row.baseFacility,fleetIndex.facilityAliasCache);let view=null;
+      for(const card of open){
+        if(card.assignableMore||!aliases.some(alias=>card.aliases.has(alias)))continue;
+        view??=fleet.viewAt(state,index);if(!accept(view,card))continue;
+        if(card.assignable.length>=limit){card.assignableMore=true;if(--remaining===0)return fleet.STOP;continue;}
+        card.assignable.push(view);
+      }
+    });
   }
   function renderRouteCenter(arg){
     const routeCompanies=routingCompanyIds();if(typeof arg==='string'&&(arg==='all'||routeCompanies.includes(arg)))routeFilterType=arg;if(routeFilterType!=='all'&&!routeCompanies.includes(routeFilterType))routeFilterType='all';
     const selectedCompanyId=routeFilterType==='all'?null:routeFilterType,selectedModes=selectedCompanyId?companyRouteModes(selectedCompanyId):[],selectedMode=selectedModes.find(mode=>['air','sea','road'].includes(mode))||null,selectedMobility=Boolean(selectedCompanyId&&isMobilityCompany(selectedCompanyId)),points=selectedMode==='road'?roadFacilityOptions(selectedCompanyId):[],seen=new Set(),allRoutes=operationalRoutes().filter(r=>{const sig=`${routeOwnerCompanyId(r)}:${routeGeometrySignature(r)}`;if(seen.has(sig))return false;seen.add(sig);return true;}),mobility=window.GH_MOBILITY_CORE?.snapshot?.(state)||{vehicles:0,moving:0,activeTrips:0};
     const tabs=[['all','الملخص'],...routeCompanies.map(companyId=>[companyId,COMPANY_PLATFORM.resolveIdentity?.(state,companyId)?.shortName||typeName(companyId)])].map(([id,label])=>`<button class="tab-btn ${routeFilterType===id?'active':''}" data-routetype="${esc(id)}">${esc(label)}</button>`).join('');
-    const fleetIndex=routeCenterFleetSnapshot(),companyRows=companyId=>isMobilityCompany(companyId)?(state.mobility?.vehicles||[]):(fleetIndex.byCompany.get(companyId)||[]),sectorSummary=routeCompanies.map(companyId=>{const rows=companyRows(companyId),mobilityCompany=isMobilityCompany(companyId),summary=fleetIndex.summaryByCompany.get(companyId)||{total:0,assigned:0,moving:0,ready:0},mode=companyRouteModes(companyId)[0]||'mobility',assigned=mobilityCompany?rows.length:summary.assigned,moving=mobilityCompany?rows.filter(a=>a.phase==='moving'||a.status==='moving').length:summary.moving,ready=mobilityCompany?rows.filter(a=>a.status==='available').length:summary.ready;return `<button class="command-btn sector-${esc(mode)}" data-routetype="${esc(companyId)}"><span>${esc(COMPANY_PLATFORM.resolveIdentity?.(state,companyId)?.shortName||companyId.toUpperCase())}</span><div><b>${esc(typeName(companyId))}</b><small>${rows.length} أصل · ${assigned} مكلّف · ${moving} متحرك · ${ready} جاهز</small></div></button>`;}).join('');
-    const selectedAssets=!selectedCompanyId||selectedMobility?[]:(fleetIndex.byCompany.get(selectedCompanyId)||[]),selectedSummary=selectedCompanyId?fleetIndex.summaryByCompany.get(selectedCompanyId):null,routes=!selectedCompanyId||selectedMobility?[]:allRoutes.filter(route=>routeOwnerCompanyId(route)===selectedCompanyId),assigned=selectedSummary?.assigned||0,idle=selectedSummary?.idle||0,ready=selectedSummary?.ready||0,moving=selectedSummary?.movingPhase||0,internationalReady=selectedSummary?.internationalReady||0;
+    const fleetIndex=routeCenterFleetSnapshot(),sectorSummary=routeCompanies.map(companyId=>{const mobilityCompany=isMobilityCompany(companyId),rows=mobilityCompany?(state.mobility?.vehicles||[]):[],summary=fleetIndex.summaryByCompany.get(companyId)||{total:0,assigned:0,moving:0,ready:0},total=mobilityCompany?rows.length:summary.total,mode=companyRouteModes(companyId)[0]||'mobility',assigned=mobilityCompany?rows.length:summary.assigned,moving=mobilityCompany?rows.filter(a=>a.phase==='moving'||a.status==='moving').length:summary.moving,ready=mobilityCompany?rows.filter(a=>a.status==='available').length:summary.ready;return `<button class="command-btn sector-${esc(mode)}" data-routetype="${esc(companyId)}"><span>${esc(COMPANY_PLATFORM.resolveIdentity?.(state,companyId)?.shortName||companyId.toUpperCase())}</span><div><b>${esc(typeName(companyId))}</b><small>${total} أصل · ${assigned} مكلّف · ${moving} متحرك · ${ready} جاهز</small></div></button>`;}).join('');
+    const selectedSummary=selectedCompanyId?fleetIndex.summaryByCompany.get(selectedCompanyId):null,selectedAssetCount=!selectedCompanyId||selectedMobility?0:(selectedSummary?.total||0),routes=!selectedCompanyId||selectedMobility?[]:allRoutes.filter(route=>routeOwnerCompanyId(route)===selectedCompanyId),assigned=selectedSummary?.assigned||0,idle=selectedSummary?.idle||0,ready=selectedSummary?.ready||0,moving=selectedSummary?.movingPhase||0,internationalReady=selectedSummary?.internationalReady||0;
     const idleRows=(selectedSummary?.idleAssets||[]).map(a=>`<div class="spec-row"><span>${esc(a.icon||assetIcon(assetModeOf(a)))} ${esc(a.name)} · ${esc(findFacility(a.baseFacility)?.name||'دون مركز')}</span><span class="tag">${assetModeOf(a)==='road'?'جاهزة لمسار تلقائي':'اختره من بطاقة مسار أدناه'}</span></div>`).join('');
     const routeNeedle=normalizeSearch(routeQuery),routeAssetNeedle=normalizeSearch(routeAssignQuery),matchingRoutes=routes.filter(r=>!routeNeedle||normalizeSearch(`${r.name} ${r.from} ${r.to} ${r.routingSource||''}`).includes(routeNeedle)),displayRoutes=matchingRoutes.slice(0,80),assignmentLimit=40,routeConflictBatch=window.GH_FLEET_CORE.routeConflicts(state,displayRoutes);
-    const routeCards=displayRoutes.map(r=>{
-      const linked=fleetIndex.byCompanyRoute.get(JSON.stringify([selectedCompanyId,r.id]))||[],turn=linked.filter(a=>a.phase==='turnaround'&&!a.departureScheduled).length,scheduled=linked.filter(a=>a.phase==='turnaround'&&a.departureScheduled).length,inMotion=linked.filter(a=>a.phase==='moving').length,primary=linked[0],scored=linked.filter(a=>a.lastTrip),avgMargin=scored.length?scored.reduce((n,a)=>n+(Number(a.lastTrip.margin)||0),0)/scored.length:null,avgRevenue=scored.length?scored.reduce((n,a)=>n+(Number(a.lastTrip.revenue)||0),0)/scored.length:null;
-      const capacity=window.GH_FLEET_CORE.routeCapacity(r),routeConflict=linked.length>=capacity?null:routeConflictBatch.get(r.id),assignable=[];let assignableMore=false;
-      if(linked.length<capacity&&!routeConflict)for(const asset of routeCenterAssignableCandidates(fleetIndex,selectedCompanyId,r)){if(asset.routeId||asset.phase==='moving'||asset.salePending||asset.deliveryStatus==='pending'||!routeFitsAsset(asset,r)||!asset.baseFacility||!(sameUnderlyingFacility(asset.baseFacility,r.fromFacility)||sameUnderlyingFacility(asset.baseFacility,r.toFacility)))continue;if(routeAssetNeedle&&!normalizeSearch(`${asset.name||''} ${asset.id||''} ${asset.catalogId||''}`).includes(routeAssetNeedle))continue;if(assignable.length>=assignmentLimit){assignableMore=true;break;}assignable.push(asset);}
-      return {r,linked,turn,scheduled,inMotion,primary,avgMargin,avgRevenue,assignable,assignableMore,capacity};
-    }).sort((a,b)=>(b.avgMargin??-Infinity)-(a.avgMargin??-Infinity)).map((x,i)=>{
+    const linkedByRoute=selectedCompanyId&&!selectedMobility?routeCenterLinkedSummary(selectedCompanyId,displayRoutes.map(r=>r.id)):new Map();
+    const routeCardRows=displayRoutes.map(r=>{
+      const card=linkedByRoute.get(r.id),linked={length:card?.count||0},turn=card?.turn||0,scheduled=card?.scheduled||0,inMotion=card?.inMotion||0,primary=card?{id:card.primaryId}:undefined,avgMargin=card?.scored?card.margin/card.scored:null,avgRevenue=card?.scored?card.revenue/card.scored:null;
+      const capacity=window.GH_FLEET_CORE.routeCapacity(r),routeConflict=linked.length>=capacity?null:routeConflictBatch.get(r.id);
+      return {r,linked,turn,scheduled,inMotion,primary,avgMargin,avgRevenue,assignable:[],assignableMore:false,capacity,wantsAssignable:linked.length<capacity&&!routeConflict};
+    });
+    routeCenterFillAssignable(fleetIndex,selectedCompanyId,routeCardRows,(asset,{r})=>!(asset.routeId||asset.phase==='moving'||asset.salePending||asset.deliveryStatus==='pending'||!routeFitsAsset(asset,r)||!asset.baseFacility||!(sameUnderlyingFacility(asset.baseFacility,r.fromFacility)||sameUnderlyingFacility(asset.baseFacility,r.toFacility)))&&(!routeAssetNeedle||normalizeSearch(`${asset.name||''} ${asset.id||''} ${asset.catalogId||''}`).includes(routeAssetNeedle)),assignmentLimit);
+    const routeCards=routeCardRows.sort((a,b)=>(b.avgMargin??-Infinity)-(a.avgMargin??-Infinity)).map((x,i)=>{
       const {r,linked,turn,scheduled,inMotion,primary,avgMargin,avgRevenue,assignable,assignableMore,capacity}=x;
       const assignment=assignable.length?`<div class="route-builder route-inline-assignment"><label>الأصل المتاح<select class="route-asset-select" data-route="${esc(r.id)}">${assignable.map(asset=>`<option value="${esc(asset.id)}">${esc(asset.icon||assetIcon(asset.type))} ${esc(asset.name)}</option>`).join('')}</select></label>${assignableMore?`<small>يعرض أول ${assignmentLimit} أصلًا مطابقًا؛ استخدم بحث الأصول للوصول للبقية.</small>`:''}</div><div class="action-row"><button class="primary-btn assign-route-center" data-route="${esc(r.id)}">تعيين أصل للمسار (${linked.length}/${capacity})</button></div>`:'';
       return `<article class="list-item sector-${esc(routeModeOf(r)||'road')}"><div class="list-item-head"><div><h3>${esc(r.name)}</h3><p>${esc(r.from)} → ${esc(r.to)} · ${esc(r.routingSource||'مسار تشغيلي مسجل')}</p></div><span class="tag ${avgMargin==null?'':avgMargin>=0?'positive':'negative'}">${avgMargin==null?`${linked.length}/${capacity} أصل`:`#${i+1} · ${fmtMoney(avgMargin)}/رحلة`}</span></div><div class="metric-row"><div><span>المسافة</span><b>${fmtNumber(r.distanceKm)} كم</b></div><div><span>المدة</span><b>${formatDuration(r.tripSeconds)}</b></div><div><span>متحركة</span><b>${inMotion}</b></div><div><span>جاهزة / مجدولة</span><b>${turn} / ${scheduled}</b></div></div>${avgRevenue!=null?`<div class="metric-row two"><div><span>متوسط الإيراد الفعلي</span><b class="positive">${fmtMoney(avgRevenue)}</b></div><div><span>متوسط الهامش الفعلي</span><b class="${avgMargin>=0?'positive':'negative'}">${fmtMoney(avgMargin)}</b></div></div>`:''}${assignment}<div class="action-row">${primary?`<button class="secondary-btn" data-open="assetManage" data-arg="${esc(primary.id)}">إدارة أحد أصول المسار</button>`:''}<button class="primary-btn depart-route" data-route="${esc(r.id)}" data-company="${esc(routeOwnerCompanyId(r))}" ${turn?'':'disabled'}>جدولة مغادرة الجاهز (${turn})</button></div></article>`;
@@ -3589,9 +3754,9 @@
     const overview=routeFilterType==='all'?`<div class="command-grid grouped workspace-card-grid">${sectorSummary}</div>`:'';
     let workspace='';
     if(selectedCompanyId&&['air','sea','road'].includes(selectedMode)){
-      const international=['air','sea'].includes(selectedMode),manualReady=selectedAssets.filter(asset=>asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.departureScheduled&&!asset.salePending),bulkReady=manualReady.length,manualAssets=international?manualReady.filter(asset=>!routeAssetNeedle||normalizeSearch(`${asset.name||''} ${asset.id||''} ${asset.catalogId||''}`).includes(routeAssetNeedle)).slice(0,80):manualReady,manualAssetsMore=international&&manualReady.length>manualAssets.length;
+      const international=['air','sea'].includes(selectedMode),bulkReady=selectedAssetCount?(selectedSummary?.manualReady||0):0,manualAssets=international&&bulkReady?routeCenterManualAssets(selectedCompanyId,routeAssetNeedle,80):[],manualAssetsMore=international&&bulkReady>manualAssets.length;
       const manualRoute=international&&manualAssets.length?`<div class="route-builder"><label>الأصل لمسار يدوي<select id="manualGlobalAsset">${manualAssets.map(asset=>`<option value="${esc(asset.id)}">${esc(asset.icon||assetIcon(asset.type))} ${esc(asset.name)}</option>`).join('')}</select></label>${manualAssetsMore?'<small>يعرض أول 80 أصلًا مطابقًا؛ استخدم بحث الأصول للوصول للبقية.</small>':''}</div><div class="action-row"><button class="secondary-btn open-global-route-selected">إنشاء مسار يدوي للأصل المحدد</button></div>`:'';
-      workspace=`<article class="list-item sector-${selectedMode}"><div class="list-item-head"><div><h3>تشغيل ${esc(companyFinanceName(selectedCompanyId))}</h3><p>المسارات والأصول والأوامر هنا مقفلة على الشركة المالكة، حتى عند مشاركة نمط التشغيل مع شركة أخرى.</p></div><span class="tag positive">${selectedAssets.length} أصل</span></div><div class="metric-row"><div><span>بلا مسار</span><b>${idle}</b></div><div><span>مكلّفة</span><b>${assigned}</b></div><div><span>متحركة</span><b>${moving}</b></div><div><span>جاهزة</span><b>${ready}</b></div></div><div class="action-row">${international?`<button class="primary-btn dispatch-international-network" data-company="${esc(selectedCompanyId)}" ${internationalReady?'':'disabled'}>${selectedMode==='sea'?'توزيع وتشغيل الأسطول البحري':'توزيع وتشغيل الشبكة الجوية'} (${internationalReady})</button><button class="secondary-btn depart-all-assets" data-company="${esc(selectedCompanyId)}" ${ready?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button>`:`<button class="primary-btn dispatch-existing-network" data-company="${esc(selectedCompanyId)}" ${bulkReady&&!roadPlanning?'':'disabled'}>توزيع وتشغيل أسطول الشاحنات (${bulkReady})</button><button class="secondary-btn depart-all-assets" data-company="${esc(selectedCompanyId)}" ${ready&&!roadPlanning?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button><p class="section-mini">تُنشأ مسارات طريق مشتركة ذات سعة محددة وتُوزع شاحنات هذه الشركة وحدها عليها بفتحات مغادرة متدرجة.</p>${roadPlanningMarkup()}`}</div>${selectedMode==='air'?'<p class="section-mini">تُوزع طائرات الشركة على خطوط مشتركة بسعة محددة وفتحات إقلاع متدرجة؛ ملكية كل مسار تبقى صريحة.</p>':''}${manualRoute}</article><article class="list-item"><div class="asset-filters"><input id="routeSearch" value="${esc(routeQuery)}" placeholder="بحث باسم المسار أو نقطة الانطلاق أو الوجهة"><input id="routeAssetSearch" value="${esc(routeAssignQuery)}" placeholder="بحث أصل متاح للتعيين بالاسم أو المعرّف"></div><p class="section-mini">${fmtNumber(matchingRoutes.length)} من ${fmtNumber(routes.length)} مسار${matchingRoutes.length>80?' · يعرض أول 80 فقط لحماية الأداء، استخدم البحث للوصول المباشر.':''}</p></article>${idleRows?`<article class="list-item"><h3>أصول تنتظر تعيين مسار</h3>${idleRows}</article>`:''}`;
+      workspace=`<article class="list-item sector-${selectedMode}"><div class="list-item-head"><div><h3>تشغيل ${esc(companyFinanceName(selectedCompanyId))}</h3><p>المسارات والأصول والأوامر هنا مقفلة على الشركة المالكة، حتى عند مشاركة نمط التشغيل مع شركة أخرى.</p></div><span class="tag positive">${selectedAssetCount} أصل</span></div><div class="metric-row"><div><span>بلا مسار</span><b>${idle}</b></div><div><span>مكلّفة</span><b>${assigned}</b></div><div><span>متحركة</span><b>${moving}</b></div><div><span>جاهزة</span><b>${ready}</b></div></div><div class="action-row">${international?`<button class="primary-btn dispatch-international-network" data-company="${esc(selectedCompanyId)}" ${internationalReady?'':'disabled'}>${selectedMode==='sea'?'توزيع وتشغيل الأسطول البحري':'توزيع وتشغيل الشبكة الجوية'} (${internationalReady})</button><button class="secondary-btn depart-all-assets" data-company="${esc(selectedCompanyId)}" ${ready?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button>`:`<button class="primary-btn dispatch-existing-network" data-company="${esc(selectedCompanyId)}" ${bulkReady&&!roadPlanning?'':'disabled'}>توزيع وتشغيل أسطول الشاحنات (${bulkReady})</button><button class="secondary-btn depart-all-assets" data-company="${esc(selectedCompanyId)}" ${ready&&!roadPlanning?'':'disabled'}>تشغيل المسارات المعيّنة فقط (${ready})</button><p class="section-mini">تُنشأ مسارات طريق مشتركة ذات سعة محددة وتُوزع شاحنات هذه الشركة وحدها عليها بفتحات مغادرة متدرجة.</p>${roadPlanningMarkup()}`}</div>${selectedMode==='air'?'<p class="section-mini">تُوزع طائرات الشركة على خطوط مشتركة بسعة محددة وفتحات إقلاع متدرجة؛ ملكية كل مسار تبقى صريحة.</p>':''}${manualRoute}</article><article class="list-item"><div class="asset-filters"><input id="routeSearch" value="${esc(routeQuery)}" placeholder="بحث باسم المسار أو نقطة الانطلاق أو الوجهة"><input id="routeAssetSearch" value="${esc(routeAssignQuery)}" placeholder="بحث أصل متاح للتعيين بالاسم أو المعرّف"></div><p class="section-mini">${fmtNumber(matchingRoutes.length)} من ${fmtNumber(routes.length)} مسار${matchingRoutes.length>80?' · يعرض أول 80 فقط لحماية الأداء، استخدم البحث للوصول المباشر.':''}</p></article>${idleRows?`<article class="list-item"><h3>أصول تنتظر تعيين مسار</h3>${idleRows}</article>`:''}`;
       if(selectedMode==='road'){const options=points.map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('');workspace+=`<article class="list-item"><h3>إنشاء مسار بري يدوي</h3><p>اختياري لرحلة تحددها بنفسك بين مركزين تابعين للشركة نفسها.</p>${points.length?`<div class="route-builder"><label>نقطة الانطلاق<select id="roadFrom">${options}</select></label><label>الوجهة<select id="roadTo">${[...points].reverse().map(f=>`<option value="${esc(f.id)}">${esc(f.name)} · ${esc(f.city)}</option>`).join('')}</select></label></div><div class="action-row">${points.length>=2?`<button class="secondary-btn build-road-route" data-company="${esc(selectedCompanyId)}">بين قاعدتين</button>`:''}<button class="secondary-btn" data-open="companyFacilities" data-arg="${esc(selectedCompanyId)}">إضافة مركز</button></div>`:'<div class="empty">افتح مركزًا لوجستيًا مملوكًا أولًا.</div>'}</article>`;}
       workspace+=`<div class="section-mini">${matchingRoutes.length} مسار ${esc(companyFinanceName(selectedCompanyId))} مطابق</div>${routeCards||'<div class="empty">لا توجد مسارات مطابقة. غيّر البحث أو أنشئ مسارًا جديدًا.</div>'}`;
     }
@@ -3632,7 +3797,10 @@
       </section>
       <section class="finance-section-v202"><div class="finance-section-head-v202"><div><h3>تمويل القابضة</h3><p>الدين ورأس المال منفصلان عن التحويلات التشغيلية.</p></div></div><div class="finance-funding-actions"><button class="primary-btn add-credit">خط ائتمان +$50M</button><button class="secondary-btn issue-bond">سندات 5 سنوات +$100M</button><button class="secondary-btn repay-debt">سداد $25M</button>${state.ipo.listed?`<button class="secondary-btn" disabled data-disabled-reason="المجموعة مدرجة بالفعل بالرمز ${esc(state.ipo.ticker||'')}.">مُدرجة · ${esc(state.ipo.ticker||'')}</button>`:`<button class="secondary-btn launch-ipo" ${state.groupValue<1000000000?'disabled data-disabled-reason="قيمة المجموعة أقل من الحد الأدنى للطرح العام ($1B)."':''}>طرح عام أولي (IPO) · ~${fmtMoney(state.groupValue*.18)}</button>`}</div></section>${renderAccountingStatement()}${window.GH_REALISM?window.GH_REALISM.financeHTML(state):''}</div>`;
   }
-  function renderAccountingStatement(){const f=state.finance,revenue=f.invoices.filter(x=>x.kind==='دخل').reduce((s,x)=>s+x.amount,0),expense=f.invoices.filter(x=>x.kind==='مصروف').reduce((s,x)=>s+x.amount,0),assets=state.cash+window.GH_FLEET_DATA.sum(state,a=>(a.purchasePrice||0)*.7),liabilities=state.debt+f.payables.reduce((s,x)=>s+x.total,0);return `<article class="list-item"><h3>الملخص المحاسبي التشغيلي</h3><div class="metric-row"><div><span>الإيرادات المثبتة</span><b class="positive">${fmtMoney(revenue)}</b></div><div><span>المصروفات المثبتة</span><b>${fmtMoney(expense)}</b></div><div><span>صافي المستندات</span><b class="${revenue-expense>=0?'positive':'negative'}">${fmtMoney(revenue-expense)}</b></div></div><div class="metric-row two"><div><span>الأصول المقدرة</span><b>${fmtMoney(assets)}</b></div><div><span>الالتزامات</span><b>${fmtMoney(liabilities)}</b></div></div></article>`;}
+  // GH_FLEET_DATA.sum(state,a=>(a.purchasePrice||0)*.7) read from the rows (row order, so the same total) instead of
+  // one view per asset.
+  function fleetBookValueTotal(){let total=0;window.GH_FLEET_DATA.scan(state,['purchasePrice'],a=>{total+=Number((a.purchasePrice||0)*.7)||0;});return total;}
+  function renderAccountingStatement(){const f=state.finance,revenue=f.invoices.filter(x=>x.kind==='دخل').reduce((s,x)=>s+x.amount,0),expense=f.invoices.filter(x=>x.kind==='مصروف').reduce((s,x)=>s+x.amount,0),assets=state.cash+fleetBookValueTotal(),liabilities=state.debt+f.payables.reduce((s,x)=>s+x.total,0);return `<article class="list-item"><h3>الملخص المحاسبي التشغيلي</h3><div class="metric-row"><div><span>الإيرادات المثبتة</span><b class="positive">${fmtMoney(revenue)}</b></div><div><span>المصروفات المثبتة</span><b>${fmtMoney(expense)}</b></div><div><span>صافي المستندات</span><b class="${revenue-expense>=0?'positive':'negative'}">${fmtMoney(revenue-expense)}</b></div></div><div class="metric-row two"><div><span>الأصول المقدرة</span><b>${fmtMoney(assets)}</b></div><div><span>الالتزامات</span><b>${fmtMoney(liabilities)}</b></div></div></article>`;}
   function metricsMarkup(items){return `<div class="metric-row">${items.map(([label,value,cls=''])=>`<div><span>${esc(label)}</span><b class="${cls}">${value}</b></div>`).join('')}</div>`;}
   function monthlyFinanceReportRows(){const input=monthlyFinanceReportInput(12),workerResult=financeReportEngine?.request?.(input);if(workerResult?.ready)return workerResult.months;if(financeReportWorkerResult?.key===input.key)return financeReportWorkerResult.months;if(financeReportFallbackCache?.key===input.key)return financeReportFallbackCache.months;const months=window.GH_FINANCE_CORE.monthlyStatement(state,{months:12});financeReportFallbackCache={key:input.key,months};return months;}
   function renderMonthlyFinance(){const months=monthlyFinanceReportRows(),current=months[0]||{monthKey:'—',reportedDays:0,income:0,expenses:0,net:0,deficit:0,surplus:0,companies:[]},opened=new Set(state.openedCompanies||[]),companyRows=current.companies.filter(row=>opened.has(row.company));return `<div class="list monthly-finance-report"><article class="list-item registry-hero"><div class="list-item-head"><div><h3>قائمة الدخل والمصروفات الشهرية</h3><p>تُجمع من الإقفالات اليومية المسجلة لكل شركة؛ العجز قيمة سالبة فعلية وليس مؤشرًا تجميليًا.</p></div><span class="tag ${current.net>=0?'positive':'negative'}">${esc(current.monthKey)}</span></div>${metricsMarkup([['الدخل',fmtMoney(current.income)],['المصروفات',fmtMoney(current.expenses)],['الفائض',fmtMoney(current.surplus)],['العجز',fmtMoney(current.deficit)]])}<p class="section-mini">أيام مقفلة داخل الشهر: ${fmtNumber(current.reportedDays)}</p></article><article class="list-item"><h3>نتيجة الشركات · ${esc(current.monthKey)}</h3>${companyRows.map(row=>`<div class="monthly-company-row"><div><b>${esc(companyFinanceName(row.company))}</b><small>دخل ${fmtMoney(row.income)} · مصروف ${fmtMoney(row.expenses)}</small></div><strong class="${row.net>=0?'positive':'negative'}">${row.net>=0?'فائض':'عجز'} ${fmtMoney(Math.abs(row.net))}</strong></div>`).join('')||'<div class="empty">لا توجد شركات ذات إقفالات في الشهر الحالي.</div>'}</article><article class="list-item"><h3>السجل الشهري</h3><div class="monthly-history-table"><div class="monthly-history-head"><b>الشهر</b><b>الدخل</b><b>المصروف</b><b>النتيجة</b></div>${months.map(row=>`<div><span>${esc(row.monthKey)}<small>${row.reportedDays} يوم</small></span><b>${fmtMoney(row.income)}</b><b>${fmtMoney(row.expenses)}</b><b class="${row.net>=0?'positive':'negative'}">${row.net>=0?'+':'−'}${fmtMoney(Math.abs(row.net))}</b></div>`).join('')}</div></article></div>`;}
@@ -3997,7 +4165,8 @@
       const result={orderId:results[0]?.orderId||null,count:allAssetIds.length,assetIds:allAssetIds,deliveryOrderIds:allDeliveryOrderIds,allocations:allocations.map(row=>({baseId:row.base.id,baseName:row.base.name,qty:row.qty}))};if(result.count!==qty)throw new Error('لم تكتمل كل توزيعات أمر الشراء.');
       window.GH_REALISM?.onSimulationTime?.(draft,draft.simSeconds);
       const purchasedAssetIds=new Set(result.assetIds),deliveryById=new Map((draft.realism?.procurement?.deliveries||[]).map(row=>[row.id,row]));
-      const deliveredIds=new Set(window.GH_FLEET_DATA.filter(draft,asset=>purchasedAssetIds.has(asset.id)&&asset.deliveryStatus==='delivered'&&asset.staffing?.ready===true).map(asset=>asset.id));
+      // Build 358 (million-asset): the purchased assets are looked up by id, not found by visiting the whole fleet.
+      const deliveredIds=new Set();for(const id of purchasedAssetIds){const asset=window.GH_FLEET_DATA.get(draft,id);if(asset&&asset.deliveryStatus==='delivered'&&asset.staffing?.ready===true)deliveredIds.add(id);}
       if(deliveredIds.size!==qty||result.deliveryOrderIds.some(orderId=>deliveryById.get(orderId)?.status!=='delivered'))throw new Error('تعذر إثبات التسليم والطاقم داخل معاملة الشراء.');
       const distribution=result.allocations.map(row=>`${row.baseName}: ${row.qty}`).join(' · ');recordAlert(`تم شراء وتسليم ${qty} × ${item.name} وتوزيعها ذريًا (${distribution})، مع تكوين الطاقم الثابت والراتب تلقائيًا. مرجع المورد ${result.orderId}.`,'procurement');return result.orderId;
       })});

@@ -55,7 +55,7 @@
   // the row]. Bytes 0–63 hold what every event touches; `flags` holds
   // ALIVE/EXTRAS and `at` is the simulation time at which progress, fuel,
   // condition and dwellRemaining hold (neither is an asset field).
-  const STRIDE=128,F64_PER_ROW=16,WORDS_PER_ROW=32;
+  const STRIDE=128,F64_PER_ROW=16,WORDS_PER_ROW=32,I32_NULL=-2147483648;
   const SLOTS=Object.freeze({
     at:['f64',0],progress:['f64',1],fuel:['f64',2],condition:['f64',3],dwellRemaining:['f64',4],departureScheduledAt:['f64',5],
     present:['u32',12],phase:['u32',13],routeId:['u32',14],baseFacility:['u32',15],
@@ -88,7 +88,7 @@
       r={values:store.values,views:makeViews(store.rows),index:new Map(),indexedTo:0,free:[],ids:null,profileGroups:null,leaseGroups:null,payrollGroups:null,
         dirty:[],dirtyFrom:store.revision,dirtyLost:false,dirtyColumns:null,suppressDirtyLog:false,
         dirtyChunks:new Uint8Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),allDirty:true,journal:null,epoch:++epochCounter,valuesGeneration:++epochCounter,
-        uid:++epochCounter,chunkVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),massVersion:0};
+        uid:++epochCounter,chunkVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),staticVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),massVersion:0};
       runtime.set(store,r);
     }
     if(r.indexedTo>store.values.length){r.index=new Map();r.indexedTo=0;r.free=[];r.valuesGeneration=++epochCounter;}
@@ -156,12 +156,16 @@
     if(r){
       const chunks=Math.max(1,Math.ceil(cap/CHUNK_ROWS));if(r.dirtyChunks.length<chunks){const next=new Uint8Array(chunks);next.set(r.dirtyChunks);r.dirtyChunks=next;}
       if(r.chunkVersions.length<chunks){const next=new Uint32Array(chunks);next.set(r.chunkVersions);r.chunkVersions=next;}
+      if(r.staticVersions.length<chunks){const next=new Uint32Array(chunks);next.set(r.staticVersions);r.staticVersions=next;}
       if(r.journal&&r.journal.active&&r.journal.seen.length<cap){const seen=new Uint8Array(cap);seen.set(r.journal.seen);r.journal.seen=seen;}
     }
   }
   function trimCapacity(store){if(store.capacity!==store.length)resize(store,store.length);return store;}
   function isAlive(store,index){return index>=0&&index<store.length&&(views(store).u8[index*STRIDE+O.flags]&ALIVE)!==0;}
-  function markDirty(r,index){const chunk=index>>>CHUNK_SHIFT;r.dirtyChunks[chunk]=1;r.chunkVersions[chunk]++;}
+  function markDirty(r,index){const chunk=index>>>CHUNK_SHIFT;r.dirtyChunks[chunk]=1;r.chunkVersions[chunk]++;r.staticVersions[chunk]++;}
+  // The event engine's fast path (toucher) writes only ENGINE_FIELDS (and `at`): it leaves staticVersions alone, so
+  // class tables over other fields stay valid while the fleet moves.
+  function markEngineDirty(r,index){const chunk=index>>>CHUNK_SHIFT;r.dirtyChunks[chunk]=1;r.chunkVersions[chunk]++;}
   // Chunks with rows changed since the last persistence checkpoint.
   function dirtyChunks(store){const r=rt(store),chunks=Math.ceil(store.length/CHUNK_ROWS),out=[];for(let chunk=0;chunk<chunks;chunk++)if(r.allDirty||r.dirtyChunks[chunk])out.push(chunk);return out;}
   function clearDirtyChunks(store){const r=rt(store);r.dirtyChunks.fill(0);r.allDirty=false;}
@@ -230,16 +234,18 @@
       if(journal!==null&&journal.active&&index<journal.length&&journal.seen[index]===0)logRow(journal,store,r,index);
       store.revision++;if(journal!==null)journal.high=store.revision;
       if(!r.suppressDirtyLog)logDirty(r,index);
-      markDirty(r,index);
+      markEngineDirty(r,index);
     };
   }
   // Mass writers (one field of very many rows) snapshot that field once.
   function gatherField(store,name){const [view,k]=SLOTS[name],per=PER_ROW[view],source=views(store)[view],copy=new source.constructor(store.length);for(let index=0;index<store.length;index++)copy[index]=source[index*per+k];return copy;}
-  function rememberColumn(store,name){
+  // quiet: the column change is not reported to the dirty-log owner (the event engine). Only for a write that cannot
+  // change what that owner tracks (columnWriter setting presence bits of fields the engine never schedules on).
+  function rememberColumn(store,name,{quiet=false}={}){
     if(!own(SLOTS,name))throw new RangeError(`fleet-store-column:${name}`);
     const journal=journalFor(store);if(journal&&!journal.fields.has(name))journal.fields.set(name,{copy:gatherField(store,name),logCount:journal.log.count});
     const r=rt(store);r.allDirty=true;r.massVersion++;store.revision++;if(journal)journal.high=store.revision;
-    if(!r.suppressDirtyLog){if(!r.dirtyColumns)r.dirtyColumns=new Set();r.dirtyColumns.add(name);}
+    if(!quiet&&!r.suppressDirtyLog){if(!r.dirtyColumns)r.dirtyColumns=new Set();r.dirtyColumns.add(name);}
   }
   function bumpStructure(store){store.structure++;const r=runtime.get(store);if(r&&r.journal&&r.journal.active&&store.structure>r.journal.highStructure)r.journal.highStructure=store.structure;}
   function unindexValue(r,stored,ref){if(stored===null||stored===undefined)return;const key=valueKey(stored);if(r.index.get(key)===ref)r.index.delete(key);}
@@ -306,7 +312,9 @@
   function hotFits(kind,value){
     if(kind==='f64')return typeof value==='number';
     if(kind==='f32x')return typeof value==='number'&&Object.is(Math.fround(value),value);
-    if(kind==='i32')return Number.isInteger(value)&&value>=-2147483648&&value<=2147483647&&!Object.is(value,-0);
+    // null is held in the slot as I32_NULL (purchased assets carry routeSlot:null, which used to put every one of them
+    // in extras); the integer I32_NULL itself goes to extras.
+    if(kind==='i32')return value===null||Number.isInteger(value)&&value>I32_NULL&&value<=2147483647&&!Object.is(value,-0);
     if(kind==='bool')return typeof value==='boolean';
     if(kind==='pattern')return splitPattern(value)!==null;
     return value!==undefined;
@@ -317,7 +325,7 @@
     else if(kind==='bool')views(store).u8[index*STRIDE+O[field]]=value?1:0;
     else if(kind==='f64')views(store).f64[index*F64_PER_ROW+O[field]]=value;
     else if(kind==='f32x')views(store).f32[index*WORDS_PER_ROW+O[field]]=value;
-    else views(store).i32[index*WORDS_PER_ROW+O[field]]=value;
+    else views(store).i32[index*WORDS_PER_ROW+O[field]]=value===null?I32_NULL:value;
     views(store).u32[index*WORDS_PER_ROW+O.present]|=presentBit(field);
   }
   function clearHot(store,index,field){views(store).u32[index*WORDS_PER_ROW+O.present]&=~presentBit(field);}
@@ -328,7 +336,7 @@
     if(kind==='bool')return v.u8[index*STRIDE+O[field]]===1;
     if(kind==='f64')return v.f64[index*F64_PER_ROW+O[field]];
     if(kind==='f32x')return v.f32[index*WORDS_PER_ROW+O[field]];
-    return v.i32[index*WORDS_PER_ROW+O[field]];
+    const stored=v.i32[index*WORDS_PER_ROW+O[field]];return stored===I32_NULL?null:stored;
   }
   function peekHot(store,index,field,kind){return kind==='ref'?value(store,views(store).u32[index*WORDS_PER_ROW+O[field]]):readHot(store,index,field,kind);}
   function extrasOf(store,index){return (flagsOf(store,index)&EXTRAS)!==0&&own(store.extras,index)?store.extras[index]:null;}
@@ -367,6 +375,30 @@
     else if(BINDING_SET.has(field))setGroupField(store,index,'binding',field,value);
     else setExtra(store,index,field,value);
     if(field==='id'){bumpStructure(store);idsMove(store,index,idBefore,idAt(store,index));}
+  }
+  // Build 358 (million-asset): one owner pass writing a few numeric hot fields of very many rows (the daily flight
+  // counters) journals each field's column once (rememberColumn) instead of every row (128 bytes per row, 128 MB at a
+  // million rows). put(index,field,value) leaves the row exactly as set() would: a field not yet present, held in the
+  // row's extras or a value its slot cannot hold exactly goes through set() (row journal, extras); every other write
+  // goes into the column, and a field not yet present gets its presence bit through the journaled presence column (once
+  // per pass; the event engine is not told, these fields never move a schedule). Each put bumps the revision and marks
+  // the chunk, like a row write; a column is journaled on its first write, so a pass that writes nothing changes nothing.
+  const ENGINE_SCHEDULE_FREE=new Set(['flightHours','flightCycles','nextCheckHours']);
+  function columnWriter(store,fields){
+    const kinds=new Map(),remembered=new Set();
+    for(const field of fields){const kind=HOT_KIND.get(field);if(kind!=='f64'&&kind!=='f32x'&&kind!=='i32')throw new RangeError(`fleet-store-column-writer:${field}`);kinds.set(field,kind);}
+    return (index,field,value)=>{
+      const kind=kinds.get(field);if(!kind)throw new RangeError(`fleet-store-column-writer:${field}`);
+      // checkRow, extrasOf, isPresent and writeHot with the runtime resolved once (this runs for every row of a pass).
+      const r=rt(store),v=r.views,flags=index>=0&&index<store.length?v.u8[index*STRIDE+O.flags]:0;if(!(flags&ALIVE))throw new RangeError(`fleet-store-row:${index}`);
+      const extras=(flags&EXTRAS)&&own(store.extras,index)?store.extras[index]:null,word=index*WORDS_PER_ROW+O.present,bit=presentBit(field),present=(v.u32[word]&bit)!==0;
+      if(!hotFits(kind,value)||(extras&&own(extras,field))||(!present&&!ENGINE_SCHEDULE_FREE.has(field))){set(store,index,field,value);return;}
+      if(!present&&!remembered.has('present')){rememberColumn(store,'present',{quiet:true});remembered.add('present');}
+      if(!remembered.has(field)){rememberColumn(store,field);remembered.add(field);}
+      if(!present)v.u32[word]|=bit;
+      const journal=journalFor(store);store.revision++;if(journal)journal.high=store.revision;markDirty(r,index);
+      if(kind==='f64')v.f64[index*F64_PER_ROW+O[field]]=value;else if(kind==='f32x')v.f32[index*WORDS_PER_ROW+O[field]]=value;else v.i32[index*WORDS_PER_ROW+O[field]]=value===null?I32_NULL:value;
+    };
   }
   // Hot-path entry for owners that write records directly (the event engine):
   // journal the row once, bump the revision, mark its chunk dirty.
@@ -510,8 +542,21 @@
     }
     return row;
   }
-  function forEachClass(store,fields,fn,{numeric=[]}={}){
-    const names=Array.isArray(fields)?fields:[],numericSet=new Set(numeric);
+  // Build 358 (million-asset): validators, integrity checks and capacity checks ask for the same classes several times
+  // per command while the fleet does not change. A result is kept per field set on the store's runtime (dropped with a
+  // new buffer or value table) and reused while revision, length and structure are unchanged: every writer bumps the
+  // revision before it writes (remember, toucher, rememberColumn, rollback, compaction).
+  // When the fleet did change, only the chunks (CHUNK_ROWS rows) written since are scanned again: each chunk keeps its
+  // own class table, valid while the chunk's write version is unchanged, and the tables merge in chunk order (classes
+  // in order of first row, counts summed, extremes taken with the same strict comparisons in row order, singles in row
+  // order), which is exactly the result of one pass. A field set without ENGINE_FIELDS uses staticVersions, which the
+  // event engine's fast path does not bump, so those tables survive a moving fleet (the Company Platform asset checks).
+  const ENGINE_FIELDS=new Set(['phase','progress','fuel','condition','dwellRemaining','departureScheduled','departureScheduledAt','crewBlocked','reverse','lastTrip','baseFacility',...BINDING_FIELDS]);
+  function classScan(store,names,numericSet){
+    const r=rt(store),signature=JSON.stringify([names,[...numericSet].sort()]),cache=r.classCache||(r.classCache=new Map()),cached=cache.get(signature);
+    if(cached&&cached.revision===store.revision&&cached.length===store.length&&cached.structure===store.structure)return cached;
+    const versions=names.some(field=>ENGINE_FIELDS.has(field))?r.chunkVersions:r.staticVersions,stamp=`${r.epoch}:${r.massVersion}:${r.valuesGeneration}`;
+    const priorTables=cached&&cached.stamp===stamp?cached.chunkTables:null,chunkTables=[];
     const plan=names.map(field=>({field,inherited:field in Object.prototype,kind:HOT_KIND.get(field)||null,profile:PROFILE_SET.has(field),binding:BINDING_SET.has(field)}));
     let mask=0;const keyed=[],nums=[];
     for(const step of plan){
@@ -521,35 +566,105 @@
     }
     const useProfile=plan.some(step=>!step.kind&&step.profile),useBinding=plan.some(step=>!step.kind&&step.binding);
     const v=views(store),u8=v.u8,W=v.u32,F=v.f64,V=store.values,EX=store.extras,length=store.length,width=2+keyed.length*2+(useProfile?1:0)+(useBinding?1:0);
-    const classOf=new Int32Array(length).fill(-1),buckets=new Map(),comps=[],first=[],counts=[],key=new Uint32Array(width);
+    const comps=[],first=[],counts=[],key=new Uint32Array(width),previous=new Uint32Array(width);
     // Hot-loop builtins as locals: global lookups are slow where the game runs inside a vm context (Node tests).
     const imul=Math.imul,larger=Math.max;
     const nCount=nums.length,mins=[],maxs=[],nans=[],requested=new Set(plan.filter(step=>!step.inherited).map(step=>step.field)),inheritedSteps=plan.filter(step=>step.inherited);
-    const singles=[];
-    for(let index=0;index<length;index++){
-      const flags=u8[index*STRIDE+O.flags];if(!(flags&ALIVE))continue;
-      // Extras only matter when they hold a requested field (purchased assets carry routeSlot:null there, for example).
-      if(flags&EXTRAS){const extras=EX[index];if(extras){let relevant=false;for(const field in extras)if(requested.has(field)){relevant=true;break;}if(!relevant)for(const step of inheritedSteps)if(own(extras,step.field)){relevant=true;break;}if(relevant){singles.push(index);continue;}}}
+    const keyedCount=keyed.length,keyedKind=keyed.map(step=>step.kind==='pattern'?0:step.kind==='bool'?1:step.kind==='f64'?2:3),keyedBit=keyed.map(step=>step.bit),keyedSlot=keyed.map(step=>step.kind==='pattern'?0:step.slot),keyedRef=keyed.map(step=>step.kind==='pattern'?O[step.slot[0]]:0),keyedNumber=keyed.map(step=>step.kind==='pattern'?O[step.slot[1]]:0);
+    // The class key of a live row into `key`; false when the row is a single (its extras hold a requested field).
+    const fill=index=>{
+      if(u8[index*STRIDE+O.flags]&EXTRAS){const extras=EX[index];if(extras){let relevant=false;for(const field in extras)if(requested.has(field)){relevant=true;break;}if(!relevant)for(const step of inheritedSteps)if(own(extras,step.field)){relevant=true;break;}if(relevant)return false;}}
       const w=index*WORDS_PER_ROW,present=W[w+O.present]&mask;let at=0;key[at++]=present;
-      for(let k=0;k<keyed.length;k++){
-        const step=keyed[k];let a=0,b=0;
-        if(present&step.bit){
-          if(step.kind==='pattern'){const ref=W[w+O[step.slot[0]]],number=W[w+O[step.slot[1]]],pattern=V[ref];a=ref;b=larger(pattern&&pattern.w||0,digitCount(number));}
-          else if(step.kind==='bool')a=u8[index*STRIDE+step.slot];
-          else if(step.kind==='f64'){const f=index*F64_PER_ROW+step.slot;a=W[f*2];b=W[f*2+1];}
-          else a=W[w+step.slot];
+      for(let k=0;k<keyedCount;k++){
+        let a=0,b=0;
+        if(present&keyedBit[k]){
+          const kind=keyedKind[k];
+          if(kind===0){const ref=W[w+keyedRef[k]],number=W[w+keyedNumber[k]],pattern=V[ref];a=ref;b=larger(pattern&&pattern.w||0,digitCount(number));}
+          else if(kind===1)a=u8[index*STRIDE+keyedSlot[k]];
+          else if(kind===2){const f=index*F64_PER_ROW+keyedSlot[k];a=W[f*2];b=W[f*2+1];}
+          else a=W[w+keyedSlot[k]];
         }
         key[at++]=a;key[at++]=b;
       }
       if(useProfile)key[at++]=W[w+O.profile];if(useBinding)key[at++]=W[w+O.binding];key[at++]=0;
-      let h=0x811c9dc5;for(let k=0;k<width;k++)h=imul(h^key[k],0x01000193);
-      let list=buckets.get(h),id=-1;
-      if(list)for(const candidate of list){const c=comps[candidate];let same=true;for(let k=0;k<width;k++)if(c[k]!==key[k]){same=false;break;}if(same){id=candidate;break;}}
-      if(id<0){id=comps.length;comps.push(key.slice());first.push(index);counts.push(0);if(list)list.push(id);else buckets.set(h,[id]);for(let k=0;k<nCount;k++){mins.push(Infinity);maxs.push(-Infinity);nans.push(false);}}
-      classOf[index]=id;counts[id]++;
-      for(let k=0;k<nCount;k++){const step=nums[k];if(!(present&step.bit))continue;const x=F[index*F64_PER_ROW+step.slot],slot=id*nCount+k;if(x!==x){nans[slot]=true;continue;}if(x<mins[slot])mins[slot]=x;if(x>maxs[slot])maxs[slot]=x;}
+      return true;
+    };
+    // The class of `key` in a table, created (with empty extremes) when new.
+    const classOf=(table,source)=>{
+      let h=0x811c9dc5;for(let k=0;k<width;k++)h=imul(h^source[k],0x01000193);
+      const list=table.buckets.get(h);
+      if(list)for(const candidate of list){const c=table.comps[candidate];let same=true;for(let k=0;k<width;k++)if(c[k]!==source[k]){same=false;break;}if(same)return candidate;}
+      const id=table.comps.length;table.comps.push(source.slice());table.first.push(-1);table.counts.push(0);if(list)list.push(id);else table.buckets.set(h,[id]);
+      for(let k=0;k<nCount;k++){table.mins.push(Infinity);table.maxs.push(-Infinity);table.nans.push(false);}
+      return id;
+    };
+    const scanChunk=(start,end)=>{
+      const table={buckets:new Map(),comps:[],first:[],counts:[],mins:[],maxs:[],nans:[],singles:[]};let previousId=-1;
+      for(let index=start;index<end;index++){
+        const flags=u8[index*STRIDE+O.flags];if(!(flags&ALIVE))continue;
+        // Extras only matter when they hold a requested field (purchased assets carry routeSlot:null there, for example).
+        if(!fill(index)){table.singles.push(index);continue;}
+        const present=key[0];
+        // Rows of one purchase batch are contiguous: a row with the previous row's key joins its class without a lookup.
+        let id=-1;
+        if(previousId>=0){id=previousId;for(let k=0;k<width;k++)if(previous[k]!==key[k]){id=-1;break;}}
+        if(id<0){id=classOf(table,key);if(table.first[id]<0)table.first[id]=index;previous.set(key);previousId=id;}
+        table.counts[id]++;
+        for(let k=0;k<nCount;k++){const step=nums[k];if(!(present&step.bit))continue;const x=F[index*F64_PER_ROW+step.slot],slot=id*nCount+k;if(x!==x){table.nans[slot]=true;continue;}if(x<table.mins[slot])table.mins[slot]=x;if(x>table.maxs[slot])table.maxs[slot]=x;}
+      }
+      table.buckets=null;return table;
+    };
+    const merged={buckets:new Map(),comps,first,counts,mins,maxs,nans},singles=[];
+    for(let chunk=0,start=0;start<length;chunk++,start+=CHUNK_ROWS){
+      const end=Math.min(length,start+CHUNK_ROWS),version=versions[chunk],prior=priorTables&&priorTables[chunk];
+      const table=prior&&prior.version===version&&prior.end===end?prior:Object.assign(scanChunk(start,end),{version,end});
+      chunkTables.push(table);
+      for(let local=0;local<table.comps.length;local++){
+        const id=classOf(merged,table.comps[local]);if(first[id]<0)first[id]=table.first[local];counts[id]+=table.counts[local];
+        for(let k=0;k<nCount;k++){const from=local*nCount+k,to=id*nCount+k;if(table.nans[from])nans[to]=true;if(table.mins[from]<mins[to])mins[to]=table.mins[from];if(table.maxs[from]>maxs[to])maxs[to]=table.maxs[from];}
+      }
+      for(const index of table.singles)singles.push(index);
     }
-    const members=id=>cb=>{for(let index=0;index<length;index++)if(classOf[index]===id)cb(projectRow(store,index,plan),index);};
+    // Members of a class (failure paths only): the rows whose key equals the class key, found by a second scan, so
+    // the common path keeps no per-row class map.
+    const members=id=>cb=>{const c=comps[id];for(let index=0;index<length;index++){if(!(u8[index*STRIDE+O.flags]&ALIVE)||!fill(index))continue;let same=true;for(let k=0;k<width;k++)if(c[k]!==key[k]){same=false;break;}if(same)cb(projectRow(store,index,plan),index);}};
+    const scan={revision:store.revision,length:store.length,structure:store.structure,stamp,chunkTables,plan,comps,first,counts,mins,maxs,nans,nums,nCount,singles,members};
+    if(cache.size>=16)cache.clear();cache.set(signature,scan);return scan;
+  }
+  // Build 358 (million-asset): the distinct truthy values of a hot ref field (routeId, baseFacility) over live rows, in
+  // order of first occurrence; with whereField (a profile field) only rows whose profile holds whereValue there. Rows
+  // with extras are read as views read them (peek). Each chunk keeps its own ordered list, valid while the chunk's
+  // static version is unchanged (the event engine's fast path writes no ref field, profile or extras), and the lists
+  // merge in chunk order, which is the order of one pass. Returns a new array.
+  function distinctRefs(store,field,whereField=null,whereValue){
+    if(HOT_KIND.get(field)!=='ref')throw new RangeError(`fleet-distinct-ref-field:${field}`);
+    if(whereField&&!PROFILE_SET.has(whereField))throw new RangeError(`fleet-distinct-where-field:${whereField}`);
+    const r=rt(store),signature=JSON.stringify([field,whereField,whereValue===undefined?null:[typeof whereValue,whereValue]]),cache=r.distinctCache||(r.distinctCache=new Map()),stamp=`${r.epoch}:${r.massVersion}:${r.valuesGeneration}`;
+    let entry=cache.get(signature);if(!entry||entry.stamp!==stamp){entry={stamp,tables:[]};if(cache.size>=16)cache.clear();cache.set(signature,entry);}
+    const v=views(store),u8=v.u8,W=v.u32,V=store.values,bit=HOT_BIT[field]>>>0,slot=O[field],length=store.length,profileMatch=new Map();
+    const scanChunk=(start,end)=>{
+      const values=[],seenRefs=new Set(),seenValues=new Set();
+      for(let index=start;index<end;index++){
+        const flags=u8[index*STRIDE+O.flags];if(!(flags&ALIVE))continue;
+        if(flags&EXTRAS){const value=peek(store,index,field);if(value&&(!whereField||peek(store,index,whereField)===whereValue)&&!seenValues.has(value)){seenValues.add(value);values.push(value);}continue;}
+        const w=index*WORDS_PER_ROW;if(!(W[w+O.present]&bit))continue;const ref=W[w+slot];if(ref===0||seenRefs.has(ref))continue;
+        if(whereField){const profileRef=W[w+O.profile];let match=profileMatch.get(profileRef);if(match===undefined){const profile=V[profileRef];match=!!profile&&typeof profile==='object'&&profile[whereField]===whereValue;profileMatch.set(profileRef,match);}if(!match)continue;}
+        const value=V[ref];if(!value)continue;seenRefs.add(ref);if(!seenValues.has(value)){seenValues.add(value);values.push(value);}
+      }
+      return values;
+    };
+    const out=[],seen=new Set();
+    for(let chunk=0,start=0;start<length;chunk++,start+=CHUNK_ROWS){
+      const end=Math.min(length,start+CHUNK_ROWS),version=r.staticVersions[chunk];let table=entry.tables[chunk];
+      if(!table||table.version!==version||table.end!==end){table={version,end,values:scanChunk(start,end)};entry.tables[chunk]=table;}
+      for(const value of table.values)if(!seen.has(value)){seen.add(value);out.push(value);}
+    }
+    entry.tables.length=Math.ceil(length/CHUNK_ROWS);
+    return out;
+  }
+  function forEachClass(store,fields,fn,{numeric=[]}={}){
+    const names=Array.isArray(fields)?fields:[],numericSet=new Set(numeric);
+    const {plan,comps,first,counts,mins,maxs,nans,nums,nCount,singles,members}=classScan(store,names,numericSet);
     for(let id=0;id<comps.length;id++){
       const row=projectRow(store,first[id],plan),info={index:first[id],members:counts[id],forEachMember:members(id)};
       fn(row,counts[id],info);
@@ -565,7 +680,14 @@
   // prefix + digits; when the prefix does not end in a digit the trailing digit run is exactly those digits, so the id
   // is identified by (prefix, number, digit count). Ids with a longer trailing digit run (the prefix then ends in a
   // digit), ids in extras and non-string ids are compared as values. Both sets are disjoint by construction.
+  // Ids are written only through set/add/replace/remove (never by the event engine's fast path), so the result stands
+  // while no chunk's static version moved (and no mass write, compaction or new value table happened).
   function idCollisions(store){
+    const r=rt(store),cached=r.idCollisionCache,stamp=`${r.epoch}:${r.massVersion}:${r.valuesGeneration}:${store.length}:${store.structure}`,chunks=Math.ceil(store.length/CHUNK_ROWS);
+    if(cached&&cached.stamp===stamp){let same=true;for(let chunk=0;chunk<chunks;chunk++)if(cached.versions[chunk]!==r.staticVersions[chunk]){same=false;break;}if(same)return {...cached.result};}
+    const result=scanIdCollisions(store);r.idCollisionCache={stamp,versions:r.staticVersions.slice(0,chunks),result};return {...result};
+  }
+  function scanIdCollisions(store){
     const v=views(store),u8=v.u8,W=v.u32,V=store.values,EX=store.extras,length=store.length,groups=new Map(),exact=new Set(),larger=Math.max,digitTail=/\d$/;let missing=false,duplicate=false;
     const addKey=(prefix,number,digits)=>{let g=groups.get(prefix);if(!g){g={keys:new Float64Array(64),n:0,sorted:true};groups.set(prefix,g);}if(g.n===g.keys.length){const next=new Float64Array(g.keys.length*2);next.set(g.keys);g.keys=next;}const key=number*16+digits;if(g.n&&g.keys[g.n-1]>=key)g.sorted=false;g.keys[g.n++]=key;};
     const addValue=id=>{if(typeof id==='string'){const m=/^([\s\S]*?)(\d*)$/.exec(id),run=m[2];if(run.length>=1&&run.length<=10){addKey(m[1],Number(run),run.length);return;}}if(exact.has(id))duplicate=true;else exact.add(id);};
@@ -584,24 +706,36 @@
   // Immutable, interned profiles are shared by rows from the same purchase
   // batch. Cache their live multiplicities so daily batch-level accounting can
   // visit profiles instead of materializing one view per asset.
-  function forEachProfile(store,fn){
-    const r=rt(store);
-    if(!r.profileGroups){const groups=new Map(),u8=r.views.u8,W=r.views.u32;for(let index=0;index<store.length;index++){if(!(u8[index*STRIDE+O.flags]&ALIVE))continue;const ref=W[index*WORDS_PER_ROW+O.profile];groups.set(ref,(groups.get(ref)||0)+1);}r.profileGroups=groups;}
-    for(const [ref,count] of r.profileGroups)if(ref!==0&&count>0)fn(value(store,ref),count,ref);
+  // Live rows per profile ref, in order of first row. Build 358 (million-asset): rows of one purchase share a profile
+  // and sit together, so runs of one ref are counted before touching the map (a few operations per row at a million).
+  function profileRefCounts(store){
+    const r=rt(store);if(r.profileGroups)return r.profileGroups;
+    const groups=new Map(),u8=r.views.u8,W=r.views.u32;let run=-1,runCount=0;
+    for(let index=0;index<store.length;index++){
+      if(!(u8[index*STRIDE+O.flags]&ALIVE))continue;const ref=W[index*WORDS_PER_ROW+O.profile];
+      if(ref===run){runCount++;continue;}if(runCount)groups.set(run,(groups.get(run)||0)+runCount);run=ref;runCount=1;
+    }
+    if(runCount)groups.set(run,(groups.get(run)||0)+runCount);
+    r.profileGroups=groups;return groups;
   }
+  function forEachProfile(store,fn){
+    for(const [ref,count] of profileRefCounts(store))if(ref!==0&&count>0)fn(value(store,ref),count,ref);
+  }
+  // Groups of profiles keyed by fields of the profile, in order of first row, with summed row counts (the per-row
+  // grouping these replace kept the same order and counts).
   function forEachLeaseGroup(store,fn){
     const r=rt(store);
-    if(!r.leaseGroups){const groups=new Map(),u8=r.views.u8,W=r.views.u32;for(let index=0;index<store.length;index++){
-      if(!(u8[index*STRIDE+O.flags]&ALIVE))continue;const ref=W[index*WORDS_PER_ROW+O.profile];if(!ref)continue;const profile=value(store,ref);if(profile?.ownership!=='lease')continue;
-      const company=String(profile.ownerCompanyId||profile.companyId||''),monthlyLease=Number(profile.monthlyLease)||0;if(!company||monthlyLease<=0)continue;const key=`${company}\u0000${monthlyLease}`;let row=groups.get(key);if(!row){row={ownerCompanyId:company,monthlyLease,count:0};groups.set(key,row);}row.count++;
+    if(!r.leaseGroups){const groups=new Map();for(const [ref,count] of profileRefCounts(store)){
+      if(!ref)continue;const profile=value(store,ref);if(profile?.ownership!=='lease')continue;
+      const company=String(profile.ownerCompanyId||profile.companyId||''),monthlyLease=Number(profile.monthlyLease)||0;if(!company||monthlyLease<=0)continue;const key=`${company}\u0000${monthlyLease}`;let row=groups.get(key);if(!row){row={ownerCompanyId:company,monthlyLease,count:0};groups.set(key,row);}row.count+=count;
     }r.leaseGroups=groups;}
     for(const row of r.leaseGroups.values())if(row.count>0)fn(row,row.count);
   }
   function forEachPayrollGroup(store,fn){
     const r=rt(store);
-    if(!r.payrollGroups){const groups=new Map(),u8=r.views.u8,W=r.views.u32;for(let index=0;index<store.length;index++){
-      if(!(u8[index*STRIDE+O.flags]&ALIVE))continue;const ref=W[index*WORDS_PER_ROW+O.profile];if(!ref)continue;const profile=value(store,ref),staff=profile?.staffing;if(staff?.ready!==true)continue;
-      const ownerCompanyId=String(profile.ownerCompanyId||profile.companyId||''),monthlyPayroll=Number(staff.monthlyPayroll)||0,headcount=Number(staff.total)||0;if(!ownerCompanyId)continue;const key=`${ownerCompanyId}\u0000${monthlyPayroll}\u0000${headcount}`;let row=groups.get(key);if(!row){row={ownerCompanyId,monthlyPayroll,headcount,count:0};groups.set(key,row);}row.count++;
+    if(!r.payrollGroups){const groups=new Map();for(const [ref,count] of profileRefCounts(store)){
+      if(!ref)continue;const profile=value(store,ref),staff=profile?.staffing;if(staff?.ready!==true)continue;
+      const ownerCompanyId=String(profile.ownerCompanyId||profile.companyId||''),monthlyPayroll=Number(staff.monthlyPayroll)||0,headcount=Number(staff.total)||0;if(!ownerCompanyId)continue;const key=`${ownerCompanyId}\u0000${monthlyPayroll}\u0000${headcount}`;let row=groups.get(key);if(!row){row={ownerCompanyId,monthlyPayroll,headcount,count:0};groups.set(key,row);}row.count+=count;
     }r.payrollGroups=groups;}
     for(const row of r.payrollGroups.values())if(row.count>0)fn(row,row.count);
   }
@@ -685,12 +819,16 @@
       if(present&B.id)used[u32[w+O.idPattern]]=1;if(present&B.name)used[u32[w+O.namePattern]]=1;
       if(present&B.routeId)used[u32[w+O.routeId]]=1;if(present&B.baseFacility)used[u32[w+O.baseFacility]]=1;if(present&B.phase)used[u32[w+O.phase]]=1;if(present&B.lastTrip)used[u32[w+O.lastTrip]]=1;
     }
-    let freed=0;
+    let freed=0;const freedRefs=[];
     for(let ref=1;ref<store.values.length;ref++){
       const stored=store.values[ref];if(used[ref]||stored===null||stored===undefined)continue;
-      const key=valueKey(stored);if(r.index.get(key)===ref)r.index.delete(key);store.values[ref]=null;r.free.push(ref);freed++;
+      const key=valueKey(stored);if(r.index.get(key)===ref)r.index.delete(key);store.values[ref]=null;r.free.push(ref);freedRefs.push(ref);freed++;
     }
-    if(freed){r.ids=null;r.valuesGeneration=++epochCounter;}
+    // Build 358 (million-asset): a freed ref is held by no live row. Every cache valid now was computed from rows that
+    // have not changed since (class tables, id checks and distinct lists per chunk version), so none holds a freed ref
+    // and they all stay valid; the id index only forgets id patterns no live row uses. (Dropping the index and every
+    // cached scan here cost a full rebuild after each daily maintenance.)
+    if(freed&&r.ids)for(const ref of freedRefs){const map=r.ids.patterns.get(ref);if(!map)continue;if(map.size){r.ids=null;break;}r.ids.patterns.delete(ref);}
     return {freed,values:store.values.length,free:r.free.length};
   }
   function stats(store){
@@ -698,9 +836,9 @@
     return {length:store.length,live:store.live,capacity:store.capacity,values:store.values.length,freeValues:r.free.length,extras:Object.keys(store.extras).length,columnBytes:bytes,bytesPerAsset:store.length?STRIDE:0};
   }
 
-  const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
+  const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,I32_NULL,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
     create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
-    views,slot,setSlot,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
+    views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,distinctRefs,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

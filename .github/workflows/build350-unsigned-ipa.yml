@@ -102,7 +102,7 @@ jobs:
           from pathlib import Path
           root=Path(sys.argv[1]);result=json.loads(Path(sys.argv[2]).read_text())
           source=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())['source_tree_sha256']
-          required=154
+          required=155
           if result.get('completed') is not True or result.get('all_tests_passed') is not True or result.get('runtime_unchanged') is not True: raise SystemExit('Full source acceptance did not pass')
           if result.get('total',0)<required or result.get('passed')!=result.get('total'): raise SystemExit('Acceptance gates are missing or failed')
           if result.get('runtime_source',{}).get('source_tree_sha256')!=source: raise SystemExit('Acceptance result is bound to another runtime')

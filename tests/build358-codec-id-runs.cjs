@@ -71,7 +71,10 @@ test('a real game save stores its asset id lists as runs',()=>{
   assert.equal(text,JSON.stringify(C.encodeState(state)));
   const decoded=C.deserialize(text),strip=v=>JSON.stringify({...v,fleet:null});assert.equal(strip(decoded),strip(state),'the decoded game equals the live game');
   const runPaths=(tree.stateCodec.runPaths||[]).map(p=>p.join('.'));
-  for(const prefix of ['advanced.labor.employmentContracts','advanced.labor.hiringLog','realism.procurement.deliveries'])assert(runPaths.some(p=>p.startsWith(prefix)&&p.endsWith('assetIds')),`${prefix} ids are runs: ${runPaths}`);
+  // Build 358 step 4b: crew and receipt lists are compact in the game itself (idLists runs); the codec still turns any
+  // long numbered array left in the save into runs.
+  const nativeRuns=prefix=>JSON.stringify(prefix.split('.').reduce((v,k)=>v[k],tree)).includes('"assetIds":{"$ids":');
+  for(const prefix of ['advanced.labor.employmentContracts','advanced.labor.hiringLog','realism.procurement.deliveries'])assert(nativeRuns(prefix)||runPaths.some(p=>p.startsWith(prefix)&&p.endsWith('assetIds')),`${prefix} ids are runs: ${runPaths}`);
   const lists=['employmentContracts','hiringLog'].map(k=>JSON.stringify(tree.advanced.labor[k]).length).concat([JSON.stringify(tree.realism.procurement.deliveries).length]);
   assert(lists.every(n=>n<20000),`id lists are compact: ${lists}`);
   return {runPaths:runPaths.length,listBytes:lists};

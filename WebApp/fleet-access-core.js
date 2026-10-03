@@ -36,6 +36,88 @@
   let configuredRouteResolver=null;
   function configure({resolveRoute}={}){configuredRouteResolver=typeof resolveRoute==='function'?resolveRoute:null;}
 
+  // --------------------------------------------------------- id lists ---
+  // Build 358 (million-asset): crew contracts, the hiring log and delivery receipts list the ids of a purchase batch,
+  // which are consecutive (prefix + number, the store's id pattern). A list of ID_LIST_MIN ids or more is kept as
+  // {$ids:[segment,...]}, a segment being [prefix,width,first,count] (the ids joinPattern({p:prefix,w:width},first+k),
+  // k < count) or one literal id, instead of one string per asset (a million strings were copied by every snapshot of
+  // these roots and written by every save). idLists.* read either form; plain arrays stay valid (earlier saves, short
+  // lists). A list is a value: writers build a new one (idLists.without), never edit one in place.
+  // Every member of a run splits (GH_FLEET_STORE.splitPattern, a function of the string) into exactly that run's prefix
+  // and width and its own number: two lists hold the same id iff they hold the same split, which makes membership and
+  // duplicate checks exact range tests. A list read from a save is checked for this by idLists.valid (the first and the
+  // last member decide it: the split of prefix + padded digits only changes once the digits outgrow the width).
+  const ID_LIST_MIN=64;
+  const isRunList=value=>isObject(value)&&Array.isArray(value.$ids);
+  const sameSplit=(id,p,w,n)=>{const split=STORE.splitPattern(id);return !!split&&split.pattern.p===p&&split.pattern.w===w&&split.number===n;};
+  function idListOf(ids){
+    if(!Array.isArray(ids)||ids.length<ID_LIST_MIN||!ids.every(id=>typeof id==='string'))return ids;
+    const segments=[];
+    for(let i=0;i<ids.length;){
+      const split=STORE.splitPattern(ids[i]);let count=1;
+      if(split){const {p,w}=split.pattern;while(i+count<ids.length&&split.number+count<=0xFFFFFFFF&&sameSplit(ids[i+count],p,w,split.number+count))count++;}
+      if(split&&count>=2)segments.push([split.pattern.p,split.pattern.w,split.number,count]);else{segments.push(ids[i]);count=1;}
+      i+=count;
+    }
+    return segments.length*4<=ids.length?{$ids:segments}:ids;
+  }
+  function idListValid(list){
+    if(Array.isArray(list))return true;if(!isRunList(list)||Object.keys(list).length!==1)return false;
+    for(const segment of list.$ids){
+      if(!Array.isArray(segment)){if(typeof segment!=='string')return false;continue;}
+      const [p,w,first,count]=segment;
+      if(segment.length!==4||typeof p!=='string'||!Number.isInteger(w)||w<0||w>10||!Number.isSafeInteger(first)||first<0||!Number.isSafeInteger(count)||count<2||first+count-1>0xFFFFFFFF)return false;
+      if(!sameSplit(STORE.joinPattern({p,w},first),p,w,first)||!sameSplit(STORE.joinPattern({p,w},first+count-1),p,w,first+count-1))return false;
+    }
+    return true;
+  }
+  // Whether an id occurs twice / whether an id is empty, without spelling out the runs.
+  function idListHasDuplicate(list){
+    if(Array.isArray(list))return new Set(list).size!==list.length;if(!isRunList(list))return false;
+    const literals=new Set(),ranges=new Map();
+    for(const segment of list.$ids){
+      if(!Array.isArray(segment)){if(literals.has(segment))return true;literals.add(segment);continue;}
+      const key=`${segment[0]}\u0000${segment[1]}`,rows=ranges.get(key);if(rows)rows.push([segment[2],segment[3]]);else ranges.set(key,[[segment[2],segment[3]]]);
+    }
+    for(const rows of ranges.values()){rows.sort((a,b)=>a[0]-b[0]);for(let k=1;k<rows.length;k++)if(rows[k][0]<rows[k-1][0]+rows[k-1][1])return true;}
+    for(const id of literals){const split=STORE.splitPattern(id);if(!split)continue;const rows=ranges.get(`${split.pattern.p}\u0000${split.pattern.w}`);if(rows&&rows.some(([first,count])=>split.number>=first&&split.number<first+count))return true;}
+    return false;
+  }
+  function idListHasEmpty(list){if(Array.isArray(list))return list.some(id=>!id);if(!isRunList(list))return false;return list.$ids.some(segment=>!Array.isArray(segment)&&!segment);}
+  function idListIs(value){return Array.isArray(value)||isRunList(value);}
+  function idListLength(list){if(Array.isArray(list))return list.length;if(!isRunList(list))return 0;let total=0;for(const segment of list.$ids)total+=Array.isArray(segment)?segment[3]:1;return total;}
+  function idListAt(list,index){
+    if(Array.isArray(list))return list[index];if(!isRunList(list)||!(index>=0))return undefined;
+    for(const segment of list.$ids){if(Array.isArray(segment)){if(index<segment[3])return STORE.joinPattern({p:segment[0],w:segment[1]},segment[2]+index);index-=segment[3];}else{if(index===0)return segment;index--;}}
+    return undefined;
+  }
+  function idListForEach(list,fn){
+    if(Array.isArray(list)){list.forEach((id,index)=>fn(id,index));return;}if(!isRunList(list))return;let index=0;
+    for(const segment of list.$ids){if(Array.isArray(segment)){const pattern={p:segment[0],w:segment[1]};for(let k=0;k<segment[3];k++)fn(STORE.joinPattern(pattern,segment[2]+k),index++);}else fn(segment,index++);}
+  }
+  function idListToArray(list){if(Array.isArray(list))return list.slice();const out=[];idListForEach(list,id=>out.push(id));return out;}
+  function idListIndexOf(list,id){
+    if(Array.isArray(list))return list.indexOf(id);if(!isRunList(list))return -1;const split=STORE.splitPattern(id);let offset=0;
+    for(const segment of list.$ids){
+      if(Array.isArray(segment)){const [p,w,first,count]=segment;if(split&&split.pattern.p===p&&split.pattern.w===w&&split.number>=first&&split.number<first+count)return offset+split.number-first;offset+=count;}
+      else{if(segment===id)return offset;offset++;}
+    }
+    return -1;
+  }
+  // The list without its element at `index` (a new value of the same form).
+  function idListWithout(list,index){
+    if(Array.isArray(list)){const out=list.slice();out.splice(index,1);return out;}if(!isRunList(list))return list;
+    const segments=[];let offset=0;
+    for(const segment of list.$ids){
+      const size=Array.isArray(segment)?segment[3]:1;
+      if(index<offset||index>=offset+size){segments.push(segment);offset+=size;continue;}
+      if(Array.isArray(segment)){const at=index-offset,[p,w,first,count]=segment;const parts=[[p,w,first,at],[p,w,first+at+1,count-at-1]];for(const part of parts){if(part[3]>=2)segments.push(part);else if(part[3]===1)segments.push(STORE.joinPattern({p,w},part[2]));}}
+      offset+=size;
+    }
+    return {$ids:segments};
+  }
+  const ID_LISTS=Object.freeze({MIN:ID_LIST_MIN,of:idListOf,is:idListIs,valid:idListValid,length:idListLength,at:idListAt,forEach:idListForEach,toArray:idListToArray,indexOf:idListIndexOf,without:idListWithout,hasDuplicate:idListHasDuplicate,hasEmpty:idListHasEmpty});
+
   // ------------------------------------------------------------ views ---
   function readOnly(){throw new TypeError('fleet-view-read-only');}
   const nestedViews=new WeakMap(),nestedTargets=new WeakMap();
@@ -90,27 +172,37 @@
   // the checkpoint. null for a faulted asset (presented exactly as stored).
   // Rows whose hot fields all live in their record slots are read directly.
   const HOT_SET=new Set(STORE.HOT_FIELDS.map(([name])=>name)),BIT=Object.fromEntries(STORE.HOT_FIELDS.map(([name],bit)=>[name,1<<bit])),O=STORE.O;
+  const STORE_HOT_KIND=new Map(STORE.HOT_FIELDS.map(([name,kind])=>[name,kind])),PROFILE_FIELD_SET=new Set(STORE.PROFILE_FIELDS),BINDING_FIELD_SET=new Set(STORE.BINDING_FIELDS);
   const scratch={phase:null,routeId:null,progress:0,fuel:0,condition:0,dwellRemaining:undefined,type:undefined};
   function hotInExtras(extras){for(const key in extras)if(HOT_SET.has(key))return true;return false;}
   function deriveRow(store,index,t){
     const extras=STORE.extrasOf(store,index);
     if(extras&&hotInExtras(extras))return deriveRowGeneric(store,index,t);
     if(extras&&extras.simulationFault)return null;
-    const v=STORE.views(store),F=v.f64,W=v.u32,f=index*STORE.F64_PER_ROW,w=index*STORE.WORDS_PER_ROW,p=W[w+O.present],V=store.values,ref=slot=>W[w+slot]===0?null:V[W[w+slot]];
-    const routeId=(p&BIT.routeId)?ref(O.routeId):undefined,phase=(p&BIT.phase)?ref(O.phase):undefined,out={};
+    const fast=deriveFast(fastScratch,store,index,t,STORE.views(store),store.values),out={phase:fast.phase,progress:fast.progress,fuel:fast.fuel,condition:fast.condition,simCarrySeconds:fast.simCarrySeconds};
+    if(fast.hasDwell)out.dwellRemaining=fast.dwellRemaining;
+    return out;
+  }
+  // deriveRow's values for a row whose hot fields all live in their slots (and that is not faulted), written into
+  // `out` (reused across rows by scan(): no allocation per row); out.hasDwell tells whether dwellRemaining is set.
+  const fastScratch={phase:null,progress:0,fuel:0,condition:0,simCarrySeconds:0,dwellRemaining:undefined,hasDwell:false};
+  function deriveFast(out,store,index,t,v,V){
+    const F=v.f64,W=v.u32,f=index*STORE.F64_PER_ROW,w=index*STORE.WORDS_PER_ROW,p=W[w+O.present];
+    const routeRef=(p&BIT.routeId)?W[w+O.routeId]:-1,phaseRef=(p&BIT.phase)?W[w+O.phase]:-1;
+    const routeId=routeRef<0?undefined:routeRef===0?null:V[routeRef],phase=phaseRef<0?undefined:phaseRef===0?null:V[phaseRef];
     out.phase=phase?phase:(routeId?'moving':'idle');
     out.progress=(p&BIT.progress)?F[f+O.progress]:0;
     out.fuel=(p&BIT.fuel)?F[f+O.fuel]:100;
     out.condition=(p&BIT.condition)?F[f+O.condition]:100;
     out.simCarrySeconds=(p&BIT.simCarrySeconds)?F[f+O.simCarrySeconds]:0;
-    if(p&BIT.dwellRemaining)out.dwellRemaining=F[f+O.dwellRemaining];
+    out.hasDwell=(p&BIT.dwellRemaining)!==0;out.dwellRemaining=out.hasDwell?F[f+O.dwellRemaining]:undefined;
     const at=F[f+O.at]-Math.max(0,(p&BIT.simCarrySeconds)&&Number.isFinite(F[f+O.simCarrySeconds])?F[f+O.simCarrySeconds]:0);
     if(t>at&&routeId&&out.phase!=='idle'){
-      const binding=V[W[w+O.binding]],profile=V[W[w+O.profile]];
-      const tripSeconds=Number((binding&&binding.tripSeconds)||(configuredRouteResolver?configuredRouteResolver(routeId,(p&BIT.baseFacility)?ref(O.baseFacility):undefined)?.tripSeconds:undefined));
+      const binding=V[W[w+O.binding]],profile=V[W[w+O.profile]],baseRef=(p&BIT.baseFacility)?W[w+O.baseFacility]:-1;
+      const tripSeconds=Number((binding&&binding.tripSeconds)||(configuredRouteResolver?configuredRouteResolver(routeId,baseRef<0?undefined:baseRef===0?null:V[baseRef])?.tripSeconds:undefined));
       scratch.phase=out.phase;scratch.routeId=routeId;scratch.progress=out.progress;scratch.fuel=out.fuel;scratch.condition=out.condition;scratch.dwellRemaining=out.dwellRemaining;scratch.type=profile?profile.type:undefined;
       events().derive(scratch,at,t,tripSeconds);
-      out.progress=scratch.progress;out.fuel=scratch.fuel;out.condition=scratch.condition;if(scratch.dwellRemaining!==undefined)out.dwellRemaining=scratch.dwellRemaining;
+      out.progress=scratch.progress;out.fuel=scratch.fuel;out.condition=scratch.condition;if(scratch.dwellRemaining!==undefined){out.dwellRemaining=scratch.dwellRemaining;out.hasDwell=true;}
     }
     return out;
   }
@@ -230,11 +322,12 @@
   }
   function receiptColumnValue(column,index){if(column.range){const text=String(column.range.start+index);return column.range.prefix+(column.range.width?text.padStart(column.range.width,'0'):text);}return column.values[index];}
   function isCompactReceipt(delivery){return delivery?.assetReceipt?.schema===RECEIPT_SCHEMA;}
-  function receiptRow(delivery,index,fields=null){
+  // `ids` is the delivery's id list spelled out (receiptIds), passed by callers that rebuild every row.
+  function receiptRow(delivery,index,fields=null,ids=null){
     const receipt=delivery.assetReceipt,row={},wanted=fields?new Set(fields):null;
     for(const key of receipt.keys){
       if(wanted&&!wanted.has(key))continue;
-      if(key==='id'&&receipt.idsFrom==='assetIds'){row.id=delivery.assetIds[index];continue;}
+      if(key==='id'&&receipt.idsFrom==='assetIds'){row.id=ids?ids[index]:ID_LISTS.at(delivery.assetIds,index);continue;}
       row[key]=Object.prototype.hasOwnProperty.call(receipt.columns,key)?receiptColumnValue(receipt.columns[key],index):wanted?receipt.template[key]:jsonClone(receipt.template[key]);
     }
     return row;
@@ -243,20 +336,23 @@
     if(!delivery||typeof delivery!=='object'||delivery.status!=='delivered'||isCompactReceipt(delivery)||!Array.isArray(delivery.assets)||!delivery.assets.length)return false;
     const assets=delivery.assets,keys=Object.keys(assets[0]||{});
     for(const asset of assets){if(!asset||typeof asset!=='object'||Array.isArray(asset))return false;const own=Object.keys(asset);if(own.length!==keys.length||own.some((key,index)=>key!==keys[index]))return false;}
-    const idsFromList=Array.isArray(delivery.assetIds)&&delivery.assetIds.length===assets.length&&assets.every((asset,index)=>asset.id===delivery.assetIds[index]&&typeof asset.id==='string'),template={},columns={};
+    const listed=ID_LISTS.is(delivery.assetIds)&&ID_LISTS.valid(delivery.assetIds)?ID_LISTS.toArray(delivery.assetIds):null;
+    const idsFromList=!!listed&&listed.length===assets.length&&assets.every((asset,index)=>asset.id===listed[index]&&typeof asset.id==='string'),template={},columns={};
     for(const key of keys){
       if(key==='id'&&idsFromList)continue;
       const first=JSON.stringify(assets[0][key]);let same=true;for(let index=1;index<assets.length&&same;index++)if(JSON.stringify(assets[index][key])!==first)same=false;
       if(same)template[key]=jsonClone(assets[0][key]);else columns[key]=encodeReceiptColumn(assets.map(asset=>jsonClone(asset[key])));
     }
     const candidate={...delivery,assetReceipt:{schema:RECEIPT_SCHEMA,count:assets.length,keys,template,columns,idsFrom:idsFromList?'assetIds':null}};
-    for(let index=0;index<assets.length;index++)if(JSON.stringify(receiptRow(candidate,index))!==JSON.stringify(assets[index]))return false;
-    delivery.assetReceipt=candidate.assetReceipt;delete delivery.assets;return true;
+    for(let index=0;index<assets.length;index++)if(JSON.stringify(receiptRow(candidate,index,null,listed))!==JSON.stringify(assets[index]))return false;
+    // A batch's ids are one numbered run: the receipt keeps the run, not the spelled-out list.
+    delivery.assetReceipt=candidate.assetReceipt;delete delivery.assets;if(idsFromList)delivery.assetIds=ID_LISTS.of(listed);return true;
   }
   function receiptAssetCount(delivery){if(isCompactReceipt(delivery))return delivery.assetReceipt.count;return Array.isArray(delivery?.assets)?delivery.assets.length:delivery?.asset?1:0;}
   // Complete rows; compact receipts are rebuilt as fresh objects on every call.
+  function receiptIds(delivery){return delivery.assetReceipt.idsFrom==='assetIds'&&ID_LISTS.is(delivery.assetIds)?ID_LISTS.toArray(delivery.assetIds):null;}
   function receiptAssets(delivery){
-    if(isCompactReceipt(delivery)){const out=new Array(delivery.assetReceipt.count);for(let index=0;index<out.length;index++)out[index]=receiptRow(delivery,index);return out;}
+    if(isCompactReceipt(delivery)){const out=new Array(delivery.assetReceipt.count),ids=receiptIds(delivery);for(let index=0;index<out.length;index++)out[index]=receiptRow(delivery,index,null,ids);return out;}
     return Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[];
   }
   function receiptFirstAsset(delivery){return isCompactReceipt(delivery)?(delivery.assetReceipt.count?receiptRow(delivery,0):null):(Array.isArray(delivery?.assets)?delivery.assets[0]:delivery?.asset)||null;}
@@ -270,7 +366,7 @@
   }
   // Read-only projection of a few fields for validators (template values are shared, never mutate them).
   function receiptFields(delivery,fields){
-    if(isCompactReceipt(delivery)){const out=new Array(delivery.assetReceipt.count);for(let index=0;index<out.length;index++)out[index]=receiptRow(delivery,index,fields);return out;}
+    if(isCompactReceipt(delivery)){const out=new Array(delivery.assetReceipt.count),ids=fields.includes('id')?receiptIds(delivery):null;for(let index=0;index<out.length;index++)out[index]=receiptRow(delivery,index,fields,ids);return out;}
     return receiptAssets(delivery);
   }
   // Count the live store plus receipts that still hold full copies. Pending snapshots
@@ -359,6 +455,56 @@
   function has(state,id){return indexOfId(state,id)>=0;}
   // Iteration visits live assets in array order; `index` is the row.
   function forEach(state,fn){const n=scanLength(state);for(let index=0;index<n;index++)if(rowAlive(state,index))fn(viewAt(state,index),index);}
+  // Build 358 (million-asset): a read-only pass over live assets in row order without one view per asset. fn(row,index)
+  // gets ONE reused object holding, for each requested field, exactly what a view presents (phase, progress, fuel,
+  // condition, simCarrySeconds and dwellRemaining as deriveRow gives them, else the stored value; undefined when the
+  // view has none). Stored objects are passed as stored, not copied (interned values are never mutated): read them,
+  // copy what you keep. {from,to} bound the rows (a pass split over frames); the return value is the next row to scan.
+  // A callback returning GH_FLEET_DATA.STOP ends the pass there. Without a store the read-only views of the plain
+  // assets are passed (forEach).
+  // phase alone needs no derivation: deriveRow presents the stored phase, else 'moving' on a route and 'idle' off one,
+  // and time moves only progress, fuel, condition and dwell.
+  const STOP=Object.freeze({scan:'stop'}),scanScratch={phase:null,progress:0,fuel:0,condition:0,simCarrySeconds:0,dwellRemaining:undefined,hasDwell:false};
+  function scan(state,fields,fn,{from=0,to=Infinity}={}){
+    const store=storeOf(state),start=Math.max(0,Math.floor(Number(from)||0));
+    if(!store){const n=Math.min(scanLength(state),to);for(let index=start;index<n;index++)if(rowAlive(state,index)&&fn(viewAt(state,index),index)===STOP)return index+1;return Math.max(start,n);}
+    const names=Array.isArray(fields)?fields:[],count=names.length,end=Math.min(store.length,to);
+    const kind=names.map(field=>STORE_HOT_KIND.get(field)||(PROFILE_FIELD_SET.has(field)?'profile':BINDING_FIELD_SET.has(field)?'binding':'')),bit=names.map(field=>BIT[field]>>>0),derivedField=names.map(field=>DERIVED_SET.has(field));
+    const slotOf=names.map(field=>O[field]),patternOf=names.map(field=>STORE.SLOTS[`${field}Pattern`]?[O[`${field}Pattern`],O[`${field}Number`]]:null),timeDerived=names.some(field=>DERIVED_SET.has(field)&&field!=='phase'),extrasDerived=timeDerived||names.includes('phase');
+    const v=STORE.views(store),u8=v.u8,W=v.u32,F=v.f64,F32=v.f32,I32=v.i32,V=store.values,t=timeOf(state),SR=STORE.STRIDE,WR=STORE.WORDS_PER_ROW,FR=STORE.F64_PER_ROW,ALIVE=STORE.ALIVE,EXTRAS=STORE.EXTRAS,PHASE=BIT.phase>>>0,ROUTE=BIT.routeId>>>0,row={};
+    for(let index=start;index<end;index++){
+      const flags=u8[index*SR+O.flags];if(!(flags&ALIVE))continue;
+      if(flags&EXTRAS){const derived=extrasDerived?deriveRow(store,index,t):null;for(let k=0;k<count;k++){const field=names[k];row[field]=derivedField[k]&&derived&&own(derived,field)?derived[field]:STORE.peek(store,index,field);}if(fn(row,index)===STOP)return index+1;continue;}
+      const derived=timeDerived?deriveFast(scanScratch,store,index,t,v,V):null;
+      const w=index*WR,present=W[w+O.present];let profile,binding;
+      for(let k=0;k<count;k++){
+        const field=names[k];
+        if(derivedField[k]){
+          if(derived){row[field]=field==='dwellRemaining'&&!derived.hasDwell?undefined:derived[field];continue;}
+          if(field==='phase'){const phaseRef=(present&PHASE)?W[w+O.phase]:0,routeRef=(present&ROUTE)?W[w+O.routeId]:0,phase=phaseRef?V[phaseRef]:undefined;row.phase=phase?phase:(routeRef&&V[routeRef]?'moving':'idle');continue;}
+        }
+        let value;
+        switch(kind[k]){
+          case 'profile':if(profile===undefined)profile=V[W[w+O.profile]];value=profile&&typeof profile==='object'?profile[field]:undefined;break;
+          case 'binding':if(binding===undefined)binding=V[W[w+O.binding]];value=binding&&typeof binding==='object'?binding[field]:undefined;break;
+          case '':value=undefined;break;
+          default:
+            if(!(present&bit[k])){value=undefined;break;}
+            switch(kind[k]){
+              case 'ref':{const ref=W[w+slotOf[k]];value=ref===0?null:V[ref];break;}
+              case 'f64':value=F[index*FR+slotOf[k]];break;
+              case 'f32x':value=F32[w+slotOf[k]];break;
+              case 'i32':value=I32[w+slotOf[k]];if(value===STORE.I32_NULL)value=null;break;
+              case 'bool':value=u8[index*SR+slotOf[k]]===1;break;
+              case 'pattern':{const [ps,ns]=patternOf[k];value=STORE.joinPattern(V[W[w+ps]],W[w+ns]);break;}
+            }
+        }
+        row[field]=value;
+      }
+      if(fn(row,index)===STOP)return index+1;
+    }
+    return Math.max(start,end);
+  }
   // Read-only projections keep validation and other narrow consumers off the
   // per-row proxy path while preserving the store boundary. The projection is
   // newly allocated and contains only the requested fields.
@@ -387,6 +533,29 @@
     forEachFieldClasses(state,fields,(row,count)=>{if(!count)return;const key=keyOf(row);counts.set(key,(counts.get(key)||0)+count);});
     return counts;
   }
+  // The phase a view presents for a row of forEachFieldClasses (asked with phase, routeId and simulationFault):
+  // deriveRow presents the stored phase, else 'moving' on a route and 'idle' off one; a faulted row (extras.
+  // simulationFault) presents what is stored. Plain assets (before migration) present their own phase.
+  function presentedPhase(state,row){return storeOf(state)?(row.phase?row.phase:row.simulationFault?row.phase:(row.routeId?'moving':'idle')):row.phase;}
+  // Live assets per presented phase (view.phase), counted per class of rows. Before migration (plain asset objects)
+  // every asset is visited.
+  function countByPhase(state){
+    if(!storeOf(state)){const out=new Map();forEach(state,asset=>{const phase=asset?.phase;out.set(phase,(out.get(phase)||0)+1);});return out;}
+    return countByFields(state,['phase','routeId','simulationFault'],row=>presentedPhase(state,row));
+  }
+  // Build 358 (million-asset): the distinct truthy values of a hot ref field (routeId, baseFacility) over live assets,
+  // in order of first occurrence (as a Set filled by forEach), read from the column instead of one view per asset;
+  // `where` = [profileField, value] keeps only assets whose view has that value (e.g. ['type','road']). Rows with
+  // extras are read as their views read them.
+  function distinctRefs(state,field,where=null){
+    const store=storeOf(state),[whereField,whereValue]=Array.isArray(where)?where:[null];
+    if(!store){const out=new Set();forEach(state,asset=>{const value=asset?.[field];if(value&&(!whereField||asset[whereField]===whereValue))out.add(value);});return out;}
+    // Per-chunk lists cached by the store (GH_FLEET_STORE.distinctRefs): a moving fleet does not rescan them.
+    return new Set(STORE.distinctRefs(store,field,whereField||null,whereValue));
+  }
+  // The id of the asset at a row (undefined for a dead row): read models that keep row numbers resolve ids while
+  // membershipRevision() is unchanged (rows move only when it changes).
+  function idAtRow(state,index){const store=storeOf(state);if(store)return STORE.isAlive(store,index)?STORE.idAt(store,index):undefined;const asset=arrayOf(state)?.[index];return isObject(asset)?asset.id:undefined;}
   function idCollisions(state){
     const store=storeOf(state);if(store&&typeof STORE.idCollisions==='function')return STORE.idCollisions(store);
     const seen=new Set();let duplicate=false,missing=false;
@@ -460,6 +629,18 @@
     for(const field of Object.keys(patch)){const value=patch[field];if(value===undefined)delete asset[field];else asset[field]=copyValue(value);}
     return nested(asset);
   }
+  // scan() in slices of `slice` rows for staged owners (the daily close): a generator yielding `label` between slices.
+  function* scanStages(state,fields,fn,slice=32768,label='fleet.scan'){
+    let stopped=false;const visit=(row,index)=>{const out=fn(row,index);if(out===STOP)stopped=true;return out;};
+    for(let next=0;!stopped&&next<scanLength(state);){next=scan(state,fields,visit,{from:next,to:next+slice});if(!stopped&&next<scanLength(state))yield label;}
+  }
+  // Build 358 (million-asset): writes numeric hot fields of many assets by row (GH_FLEET_STORE.columnWriter: each
+  // column journaled once, exactly the values set() would leave). Without a store the plain asset is assigned as
+  // update() does.
+  function columnWriter(state,fields){
+    const store=storeOf(state);if(store)return STORE.columnWriter(store,fields);
+    return (index,field,value)=>{const asset=liveAsset(state,index);if(!asset)return;if(value===undefined)delete asset[field];else asset[field]=copyValue(value);};
+  }
   // Replace the asset with the same id by a whole new value (same position).
   function put(state,asset){
     if(!isObject(asset))throw new TypeError('fleet-put-asset-object-required');
@@ -488,7 +669,7 @@
     const store=storeOf(state);if(store)return STORE.removeMany(store,doomed);
     const drop=new Set(doomed),assets=arrayOf(state);invalidateArrayIndex(assets);let write=0;for(let read=0;read<assets.length;read++){if(drop.has(read))continue;if(write!==read)assets[write]=assets[read];write++;}assets.length=write;return drop.size;}
 
-  const API=Object.freeze({VERSION,forEachFieldClasses,idCollisions,countByFields,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
+  const API=Object.freeze({VERSION,forEachFieldClasses,idCollisions,countByFields,countByPhase,presentedPhase,idAtRow,distinctRefs,idLists:ID_LISTS,STOP,scan,scanStages,scanLength,columnWriter,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
     get,has,forEach,forEachFields,some,every,find,filter,count,sum,dailyLeaseCosts,payrollTotals,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
     update,put,add,addMany,remove,removeMany,removeWhere,drafts,draft,commit});
   globalThis.GH_FLEET_DATA=API;

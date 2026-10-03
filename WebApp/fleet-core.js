@@ -122,17 +122,36 @@
     const slot=Math.max(0,Math.floor(Number(asset?.routeSlot)||0));
     return slot*(ROUTE_DEPARTURE_INTERVAL_SECONDS[assetMode(asset)]||0);
   }
+  // Build 358 (million-asset): the users of each (company, mode, route) are counted per class of rows (one cached class
+  // scan per fleet revision) instead of listing every routed asset; a check needs only a group's size and its first
+  // user other than the asset being placed (a view made on demand), and each company's air routes in order of their
+  // first user, exactly what the full lists gave.
+  const ROUTE_USER_FIELDS=Object.freeze(['ownerCompanyId','companyId','assetMode','type','routeId']);
   function routeConflictContext(state){
-    const assets=fleetData().list(state),routeIndex=new Map((state.customRoutes||[]).filter(Boolean).map(row=>[row.id,row])),usersByRoute=new Map(),airRouteOrderByCompany=new Map(),seenAirRouteByCompany=new Map(),signatureCache=new Map();
-    for(const asset of assets){if(!asset?.routeId)continue;const companyId=assetOwnerCompanyId(asset),mode=assetMode(asset);if(!companyId||!mode)continue;const key=`${companyId}\u0000${mode}\u0000${asset.routeId}`,users=usersByRoute.get(key);if(users)users.push(asset);else usersByRoute.set(key,[asset]);if(mode==='air'){let seen=seenAirRouteByCompany.get(companyId);if(!seen){seen=new Set();seenAirRouteByCompany.set(companyId,seen);}if(!seen.has(asset.routeId)){seen.add(asset.routeId);const order=airRouteOrderByCompany.get(companyId);if(order)order.push(asset.routeId);else airRouteOrderByCompany.set(companyId,[asset.routeId]);}}}
+    const fleet=fleetData(),routeIndex=new Map((state.customRoutes||[]).filter(Boolean).map(row=>[row.id,row])),groups=new Map(),airRouteOrderByCompany=new Map(),signatureCache=new Map();
+    fleet.forEachFieldClasses(state,ROUTE_USER_FIELDS,(row,count,info)=>{
+      if(!count||!row.routeId)return;const companyId=assetOwnerCompanyId(row),mode=assetMode(row);if(!companyId||!mode)return;
+      const key=`${companyId}\u0000${mode}\u0000${row.routeId}`;let group=groups.get(key);
+      if(!group){group={companyId,mode,routeId:row.routeId,count:0,first:info.index,users:null};groups.set(key,group);}group.count+=count;if(info.index<group.first)group.first=info.index;
+    });
+    for(const group of [...groups.values()].filter(group=>group.mode==='air').sort((a,b)=>a.first-b.first)){const order=airRouteOrderByCompany.get(group.companyId);if(order)order.push(group.routeId);else airRouteOrderByCompany.set(group.companyId,[group.routeId]);}
     const signature=route=>{if(!route)return null;if(signatureCache.has(route))return signatureCache.get(route);const value=routeSignature(route);signatureCache.set(route,value);return value;};
-    return {routeIndex,usersByRoute,airRouteOrderByCompany,signature};
+    // The group's first two users (views, row order): enough to skip the one asset being placed.
+    const firstUsers=group=>{
+      if(group.users)return group.users;const users=[];
+      fleet.scan(state,ROUTE_USER_FIELDS,(row,index)=>{if(row.routeId!==group.routeId||assetMode(row)!==group.mode||assetOwnerCompanyId(row)!==group.companyId)return;users.push(fleet.viewAt(state,index));if(users.length>=2)return fleet.STOP;},{from:group.first});
+      group.users=users;return users;
+    };
+    const firstUserOtherThan=(group,assetId)=>firstUsers(group).find(row=>row.id!==assetId)||null;
+    const memberOf=(group,assetId)=>{if(assetId===null||assetId===undefined)return false;const asset=fleet.get(state,assetId);return !!asset&&asset.routeId===group.routeId&&assetMode(asset)===group.mode&&assetOwnerCompanyId(asset)===group.companyId;};
+    return {routeIndex,groups,airRouteOrderByCompany,signature,firstUserOtherThan,memberOf};
   }
   function routeConflictWithContext(state,assetId,routeId,route,context){
-    const routeOwner=requireFleetRoute(state,route);if(!routeOwner.mode||!routeId)return null;const ctx=context||routeConflictContext(state),key=`${routeOwner.companyId}\u0000${routeOwner.mode}\u0000${routeId}`,sameRouteUsers=ctx.usersByRoute.get(key)||[];let firstSame=null,count=0;
-    for(const other of sameRouteUsers){if(other.id===assetId)continue;if(!firstSame)firstSame=other;count++;if(count>=routeCapacity(route))return firstSame;}
+    const routeOwner=requireFleetRoute(state,route);if(!routeOwner.mode||!routeId)return null;const ctx=context||routeConflictContext(state),key=`${routeOwner.companyId}\u0000${routeOwner.mode}\u0000${routeId}`,same=ctx.groups.get(key);
+    // The former loop returned the first other user once the other users reached the route's capacity.
+    if(same&&same.count-(ctx.memberOf(same,assetId)?1:0)>=routeCapacity(route))return ctx.firstUserOtherThan(same,assetId);
     if(routeOwner.mode!=='air')return null;const signature=ctx.signature(route),routeOrder=ctx.airRouteOrderByCompany.get(routeOwner.companyId)||[];
-    for(const otherRouteId of routeOrder){if(otherRouteId===routeId)continue;const users=ctx.usersByRoute.get(`${routeOwner.companyId}\u0000air\u0000${otherRouteId}`)||[];const other=users.find(row=>row.id!==assetId);if(!other)continue;const registered=ctx.routeIndex.get(otherRouteId),otherSignature=registered?ctx.signature(registered):other.routeSignature;if(signature&&otherSignature&&signature===otherSignature)return other;if(registered&&globalThis.GH_ROUTE_CORE?.corridorMetrics?.(registered,route)?.duplicate)return other;}
+    for(const otherRouteId of routeOrder){if(otherRouteId===routeId)continue;const group=ctx.groups.get(`${routeOwner.companyId}\u0000air\u0000${otherRouteId}`);const other=group?ctx.firstUserOtherThan(group,assetId):null;if(!other)continue;const registered=ctx.routeIndex.get(otherRouteId),otherSignature=registered?ctx.signature(registered):other.routeSignature;if(signature&&otherSignature&&signature===otherSignature)return other;if(registered&&globalThis.GH_ROUTE_CORE?.corridorMetrics?.(registered,route)?.duplicate)return other;}
     return null;
   }
   function routeConflict(state,assetId,routeId,route){return routeConflictWithContext(state,assetId,routeId,route,routeConflictContext(state));}
@@ -277,7 +296,8 @@
       group.rows.push({asset,plan,center});group.headcount+=plan.total;group.payroll+=plan.monthlyPayroll;
     }
     for(const group of groups.values()){
-      const contractId=nextId(state,'EMP-AUTO'),assetIds=group.rows.map(row=>row.asset.id),first=group.rows[0],contract={id:contractId,company:group.company,ownerCompanyId:group.company,assetId:assetIds[0],assetIds,deliveryOrderId:group.deliveryOrderId,assetCount:assetIds.length,name:`طاقم ثابت · ${first.asset.name}${assetIds.length>1?` + ${assetIds.length-1}`:''}`,role:'طاقم تشغيلي مرتبط بدفعة الأصول',count:group.headcount,center:group.center,salary:group.payroll,startDay:simDay(state),termMonths:1200,status:'ساري',source:'توظيف آلي ثابت عند شراء دفعة الأصول',automaticAssetStaffing:true,permanent:true};
+      // Build 358 (million-asset): the batch's ids as a compact list (GH_FLEET_DATA.idLists), shared by the contract and the hiring log as a value.
+      const contractId=nextId(state,'EMP-AUTO'),ids=group.rows.map(row=>row.asset.id),assetIds=fleetData().idLists.of(ids),first=group.rows[0],contract={id:contractId,company:group.company,ownerCompanyId:group.company,assetId:ids[0],assetIds,deliveryOrderId:group.deliveryOrderId,assetCount:ids.length,name:`طاقم ثابت · ${first.asset.name}${ids.length>1?` + ${ids.length-1}`:''}`,role:'طاقم تشغيلي مرتبط بدفعة الأصول',count:group.headcount,center:group.center,salary:group.payroll,startDay:simDay(state),termMonths:1200,status:'ساري',source:'توظيف آلي ثابت عند شراء دفعة الأصول',automaticAssetStaffing:true,permanent:true};
       contracts.push(contract);
       hiring.push({id:nextId(state,'HR-AUTO'),at:Number(state.simSeconds)||0,company:group.company,source:'توظيف دفعة أصول آلي ثابت',deliveryOrderId:group.deliveryOrderId,assetIds,total:group.headcount,monthlyPayroll:group.payroll,coverageBefore:100,coverageAfter:100});
       for(const row of group.rows){row.asset.staffing={...row.plan,contractId,provisionedAt:Number(state.simSeconds)||0,center:row.center};row.asset.crewBlocked=false;}
@@ -306,39 +326,49 @@
     }
     const facilityOwner=globalThis.GH_FACILITY_CORE;if(!facilityOwner?.assetCapacity)throw new Error('facility-capacity-owner-missing');
     for(const [baseId,count] of additions){const base=baseById.get(baseId),capacity=facilityOwner.assetCapacity(base);if((occupancy.get(baseId)||0)+count>capacity)throw new Error('delivery-base-full');}
-    const deliveredRows=[],leased=new Set(Array.isArray(state.leasedAssets)?state.leasedAssets:[]);
-    for(const {input,delivery,base,snaps,ownerCompanyId} of prepared)for(const snap of snaps){const delivered={...snap,ownerCompanyId,deliveryOrderId:input.deliveryId,requestRef:delivery.requestRef,paymentRef:delivery.payment.ref,baseFacility:input.baseId,phase:input.phase||'idle',routeId:null,routeSignature:null,routeSlot:null,departureScheduled:false,progress:0,fuel:100,deliveryStatus:'delivered',deliveredDay:input.deliveredDay,deliveredAtSeconds:input.deliveredAtSeconds};deliveredRows.push({asset:delivered,base,deliveryId:input.deliveryId});if(delivered.ownership==='lease')leased.add(delivered.id);}
+    // Build 358 (million-asset): leased assets are no longer appended to state.leasedAssets, a list nothing reads (a
+    // lease is the asset's own ownership field) that every purchase copied whole. Disposal still removes ids from it,
+    // so the lists of earlier saves empty out.
+    const deliveredRows=[];
+    for(const {input,delivery,base,snaps,ownerCompanyId} of prepared)for(const snap of snaps){const delivered={...snap,ownerCompanyId,deliveryOrderId:input.deliveryId,requestRef:delivery.requestRef,paymentRef:delivery.payment.ref,baseFacility:input.baseId,phase:input.phase||'idle',routeId:null,routeSignature:null,routeSlot:null,departureScheduled:false,progress:0,fuel:100,deliveryStatus:'delivered',deliveredDay:input.deliveredDay,deliveredAtSeconds:input.deliveredAtSeconds};deliveredRows.push({asset:delivered,base,deliveryId:input.deliveryId});}
     // Fixed crews are attached before the assets join the fleet; the crew roster is
     // then recounted once from the whole fleet.
-    state.leasedAssets=[...leased];provisionStaffingBatch(state,deliveredRows,{synchronize:false});
+    provisionStaffingBatch(state,deliveredRows,{synchronize:false});
     fleet.addMany(state,deliveredRows.map(row=>row.asset));synchronizeCrew(state);return deliveredRows.map(row=>row.asset);
   }
   function releaseStaffing(state,asset,reason){
     const batch=disposalBatches.get(state);if(batch&&!batch.contractById)batch.contractById=new Map(laborLedger(state).employmentContracts.map(row=>[row.id,row]));
     const contractId=asset?.staffing?.contractId,contract=batch?.contractById?(batch.contractById.get(contractId)||null):laborLedger(state).employmentContracts.find(row=>row.id===contractId);
     if(contract&&contract.status==='ساري'){
-      if(Array.isArray(contract.assetIds)){
-        const index=contract.assetIds.indexOf(asset?.id);
-        if(index>=0){contract.assetIds.splice(index,1);contract.assetCount=contract.assetIds.length;contract.count=Math.max(0,(Number(contract.count)||0)-(Number(asset.staffing?.total)||0));contract.salary=Math.max(0,(Number(contract.salary)||0)-(Number(asset.staffing?.monthlyPayroll)||0));contract.assetId=contract.assetIds[0]||null;}
+      // The contract's id list is a value (GH_FLEET_DATA.idLists): the asset leaves through a new list.
+      const ids=fleetData().idLists;
+      if(ids.is(contract.assetIds)){
+        const index=ids.indexOf(contract.assetIds,asset?.id);
+        if(index>=0){contract.assetIds=ids.without(contract.assetIds,index);contract.assetCount=ids.length(contract.assetIds);contract.count=Math.max(0,(Number(contract.count)||0)-(Number(asset.staffing?.total)||0));contract.salary=Math.max(0,(Number(contract.salary)||0)-(Number(asset.staffing?.monthlyPayroll)||0));contract.assetId=ids.at(contract.assetIds,0)||null;}
       }
-      if(!Array.isArray(contract.assetIds)||contract.assetIds.length===0){contract.status='منتهي';contract.endedDay=simDay(state);contract.endReason=reason||'خروج الأصل من الملكية';}
+      if(!ids.is(contract.assetIds)||ids.length(contract.assetIds)===0){contract.status='منتهي';contract.endedDay=simDay(state);contract.endReason=reason||'خروج الأصل من الملكية';}
     }
     if(asset?.staffing){asset.staffing.ready=false;asset.staffing.releasedAt=Number(state.simSeconds)||0;}
     if(batch)batch.crewDirty=true;else synchronizeCrew(state);
   }
+  // Build 358 (million-asset): runs at every load. A contract's members are looked up by id (the id index), not through
+  // a map of every asset; the assets left to staff are found by one pass over the rows (GH_FLEET_DATA.scan) that reads
+  // only delivery status, phase and staffing, so only those assets get views (requireFleetAsset has no side effect, so
+  // checking it after the cheap skips is the former order's outcome).
   function reconcileStaffing(state,facilityResolver){
-    const assets=fleetData().list(state),assetById=new Map(assets.map(asset=>[asset.id,asset]));
+    const fleet=fleetData(),ids=fleet.idLists;
     for(const contract of laborLedger(state).employmentContracts){
       if(contract?.automaticAssetStaffing!==true)continue;
-      const ids=Array.isArray(contract.assetIds)?contract.assetIds:[contract.assetId],linked=ids.map(id=>assetById.get(id)).filter(asset=>asset?.staffing?.contractId===contract.id&&asset.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true);
-      if(linked.length&&Array.isArray(contract.assetIds)){contract.assetIds=linked.map(asset=>asset.id);contract.assetId=contract.assetIds[0];contract.assetCount=linked.length;contract.count=linked.reduce((sum,asset)=>sum+(Number(asset.staffing.total)||0),0);contract.salary=linked.reduce((sum,asset)=>sum+(Number(asset.staffing.monthlyPayroll)||0),0);}
+      const members=ids.is(contract.assetIds)?ids.toArray(contract.assetIds):[contract.assetId],linked=members.map(id=>fleet.get(state,id)).filter(asset=>asset?.staffing?.contractId===contract.id&&asset.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true);
+      if(linked.length&&ids.is(contract.assetIds)){contract.assetIds=ids.of(linked.map(asset=>asset.id));contract.assetId=linked[0].id;contract.assetCount=linked.length;contract.count=linked.reduce((sum,asset)=>sum+(Number(asset.staffing.total)||0),0);contract.salary=linked.reduce((sum,asset)=>sum+(Number(asset.staffing.monthlyPayroll)||0),0);}
       if(linked.length&&Array.isArray(contract.roles))delete contract.roles;
     }
+    const unstaffed=[];
+    fleet.scan(state,['deliveryStatus','phase','staffing'],(asset,index)=>{if(asset.deliveryStatus==='pending'||asset.phase==='delivery')return;if(asset.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true)return;unstaffed.push(index);});
     let provisioned=0;
-    for(const asset of assets){
+    for(const index of unstaffed){
+      const asset=fleet.viewAt(state,index);if(!asset)continue;
       try{requireFleetAsset(state,asset);}catch(_error){continue;}
-      if(asset.deliveryStatus==='pending'||asset.phase==='delivery')continue;
-      if(asset.staffing?.mode==='automatic-fixed'&&asset.staffing.ready===true)continue;
       const base=typeof facilityResolver==='function'?facilityResolver(asset.baseFacility):null;
       provisionStaffing(state,asset,base);provisioned++;
     }

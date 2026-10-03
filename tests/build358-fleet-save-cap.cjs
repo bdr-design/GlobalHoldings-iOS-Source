@@ -3,7 +3,8 @@
 // - an airport base takes 3,000 new aircraft and one purchase can deliver all of them;
 // - a delivered batch keeps every asset in a compact receipt (template + columns + assetIds) that rebuilds the complete
 //   rows exactly, so receipts no longer double the saved fleet;
-// - purchases may take the fleet to the 6,000-record ceiling (live assets plus pending snapshots) and not past it;
+// - purchases may take the fleet to the record ceiling (live assets plus pending snapshots) and not past it: 6,000 for
+//   the browser save (one localStorage string), 1,000,000 for the native save (records in vault chunks);
 // - the ceiling is an admission rule only: a state above it (written directly) still validates, saves and loads.
 const assert=require('node:assert/strict'),path=require('node:path'),ROOT=process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..');
 const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario'));
@@ -13,7 +14,7 @@ e.load('migration-core');e.load('state-codec-core');e.load('persistence-core');
 const limit=s.GH_PERSISTENCE.fleetRecordLimit();
 assert.equal(limit,6000,'browser fleet ceiling');
 const nativeMessages=[],previousWebkit=s.webkit;s.webkit={messageHandlers:{saveBridge:{postMessage:message=>nativeMessages.push(message)}}};
-assert.equal(s.GH_PERSISTENCE.fleetRecordLimit(),6000,'native fleet ceiling');
+assert.equal(s.GH_PERSISTENCE.fleetRecordLimit(),1000000,'native fleet ceiling: the million-asset game (records in vault chunks)');
 s.webkit=previousWebkit;
 assert.equal(s.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['airport-base'],3000,'an airport base takes 3,000 aircraft');
 assert.equal(s.GH_PROCUREMENT_CORE.MAX_ASSET_PURCHASE_QUANTITY,3000,'one purchase may fill an airport');
@@ -49,7 +50,8 @@ assert.equal(receipts.length,2);
 for(const receipt of receipts){
   assert.equal(FLEET.isCompactReceipt(receipt),true,'delivered receipts are compact');assert.equal(Object.hasOwn(receipt,'assets'),false);
   const rows=FLEET.receiptAssets(receipt);
-  assert.equal(rows.length,3000);assert.deepEqual(rows.map(row=>row.id),receipt.assetIds,'receipt rows carry the delivered ids in order');
+  assert.equal(rows.length,3000);assert.deepEqual(rows.map(row=>row.id),FLEET.idLists.toArray(receipt.assetIds),'receipt rows carry the delivered ids in order');
+  assert.equal(receipt.assetIds.$ids.length,1,'a numbered batch keeps its ids as one run');
   assert.equal(new Set(rows.map(row=>row.name)).size,3000,'every delivered asset keeps its own name');
   for(const index of [0,1,1499,2999]){const live=FLEET.get(state,rows[index].id);assert.ok(live,'receipt asset is live');assert.equal(rows[index].name,live.name);assert.equal(rows[index].catalogId,live.catalogId);assert.equal(rows[index].deliveryOrderId,receipt.id);}
   assert.notEqual(rows[0].specs,rows[1].specs,'rebuilt rows are fresh objects');

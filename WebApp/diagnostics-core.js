@@ -158,6 +158,19 @@
     };
   }
   function rectOverlap(a,b,tolerance=1){if(!a||!b)return false;return a.left<b.right-tolerance&&a.right>b.left+tolerance&&a.top<b.bottom-tolerance&&a.bottom>b.top+tolerance;}
+  function fleetAssetsHealthy(state){
+    const fleet=fleetData();if(fleet.mode?.(state)!=='store'||typeof fleet.forEachFieldClasses!=='function'||typeof fleet.idCollisions!=='function')return false;
+    const ids=fleet.idCollisions(state);if(ids.duplicate||ids.missing)return false;
+    let healthy=true;
+    fleet.forEachFieldClasses(state,['id','progress','condition'],row=>{
+      if(!healthy)return;
+      // The loop compares String(id): only non-empty string ids are compared the same way by idCollisions.
+      if(typeof row.id!=='string'||row.id===''){healthy=false;return;}
+      if(row.progress!=null&&(!finiteNumber(Number(row.progress))||Number(row.progress)<0))healthy=false;
+      else if(row.condition!=null&&(!finiteNumber(Number(row.condition))||Number(row.condition)<0||Number(row.condition)>100))healthy=false;
+    },{numeric:['progress','condition']});
+    return healthy;
+  }
   function runHealthCheck(state,extra={},options={}){
     const issues=[];ensure(state);
     const add=(id,severity,title,detail,domain,evidence)=>issues.push(issue(id,severity,title,detail,domain,evidence));
@@ -180,6 +193,12 @@
     for(const [key,label] of [['cash','السيولة الموحدة'],['debt','الدين الموحد'],['groupValue','قيمة المجموعة']]){const v=Number(state[key]);if(!Number.isFinite(v)||v<0)add(`STATE_${key.toUpperCase()}_INVALID`,'critical',`${label} غير صالحة`,`${key} يجب أن يكون رقمًا محدودًا وغير سالب.`,'finance',{value:state[key]});}
     if(String(state.saveVersion||'3.0.0')!=='3.0.0')add('SAVE_SCHEMA_UNEXPECTED','warning','نسخة الحفظ غير متوقعة','المشروع مصمم حاليًا لحفظ 3.0.0.','save',{saveVersion:state.saveVersion});
 
+    // Build 358 (million-asset): the per-asset checks below only add issues for a missing or duplicate id, a progress
+    // that is not a finite number >= 0, or a condition outside [0,100]. A view presents the stored value or one derived
+    // from it, and derivation clamps (progress to [0,1], condition to [55,100]), so a fleet whose stored values all
+    // pass (per class of rows, at each class's extremes) and whose ids are present and unique adds nothing. Otherwise
+    // the per-asset loop runs and reports exactly as before.
+    if(!fleetAssetsHealthy(state)){
     const assetIds=new Set(),dupAssets=[];
     fleetData().forEach(state,a=>{
       if(!a||typeof a!=='object'){add('ASSET_INVALID_RECORD','critical','سجل أصل تالف','يوجد عنصر غير صالح داخل state.assets.','assets');return;}
@@ -189,6 +208,7 @@
       if(a.condition!=null&&(!finiteNumber(Number(a.condition))||Number(a.condition)<0||Number(a.condition)>100))add('ASSET_CONDITION_INVALID','warning','حالة أصل خارج النطاق',`Condition يجب أن تكون بين 0 و100.`,'assets',{id,condition:a.condition});
     });
     if(dupAssets.length)add('ASSET_DUPLICATE_IDS','critical','معرفات أصول مكررة','تكرار ID قد يسبب overwrite أو بيع/توجيه الأصل الخطأ.','assets',{ids:[...new Set(dupAssets)].slice(0,20)});
+    }
 
     const books=state.finance?.companyBooks||state.companyBooks||{};
     for(const [company,book] of Object.entries(books||{})){

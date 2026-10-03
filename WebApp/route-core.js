@@ -173,7 +173,8 @@
       return before!==state.customRoutes.length;
     }
     if(command==='dedupe'){
-      const used=new Set(fleetData().map(state,asset=>asset.routeId).filter(Boolean)),kept=[],removedIds=[],conflicts=[];
+      // Route ids in use: the distinct truthy routeId values, read from the column (no view per asset).
+      const used=fleetData().distinctRefs(state,'routeId'),kept=[],removedIds=[],conflicts=[];
       for(const raw of state.customRoutes){
         let route;try{route=canonicalRoute(raw,state);}catch(_error){kept.push(raw);continue;}
         const found=conflict(kept,route);

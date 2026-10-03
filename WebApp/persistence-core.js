@@ -1,11 +1,14 @@
 (()=>{
   'use strict';
   const VERSION='3.0.0', SAVE_SCHEMA_VERSION='3.0.0', SLOT_FORMAT='global-holdings-save-slot-v2', EXPORT_FORMAT='global-holdings-save';
-  // Save Schema still scans every live asset on every save and durable command. Until chunked binary persistence, a
-  // purchase may not take the fleet past 6,000 records (live assets plus pending delivery snapshots; delivered receipts
-  // are stored compactly since Build 358 and do not count). It is an admission rule only: a save above it still loads.
-  // Measured in Node on the development VM at 6,000 assets: 1.5 MB save, ~230 ms full validation.
-  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeSoftBytes:22.5*1024*1024,nativeHardBytes:30*1024*1024,browserFleetRecordLimit:6000,nativeFleetRecordLimit:6000,ackTimeoutMs:10000,pending:16});
+  // A purchase may not take the fleet past the record ceiling (live assets plus pending delivery snapshots; delivered
+  // receipts are stored compactly since Build 358 and do not count). It is an admission rule only: a save above it
+  // still loads. The browser save is one localStorage string (4.5 MB), so it keeps 6,000 records. Build 358
+  // (million-asset game): the native save keeps the fleet records in 4 MiB vault chunks outside the JSON, validation
+  // and the daily close work per class of rows, so the native ceiling is 1,000,000 records. Measured in desktop
+  // Chromium with the full app at 1,000,000 assets: 0.5 MB save JSON plus 168 MB of record chunks, warm save ~130 ms,
+  // purchase ~0.3 s, daily close ~3.6 s spread over frames (longest task ~0.2 s), boot ~3 s.
+  const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeSoftBytes:22.5*1024*1024,nativeHardBytes:30*1024*1024,browserFleetRecordLimit:6000,nativeFleetRecordLimit:1000000,ackTimeoutMs:10000,pending:16});
   const saveSchemaVersion=state=>['2.0.0','3.0.0'].includes(String(state?.saveVersion||''))?String(state.saveVersion):SAVE_SCHEMA_VERSION;
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));

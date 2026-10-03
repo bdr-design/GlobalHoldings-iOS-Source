@@ -1,14 +1,14 @@
 {
   "approved": false,
-  "source_tree_sha256": "f3573f5e540b39ea841b4e78c4e94c96bb330f249779f3d52f0d2fb6a8fb5aa1",
+  "source_tree_sha256": "2dba796d7eef8f5c455ee2a0ecf72e25ab5dec8085e2a2b54d82ff43b40c3a41",
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
   "blocking_issues": [
-    "No physical iPhone profile exists for this candidate. Frame time, touch latency, memory, and thermal targets at 100,000 and 1,000,000 assets remain unverified on target hardware.",
+    "No physical iPhone profile exists for this candidate. Frame time, touch latency, memory (803 MB JS heap at 1,000,000 assets in desktop Chromium), and thermal targets at 100,000 and 1,000,000 assets remain unverified on target hardware.",
     "Build 358 direct-source CI passed on commit 1c618ad (run 37077522739: 147/147 source gates, unsigned arm64 iPhoneOS Release build); the recorded artifact block below still belongs to Build 357 (commit af36368). Later commits are verified by their own runs.",
-    "Fleet JSON persistence admits purchases up to 6,000 records (live assets plus pending delivery snapshots; delivered receipts are compact since Build 358). Save Schema now validates assets per class of identically-read rows (trusted pass 61 ms at 100,000 assets in Node), but the save is still one JSON text: chunked binary persistence in the native vault is not implemented, so saves above ~120,000 assets exceed the 30 MB native ceiling and million-asset save/load is not supported.",
-    "The daily close still runs in one slice (~60 ms on the development VM with 300 aircraft and 100 Mobility vehicles, dominated by document-signed trip settlement); it is not frame-budgeted.",
+    "Native fleet persistence admits purchases up to 1,000,000 records (fleet records in 4 MiB native vault chunks outside the save JSON; the browser localStorage save keeps 6,000). Measured only in desktop Chromium with the full app at 1,000,000 assets: 150 s of play at 600x with 5 frames over 100 ms (longest 0.45 s), staged daily close 2.7 s with a 174 ms longest task, warm save 83 ms (0.73 MB JSON), purchase 0.28 s, boot 2.8 s.",
+    "With a fully moving 1,000,000-asset fleet, saves (changed-chunk checksums and Save Schema class validation), command integrity checks and the periodic health check still rescan every chunk for classes that read engine fields: 100-280 ms tasks on desktop, unmeasured on iPhone. Incremental validation of engine fields is not implemented.",
     "Manual advance consults adapter.getManualSliceLimit and estimates a slice from a 1,500-event window, with 60-second and 3,600-second bounds; actual per-frame timing still needs iPhone profiling.",
     "The incremental spatial index and device-scale map/list rendering profile remain unverified."
   ],
@@ -21,7 +21,7 @@
     "full_source_acceptance": "PENDING_BUILD358_CI",
     "native_swift_tests": "DIRECT_CI_PASS",
     "physical_iphone_profile": "PENDING",
-    "chunked_binary_persistence": "NOT_IMPLEMENTED_BUILD358",
+    "chunked_binary_persistence": "IMPLEMENTED_BUILD358; fleet records in native vault chunks (see build358_chunked_native_save)",
     "manual_advance_frame_budget": "SLICE_LIMIT_IMPLEMENTED; 1,500-event window estimate; target-device frame timing pending",
     "release_approval": "CLOSED",
     "browser_and_lint": "DIRECT_CI_CHROMIUM_WEBKIT_AND_ESLINT_PASS",
@@ -29,12 +29,15 @@
     "build358_air_sea_dispatch": "LOCAL_PASS; store-mode air and sea bulk dispatch assigns every asset (browser test)",
     "build358_row_level_slice_snapshots": "LOCAL_PASS; steady/hour slices snapshot only written roots, enforced write sets over 288 slices, exact rollback of failed steady/hour/day slices",
     "build358_airport_capacity_3000": "LOCAL_PASS; default 3,000, idempotent load migration preserves upgrades, one purchase may deliver 3,000",
-    "build358_compact_receipts": "LOCAL_PASS; lossless receipts, 6,000-record purchase ceiling, no load-time lockout",
+    "build358_compact_receipts": "LOCAL_PASS; lossless receipts, record ceiling (browser 6,000; native 1,000,000), no load-time lockout",
     "build358_fleet_row_codec_cache": "LOCAL_PASS; per-chunk write versions, segment-cached row encoding byte-identical to a full encode, rotating re-encode self-check, fast base64; real game save 283->69 ms at 30,000 assets",
     "build358_validation_classes": "LOCAL_PASS; Save Schema and Company Platform validate per class of rows (refs, groups, pattern prefix and digit count; progress/fuel/condition at class extremes) and find id collisions without per-row strings; equal to the per-row scan on 160 seeded corruption rounds; trusted validation 884->61 ms at 100,000 assets",
     "build358_chunked_native_save": "CI_PASS (run 37083088387 on aa4616b: 152 gates, native vault chunk tests, unsigned iPhoneOS build); chunks upload as raw fetch POST bodies to gh://app (CI WebKit: 4 MiB intact in 34 ms) with a base64 bridge fallback",
     "build358_codec_id_runs": "LOCAL_PASS; asset id lists (crew contracts, hiring log, receipts) saved as [-3,prefix,width,first,count] runs, verified per element, gh-shape-2; native save text at 100,000 assets 25.3 MB -> 1.66 MB",
-    "build358_purchase_scale": "LOCAL_PASS; a purchase no longer walks the fleet: crew totals per staffing class, base occupancy per class, delivered assets and duplicate ids through the id index; a 1,000-asset purchase visits 0 assets through fleet walks at 4,010 and at 45,010 assets (was 10,030 and 133,030)"
+    "build358_purchase_scale": "LOCAL_PASS; a purchase no longer walks the fleet: crew totals per staffing class, base occupancy per class, delivered assets and duplicate ids through the id index; a 1,000-asset purchase visits 0 assets through fleet walks at 4,010 and at 45,010 assets (was 10,030 and 133,030)",
+    "build358_million_asset_paths": "LOCAL_PASS; per-chunk class tables (static versions survive a moving fleet), row scans without views, fused staged fleet day pass, map aggregation above 20,000 assets, route center and asset panel from classes and stopping row passes, boot repairs as row scans, caches kept across value GC; realism, engine and boot repairs equal to the previous code; 1,000,000 assets in desktop Chromium: play 392 -> 5 frames over 100 ms in 150 s, daily close 19.7 s -> 2.7 s, purchase 8.1 -> 0.28 s, routes panel 39.4 -> 0.53 s, boot 58.4 -> 2.8 s",
+    "build358_id_lists": "LOCAL_PASS; crew contracts, hiring log and receipts keep 64+ asset ids as canonical runs in live state (GH_FLEET_DATA.idLists), validated in Save Schema and read by migration",
+    "build358_native_record_ceiling": "LOCAL_PASS; nativeFleetRecordLimit 1,000,000; physical iPhone profile pending"
   },
   "latest_direct_source_ci": {
     "run_id": 36956423617,
@@ -69,7 +72,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "claude/vibrant-planck-irbtw6",
     "based_on": "build357-wip@38b21bc",
-    "source_tree_sha256": "f3573f5e540b39ea841b4e78c4e94c96bb330f249779f3d52f0d2fb6a8fb5aa1",
+    "source_tree_sha256": "2dba796d7eef8f5c455ee2a0ecf72e25ab5dec8085e2a2b54d82ff43b40c3a41",
     "working_tree_clean": null
   },
   "point": "Build 358: air/sea dispatch fix, row-level simulation snapshots (no per-slice full-state copy), 3,000-aircraft airports with compact delivery receipts; RELEASE_GATE remains closed pending CI, physical iPhone profiling and owner approval."

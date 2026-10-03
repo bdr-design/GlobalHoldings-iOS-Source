@@ -92,13 +92,45 @@
   // they read is written (only realism.financial and realism.budgets change), so inside that window the fleet is grouped
   // by owner once and each company's statements are computed once. Outside it everything is computed as before.
   let closeMemo=null;
-  function companyAssets(state,t){
-    if(!closeMemo||closeMemo.state!==state)return fleetData().filter(state,a=>assetOwnerCompanyId(state,a)===t);
-    if(!closeMemo.byOwner){const groups=new Map();fleetData().forEach(state,a=>{const id=assetOwnerCompanyId(state,a);let rows=groups.get(id);if(!rows){rows=[];groups.set(id,rows);}rows.push(a);});closeMemo.byOwner=groups;}
-    return closeMemo.byOwner.get(t)||[];
+  // Build 358 (million-asset): what the statements, budgets and insured value read from a company's assets, for every
+  // owner in one read-only pass in row order (GH_FLEET_DATA.scan, no view per asset): each owner's sums run in the
+  // order its asset list had, so the results are the same. Kept while the fleet (revision), the simulated time and the
+  // owner each class of rows resolves to are unchanged; the staged daily close computes it in slices first.
+  const OWNER_TOTAL_FIELDS=Object.freeze(['ownerCompanyId','companyId','company','assetMode','type','purchasePrice','condition','ownership','monthlyLease','leaseTermMonths','leaseStartSeconds','deliveredAtSeconds','year','lastTrip','staffing']);
+  const OWNER_FIELDS=Object.freeze(['ownerCompanyId','companyId','company','assetMode','type']);
+  const USEFUL_YEARS=Object.freeze({air:20,sea:25,road:8,power:25,bank:12,group:20}),SALVAGE_PCT=Object.freeze({air:.12,sea:.15,road:.08,power:.10,bank:.05,group:.05});
+  const EMPTY_OWNER_TOTALS=Object.freeze({assetVal:0,depr:0,leaseLiab:0,rou:0,leaseInterest:0,owned:0,fuelCost:0,maintReserve:0,payroll:0});
+  let ownerTotalsMemo=null;
+  function ownersFingerprint(state){const pairs=[];fleetData().forEachFieldClasses(state,OWNER_FIELDS,row=>{pairs.push([row.ownerCompanyId,row.companyId,row.company,row.assetMode,row.type,assetOwnerCompanyId(state,row)]);});return JSON.stringify(pairs);}
+  function ownerTotalsKey(state){const fleet=fleetData(),revision=fleet.revision(state);return revision===null?null:{fleet:state.fleet,revision,simSeconds:Math.max(0,Number(state.simSeconds)||0),owners:ownersFingerprint(state)};}
+  const sameOwnerTotalsKey=(a,b)=>!!a&&!!b&&a.fleet===b.fleet&&a.revision===b.revision&&a.simSeconds===b.simSeconds&&a.owners===b.owners;
+  // The owner totals of one pass: visit(row) per asset in row order; totals per owner id.
+  function ownerTotalsVisitor(state){
+    const totals=new Map(),simSeconds=Math.max(0,Number(state.simSeconds)||0),simYear=2026+Math.floor(simSeconds/(365*86400)),monthlyRate=Math.pow(1.07,1/12)-1,owners=new Map();
+    const visit=a=>{
+      const ownerKey=`${a.ownerCompanyId}\u0000${a.companyId}\u0000${a.company}\u0000${a.assetMode}\u0000${a.type}`;let t=owners.get(ownerKey);if(t===undefined){t=assetOwnerCompanyId(state,a);owners.set(ownerKey,t);}
+      let acc=totals.get(t);if(!acc){acc={assetVal:0,depr:0,leaseLiab:0,rou:0,leaseInterest:0,owned:0,fuelCost:0,maintReserve:0,payroll:0};totals.set(t,acc);}
+      const price=Math.max(0,Number(a.purchasePrice)||0),condition=clamp(Number(a.condition)||100,0,100);
+      if(a.ownership==='lease'){
+        const monthly=Math.max(0,Number(a.monthlyLease)||0),term=Math.max(12,Number(a.leaseTermMonths)||60),start=Math.max(0,Number(a.leaseStartSeconds)||Number(a.deliveredAtSeconds)||simSeconds),elapsed=Math.min(term,Math.max(0,Math.floor((simSeconds-start)/(30*86400)))),remaining=Math.max(0,term-elapsed);
+        const pv=monthlyRate?monthly*(1-Math.pow(1+monthlyRate,-remaining))/monthlyRate:monthly*remaining;acc.leaseLiab+=pv;const initialPv=monthlyRate?monthly*(1-Math.pow(1+monthlyRate,-term))/monthlyRate:monthly*term;const carrying=initialPv*Math.max(0,1-elapsed/term);acc.rou+=carrying;acc.depr+=term?initialPv/term:0;acc.leaseInterest+=pv*monthlyRate;
+      }else{
+        const mode=assetMode(a),life=USEFUL_YEARS[mode]||15,salvage=price*(SALVAGE_PCT[mode]||.08),modelYear=Math.min(simYear,Math.max(2000,Number(a.year)||simYear)),ageYears=Math.max(0,simYear-modelYear),annualDep=Math.max(0,(price-salvage)/life),accum=Math.min(price-salvage,annualDep*ageYears),book=Math.max(salvage,price-accum);acc.assetVal+=book*(.75+.25*condition/100);acc.depr+=annualDep/12;
+        acc.owned+=(Number(a.purchasePrice)||0)*clamp((Number(a.condition)||100)/100,.4,1);
+      }
+      acc.fuelCost+=Number(a.lastTrip?.fuelCost)||0;acc.maintReserve+=Number(a.lastTrip?.maintReserve)||0;acc.payroll+=Number(a.staffing?.monthlyPayroll)||0;
+    };
+    return {visit,totals};
   }
+  function* ownerFleetTotalsStages(state,slice=Infinity){
+    const fleet=fleetData(),key=ownerTotalsKey(state);if(key&&ownerTotalsMemo&&ownerTotalsMemo.state===state&&sameOwnerTotalsKey(ownerTotalsMemo.key,key))return ownerTotalsMemo.totals;
+    const owner=ownerTotalsVisitor(state);
+    yield* fleet.scanStages(state,OWNER_TOTAL_FIELDS,owner.visit,slice,'realism.fleet-totals');
+    ownerTotalsMemo={state,key,totals:owner.totals};return owner.totals;
+  }
+  function ownerFleetTotals(state,t){const stages=ownerFleetTotalsStages(state);let step;while(!(step=stages.next()).done){}return step.value.get(t)||EMPTY_OWNER_TOTALS;}
   const statementCopy=row=>({...row,bankingAdjustment:row.bankingAdjustment&&typeof row.bankingAdjustment==='object'?{...row.bankingAdjustment}:row.bankingAdjustment});
-  function ownedValue(state,t){return companyAssets(state,t).filter(a=>a.ownership!=='lease').reduce((n,a)=>n+(Number(a.purchasePrice)||0)*clamp((Number(a.condition)||100)/100,.4,1),0);}
+  function ownedValue(state,t){return ownerFleetTotals(state,t).owned;}
   function ledgerTotals(state,t,days=30){const b=books(state,t),cut=(Number(state.simSeconds)||0)-days*86400,cutDay=Math.floor(cut/86400),archive=state.finance?.auditArchive;let income=0,expense=0;const consume=e=>{if((Number(e?.at)||0)<cut)return;const amt=Number(e?.amount)||0;if(e?.kind==='intercompany'||e?.kind==='internal'||e?.kind==='bank-credit'||e?.kind==='cash-sweep')return;if(String(e?.from||'').includes('عميل')||String(e?.note||'').includes('إيراد')||String(e?.note||'').includes('فاتورة رحلة'))income+=amt;else expense+=amt;};for(const e of (b?.ledger||[]))consume(e);for(const e of (archive?.records?.[`companyLedger-${t}`]||[]))consume(e);for(const d of (archive?.digests||[]))if(d?.kind===`companyLedger-${t}`&&d?.schema==='gh-finance-audit-digest-v2')for(const row of d.recentDaily||[])if(Number(row?.day)>=cutDay){income+=Number(row?.income)||0;expense+=Number(row?.expense)||0;}return {income,expense};}
   function statements(state,t){
     const memo=closeMemo&&closeMemo.state===state?closeMemo.statements:null;if(memo?.has(t))return statementCopy(memo.get(t));
@@ -106,64 +138,72 @@
   }
   function computeStatements(state,t){
     const b=books(state,t)||{debt:0,taxPayable:0},lt=ledgerTotals(state,t,30),c=cash(state,t),recv=(state.finance?.receivables||[]).filter(x=>rowCompanyId(state,x)===t).reduce((n,x)=>n+(Number(x.total)||0),0),pay=(state.finance?.payables||[]).filter(x=>rowCompanyId(state,x)===t).reduce((n,x)=>n+(Number(x.total)||0),0),debt=Math.max(0,Number(b.debt)||0),simSeconds=Math.max(0,Number(state.simSeconds)||0),simYear=2026+Math.floor(simSeconds/(365*86400));
-    const usefulYears={air:20,sea:25,road:8,power:25,bank:12,group:20},salvagePct={air:.12,sea:.15,road:.08,power:.10,bank:.05,group:.05};let assetVal=0,depr=0,leaseLiab=0,rou=0,leaseInterest=0;
-    for(const a of companyAssets(state,t)){
-      const price=Math.max(0,Number(a.purchasePrice)||0),condition=clamp(Number(a.condition)||100,0,100);
-      if(a.ownership==='lease'){
-        const monthly=Math.max(0,Number(a.monthlyLease)||0),term=Math.max(12,Number(a.leaseTermMonths)||60),start=Math.max(0,Number(a.leaseStartSeconds)||Number(a.deliveredAtSeconds)||simSeconds),elapsed=Math.min(term,Math.max(0,Math.floor((simSeconds-start)/(30*86400)))),remaining=Math.max(0,term-elapsed),monthlyRate=Math.pow(1.07,1/12)-1;
-        const pv=monthlyRate?monthly*(1-Math.pow(1+monthlyRate,-remaining))/monthlyRate:monthly*remaining;leaseLiab+=pv;const initialPv=monthlyRate?monthly*(1-Math.pow(1+monthlyRate,-term))/monthlyRate:monthly*term;const carrying=initialPv*Math.max(0,1-elapsed/term);rou+=carrying;depr+=term?initialPv/term:0;leaseInterest+=pv*monthlyRate;
-      }else{
-        const mode=assetMode(a),life=usefulYears[mode]||15,salvage=price*(salvagePct[mode]||.08),modelYear=Math.min(simYear,Math.max(2000,Number(a.year)||simYear)),ageYears=Math.max(0,simYear-modelYear),annualDep=Math.max(0,(price-salvage)/life),accum=Math.min(price-salvage,annualDep*ageYears),book=Math.max(salvage,price-accum);assetVal+=book*(.75+.25*condition/100);depr+=annualDep/12;
-      }
-    }
+    const fleetTotals=ownerFleetTotals(state,t),assetVal=fleetTotals.assetVal,depr=fleetTotals.depr,leaseLiab=fleetTotals.leaseLiab,rou=fleetTotals.rou,leaseInterest=fleetTotals.leaseInterest;
     const revenue=lt.income,leaseServiceExcluded=0,opex=Math.max(0,lt.expense-leaseServiceExcluded),ebitda=revenue-opex,interest=debt*.07/12+leaseInterest,pretax=ebitda-depr-interest,tax=Math.max(0,pretax*.15),net=pretax-tax,bankingAdjustment=globalThis.GH_BANKING_CORE?.statementAdjustments?.(state,t)||{assets:0,liabilities:0},assets=c+recv+assetVal+rou+Math.max(0,Number(bankingAdjustment.assets)||0),liabilities=pay+debt+leaseLiab+(Number(b.taxPayable)||0)+Math.max(0,Number(bankingAdjustment.liabilities)||0),equity=assets-liabilities;
     const workingCapitalDelta=recv*.03-pay*.02,operatingCF=net+depr-workingCapitalDelta,investingCF=-(state.constructionContracts||[]).filter(x=>rowCompanyId(state,x)===t&&String(x.status||'').includes('مكتمل')===false).reduce((n,x)=>n+(Number(x.amount)||0)/Math.max(1,Number(x.totalDays)||180),0),financingCF=0;
     return {revenue,opex,ebitda,depr,interest,tax,net,assets,liabilities,cash:c,receivables:recv,payables:pay,debt,leaseLiability:leaseLiab,rouAsset:rou,equity,operatingCF,investingCF,financingCF,workingCapitalDelta,bankingAdjustment};
   }
   function closeFinancials(state,day){const r=migrate(state),types=companyTypes(state),archive=state.finance?.auditArchive;let rev=0,op=0,assets=0,liab=0,net=0,ocf=0,icf=0,fcf=0;for(const t of types){const s=statements(state,t);s.equity=s.assets-s.liabilities;r.financial.statements[t]=s;rev+=s.revenue;op+=s.opex;assets+=s.assets;liab+=s.liabilities;net+=s.net;ocf+=s.operatingCF;icf+=s.investingCF;fcf+=s.financingCF;}let eliminations=0;const add=e=>{if(e?.kind==='intercompany'||e?.kind==='bank-credit'||e?.kind==='cash-sweep')eliminations+=Number(e.amount)||0;};for(const t of types){for(const e of (books(state,t)?.ledger||[]))add(e);for(const e of (archive?.records?.[`companyLedger-${t}`]||[]))add(e);for(const d of (archive?.digests||[]))if(d?.kind===`companyLedger-${t}`&&d?.schema==='gh-finance-audit-digest-v2')eliminations+=Number(d.intercompanyTotal)||0;}const balanceEliminations=globalThis.GH_BANKING_CORE?.intercompanyBalanceEliminations?.(state)||{assets:0,liabilities:0};assets=Math.max(0,assets-Math.max(0,Number(balanceEliminations.assets)||0));liab=Math.max(0,liab-Math.max(0,Number(balanceEliminations.liabilities)||0));r.financial.intercompanyEliminations=eliminations;r.financial.intercompanyBalanceEliminations=balanceEliminations;r.financial.consolidated={revenue:rev,opex:op,ebitda:rev-op,net,assets,liabilities:liab,equity:assets-liab,operatingCF:ocf,investingCF:icf,financingCF:fcf};r.financial.lastCloseDay=day;}
-  function inferBudgetActual(state,t){const s=statements(state,t),assets=companyAssets(state,t),fuel=assets.reduce((n,a)=>n+(Number(a.lastTrip?.fuelCost)||0),0)*8,maint=assets.reduce((n,a)=>n+(Number(a.lastTrip?.maintReserve)||0),0)*8,assetPayroll=assets.reduce((n,a)=>n+(Number(a.staffing?.monthlyPayroll)||0),0),contractPayroll=(state.advanced?.labor?.employmentContracts||[]).filter(c=>c.status==='ساري'&&!c.automaticAssetStaffing&&rowCompanyId(state,c)===t).reduce((n,c)=>n+(Number(c.salary)||0),0),legacyPayroll=assetPayroll||contractPayroll?0:(state.crew||[]).filter(c=>String(c.ownerCompanyId||c.companyId||c.company||c.sector||'')===t).reduce((n,c)=>n+(Number(c.count)||0)*((Number(c.salaryMin)||0)+(Number(c.salaryMax)||0))/2*30,0),payroll=assetPayroll+contractPayroll+legacyPayroll;return {payroll,fuel,maintenance:maint,marketing:s.revenue*.018,insurance:Math.max(0,ownedValue(state,t)*.0008),technology:s.revenue*.01,capex:0,other:Math.max(0,s.opex-payroll-fuel-maint)};}
+  function inferBudgetActual(state,t){const s=statements(state,t),fleetTotals=ownerFleetTotals(state,t),fuel=fleetTotals.fuelCost*8,maint=fleetTotals.maintReserve*8,assetPayroll=fleetTotals.payroll,contractPayroll=(state.advanced?.labor?.employmentContracts||[]).filter(c=>c.status==='ساري'&&!c.automaticAssetStaffing&&rowCompanyId(state,c)===t).reduce((n,c)=>n+(Number(c.salary)||0),0),legacyPayroll=assetPayroll||contractPayroll?0:(state.crew||[]).filter(c=>String(c.ownerCompanyId||c.companyId||c.company||c.sector||'')===t).reduce((n,c)=>n+(Number(c.count)||0)*((Number(c.salaryMin)||0)+(Number(c.salaryMax)||0))/2*30,0),payroll=assetPayroll+contractPayroll+legacyPayroll;return {payroll,fuel,maintenance:maint,marketing:s.revenue*.018,insurance:Math.max(0,ownedValue(state,t)*.0008),technology:s.revenue*.01,capex:0,other:Math.max(0,s.opex-payroll-fuel-maint)};}
   function updateBudgets(state,day){const r=migrate(state),period=Math.floor(day/30);for(const t of companyTypes(state)){const b=r.budgets[t]||(r.budgets[t]=defaultBudget());if(b.period!==period){b.period=period;b.actual=Object.fromEntries(Object.keys(b.lines).map(k=>[k,0]));}const act=inferBudgetActual(state,t);b.actual={...b.actual,...act};const s=statements(state,t),base=Math.max(500000,s.revenue||cash(state,t)*.04);const godPlan=state.companyBudgets?.[t],manualLimit=godPlan?.enabled?Math.max(0,Number(godPlan.limit)||0):0,manualLines=godPlan?.lines&&typeof godPlan.lines==='object'?godPlan.lines:null,manualLineTotal=manualLines?Object.values(manualLines).reduce((n,x)=>n+(Math.max(0,Number(x)||0)),0):0;if(manualLimit>0&&manualLineTotal>0){b.lines={payroll:Number(manualLines.payroll)||0,fuel:Number(manualLines.fuel)||0,maintenance:Number(manualLines.maintenance)||0,marketing:Number(manualLines.marketing)||0,insurance:Number(manualLines.insurance)||0,technology:Number(manualLines.technology)||0,capex:Number(manualLines.capex)||0,other:Number(manualLines.other)||0};}else if(manualLimit>0){b.lines={payroll:manualLimit*.22,fuel:manualLimit*.23,maintenance:manualLimit*.10,marketing:manualLimit*.05,insurance:manualLimit*.04,technology:manualLimit*.05,capex:manualLimit*.23,other:manualLimit*.08};}else if(!Object.values(b.lines).some(Number)){b.lines={payroll:base*.22,fuel:base*.25,maintenance:base*.10,marketing:base*.04,insurance:base*.03,technology:base*.04,capex:base*.24,other:base*.08};}const elapsed=(day%30)+1;for(const k of Object.keys(b.lines)){b.forecast[k]=(Number(b.actual[k])||0)/Math.max(1,elapsed)*30;b.variance[k]=(Number(b.forecast[k])||0)-(Number(b.lines[k])||0);}}}
-  function updateOps(state,day){
-    const fleet=fleetData(),r=migrate(state),assets=fleet.list(state),air=assets.filter(a=>assetMode(a)==='air'),sea=assets.filter(a=>assetMode(a)==='sea'),road=assets.filter(a=>assetMode(a)==='road');
-    let ask=0,rpk=0,rev=0,cost=0,fuel=0,movingAir=0,airCondition=0,maintReserve=0,maintExposure=0;
-    for(const a of air){
-      const cap=Math.max(0,Number(a.specs?.capacity)||0),d=Math.max(0,Number(a.lastTrip?.distanceKm)||Number(a.lastTrip?.distance)||0),condition=clamp(Number(a.condition)||100,0,100);
-      const demand=clamp((r.economy.airDemand||100)/100,.65,1.35),conditionFactor=clamp(.82+(condition-70)*.004,.70,1.06),lf=clamp(.78*demand*conditionFactor,.52,.96);
-      ask+=cap*Math.max(1,d);rpk+=cap*lf*Math.max(1,d);rev+=Number(a.lastTrip?.revenue)||0;
-      const fuelCost=Number(a.lastTrip?.fuelCost)||0,crewCost=Number(a.lastTrip?.crewCost)||0,reserve=Number(a.lastTrip?.maintReserve)||0;
-      fuel+=fuelCost;maintReserve+=reserve;maintExposure+=Math.max(0,(100-condition)/100)*(Number(a.purchasePrice)||0)*.0008;cost+=fuelCost+crewCost+reserve;
-      if(a.phase==='moving')movingAir++;airCondition+=condition;
-      fleet.update(state,a,{flightHours:(Number(a.flightHours)||0)+(a.phase==='moving'?4:0),flightCycles:(Number(a.flightCycles)||0)+(a.phase==='turnaround'?1:0),nextCheckHours:Number(a.nextCheckHours)||600});
-    }
+  // Build 358 (million-asset): the per-asset part of the operations close is one read-only pass over the fleet in row
+  // order (GH_FLEET_DATA.scan: no view per asset, stored objects read in place) split into slices of OPS_SLICE_ROWS
+  // rows, each a stage of the staged daily close (the transaction holds the fleet still between slices). Every sum and
+  // count runs in the order of the former per-mode lists (row order), so the results are the same. The flight counters
+  // are written through a column writer (each column journaled once, not each row); the row is no longer checkpointed
+  // first (that only re-based progress, fuel and condition on today's time without changing what a view presents).
+  const OPS_SLICE_ROWS=8192,OPS_FIELDS=Object.freeze(['assetMode','type','specs','lastTrip','condition','purchasePrice','phase','flightHours','flightCycles','nextCheckHours']);
+  function opsVisitor(state){
+    const fleet=fleetData(),r=migrate(state),write=fleet.columnWriter(state,['flightHours','flightCycles','nextCheckHours']),demand=clamp((r.economy.airDemand||100)/100,.65,1.35),bunker=Math.max(1,r.economy.bunker);
+    let ask=0,rpk=0,rev=0,cost=0,fuel=0,movingAir=0,airCondition=0,maintReserve=0,maintExposure=0,airCount=0,maintenanceDue=0,aog=0;
+    let seaDistance=0,seaFuelProxy=0,seaTransport=0,seaCondition=0,movingSea=0,seaCount=0,seaDryDock=0,roadCount=0,roadWeak=0,roadDamaged=0;
+    const visit=(a,index)=>{
+      const mode=assetMode(a);
+      if(mode==='air'){
+        const cap=Math.max(0,Number(a.specs?.capacity)||0),d=Math.max(0,Number(a.lastTrip?.distanceKm)||Number(a.lastTrip?.distance)||0),condition=clamp(Number(a.condition)||100,0,100);
+        const conditionFactor=clamp(.82+(condition-70)*.004,.70,1.06),lf=clamp(.78*demand*conditionFactor,.52,.96);
+        ask+=cap*Math.max(1,d);rpk+=cap*lf*Math.max(1,d);rev+=Number(a.lastTrip?.revenue)||0;
+        const fuelCost=Number(a.lastTrip?.fuelCost)||0,crewCost=Number(a.lastTrip?.crewCost)||0,reserve=Number(a.lastTrip?.maintReserve)||0;
+        fuel+=fuelCost;maintReserve+=reserve;maintExposure+=Math.max(0,(100-condition)/100)*(Number(a.purchasePrice)||0)*.0008;cost+=fuelCost+crewCost+reserve;
+        if(a.phase==='moving')movingAir++;airCondition+=condition;airCount++;
+        const flightHours=(Number(a.flightHours)||0)+(a.phase==='moving'?4:0),flightCycles=(Number(a.flightCycles)||0)+(a.phase==='turnaround'?1:0),nextCheckHours=Number(a.nextCheckHours)||600;
+        write(index,'flightHours',flightHours);write(index,'flightCycles',flightCycles);write(index,'nextCheckHours',nextCheckHours);
+        if(flightHours>=nextCheckHours||Number(a.condition)<72)maintenanceDue++;if(Number(a.condition)<60)aog++;
+      }else if(mode==='sea'){
+        const d=Math.max(1,Number(a.lastTrip?.distanceKm)||Number(a.lastTrip?.distance)||1),cap=Math.max(1,Number(a.specs?.capacity)||Number(a.specs?.teu)||Number(a.specs?.dwt)||1),cond=clamp(Number(a.condition)||100,0,100);seaDistance+=d;seaTransport+=d*cap;seaFuelProxy+=Math.max(0,Number(a.lastTrip?.fuelCost)||0)/bunker;seaCondition+=cond;if(a.phase==='moving')movingSea++;
+        seaCount++;if(Number(a.condition)<70)seaDryDock++;
+      }else if(mode==='road'){roadCount++;if(Number(a.condition)<70)roadWeak++;if(Number(a.condition)<75)roadDamaged++;}
+    };
+    const finish=day=>{
     r.aviation.ask=ask;r.aviation.rpk=rpk;r.aviation.loadFactor=ask?clamp(rpk/ask*100,0,100):0;r.aviation.yield=rpk?rev/rpk:0;r.aviation.rask=ask?rev/ask:0;r.aviation.cask=ask?cost/ask:0;r.aviation.caskExFuel=ask?(cost-fuel)/ask:0;
-    r.aviation.maintenanceDue=air.filter(a=>(Number(a.flightHours)||0)>=(Number(a.nextCheckHours)||600)||Number(a.condition)<72).length;r.aviation.aog=air.filter(a=>Number(a.condition)<60).length;
-    r.aviation.avgCondition=air.length?airCondition/air.length:100;r.aviation.utilization=air.length?movingAir/air.length*100:0;
-    r.aviation.dispatchReliability=air.length?clamp(100-(r.aviation.aog/air.length*100)-(r.aviation.maintenanceDue/air.length*2.5),55,99.95):100;
+    r.aviation.maintenanceDue=maintenanceDue;r.aviation.aog=aog;
+    r.aviation.avgCondition=airCount?airCondition/airCount:100;r.aviation.utilization=airCount?movingAir/airCount*100:0;
+    r.aviation.dispatchReliability=airCount?clamp(100-(r.aviation.aog/airCount*100)-(r.aviation.maintenanceDue/airCount*2.5),55,99.95):100;
     r.aviation.technicalDelayRate=clamp(100-r.aviation.dispatchReliability,.05,15);r.aviation.otp=clamp(98-r.aviation.technicalDelayRate*.65-Math.max(0,r.aviation.utilization-88)*.12,55,99.5);
     r.aviation.maintenanceReserveCoverage=maintExposure?clamp(maintReserve/maintExposure*100,0,250):100;r.aviation.healthMonitoringScore=clamp(r.aviation.dispatchReliability*.55+r.aviation.avgCondition*.35+Math.min(100,r.aviation.maintenanceReserveCoverage)*.10,0,100);
 
-    let seaDistance=0,seaFuelProxy=0,seaTransport=0,seaCondition=0,movingSea=0;
-    for(const a of sea){const d=Math.max(1,Number(a.lastTrip?.distanceKm)||Number(a.lastTrip?.distance)||1),cap=Math.max(1,Number(a.specs?.capacity)||Number(a.specs?.teu)||Number(a.specs?.dwt)||1),cond=clamp(Number(a.condition)||100,0,100);seaDistance+=d;seaTransport+=d*cap;seaFuelProxy+=Math.max(0,Number(a.lastTrip?.fuelCost)||0)/Math.max(1,r.economy.bunker);seaCondition+=cond;if(a.phase==='moving')movingSea++;}
-    const avgSea=sea.length?seaCondition/sea.length:100;r.maritime.utilization=sea.length?movingSea/sea.length*100:0;
+    const avgSea=seaCount?seaCondition/seaCount:100;r.maritime.utilization=seaCount?movingSea/seaCount*100:0;
     r.maritime.fuelIntensity=seaTransport?seaFuelProxy/seaTransport*1e6:0;
     const ageConditionPenalty=clamp((92-avgSea)/100,0,.5),utilPenalty=clamp(Math.abs(r.maritime.utilization-78)/100,0,.35),intensityBase=Math.max(.55,r.maritime.fuelIntensity||.85);
     const simYear=Math.max(0,Math.floor(day/365));r.maritime.requiredCii=clamp(.90-simYear*.018,.72,.95);r.maritime.attainedCii=clamp(intensityBase*(1+ageConditionPenalty+utilPenalty*.15),.35,2.5);r.maritime.ciiRatio=r.maritime.attainedCii/Math.max(.01,r.maritime.requiredCii);
     const ratio=r.maritime.ciiRatio;r.maritime.cii=ratio<=.82?'A':ratio<=.93?'B':ratio<=1.08?'C':ratio<=1.20?'D':'E';
     if(r.maritime.lastCiiYear!==simYear){const prev=r.maritime.ciiHistory[0];r.maritime.consecutiveD=r.maritime.cii==='D'?(prev?.rating==='D'?(Number(prev.consecutiveD)||1)+1:1):0;r.maritime.ciiHistory.unshift({year:simYear,rating:r.maritime.cii,ratio:r.maritime.ciiRatio,consecutiveD:r.maritime.consecutiveD});r.maritime.ciiHistory=r.maritime.ciiHistory.slice(0,8);r.maritime.lastCiiYear=simYear;}
     r.maritime.correctiveAction=r.maritime.cii==='E'||r.maritime.consecutiveD>=3;r.maritime.correctivePlanStatus=r.maritime.correctiveAction?'مطلوب':r.maritime.cii==='D'?`مراقبة D (${r.maritime.consecutiveD}/3)`:'غير مطلوب';
-    r.maritime.eexiReadiness=clamp(avgSea*.72+(100-Math.max(0,r.economy.bunker-640)/10)*.08+(100-r.maritime.dryDockDue*5)*.20,0,100);r.maritime.eexi=r.maritime.eexiReadiness>=70?'Compliant':'Action required';r.maritime.dryDockDue=sea.filter(a=>Number(a.condition)<70).length;r.maritime.avgBunkerCost=r.economy.bunker;
-    r.maritime.waitingHours=clamp((100-r.maritime.utilization)*.18+r.maritime.dryDockDue*6,0,96);r.maritime.demurrage=Math.round(r.maritime.waitingHours*Math.max(0,sea.length)*1200);
+    r.maritime.eexiReadiness=clamp(avgSea*.72+(100-Math.max(0,r.economy.bunker-640)/10)*.08+(100-r.maritime.dryDockDue*5)*.20,0,100);r.maritime.eexi=r.maritime.eexiReadiness>=70?'Compliant':'Action required';r.maritime.dryDockDue=seaDryDock;r.maritime.avgBunkerCost=r.economy.bunker;
+    r.maritime.waitingHours=clamp((100-r.maritime.utilization)*.18+r.maritime.dryDockDue*6,0,96);r.maritime.demurrage=Math.round(r.maritime.waitingHours*Math.max(0,seaCount)*1200);
 
     const hubs=(state.customHubs||[]).filter(h=>['logistics','depot'].includes(h.kind)||platform()?.getRouteModes?.(state,rowCompanyId(state,h,''))?.includes('road')).length;
-    r.logistics.warehouseUtilization=clamp(road.length/Math.max(1,hubs*14)*100,0,100);const weakRoad=road.filter(a=>Number(a.condition)<70).length;
-    r.logistics.onTime=clamp(97-(r.logistics.warehouseUtilization>90?(r.logistics.warehouseUtilization-90)*.45:0)-weakRoad*1.5,60,99);r.logistics.emptyMiles=clamp(22-road.length*.25+hubs*.3,7,35);r.logistics.damageRate=clamp(.45+road.filter(a=>Number(a.condition)<75).length*.12,.2,5);r.logistics.orderCycleHours=clamp(30+(r.logistics.warehouseUtilization-70)*.25,12,72);r.logistics.throughput=Math.round(road.length*18*(r.logistics.onTime/100));
-    r.logistics.customsHours=clamp(7+(100-r.logistics.onTime)*.22+(r.economy.freight-100)*.03,3,48);r.logistics.customsScore=clamp(5-r.logistics.customsHours/16,1,5);r.logistics.shipmentScore=clamp(3.9-(Math.max(0,r.economy.freight-100)*.012)-r.logistics.emptyMiles*.018+Math.min(0.7,road.length*.012),1,5);r.logistics.trackingScore=clamp(2.8+(state.advanced?.cyber?.coverage||70)/100*1.4-r.logistics.damageRate*.08,1,5);r.logistics.infrastructureScore=clamp(2.6+Math.min(1,hubs/8)*1.5-Math.max(0,r.logistics.warehouseUtilization-92)*.03,1,5);r.logistics.serviceScore=clamp(2.8+(100-r.logistics.emptyMiles)/100*1.3+(r.logistics.onTime-80)*.02,1,5);r.logistics.timelinessScore=clamp(1+r.logistics.onTime/25,1,5);r.logistics.lpiProxy=(r.logistics.customsScore+r.logistics.shipmentScore+r.logistics.trackingScore+r.logistics.infrastructureScore+r.logistics.serviceScore+r.logistics.timelinessScore)/6;r.logistics.networkBalance=clamp(100-r.logistics.emptyMiles-Math.max(0,r.logistics.warehouseUtilization-85)*.6,0,100);
+    r.logistics.warehouseUtilization=clamp(roadCount/Math.max(1,hubs*14)*100,0,100);const weakRoad=roadWeak;
+    r.logistics.onTime=clamp(97-(r.logistics.warehouseUtilization>90?(r.logistics.warehouseUtilization-90)*.45:0)-weakRoad*1.5,60,99);r.logistics.emptyMiles=clamp(22-roadCount*.25+hubs*.3,7,35);r.logistics.damageRate=clamp(.45+roadDamaged*.12,.2,5);r.logistics.orderCycleHours=clamp(30+(r.logistics.warehouseUtilization-70)*.25,12,72);r.logistics.throughput=Math.round(roadCount*18*(r.logistics.onTime/100));
+    r.logistics.customsHours=clamp(7+(100-r.logistics.onTime)*.22+(r.economy.freight-100)*.03,3,48);r.logistics.customsScore=clamp(5-r.logistics.customsHours/16,1,5);r.logistics.shipmentScore=clamp(3.9-(Math.max(0,r.economy.freight-100)*.012)-r.logistics.emptyMiles*.018+Math.min(0.7,roadCount*.012),1,5);r.logistics.trackingScore=clamp(2.8+(state.advanced?.cyber?.coverage||70)/100*1.4-r.logistics.damageRate*.08,1,5);r.logistics.infrastructureScore=clamp(2.6+Math.min(1,hubs/8)*1.5-Math.max(0,r.logistics.warehouseUtilization-92)*.03,1,5);r.logistics.serviceScore=clamp(2.8+(100-r.logistics.emptyMiles)/100*1.3+(r.logistics.onTime-80)*.02,1,5);r.logistics.timelinessScore=clamp(1+r.logistics.onTime/25,1,5);r.logistics.lpiProxy=(r.logistics.customsScore+r.logistics.shipmentScore+r.logistics.trackingScore+r.logistics.infrastructureScore+r.logistics.serviceScore+r.logistics.timelinessScore)/6;r.logistics.networkBalance=clamp(100-r.logistics.emptyMiles-Math.max(0,r.logistics.warehouseUtilization-85)*.6,0,100);
 
     const e=state.energy||{},gasMW=Number(e.gasMW)||0,solarMW=Number(e.solarMW)||0,windMW=Number(e.windMW)||0,totalMW=gasMW+solarMW+windMW,renewableMW=solarMW+windMW,availability=clamp(Number(e.availability)||90,0,100);
     const weatherFactor=clamp(.74+rand(`energy:${day}:weather`,-.08,.08),.58,.90),thermalFactor=.72;r.energy.capacityFactor=totalMW?clamp(((gasMW*thermalFactor+renewableMW*weatherFactor)/totalMW)*(availability/100)*100,0,100):0;r.energy.availableMW=totalMW*availability/100;r.energy.renewableShare=totalMW?renewableMW/totalMW*100:0;
     const storageMWh=Math.max(0,Number(e.storageMWh)||0),spread=Math.max(0,r.economy.electricity-r.economy.gas),beforeSoc=r.energy.storageSoc;
     if(storageMWh>0&&spread>25&&r.energy.storageSoc>20){r.energy.storageSoc=clamp(r.energy.storageSoc-8,5,100);r.energy.cycles+=.08;}else if(storageMWh>0&&r.economy.electricity<75&&r.energy.storageSoc<90){r.energy.storageSoc=clamp(r.energy.storageSoc+7,0,100);r.energy.cycles+=.07;}
     r.energy.roundTripEfficiency=clamp(86-r.energy.degradation*.10,78,90);r.energy.degradation=clamp(1+r.energy.cycles*.012,1,20);r.energy.storageHealth=clamp(100-r.energy.degradation,60,100);r.energy.effectiveStorageMWh=storageMWh*r.energy.storageHealth/100;r.energy.storageThroughputMWh=Math.abs(r.energy.storageSoc-beforeSoc)/100*r.energy.effectiveStorageMWh;r.energy.roundTripLossMWh=r.energy.storageThroughputMWh*(1-r.energy.roundTripEfficiency/100);r.energy.reserveMargin=totalMW?clamp((r.energy.availableMW-(totalMW*.78))/Math.max(1,totalMW*.78)*100,-50,80):0;r.energy.curtailment=clamp(Math.max(0,r.energy.renewableShare-55)*.08+Math.max(0,r.energy.storageSoc-92)*.1,0,25);
+    };
+    return {visit,finish};
   }
   // Baseline reported for a bank with no balance sheet: no funding means no stressed outflows,
   // so the prudential ratios are not applicable. These mirror the pristine defaults above.
@@ -180,7 +220,7 @@
   }
   function updateBank(state){const r=migrate(state),m=bankingMetrics(state);Object.assign(r.banking,m);}
   function marketCompanyIds(state){const P=platform();return P?.listInstances?P.listInstances(state,{includeGroup:false,openedOnly:true}).filter(company=>company.operational).map(company=>company.id):SECTORS.filter(id=>(state.openedCompanies||[]).includes(id));}
-  function updateMarketShare(state,day){const r=migrate(state),ids=marketCompanyIds(state),counts={};fleetData().forEach(state,a=>{const owner=assetOwnerCompanyId(state,a);if(owner)counts[owner]=(counts[owner]||0)+1;});for(const companyId of ids){const sector=sectorOfCompany(state,companyId),infra=sector==='power'?((state.energy?.gasMW||0)+(state.energy?.solarMW||0)+(state.energy?.windMW||0))/200:sector==='bank'?(state.bank?.branches||0):counts[companyId]||0,rep=r.reputation[companyId]??r.reputation[sector]??70,pressure=r.market.competitorPressure[companyId]??r.market.competitorPressure[sector]??50;r.reputation[companyId]=rep;r.market.competitorPressure[companyId]=pressure;r.market.share[companyId]=clamp(2+infra*1.15+(rep-65)*.18-pressure*.035,0.5,42);if(day-r.market.lastResponseDay>=7){const share=r.market.share[companyId];r.market.competitorPressure[companyId]=clamp(45+share*1.15+rand(`${day}:${companyId}:pressure`,-5,6),20,95);}}if(day-r.market.lastResponseDay>=7)r.market.lastResponseDay=day;}
+  function updateMarketShare(state,day){const r=migrate(state),ids=marketCompanyIds(state),counts=fleetData().countByFields(state,OWNER_FIELDS,row=>assetOwnerCompanyId(state,row));for(const companyId of ids){const sector=sectorOfCompany(state,companyId),infra=sector==='power'?((state.energy?.gasMW||0)+(state.energy?.solarMW||0)+(state.energy?.windMW||0))/200:sector==='bank'?(state.bank?.branches||0):counts.get(companyId)||0,rep=r.reputation[companyId]??r.reputation[sector]??70,pressure=r.market.competitorPressure[companyId]??r.market.competitorPressure[sector]??50;r.reputation[companyId]=rep;r.market.competitorPressure[companyId]=pressure;r.market.share[companyId]=clamp(2+infra*1.15+(rep-65)*.18-pressure*.035,0.5,42);if(day-r.market.lastResponseDay>=7){const share=r.market.share[companyId];r.market.competitorPressure[companyId]=clamp(45+share*1.15+rand(`${day}:${companyId}:pressure`,-5,6),20,95);}}if(day-r.market.lastResponseDay>=7)r.market.lastResponseDay=day;}
   function updateRisk(state,day){
     const r=migrate(state),s=r.financial.consolidated||{},netDebt=Math.max(0,(Number(state.debt)||0)-(Number(state.cash)||0)),ebitda=Math.max(1,Number(s.ebitda)||1),lev=netDebt/ebitda,liq=Number(state.cash)||0,issues=[];
     if(lev>r.risk.limits.netDebtEbitda)issues.push({id:'LEV',severity:'high',title:'الرافعة المالية أعلى من شهية المخاطر',value:lev.toFixed(2)+'x'});
@@ -194,8 +234,20 @@
     r.risk.register=issues;r.risk.lastReviewDay=day;
   }
   function updateRating(state){const r=migrate(state),s=r.financial.consolidated||{},ebitda=Number(s.ebitda)||0,enterprise=Math.max(1,Number(state.groupValue)||Number(s.assets)||1),lev=ebitda>1000000?(Number(state.debt)||0)/ebitda:(Number(state.debt)||0)/enterprise*2,liq=(Number(state.cash)||0)/Math.max(1,Number(state.debt)||1),operatingAdj=(Number(s.revenue)||0)<1000000?0:(s.net>0?5:-8),score=clamp(72-lev*7+Math.min(12,liq*5)+operatingAdj-r.risk.register.length*2,32,95);r.rating.score=Math.round(score);r.rating.grade=score>=82?'A':score>=74?'A-':score>=66?'BBB+':score>=58?'BBB':score>=50?'BBB-':score>=42?'BB+':'BB';r.rating.outlook=r.risk.register.some(x=>x.severity==='high')?'Negative':s.net>0?'Stable':'Negative';globalThis.GH_CORPORATE_CORE?.execute?.({state},'set-credit-rating',{grade:r.rating.grade});}
+  // The insured fleet's condition total (row order, as GH_FLEET_DATA.sum gave it). The operations pass of the daily
+  // close reads every row's condition already and leaves its total here for the same fleet revision and time.
+  let conditionSumMemo=null;
+  function conditionSumKey(state){const revision=fleetData().revision(state);return revision===null?null:{fleet:state.fleet,revision,simSeconds:Math.max(0,Number(state.simSeconds)||0)};}
+  function fleetConditionSum(state){
+    const key=conditionSumKey(state);
+    if(key&&conditionSumMemo&&conditionSumMemo.state===state&&conditionSumMemo.key.fleet===key.fleet&&conditionSumMemo.key.revision===key.revision&&conditionSumMemo.key.simSeconds===key.simSeconds)return conditionSumMemo.sum;
+    let sum=0;fleetData().scan(state,['condition'],a=>{sum+=Number(a.condition)||100;});return sum;
+  }
+  // The operations cycle's fleet condition total (GH_FLEET_DATA.sum of condition, row order) from the daily close's
+  // fleet pass, while the fleet and time are those it read; null otherwise.
+  function fleetReadinessTotal(state){const key=conditionSumKey(state);return key&&conditionSumMemo&&conditionSumMemo.state===state&&conditionSumMemo.key.fleet===key.fleet&&conditionSumMemo.key.revision===key.revision&&conditionSumMemo.key.simSeconds===key.simSeconds&&Number.isFinite(conditionSumMemo.readiness)?conditionSumMemo.readiness:null;}
   function updateInsurance(state){
-    const r=migrate(state),condition=fleetData().size(state)?fleetData().sum(state,a=>Number(a.condition)||100)/fleetData().size(state):100,incidents=(state.advanced?.safety?.incidents||0),claims=(state.advanced?.insurance?.claims||[]);
+    const r=migrate(state),condition=fleetData().size(state)?fleetConditionSum(state)/fleetData().size(state):100,incidents=(state.advanced?.safety?.incidents||0),claims=(state.advanced?.insurance?.claims||[]);
     // تسوية المطالبات: بعد فترة فحص محاكاة (3 أيام) تُصرف المطالبة فعليًا عبر الخزينة بدل ما تبقى معلقة "قيد الفحص" للأبد.
     const REVIEW_SECONDS=3*86400,nowSec=Math.max(0,Number(state.simSeconds)||0);
     for(const c of claims){
@@ -312,15 +364,36 @@
   function morningBrief(state,day){const r=migrate(state);if(r.morningBriefs[0]?.day===day)return;const s=r.financial.consolidated||{},topRisks=r.risk.register.slice(0,3),pendingDeliveries=(r.procurement.deliveries||[]).filter(row=>row.status==='pending').length,brief={day,net:Number(s.net)||0,cash:Number(state.cash)||0,risks:topRisks.map(x=>x.title),pendingDeliveries,headline:topRisks.length?`أولوية اليوم: ${topRisks[0].title}`:pendingDeliveries?`${pendingDeliveries} تسليم أصول قيد الوصول`:'التشغيل ضمن الحدود الوقائية'};r.morningBriefs.unshift(brief);r.morningBriefs=r.morningBriefs.slice(0,30);}
   function causalEvent(state,hour){const r=migrate(state),day=Math.floor(hour/24);if(hour%72!==0)return;const roll=rand(`event:${Math.floor(hour/72)}`),e=r.economy;let ev=null;if(roll<.22){ev={id:`EV2-${hour}`,type:'oil',title:'اضطراب في إمدادات الطاقة',oil:+12,freight:+5,airDemand:-3,seaDemand:-1,duration:48};}else if(roll<.40){ev={id:`EV2-${hour}`,type:'ports',title:'ازدحام في ممرات بحرية رئيسية',freight:+14,bunker:+4,seaDemand:-2,duration:72};}else if(roll<.57){ev={id:`EV2-${hour}`,type:'rates',title:'تشدد ائتماني عالمي',baseRate:+.006,airDemand:-2,roadDemand:-2,duration:96};}else if(roll<.72){ev={id:`EV2-${hour}`,type:'growth',title:'ارتفاع في الطلب التجاري العالمي',airDemand:+5,seaDemand:+6,roadDemand:+5,powerDemand:+3,duration:72};}if(ev){e.lastEvent=ev;e.eventHistory.unshift({...ev,day});e.eventHistory=e.eventHistory.slice(0,30);for(const [k,v] of Object.entries(ev))if(typeof v==='number'&&k!=='duration')e[k]=Math.max(0,(Number(e[k])||0)+v);}}
   function onHour(state,hour){const r=migrate(state),e=r.economy;causalEvent(state,hour);const oilDrift=(78-e.oil)*.006+rand(`${hour}:oil`,-.8,.8);e.oil=clamp(e.oil+oilDrift,35,180);e.jetFuel=clamp(.52+e.oil*.0045+rand(`${hour}:jet`,-.006,.006),.45,1.75);e.bunker=clamp(300+e.oil*4.2+rand(`${hour}:bun`,-4,4),280,1200);e.diesel=clamp(.48+e.oil*.006+rand(`${hour}:dies`,-.008,.008),.5,2.0);e.gas=clamp(e.gas+(39-e.gas)*.01+rand(`${hour}:gas`,-.5,.5),15,120);e.electricity=clamp(36+e.gas*.75+rand(`${hour}:elec`,-2.2,2.2),30,190);e.freight=clamp(e.freight+(100-e.freight)*.008+rand(`${hour}:freight`,-1.3,1.3),55,220);e.baseRate=clamp(e.baseRate+(0.046-e.baseRate)*.003+rand(`${hour}:rate`,-.0002,.0002),.005,.16);e.usdIndex=clamp(e.usdIndex+(100-e.usdIndex)*.005+rand(`${hour}:usd`,-.25,.25),80,130);for(const k of ['airDemand','seaDemand','roadDemand','powerDemand'])e[k]=clamp(e[k]+(100-e[k])*.01+rand(`${hour}:${k}`,-.4,.4),65,145);globalThis.GH_MARKET_CORE?.execute?.({state},'sync-economy',{values:{electricityPriceMWh:e.electricity,gasCostMWh:e.gas,baseRate:e.baseRate,freightIndex:e.freight}});}
-  function integrity(state,day){const r=migrate(state),issues=[];for(const t of companyTypes(state)){const b=books(state,t);if(!b||!Array.isArray(b.accounts))issues.push(`دفتر ${t} غير صالح`);else if(b.accounts.some(a=>!Number.isFinite(Number(a.balance))))issues.push(`رصيد غير رقمي في ${t}`);}const ids=new Set();fleetData().forEach(state,a=>{if(!a.id||ids.has(a.id))issues.push('معرف أصل مكرر');ids.add(a.id);});const qids=new Set();for(const q of r.eventQueue){if(qids.has(q.id))issues.push('حدث زمني مكرر');qids.add(q.id);}r.controls.issues=issues;r.controls.lastIntegrityDay=day;return issues;}
+  // Build 358 (million-asset): every asset id present, a non-empty string and unique (GH_FLEET_DATA.idCollisions, per
+  // class of rows) means the per-asset id check adds nothing; anything else runs it as before.
+  function fleetIdsSound(state){
+    const fleet=fleetData();if(fleet.mode?.(state)!=='store'||typeof fleet.idCollisions!=='function')return false;
+    const ids=fleet.idCollisions(state);if(ids.duplicate||ids.missing)return false;
+    let sound=true;fleet.forEachFieldClasses(state,['id'],row=>{if(typeof row.id!=='string'||row.id==='')sound=false;});return sound;
+  }
+  function integrity(state,day){const r=migrate(state),issues=[];for(const t of companyTypes(state)){const b=books(state,t);if(!b||!Array.isArray(b.accounts))issues.push(`دفتر ${t} غير صالح`);else if(b.accounts.some(a=>!Number.isFinite(Number(a.balance))))issues.push(`رصيد غير رقمي في ${t}`);}if(!fleetIdsSound(state)){const ids=new Set();fleetData().forEach(state,a=>{if(!a.id||ids.has(a.id))issues.push('معرف أصل مكرر');ids.add(a.id);});}const qids=new Set();for(const q of r.eventQueue){if(qids.has(q.id))issues.push('حدث زمني مكرر');qids.add(q.id);}r.controls.issues=issues;r.controls.lastIntegrityDay=day;return issues;}
   // Build 358: the daily close as stages. The app's staged day boundary (GH_TRANSACTION_CORE.beginStaged) runs one or
   // more stages per frame inside the same transaction; onDay() runs them all at once. Order and results are identical.
   // The statements memo window (closeFinancials -> updateBudgets) never spans a pause.
+  // Build 358 (million-asset): the daily close reads the fleet in ONE pass, in slices of OPS_SLICE_ROWS rows (each a
+  // stage): the owner totals of the statements, budgets and insured value, the operations sums, the condition totals of
+  // insurance and of the app's operations cycle, and the day's flight counters (written through a column writer).
+  // Nothing the close computes before the operations stage reads the flight counters, and they change no field the
+  // totals read, so every result is the one the separate passes gave; the memos keep the fleet revision after the writes.
+  const FLEET_DAY_FIELDS=Object.freeze([...new Set([...OWNER_TOTAL_FIELDS,...OPS_FIELDS])]);
+  function* fleetDayPass(state){
+    const fleet=fleetData(),owner=ownerTotalsVisitor(state),ops=opsVisitor(state);let insured=0,readiness=0;
+    yield* fleet.scanStages(state,FLEET_DAY_FIELDS,(a,index)=>{owner.visit(a);ops.visit(a,index);const condition=Number(a.condition);insured+=condition||100;readiness+=condition||0;},OPS_SLICE_ROWS,'realism.fleet-day');
+    ownerTotalsMemo={state,key:ownerTotalsKey(state),totals:owner.totals};
+    const key=conditionSumKey(state);conditionSumMemo=key?{state,key,sum:insured,readiness}:null;
+    return ops;
+  }
   function* onDayStages(state,day){
     migrate(state);
-    closeMemo={state,byOwner:null,statements:new Map()};try{closeFinancials(state,day);updateBudgets(state,day);}finally{closeMemo=null;}
+    const ops=yield* fleetDayPass(state);
+    closeMemo={state,statements:new Map()};try{closeFinancials(state,day);updateBudgets(state,day);}finally{closeMemo=null;}
     yield 'realism.budgets';
-    updateOps(state,day);yield 'realism.operations';
+    ops.finish(day);yield 'realism.operations';
     updateBank(state);updateMarketShare(state,day);updateRisk(state,day);updateRating(state);updateInsurance(state);yield 'realism.market-risk';
     updateTaxFxAndDividends(state,day);updatePrograms(state,day);updateReputation(state);supplierScores(state);yield 'realism.programs';
     deliverDueAssets(state,day);yield 'realism.deliveries';
@@ -357,5 +430,5 @@
     ${section('سلامة النواة','فحص وقائي يومي يمنع التكرار والأرصدة غير الرقمية والأحداث المكررة.',`<div class="metric-row">${metric('Integrity issues',String(r.controls.issues.length),r.controls.issues.length?'negative':'positive')}${metric('Schema',r.schema)}${metric('Core',r.version)}</div>${r.controls.issues.length?`<div class="realism-alerts">${r.controls.issues.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}`)}
   </div>`;}
   function financeHTML(state){const r=migrate(state),types=companyTypes(state);return `<article class="list-item realism-finance-appendix"><div class="list-item-head"><div><h3>القوائم المالية 2.0</h3><p>30 يومًا متحركًا · Consolidation مع استبعاد التعاملات الداخلية وLease liabilities.</p></div><span class="tag positive">${esc(r.rating.grade)}</span></div><div class="realism-mini-grid">${types.map(t=>{const s=r.financial.statements[t]||statements(state,t);return `<div><span>${esc(entityName(state,t))}</span><b>${money(s.net||0)}</b><small>إيراد ${money(s.revenue||0)} · أصول ${money(s.assets||0)}</small></div>`}).join('')}</div></article><article class="list-item realism-finance-appendix"><h3>Budget / Actual / Forecast / Variance</h3><div class="realism-budget-table">${types.map(t=>{const b=r.budgets[t]||(r.budgets[t]=defaultBudget()),plan=Object.values(b.lines).reduce((a,x)=>a+(Number(x)||0),0),actual=Object.values(b.actual).reduce((a,x)=>a+(Number(x)||0),0),forecast=Object.values(b.forecast).reduce((a,x)=>a+(Number(x)||0),0);return `<div><b>${esc(entityName(state,t))}</b><span>${money(plan)}</span><span>${money(actual)}</span><span>${money(forecast)}</span><span class="${forecast<=plan?'positive':'negative'}">${money(forecast-plan)}</span></div>`}).join('')}<div class="budget-head"><b>الشركة</b><span>Budget</span><span>Actual</span><span>Forecast</span><span>Variance</span></div></div></article>`;}
-  window.GH_REALISM={VERSION,SCHEMA,migrate,reconcilePendingDeliveryCount,hasPendingDeliveries,simulationSliceLimit,onHour,onDay,onDayStages,onSimulationTime:deliverDueAssetsAt,tripModifier,render,financeHTML,statements,bankingMetrics,deliveryCapacity,companyTypes,assetMode,assetOwnerCompanyId};
+  window.GH_REALISM={VERSION,SCHEMA,migrate,fleetReadinessTotal,reconcilePendingDeliveryCount,hasPendingDeliveries,simulationSliceLimit,onHour,onDay,onDayStages,onSimulationTime:deliverDueAssetsAt,tripModifier,render,financeHTML,statements,bankingMetrics,deliveryCapacity,companyTypes,assetMode,assetOwnerCompanyId};
 })();
