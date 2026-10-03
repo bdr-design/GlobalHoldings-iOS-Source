@@ -71,17 +71,18 @@ test('older saves: the fleet-purchase VAT credit is reversed once, cash unchange
   return {reversed:210000,due:second.amount};
 });
 
-test('the open period loses no more than it holds, and a save without fleet purchases is only marked',()=>{
+test('the open period loses no more than it holds, and a save without taxed fleet purchases is left untouched',()=>{
   const e=scenario(),{s,state}=e,F=s.GH_FINANCE_CORE;state.godMoney=true;state.infiniteMoney=true;
   state.simSeconds=5*DAY;F.invoice(state,{kind:'مصروف',amount:115000,note:'شراء 1 × A220',taxable:true,status:'مسددة',company:'air',counterparty:'Supplier LLC'});
   F.book(state,'air').vat.input-=10000;delete state.finance.fleetPurchaseVat;
   const loaded=boot(s,state);
   assert.equal(loaded.finance.fleetPurchaseVatAdjustment.companies.air.amount,5000,'bounded by the open input VAT');
   assert.equal(F.book(loaded,'air').vat.input,0);
-  const clean=scenario();delete clean.state.finance.fleetPurchaseVat;const vat=JSON.stringify(clean.s.GH_FINANCE_CORE.book(clean.state,'air').vat);
-  const cleanLoaded=boot(clean.s,clean.state);
-  assert.equal(cleanLoaded.finance.fleetPurchaseVat,'zero-rated');assert.equal(cleanLoaded.finance.fleetPurchaseVatAdjustment,undefined);
-  assert.equal(JSON.stringify(clean.s.GH_FINANCE_CORE.book(cleanLoaded,'air').vat),vat);
+  // Every game since this build: purchases carry no VAT, so loading changes nothing (save/reload stays exact).
+  const clean=scenario();clean.state.godMoney=true;clean.state.infiniteMoney=true;assert.ok(clean.manualPurchase(2));
+  const cleanLoaded=boot(clean.s,clean.state),finance=JSON.stringify(cleanLoaded.finance);
+  assert.equal(cleanLoaded.finance.fleetPurchaseVat,undefined);assert.equal(cleanLoaded.finance.fleetPurchaseVatAdjustment,undefined);
+  clean.s.GH_SAVE_SCHEMA.normalize(cleanLoaded);assert.equal(JSON.stringify(cleanLoaded.finance),finance);
   return {bounded:5000};
 });
 

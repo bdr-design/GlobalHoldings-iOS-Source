@@ -537,7 +537,7 @@ function closeVatPeriod(s,p={}){
 // credit could exceed months of output VAT on trips, so the tax stayed zero. On load that input VAT is reversed once, per
 // company: purchases after the company's last close from the open period, earlier ones from the credit still carried,
 // never more than either holds (credit already set against output VAT stays). Cash and documents are unchanged; a
-// reclassification journal entry records the amount.
+// reclassification journal entry records the amount, and the save is marked so this never runs twice.
 const FLEET_PURCHASE_NOTE=/^(?:شراء|دفعة إيجار) \d+ × /;
 function zeroRateFleetPurchaseVat(s){
  const f=s?.finance;if(!f||typeof f!=='object'||f.fleetPurchaseVat==='zero-rated')return null;
@@ -547,6 +547,8 @@ function zeroRateFleetPurchaseVat(s){
   const tax=Number(row?.tax);if(!row||row.kind!=='مصروف'||!(tax>0)||!FLEET_PURCHASE_NOTE.test(String(row.note||''))||seen.has(row.number))continue;seen.add(row.number);
   const sum=taxed.get(row.company)||{open:0,closed:0};if(Number(row.at)>(lastClose.get(row.company)??-Infinity))sum.open+=tax;else sum.closed+=tax;taxed.set(row.company,sum);
  }
+ // A save without taxed fleet purchases (every game since this build) is left untouched, so save and reload stay exact.
+ if(!taxed.size)return null;
  const adjusted={};
  for(const [company,sum] of taxed){
   const b=books[company],vat=b?.vat;if(!vat||typeof vat!=='object')continue;
