@@ -23,6 +23,27 @@
   // The root carries  stateCodec:{version,paths}  so decoding needs no external configuration.
 
   const VERSION='gh-shape-1';
+  // Build 358 (million-asset save): runs of sequential ids. An array of RUN_MIN+ strings `prefix + digits` whose
+  // numbers are consecutive (the fleet store's pattern rule: zero padding kept as a width) is stored as
+  //   [-3, prefix, width, first, count]
+  // inside collections, and at RUN paths (meta.runPaths) elsewhere; every element is compared with its rebuilt text
+  // before a run is written, so decoding gives exactly the same array. A save with run paths is written as
+  // RUN_VERSION, which earlier decoders reject (they would otherwise keep the run marker as data).
+  const RUN_VERSION='gh-shape-2',RUN_MIN=64,RUN_MAX=1<<24,RUN_HEAD=/^([\s\S]*?)(\d{1,10})$/;
+  function runText(prefix,width,number){const digits=String(number);return prefix+(width?digits.padStart(width,'0'):digits);}
+  function idRun(list){
+    if(!Array.isArray(list)||list.length<RUN_MIN||list.length>RUN_MAX||typeof list[0]!=='string')return null;
+    const head=RUN_HEAD.exec(list[0]);if(!head)return null;
+    const prefix=head[1],digits=head[2],first=Number(digits),width=digits.length>1&&digits[0]==='0'?digits.length:0;
+    if(first+list.length-1>0xFFFFFFFF||runText(prefix,width,first)!==list[0])return null;
+    for(let i=1;i<list.length;i++)if(list[i]!==runText(prefix,width,first+i))return null;
+    return [-3,prefix,width,first,list.length];
+  }
+  function expandRun(cell){
+    const [tag,prefix,width,first,count]=cell;
+    if(cell.length!==5||tag!==-3||typeof prefix!=='string'||!Number.isInteger(width)||width<0||width>10||!Number.isSafeInteger(first)||first<0||!Number.isInteger(count)||count<1||count>RUN_MAX||first+count-1>0xFFFFFFFF)throw corrupt('run');
+    const out=new Array(count);for(let i=0;i<count;i++)out[i]=runText(prefix,width,first+i);return out;
+  }
   const MIN_ROWS=64;
   const MIN_POOL_CHARS=40;
   const MIN_CONSTANT_ROWS=4;
@@ -181,6 +202,7 @@
       if(value===null)return null;
       if(typeof value.toJSON==='function'){const json=value.toJSON();if(json!==value)return encodeValue(json,depth+1);}
       if(Array.isArray(value)){
+        const run=idRun(value);if(run)return run;
         const out=[-1];
         for(let i=0;i<value.length;i++){const cell=encodeValue(value[i],depth+1);out.push(cell===undefined?null:cell);}
         return out;
@@ -262,6 +284,7 @@
       if(depth>MAX_DEPTH)throw corrupt('depth');
       const tag=cell[0];
       if(tag===-1){const out=new Array(cell.length-1);for(let i=1;i<cell.length;i++)out[i-1]=decode(cell[i],depth+1);return out;}
+      if(tag===-3)return expandRun(cell);
       if(tag===-2){
         const index=cell[1];if(cell.length!==2||!Number.isInteger(index)||index<0||index>=pool.length)throw corrupt('pool-index');
         return decode(pool[index],depth+1);
@@ -314,16 +337,18 @@
     return true;
   }
   // Deterministic discovery: the same state always yields the same ordered path list.
-  function selectPaths(state){
-    const paths=[];
+  function selectPaths(state){return scanPaths(state).paths;}
+  function scanPaths(state){
+    const paths=[],runs=[];
     (function visit(node,path,depth){
       for(const key of Object.keys(node)){
         const value=node[key];if(value===null||typeof value!=='object')continue;
+        if(Array.isArray(value)&&value.length>=RUN_MIN){const run=idRun(value);if(run){runs.push({path:[...path,key],run});continue;}}
         if(collectionCandidate(value)){paths.push([...path,key]);continue;}
         if(depth<MAX_SCAN_DEPTH&&typeof value.toJSON!=='function'&&(isPlain(value)||Array.isArray(value)&&value.length<MIN_ROWS))visit(value,[...path,key],depth+1);
       }
     })(state,[],1);
-    return paths;
+    return {paths,runs};
   }
   function readPath(root,path){let node=root;for(const key of path){if(node===null||typeof node!=='object'||!own(node,key))return undefined;node=node[key];}return node;}
   function writePathCopy(root,path,value){
@@ -339,17 +364,18 @@
     // Fleet rows are the only ArrayBuffer in Save Schema 3. Preserve their
     // bytes through the current JSON transport until binary chunk storage lands.
     if(isArrayBuffer(state.fleet?.rows)){const path=['fleet','rows'];out=writePathCopy(out,path,binaryMarker(state.fleet.rows));binaryPaths.push(path);}
-    const paths=selectPaths(out);
-    if(!paths.length&&!binaryPaths.length)return state;
+    const scan=scanPaths(out),paths=scan.paths;
+    if(!paths.length&&!binaryPaths.length&&!scan.runs.length)return state;
     for(const path of paths)out=writePathCopy(out,path,encodeCollection(readPath(out,path)));
-    out.stateCodec={version:VERSION,paths,binaryPaths};
+    for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
+    out.stateCodec=scan.runs.length?{version:RUN_VERSION,paths,binaryPaths,runPaths:scan.runs.map(row=>row.path)}:{version:VERSION,paths,binaryPaths};
     return out;
   }
 
   function decodeState(tree,options={}){
     if(!isPlain(tree)||!own(tree,'stateCodec'))return tree;
     const meta=tree.stateCodec;
-    if(!isPlain(meta)||meta.version!==VERSION||!Array.isArray(meta.paths))throw corrupt('meta');
+    if(!isPlain(meta)||(meta.version!==VERSION&&meta.version!==RUN_VERSION)||!Array.isArray(meta.paths))throw corrupt('meta');
     let out={...tree};delete out.stateCodec;
     for(const path of meta.paths){
       if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('path');
@@ -361,6 +387,13 @@
       if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('binary-path');
       const node=readPath(out,path);if(node===undefined)throw corrupt('binary-path-missing');
       out=writePathCopy(out,path,binaryBuffer(node,options));
+    }
+    const runPaths=meta.runPaths===undefined?[]:meta.runPaths;
+    if(!Array.isArray(runPaths)||(runPaths.length&&meta.version!==RUN_VERSION))throw corrupt('run-paths');
+    for(const path of runPaths){
+      if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('run-path');
+      const node=readPath(out,path);if(!Array.isArray(node)||node[0]!==-3)throw corrupt('run-path-missing');
+      out=writePathCopy(out,path,expandRun(node));
     }
     return out;
   }
@@ -390,8 +423,8 @@
       const path=['fleet','rows'],token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;
       fragments.push({token:JSON.stringify(token),text:rowsText===null?rowsMarkerText(state.fleet):rowsText});out=writePathCopy(out,path,token);binaryPaths.push(path);
     }
-    const paths=selectPaths(out);
-    if(!paths.length&&!binaryPaths.length)return JSON.stringify(state);
+    const scan=scanPaths(out),paths=scan.paths;
+    if(!paths.length&&!binaryPaths.length&&!scan.runs.length)return JSON.stringify(state);
     for(const path of paths){
       const value=readPath(out,path),key=JSON.stringify(path),current=sealedMembers(value);
       if(!current){COLLECTION_TEXT.delete(key);out=writePathCopy(out,path,encodeCollection(value));continue;}
@@ -401,7 +434,8 @@
       const token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;fragments.push({token:JSON.stringify(token),text:entry.text});out=writePathCopy(out,path,token);
     }
     for(const key of [...COLLECTION_TEXT.keys()])if(!live.has(key))COLLECTION_TEXT.delete(key);
-    out.stateCodec={version:VERSION,paths,binaryPaths};
+    for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
+    out.stateCodec=scan.runs.length?{version:RUN_VERSION,paths,binaryPaths,runPaths:scan.runs.map(row=>row.path)}:{version:VERSION,paths,binaryPaths};
     const text=JSON.stringify(out);if(!fragments.length)return text;
     for(const fragment of fragments){fragment.at=text.indexOf(fragment.token);if(fragment.at<0||text.indexOf(fragment.token,fragment.at+1)>=0)throw new Error('state-codec-fragment-token');}
     fragments.sort((a,b)=>a.at-b.at);const parts=[];let cursor=0;

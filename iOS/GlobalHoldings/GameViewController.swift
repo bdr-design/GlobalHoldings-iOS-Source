@@ -960,7 +960,16 @@ private final class GlobalGameSchemeHandler: NSObject, WKURLSchemeHandler {
     /// Build 358 (million-asset save): the fleet record chunks of the native save, read (decompressed and SHA-256
     /// checked) on the vault queue. The boot gate fetches them before app.js assembles the saved fleet.
     private func serveSaveChunk(_ task: WKURLSchemeTask, url: URL, id: String) {
-        guard (task.request.httpMethod ?? "GET").uppercased() == "GET", GlobalSaveVault.shared.isValidChunkId(id) else {
+        let method = (task.request.httpMethod ?? "GET").uppercased()
+        guard GlobalSaveVault.shared.isValidChunkId(id) else {
+            finish404(task, url: url)
+            return
+        }
+        if method == "POST" {
+            storeSaveChunk(task, url: url, id: id)
+            return
+        }
+        guard method == "GET" else {
             finish404(task, url: url)
             return
         }
@@ -980,6 +989,48 @@ private final class GlobalGameSchemeHandler: NSObject, WKURLSchemeHandler {
                 task.didFinish()
             case .failure:
                 self.finish404(task, url: url)
+            }
+        }
+    }
+
+    /// Upload of one chunk as the raw request body (CI WebKit delivers a 4 MiB body intact as httpBody), stored and
+    /// verified on the vault queue. The reply is JSON: {ok, id, sha256} or {ok:false, message}.
+    private func storeSaveChunk(_ task: WKURLSchemeTask, url: URL, id: String) {
+        var body = task.request.httpBody
+        if body == nil, let stream = task.request.httpBodyStream {
+            var data = Data()
+            var buffer = [UInt8](repeating: 0, count: 65_536)
+            stream.open()
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                data.append(buffer, count: count)
+            }
+            stream.close()
+            body = data
+        }
+        let key = ObjectIdentifier(task as AnyObject)
+        pendingTasks.insert(key)
+        let reply: (Int, [String: Any]) -> Void = { [weak self] status, detail in
+            guard let self, self.pendingTasks.remove(key) != nil else { return }
+            let data = (try? JSONSerialization.data(withJSONObject: detail)) ?? Data("{}".utf8)
+            let headers = ["Content-Type": "application/json; charset=utf-8", "Content-Length": String(data.count), "Cache-Control": "no-store"]
+            guard let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers) else {
+                self.finish404(task, url: url)
+                return
+            }
+            task.didReceive(response)
+            task.didReceive(data)
+            task.didFinish()
+        }
+        guard let data = body, !data.isEmpty else {
+            reply(400, ["ok": false, "id": id, "message": "Empty save chunk upload."])
+            return
+        }
+        GlobalSaveVault.shared.storeChunkAsync(id: id, data: data) { result in
+            switch result {
+            case .success(let digest): reply(200, ["ok": true, "id": id, "sha256": digest])
+            case .failure(let error): reply(409, ["ok": false, "id": id, "message": error.localizedDescription])
             }
         }
     }

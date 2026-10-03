@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "source_tree_sha256": "cdd61c5f8352ebbadfb6be6acb3ea23144d18a9a8721d8a08bf71a38edfe0984",
+  "source_tree_sha256": "910529bad2e925abeb5cf01c900a86d3a0f9650e96e57096c3adda0f69f1b8cc",
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
@@ -32,7 +32,8 @@
     "build358_compact_receipts": "LOCAL_PASS; lossless receipts, 6,000-record purchase ceiling, no load-time lockout",
     "build358_fleet_row_codec_cache": "LOCAL_PASS; per-chunk write versions, segment-cached row encoding byte-identical to a full encode, rotating re-encode self-check, fast base64; real game save 283->69 ms at 30,000 assets",
     "build358_validation_classes": "LOCAL_PASS; Save Schema and Company Platform validate per class of rows (refs, groups, pattern prefix and digit count; progress/fuel/condition at class extremes) and find id collisions without per-row strings; equal to the per-row scan on 160 seeded corruption rounds; trusted validation 884->61 ms at 100,000 assets",
-    "build358_chunked_native_save": "LOCAL_PASS (native compile and vault tests verified by CI); native saves keep fleet records as 'chunks-v1' (4 MiB chunks, LZFSE files with SHA-256, uploaded before the commit that lists them, conservative collection), boot gate fetches chunks before app.js, chunked saves are never mirrored to WebStorage; purchase ceiling still 6,000 until per-asset id lists leave the JSON"
+    "build358_chunked_native_save": "CI_PASS (run 37083088387 on aa4616b: 152 gates, native vault chunk tests, unsigned iPhoneOS build); chunks upload as raw fetch POST bodies to gh://app (CI WebKit: 4 MiB intact in 34 ms) with a base64 bridge fallback",
+    "build358_codec_id_runs": "LOCAL_PASS; asset id lists (crew contracts, hiring log, receipts) saved as [-3,prefix,width,first,count] runs, verified per element, gh-shape-2; native save text at 100,000 assets 25.3 MB -> 1.66 MB"
   },
   "latest_direct_source_ci": {
     "run_id": 36956423617,
@@ -67,7 +68,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "claude/vibrant-planck-irbtw6",
     "based_on": "build357-wip@38b21bc",
-    "source_tree_sha256": "cdd61c5f8352ebbadfb6be6acb3ea23144d18a9a8721d8a08bf71a38edfe0984",
+    "source_tree_sha256": "910529bad2e925abeb5cf01c900a86d3a0f9650e96e57096c3adda0f69f1b8cc",
     "working_tree_clean": null
   },
   "point": "Build 358: air/sea dispatch fix, row-level simulation snapshots (no per-slice full-state copy), 3,000-aircraft airports with compact delivery receipts; RELEASE_GATE remains closed pending CI, physical iPhone profiling and owner approval."

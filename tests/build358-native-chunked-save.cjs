@@ -109,6 +109,27 @@ const rowsOf=json=>JSON.parse(json).fleet.rows;
     assert.equal(P.vaultChunkCount(),0,'the vault set is forgotten after a reset');
     return {slotUploads:slotOrder.filter(a=>a==='storeSaveChunk').length,resetUploads:resetAt};
   });
+  await test('chunks travel as raw fetch POST bodies to gh://app; a runtime without the route falls back to the bridge',async()=>{
+    // The page runs on gh://app in the app; the vault route answers {ok,id,sha256}.
+    const posted=[],previousFetch=s.fetch,previousLocation=s.location;let routeMissing=false;
+    s.location={protocol:'gh:'};
+    s.fetch=async(url,init)=>{
+      const id=decodeURIComponent(String(url).split('/save-chunk/')[1]||'');posted.push({url:String(url),method:init?.method,bytes:init?.body?.byteLength,isView:ArrayBuffer.isView(init?.body)});
+      if(routeMissing)return {status:404,ok:false,json:async()=>({})};
+      vault.chunks.set(id,Buffer.from(init.body.buffer,init.body.byteOffset,init.body.byteLength));
+      return {status:200,ok:true,json:async()=>({ok:true,id,sha256:crypto.createHash('sha256').update(init.body).digest('hex')})};
+    };
+    try{
+      P.forgetVaultChunks();resetLog();posted.length=0;await P.commitState(state,{storageKey:key}).native;
+      assert(posted.length>0&&posted.every(row=>row.method==='POST'&&row.isView&&row.url.startsWith('gh://app/save-chunk/')),'chunks posted as raw bytes');
+      assert.equal(uploads().length,0,'no base64 bridge upload when the route exists');
+      const loaded=CODEC.deserialize(vault.saves.at(-1),{resolveChunk:id=>vault.chunks.get(id)});
+      assert.deepEqual(new Uint8Array(loaded.fleet.rows),new Uint8Array(state.fleet.rows),'the posted chunks rebuild the saved rows');
+      routeMissing=true;P.forgetVaultChunks();resetLog();posted.length=0;await P.commitState(state,{storageKey:key}).native;
+      assert(posted.length>0&&uploads().length===posted.length,'a 404 sends each chunk over the bridge instead');
+      return {posted:posted.length};
+    }finally{s.fetch=previousFetch;s.location=previousLocation;}
+  });
   const passed=results.filter(r=>r.ok).length;
   console.log(JSON.stringify({suite:'build358-native-chunked-save',passed,total:results.length,results},null,2));
   if(passed!==results.length)process.exitCode=1;
