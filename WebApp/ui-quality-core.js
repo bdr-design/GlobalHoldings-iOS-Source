@@ -31,7 +31,11 @@
       if(actionable&&!btn.dataset?.interactionBound)issues.push({id:'UI_ACTION_UNBOUND',severity:'critical',panel,label:(btn.textContent||'').trim().slice(0,100)});
       if(btn.disabled&&!btn.dataset?.disabledReason&&!btn.title)issues.push({id:'UI_DISABLED_WITHOUT_REASON',severity:'warning',panel,label:(btn.textContent||'').trim().slice(0,100)});
     });
-    const box=root.getBoundingClientRect?.();if(box&&root.scrollWidth>root.clientWidth+3)issues.push({id:'UI_PANEL_HORIZONTAL_OVERFLOW',severity:'warning',panel,scrollWidth:root.scrollWidth,clientWidth:root.clientWidth});
+    // Build 358: the overflow check reads layout. Right after a panel's HTML is replaced that forces a synchronous layout
+    // (15 ms in Chromium, several times that on iPhone, on every drawer render); it now runs after the next paint, when
+    // layout is already computed.
+    const checkOverflow=()=>{if(!root.isConnected)return;const box=root.getBoundingClientRect?.();if(box&&root.scrollWidth>root.clientWidth+3){const row={id:'UI_PANEL_HORIZONTAL_OVERFLOW',severity:'warning',panel,scrollWidth:root.scrollWidth,clientWidth:root.clientWidth};record(state,row.id,row,row.severity);}};
+    if(typeof requestAnimationFrame==='function'&&typeof setTimeout==='function')requestAnimationFrame(()=>setTimeout(checkOverflow,0));else checkOverflow();
     issues.forEach(i=>record(state,i.id,i,i.severity));return issues;
   }
   function enhance(root,{panel,state}={}){

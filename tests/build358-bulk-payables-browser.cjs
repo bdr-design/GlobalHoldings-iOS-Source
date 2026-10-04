@@ -34,6 +34,14 @@ const COUNT=30;
     assert.equal(transferred.payables,0,'every payable is paid by transfer');assert.equal(transferred.issued,0,'no cheque is issued for a transfer');
     assert.equal(transferred.saveRevision,beforeTransfer.saveRevision+1,'one save for the whole batch');
     assert.equal(transferred.valid,true,'the save validates');
+    // A payroll payable (paid by transfer only) among the open payables is skipped with its reason; the other payables
+    // still get their cheques (it used to reject the whole batch, so no cheque was issued at all).
+    await page.evaluate(async()=>{await __AUDIT__.runAuthorizedDomainCommand('finance','accrue-payroll',{company:'group',amount:2500,note:'QA payroll due',number:'QA-MIX-PAY',dueDay:Math.floor(__GH_STATE__.simSeconds/86400),reportId:'PAYROLL-QA-MIX'},{silent:true});for(let i=0;i<2;i++)await __AUDIT__.runAuthorizedDomainCommand('finance','accrue-expense',{company:'group',amount:500+i,note:`QA mix ${i}`,counterparty:'QA Bulk Vendor LLC',taxable:false,number:`QA-MIX-${i}`},{silent:true});});
+    await click('.settle-all-payables[data-method="cheque"]');
+    const mixed=await page.evaluate(()=>{const s=__GH_STATE__;return {issued:(s.finance.cheques||[]).filter(ch=>ch.status==='صادر'&&String(ch.invoiceNumber||'').startsWith('QA-MIX-')).map(ch=>ch.invoiceNumber).sort(),payrollOpen:(s.finance.payables||[]).some(row=>row.number==='QA-MIX-PAY'),alert:(s.alerts||[]).find(text=>/صدرت .* شيكات/.test(text))||''};});
+    assert.deepEqual(mixed.issued,['QA-MIX-0','QA-MIX-1'],'the supplier payables get their cheques');
+    assert.equal(mixed.payrollOpen,true,'the payroll payable stays open for a transfer');
+    assert.match(mixed.alert,/رواتب تُصرف بتحويل فقط/,'the skipped payable and its reason are reported');
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({suite:'build358-bulk-payables-browser',documents:COUNT,issueMs,cashMs,transferMs}));
     console.log('BUILD358_BULK_PAYABLES_PASS');

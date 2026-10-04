@@ -26,6 +26,14 @@
   // One formatter for the whole session: constructing Intl.NumberFormat per call
   // cost tens of microseconds on every label, list row and departure.
   const ARABIC_INTEGER_FORMAT = new Intl.NumberFormat('ar-SA', {maximumFractionDigits: 0});
+  // Build 358: date formatters are built once; constructing an Intl formatter on every KPI render (every frame) was a
+  // measurable cost on iPhone.
+  const SIM_DATE_FORMATS=Object.freeze({
+    full:new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}),
+    compact:new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}),
+    month:new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{month:'long',year:'numeric',timeZone:'UTC'}),
+    cheque:new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'})
+  });
   const fmtNumber = value => ARABIC_INTEGER_FORMAT.format(value || 0);
   const fmtStars = value => { const full=Math.round(clamp(value,0,5)*2)/2; let s=''; for(let i=1;i<=5;i++){ s += i<=full?'★':(i-0.5===full?'⯨':'☆'); } return s; };
   const APP_VERSION = '3.0.0';
@@ -1600,7 +1608,8 @@
       // A route carries its mode's base capacity (24 aircraft or ships) until the fleet outgrows the route registry at
       // that capacity; then every route this dispatch uses carries the even share (GH_FLEET_CORE.requiredRouteCapacity),
       // with one spare route per origin for the per-origin rounding of the plan.
-      const fleet=window.GH_FLEET_CORE,baseCapacity=fleet.routeCapacity(type),nonTypeRoutes=draft.customRoutes.filter(route=>route.type!==type).length,availableRoutes=Math.max(0,window.GH_ROUTE_CORE.LIMITS.routes-nonTypeRoutes);
+      // Build 358 (million-asset routes): the mode plans within its own registry quota (GH_ROUTE_CORE.modeRouteBudget).
+      const fleet=window.GH_FLEET_CORE,baseCapacity=fleet.routeCapacity(type),modeBudget=window.GH_ROUTE_CORE.modeRouteBudget(draft,type),availableRoutes=modeBudget.planning;
       let stayingOnRoutes=0;for(const count of initialLoads.values())stayingOnRoutes+=count;
       const usableRoutes=Math.max(1,availableRoutes-originsById.size),capacity=fleet.requiredRouteCapacity(type,eligibleUnsorted.length+stayingOnRoutes,usableRoutes),minimumRoutes=Math.ceil(eligibleUnsorted.length/capacity);
       if(availableRoutes<minimumRoutes)throw new Error(`سعة سجل المسارات لا تكفي لتوزيع أسطول ${label} بأمان؛ المتاح ${availableRoutes} مسار والحد الأدنى المطلوب ${minimumRoutes}`);
@@ -1613,14 +1622,19 @@
       const registeredRouteById=new Map(registeredRoutes.map(route=>[route.id,route])),assignments=[],createdRoutes=[],diversity=newRouteDiversityLedger(),diversityRoutes=new Set();
       for(const row of routePlan.assignments){const asset=eligibleById.get(row.assetId),route=registeredRouteById.get(row.routeId),origin=originByAssetId.get(row.assetId);if(!asset||!route||!origin)throw new Error('فقد أصل أو مسار قائم أثناء تخطيط الشبكة');assignments.push({asset,route});if(!diversityRoutes.has(route.id)){const fromOrigin=sameUnderlyingFacilityFor(draft,origin.id,route.fromFacility),point=fromOrigin?route.route.at(-1):route.route[0];recordRouteDiversity(diversity,route.id,point,haversine(origin.coords,point));diversityRoutes.add(route.id);}}
       let createdCount=0;
-      for(const plannedGroup of routePlan.waitingGroups){
+      // New routes for the assets still waiting at each origin share the mode's free slots: the target load while the
+      // slots allow it, else a higher load per route (a new base never fails for want of registry slots).
+      let groupSlots;try{groupSlots=window.GH_ROUTE_CORE.allocateForBudget(window.GH_ROUTE_CORE.modeRouteBudget(draft,type),routePlan.waitingGroups.map(group=>group.assetIds.length),targetLoad,window.GH_ROUTE_CORE.LIMITS.fleetCapacity);}
+      catch(error){if(error.code==='route-mode-capacity')throw new Error(`حصة المسارات ${routeLabel} ممتلئة: ${error.needed} نقطة انطلاق تحتاج مسارًا جديدًا والمتاح ${error.free}؛ احذف مسارات ${routeLabel} غير مستخدمة`);throw error;}
+      for(const [groupIndex,plannedGroup] of routePlan.waitingGroups.entries()){
         const group={origin:originsById.get(plannedGroup.originId),assets:plannedGroup.assetIds.map(id=>eligibleById.get(id))};if(!group.origin||group.assets.some(asset=>!asset))throw new Error('فقد أصل أو نقطة انطلاق أثناء تخطيط الشبكة');
         group.assets.sort((a,b)=>assetRangeKm(a)-assetRangeKm(b)||String(a.id).localeCompare(String(b.id)));
-        for(let offset=0;offset<group.assets.length;offset+=targetLoad){
-          const members=group.assets.slice(offset,offset+targetLoad),seedAsset=members[0],choice=await chooseDiverseWorldDestination({source,origin:group.origin,asset:seedAsset,target:draft,routes,ledger:diversity,selectionKey:`${type}-fleet:${group.origin.id}:${offset}`,workerClient:routeWorker}),entity=choice?.candidate;
+        const groupLoad=Math.max(1,groupSlots[groupIndex].load||targetLoad),groupCapacity=Math.max(capacity,groupLoad);
+        for(let offset=0;offset<group.assets.length;offset+=groupLoad){
+          const members=group.assets.slice(offset,offset+groupLoad),seedAsset=members[0],choice=await chooseDiverseWorldDestination({source,origin:group.origin,asset:seedAsset,target:draft,routes,ledger:diversity,selectionKey:`${type}-fleet:${group.origin.id}:${offset}`,workerClient:routeWorker}),entity=choice?.candidate;
           if(!entity)throw new Error(`${seedAsset.name}: لا توجد وجهة ${routeLabel} آمنة ومتنوعة ضمن مدى مجموعة الأسطول`);
           const destination=ensurePublicRouteEndpoint(entity,draft),route=buildPublicRoute(seedAsset,group.origin,destination,draft);if(!route)throw new Error(`${seedAsset.name}: تعذر بناء هندسة المسار ${routeLabel}`);
-          if(capacity>baseCapacity)route.fleetCapacity=capacity;
+          if(groupCapacity>baseCapacity)route.fleetCapacity=groupCapacity;
           if(members.some(asset=>!routeFitsAsset(asset,route)))throw new Error(`${seedAsset.name}: المسار المختار لا يناسب كل أصول الدفعة`);
           dispatch('routes','create',{route});routes[route.id]=route;createdRoutes.push(route);recordRouteDiversity(diversity,entity.key,entity.coords,choice.direct);for(const asset of members)assignments.push({asset,route});
           createdCount++;if(createdCount%3===0)await yieldFleetPlanning();
@@ -1689,11 +1703,14 @@
     if(activeDrawerPanel==='routes')renderRouteCenterInto();
     const timer=setTimeout(()=>controller.abort(),180000);
     try{
-      const roadHardCapacity=window.GH_FLEET_CORE.routeCapacity('road'),nonRoadRouteCount=snapshot.customRoutes.filter(route=>route.type!=='road').length,availableRoadRoutes=Math.max(0,window.GH_ROUTE_CORE.LIMITS.routes-nonRoadRouteCount),minimumRoadRoutes=Math.ceil(preview.length/roadHardCapacity);if(availableRoadRoutes<minimumRoadRoutes)throw new Error('سعة سجل المسارات لا تكفي لتوزيع أسطول الشاحنات بأمان؛ احذف مسارات غير مستخدمة أولًا');
-      const targetRouteLoad=window.GH_FLEET_CORE.automaticRouteTargetLoad('road',preview.length,availableRoadRoutes);
-      const routeCandidates=Object.values(runtime).filter(route=>!BASE_ROUTE_IDS.has(route.id)||operationalRouteIds('road').has(route.id)),origins=preview.map(asset=>routeOriginForAsset(asset,state,runtime,facilityIndex)),workerInput={assets:preview,routes:routeCandidates,origins,assetOwners:preview.map(asset=>assetOwnerCompanyId(asset)),routeOwners:routeCandidates.map(route=>routeOwnerCompanyId(route)),facilities:facilityRows.map(({id,iata,icao,code})=>({id,iata,icao,code})),initialLoads:Object.fromEntries(initialLoadByRoute),routeCount:snapshot.customRoutes.length,seed:snapshot.determinism?.seed||1,targetRouteLoad,routeCapacity:roadHardCapacity};
+      // Build 358 (million-asset routes): trucks plan within the road quota; when the fleet outgrows it at the base load
+      // (64 per route), new routes carry the even share (fleetCapacity) instead of the dispatch being refused.
+      const roadBaseCapacity=window.GH_FLEET_CORE.routeCapacity('road'),roadBudget=window.GH_ROUTE_CORE.modeRouteBudget(state,'road'),availableRoadRoutes=roadBudget.planning;let stayingOnRoad=0;for(const load of initialLoadByRoute.values())stayingOnRoad+=load;
+      if(!availableRoadRoutes)throw new Error('حصة مسارات الشاحنات ممتلئة؛ احذف مسارات برية غير مستخدمة أولًا');
+      const roadHardCapacity=window.GH_FLEET_CORE.requiredRouteCapacity('road',preview.length+stayingOnRoad,availableRoadRoutes),targetRouteLoad=window.GH_FLEET_CORE.automaticRouteTargetLoad('road',preview.length,availableRoadRoutes,roadHardCapacity),maxRouteCapacity=window.GH_ROUTE_CORE.LIMITS.fleetCapacity;
+      const routeCandidates=Object.values(runtime).filter(route=>!BASE_ROUTE_IDS.has(route.id)||operationalRouteIds('road').has(route.id)),origins=preview.map(asset=>routeOriginForAsset(asset,state,runtime,facilityIndex)),workerInput={assets:preview,routes:routeCandidates,origins,assetOwners:preview.map(asset=>assetOwnerCompanyId(asset)),routeOwners:routeCandidates.map(route=>routeOwnerCompanyId(route)),facilities:facilityRows.map(({id,iata,icao,code})=>({id,iata,icao,code})),initialLoads:Object.fromEntries(initialLoadByRoute),routeCount:snapshot.customRoutes.length,seed:snapshot.determinism?.seed||1,targetRouteLoad,routeCapacity:roadHardCapacity,baseRouteCapacity:roadBaseCapacity,routeBudget:roadBudget,maxRouteCapacity};
       const workerPlan=await planRoadRoutesInWorker(workerInput,{signal:controller.signal,onProgress:updateRoadPlanning});
-      const plan=workerPlan||await window.GH_ROAD_PLANNER.plan({assets:preview,routes:routeCandidates,routeCount:snapshot.customRoutes.length,seed:snapshot.determinism?.seed||1,signal:controller.signal,onProgress:updateRoadPlanning,targetRouteLoad,
+      const plan=workerPlan||await window.GH_ROAD_PLANNER.plan({assets:preview,routes:routeCandidates,routeCount:snapshot.customRoutes.length,seed:snapshot.determinism?.seed||1,signal:controller.signal,onProgress:updateRoadPlanning,targetRouteLoad,newRouteCapacity:roadHardCapacity,routeBudget:roadBudget,maxRouteCapacity,
         originFor:asset=>routeOriginForAsset(asset,state,runtime,facilityIndex),
         routeCapacity:route=>window.GH_FLEET_CORE.routeCapacity(route),
         initialLoad:route=>initialLoadByRoute.get(route.id)||0,
@@ -1994,15 +2011,20 @@
     updateMapStatus();renderWorldInfrastructureMarkers();lastMapStructureSignature=mapStructureSignature();updateMarkerPositions(true);
   }
 
-  let mapStatusCache={assetKey:'',ownerKey:'',mobilityKey:'',moving:0,idle:0,turn:0,routed:0,ownedFacilities:0,mobilityMoving:0,mobilityVehicles:0};
+  let mapStatusCache={assetKey:'',ownerKey:'',mobilityKey:'',moving:0,idle:0,turn:0,routed:0,ownedFacilities:0,mobilityMoving:0,mobilityVehicles:0,countedAt:0,countedRevision:null,countedAssets:null,pendingRecount:false};
   function updateMapStatus(){
     if(mapCategoryVisible('infrastructure')&&['airport','port'].includes(state.activeFilter))return;
     const revision=Math.max(0,Math.floor(Number(state.saveRevision)||0)),assetLength=window.GH_FLEET_DATA.size(state),mapRevision=Number(window.GH_MAP_STRUCTURE_REVISION)||0,assetKey=`${revision}:${mapRevision}:${assetLength}`,ownerKey=`${revision}:${mapRevision}`;
     if(mapStatusCache.assetKey!==assetKey){
-      const summary=window.GH_MAP_ASSET_STATUS_SUMMARY;
-      if(summary&&summary.saveRevision===revision&&summary.mapRevision===mapRevision&&summary.assetCount===assetLength){mapStatusCache.moving=summary.moving;mapStatusCache.idle=summary.idle;mapStatusCache.turn=summary.turn;}
-      else{const phases=window.GH_FLEET_DATA.countByPhase(state);mapStatusCache.moving=phases.get('moving')||0;mapStatusCache.idle=phases.get('idle')||0;mapStatusCache.turn=phases.get('turnaround')||0;}
-      mapStatusCache.assetKey=assetKey;
+      {
+        // Build 358: a HUD line. The fleet is counted (one column read) when the save or the fleet size changes; after a
+        // simulation slice alone it is recounted at most every 2 s, keeping the last counts in between. (The former
+        // engine summary carried no phase counts any more and printed "NaN في الحركة · undefined في المحطات".)
+        const nowMs=Date.now(),sliceOnly=mapStatusCache.countedRevision===revision&&mapStatusCache.countedAssets===assetLength;
+        if(sliceOnly&&nowMs-(mapStatusCache.countedAt||0)<2000){mapStatusCache.pendingRecount=true;}
+        else{const phases=window.GH_FLEET_DATA.countByPhase(state);mapStatusCache.moving=phases.get('moving')||0;mapStatusCache.idle=phases.get('idle')||0;mapStatusCache.turn=phases.get('turnaround')||0;mapStatusCache.countedAt=nowMs;mapStatusCache.countedRevision=revision;mapStatusCache.countedAssets=assetLength;mapStatusCache.pendingRecount=false;}
+      }
+      if(!mapStatusCache.pendingRecount)mapStatusCache.assetKey=assetKey;
     }
     if(mapStatusCache.ownerKey!==ownerKey){mapStatusCache.routed=operationalRoutes('road').filter(r=>r.routingSource).length;mapStatusCache.ownedFacilities=getDynamicFacilities().filter(f=>f?.owned).length;mapStatusCache.ownerKey=ownerKey;}
     const mobilityRows=Array.isArray(state.mobility?.vehicles)?state.mobility.vehicles:[],mobilityRevision=window.GH_MOBILITY_CORE?.mapStructureRevision?.()||0,mobilityKey=`${revision}:${mobilityRevision}:${mobilityRows.length}`;
@@ -2142,12 +2164,12 @@
   function simDate(){ return new Date(SIM_START + state.simSeconds*1000); }
   function formatSimDate(){
     const d=simDate();
-    const date=new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{day:'2-digit',month:'short',year:'numeric',timeZone:'UTC'}).format(d);
+    const date=SIM_DATE_FORMATS.full.format(d);
     const hh=String(d.getUTCHours()).padStart(2,'0'), mm=String(d.getUTCMinutes()).padStart(2,'0');
     return `${date} · ${hh}:${mm}`;
   }
   function formatSimDateCompact(){
-    return new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}).format(simDate());
+    return SIM_DATE_FORMATS.compact.format(simDate());
   }
   const calendarDayStartSeconds=date=>Math.max(0,Math.floor((Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate())-SIM_START)/1000));
   const calendarKey=date=>`${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}-${String(date.getUTCDate()).padStart(2,'0')}`;
@@ -2174,7 +2196,7 @@
     const minMonth=Date.UTC(current.getUTCFullYear(),current.getUTCMonth(),1),maxMonth=Date.UTC(max.getUTCFullYear(),max.getUTCMonth(),1),viewMs=calendarViewMonth.getTime();
     if(viewMs<minMonth)calendarViewMonth=new Date(minMonth);if(viewMs>maxMonth)calendarViewMonth=new Date(maxMonth);
     const y=calendarViewMonth.getUTCFullYear(),m=calendarViewMonth.getUTCMonth();
-    if($('simCalendarMonthLabel'))$('simCalendarMonthLabel').textContent=new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{month:'long',year:'numeric',timeZone:'UTC'}).format(calendarViewMonth);
+    if($('simCalendarMonthLabel'))$('simCalendarMonthLabel').textContent=SIM_DATE_FORMATS.month.format(calendarViewMonth);
     if($('simCalendarCurrent'))$('simCalendarCurrent').textContent=formatSimDate();
     const firstDow=new Date(Date.UTC(y,m,1)).getUTCDay(),offset=(firstDow+1)%7,days=new Date(Date.UTC(y,m+1,0)).getUTCDate(),cells=[];
     for(let i=0;i<offset;i++)cells.push('<span class="sim-cal-blank" aria-hidden="true"></span>');
@@ -2426,7 +2448,7 @@
   }
 
   function simulationCalendarDate(day=state.lastFinancialDay){return new Date(SIM_START+Math.max(0,Math.floor(Number(day)||0))*86400000);}
-  function payrollCalendarMeta(day=state.lastFinancialDay){const date=simulationCalendarDate(day),monthKey=`${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}`;return {date,monthKey,dayOfMonth:date.getUTCDate(),label:new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{month:'long',year:'numeric',timeZone:'UTC'}).format(date)};}
+  function payrollCalendarMeta(day=state.lastFinancialDay){const date=simulationCalendarDate(day),monthKey=`${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,'0')}`;return {date,monthKey,dayOfMonth:date.getUTCDate(),label:(payrollCalendarMeta.monthFormat||=new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{month:'long',year:'numeric',timeZone:'UTC'})).format(date)};}
   function executivePayrollCompany(id,target=state){
     const sector=({H4:'air',H2:'sea',H1:'road',H6:'road',H8:'power',H11:'power',H9:'bank',H10:'bank'})[id];
     return sector?resolveOperationalCompanyForSector(target,sector):'group';
@@ -2519,21 +2541,21 @@
       // 7-day terms and daily operating costs are billed by suppliers on 7-day terms; this close collects and pays the
       // rows due today (finance settle-due-terms), so receivables and payables stay visible in a solvent group.
       const PAYMENT_TERMS_DAYS=7;
-      phase('simulation.finance-day.settle-due-terms',()=>dispatchSystemCommand({state},'finance','settle-due-terms',{day:state.lastFinancialDay},{actor:'financial-close'}));
-      yield 'finance-day.settle-due-terms';
-      phase('simulation.finance-day.operating-revenue-payments',()=>{for(const companyId of companyIds){
+      // Build 358 (iPhone diagnostic: 13-19 ms and 10-18 ms single steps): due terms, operating revenue and payroll
+      // each sign several documents per company, so each company is its own step.
+      for(const company of [...new Set([...companyIds,'group'])]){phase('simulation.finance-day.settle-due-terms',()=>dispatchSystemCommand({state},'finance','settle-due-terms',{day:state.lastFinancialDay,company},{actor:'financial-close'}));yield 'finance-day.settle-due-terms';}
+      for(const companyId of companyIds){phase('simulation.finance-day.operating-revenue-payments',()=>{
         const terms=companyId!==bankCompany?{termsDays:PAYMENT_TERMS_DAYS}:{},taxable=companyTaxable(state,companyId),revenue=Math.max(0,Number(cashOperatingRevenue[companyId])||0),expense=Math.max(0,Number(cashOperatingExpense[companyId])||0),contractRows=contractDailyRows.filter(row=>row.companyId===companyId),contractRevenue=contractRows.reduce((sum,row)=>sum+Math.max(0,Number(row.revenue)||0),0);
         for(const row of contractRows)if(row.revenue>0)dispatchSystemCommand({state},'finance','credit',{company:companyId,amount:row.revenue,note:`إيراد عقد يومي · ${row.name}`,taxable,...terms,reference:`CONTRACT-COLLECT-${row.id}-${state.lastFinancialDay}`,counterparty:row.client,sourceRefs:[row.id,`CONTRACT-DAY-${row.id}-${state.lastFinancialDay}`]},{actor:'financial-close'});
         const residualRevenue=Math.max(0,revenue-contractRevenue);if(residualRevenue>0)dispatchSystemCommand({state},'finance','credit',{company:companyId,amount:residualRevenue,note:`إيراد يومي ${typeName(companyId)} · منشآت/تشغيل غير تعاقدي`,taxable,...terms,reference:`OPER-COLLECT-${companyId}-${state.lastFinancialDay}`,periodDay:state.lastFinancialDay,sourceRefs:[`OPER-${companyId}-${state.lastFinancialDay}`]},{actor:'financial-close'});
         const billed=expense>0&&companyId!==bankCompany&&postAccruedExpense(companyId,expense,`مصروف يومي ${typeName(companyId)} · فاتورة مورد آجلة (عقود/منشآت/إيجارات)`,'فاتورة مورد آجلة',state.lastFinancialDay+PAYMENT_TERMS_DAYS,`${companyId.toUpperCase()}-AP-${state.lastFinancialDay}`,'مصروف تشغيلي',{taxable,paymentTerms:PAYMENT_TERMS_DAYS,counterparty:`موردو ${typeName(companyId)} المعتمدون`});
         if(expense>0&&!billed){const available=companyOperatingBalance(companyId),paid=Math.min(available,expense);if(paid>0)spendCompanySystem(companyId,paid,`مصروف يومي ${typeName(companyId)} · عقود/منشآت/إيجارات`,'قيد تشغيلي يومي',taxable);if(paid<expense){const due=expense-paid,number=`${companyId.toUpperCase()}-ACC-${state.lastFinancialDay}`;postAccruedExpense(companyId,due,'مصروف تشغيلي مستحق مرحّل من الإقفال اليومي','قيد مستحق',state.lastFinancialDay+7,number,'مصروف تشغيلي');}}
-      }});
-      yield 'finance-day.operating-revenue-payments';
+      });yield 'finance-day.operating-revenue-payments';}
       const closedSectorProfit=Object.fromEntries(companyIds.map(companyId=>[companyId,(Number(tripProfit[companyId])||0)+(Number(daily[companyId])||0)]));
       if(payrollDueToday)for(const companyId of companyIds)closedSectorProfit[companyId]-=Number(payrollPlan[companyId]?.amount)||0;
       const companyDaily={};for(const companyId of companyIds){const tripGross=Math.max(0,Number(tripRevenue[companyId])||0),operatingGross=Math.max(0,Number(operatingRevenue[companyId])||0),companyNet=Number(closedSectorProfit[companyId])||0;companyDaily[companyId]={tripRevenue:tripGross,operatingRevenue:operatingGross,grossRevenue:tripGross+operatingGross,expenses:Math.max(0,tripGross+operatingGross-companyNet),net:companyNet,tripCount:Math.max(0,Number(tripCount[companyId])||0)};}
       const overhead=42500+window.GH_FLEET_DATA.size(state)*80;let realismCost=0;
-      if(window.GH_REALISM&&typeof window.GH_REALISM.onDayStages==='function'){const realismDay=window.GH_REALISM.onDayStages(state,state.lastFinancialDay);for(;;){const step=phase('simulation.finance-day.realism-close',()=>realismDay.next());if(step.done){realismCost=step.value;break;}yield 'finance-day.realism-close';}}
+      if(window.GH_REALISM&&typeof window.GH_REALISM.onDayStages==='function'){const realismDay=window.GH_REALISM.onDayStages(state,state.lastFinancialDay);for(;;){let stage='';const step=phase(()=>`simulation.finance-day.realism-close${stage?`:${stage}`:''}`,()=>{const out=realismDay.next();stage=out.done?'final':String(out.value||'');return out;});if(step.done){realismCost=step.value;break;}yield 'finance-day.realism-close';}}
       else realismCost=phase('simulation.finance-day.realism-close',()=>window.GH_REALISM?window.GH_REALISM.onDay(state,state.lastFinancialDay):0);
       yield 'finance-day.realism-close';
       const groupCost=overhead+advancedCost+realismCost,groupPayrollExpense=payrollDueToday?payrollPlan.group.amount:0;
@@ -2546,10 +2568,9 @@
       const net=Object.values(closedSectorProfit).reduce((a,b)=>a+(Number(b)||0),0)-groupCost-groupPayrollExpense;phase('simulation.finance-day.daily-close-postings',()=>{dispatchSystemCommand({state},'finance','record-daily-close',{day:state.lastFinancialDay,sectors:closedSectorProfit,companies:companyDaily,net},{actor:'financial-close'});dispatchSystemCommand({state},'corporate','adjust-group-value',{delta:net*.03},{actor:'financial-close'});runOperationsCycle(net,fleetConditionTotal);});
       // رواتب تقويمية في تاريخ 27؛ إذا وصل حفظ قديم بعد التاريخ تُنفّذ مرة واحدة للشهر نفسه.
       if(payrollDueToday){
-        phase('simulation.finance-day.payroll-payments',()=>{
         const reportId=`PAYROLL-${payrollMeta.monthKey}`,payrollItems=[...companyIds,'group'].map(company=>payrollPlan[company]).filter(row=>row&&row.amount>0),lines=[];
-        for(const item of payrollItems){
-          const company=item.company,amount=item.amount;if(amount<=0)continue;
+        for(const item of payrollItems){phase('simulation.finance-day.payroll-payments',()=>{
+          const company=item.company,amount=item.amount;if(amount<=0)return;
           const note=`مسير رواتب يوم 27 · ${companyFinanceName(company)}`,opening=companyOperatingBalance(company);
           let autoFunding=0;
           if(company!=='group'&&opening<amount){
@@ -2561,7 +2582,8 @@
           const due=Math.max(0,amount-paid);
           if(due>0){const number=`PAY-${company.toUpperCase()}-${payrollMeta.monthKey}`,doc=dispatchSystemCommand({state},'finance','accrue-payroll',{company,amount:due,note:`رواتب مستحقة يوم 27 · ${companyFinanceName(company)}`,number,dueDay:state.lastFinancialDay,reportId},{actor:'payroll-scheduler'}).result;dueRef=doc?.number||number;}
           lines.push({company,companyName:companyFinanceName(company),amount,paid,due,autoFunding,paymentRef,dueRef,headcount:item.headcount});
-        }
+        });yield 'finance-day.payroll-payments';}
+        phase('simulation.finance-day.payroll-report',()=>{
         const report=dispatchSystemCommand({state},'finance','record-payroll-report',{report:{id:reportId,day:state.lastFinancialDay,month:payrollMeta.label,monthKey:payrollMeta.monthKey,calendarDate:payrollMeta.date.toISOString().slice(0,10),lines}},{actor:'payroll-scheduler'}).result;
         pushAlert(report?.due>0?`صدر تقرير رواتب يوم 27: صُرف ${fmtMoney(report.paid)} وسُجل ${fmtMoney(report.due)} كرواتب مستحقة، بلا انتظار اعتماد.`:`صدر تقرير رواتب يوم 27 وصُرف كامل المسير بقيمة ${fmtMoney(report?.paid||0)} عبر التحويلات.`);
         });
@@ -2833,10 +2855,7 @@
         if(!transaction.committed)return {committed:false,retry:true,reason:transaction.reason||'transaction-rejected'};
         const completedBoundary=TIME.boundaryAt(completeTo);
         if(completedBoundary.day!==null){const maintenance=window.GH_FLEET_DATA.maintain(state,completedBoundary.day);if(maintenance.compacted){window.GH_MAP_STRUCTURE_REVISION=((Number(window.GH_MAP_STRUCTURE_REVISION)||0)+1)>>>0;}}
-        if(out.events||journal.saleIds.length||journal.retiredRouteIds.length){
-          const mapRevision=((Number(window.GH_MAP_STRUCTURE_REVISION)||0)+1)>>>0;window.GH_MAP_STRUCTURE_REVISION=mapRevision;
-          window.GH_MAP_ASSET_STATUS_SUMMARY=Object.freeze({saveRevision:Number(state.saveRevision)||0,mapRevision,assetCount:window.GH_FLEET_DATA.size(state),events:out.events});
-        }
+        if(out.events||journal.saleIds.length||journal.retiredRouteIds.length)window.GH_MAP_STRUCTURE_REVISION=((Number(window.GH_MAP_STRUCTURE_REVISION)||0)+1)>>>0;
         for(const routeId of new Set(journal.retiredRouteIds))if(!BASE_ROUTE_IDS.has(routeId)&&!(state.customRoutes||[]).some(route=>route.id===routeId))delete routeTemplates[routeId];
         for(const id of new Set(journal.saleIds))queueAssetSaleFinalize(id);
         return {committed:true,completeTo,boundary:completedBoundary,events:out.events,order};
@@ -3858,7 +3877,7 @@
     if(rest)parts.push(belowThousand(rest));return parts.join(' و');
   }
   function amountInWords(amount,currency='USD'){const numeric=Math.max(0,Number(amount)||0),whole=Math.floor(numeric),cents=Math.round((numeric-whole)*100),unit=currency==='SAR'?'ريال سعودي':'دولار أمريكي';return `فقط ${arabicNumberWords(whole)} ${unit}${cents?` و${arabicNumberWords(cents)} سنتًا`:''} لا غير`;}
-  function chequeDateFromSeconds(seconds){return new Intl.DateTimeFormat('ar-SA-u-ca-gregory',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:'UTC'}).format(new Date(SIM_START+Math.max(0,Number(seconds)||0)*1000));}
+  function chequeDateFromSeconds(seconds){return SIM_DATE_FORMATS.cheque.format(new Date(SIM_START+Math.max(0,Number(seconds)||0)*1000));}
   function chequeDateFromDay(day){return chequeDateFromSeconds(Math.max(0,Number(day)||0)*86400);}
   function transferDirection(x,company){const fromKey=companyKeyForAccount(x.from),toKey=companyKeyForAccount(x.to);if(fromKey&&toKey){if(fromKey===company&&toKey!==company)return {key:'outgoing',label:'حوالة صادرة',watermark:'OUTGOING'};if(toKey===company&&fromKey!==company)return {key:'incoming',label:'حوالة واردة',watermark:'INCOMING'};return {key:'internal',label:'تحويل داخلي',watermark:'INTERNAL'};}if(fromKey===company)return {key:'outgoing',label:'حوالة صادرة',watermark:'OUTGOING'};if(toKey===company)return {key:'incoming',label:'حوالة واردة',watermark:'INCOMING'};return {key:'internal',label:'إشعار تحويل مصرفي',watermark:'TRANSFER'};}
   // Financial documents resolve the current legal-entity identity at render time. No historical logo snapshot is persisted.
@@ -3934,7 +3953,7 @@
       view=['payables','receivables','taxes','debts'].includes(view)?view:'payables';const selector=`<article class="list-item finance-compact-filter"><div><h3>الالتزامات والتسويات</h3><p>الذمم والضرائب والديون في سجل واضح واحد؛ لا تُخلط مع المستندات.</p></div><label>نوع الالتزام<select id="financeObligationType"><option value="payables" ${view==='payables'?'selected':''}>ذمم علينا</option><option value="receivables" ${view==='receivables'?'selected':''}>ذمم لنا</option><option value="taxes" ${view==='taxes'?'selected':''}>الضرائب والتسويات</option><option value="debts" ${view==='debts'?'selected':''}>الديون والتمويل</option></select></label></article>`;
       if(view==='receivables')body=`${selector}${ar.length?`<article class="list-item"><div class="list-item-head"><h3>الذمم المدينة</h3><span class="tag">${ar.length}</span></div>${ar.slice(0,80).map(x=>`<div class="department-row"><span>${esc(x.number)}<small>${esc(formalFinanceParty(x.counterparty,x.company||'group','customer'))} · ${esc(x.note)} · ${fmtMoney(x.total||x.amount)}</small></span><button class="secondary-btn collect-receivable" data-number="${x.number}">تحصيل الذمة</button></div>`).join('')}</article>`:'<div class="empty">لا توجد ذمم مدينة مفتوحة.</div>'}`;
       if(view==='payables'){const openCount=openPayablesFor(validCompany).length,issuedCount=issuedChequesFor(validCompany).length;body=`${selector}${ap.length?`<article class="list-item"><div class="list-item-head"><div><h3>الذمم الدائنة</h3><p>كل ذمة تُسدد بتحويل واحد أو بشيك واحد؛ لا يوجد تنفيذ مزدوج.</p></div><span class="tag">${ap.length}</span></div><div class="action-row bulk-payables-actions"><button class="secondary-btn settle-all-payables" data-method="transfer" data-company="${esc(validCompany)}" ${openCount?'':'disabled'}>سداد الكل بتحويل بنكي (${fmtNumber(openCount)})</button><button class="secondary-btn settle-all-payables" data-method="cheque" data-company="${esc(validCompany)}" ${openCount?'':'disabled'}>إصدار شيكات للكل (${fmtNumber(openCount)})</button><button class="primary-btn settle-all-cheques" data-company="${esc(validCompany)}" ${issuedCount?'':'disabled'}>صرف جميع الشيكات (${fmtNumber(issuedCount)})</button></div>${ap.slice(0,80).map(x=>{const issued=(state.finance.cheques||[]).find(ch=>ch.invoiceNumber===x.number&&ch.status==='صادر');return `<div class="department-row payable-method-row"><span>${esc(x.number)}<small>${esc(formalFinanceParty(x.counterparty,x.company||'group','supplier'))} · ${esc(x.note)} · ${fmtMoney(x.total||x.amount)}</small></span>${issued?`<div><span class="tag">شيك صادر · ${esc(issued.id)}</span><button class="secondary-btn settle-cheque-now" data-id="${esc(issued.id)}">صرف الشيك</button></div>`:`<div class="action-row compact"><button class="secondary-btn settle-payable-transfer" data-number="${x.number}">تحويل بنكي</button><button class="primary-btn issue-payable-cheque" data-number="${x.number}">إصدار شيك</button></div>`}</div>`;}).join('')}</article>`:'<div class="empty">لا توجد ذمم دائنة مفتوحة.</div>'}`;}
-      if(view==='taxes'){const due=periods.filter(x=>x.status==='مستحق'),dueTotal=due.reduce((n,x)=>n+(Number(x.amount)||0),0),taxTypes=(validCompany==='all'?companyFinanceTypes(state,{openedOnly:true}):[validCompany]).filter((v,i,a)=>a.indexOf(v)===i),accrualRows=taxTypes.map(type=>({type,preview:taxAccrualPreview(type),due:periods.filter(x=>(x.company||'group')===type&&x.status==='مستحق').reduce((n,x)=>n+(Number(x.amount)||0),0),paid:Number(companyBook(type).taxPaid)||0})),accruedTotal=accrualRows.reduce((n,x)=>n+x.preview.net,0),recentPeriods=[...periods].sort((a,b)=>(Number(b.dueDay)||0)-(Number(a.dueDay)||0)).slice(0,24);body=`${selector}<article class="list-item tax-obligation-card"><div class="list-item-head"><div><h3>الضرائب والتسويات</h3><p>تظهر الضريبة المتراكمة مباشرة حتى قبل نهاية الشهر، ثم تتحول عند الإقفال إلى التزام مستحق قابل للسداد.</p></div><span class="tag ${dueTotal?'negative':accruedTotal?'':'positive'}">مستحق ${fmtMoney(dueTotal)}</span></div><div class="finance-clean-kpis tax-live-kpis"><div><span>متراكم قبل الإقفال</span><b>${fmtMoney(accruedTotal)}</b></div><div><span>مستحق رسمي</span><b>${fmtMoney(dueTotal)}</b></div><div><span>فترات مسجلة</span><b>${periods.length}</b></div><div><span>تسويات محفوظة</span><b>${taxSettlements.length}</b></div></div>${accrualRows.map(row=>`<div class="tax-company-live-row"><span>${companyLogoMarkup(row.type,'tiny')}<b>${esc(companyFinanceName(row.type))}</b><small>مخرجات ${fmtMoney(row.preview.output)} · مدخلات ${fmtMoney(row.preview.input)} · رصيد مرحّل ${fmtMoney(row.preview.credit)}</small></span><strong>متراكم ${fmtMoney(row.preview.net)}<small>مستحق ${fmtMoney(row.due)}</small>${row.preview.balance<0?`<small>رصيد ضريبي دائن ${fmtMoney(-row.preview.balance)} يُخصم من ضريبة المبيعات القادمة</small>`:''}</strong>${row.due>0?`<button class="primary-btn pay-taxes" data-company="${row.type}">تسديد الضريبة بشيك</button>`:''}</div>`).join('')}<p class="section-mini">إذا لم ينتهِ الشهر بعد يظهر المتراكم فقط. بعد الإقفال الشهري يظهر الالتزام الرسمي وموعد الاستحقاق تلقائيًا.</p></article><article class="list-item"><div class="list-item-head"><div><h3>الفترات الضريبية</h3><p>حتى الفترات ذات الرصيد صفر تبقى ظاهرة حتى تعرف أن الإقفال الضريبي تم فعلًا.</p></div><span class="tag">${recentPeriods.length}</span></div>${recentPeriods.length?recentPeriods.map(x=>`<div class="spec-row"><span>${esc(x.period)}<small>${esc(x.id)} · ${esc(companyFinanceName(x.company||'group'))} · الاستحقاق يوم ${Number(x.dueDay)+1}</small></span><b>${fmtMoney(x.amount)} · ${esc(x.status||'—')}</b></div>`).join(''):'<p class="section-mini">لا توجد فترة مقفلة بعد؛ سيظهر أول إقفال عند نهاية الشهر التقويمي.</p>'}</article>${taxSettlements.length?`<div class="doc-art-grid">${taxSettlements.slice(0,30).map(taxSettlementArt).join('')}</div>`:'<div class="empty">لا توجد تسويات ضريبية محفوظة بعد.</div>'}`;}
+      if(view==='taxes'){const due=periods.filter(x=>x.status==='مستحق'),dueTotal=due.reduce((n,x)=>n+(Number(x.amount)||0),0),taxTypes=(validCompany==='all'?companyFinanceTypes(state,{openedOnly:true}):[validCompany]).filter((v,i,a)=>a.indexOf(v)===i),accrualRows=taxTypes.map(type=>({type,preview:taxAccrualPreview(type),due:periods.filter(x=>(x.company||'group')===type&&x.status==='مستحق').reduce((n,x)=>n+(Number(x.amount)||0),0),paid:Number(companyBook(type).taxPaid)||0})),accruedTotal=accrualRows.reduce((n,x)=>n+x.preview.net,0),recentPeriods=[...periods].sort((a,b)=>(Number(b.dueDay)||0)-(Number(a.dueDay)||0)).slice(0,24);body=`${selector}<article class="list-item tax-obligation-card"><div class="list-item-head"><div><h3>الضرائب والتسويات</h3><p>تظهر الضريبة المتراكمة مباشرة حتى قبل نهاية الشهر، ثم تتحول عند الإقفال إلى التزام مستحق قابل للسداد.</p></div><span class="tag ${dueTotal?'negative':accruedTotal?'':'positive'}">مستحق ${fmtMoney(dueTotal)}</span></div><div class="finance-clean-kpis tax-live-kpis"><div><span>متراكم قبل الإقفال</span><b>${fmtMoney(accruedTotal)}</b></div><div><span>مستحق رسمي</span><b>${fmtMoney(dueTotal)}</b></div><div><span>فترات مسجلة</span><b>${periods.length}</b></div><div><span>تسويات محفوظة</span><b>${taxSettlements.length}</b></div></div>${accrualRows.map(row=>`<div class="tax-company-live-row"><span>${companyLogoMarkup(row.type,'tiny')}<b>${esc(companyFinanceName(row.type))}</b><small>مخرجات ${fmtMoney(row.preview.output)} · مدخلات ${fmtMoney(row.preview.input)} · رصيد مرحّل ${fmtMoney(row.preview.credit)}</small></span><strong>متراكم ${fmtMoney(row.preview.net)}<small>مستحق ${fmtMoney(row.due)}</small></strong>${row.preview.balance<0?`<small class="tax-credit-note">رصيد ضريبي دائن ${fmtMoney(-row.preview.balance)} يُخصم من ضريبة المبيعات القادمة</small>`:''}${row.due>0?`<button class="primary-btn pay-taxes" data-company="${row.type}">تسديد الضريبة بشيك</button>`:''}</div>`).join('')}<p class="section-mini">إذا لم ينتهِ الشهر بعد يظهر المتراكم فقط. بعد الإقفال الشهري يظهر الالتزام الرسمي وموعد الاستحقاق تلقائيًا.</p></article><article class="list-item"><div class="list-item-head"><div><h3>الفترات الضريبية</h3><p>حتى الفترات ذات الرصيد صفر تبقى ظاهرة حتى تعرف أن الإقفال الضريبي تم فعلًا.</p></div><span class="tag">${recentPeriods.length}</span></div>${recentPeriods.length?recentPeriods.map(x=>`<div class="spec-row"><span>${esc(x.period)}<small>${esc(x.id)} · ${esc(companyFinanceName(x.company||'group'))} · الاستحقاق يوم ${Number(x.dueDay)+1}</small></span><b>${fmtMoney(x.amount)} · ${esc(x.status||'—')}</b></div>`).join(''):'<p class="section-mini">لا توجد فترة مقفلة بعد؛ سيظهر أول إقفال عند نهاية الشهر التقويمي.</p>'}</article>${taxSettlements.length?`<div class="doc-art-grid">${taxSettlements.slice(0,30).map(taxSettlementArt).join('')}</div>`:'<div class="empty">لا توجد تسويات ضريبية محفوظة بعد.</div>'}`;}
       if(view==='debts'){const openTotal=debtRecords.reduce((n,x)=>n+(Number(x.outstanding)||0),0);body=`${selector}<article class="list-item"><div class="list-item-head"><div><h3>سجل الديون</h3><p>كل دين يُسدد من بطاقته وبالمبلغ الذي تحدده. السداد يخصم مرة واحدة من حساب الشركة ويصدر قيدًا وإشعار تسوية مرتبطين بنفس الدين.</p></div><span class="tag ${openTotal?'negative':'positive'}">قائم ${fmtMoney(openTotal)}</span></div></article>${debtRecords.length?debtRecords.slice(0,40).map(debtRecordCard).join(''):'<div class="empty">لا توجد التزامات تمويلية مسجلة.</div>'}${debtSettlements.length?`<article class="list-item"><h3>تسويات الدين المنفذة</h3></article><div class="doc-art-grid">${debtSettlements.slice(0,30).map(debtSettlementArt).join('')}</div>`:''}`;}
     }
     if(tab==='profits')body=renderProfitFlow(validCompany);
@@ -4151,18 +4170,23 @@
   function bulkPayableCompany(filter){return filter&&filter!=='all'?filter:'all';}
   function openPayablesFor(filter){const company=bulkPayableCompany(filter),issued=new Set((state.finance.cheques||[]).filter(ch=>ch.status==='صادر'&&ch.invoiceNumber).map(ch=>ch.invoiceNumber));return (state.finance.payables||[]).filter(d=>(company==='all'||(d.company||'group')===company)&&!issued.has(d.number));}
   function issuedChequesFor(filter){const company=bulkPayableCompany(filter);return (state.finance.cheques||[]).filter(ch=>ch.status==='صادر'&&(company==='all'||(ch.company||'group')===company));}
+  function payableSkipText(reasons={}){const labels={'payroll-cheque-not-supported':'رواتب تُصرف بتحويل فقط','cheque-already-issued':'لها شيك صادر','insufficient-cash':'الرصيد لا يكفي','cheque-linked-invoice-not-payable':'فاتورتها مسددة','cheque-linked-amount-mismatch':'مبلغها لا يطابق فاتورتها','cheque-linked-company-mismatch':'شركتها لا تطابق فاتورتها','cheque-linked-payable-not-found':'بلا فاتورة'};return Object.entries(reasons).map(([key,count])=>`${fmtNumber(count)} ${labels[key]||key}`).join('، ')||'—';}
   async function settleAllPayables(method,filter){
     const numbers=openPayablesFor(filter).map(row=>row.number);if(!numbers.length){notice('لا توجد ذمم مفتوحة لهذا الإجراء.');return null;}
     const stayPanel=activeDrawerPanel,stayArg=activeDrawerArg,stayScroll=$('drawerBody')?.scrollTop||0;
     const result=await runAuthorizedCompositeCommand(`settle-all-payables:${method}`,({state:draft,dispatch})=>{
       const F=window.GH_FINANCE_CORE,free=draft.godMoney&&draft.infiniteMoney;let count=0,amount=0,skipped=0;
+      const reasons={};
       for(const number of numbers){const item=(draft.finance.payables||[]).find(row=>row.number===number);if(!item)continue;const due=Number(item.total??item.amount)||0;
-        if(method==='transfer'&&!free&&F.operating(draft,F.requireCompany(draft,item.company||'group'))<due){skipped++;continue;}
+        if(method==='transfer'&&!free&&F.operating(draft,F.requireCompany(draft,item.company||'group'))<due){skipped++;reasons['insufficient-cash']=(reasons['insufficient-cash']||0)+1;continue;}
+        // Build 358: a payable that cannot take a cheque (payroll is paid by transfer only, a cheque already issued...)
+        // is skipped with its reason; it never rejects the whole batch.
+        const blocker=method==='cheque'?F.payableChequeBlocker(draft,number):null;if(blocker){skipped++;reasons[blocker]=(reasons[blocker]||0)+1;continue;}
         const out=dispatch('finance','settle-payable',{number,method}).result;count++;amount+=Number(out?.amount)||due;}
-      if(!count)throw new Error('لا يكفي رصيد الحساب الجاري لسداد أي ذمة الآن');
-      return {count,amount,skipped};
+      if(!count)throw new Error(method==='cheque'?`لا توجد ذمة يمكن إصدار شيك لها الآن (${payableSkipText(reasons)})`:'لا يكفي رصيد الحساب الجاري لسداد أي ذمة الآن');
+      return {count,amount,skipped,reasons};
     },{afterCommit:()=>{updateKpis();if(stayPanel){openDrawer(stayPanel,stayArg);requestAnimationFrame(()=>{if($('drawerBody'))$('drawerBody').scrollTop=stayScroll;});}}});
-    if(result)pushAlert(method==='cheque'?`صدرت ${fmtNumber(result.count)} شيكات بقيمة ${fmtMoney(result.amount)} لسداد الذمم المفتوحة؛ تبقى كل ذمة مفتوحة حتى صرف شيكها.`:`سُددت ${fmtNumber(result.count)} ذمة بتحويلات بنكية بقيمة ${fmtMoney(result.amount)}${result.skipped?`؛ بقيت ${fmtNumber(result.skipped)} ذمة لعدم كفاية الرصيد`:''}.`);
+    if(result)pushAlert(method==='cheque'?`صدرت ${fmtNumber(result.count)} شيكات بقيمة ${fmtMoney(result.amount)} لسداد الذمم المفتوحة؛ تبقى كل ذمة مفتوحة حتى صرف شيكها.${result.skipped?` لم يصدر شيك لـ ${fmtNumber(result.skipped)} ذمة: ${payableSkipText(result.reasons)}.`:''}`:`سُددت ${fmtNumber(result.count)} ذمة بتحويلات بنكية بقيمة ${fmtMoney(result.amount)}${result.skipped?`؛ بقيت ${fmtNumber(result.skipped)} ذمة لعدم كفاية الرصيد`:''}.`);
     return result;
   }
   async function settleAllIssuedCheques(filter){

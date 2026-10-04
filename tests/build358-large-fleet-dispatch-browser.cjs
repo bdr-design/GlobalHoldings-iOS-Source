@@ -8,7 +8,7 @@
 // their capacity, the save validates, and the fleet flies (completed trips, no faults) over three simulated hours.
 const assert=require('node:assert/strict'),path=require('node:path');
 const {chromium}=require('playwright'),{boot}=require('./helpers/local-dom-app');
-const QTY=6000,SITES=['OMDB','EGLL'];
+const QTY=6000,SITES=['OMDB','EGLL'],GH_QUOTA_AIR=320;
 
 // The native vault as GH_PERSISTENCE sees it: chunks and commits acknowledged by events.
 function installVault(){
@@ -67,7 +67,7 @@ function installVault(){
     assert.equal(state.underway,QTY,`every aircraft departs or holds a slot: ${JSON.stringify(state)}`);
     assert.equal(state.unknown,0,'every route an aircraft uses is registered');
     assert.ok(state.routes<=state.registry,`routes fit the registry: ${state.routes}`);
-    assert.ok(state.maxUsers>24&&state.maxCapacity>24,`routes carry more than the base 24: ${JSON.stringify(state)}`);
+    assert.ok(state.routes<=GH_QUOTA_AIR,`the dispatch stays within the air quota: ${JSON.stringify(state)}`);
     assert.equal(state.over,0,'no route carries more than its capacity');
     assert.equal(state.valid,true,`the save validates: ${state.errors}`);
     assert.ok(state.saves>0,'the native vault holds the committed save');
@@ -82,8 +82,30 @@ function installVault(){
     assert.equal(flown.faults,0,'no simulation faults');
     assert.ok(flown.trips>0&&flown.moving>0,`the fleet flies: ${JSON.stringify(flown)}`);
     assert.equal(flown.valid,true,'the save still validates');
+
+    // Build 358 (million-asset routes), from the iPhone diagnostic: after the big dispatch, 1,000 aircraft bought at a new
+    // base were refused ("route-capacity": the dispatch had spread over nearly every registry slot). The mode quota keeps
+    // a reserve, the new base's routes share it and carry the raised load, and every aircraft departs.
+    const newBase=await page.evaluate(async()=>{
+      const a=__AUDIT__,s=()=>__GH_STATE__,airport=GH_WORLD_DATA.airports.find(r=>r[0]==='KJFK');
+      await a.runAuthorizedDomainCommand('facilities','create',{facility:{id:'QA-air-KJFK',name:'QA Airport KJFK',kind:'airport-base',company:'air',ownerCompanyId:'air',owned:true,sourceKey:'air:KJFK',code:airport[1],icao:airport[0],iata:airport[1],city:airport[3]||'—',country:String(airport[5]),coords:[airport[6],airport[7]]},bucket:'globalBases'},{silent:true});
+      const model=[...GH_ASSET_CATALOG.air.used].sort((x,y)=>(x.leaseMonthly||0)-(y.leaseMonthly||0)||x.price-y.price)[0];
+      if(!await a.buyAsset('air','used',model.id,'lease',1000,'QA-air-KJFK',true,'QA-LARGE-KJFK','air'))return {error:'purchase'};
+      return {size:GH_FLEET_DATA.size(s()),budget:GH_ROUTE_CORE.modeRouteBudget(s(),'air')};
+    });
+    assert.equal(newBase.size,QTY+1000,`bought: ${JSON.stringify(newBase)}`);
+    await page.evaluate(()=>__AUDIT__.openDrawer('routes','air'));
+    await button.waitFor({state:'visible',timeout:30000});const samplesBefore=await page.evaluate(()=>(window.GH_APP_RUNTIME_METRICS?.snapshot?.().durable?.samples||[]).length);
+    await page.locator('.dispatch-international-network[data-company="air"]').first().click();
+    await page.waitForFunction(n=>{const d=window.GH_APP_RUNTIME_METRICS?.snapshot?.().durable;return (d?.samples||[]).length>n&&/bulk-shared-departure/.test(d.last?.name||'');},samplesBefore,{timeout:300000});
+    const second=await page.evaluate(()=>{const s=__GH_STATE__,d=window.GH_APP_RUNTIME_METRICS.snapshot().durable.last;let atNewBase=0,routedNew=0;const newRoutes=new Set();GH_FLEET_DATA.scan(s,['baseFacility','routeId'],r=>{if(r.baseFacility==='QA-air-KJFK'){atNewBase++;if(r.routeId){routedNew++;newRoutes.add(r.routeId);}}});const raised=(s.customRoutes||[]).filter(r=>newRoutes.has(r.id)).map(r=>GH_FLEET_CORE.routeCapacity(r));const budget=GH_ROUTE_CORE.modeRouteBudget(s,'air');return {committed:d.committed,atNewBase,routedNew,newRoutes:newRoutes.size,maxNewCapacity:Math.max(0,...raised),budget,alert:(s.alerts||[])[0],valid:GH_SAVE_SCHEMA.validate(s).ok};});
+    assert.equal(second.committed,true,`the new base dispatch commits: ${JSON.stringify(second)}`);
+    assert.equal(second.routedNew,1000,`every new aircraft has a route: ${JSON.stringify(second)}`);
+    assert.ok(second.maxNewCapacity>24,`the new base's routes carry more than the base 24 (the quota reserve is shared, not spent): ${JSON.stringify(second)}`);
+    assert.ok(second.budget.used<=second.budget.quota&&second.budget.free>0,`the air quota keeps free slots for later bases: ${JSON.stringify(second.budget)}`);
+    assert.equal(second.valid,true,'the save validates');
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({suite:'build358-large-fleet-dispatch-browser',aircraft:QTY,dispatchMs,routes:state.routes,maxCapacity:state.maxCapacity,maxUsers:state.maxUsers,after3h:{moving:flown.moving,trips:flown.trips},environment:`Chromium local DOM; in-page native vault stand-in; ${path.basename(__filename)}`}));
+    console.log(JSON.stringify({suite:'build358-large-fleet-dispatch-browser',aircraft:QTY,dispatchMs,routes:state.routes,maxCapacity:state.maxCapacity,maxUsers:state.maxUsers,after3h:{moving:flown.moving,trips:flown.trips},newBase:{routed:second.routedNew,airRoutes:second.budget.used,free:second.budget.free},environment:`Chromium local DOM; in-page native vault stand-in; ${path.basename(__filename)}`}));
     console.log('BUILD358_LARGE_FLEET_DISPATCH_PASS');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

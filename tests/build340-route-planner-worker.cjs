@@ -12,7 +12,7 @@ function fixtures(count){
 }
 
 async function compareAtScale(count){
-  const {origin,route,assets}=fixtures(count),input={assets,routes:[route],origins:assets.map(()=>origin),assetOwners:assets.map(()=> 'road'),routeOwners:['road'],facilities:[{id:'BASE-1'},{id:'BASE-2'}],initialLoads:{},routeCount:1,seed:7,targetRouteLoad:count+1,routeCapacity:count+1,yieldEvery:512,intervalMs:0};
+  const {origin,route,assets}=fixtures(count),input={assets,routes:[route],origins:assets.map(()=>origin),assetOwners:assets.map(()=> 'road'),routeOwners:['road'],facilities:[{id:'BASE-1'},{id:'BASE-2'}],initialLoads:{},routeCount:1,seed:7,targetRouteLoad:count+1,routeCapacity:count+1,baseRouteCapacity:count+1,yieldEvery:512,intervalMs:0};
   const provider={roadBatch:async()=>{throw new Error('existing route must avoid external routing');}},options={provider,yieldControl:async()=>{}};
   const workerResult=await workerCore.plan(input,options);
   const mainResult=await globalThis.GH_ROAD_PLANNER.plan({assets,routes:[route],originFor:()=>origin,usable:()=>true,provider,routeCount:1,seed:7,targetRouteLoad:count+1,routeCapacity:()=>count+1,initialLoad:()=>0,yieldEvery:512,intervalMs:0,yieldControl:async()=>{}});
@@ -22,7 +22,7 @@ async function compareAtScale(count){
 
 async function testValidationAndCancellation(){
   assert.throws(()=>workerCore.validate({assets:[],routes:[],origins:[{}],facilities:[]}),/road-worker-input-invalid/);
-  const {origin,route,assets}=fixtures(256),controller=new AbortController(),input={assets,routes:[route],origins:assets.map(()=>origin),assetOwners:assets.map(()=> 'road'),routeOwners:['road'],facilities:[{id:'BASE-1'},{id:'BASE-2'}],initialLoads:{},routeCount:1,seed:1,targetRouteLoad:300,routeCapacity:300,yieldEvery:16,intervalMs:0};let yields=0;
+  const {origin,route,assets}=fixtures(256),controller=new AbortController(),input={assets,routes:[route],origins:assets.map(()=>origin),assetOwners:assets.map(()=> 'road'),routeOwners:['road'],facilities:[{id:'BASE-1'},{id:'BASE-2'}],initialLoads:{},routeCount:1,seed:1,targetRouteLoad:300,routeCapacity:300,baseRouteCapacity:300,yieldEvery:16,intervalMs:0};let yields=0;
   await assert.rejects(workerCore.plan(input,{provider:{roadBatch:async()=>{throw new Error('unexpected network call');}},signal:controller.signal,yieldControl:async()=>{if(++yields===2)controller.abort();}}),/أُلغي حساب المسارات/);
   assert.equal(yields,2);
 }

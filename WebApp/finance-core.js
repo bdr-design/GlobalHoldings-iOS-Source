@@ -326,11 +326,25 @@ function collectReceivable(s,p){
 // supplier payable with payment terms is paid by transfer when the company's account covers it; one it cannot cover
 // stays open for the player (no overdraft). Rows without terms are never touched here.
 function settleDueTerms(s,p={}){
- const day=Math.floor(num(p.day??Math.floor(now(s)/86400))),out={day,collected:0,collectedAmount:0,paid:0,paidAmount:0,unpaid:0};
- const due=rows=>rows.filter(row=>row?.autoSettle===true&&Number.isFinite(Number(row.dueDay))&&Number(row.dueDay)<=day);
+ const day=Math.floor(num(p.day??Math.floor(now(s)/86400))),out={day,...(p.company?{company:requireCompany(s,p.company)}:{}),collected:0,collectedAmount:0,paid:0,paidAmount:0,unpaid:0};
+ const company=p.company?requireCompany(s,p.company):null,due=rows=>rows.filter(row=>row?.autoSettle===true&&Number.isFinite(Number(row.dueDay))&&Number(row.dueDay)<=day&&(!company||requireCompany(s,row.company)===company));
  withCollectionBatch(s,()=>{for(const row of due(s.finance.receivables)){const inv=financeRowByNumber(s,'invoices',row.number),reference=inv?.sourceRef&&!findTransferByReference(s,inv.sourceRef)?inv.sourceRef:undefined;const r=collectReceivable(s,{number:row.number,company:row.company,reference});out.collected++;out.collectedAmount+=num(r.amount);}});
- for(const row of due(s.finance.payables)){const t=requireCompany(s,row.company),a=num(row.total??row.amount);if(!hasFunds(s,t,a)){out.unpaid++;continue;}const r=settlePayable(s,{number:row.number,method:'transfer'});out.paid++;out.paidAmount+=num(r.amount);}
+ const chequed=new Set((s.finance.cheques||[]).filter(ch=>ch?.status==='صادر'&&ch.invoiceNumber).map(ch=>String(ch.invoiceNumber)));
+ // A payable with an outstanding cheque is settled when that cheque is cashed, never also by transfer.
+ for(const row of due(s.finance.payables)){if(chequed.has(String(row.number))){out.chequePending=(out.chequePending||0)+1;continue;}const t=requireCompany(s,row.company),a=num(row.total??row.amount);if(!hasFunds(s,t,a)){out.unpaid++;continue;}const r=settlePayable(s,{number:row.number,method:'transfer'});out.paid++;out.paidAmount+=num(r.amount);}
  return out;
+}
+// Build 358: why a cheque cannot be issued for a payable (null when it can), checked before a bulk command dispatches,
+// so one such payable is skipped with its reason instead of rejecting the whole batch.
+function payableChequeBlocker(s,number){
+ const n=String(number||''),item=s.finance.payables.find(x=>x.number===n);if(!item)return 'payable-not-found';
+ const inv=findFinanceDocument(s,'invoices',x=>x.number===n);if(!inv)return 'cheque-linked-payable-not-found';
+ if(inv.payrollShortfall===true||item.payrollShortfall===true)return 'payroll-cheque-not-supported';
+ if(inv.kind!=='مصروف'||['مدفوعة','مسددة','محصلة'].includes(inv.status))return 'cheque-linked-invoice-not-payable';
+ if((s.finance.cheques||[]).some(ch=>ch?.status==='صادر'&&String(ch.invoiceNumber||'')===n))return 'cheque-already-issued';
+ let t;try{t=requireCompany(s,item.company);}catch{return 'cheque-linked-company-mismatch';}if(requireCompany(s,inv.company)!==t)return 'cheque-linked-company-mismatch';
+ const a=num(item.total??item.amount);if(a<=0||Math.abs(num(inv.total??inv.amount)-a)>.01)return 'cheque-linked-amount-mismatch';
+ return null;
 }
 function settlePayable(s,p){
   const n=String(p.number||''),item=s.finance.payables.find(x=>x.number===n);if(!item)throw new Error('payable-not-found');
@@ -631,5 +645,5 @@ function execute(ctx,cmd,p={},meta={}){
   }
  }finally{activeExecutionMeta=previousMeta;activeEnsureTarget=previousEnsureTarget;activeEnsureComplete=previousEnsureComplete;}
 }
-const API={VERSION,zeroRateFleetPurchaseVat,FLEET_PURCHASE_NOTE,COMPANY_METRIC_KEYSPACE:'company-instance-id/v1',annualPerformance,TYPES,companyIds,supportsCompany,requireCompany,companyMetricMap,collectionProfile,ensure,makeBook,book,operating,total,budget,remaining,lineRemaining,lineFor,canSpend,consumeBudget,reserveBudget,consumeReserved,releaseReserved,reconcile,journal,invoice,issueInvoice,payByCheque,performance,monthlyStatement,calendarMonthForDay,centralTreasuryPolicy,intercompanyLoanSnapshot,closeVatPeriod,withCollectionBatch,execute};globalThis.GH_FINANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('finance',API);if(globalThis.window&&window!==globalThis)window.GH_FINANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+const API={VERSION,payableChequeBlocker,zeroRateFleetPurchaseVat,FLEET_PURCHASE_NOTE,COMPANY_METRIC_KEYSPACE:'company-instance-id/v1',annualPerformance,TYPES,companyIds,supportsCompany,requireCompany,companyMetricMap,collectionProfile,ensure,makeBook,book,operating,total,budget,remaining,lineRemaining,lineFor,canSpend,consumeBudget,reserveBudget,consumeReserved,releaseReserved,reconcile,journal,invoice,issueInvoice,payByCheque,performance,monthlyStatement,calendarMonthForDay,centralTreasuryPolicy,intercompanyLoanSnapshot,closeVatPeriod,withCollectionBatch,execute};globalThis.GH_FINANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('finance',API);if(globalThis.window&&window!==globalThis)window.GH_FINANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

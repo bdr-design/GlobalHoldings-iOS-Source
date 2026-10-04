@@ -161,7 +161,8 @@
   // count runs in the order of the former per-mode lists (row order), so the results are the same. The flight counters
   // are written through a column writer (each column journaled once, not each row); the row is no longer checkpointed
   // first (that only re-based progress, fuel and condition on today's time without changing what a view presents).
-  const OPS_SLICE_ROWS=8192,OPS_FIELDS=Object.freeze(['assetMode','type','specs','lastTrip','condition','purchasePrice','phase','flightHours','flightCycles','nextCheckHours']);
+  // Build 358 (iPhone diagnostic, 36,000 assets: ~10 ms per 8,192-row step): 4,096 rows per daily fleet step.
+  const OPS_SLICE_ROWS=4096,OPS_FIELDS=Object.freeze(['assetMode','type','specs','lastTrip','condition','purchasePrice','phase','flightHours','flightCycles','nextCheckHours']);
   function opsVisitor(state){
     const fleet=fleetData(),r=migrate(state),write=fleet.columnWriter(state,['flightHours','flightCycles','nextCheckHours']),demand=clamp((r.economy.airDemand||100)/100,.65,1.35),bunker=Math.max(1,r.economy.bunker);
     let ask=0,rpk=0,rev=0,cost=0,fuel=0,movingAir=0,airCondition=0,maintReserve=0,maintExposure=0,airCount=0,maintenanceDue=0,aog=0;

@@ -39,7 +39,22 @@ const DAY=86400;
   assert.equal(short.unpaid,1);assert.ok(state.finance.payables.some(row=>row.number===big.number),'the uncovered payable stays open');
   assert.equal(s.GH_SAVE_SCHEMA.validate(state).ok,true);
   assert.equal((s.GH_INTEGRITY_CORE.check(state).issues||[]).filter(row=>row.severity==='critical').length,0);
-  console.log('PASS finance core: 7-day terms, due-day settlement, uncovered payable kept open');
+  // A payable with an outstanding cheque is settled when the cheque is cashed, never also by transfer on its due day.
+  state.godMoney=true;state.infiniteMoney=true;
+  const chequedBill=command('finance','accrue-expense',{company:'air',amount:7000,note:'فاتورة بشيك',dueDay:19,number:'AIR-AP-CHQ',paymentTerms:7,counterparty:'موردو QA'});
+  assert.equal(F.payableChequeBlocker(state,chequedBill.number),null,'a supplier payable can take a cheque');
+  const issued=command('finance','settle-payable',{number:chequedBill.number,method:'cheque'});
+  assert.equal(F.payableChequeBlocker(state,chequedBill.number),'cheque-already-issued');
+  state.simSeconds=19*DAY;const dueOut=command('finance','settle-due-terms',{day:19});
+  assert.equal(dueOut.chequePending,1,'the chequed payable is left to its cheque');
+  assert.ok(state.finance.payables.some(row=>row.number===chequedBill.number),'still open until the cheque is cashed');
+  const cashed=command('finance','settle-cheque',{id:issued.chequeId});assert.equal(cashed.settled,true,'the cheque cashes (its payable is still there)');
+  assert.equal(state.finance.payables.some(row=>row.number===chequedBill.number),false);
+  // Payroll payables are paid by transfer only: the bulk cheque command skips them instead of failing.
+  const payroll=command('finance','accrue-payroll',{company:'air',amount:3000,note:'رواتب مستحقة',number:'PAY-AIR-QA',dueDay:19,reportId:'PAYROLL-QA'});
+  assert.equal(F.payableChequeBlocker(state,payroll.number),'payroll-cheque-not-supported');
+  assert.equal(F.payableChequeBlocker(state,'NO-SUCH'),'payable-not-found');
+  console.log('PASS finance core: 7-day terms, due-day settlement, uncovered payable kept open, cheque-pending payables, cheque blockers');
 }
 
 (async()=>{

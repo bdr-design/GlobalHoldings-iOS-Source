@@ -4,7 +4,12 @@
   const ROUTE_TYPES=Object.freeze(['air','sea','road']);
   const fleetData=()=>{const api=globalThis.GH_FLEET_DATA||(typeof require==='function'?require('./fleet-access-core.js'):null);if(!api)throw new Error('fleet-data-access-unavailable');return api;};
   // fleetCapacity: the most assets one route may carry (Build 358; GH_FLEET_CORE.routeCapacity reads it per mode).
-  const LIMITS=Object.freeze({routes:240,endpoints:360,cacheEntries:160,pointsPerRoute:2048,routeBytes:256*1024,cacheBytes:512*1024,fleetCapacity:8192});
+  // Build 358 (million-asset routes): the registry holds 960 routes in three mode quotas of 320 (air, sea, road), so one
+  // mode can never take the slots another needs (a large air dispatch used to leave road fleets no route at all). A
+  // route carries up to fleetCapacity (8,192) assets, so each mode reaches 320 x 8,192 = 2.6 million assets. Dispatch
+  // plans within its mode's free slots (allocateRouteSlots) and raises the per-route load instead of rejecting.
+  const LIMITS=Object.freeze({routes:960,endpoints:1440,cacheEntries:160,pointsPerRoute:2048,routeBytes:256*1024,cacheBytes:512*1024,fleetCapacity:8192});
+  const MODE_ROUTE_QUOTA=Object.freeze({air:320,sea:320,road:320});
   const NEAR_DUPLICATE=Object.freeze({sampleCount:33,endpointKm:2.5,meanKm:1.25,maxKm:3,lengthRatio:1.04});
   const clone=value=>globalThis.structuredClone?structuredClone(value):JSON.parse(JSON.stringify(value));
   const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -168,11 +173,41 @@
       if(endpoint?.routeEndpoint&&!stillUsed)delete state.routeEndpoints[endpointId];
     }
   }
+  // The routes a mode holds, its quota and the slots it may still create (bounded by the whole registry too).
+  function modeRouteBudget(state,mode){
+    const routes=Array.isArray(state?.customRoutes)?state.customRoutes:[],quota=MODE_ROUTE_QUOTA[mode]||LIMITS.routes;let used=0;
+    for(const route of routes)if(routeMode(route)===mode)used++;
+    const free=Math.max(0,Math.min(quota-used,LIMITS.routes-routes.length)),reserve=Math.ceil(quota*.1);
+    // planning: the routes a dispatch spreads its fleet over. It leaves a tenth of the quota free for bases added later
+    // (their assets need routes from their own origin); once the free slots are within that reserve they all count.
+    return {mode,quota,used,free,reserve,planning:used+(free>reserve?free-reserve:free)};
+  }
+  // New routes for groups of assets waiting at their origins (one group per origin; a group needs at least one route):
+  // the preferred load per route while the free slots allow it, else the slots shared out by group size and the load
+  // raised to fit, never above maxLoad. Returns per group {routes, load}; throws when even that cannot fit.
+  function allocateRouteSlots(groupSizes,freeSlots,preferredLoad,maxLoad=LIMITS.fleetCapacity){
+    const sizes=(Array.isArray(groupSizes)?groupSizes:[]).map(n=>Math.max(0,Math.floor(Number(n)||0))),free=Math.max(0,Math.floor(Number(freeSlots)||0)),preferred=Math.max(1,Math.floor(Number(preferredLoad)||1)),max=Math.max(preferred,Math.floor(Number(maxLoad)||preferred));
+    const active=sizes.filter(n=>n>0).length,wanted=sizes.map(n=>n?Math.ceil(n/preferred):0),wantedTotal=wanted.reduce((a,b)=>a+b,0);
+    if(wantedTotal<=free)return sizes.map((n,i)=>({routes:wanted[i],load:n?Math.min(preferred,n):0}));
+    if(active>free){const error=new Error('route-mode-capacity');error.code='route-mode-capacity';error.needed=active;error.free=free;throw error;}
+    const total=sizes.reduce((a,b)=>a+b,0),spare=free-active,slots=sizes.map(n=>n?Math.min(Math.ceil(n/preferred),1+Math.floor(spare*n/total)):0);
+    return sizes.map((n,i)=>{if(!n)return {routes:0,load:0};const load=Math.ceil(n/slots[i]);if(load>max){const error=new Error('route-load-capacity');error.code='route-load-capacity';throw error;}return {routes:Math.ceil(n/load),load};});
+  }
+  // The new-route allocation for one dispatch within a mode's budget: the free slots down to the reserve, or half of what
+  // is free when that is more (at least one route per waiting origin), so later bases still find slots; the whole
+  // remainder only when nothing less fits.
+  function allocateForBudget(budget,groupSizes,preferredLoad,maxLoad=LIMITS.fleetCapacity){
+    const free=Math.max(0,Math.floor(Number(budget?.free)||0)),reserve=Math.max(0,Math.floor(Number(budget?.reserve)||0)),active=(groupSizes||[]).filter(n=>Number(n)>0).length;
+    const share=Math.max(active,free-reserve,Math.ceil(free/2));
+    try{return allocateRouteSlots(groupSizes,Math.min(free,share),preferredLoad,maxLoad);}
+    catch(error){if(error.code!=='route-load-capacity'||share>=free)throw error;return allocateRouteSlots(groupSizes,free,preferredLoad,maxLoad);}
+  }
   function execute(ctx,command,payload={}){
     const state=ensure(ctx.state||ctx);
     if(command==='create'||command==='create-with-cache'){
       if(state.customRoutes.length>=LIMITS.routes)throw new Error('route-capacity');
       const route=canonicalRoute(payload.route,state),existing=conflict(state.customRoutes,route);
+      if(modeRouteBudget(state,routeMode(route)).free<=0)throw new Error('route-mode-capacity');
       if(existing)throw new Error(existing.code);
       state.customRoutes.push(route);
       const cache=command==='create-with-cache'?cacheGeometry(state,{id:route.id,route:route.route,distanceKm:payload.distanceKm??route.distanceKm,durationSeconds:payload.durationSeconds??route.tripSeconds}):null;
@@ -222,6 +257,6 @@
     if(command==='cache-geometry'){const before=JSON.stringify(state.routeCache[payload.id]||null),entry=cacheGeometry(state,payload);if(before!==JSON.stringify(entry))bumpRoutesRevision(state);return entry;}
     throw new Error(`Unknown route command: ${command}`);
   }
-  const API=Object.freeze({VERSION,ROUTE_TYPES,LIMITS,NEAR_DUPLICATE,ensure,validPoint,splitAtDateline,routeMode,routeOwnerCompanyId,validateRouteOwnership,validateRoute,canonicalRoute,signature,sample,corridorMetrics,conflict,execute});
+  const API=Object.freeze({VERSION,ROUTE_TYPES,LIMITS,MODE_ROUTE_QUOTA,modeRouteBudget,allocateRouteSlots,allocateForBudget,NEAR_DUPLICATE,ensure,validPoint,splitAtDateline,routeMode,routeOwnerCompanyId,validateRouteOwnership,validateRoute,canonicalRoute,signature,sample,corridorMetrics,conflict,execute});
   globalThis.GH_ROUTE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('routes',API);if(globalThis.window&&window!==globalThis)window.GH_ROUTE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

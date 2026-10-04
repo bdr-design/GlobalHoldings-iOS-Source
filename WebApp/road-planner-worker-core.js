@@ -13,7 +13,7 @@
     return Boolean((a.iata&&a.iata===b.iata)||(a.icao&&a.icao===b.icao)||(a.code&&a.code===b.code));
   }
   function validate(input){
-    if(!input||!Array.isArray(input.assets)||input.assets.length>20000||!Array.isArray(input.routes)||input.routes.length>500||!Array.isArray(input.origins)||input.origins.length!==input.assets.length||!Array.isArray(input.facilities)||input.facilities.length>10000)throw new TypeError('road-worker-input-invalid');
+    if(!input||!Array.isArray(input.assets)||input.assets.length>20000||!Array.isArray(input.routes)||input.routes.length>1000||!Array.isArray(input.origins)||input.origins.length!==input.assets.length||!Array.isArray(input.facilities)||input.facilities.length>10000)throw new TypeError('road-worker-input-invalid');
     if(input.assets.some(asset=>!asset?.id)||input.routes.some(route=>!route?.id||!Array.isArray(route.route)))throw new TypeError('road-worker-row-invalid');
     return true;
   }
@@ -34,7 +34,7 @@
     const ownerForRoute=route=>ownersByRoute.get(route.id)||'';
     return planner.plan({
       assets:input.assets,routes:input.routes,originFor:asset=>origins.get(asset.id),provider,seed:input.seed,routeCount:input.routeCount,
-      targetRouteLoad:input.targetRouteLoad,routeCapacity:()=>input.routeCapacity,initialLoad:route=>loadRows[route.id]||0,
+      targetRouteLoad:input.targetRouteLoad,routeCapacity:route=>Math.max(input.baseRouteCapacity||64,Number.isSafeInteger(route?.fleetCapacity)?route.fleetCapacity:0),newRouteCapacity:input.routeCapacity,routeBudget:input.routeBudget,maxRouteCapacity:input.maxRouteCapacity,initialLoad:route=>loadRows[route.id]||0,
       signal:options.signal,onProgress:options.onProgress,intervalMs:input.intervalMs,yieldEvery:input.yieldEvery,yieldControl:options.yieldControl,
       usable:(asset,route)=>{
         const range=Number(asset.specs?.rangeKm)||0,leg=Number(route.roadNetworkDistanceKm)||Number(route.distanceKm)||routeLength(route.route);

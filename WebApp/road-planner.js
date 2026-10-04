@@ -18,10 +18,10 @@
   // bounded fleet slot pool; callers still revalidate and commit every asset in
   // one durable command. This prevents route-count and save-size growth from
   // scaling linearly with the number of purchased trucks.
-  async function plan({assets,routes,originFor,usable,provider=globalThis.GH_MAP_PROVIDER,seed=1,routeCount=routes.length,routeCapacity=()=>DEFAULT_ROUTE_CAPACITY,targetRouteLoad=null,initialLoad=()=>0,signal,onProgress=()=>{},intervalMs=1100,yieldEvery=DEFAULT_PLAN_YIELD_EVERY,yieldControl=yieldToUI}){
+  async function plan({assets,routes,originFor,usable,provider=globalThis.GH_MAP_PROVIDER,seed=1,routeCount=routes.length,routeCapacity=()=>DEFAULT_ROUTE_CAPACITY,newRouteCapacity=null,routeBudget=null,maxRouteCapacity=null,targetRouteLoad=null,initialLoad=()=>0,signal,onProgress=()=>{},intervalMs=1100,yieldEvery=DEFAULT_PLAN_YIELD_EVERY,yieldControl=yieldToUI}){
     const core=globalThis.GH_ROUTE_CORE,selectedRoutes=[],result=[],reserved=routes.filter(r=>r.type==='road'),ordered=[...assets].sort((a,b)=>(Number(a.specs?.rangeKm)||Infinity)-(Number(b.specs?.rangeKm)||Infinity)||String(a.id).localeCompare(String(b.id))),loads=new Map(),waitingByOrigin=new Map();
     yieldEvery=Math.max(8,Math.min(512,Math.floor(Number(yieldEvery)||DEFAULT_PLAN_YIELD_EVERY)));
-    const hardCapacity=Math.max(1,Math.floor(Number(routeCapacity({type:'road'}))||DEFAULT_ROUTE_CAPACITY)),automaticCapacity=Math.max(1,Math.min(hardCapacity,Math.floor(Number(targetRouteLoad)||hardCapacity)));
+    const baseCapacity=Math.max(1,Math.floor(Number(routeCapacity({type:'road'}))||DEFAULT_ROUTE_CAPACITY)),hardCapacity=Math.max(baseCapacity,Math.floor(Number(newRouteCapacity)||baseCapacity)),automaticCapacity=Math.max(1,Math.min(hardCapacity,Math.floor(Number(targetRouteLoad)||hardCapacity)));
     const conflict=(list,route)=>core.conflict(list,route),remember=route=>{if(!selectedRoutes.some(row=>row.id===route.id))selectedRoutes.push(route);};
     for(const route of routes)loads.set(route.id,Math.max(0,Math.floor(Number(initialLoad(route))||0)));
     for(const [index,asset]of ordered.entries()){
@@ -33,13 +33,16 @@
       if(existing){loads.set(existing.id,(loads.get(existing.id)||0)+1);remember(existing);result.push({assetId:asset.id,origin:copy(origin),route:copy(existing),created:false,shared:true});continue;}
       const group=waitingByOrigin.get(origin.id)||[];group.push({asset,origin,index});waitingByOrigin.set(origin.id,group);
     }
-    const pending=[];
-    for(const group of waitingByOrigin.values()){
+    // Build 358 (million-asset routes): the waiting groups share the road quota's free slots (GH_ROUTE_CORE
+    // .allocateRouteSlots): the target load while slots allow it, else a higher load per new route (fleetCapacity).
+    const pending=[],groups=[...waitingByOrigin.values()],budget=routeBudget||{free:Math.max(0,core.LIMITS.routes-routeCount),reserve:0};
+    let slots;try{slots=core.allocateForBudget(budget,groups.map(group=>group.length),automaticCapacity,Math.floor(Number(maxRouteCapacity)||core.LIMITS.fleetCapacity));}
+    catch(error){if(error.code==='route-mode-capacity')throw new Error(`حصة مسارات الشاحنات ممتلئة: ${error.needed} مركزًا يحتاج مسارًا جديدًا والمتاح ${error.free}؛ احذف مسارات برية غير مستخدمة`);throw error;}
+    for(const [groupIndex,group] of groups.entries()){
       group.sort((a,b)=>(Number(a.asset.specs?.rangeKm)||Infinity)-(Number(b.asset.specs?.rangeKm)||Infinity)||String(a.asset.id).localeCompare(String(b.asset.id)));
-      const capacity=automaticCapacity;
-      for(let index=0;index<group.length;index+=capacity){const members=group.slice(index,index+capacity);pending.push({asset:members[0].asset,origin:members[0].origin,index:members[0].index,members,attempt:0});}
+      const load=Math.max(1,slots[groupIndex].load||automaticCapacity);
+      for(let index=0;index<group.length;index+=load){const members=group.slice(index,index+load);pending.push({asset:members[0].asset,origin:members[0].origin,index:members[0].index,members,load,attempt:0});}
     }
-    if(routeCount+pending.length>core.LIMITS.routes)throw new Error('سعة سجل المسارات لا تكفي لمجموعات الأسطول؛ احذف المسارات غير المستخدمة أولًا');
     let calls=0,lastCall=0;
     function check(){if(signal?.aborted)throw new Error('أُلغي حساب المسارات');if(calls>=80)throw new Error('لم تكتمل مسارات الأسطول ضمن حد المحاولات؛ لم تُعتمد أي رحلة');}
     async function fetchGroup(rows){
@@ -60,6 +63,7 @@
           if(g.distanceKm>=3&&g.distanceKm<=range*1.005&&!conflict(reserved,candidate.route)&&!conflict(selectedRoutes,candidate.route))planned=candidate;
         }
         if(planned){
+          const capacity=Math.max(hardCapacity,row.load);if(capacity>baseCapacity)planned.route.fleetCapacity=capacity;
           remember(planned.route);loads.set(planned.route.id,row.members.length);
           row.members.forEach((member,index)=>result.push({assetId:member.asset.id,origin:copy(row.origin),...copy(planned),created:index===0,plannedShared:index>0,shared:true}));pending.splice(pending.indexOf(row),1);
         }else if(++row.attempt>=MAX_ATTEMPTS)throw new Error(`${row.asset.name}: تعذر إيجاد طريق للأسطول ضمن مدى الشاحنات؛ لم تُعتمد أي رحلة`);
