@@ -15,7 +15,9 @@ const out=path.resolve(__dirname,'../verification');
   const before=await page.evaluate(()=>({time:__GH_STATE__.simSeconds,owners:[...__GH_STATE__.openedCompanies],books:Object.keys(__GH_STATE__.companyFinance)}));
   assert.equal(before.time,0);assert.deepEqual(before.owners,[]);
   await page.click('#simCalendarToggle');await page.click('#simNextDay');
-  await page.waitForFunction(()=>__GH_STATE__.simSeconds>=86400||Boolean(GH_SIM_KERNEL.snapshot().lastError));
+  // Build 358: the day close is staged across frames, so the time reaches the target before the close commits;
+  // the advance is finished when the kernel is idle again.
+  await page.waitForFunction(()=>(__GH_STATE__.simSeconds>=86400&&!GH_SIM_KERNEL.snapshot().manualAdvance)||Boolean(GH_SIM_KERNEL.snapshot().lastError));
   const after=await page.evaluate(()=>({time:__GH_STATE__.simSeconds,day:__GH_STATE__.lastFinancialDay,hour:__GH_STATE__.lastMarketHour,kernel:GH_SIM_KERNEL.snapshot(),owners:[...__GH_STATE__.openedCompanies],books:Object.keys(__GH_STATE__.companyFinance)}));
   results.push({case:'unfounded-group-real-next-day',before,after});
   assert.equal(after.time,86400,`calendar must finish an actual day without phantom companies: ${after.kernel.lastError}`);
