@@ -2770,11 +2770,14 @@
   //   commands, events and outbox rows and edits fields of its own rows; the market tick edits price fields of each
   //   stock row; realism moves economy fields, its event history and the pending-delivery count (an hour-only slice
   //   has no pending delivery, so delivery rows are not edited).
+  // - hourly cycle, continued: GH_ADVANCED's market hour assigns fields of advanced.economy; the routes and their
+  //   endpoints are not written (write-set audit), yet stay in scope at row level. Deep-copied, the 960-route
+  //   registry (1.6 MB, its geometry in small arrays) made every hour slice cost 22-25 ms on iPhone.
   // tests/build358-row-snapshot-rollback.cjs fails these slices mid-way and requires the whole state to come back exact.
   function simulationRowRoots(kind){
     const rows={},mobility=window.GH_MOBILITY_CORE?.ROLLBACK_POLICY;if(mobility)rows.mobility=mobility;
     if(kind==='steady'||kind==='hour'){rows.finance={level:'containers'};rows.treasury={level:'containers'};}
-    if(kind==='hour'){rows.domainRuntime={level:'containers'};rows.controlPlane={level:'rows'};rows.market={level:'rows'};rows.realism={level:'rows'};}
+    if(kind==='hour'){rows.domainRuntime={level:'containers'};rows.controlPlane={level:'rows'};rows.market={level:'rows'};rows.realism={level:'rows'};rows.advanced={level:'rows'};rows.customRoutes={level:'rows'};rows.routeEndpoints={level:'rows'};}
     return rows;
   }
   const SIMULATION_TRIP_ALERT_LIMIT=3;

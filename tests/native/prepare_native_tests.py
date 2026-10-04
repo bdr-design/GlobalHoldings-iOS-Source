@@ -326,12 +326,12 @@ let scanCorpus:[String]=[
     #"{"a":{"b":{"c":{"d":[1,-2.5,3e2,"s",null,true,false,0,0.5,10]}}}}"#,
     // Refused by both.
     "", "   ", "[]", #"[{"saveVersion":"3.0.0"}]"#, #""x""#, "3", "null", "true",
-    "{", "}", #"{"a"}"#, #"{"a":}"#, #"{"a":1,}"#, #"{"a":[1,]}"#, "{,}", #"{"a":1,,"b":2}"#,
+    "{", "}", #"{"a"}"#, #"{"a":}"#, "{,}", #"{"a":1,,"b":2}"#,
     #"{"a" 1}"#, "{a:1}", "{'a':1}", #"{"a":1}x"#, #"{"a":1}{}"#, #"{"a":[1 2]}"#, #"{"a":{"b":1 "c":2}}"#,
     #"{"a":tru}"#, #"{"a":nul}"#, #"{"a":True}"#, #"{"a":falsey}"#,
     #"{"a":"\\x"}"#, #"{"a":"\\u12G4"}"#, #"{"a":"\\u12"}"#, #"{"a":"abc}"#, "{\\"a\\":\\"tab\\there\\"}", "{\\"a\\":\\"line\\nbreak\\"}", "{\\"a\\":\\"nul\\u{0}\\"}",
     #"{"a":[}"#, #"{"a":]}"#, #"{"a":{]}"#, #"{"a":[1}"#, #"{"a":{"b":[1,{"c":2]}}"#,
-    #"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["a",]}}}"#, #"{"fleet":{"rows":{"chunks":["a" "b"]}}}"#,
+    #"{"fleet":{"rows":{"chunks":["a" "b"]}}}"#,
     #"{"saveVersion":"3.0.0"} "x""#, #"{"saveVersion":"3.0.0""#
 ]
 test("payload scan reads what JSONSerialization reads (fixed corpus)") {
@@ -342,8 +342,9 @@ test("payload scan reads what JSONSerialization reads (fixed corpus)") {
     }
     try check(bad.isEmpty,"Scan differs: \\(bad.prefix(4))")
 }
+// JSONSerialization on macOS accepts a trailing comma; JSON.parse in the game refuses it, and so does the scan.
 test("payload scan refuses what RFC 8259 refuses") {
-    let strict=[#"{"a":01}"#,#"{"a":-01}"#,#"{"a":1.}"#,#"{"a":.5}"#,#"{"a":+1}"#,#"{"a":0x10}"#,#"{"a":-}"#,#"{"a":NaN}"#,#"{"a":Infinity}"#,#"{"a":1e}"#,#"{"a":1e+}"#,#"{"a":1.e3}"#,"{\\"a\\":1}\\u{0}","\\u{FEFF}{}","{\\"a\\":1}\\u{0B}",#"{"a":"\\U0041"}"#]
+    let strict=[#"{"a":1,}"#,#"{"a":[1,]}"#,#"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["a",]}}}"#,#"{"a":01}"#,#"{"a":-01}"#,#"{"a":1.}"#,#"{"a":.5}"#,#"{"a":+1}"#,#"{"a":0x10}"#,#"{"a":-}"#,#"{"a":NaN}"#,#"{"a":Infinity}"#,#"{"a":1e}"#,#"{"a":1e+}"#,#"{"a":1.e3}"#,"{\\"a\\":1}\\u{0}","\\u{FEFF}{}","{\\"a\\":1}\\u{0B}",#"{"a":"\\U0041"}"#]
     let accepted=strict.filter{GlobalSaveVault.inspectSaveJSONForTesting(Data($0.utf8)) != nil}
     try check(accepted.isEmpty,"Accepted: \\(accepted)")
 }
@@ -449,6 +450,7 @@ let nextStages=vault.takeCommitTimings(generation:nextGeneration) ?? [:]
 test("a second large commit succeeds and reports its stages") {try check(nextGeneration>0 && vault.currentSave()==perfNext && nextStages["envelopeBytes"] != nil,"Second large commit failed")}
 let performance:[String:Any]=["bytes":perf.utf8.count,"handler_validation_and_enqueue_ms":dispatchMS,"completed_ms":totalMS,"success":perfSuccess,"second_commit_ms":nextMS,"second_commit_stages":nextStages,"single_sample":true,"iphone_measurement":false,"includes_bootstrap_refresh":false]
 try JSONSerialization.data(withJSONObject:performance,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"save-enqueue-measurement.json"))
+print("SAVE_MEASUREMENT "+String(data:try JSONSerialization.data(withJSONObject:performance,options:[.sortedKeys]),encoding:.utf8)!)
 vault.reset()
 let failed=rows.filter{($0["ok"] as? Bool) != true}.count
 let report:[String:Any]=["total":rows.count,"passed":rows.count-failed,"failed":failed,"cases":rows,"native_foundation_real_file_io":true,"device_test":false,"scope":"Vault compiled unmodified except candidate fixes. Controller pure helpers extracted; no live WKWebView." ]

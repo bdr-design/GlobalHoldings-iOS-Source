@@ -3,7 +3,7 @@
 // its work, because the close joins system commands (fallbackReason joined-writer) and a join promotes a scoped
 // transaction to a full snapshot. A staged transaction with stagedFullScope captures every other root before it writes,
 // one root per step, so joins need no copy. This gate holds the transaction core to that:
-//  - the extra roots are captured in separate steps before the first write;
+//  - the extra roots, and the declared scope itself, are captured in separate steps before the first write;
 //  - a join does not promote (no joined-writer fallback);
 //  - a failure after writes to roots outside the original scope, and after adding a new root, restores the state exactly;
 //  - a commit keeps every write;
@@ -51,6 +51,29 @@ function run(target,{fail,full=true}){
   assert.equal(target.simSeconds,20);assert.equal(target.market.prices.X,99);assert.equal(target.world.rows[5].v,-1);assert.deepEqual(target.log,['joined']);
   assert.deepEqual(target.addedRoot,{created:true});assert.equal('profile' in target,false);
   console.log('PASS commit keeps every write');
+}
+{
+  // The declared scope is captured one root per step too (the daily close copied every root it writes in its first
+  // frame, 36-45 ms on iPhone): the first step captures nothing, each step adds at most one root, and the row-level
+  // policy of a declared root still applies. An abort while capturing restores the state exactly and deletes nothing.
+  const target=fixture(),before=JSON.stringify(target);
+  const handle=TX.beginStaged(target,{label:'qa-deferred-scope',scope:['simSeconds','finance','world'],writeRoots:['simSeconds','finance','world'],stagedFullScope:true,rowRoots:{world:{level:'rows'}},apply:function*(){target.world.rows[1].v=-5;target.finance.cash=0;yield 'a';return true;}});
+  const sizes=[];let guard=0;while(!handle.done&&guard++<100){sizes.push(TX.telemetry().last?.label==='qa-deferred-scope'?TX.telemetry().last.scopeSize:null);handle.step(-Infinity);}
+  assert.equal(handle.error,null,String(handle.error));assert.equal(handle.result.committed,true);
+  const t=TX.telemetry().last;assert.deepEqual(t.rowRoots,['world'],'row-level policy kept for a deferred root');assert.equal(t.stagedFullScope,true);
+  assert.ok(handle.steps>=Object.keys(JSON.parse(before)).length+1,`one step per root (${handle.steps} steps)`);
+  for(const stopAfter of [1,2,3,4]){
+    const target=fixture(),before=JSON.stringify(target),order=Object.keys(target);
+    const h=TX.beginStaged(target,{label:'qa-deferred-abort',scope:['simSeconds','finance','world'],writeRoots:['simSeconds','finance','world'],stagedFullScope:true,apply:function*(){target.simSeconds=99;yield 'a';return true;}});
+    for(let i=1;i<stopAfter&&!h.done;i++)h.step(-Infinity);
+    target.profile.name='written between frames';h.abort('qa-abort-while-capturing');
+    assert.ok(h.error&&/qa-abort-while-capturing/.test(h.error.message));
+    const expected=JSON.parse(before);if(stopAfter>=Object.keys(expected).length+1)expected.profile.name='QA';else expected.profile.name='written between frames';
+    const now=JSON.parse(JSON.stringify(target));
+    assert.deepEqual(Object.keys(target),order,`abort after ${stopAfter} steps: every root kept, in order`);
+    assert.equal(now.simSeconds,10);assert.deepEqual(now.finance,expected.finance);assert.deepEqual(now.world,expected.world);
+  }
+  console.log('PASS the declared scope is captured one root per step; an abort while capturing restores and deletes nothing');
 }
 {
   // Without the option the join still promotes to a full snapshot (unchanged behaviour for other transactions).

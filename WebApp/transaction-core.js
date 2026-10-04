@@ -457,6 +457,9 @@
     // snapshot of that draft therefore protects nothing. This is honored ONLY when the target is
     // exactly the active durable draft; any failure poisons the command so the draft cannot publish.
     const discardableDraft=options.discardableDraft===true&&!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__&&globalThis.__GH_DURABLE_COMMAND_CONTEXT__.draft===target&&!requestedJournal&&!scope;
+    // Build 358: a staged transaction that captures the whole state (stagedFullScope) also captures its declared scope
+    // one root per step, before it writes, instead of all at once in its first frame (the daily close: 36-45 ms on iPhone).
+    const deferredScope=stageToken&&options.stagedFullScope===true&&scope&&!requestedJournal&&!discardableDraft?scope:null;
     const snapshotStart=runtimeClock();
     if(discardableDraft){rollbackStorage='discardable-draft';}
     else if(requestedJournal&&!fallbackReason){
@@ -466,14 +469,14 @@
     }
     if(discardableDraft){/* no snapshot by design */}
     else if(requestedJournal&&fallbackReason){snapshot=deepClone(target,SNAPSHOT_OPTIONS);rollbackStorage='full-snapshot';}
-    else if(!requestedJournal){snapshot=scope?captureScoped(target,scope,rowPolicies):deepClone(target,SNAPSHOT_OPTIONS);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
+    else if(!requestedJournal){snapshot=scope?captureScoped(target,deferredScope?[]:scope,rowPolicies):deepClone(target,SNAPSHOT_OPTIONS);rollbackStorage=scope?'legacy-scoped':'full-snapshot';}
     timing.snapshotMs=Math.max(0,runtimeClock()-snapshotStart);timing.rollbackStorage=rollbackStorage;timing.fullSnapshot=rollbackStorage==='full-snapshot';timing.fullSnapshotFallback=requestedJournal&&rollbackStorage==='full-snapshot';timing.fallbackReason=timing.fullSnapshotFallback?fallbackReason:null;
     // Write auditing is an architecture-development proof tool. Full transactions reuse
     // their rollback snapshot; scoped/journal transactions take an extra full baseline only when
     // audit/enforcement is explicitly requested. Normal gameplay pays no audit cost.
     const auditBaseline=auditWrites?((rollbackStorage==='full-snapshot')?snapshot:deepClone(target)):null;
     const journaledRootValues={};for(const key of JOURNALED_ROOTS.keys())if(Object.prototype.hasOwnProperty.call(target,key))journaledRootValues[key]=target[key];
-    const context={target,label,scope:rollbackStorage==='legacy-scoped'?scope:null,snapshot,journal,rootOrder:Object.keys(target),journaledRootValues,postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null,undos:[],scopedJoin:rollbackStorage==='legacy-scoped'&&options.scopedJoin===true,rowEntries:null};
+    const context={target,label,scope:rollbackStorage==='legacy-scoped'?(deferredScope?[]:scope):null,snapshot,journal,rootOrder:Object.keys(target),journaledRootValues,postCommit:[],memo:new Map(),failure:null,auditBaseline,declaredWriteRoots,writerContracts,rollbackStorage,timing,measure,irreversiblePriority:null,undos:[],scopedJoin:rollbackStorage==='legacy-scoped'&&options.scopedJoin===true,rowEntries:null};
     if(rowPolicies)timing.rowRoots=Object.keys(rowPolicies).filter(key=>context.snapshot?.[key]?.rows);
     // Writer-owned undo (Build 353): a writer may keep its own exact preimage for writes it deliberately leaves
     // outside `scope` (the simulation slice keeps the previous asset field values instead of deep-cloning the
@@ -493,14 +496,17 @@
       // Build 358: a staged scoped transaction may capture every other root before it writes (stagedFullScope), one root
       // per step across frames. Its scope then covers the whole state, so a joined writer needs no full-state copy in the
       // middle of the work (the daily close joins system commands; that copy was 17-21 ms on iPhone with a 25 MB state).
+      // The declared scope (deferred above) comes first, with its row-level policies; a root joins the scope only once
+      // captured, so a rollback in the middle of capturing restores exactly the roots captured so far.
       if(stageToken&&options.stagedFullScope===true&&context.rollbackStorage==='legacy-scoped'&&context.scope){
-        const known=new Set(context.scope);
-        for(const key of context.rootOrder){
+        const known=new Set(context.scope),declared=new Set(deferredScope||[]);
+        for(const key of deferredScope?[...deferredScope,...context.rootOrder]:context.rootOrder){
           if(known.has(key)||JOURNALED_ROOTS.has(key))continue;
-          const start=runtimeClock();context.snapshot[key]=captureEntry(target,key,null);context.scope.push(key);known.add(key);if(context.declaredWriteRoots&&!context.declaredWriteRoots.includes(key))context.declaredWriteRoots.push(key);
+          const start=runtimeClock();context.snapshot[key]=captureEntry(target,key,declared.has(key)?rowPolicies?.[key]||null:null);context.scope.push(key);known.add(key);if(context.declaredWriteRoots&&!context.declaredWriteRoots.includes(key))context.declaredWriteRoots.push(key);
           timing.snapshotMs+=Math.max(0,runtimeClock()-start);timing.scopeSize=context.scope.length;
           activeContext=null;yield 'snapshot';if(activeContext)throw new Error('staged-transaction-resumed-inside-transaction');activeContext=context;
         }
+        if(rowPolicies)timing.rowRoots=Object.keys(rowPolicies).filter(key=>context.snapshot?.[key]?.rows);
         context.fullCoverage=true;context.scopedJoin=true;timing.stagedFullScope=true;
       }
       phase='commit';const applyStart=runtimeClock();let value;
