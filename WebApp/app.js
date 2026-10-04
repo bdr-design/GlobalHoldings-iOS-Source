@@ -2768,7 +2768,7 @@
     const stagedDay=meta.boundary?.day!=null&&meta.staged!==false&&typeof financialDayStages==='function'&&typeof TX.beginStaged==='function';
     let out=null,journal=null;
     const transactionOptions=()=>{
-        const boundaryRequested=meta.boundary||{},deliveryWorkPending=window.GH_REALISM?.hasPendingDeliveries?.(state)!==false,
+        const boundaryRequested=meta.boundary||{},deliveryWorkPending=typeof window.GH_REALISM?.deliveryDueBy==='function'?window.GH_REALISM.deliveryDueBy(state,to):window.GH_REALISM?.hasPendingDeliveries?.(state)!==false,
           dayBoundary=boundaryRequested.day!=null,hourOnly=!dayBoundary&&boundaryRequested.hour!=null&&!deliveryWorkPending,steady=!dayBoundary&&boundaryRequested.hour==null&&!deliveryWorkPending,
           scope=steady?SIMULATION_STEADY_TRANSACTION_SCOPE:hourOnly?SIMULATION_HOUR_TRANSACTION_SCOPE:SIMULATION_TRANSACTION_SCOPE;
         journal=makeSimulationEffects();
@@ -2803,7 +2803,7 @@
             state.simulationKernel.lastAtomicCommit={from,to:completeTo,requestedTo:to,events:out.events,day:boundary.day,hour:boundary.hour,at:completeTo,core:EVENTS.VERSION,order};
             return true;
         };
-        return {label:'simulation:'+from+'->'+to,scope,writeRoots:scope,rowRoots:simulationRowRoots(steady?'steady':hourOnly?'hour':'full'),scopedJoin:hourOnly,
+        return {label:'simulation:'+from+'->'+to,scope,writeRoots:scope,rowRoots:simulationRowRoots(steady?'steady':hourOnly?'hour':'full'),scopedJoin:hourOnly,stagedFullScope:dayBoundary,
           auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,enforceWriteRoots:globalThis.__GH_BUILD358_ENFORCE_SLICE_SCOPE__===true&&(steady||hourOnly),
           profileContext:{kind:'simulation-slice',from,to,speed:Number(meta.speed)||0,order,eventsBudget:maxEvents||null},
           apply:stagedDay?sliceWork:measure=>{const steps=sliceWork(measure);let step;while(!(step=steps.next()).done){}return step.value;}

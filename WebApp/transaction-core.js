@@ -248,7 +248,8 @@
   function captureEntry(target,key,policy=null){
     const exists=Object.prototype.hasOwnProperty.call(target,key),value=exists?target[key]:undefined;
     if(exists&&policy&&isPlainRecord(value))return {exists:true,ref:value,rows:captureRows(value,policy)};
-    return {exists,value:deepClone(value)};
+    // Sealed collections of this root are shared (their rows cannot change), as a full rollback snapshot shares them.
+    return {exists,value:exists&&SEALED_COLLECTIONS.has(key)?deepClone({[key]:value},SNAPSHOT_OPTIONS)[key]:deepClone(value)};
   }
   function restoreEntry(target,key,entry){
     if(!entry?.exists){delete target[key];return;}
@@ -474,7 +475,7 @@
     // outside `scope` (the simulation slice keeps the previous asset field values instead of deep-cloning the
     // fleet). It always runs after the snapshot restore, so it also holds after a scoped -> full promotion.
     const undo=typeof options.undo==='function'?options.undo:null;
-    const restore=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope,context.journaledRootValues);return restoreRootOrder(target,context.rootOrder);}const restored=restoreObject(target,context.snapshot,context.journaledRootValues);if(context.rowEntries)for(const [key,entry] of Object.entries(context.rowEntries))restoreEntry(target,key,entry);return restored;};
+    const restore=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope,context.journaledRootValues);if(context.fullCoverage){const known=new Set(context.rootOrder);for(const key of Object.keys(target))if(!known.has(key)&&!JOURNALED_ROOTS.has(key))delete target[key];}return restoreRootOrder(target,context.rootOrder);}const restored=restoreObject(target,context.snapshot,context.journaledRootValues);if(context.rowEntries)for(const [key,entry] of Object.entries(context.rowEntries))restoreEntry(target,key,entry);return restored;};
     const releaseUndos=()=>{const rows=context.undos.splice(0);for(const row of rows)row.release?.();};
     const rollback=()=>{const restored=restore();if(undo)undo();const rows=context.undos.splice(0);for(let i=rows.length-1;i>=0;i--)rows[i].undo();return restored;};
     let phase='validate';activeContext=context;
@@ -485,6 +486,19 @@
       if(validation===false||validation?.ok===false){const rollbackStart=runtimeClock();rollback();timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);timing.totalMs=Math.max(0,runtimeClock()-totalStart);timing.stage='validation-rejected';publishRuntimeMetric(timing);return {committed:false,reason:validation?.reason||'validation-rejected',label};}
       // Staged: the snapshot frame ends here, before any write.
       if(stageToken){activeContext=null;yield 'snapshot';if(activeContext)throw new Error('staged-transaction-resumed-inside-transaction');activeContext=context;}
+      // Build 358: a staged scoped transaction may capture every other root before it writes (stagedFullScope), one root
+      // per step across frames. Its scope then covers the whole state, so a joined writer needs no full-state copy in the
+      // middle of the work (the daily close joins system commands; that copy was 17-21 ms on iPhone with a 25 MB state).
+      if(stageToken&&options.stagedFullScope===true&&context.rollbackStorage==='legacy-scoped'&&context.scope){
+        const known=new Set(context.scope);
+        for(const key of context.rootOrder){
+          if(known.has(key)||JOURNALED_ROOTS.has(key))continue;
+          const start=runtimeClock();context.snapshot[key]=captureEntry(target,key,null);context.scope.push(key);known.add(key);if(context.declaredWriteRoots&&!context.declaredWriteRoots.includes(key))context.declaredWriteRoots.push(key);
+          timing.snapshotMs+=Math.max(0,runtimeClock()-start);timing.scopeSize=context.scope.length;
+          activeContext=null;yield 'snapshot';if(activeContext)throw new Error('staged-transaction-resumed-inside-transaction');activeContext=context;
+        }
+        context.fullCoverage=true;context.scopedJoin=true;timing.stagedFullScope=true;
+      }
       phase='commit';const applyStart=runtimeClock();let value;
       try{value=options.apply(measure);}
       finally{timing.applyMs=Math.max(0,runtimeClock()-applyStart);timing.stage='commit';}

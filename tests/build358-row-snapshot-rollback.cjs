@@ -87,7 +87,9 @@ const {chromium}=require('playwright'),{boot}=require('./helpers/local-dom-app')
       assert.equal(row.simAfter,row.simBefore,`${kind}: simulation time restored`);
       assert.equal(row.identical,true,`${kind}: state must be restored exactly: ${JSON.stringify(row.diff)}`);
     }
-    assert.match(result.rollbacks.day.storage,/^full-snapshot\/joined-writer\//,'daily close keeps the full fallback');
+    // The staged daily close captures every root before it writes (stagedFullScope), so its joined commands no longer
+    // promote it to a full-state copy mid-work; the rollback above stays exact.
+    assert.match(result.rollbacks.day.storage,/^legacy-scoped\/-\//,'daily close: full scope captured before writing, no joined-writer promotion');
     console.log('street-route',JSON.stringify(result.street));
     assert.equal(result.street.storage,'legacy-scoped','a street-route result snapshots only its scope');assert.ok(result.street.rowRoots.includes('mobility'));
     assert.match(String(result.street.error),/build358-street-failure/);assert.equal(result.street.identical,true,'a failed street-route command restores the state exactly');

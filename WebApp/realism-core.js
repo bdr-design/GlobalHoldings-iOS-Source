@@ -75,7 +75,16 @@
   // Calendar advance may use wider atomic slices only when this owner has no
   // sub-hour delivery work. 600 seconds preserves the pre-fix delivery polling
   // ceiling without forcing that cost on fleets with no pending deliveries.
-  function simulationSliceLimit(state){return hasPendingDeliveries(state)?600:3600;}
+  // Build 358: the earliest due time of a pending delivery (-Infinity for a row whose clock is not normalized yet, so
+  // it is handled at once; Infinity when none is pending). A slice that ends before it cannot deliver anything, so it
+  // needs neither the delivery scope (a full copy of finance per slice on iPhone) nor 600-second slices.
+  function nextDeliveryDueAt(state){
+    if(!hasPendingDeliveries(state))return Infinity;let next=Infinity;
+    for(const row of state.realism.procurement.deliveries||[]){if(row?.status!=='pending')continue;const due=Number(row.dueAtSeconds);if(!Number.isFinite(due))return -Infinity;if(due<next)next=due;}
+    return next;
+  }
+  function deliveryDueBy(state,seconds){return nextDeliveryDueAt(state)<=Number(seconds);}
+  function simulationSliceLimit(state){const next=nextDeliveryDueAt(state);return next-(Math.max(0,Number(state.simSeconds)||0))>3600?3600:600;}
   function migrate(state){
     state.realism=state.realism&&typeof state.realism==='object'?state.realism:initial();deepDefaults(state.realism,initial());
     const r=state.realism;r.schema=SCHEMA;r.version=VERSION;delete r[String.fromCharCode(97,105)];reconcilePendingDeliveryCount(state);for(const companyId of companyTypes(state))if(!r.budgets[companyId])r.budgets[companyId]=defaultBudget();
@@ -430,5 +439,5 @@
     ${section('سلامة النواة','فحص وقائي يومي يمنع التكرار والأرصدة غير الرقمية والأحداث المكررة.',`<div class="metric-row">${metric('Integrity issues',String(r.controls.issues.length),r.controls.issues.length?'negative':'positive')}${metric('Schema',r.schema)}${metric('Core',r.version)}</div>${r.controls.issues.length?`<div class="realism-alerts">${r.controls.issues.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}`)}
   </div>`;}
   function financeHTML(state){const r=migrate(state),types=companyTypes(state);return `<article class="list-item realism-finance-appendix"><div class="list-item-head"><div><h3>القوائم المالية 2.0</h3><p>30 يومًا متحركًا · Consolidation مع استبعاد التعاملات الداخلية وLease liabilities.</p></div><span class="tag positive">${esc(r.rating.grade)}</span></div><div class="realism-mini-grid">${types.map(t=>{const s=r.financial.statements[t]||statements(state,t);return `<div><span>${esc(entityName(state,t))}</span><b>${money(s.net||0)}</b><small>إيراد ${money(s.revenue||0)} · أصول ${money(s.assets||0)}</small></div>`}).join('')}</div></article><article class="list-item realism-finance-appendix"><h3>Budget / Actual / Forecast / Variance</h3><div class="realism-budget-table">${types.map(t=>{const b=r.budgets[t]||(r.budgets[t]=defaultBudget()),plan=Object.values(b.lines).reduce((a,x)=>a+(Number(x)||0),0),actual=Object.values(b.actual).reduce((a,x)=>a+(Number(x)||0),0),forecast=Object.values(b.forecast).reduce((a,x)=>a+(Number(x)||0),0);return `<div><b>${esc(entityName(state,t))}</b><span>${money(plan)}</span><span>${money(actual)}</span><span>${money(forecast)}</span><span class="${forecast<=plan?'positive':'negative'}">${money(forecast-plan)}</span></div>`}).join('')}<div class="budget-head"><b>الشركة</b><span>Budget</span><span>Actual</span><span>Forecast</span><span>Variance</span></div></div></article>`;}
-  window.GH_REALISM={VERSION,SCHEMA,migrate,fleetReadinessTotal,reconcilePendingDeliveryCount,hasPendingDeliveries,simulationSliceLimit,onHour,onDay,onDayStages,onSimulationTime:deliverDueAssetsAt,tripModifier,render,financeHTML,statements,bankingMetrics,deliveryCapacity,companyTypes,assetMode,assetOwnerCompanyId};
+  window.GH_REALISM={VERSION,SCHEMA,migrate,fleetReadinessTotal,reconcilePendingDeliveryCount,hasPendingDeliveries,nextDeliveryDueAt,deliveryDueBy,simulationSliceLimit,onHour,onDay,onDayStages,onSimulationTime:deliverDueAssetsAt,tripModifier,render,financeHTML,statements,bankingMetrics,deliveryCapacity,companyTypes,assetMode,assetOwnerCompanyId};
 })();
