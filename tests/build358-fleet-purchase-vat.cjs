@@ -26,8 +26,20 @@ test('a fleet purchase carries no input VAT; trip revenue makes VAT due at the m
   assert.equal(F.book(state,'air').taxAccrued,150000,'the open period accrues the output VAT');
   state.simSeconds=31*DAY;const period=command('finance','close-vat-period',{day:30}).find(row=>row.company==='air');
   assert.equal(period.status,'مستحق','the month close makes it due');assert.equal(period.amount,150000);
+  const cashBefore=F.operating(state,'air'),transfersBefore=state.finance.transfers.length;
   const paid=command('finance','pay-taxes',{company:'air'});
-  assert.equal(paid.amount,150000);assert.ok(paid.settlementId,'a tax settlement is issued');
+  assert.equal(paid.amount,150000);assert.ok(/^TAX-SET-/.test(paid.settlementId),'a tax settlement is issued with its number');
+  // Build 358: the tax is paid by a cheque to the tax authority, cashed at once; no government transfer.
+  const cheque=state.finance.cheques.find(row=>row.id===paid.chequeId);
+  assert.ok(cheque,'a cheque is issued');assert.equal(cheque.beneficiary,'هيئة الزكاة والضريبة والجمارك');assert.equal(cheque.amount,150000);
+  assert.equal(cheque.status,'مصروف','the cheque is cashed');assert.equal(cheque.purposeCategory,'سداد ضريبة القيمة المضافة');
+  assert.equal(F.operating(state,'air'),cashBefore-150000,'the account pays exactly the tax');
+  assert.equal(state.finance.transfers.length,transfersBefore,'no transfer document');
+  assert.equal(state.finance.transfers.some(row=>row.kind==='tax-settlement'),false);
+  const settlement=state.finance.taxSettlements.find(row=>row.id===paid.settlementId);
+  assert.equal(settlement.paymentMethod,'شيك مصرفي');assert.equal(settlement.paymentReference,cheque.id);assert.equal(settlement.chequeId,cheque.id);
+  const statement=state.treasury.ledger.find(row=>row.chequeNumber===cheque.id);assert.ok(statement&&statement.paymentMethod==='شيك مصرفي','the bank statement shows the cashed cheque');
+  assert.equal(s.GH_DOCUMENT_PROOF.verifyDocument(state,cheque).ok,true,'the cheque stays sealed');assert.equal(s.GH_DOCUMENT_PROOF.verifyDocument(state,settlement).ok,true,'the settlement stays sealed');
   assert.equal(state.finance.periods.find(row=>row.id===period.id).status,'مسدد');
   assert.equal(s.GH_SAVE_SCHEMA.validate(state).ok,true);
   return {invoice:doc.number,due:period.amount,settlement:paid.settlementId};

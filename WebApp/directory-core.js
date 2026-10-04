@@ -27,6 +27,28 @@
   const NATIVE_LABELS=Object.freeze({'netherlands antilles':'جزر الأنتيل الهولندية',somaliland:'أرض الصومال'});
   // World hub airports rank above other international airports (IATA codes).
   const HUB_AIRPORTS=new Set('ATL PEK PKX DXB DWC LAX HND NRT ORD LHR LGW PVG CDG DFW CAN AMS FRA IST SAW DEL BOM SIN ICN DEN BKK JFK EWR KUL SFO MAD BCN CTU SZX LAS SEA MIA MCO PHX IAH MUC SYD MEL FCO YYZ YVR YUL SVO DOH AUH SHJ JED RUH DMM MED CAI KWI BAH MCT AMM BEY CMN TUN ALG NBO JNB ADD LOS GRU MEX HKG TPE MNL CGK KIX ZRH VIE CPH OSL ARN HEL DUB LIS ATH BRU MXP GVA BOS IAD EZE BOG LIM SCL KHI LHE ISB DAC CMB MLE ESB'.split(' '));
+  // Build 358: world regions for the facility directory (a filter, and the order of the unfiltered list). ISO codes;
+  // a registry country without one falls back to its sites' coordinates.
+  const REGIONS=Object.freeze([
+    ['middle-east','الشرق الأوسط','SA AE QA KW BH OM YE IQ IR JO LB SY PS IL TR EG CY'],
+    ['europe','أوروبا','GB IE FR DE NL BE LU CH AT IT ES PT AD MC SM VA MT GR AL MK RS ME BA HR SI HU CZ SK PL DK NO SE FI IS EE LV LT BY UA MD RO BG RU GE AM AZ FO GI IM JE GG AX SJ XK LI'],
+    ['asia','آسيا','CN JP KR KP MN TW HK MO IN PK BD LK NP BT MV AF KZ UZ TM KG TJ TH VN LA KH MM MY SG ID PH BN TL IO'],
+    ['north-america','أمريكا الشمالية','US CA MX GL BM PM GT BZ SV HN NI CR PA CU JM HT DO PR BS BB TT AG DM GD KN LC VC AW CW SX BQ KY TC VG VI AI MS GP MQ MF BL UM'],
+    ['africa','أفريقيا','MA DZ TN LY SD SS ET ER DJ SO KE UG TZ RW BI CD CG CF CM GA GQ ST NG NE TD ML BF SN GM GW GN SL LR CI GH TG BJ MR CV AO ZM ZW MW MZ MG MU SC KM RE YT NA BW ZA LS SZ EH SH'],
+    ['south-america','أمريكا الجنوبية','BR AR CL CO PE VE EC BO PY UY GY SR GF FK GS'],
+    ['oceania','أوقيانوسيا','AU NZ PG FJ SB VU NC PF WS TO KI TV NR FM MH PW GU MP AS CK NU WF TK NF PN AQ']
+  ].map(([id,label,codes])=>Object.freeze({id,label,codes:Object.freeze(codes.split(' '))})));
+  const REGION_BY_COUNTRY=new Map(REGIONS.flatMap(region=>region.codes.map(code=>[code,region.id])));
+  const REGION_IDS=new Set(REGIONS.map(region=>region.id));
+  function regionFromCoords(coords){
+    const lat=Number(coords?.[0]),lng=Number(coords?.[1]);if(!Number.isFinite(lat)||!Number.isFinite(lng))return 'asia';
+    if(lng<-30)return lat>=12?'north-america':'south-america';
+    if((lat<-10&&lng>110)||lng>=150||lng<=-150)return 'oceania';
+    if(lat>=12&&lat<=42&&lng>=25&&lng<=63)return 'middle-east';
+    if(lat>=35&&lng<60)return 'europe';
+    if(lat<37&&lng<52)return 'africa';
+    return 'asia';
+  }
   function normalize(value){
     return String(value??'').normalize('NFD').replace(/[\u0300-\u036f\u064b-\u065f\u0670\u06d6-\u06ed]/g,'')
       .replace(/[إأآٱ]/g,'ا').replace(/ى/g,'ي').replace(/ـ/g,'').toLowerCase().replace(/&/g,' and ')
@@ -108,8 +130,9 @@
         if(!countryRows.has(country.id))countryRows.set(country.id,country);
         const bucket=countryBuckets.get(country.id);if(bucket)bucket.push(index);else countryBuckets.set(country.id,[index]);
       }
-      const countryOptions=Object.freeze([...countryBuckets].map(([id,bucket])=>Object.freeze({id,label:countryRows.get(id)?.label||id,count:bucket.length})).sort((a,b)=>compareLabels(a.label,b.label)||a.id.localeCompare(b.id)));
-      return Object.freeze({provider,rows,decode,indexCountryIds,countryBuckets,countryOptions,countryIds:Object.freeze([...countryIds]),countryRows,cache});
+      const countryRegions=new Map();for(const [id,bucket] of countryBuckets)countryRegions.set(id,REGION_BY_COUNTRY.get(id)||regionFromCoords(decode(rows[bucket[0]]).details?.coords));
+      const countryOptions=Object.freeze([...countryBuckets].map(([id,bucket])=>Object.freeze({id,label:countryRows.get(id)?.label||id,count:bucket.length,region:countryRegions.get(id)})).sort((a,b)=>compareLabels(a.label,b.label)||a.id.localeCompare(b.id)));
+      return Object.freeze({provider,rows,decode,indexCountryIds,countryBuckets,countryOptions,countryRegions,countryIds:Object.freeze([...countryIds]),countryRows,cache});
     }
     const sources=new Map([['world-airports',airports],['world-ports',ports],['world-capitals',capitals]]),models=new Map();
     function modelFor(provider){if(models.has(provider))return models.get(provider);const rows=sources.get(provider);if(!rows)return null;const model=buildModel(provider,rows);models.set(provider,model);return model;}
@@ -154,8 +177,13 @@
     function segmentCacheKey(segments){return segments.map(({companyId,model})=>`${companyId}:${model.provider}`).join('|');}
     function countriesFor(segments){
       const key=segmentCacheKey(segments);if(countryCache.has(key))return countryCache.get(key);
-      const grouped=new Map();for(const {model} of segments)for(const row of model.countryOptions){const current=grouped.get(row.id);if(current)current.count+=row.count;else grouped.set(row.id,{id:row.id,label:row.label,count:row.count});}
+      const grouped=new Map();for(const {model} of segments)for(const row of model.countryOptions){const current=grouped.get(row.id);if(current)current.count+=row.count;else grouped.set(row.id,{id:row.id,label:row.label,count:row.count,region:row.region});}
       const result=Object.freeze([...grouped.values()].sort((a,b)=>compareLabels(a.label,b.label)||a.id.localeCompare(b.id)).map(Object.freeze));countryCache.set(key,result);return result;
+    }
+    function regionsFor(segments){
+      const key=`regions|${segmentCacheKey(segments)}`;if(countryCache.has(key))return countryCache.get(key);
+      const counts=new Map();for(const row of countriesFor(segments))counts.set(row.region,(counts.get(row.region)||0)+row.count);
+      const result=Object.freeze(REGIONS.filter(region=>counts.has(region.id)).map(region=>Object.freeze({id:region.id,label:region.label,count:counts.get(region.id)})));countryCache.set(key,result);return result;
     }
     function modelCities(model,countryId){
       const key=`${model.provider}|${countryId}`;if(cityCache.has(key))return cityCache.get(key);
@@ -181,9 +209,26 @@
       for(let index=0;index<out.length;index++){const row=model.decode(model.rows[index]),d=row.details||{};out[index]=model.provider==='world-airports'?(d.iata?(HUB_AIRPORTS.has(d.iata)?3:/international|دولي/i.test(String(row.name||''))?2:1):0):model.provider==='world-ports'?(d.terminal?1:0):0;}
       model.cache.importance=out;return out;
     }
-    function rankedCandidates(model,country){
-      const key=`ranked|${country||''}`,cached=model.cache[key];if(cached)return cached;const weight=importance(model),base=country?(model.countryBuckets.get(country)||[]):Array.from({length:model.rows.length},(_,index)=>index);
-      const out=base.slice().sort((a,b)=>weight[b]-weight[a]||a-b);model.cache[key]=out;return out;
+    function rankedCandidates(model,country,region=''){
+      const key=`ranked|${country||''}|${country?'':region||''}`,cached=model.cache[key];if(cached)return cached;const weight=importance(model);
+      if(country){const out=(model.countryBuckets.get(country)||[]).slice().sort((a,b)=>weight[b]-weight[a]||a-b);model.cache[key]=out;return out;}
+      // Build 358: without a country, take one site per country in turn, the countries ordered so regions alternate;
+      // main sites (higher importance) still come before any lesser site.
+      const tiers=new Map();
+      for(const [countryId,bucket] of model.countryBuckets){
+        const countryRegion=model.countryRegions.get(countryId);if(region&&countryRegion!==region)continue;
+        for(const index of bucket){const tier=weight[index];let byCountry=tiers.get(tier);if(!byCountry)tiers.set(tier,byCountry=new Map());let list=byCountry.get(countryId);if(!list)byCountry.set(countryId,list=[]);list.push(index);}
+      }
+      const out=[];
+      for(const tier of [...tiers.keys()].sort((a,b)=>b-a)){
+        const byCountry=tiers.get(tier),byRegion=new Map();
+        for(const [countryId,list] of byCountry){const id=model.countryRegions.get(countryId);let countries=byRegion.get(id);if(!countries)byRegion.set(id,countries=[]);countries.push({countryId,list});}
+        for(const countries of byRegion.values())countries.sort((a,b)=>b.list.length-a.list.length||a.list[0]-b.list[0]);
+        const regionOrder=REGIONS.map(row=>row.id).filter(id=>byRegion.has(id)),order=[];
+        for(let round=0,added=true;added;round++){added=false;for(const id of regionOrder){const row=byRegion.get(id)[round];if(row){order.push(row);added=true;}}}
+        for(let round=0,added=true;added;round++){added=false;for(const row of order){if(round<row.list.length){out.push(row.list[round]);added=true;}}}
+      }
+      model.cache[key]=out;return out;
     }
     // A query ranks an exact code (IATA, ICAO, port code) first, then a name or city that starts with the query, then
     // other matches; main sites first within each.
@@ -193,22 +238,24 @@
       const name=normalize(row.name),city=normalize(row.city);if(name.startsWith(query)||city.startsWith(query))score+=20;else if(name.includes(query)||city.includes(query))score+=10;
       return score;
     }
-    function viewFor(segment,country,city,tokens){
-      const model=segment.model,candidates=rankedCandidates(model,country),totalCandidates=candidates.length;
+    function viewFor(segment,country,city,tokens,region=''){
+      const model=segment.model,candidates=rankedCandidates(model,country,region),totalCandidates=candidates.length;
       if(!city&&!tokens.length)return {segment,total:totalCandidates,indexAt:position=>candidates[position]};
       const matched=[],query=tokens.join(' ');for(let position=0;position<totalCandidates;position++){const index=candidates[position];if(city){const row=model.decode(model.rows[index]),rowCityId=`${model.indexCountryIds[index]}:${normalize(String(row.city||'مدينة غير محددة'))}`;if(rowCityId!==city)continue;}if(tokens.length){const text=searchText(model,index);if(!tokens.every(token=>text.includes(token)))continue;}matched.push(index);}
       if(tokens.length&&matched.length>1){const scores=new Map(matched.map((index,position)=>[index,matchScore(model,index,tokens,query)*100000-position]));matched.sort((a,b)=>scores.get(b)-scores.get(a));}
       return {segment,total:matched.length,indexAt:position=>matched[position]};
     }
-    function search({state=null,company='all',companyId='',country='',city='',text='',page=0,pageSize=24}={}){
-      const explicit=String(companyId||company||'all').trim()||'all',segments=segmentsFor(state,explicit),tokens=normalize(text).split(' ').filter(Boolean),views=segments.map(segment=>viewFor(segment,country,city,tokens)),total=views.reduce((sum,view)=>sum+view.total,0),size=Math.max(1,Math.min(24,Math.trunc(Number(pageSize))||24)),pages=Math.ceil(total/size),current=Math.min(Math.max(0,Math.trunc(Number(page))||0),Math.max(0,pages-1)),start=current*size,end=Math.min(total,start+size),rows=[];
+    function search({state=null,company='all',companyId='',region='',country='',city='',text='',page=0,pageSize=24}={}){
+      region=REGION_IDS.has(String(region||''))?String(region):'';
+      const explicit=String(companyId||company||'all').trim()||'all',segments=segmentsFor(state,explicit),tokens=normalize(text).split(' ').filter(Boolean),views=segments.map(segment=>viewFor(segment,country,city,tokens,region)),total=views.reduce((sum,view)=>sum+view.total,0),size=Math.max(1,Math.min(24,Math.trunc(Number(pageSize))||24)),pages=Math.ceil(total/size),current=Math.min(Math.max(0,Math.trunc(Number(page))||0),Math.max(0,pages-1)),start=current*size,end=Math.min(total,start+size),rows=[];
       let offset=0;for(const view of views){const localStart=Math.max(0,start-offset),localEnd=Math.min(view.total,end-offset);if(localStart<localEnd)for(let position=localStart;position<localEnd;position++){const row=materialize(view.segment.model,view.indexAt(position));rows.push(project(row,view.segment.companyId,view.segment.definition));}offset+=view.total;if(offset>=end)break;}
-      return {rows,total,page:current,pages,countries:countriesFor(segments),get cities(){return citiesFor(segments,country);}};
+      const allCountries=countriesFor(segments);
+      return {rows,total,page:current,pages,region,regions:regionsFor(segments),countries:region?Object.freeze(allCountries.filter(row=>row.region===region)):allCountries,get cities(){return citiesFor(segments,country);}};
     }
     const countryMetadata=value=>{const country=countries.resolve(value);return Object.freeze({id:country.id,label:country.label});};
     return Object.freeze({search,rowsFor,get stats(){return statsFor(null,'all');},statsFor,countryMetadata,providers:Object.freeze([...sources.keys()])});
   }
-  const API=Object.freeze({VERSION,COMPANIES,create,normalize});
+  const API=Object.freeze({VERSION,COMPANIES,REGIONS,create,normalize});
   globalThis.GH_DIRECTORY_CORE=API;
   if(globalThis.window&&window!==globalThis)window.GH_DIRECTORY_CORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;
