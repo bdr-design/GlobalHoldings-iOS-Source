@@ -33,7 +33,7 @@ const {drawFounderSignature}=require('./helpers/signature-input');
   });
 
   const report=[];
-  const panels=['companies','leadershipHub','control','peopleHub','finance','workspaceHub','governanceHub','systemHub','settings','network','routes','assets','assetMarket','companyManage','labor','invoices','monthlyFinance','treasury','energy','bank','businessWorld','news','procurement','conference','audit','legal','insurance','research','esg','career','diagnostics','controlPlane'];
+  const panels=['companies','leadershipHub','control','peopleHub','finance','governanceHub','compliance','groupManagement','systemHub','settings','network','routes','assets','assetMarket','companyManage','labor','invoices','monthlyFinance','treasury','energy','bank','businessWorld','news','procurement','conference','research','esg','diagnostics','controlPlane'];
   for(const panel of panels){
     await page.evaluate(name=>qaContext.openDrawer(name,name==='companyManage'?'air':name==='labor'?'managers:air':name==='assetMarket'?'air':undefined),panel);
     await page.waitForTimeout(50);

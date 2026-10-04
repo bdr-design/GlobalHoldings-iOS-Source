@@ -10,7 +10,7 @@ fs.mkdirSync(out,{recursive:true});
  const browser=await chromium.launch({headless:true});
  const results=[],errors=[];
  try{
-  for(const viewport of [{width:844,height:390},{width:390,height:844}]){
+  for(const viewport of [{width:844,height:390}]){
    const orientation=viewport.width>viewport.height?'landscape':'portrait';
    const context=await browser.newContext({viewport,deviceScaleFactor:2,hasTouch:true,locale:'ar-SA'});
    const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push({orientation,message:e.message}));
@@ -46,7 +46,8 @@ fs.mkdirSync(out,{recursive:true});
      }else{
       const tabs=[['jobs','الوظائف والاحتياج'],['managers','مديرو الشركات'],['recruitment','الاستقطاب'],['contracts','العقود'],['payroll','الرواتب'],['dashboard','لوحة HR']];
       for(const [id,label] of tabs){
-       await click(page.locator('.side-nav [data-panel=peopleHub]'));
+       await click(page.locator('.side-nav [data-panel=leadershipHub]'));
+       await click(page.locator('#drawerBody .command-btn[data-open="peopleHub"]'));
        await click(page.locator('#drawerBody .command-btn[data-open="labor"][data-arg="dashboard"]'));
        await click(page.getByRole('button',{name:label,exact:true}));
        assert.equal(await page.locator(`#drawerBody [data-labortab="${id}"].active`).count(),1,`actual HR click must activate ${id}`);

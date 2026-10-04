@@ -46,7 +46,7 @@
     board:{meetings:[],resolutions:[],nextMeetingDay:30},
     procurement:{pipeline:[],deliveries:[],pendingDeliveryCount:null,leadTimes:{air:120,sea:210,road:21,power:365,bank:45},supplierScores:{}},
     projects:[],insurance:{renewalIndex:100,claimsTrend:0},
-    taxFx:{fxExposure:0,hedgedPct:0,taxRate:.15},rating:{grade:'BBB',outlook:'Stable',score:62},dividends:{history:[],available:0},
+    taxFx:{fxExposure:0,taxRate:.15},rating:{grade:'BBB',outlook:'Stable',score:62},dividends:{history:[],available:0},
     people:{succession:{},executiveScore:75},morningBriefs:[],eventQueue:[],controls:{lastIntegrityDay:0,issues:[]}
   });
   function deepDefaults(target,defs){for(const [k,v] of Object.entries(defs)){if(target[k]===undefined)target[k]=typeof structuredClone==='function'?structuredClone(v):JSON.parse(JSON.stringify(v));else if(v&&typeof v==='object'&&!Array.isArray(v)&&target[k]&&typeof target[k]==='object'&&!Array.isArray(target[k]))deepDefaults(target[k],v);}return target;}
@@ -274,7 +274,7 @@
   function deliveryAssets(delivery){return fleetData().receiptAssets(delivery);}
   function deliveryUnitCount(delivery){return Math.max(1,fleetData().receiptAssetCount(delivery)||Math.floor(Number(delivery?.count)||0));}
   function syncManualDeliveryPipeline(state,day){const r=migrate(state),deliveries=r.procurement.deliveries||[],existing=new Map((r.procurement.pipeline||[]).map(row=>[row.sourceId,row]));r.procurement.pipeline=deliveries.slice(-400).map(d=>{const prior=existing.get(d.id)||{},first=fleetData().receiptFirstAsset(d),company=assetOwnerCompanyId(state,first)||rowCompanyId(state,d,'');return {...prior,id:`PRC2-${d.id}`,sourceId:d.id,company,ownerCompanyId:company,title:first?.name||d.assetName||d.catalogId||d.id,count:deliveryUnitCount(d),stage:d.status==='delivered'?'Delivered':d.status==='cancelled'?'Cancelled':d.blockedReason?'Destination blocked':'Paid / Delivery',createdDay:Number.isFinite(Number(d.orderedDay))?Number(d.orderedDay):day,leadDays:Math.max(0,Math.ceil((Number(d.dueAtSeconds)-Number(d.orderedAtSeconds))/86400)||0),manual:true};});return r.procurement.pipeline;}
-  function updateTaxFxAndDividends(state,day){const r=migrate(state),countries=new Set((state.globalBases||[]).map(x=>x.country||x.countryCode).filter(Boolean)),baseTax=.15+Math.min(.07,countries.size*.005);r.taxFx.taxRate=baseTax;r.taxFx.fxExposure=Number(state.advanced?.treasury?.fxExposure)||Math.max(0,(Number(state.debt)||0)*.28);r.taxFx.hedgedPct=Number(state.advanced?.treasury?.hedgeRatio)||0;const floor=r.risk.limits.minLiquidity,excess=Math.max(0,(Number(state.cash)||0)-floor);r.dividends.available=Math.round(excess*.35);}
+  function updateTaxFxAndDividends(state,day){const r=migrate(state),countries=new Set((state.globalBases||[]).map(x=>x.country||x.countryCode).filter(Boolean)),baseTax=.15+Math.min(.07,countries.size*.005);r.taxFx.taxRate=baseTax;r.taxFx.fxExposure=Math.max(0,(Number(state.debt)||0)*.28);delete r.taxFx.hedgedPct;const floor=r.risk.limits.minLiquidity,excess=Math.max(0,(Number(state.cash)||0)-floor);r.dividends.available=Math.round(excess*.35);}
   function updatePrograms(state,day){
     const r=migrate(state);globalThis.GH_GOVERNANCE_CORE?.execute?.({state},'tick-sustainability',{day});
     const research=state.research||{};r.controls.researchEffects={efficiency:clamp((Number(research.efficiency)||0)/100,0,1),automation:clamp((Number(research.automation)||0)/100,0,1),cleanEnergy:clamp((Number(research.cleanEnergy)||0)/100,0,1)};

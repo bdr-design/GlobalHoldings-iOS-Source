@@ -67,8 +67,9 @@ const DAY=86400;
       for(const type of ['air','power']){const d=GH_COMPANY_PLATFORM.definitionFor(s(),type);await a.runAuthorizedDomainCommand('corporate','open-company',{type,companyId:type,capital:Math.max(400000000,d.founding.minimumCapital),legalName:`QA Terms ${type}`,formationContract:`QA-TERMS-${type}`},{silent:true});}
       const airport=GH_WORLD_DATA.airports.find(r=>r[0]==='OMDB');
       await a.runAuthorizedDomainCommand('facilities','create',{facility:{id:'QA-air-OMDB',name:'QA OMDB',kind:'airport-base',company:'air',ownerCompanyId:'air',owned:true,sourceKey:'air:OMDB',code:airport[1],icao:airport[0],iata:airport[1],city:airport[3]||'—',country:String(airport[5]),coords:[airport[6],airport[7]]},bucket:'globalBases'},{silent:true});
-      // Daily operating revenue: an SLA contract at the airport (owned facility income). Daily operating cost: leases.
-      await a.runAuthorizedDomainCommand('facilities','contract',{id:'QA-air-OMDB',facilityId:'QA-air-OMDB',annualRevenue:36500000,termDays:180},{silent:true});
+      // Daily operating revenue: a signed customer contract (K3, air cargo). Daily operating cost: leases.
+      await a.runAuthorizedDomainCommand('contracts','bid',{id:'K3',won:true,number:'GH-CN-QA-TERMS',client:'Nova Devices',sector:'air',title:'QA terms air cargo',value:66000000,termMonths:18},{silent:true});
+      await a.runAuthorizedDomainCommand('contracts','sign',{id:'K3',company:'air',companyId:'air',ownerCompanyId:'air',sector:'air',deposit:0,name:'QA terms air cargo',client:'Nova Devices',value:66000000,termMonths:18,taxable:true},{silent:true});
       const lease=[...GH_ASSET_CATALOG.air.used].sort((x,y)=>(x.leaseMonthly||0)-(y.leaseMonthly||0)||x.price-y.price)[0];
       if(!await a.buyAsset('air','used',lease.id,'lease',6,'QA-air-OMDB',true,'QA-TERMS-LEASE','air'))throw new Error('lease rejected');
     });

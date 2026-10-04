@@ -21,6 +21,5 @@ if(cmd==='tick-prices'){
   }
   return {hour,stocks:s.market.length,competitors:s.simulationWorld.competitors.length};
 }
-if(cmd==='due-diligence'){s.advanced=s.advanced||{};s.advanced.ma=s.advanced.ma||{reviews:[]};s.advanced.ma.reviews=Array.isArray(s.advanced.ma.reviews)?s.advanced.ma.reviews:[];const row={id:p.id,at:now(s),score:Number(p.score)||0,riskScore:Number(p.riskScore??p.score)||0,leverage:Number(p.leverage)||0,margin:Number(p.margin)||0,synergy:num(p.synergy),quality:Number(p.quality)||80,notes:p.notes||[],status:'مكتمل'};s.advanced.ma.reviews.unshift(row);const C=globalThis.GH_CORPORATE_CORE;if(!C?.execute)throw new Error('corporate-core-missing');C.execute({state:s},'record-dd',{id:p.id,data:{riskScore:row.riskScore,leverage:row.leverage,margin:row.margin,synergy:row.synergy,quality:row.quality}});return row;}
-if(cmd==='acquire-stake'){const C=globalThis.GH_CORPORATE_CORE;if(!C?.execute)throw new Error('corporate-core-missing');const row=C.execute({state:s},'acquire-stake',p);s.maPortfolio.unshift(row);return row;}throw new Error(`Unknown market command: ${cmd}`)}
+throw new Error(`Unknown market command: ${cmd}`)}
 const API={VERSION,ensure,execute};globalThis.GH_MARKET_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('market',API);if(globalThis.window&&window!==globalThis)window.GH_MARKET_CORE=API;})();

@@ -28,11 +28,12 @@
     <symbol id="i-market" viewBox="0 0 24 24"><path d="m3 17 5-5 4 3 8-9M16 6h4v4M3 21h18"/></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
-    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></symbol>
     <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5Z"/></symbol>
     <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></symbol>
     <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></symbol>
     <symbol id="i-crown" viewBox="0 0 24 24"><path d="m3 7 5 4 4-7 4 7 5-4-2 11H5L3 7ZM5 21h14"/></symbol>
   </svg>
 
@@ -85,38 +86,36 @@
         <span id="brandMark" class="brand-mark">GH</span>
         <span class="brand-copy"><strong id="groupName">المجموعة العالمية القابضة</strong><small id="runtimeBuildBadge" hidden>BUILD —</small></span>
       </button>
+      <div id="simClockChip" class="sim-clock-chip" aria-live="polite">
+        <button id="simCalendarToggle" class="sim-clock-toggle" type="button" aria-expanded="false" aria-controls="simCalendarPanel" title="فتح التقويم التشغيلي">
+          <span class="sim-clock-copy"><strong id="simDate">01 يناير 2026</strong><small id="simDay">اليوم 1</small></span>
+        </button>
+      </div>
+      <div class="ui-time" aria-label="الوقت والسرعة"><button id="speedToggle" class="ui-pause" title="إيقاف أو استئناف المحاكاة" aria-label="إيقاف أو استئناف المحاكاة"><span aria-hidden="true">Ⅱ</span><b id="speedLabel" class="sr-only"></b></button><div id="speedMenu" class="ui-speeds" role="group" aria-label="سرعة المحاكاة"><button data-speed="1" title="عادي · 30 ضعفًا">30×</button><button data-speed="2" title="سريع · 120 ضعفًا">120×</button><button data-speed="3" title="متسارع · 300 ضعفًا">300×</button><button data-speed="4" title="فائق · 600 ضعفًا">600×</button></div></div>
       <section class="top-kpis" aria-label="مؤشرات المجموعة">
         <div><span>السيولة</span><strong id="cashKpi">$250.0M</strong></div>
-        <div><span>قيمة المجموعة</span><strong id="valueKpi">$412.0M</strong></div>
-        <div><span>الديون</span><strong id="debtKpi">$84.0M</strong></div>
         <div><span>صافي اليوم</span><strong id="profitKpi">+$0</strong></div>
       </section>
-      <div class="ui-time" aria-label="الوقت والسرعة"><button id="speedToggle" class="ui-pause" title="إيقاف أو استئناف المحاكاة" aria-label="إيقاف أو استئناف المحاكاة"><span aria-hidden="true">Ⅱ</span><b id="speedLabel" class="sr-only"></b></button><div id="speedMenu" class="ui-speeds" role="group" aria-label="سرعة المحاكاة"><button data-speed="1" title="عادي · 30 ضعفًا">30×</button><button data-speed="2" title="سريع · 120 ضعفًا">120×</button><button data-speed="3" title="متسارع · 300 ضعفًا">300×</button><button data-speed="4" title="فائق · 600 ضعفًا">600×</button></div></div>
+      <div class="map-style" role="group" aria-label="نمط الخريطة">
+        <button type="button" data-map-style="dark" aria-pressed="true"><svg><use href="#i-moon"></use></svg><span>داكن</span></button><button type="button" data-map-style="natural" aria-pressed="false"><svg><use href="#i-world"></use></svg><span>طبيعي</span></button>
+      </div>
       <div class="top-actions">
-        <button id="executionLogBtn" hidden class="icon-btn" aria-label="سجل التنفيذ" title="سجل التنفيذ"><svg><use href="#i-target"></use></svg><b id="executionLogCount">✓</b></button><button id="alertsBtn" class="icon-btn" aria-label="التنبيهات"><svg><use href="#i-bell"></use></svg><b id="alertCount">0</b></button>
-        <button id="healthBtn" hidden class="icon-btn health-shortcut" aria-label="صحة النظام" title="صحة النظام"><span>HLT</span></button><button id="settingsBtn" hidden class="icon-btn" aria-label="الإعدادات"><svg><use href="#i-settings"></use></svg></button>
+        <button id="filterToggle" class="icon-btn" aria-label="طبقات الخريطة" title="طبقات الخريطة"><svg><use href="#i-layers"></use></svg></button><button id="executionLogBtn" hidden class="icon-btn" aria-label="سجل التنفيذ" title="سجل التنفيذ"><svg><use href="#i-target"></use></svg><b id="executionLogCount">✓</b></button><button id="alertsBtn" class="icon-btn" aria-label="التنبيهات"><svg><use href="#i-bell"></use></svg><b id="alertCount">0</b></button><button id="healthBtn" hidden class="icon-btn health-shortcut" aria-label="صحة النظام" title="صحة النظام"><span>HLT</span></button><button id="settingsBtn" class="icon-btn" aria-label="النظام" title="النظام"><svg><use href="#i-settings"></use></svg></button>
       </div>
     </header>
 
     <div class="game-frame">
-      <nav class="side-nav domain-rail" aria-label="مساحات العمل الرئيسية">
-        <button id="mapNavBtn" title="الخريطة" aria-label="الخريطة" class="active" data-nav="map"><svg><use href="#i-world"></use></svg><span>الخريطة</span><small>العالم</small></button>
-        <button title="المجموعة" aria-label="المجموعة" data-panel="leadershipHub" data-nav="leadership"><svg><use href="#i-target"></use></svg><span>المجموعة</span><small>القرار والسجل</small></button>
-        <button title="الشركات" aria-label="الشركات" data-panel="companies" data-nav="companies"><svg><use href="#i-company"></use></svg><span>الشركات</span><small>المجموعة</small></button>
-        <button title="التشغيل" aria-label="التشغيل" data-panel="control" data-nav="control"><svg><use href="#i-ops"></use></svg><span>التشغيل</span><small>الأصول والمسارات</small></button>
-        <button title="الموارد البشرية" aria-label="الموارد البشرية" data-panel="peopleHub" data-nav="people"><svg><use href="#i-company"></use></svg><span>الموارد</span><small>وظائف المنشآت</small></button>
-        <button title="المالية" aria-label="المالية" data-panel="finance" data-nav="finance"><svg><use href="#i-market"></use></svg><span>المالية</span><small>الخزينة والحسابات</small></button>
-        <button title="المزيد" aria-label="المزيد" data-panel="workspaceHub" data-nav="more"><svg><use href="#i-settings"></use></svg><span>المزيد</span><small>كل الأدوات</small></button>
-      </nav>
-
       <main class="map-stage">
         <div id="map" aria-label="الخريطة العالمية الموحدة"></div>
-        <div class="map-heading"><span class="live-dot"></span><div><small>مركز القيادة العالمي</small><strong>الحركة التشغيلية المباشرة</strong></div></div>
-        <div id="simClockChip" class="sim-clock-chip" aria-live="polite">
-          <button id="simCalendarToggle" class="sim-clock-toggle" type="button" aria-expanded="false" aria-controls="simCalendarPanel" title="فتح التقويم التشغيلي">
-            <span class="sim-clock-icon" aria-hidden="true">▦</span><span class="sim-clock-copy"><strong id="simDate">01 يناير 2026</strong><small id="simDay">اليوم 1</small></span>
-          </button>
-        </div>
+        <div class="map-strip"><div id="mapStatus" class="map-status">تحميل الحركة العالمية…</div><span class="map-credit" dir="ltr">Natural Earth · © OpenStreetMap contributors · Esri</span></div>
+      </main>
+
+      <div class="sheet-dock">
+        <aside id="drawer" class="drawer" aria-hidden="true">
+        <div class="drawer-head"><button id="workspaceBack" class="close-btn" aria-label="الرجوع للقسم السابق" hidden>→</button><div><span id="drawerEyebrow" class="eyebrow">العمليات</span><h2 id="drawerTitle">مركز القيادة</h2></div><button id="drawerClose" class="close-btn" aria-label="إغلاق اللوحة"><svg><use href="#i-close"></use></svg></button></div>
+        <div id="drawerBody" class="drawer-body"></div>
+      </aside>
+
         <section id="simCalendarPanel" class="sim-calendar-panel hidden" aria-label="التقويم التشغيلي">
           <header class="sim-cal-head"><div><small>التقويم التشغيلي</small><strong id="simCalendarCurrent">01 يناير 2026 · 00:00</strong></div><span id="simAdvanceStatus">جاهز للتقديم</span></header>
           <div class="sim-cal-quick" aria-label="تقديم الوقت"><button id="simNextDay" type="button" class="sim-day-step">+ يوم</button><button type="button" data-calendar-advance="7">+ 7 أيام</button><button type="button" data-calendar-advance="30">+ 30 يوم</button><button type="button" data-calendar-advance="year">+ سنة</button></div>
@@ -126,29 +125,14 @@
           <div class="sim-cal-foot"><small>اختيار أي يوم قادم حتى سنة واحدة في كل عملية يحافظ على الإقفالات اليومية والرواتب والضرائب.</small><button id="simCalendarGo" type="button" class="primary-btn" data-disabled-reason="اختر تاريخًا قادمًا أولًا" disabled>تقديم إلى التاريخ</button></div>
         </section>
 
-        <div class="map-actions" aria-label="أدوات الخريطة">
-          <button id="worldDirectoryBtn" class="map-fab map-fab-primary" aria-label="الدليل العالمي للشبكة والتوسع"><span class="fab-code">GLO</span><span>الدليل العالمي</span></button>
-          <button id="filterToggle" class="map-fab" aria-label="فلاتر الخريطة"><svg><use href="#i-filter"></use></svg><span>فلترة</span></button>
-          <button id="layerBtn" class="map-fab" aria-label="نوع الخريطة"><svg><use href="#i-layers"></use></svg><span>الطبقات</span></button>
-          <button id="fitWorldBtn" class="map-fab" aria-label="عرض العالم"><svg><use href="#i-target"></use></svg><span>العالم</span></button>
-        </div>
-
-        <div id="filterPopover" class="map-popover filter-popover hidden">
+        <section id="filterPopover" class="map-popover filter-popover hidden" aria-label="طبقات الخريطة">
           <div class="popover-title"><span>طبقات الخريطة</span><small>التغيير لا يحرك الكاميرا</small></div>
+          <div id="layerMenu" class="filter-section layer-pop"><b>خلفية الخريطة</b><div class="filter-grid"><button data-layer="dark"><span>داكن</span></button><button data-layer="natural"><span>طبيعي</span></button><button data-layer="street"><span>الشوارع والمدن</span></button><button data-layer="satellite"><span>أقمار صناعية</span></button></div></div>
           <div class="filter-section"><b>النطاق</b><div class="filter-grid"><button class="filter-btn active" data-filter="all"><span>الكل</span><small>شبكة المجموعة</small></button><button class="filter-btn" data-filter="facility"><span>المنشآت</span><small>المقار والمواقع</small></button></div></div>
           <div class="filter-section"><b>التشغيل</b><div class="filter-grid"><button class="filter-btn" data-filter="air"><span>الطيران</span><small>الطائرات والمسارات</small></button><button class="filter-btn" data-filter="sea"><span>البحرية</span><small>السفن والمسارات</small></button><button class="filter-btn" data-filter="road"><span>اللوجستيات</span><small>الشاحنات والمسارات</small></button><button class="filter-btn" data-filter="mobility"><span>التنقل الذكي</span><small>المركبات الحضرية</small></button></div></div>
           <div class="filter-section"><b>البنية العالمية</b><div class="filter-grid"><button class="filter-btn" data-filter="airport"><span>المطارات</span><small>ضمن نطاق العرض</small></button><button class="filter-btn" data-filter="port"><span>الموانئ</span><small>ضمن نطاق العرض</small></button></div></div>
           <label class="mini-switch"><input id="competitorToggle" type="checkbox" checked><span></span><b>طبقة المنافسين</b></label>
-        </div>
-
-        <div id="layerMenu" class="map-popover layer-pop hidden">
-          <div class="popover-title">أسلوب الخريطة</div>
-          <button data-layer="standard" class="active">التضاريس</button><button data-layer="street">الشوارع والمدن</button><button data-layer="satellite">أقمار صناعية</button>
-        </div>
-
-
-
-        <div id="mapStatus" class="map-status">تحميل الحركة العالمية…</div>
+        </section>
 
         <section id="assetCard" class="asset-card hidden" aria-live="polite">
           <button id="assetClose" class="close-btn asset-close" aria-label="إغلاق"><svg><use href="#i-close"></use></svg></button>
@@ -157,37 +141,21 @@
           <div class="asset-grid"><div><span>الحالة</span><b id="assetStatus"></b></div><div><span>الوصول</span><b id="assetEta"></b></div><div><span>المتبقي</span><b id="assetDistance"></b></div><div><span>السرعة</span><b id="assetSpeed"></b></div><div><span>الوقود</span><b id="assetFuel"></b></div><div><span>الحمولة</span><b id="assetLoad"></b></div></div>
           <div class="asset-footer"><span>هامش آخر دورة</span><strong id="assetMargin"></strong><button id="assetManageBtn" class="primary-btn">فتح ملف الأصل</button></div>
         </section>
-      </main>
+      </div>
 
-      <aside id="drawer" class="drawer" aria-hidden="true">
-        <div class="drawer-head"><button id="workspaceBack" class="close-btn" aria-label="الرجوع للقسم السابق" hidden>→</button><div><span id="drawerEyebrow" class="eyebrow">العمليات</span><h2 id="drawerTitle">مركز القيادة</h2></div><button id="drawerClose" class="close-btn" aria-label="إغلاق اللوحة"><svg><use href="#i-close"></use></svg></button></div>
-        <div id="drawerBody" class="drawer-body"></div>
-      </aside>
+      <nav class="side-nav domain-rail" aria-label="الأقسام">
+        <button id="mapNavBtn" title="الخريطة" aria-label="الخريطة" class="active" data-nav="map"><svg><use href="#i-world"></use></svg><span>الخريطة</span></button>
+        <button title="العمليات" aria-label="العمليات" data-panel="control" data-nav="control"><svg><use href="#i-ops"></use></svg><span>العمليات</span></button>
+        <button title="الشركات" aria-label="الشركات" data-panel="companies" data-nav="companies"><svg><use href="#i-company"></use></svg><span>الشركات</span></button>
+        <button title="المال" aria-label="المال" data-panel="finance" data-nav="finance"><svg><use href="#i-market"></use></svg><span>المال</span></button>
+        <button title="الإدارة" aria-label="الإدارة" data-panel="leadershipHub" data-nav="leadership"><svg><use href="#i-crown"></use></svg><span>الإدارة</span></button>
+      </nav>
     </div>
-
-    <nav class="bottom-nav workspace-bottom-nav" aria-label="تنقل الهاتف">
-      <button data-mobile-map class="active"><svg><use href="#i-world"></use></svg><b>العالم</b></button>
-      <button title="المجموعة" aria-label="المجموعة" data-panel="leadershipHub"><svg><use href="#i-target"></use></svg><b>القيادة</b></button>
-      <button title="التشغيل" aria-label="التشغيل" data-panel="control"><svg><use href="#i-ops"></use></svg><b>العمليات</b></button>
-      <button title="المالية" aria-label="المالية" data-panel="finance"><svg><use href="#i-market"></use></svg><b>المالية</b></button>
-      <button title="المزيد" aria-label="المزيد" data-panel="workspaceHub"><svg><use href="#i-more"></use></svg><b>المزيد</b></button>
-    </nav>
 
     <div id="backdrop" class="backdrop hidden"></div>
     <dialog id="signatureDialog" class="authorization-dialog" aria-labelledby="signatureDialogTitle">
       <div class="authorization-dialog-card"><header><div><small>هوية الاعتماد</small><h2 id="signatureDialogTitle">اعتماد توقيع المعاملات</h2></div><button id="signatureDialogClose" type="button" aria-label="إغلاق">×</button></header><p>يستخدم هذا الرسم كتوقيع مرئي على المعاملات الجديدة. يحتفظ كل مستند بإصدار التوقيع وبصمته وقت الاعتماد.</p><div id="signatureDialogMount"></div><p id="signatureDialogError" class="incorporation-error" role="alert" hidden></p><footer><button id="signatureDialogCancel" class="secondary-btn" type="button">لاحقًا</button><button id="signatureDialogSave" class="primary-btn" type="button">اعتماد التوقيع</button></footer></div>
     </dialog>
-    <aside id="godPanel" class="god-panel" aria-hidden="true" aria-label="God Mode">
-      <div class="drawer-head"><div><h2>God Mode</h2></div><button id="godClose" class="close-btn" aria-label="إغلاق God Mode"><svg><use href="#i-close"></use></svg></button></div>
-      <nav class="god-tabs" role="tablist" aria-label="أدوات God Mode"><button id="godTab-rules" type="button" role="tab" aria-controls="godPage-rules" aria-selected="false" tabindex="-1" data-god-tab="rules">القواعد</button><button id="godTab-cash" type="button" role="tab" aria-controls="godPage-cash" aria-selected="true" tabindex="0" data-god-tab="cash">السيولة</button><button id="godTab-budget" type="button" role="tab" aria-controls="godPage-budget" aria-selected="false" tabindex="-1" data-god-tab="budget">الميزانية</button><button id="godTab-debt" type="button" role="tab" aria-controls="godPage-debt" aria-selected="false" tabindex="-1" data-god-tab="debt">الدين</button></nav>
-      <p id="godFeedback" role="status" aria-live="polite"></p>
-      <div class="god-body">
-        <section id="godPage-rules" class="god-section" role="tabpanel" aria-labelledby="godTab-rules" hidden><div class="god-section-head"><div><b>قواعد المحاكاة</b><small>تحكم بالقيود فقط، دون حذف أثر التكاليف من التقارير.</small></div></div><label class="switch-row"><div><b>تفعيل God Money</b><small>فتح أدوات التحكم المالي.</small></div><input id="godMoneyToggle" type="checkbox"><span></span></label><label class="switch-row"><div><b>تجاوز قيد السيولة</b><small>يسمح بالتنفيذ التجريبي مع إبقاء التكلفة الاقتصادية مسجلة.</small></div><input id="infiniteToggle" type="checkbox"><span></span></label></section>
-        <section id="godPage-cash" class="god-section" role="tabpanel" aria-labelledby="godTab-cash"><div class="god-section-head"><div><b>السيولة الفعلية</b><small>أضف أو عيّن رصيد كيان واحد فقط؛ لا يتم تصفير الشركات الأخرى.</small></div></div><label class="god-select-label">الكيان<select id="godEntitySelect"><option value="group">المجموعة</option><option value="air">الطيران</option><option value="sea">البحرية</option><option value="road">اللوجستيات</option><option value="power">الطاقة</option><option value="bank">البنك</option></select></label><div class="god-form"><label>إضافة سيولة<input id="addMoneyInput" type="number" min="0" step="1000000" value="100000000"></label><button id="addMoneyBtn">إضافة</button></div><div class="quick-money"><button data-money="1000000">+1M</button><button data-money="10000000">+10M</button><button data-money="100000000">+100M</button><button data-money="1000000000">+1B</button></div><div class="god-form"><label>تعيين رصيد الحساب الجاري<input id="setMoneyInput" type="number" min="0" step="1000000" value="1000000000"></label><button id="setMoneyBtn">تعيين</button></div><div id="godEntityStatus" class="god-status"></div></section>
-        <section id="godPage-budget" class="god-section" role="tabpanel" aria-labelledby="godTab-budget" hidden><div class="god-section-head"><div><b>ميزانية تشغيل حقيقية</b><small>حد إنفاق 30 يوم + خطة تفصيلية. تعديل الميزانية لا يضيف أي دولار للحساب.</small></div></div><div class="god-budget-form"><label>الشركة<select id="companyBudgetSelect"><option value="group">المجموعة</option><option value="air">الطيران</option><option value="sea">البحرية</option><option value="road">اللوجستيات</option><option value="power">الطاقة</option><option value="bank">البنك</option></select></label><label>حد الإنفاق خلال 30 يوم<input id="companyBudgetInput" type="number" min="0" step="1000000" value="50000000"></label><button id="setCompanyBudgetBtn">حفظ الحد</button></div><div class="god-budget-lines"><label>رواتب<input id="godBudgetPayroll" type="number" min="0" step="100000"></label><label>وقود/طاقة<input id="godBudgetFuel" type="number" min="0" step="100000"></label><label>صيانة<input id="godBudgetMaintenance" type="number" min="0" step="100000"></label><label>تسويق<input id="godBudgetMarketing" type="number" min="0" step="100000"></label><label>تأمين<input id="godBudgetInsurance" type="number" min="0" step="100000"></label><label>تقنية<input id="godBudgetTechnology" type="number" min="0" step="100000"></label><label>CAPEX<input id="godBudgetCapex" type="number" min="0" step="100000"></label><label>أخرى<input id="godBudgetOther" type="number" min="0" step="100000"></label></div><div class="god-inline-actions"><button id="budgetAutoSplitBtn" class="secondary-btn">توزيع تلقائي مدروس</button><button id="saveBudgetPlanBtn" class="primary-btn">حفظ الخطة التفصيلية</button><button id="resetCompanyBudgetBtn" class="danger-soft">إلغاء الميزانية</button></div><div id="companyBudgetStatus" class="god-budget-status"></div></section>
-        <section id="godPage-debt" class="god-section" role="tabpanel" aria-labelledby="godTab-debt" hidden><div class="god-section-head"><div><b>الدين ورأس المال</b><small>تعديل دين كيان محدد أو تصفير ديون المجموعة كاملة عند الاختبار.</small></div></div><div class="god-debt-form"><label>الشركة<select id="godDebtCompanySelect"><option value="group">المجموعة</option><option value="air">الطيران</option><option value="sea">البحرية</option><option value="road">اللوجستيات</option><option value="power">الطاقة</option><option value="bank">البنك</option></select></label><label>الدين المستهدف<input id="godDebtInput" type="number" min="0" step="1000000" value="0"></label><button id="setGodDebtBtn">تعيين الدين</button></div><button id="clearDebtBtn" class="danger-soft">تصفير جميع الديون</button></section>
-      </div>
-    </aside>
   </div>
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="world-data.js"></script>
@@ -222,7 +190,6 @@
   <script src="game-lifecycle-core.js"></script>
   <script src="domain-command-core.js"></script>
   <script src="business-world-core.js"></script>
-  <script src="department-core.js"></script>
   <script src="finance-core.js"></script>
   <script src="finance-report-core.js"></script>
   <script src="media-asset-core.js"></script>

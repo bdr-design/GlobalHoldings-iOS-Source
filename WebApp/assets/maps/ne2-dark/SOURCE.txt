@@ -1,0 +1,2 @@
+Rendered by tools/render_dark_map_tiles.py from assets/maps/ne2.
+Made with Natural Earth. Natural Earth II is in the public domain.

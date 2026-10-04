@@ -105,15 +105,9 @@ check(missingCatalogRejected,
   });
 
 const salaryState = {...minimal(), advanced: {}, hired: [], openedCompanies: []};
-hrBox.GH_HR_CORE.applySalaryRaise(salaryState, {company: 'group', percent: 5, reference: 'B334-SALARY'});
-let salaryConflictRejected = false;
-try { hrBox.GH_HR_CORE.applySalaryRaise(salaryState, {company: 'group', percent: 10, reference: 'B334-SALARY'}); }
-catch (_error) { salaryConflictRejected = true; }
-check(salaryConflictRejected,
-  'HR_SALARY_REFERENCE_CONFLICT_SILENT', {
-    retryAccepted: !salaryConflictRejected,
-    history: hrBox.GH_HR_CORE.salaryHistory(salaryState, 'group')
-  });
+hrBox.GH_HR_CORE.ensure(salaryState).salaryPolicy.group.salaryIndex = 1.05;
+check(Math.abs(hrBox.GH_HR_CORE.salaryMultiplier(salaryState, 'group') - 1.05) < 1e-9,
+  'HR_SAVED_SALARY_INDEX_IGNORED', {multiplier: hrBox.GH_HR_CORE.salaryMultiplier(salaryState, 'group')});
 
 const result = {passed: defects.length === 0, passCount: passes.length, passes, defectCount: defects.length, defects};
 console.log(JSON.stringify(result, null, 2));

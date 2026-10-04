@@ -6,12 +6,6 @@ const SPONSOR_SEEDS=[
  {id:'SPON-ENERGY-001',name:'NorthArc Data Systems',industry:'مراكز بيانات',sectors:['power'],value:32000000,termDays:730,rights:'شريك طاقة واستدامة للمحتوى المؤسسي',exclusivity:'مراكز بيانات'},
  {id:'SPON-GROUP-001',name:'Crestline Business Network',industry:'خدمات أعمال',sectors:['group','bank'],value:15000000,termDays:365,rights:'رعاية الفعاليات والتقارير المؤسسية',exclusivity:'خدمات أعمال'}
 ];
-const CAMPAIGN_CHANNELS=Object.freeze({
- digital:{name:'حملة رقمية',cpm:9,reachFactor:74,agency:'Nexa Media Exchange'},
- trade:{name:'معارض وفعاليات قطاعية',cpm:28,reachFactor:24,agency:'World Trade Events'},
- outdoor:{name:'إعلان خارجي',cpm:16,reachFactor:42,agency:'MetroReach Media'},
- corporate:{name:'حملة B2B مباشرة',cpm:36,reachFactor:18,agency:'Meridian Corporate Media'}
-});
 const num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0,day=s=>Math.floor(now(s)/86400);
 const norm=v=>String(v||'').trim().toLowerCase().replace(/[\s._,،/\\()-]+/g,' ');
 const unique=a=>[...new Set((a||[]).filter(Boolean).map(String))];
@@ -37,9 +31,9 @@ function ensure(s){
  const b=s.businessWorld=s.businessWorld&&typeof s.businessWorld==='object'&&!Array.isArray(s.businessWorld)?s.businessWorld:{};
  b.schema=SCHEMA;b.parties=b.parties&&typeof b.parties==='object'&&!Array.isArray(b.parties)?b.parties:{};
  b.relationships=b.relationships&&typeof b.relationships==='object'&&!Array.isArray(b.relationships)?b.relationships:{};
- for(const k of ['opportunities','sponsorships','campaigns','events','competitorActivity'])b[k]=Array.isArray(b[k])?b[k]:[];
+ for(const k of ['opportunities','sponsorships','events','competitorActivity'])b[k]=Array.isArray(b[k])?b[k]:[];delete b.campaigns;
  b.sequence=Math.max(0,Math.floor(Number(b.sequence)||0));const lastWeek=Number(b.lastCompetitorWeek);b.lastCompetitorWeek=Number.isFinite(lastWeek)?Math.max(-1,Math.floor(lastWeek)):-1;
- trim(b.opportunities,120);trim(b.sponsorships,60);trim(b.campaigns,80);trim(b.events,240);trim(b.competitorActivity,120);
+ trim(b.opportunities,120);trim(b.sponsorships,60);trim(b.events,240);trim(b.competitorActivity,120);
  seedSponsors(s);return b;
 }
 function findByName(s,name){const n=norm(name);if(!n)return null;return Object.values(ensure(s).parties).find(p=>norm(p.legalName)===n||norm(p.displayName)===n||(p.aliases||[]).some(a=>norm(a)===n))||null;}
@@ -116,14 +110,6 @@ function acceptSponsorship(s,p={}){
  touchRelationship(s,{partyId:offer.partyId,company,role:'sponsor',reference:offer.id,contractId:offer.id});recordEvent(s,{kind:'sponsorship',partyId:offer.partyId,company,title:`قبول رعاية ${resolveParty(s,offer.partyId)?.displayName}`,detail:`${offer.rights} · حصرية: ${offer.exclusivity}`,amount:offer.value,reference:`SPON-ACCEPT-${offer.id}`,severity:'positive'});return offer;
 }
 function rejectSponsorship(s,p={}){const offer=ensure(s).sponsorships.find(x=>x.id===p.id);if(!offer)throw new Error('sponsorship-not-found');if(offer.status!=='عرض متاح')throw new Error('sponsorship-not-available');offer.status='مرفوض';offer.closedAt=now(s);recordEvent(s,{kind:'sponsorship',partyId:offer.partyId,title:`رفض عرض رعاية ${resolveParty(s,offer.partyId)?.displayName}`,reference:`SPON-REJECT-${offer.id}`});return offer;}
-function launchCampaign(s,p={}){
- const channel=CAMPAIGN_CHANNELS[p.channel];if(!channel)throw new Error('campaign-channel-invalid');const company=ownerFromPayload(s,p),budget=num(p.budget),days=Math.max(7,Math.min(180,Math.floor(Number(p.days)||30)));if(budget<10000)throw new Error('campaign-budget-too-small');
- const agency=upsertParty(s,{name:channel.agency,role:'advertising-agency',industry:'إعلانات وتسويق'}),F=globalThis.GH_FINANCE_CORE;if(!F?.execute)throw new Error('finance-core-unavailable');
- const id=`CMP-${String(++ensure(s).sequence).padStart(6,'0')}`;F.execute({state:s},'spend',{company,amount:budget,note:`${channel.name} · ${id}`,method:'تحويل بنكي',taxable:true,counterparty:agency.legalName,line:'marketing'});
- const impressions=Math.round(budget/Math.max(1,channel.cpm)*1000),reach=Math.round(impressions*Math.min(.92,.32+channel.reachFactor/100));
- const row={id,company,ownerCompanyId:company,agencyPartyId:agency.id,channel:p.channel,channelName:channel.name,budget,startDay:day(s),endDay:day(s)+days,status:'نشطة',impressions,reach,frequency:reach?Number((impressions/reach).toFixed(2)):0};ensure(s).campaigns.unshift(row);trim(ensure(s).campaigns,80);
- recordEvent(s,{kind:'campaign',partyId:agency.id,company,title:`إطلاق ${channel.name}`,detail:`ميزانية ${budget.toLocaleString('en-US')} USD · مدة ${days} يوم`,amount:budget,reference:`CAMPAIGN-${id}`});return row;
-}
 function billSponsorship(s,offer,processedDay){
  if(offer.status!=='نشط'||processedDay<offer.nextBillingDay)return 0;if(processedDay>offer.endDay){offer.status='منتهي';return 0;}
  const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)return 0;const period=offer.billedPeriods+1,ref=`SPON-${offer.id}-P${period}`,party=resolveParty(s,offer.partyId),amount=Math.min(offer.monthlyValue,Math.max(0,offer.value-offer.billedPeriods*offer.monthlyValue));
@@ -135,10 +121,9 @@ function competitorTick(s,processedDay){
  const kinds=['عقد جديد','توسعة تجارية','شراكة قطاعية','مناقصة خارجية'],kind=kinds[week%kinds.length],row={id:`RIVAL-${week}-${r.id}`,at:now(s),day:processedDay,partyId:r.id,sector,kind,detail:`${r.displayName} أعلنت ${kind} في ${r.industry||'السوق'}.`};b.competitorActivity.unshift(row);trim(b.competitorActivity,120);recordEvent(s,{kind:'competitor',partyId:r.id,company:'group',title:row.detail,detail:'حدث سوقي خارجي للمنافس ولا ينفذ أي قرار داخل شركاتك.',reference:row.id});return row;
 }
 function tickDay(s,p={}){
- const processedDay=Math.max(0,Math.floor(Number(p.day)||day(s))),b=ensure(s);let sponsorshipRevenue=0,completedCampaigns=0;
+ const processedDay=Math.max(0,Math.floor(Number(p.day)||day(s))),b=ensure(s);let sponsorshipRevenue=0;
  for(const offer of b.sponsorships)sponsorshipRevenue+=billSponsorship(s,offer,processedDay);
- for(const c of b.campaigns)if(c.status==='نشطة'&&processedDay>=c.endDay){c.status='مكتملة';c.completedDay=processedDay;completedCampaigns++;recordEvent(s,{kind:'campaign',partyId:c.agencyPartyId,company:c.company,title:`اكتملت ${c.channelName}`,detail:`الوصول التقديري ${c.reach.toLocaleString('en-US')} · الظهور ${c.impressions.toLocaleString('en-US')}`,reference:`CAMPAIGN-END-${c.id}`,severity:'positive'});}
- const competitor=competitorTick(s,processedDay);return {day:processedDay,sponsorshipRevenue,completedCampaigns,competitor};
+ const competitor=competitorTick(s,processedDay);return {day:processedDay,sponsorshipRevenue,competitor};
 }
 function customerSnapshot(s,partyId){
  const b=ensure(s),party=b.parties[partyId];if(!party)return null;
@@ -148,11 +133,11 @@ function customerSnapshot(s,partyId){
 }
 function snapshot(s){
  const b=ensure(s),parties=Object.values(b.parties),customers=parties.filter(p=>p.roles.includes('customer')),competitors=parties.filter(p=>p.roles.includes('competitor')),sponsors=parties.filter(p=>p.roles.includes('sponsor'));
- return {parties,customers,competitors,sponsors,opportunities:b.opportunities,sponsorships:b.sponsorships,campaigns:b.campaigns,events:b.events,competitorActivity:b.competitorActivity,activeContracts:b.opportunities.filter(o=>o.status==='نشط').length,openOpportunities:b.opportunities.filter(o=>['متاحة','بانتظار التوقيع'].includes(o.status)).length};
+ return {parties,customers,competitors,sponsors,opportunities:b.opportunities,sponsorships:b.sponsorships,events:b.events,competitorActivity:b.competitorActivity,activeContracts:b.opportunities.filter(o=>o.status==='نشط').length,openOpportunities:b.opportunities.filter(o=>['متاحة','بانتظار التوقيع'].includes(o.status)).length};
 }
 function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);switch(cmd){
- case'ensure':return ensure(s);case'sync-world':return syncWorld(s,p);case'record-bid':return recordBid(s,p);case'record-contract':return recordContract(s,p);case'record-finance':return recordFinance(s,p);case'accept-sponsorship':return acceptSponsorship(s,p);case'reject-sponsorship':return rejectSponsorship(s,p);case'launch-campaign':return launchCampaign(s,p);case'tick-day':return tickDay(s,p);default:throw new Error(`Unknown business-world command: ${cmd}`);
+ case'ensure':return ensure(s);case'sync-world':return syncWorld(s,p);case'record-bid':return recordBid(s,p);case'record-contract':return recordContract(s,p);case'record-finance':return recordFinance(s,p);case'accept-sponsorship':return acceptSponsorship(s,p);case'reject-sponsorship':return rejectSponsorship(s,p);case'tick-day':return tickDay(s,p);default:throw new Error(`Unknown business-world command: ${cmd}`);
 }}
-const API={VERSION,SCHEMA,CAMPAIGN_CHANNELS,ensure,upsertParty,partyIdForName,resolveParty,touchRelationship,recordEvent,syncWorld,competitorForSector,customerSnapshot,snapshot,execute};
+const API={VERSION,SCHEMA,ensure,upsertParty,partyIdForName,resolveParty,touchRelationship,recordEvent,syncWorld,competitorForSector,customerSnapshot,snapshot,execute};
 globalThis.GH_BUSINESS_WORLD=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('business-world',API);if(globalThis.window&&window!==globalThis)window.GH_BUSINESS_WORLD=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

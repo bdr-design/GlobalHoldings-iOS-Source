@@ -2,12 +2,13 @@
   'use strict';
   const VERSION='3.0.0';
   const PANEL_DOMAIN={
-    leadershipHub:'القيادة التنفيذية',workspaceHub:'النظام والسلامة',actionCenter:'القيادة التنفيذية',executionLog:'القيادة التنفيذية',programs:'القيادة التنفيذية',news:'القيادة التنفيذية',businessWorld:'القيادة التنفيذية',realism:'القيادة التنفيذية',ma:'القيادة التنفيذية',research:'القيادة التنفيذية',esg:'القيادة التنفيذية',career:'القيادة التنفيذية',
-    companies:'المجموعة والشركات',companyManage:'المجموعة والشركات',peopleHub:'الموارد البشرية',labor:'الموارد البشرية',control:'التشغيل والأصول',network:'التشغيل والأصول',expansion:'التشغيل والأصول',globalRoute:'التشغيل والأصول',routes:'التشغيل والأصول',assets:'التشغيل والأصول',assetManage:'التشغيل والأصول',ports:'التشغيل والأصول',procurement:'التشغيل والأصول',contracts:'التشغيل والأصول',facilityManage:'التشغيل والأصول',
-    finance:'المالية والخزينة',treasury:'المالية والخزينة',invoices:'المالية والخزينة',market:'المالية والخزينة',bank:'المالية والخزينة',
-    governanceHub:'الحوكمة والمخاطر',governance:'الحوكمة والمخاطر',audit:'الحوكمة والمخاطر',compliance:'الحوكمة والمخاطر',legal:'الحوكمة والمخاطر',insurance:'الحوكمة والمخاطر',cyber:'الحوكمة والمخاطر',safety:'الحوكمة والمخاطر',
-    systemHub:'النظام والسلامة',more:'النظام والسلامة',diagnostics:'النظام والسلامة',controlPlane:'النظام والسلامة',updates:'النظام والسلامة',settings:'النظام والسلامة',energy:'المجموعة والشركات'
+    leadershipHub:'الإدارة',actionCenter:'الإدارة',news:'الإدارة',businessWorld:'الإدارة',realism:'الإدارة',research:'الإدارة',esg:'الإدارة',conference:'الإدارة',peopleHub:'الإدارة',labor:'الإدارة',groupManagement:'الإدارة',governanceHub:'الإدارة',compliance:'الإدارة',cyber:'الإدارة',safety:'الإدارة',
+    companies:'الشركات',companyManage:'الشركات',energy:'الشركات',bank:'الشركات',
+    control:'العمليات',network:'العمليات',expansion:'العمليات',globalRoute:'العمليات',routes:'العمليات',assets:'العمليات',assetManage:'العمليات',ports:'العمليات',procurement:'العمليات',contracts:'العمليات',facilityManage:'العمليات',
+    finance:'المال',treasury:'المال',invoices:'المال',market:'المال',
+    systemHub:'النظام',executionLog:'النظام',diagnostics:'النظام',controlPlane:'النظام',updates:'النظام',settings:'النظام'
   };
+
   function record(state,type,detail={},severity='info'){
     try{globalThis.GH_DIAGNOSTICS?.record?.(state,type,detail,severity);}catch(error){console.warn('UI quality diagnostics failed',error);}
   }
@@ -17,8 +18,6 @@
     (state?.realism?.procurement?.deliveries||[]).filter(d=>d?.status!=='delivered'&&Number(d?.dueSimSeconds||Infinity)<now).forEach(d=>{const asset=(Array.isArray(d.assets)?d.assets:d.asset?[d.asset]:[])[0];out.push(task(`DEL:${d.id}`,`تسليم متأخر · ${asset?.model||d.catalogId||d.id}${Number(d.count||d.assets?.length)>1?` · ${Number(d.count||d.assets.length)} أصل`:''}`,'التشغيل','critical','procurement',d.destination||''));});
     const activeIssues=diag.activeIssues&&typeof diag.activeIssues==='object'?Object.values(diag.activeIssues):[];
     activeIssues.forEach(i=>out.push(task(`DIAG:${i.id||i.type}`,i.message||i.title||i.id||'مشكلة نظام','النظام',i.severity==='critical'?'critical':'high','diagnostics',i.detail||'')));
-    const audit=state?.advanced?.audit;if(Number(audit?.findings)>0)out.push(task('AUDIT:OPEN',`${audit.findings} ملاحظات تدقيق مفتوحة`,'الرقابة',audit.findings>=5?'critical':'high','audit','تحتاج متابعة وإغلاق.'));
-    const legal=state?.advanced?.legal;if(Number(legal?.openCases)>0)out.push(task('LEGAL:OPEN',`${legal.openCases} قضايا قانونية مفتوحة`,'الرقابة','high','legal',''));
     const safety=state?.advanced?.safety;if(Number(safety?.incidents)>0)out.push(task('SAFETY:INCIDENTS',`${safety.incidents} حوادث سلامة`,'الرقابة','critical','safety',''));
     const cyber=state?.advanced?.cyber;if(Number(cyber?.incidents)>0)out.push(task('CYBER:INCIDENTS',`${cyber.incidents} حوادث سيبرانية`,'الرقابة','critical','cyber',''));
     const rank={critical:0,high:1,normal:2};return out.sort((a,b)=>(rank[a.priority]??9)-(rank[b.priority]??9)||a.domain.localeCompare(b.domain,'ar'));
@@ -27,7 +26,7 @@
     const issues=[];if(!root?.querySelectorAll)return issues;
     const ids=new Set();root.querySelectorAll('[id]').forEach(el=>{if(ids.has(el.id))issues.push({id:'UI_DUPLICATE_ID',severity:'warning',panel,elementId:el.id});ids.add(el.id);});
     root.querySelectorAll('button').forEach(btn=>{
-      const actionable=btn.dataset?.ghAction||btn.dataset?.open||btn.classList?.contains('diligence')||btn.classList?.contains('acquire-stake');
+      const actionable=btn.dataset?.ghAction||btn.dataset?.open;
       if(actionable&&!btn.dataset?.interactionBound)issues.push({id:'UI_ACTION_UNBOUND',severity:'critical',panel,label:(btn.textContent||'').trim().slice(0,100)});
       if(btn.disabled&&!btn.dataset?.disabledReason&&!btn.title)issues.push({id:'UI_DISABLED_WITHOUT_REASON',severity:'warning',panel,label:(btn.textContent||'').trim().slice(0,100)});
     });

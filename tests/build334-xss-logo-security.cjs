@@ -71,16 +71,17 @@ board.update(boardSnapshot,boardScene);assert(!boardElement.innerHTML.includes('
 const portfolioSnapshot={...boardSnapshot,companies:[{type:'air',legalName:'Safe Air',net:1,reportedDays:1,dataQuality:{status:'ok'}}]},chartUnitPayload='<img src=x onerror=alert(1)>';board.update(portfolioSnapshot,{...boardScene,kind:'portfolio',logo:'',chartUnit:chartUnitPayload});assert(!boardElement.innerHTML.includes(chartUnitPayload),'conference chart units from a persisted plan must never enter innerHTML raw');assert(boardElement.innerHTML.includes('&lt;img src=x onerror=alert(1)&gt;'));
 
 const advancedHarness=harness(['advanced-core']),advanced=advancedHarness.s.GH_ADVANCED;
-const malicious='<style id="stored-css">body{display:none}</style><button data-gh-action="audit-run">اعتماد</button>';
-const html=advanced.render('ma',null,{state:{simSeconds:0,advanced:{},treasury:{},stakes:{},maDeals:{}},competitors:[{id:'C1',name:malicious,sector:'<img src=x onerror=alert(1)>',hq:'X',strategy:'Y',price:1,ebitda:1,debt:0}],fmtMoney:String});
-assert(!html.includes('<style'),html);assert(!html.includes('<button data-gh-action="audit-run">'),html);assert(html.includes('&lt;style'),'stored markup must render as text');assert(!/onerror\s*=/.test(html),'event attributes must not survive rendering');
-const origin=/data-gh-action-origin="([a-f0-9]{32})"/.exec(advanced.actionAttributes('audit-run'))?.[1];assert(origin);
+const malicious='<style id="stored-css">body{display:none}</style><button data-gh-action="cyber-drill">اعتماد</button>';
+// Every section page passes through this guard before it reaches the DOM.
+const html=advanced.sanitizeMarkup(`<article class="list-item"><h3>${malicious}</h3><p><img src=x onerror=alert(1)></p></article>`);
+assert(!html.includes('<style'),html);assert(!/data-gh-action-origin/.test(html),'stored markup can never carry a trusted action origin');assert(!/onerror\s*=/.test(html),'event attributes must not survive rendering');
+const origin=/data-gh-action-origin="([a-f0-9]{32})"/.exec(advanced.actionAttributes('cyber-drill'))?.[1];assert(origin);
 const listeners=[];
-const trusted={tagName:'BUTTON',dataset:{ghAction:'audit-run',ghActionOrigin:origin},addEventListener:(name,fn)=>listeners.push([name,fn]),removeAttribute(){}};
-const forged={tagName:'BUTTON',dataset:{ghAction:'audit-run',ghActionOrigin:'forged'},addEventListener(){throw new Error('forged action was bound');},removeAttribute(name){if(name==='data-gh-action')delete this.dataset.ghAction;if(name==='data-gh-action-origin')delete this.dataset.ghActionOrigin;}};
-const missingOrigin={tagName:'BUTTON',dataset:{ghAction:'audit-run'},addEventListener(){throw new Error('originless action was bound');},removeAttribute(name){if(name==='data-gh-action')delete this.dataset.ghAction;if(name==='data-gh-action-origin')delete this.dataset.ghActionOrigin;}};
+const trusted={tagName:'BUTTON',dataset:{ghAction:'cyber-drill',ghActionOrigin:origin},addEventListener:(name,fn)=>listeners.push([name,fn]),removeAttribute(){}};
+const forged={tagName:'BUTTON',dataset:{ghAction:'cyber-drill',ghActionOrigin:'forged'},addEventListener(){throw new Error('forged action was bound');},removeAttribute(name){if(name==='data-gh-action')delete this.dataset.ghAction;if(name==='data-gh-action-origin')delete this.dataset.ghActionOrigin;}};
+const missingOrigin={tagName:'BUTTON',dataset:{ghAction:'cyber-drill'},addEventListener(){throw new Error('originless action was bound');},removeAttribute(name){if(name==='data-gh-action')delete this.dataset.ghAction;if(name==='data-gh-action-origin')delete this.dataset.ghActionOrigin;}};
 const rootNode={querySelectorAll:selector=>selector==='[data-gh-action]'?[trusted,forged,missingOrigin]:[],querySelector:()=>null};
-advanced.bind(rootNode,{state:{},currentPanel:'audit'});assert.equal(listeners.length,1);assert.equal(forged.disabled,true);assert.equal(forged.dataset.ghAction,undefined);assert.equal(missingOrigin.disabled,true);assert.equal(missingOrigin.dataset.ghAction,undefined);
+advanced.bind(rootNode,{state:{},currentPanel:'compliance'});assert.equal(listeners.length,1);assert.equal(forged.disabled,true);assert.equal(forged.dataset.ghAction,undefined);assert.equal(missingOrigin.disabled,true);assert.equal(missingOrigin.dataset.ghAction,undefined);
 
 const oversizedSource=new Uint8Array(identity.CUSTOM_LOGO_LIMITS.decodedBytes+1);oversizedSource.set(Buffer.from(validPng.split(',')[1],'base64'));
 let sourceReadCount=0;

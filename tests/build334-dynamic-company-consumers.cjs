@@ -115,10 +115,10 @@ function test(name,run){run();results.push(name);console.log('PASS',name);}
   });
 
   test('business relationships remain separate and an unknown explicit company cannot charge the group',()=>{
-    const cashOne=F.operating(state,'air-one'),cashTwo=F.operating(state,'air-two'),one=World.execute({state},'launch-campaign',{ownerCompanyId:'air-one',channel:'digital',budget:100000,days:7}),two=World.execute({state},'launch-campaign',{ownerCompanyId:'air-two',channel:'digital',budget:200000,days:7});
-    assert.equal(one.ownerCompanyId,'air-one');assert.equal(two.ownerCompanyId,'air-two');assert.equal(cashOne-F.operating(state,'air-one'),100000);assert.equal(cashTwo-F.operating(state,'air-two'),200000);
+    const one=World.execute({state},'record-finance',{ownerCompanyId:'air-one',counterparty:'Nexa Media Exchange',direction:'outgoing',amount:100000,reference:'QA-REL-1'}),two=World.execute({state},'record-finance',{ownerCompanyId:'air-two',counterparty:'Nexa Media Exchange',direction:'outgoing',amount:200000,reference:'QA-REL-2'});
+    assert.ok(one&&two);const cashOne=F.operating(state,'air-one'),cashTwo=F.operating(state,'air-two');F.execute({state},'spend',{company:'air-one',amount:100000,note:'خدمات وسيط',counterparty:'Nexa Media Exchange',line:'other'});F.execute({state},'spend',{company:'air-two',amount:200000,note:'خدمات وسيط',counterparty:'Nexa Media Exchange',line:'other'});assert.equal(cashOne-F.operating(state,'air-one'),100000);assert.equal(cashTwo-F.operating(state,'air-two'),200000);
     const relationships=Object.values(state.businessWorld.relationships);assert(relationships.some(row=>row.ownerCompanyId==='air-one'));assert(relationships.some(row=>row.ownerCompanyId==='air-two'));
-    const before=JSON.stringify({books:state.companyFinance,world:state.businessWorld});assert.throws(()=>World.execute({state},'launch-campaign',{ownerCompanyId:'air-typo',channel:'digital',budget:100000,days:7}),/company-definition-unavailable:air-typo/);assert.equal(JSON.stringify({books:state.companyFinance,world:state.businessWorld}),before);
+    const before=JSON.stringify({books:state.companyFinance,world:state.businessWorld});assert.throws(()=>World.execute({state},'record-finance',{ownerCompanyId:'air-typo',counterparty:'Nexa Media Exchange',direction:'outgoing',amount:100000,reference:'QA-REL-3'}),/company-definition-unavailable:air-typo/);assert.equal(JSON.stringify({books:state.companyFinance,world:state.businessWorld}),before);
   });
 
   test('realism and company UI expose both same-sector instances independently',()=>{

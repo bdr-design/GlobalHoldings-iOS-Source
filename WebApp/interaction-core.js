@@ -35,7 +35,7 @@
   function validate(root=document){
     const issues=[];if(!root?.querySelectorAll)return issues;
     root.querySelectorAll('button').forEach(btn=>{
-      const looksAction=btn.dataset?.ghAction||btn.dataset?.open||btn.classList?.contains('diligence')||btn.classList?.contains('acquire-stake');
+      const looksAction=btn.dataset?.ghAction||btn.dataset?.open;
       if(looksAction&&!btn.onclick&&btn.dataset?.interactionBound!=='1')issues.push({id:'BUTTON_NO_HANDLER',label:label(btn)});
       const intentionallyBusy=btn.getAttribute?.('aria-busy')==='true'||btn.classList?.contains('is-busy');
       if(btn.disabled&&!btn.dataset?.disabledReason&&!btn.title&&!intentionallyBusy)issues.push({id:'DISABLED_WITHOUT_REASON',label:label(btn)});

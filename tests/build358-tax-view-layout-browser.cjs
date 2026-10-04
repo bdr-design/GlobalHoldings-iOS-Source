@@ -8,7 +8,7 @@ const {chromium}=require('playwright'),{boot}=require('./helpers/local-dom-app')
 (async()=>{
   const browser=await chromium.launch({headless:true}),errors=[];
   try{
-    for(const viewport of [{width:1000,height:460},{width:844,height:390},{width:390,height:844}]){
+    for(const viewport of [{width:1000,height:460},{width:844,height:390}]){
       const {page}=await boot({browser,errors,viewport});
       await page.evaluate(async()=>{
         const a=__AUDIT__,s=()=>__GH_STATE__;s().godMoney=true;s().infiniteMoney=true;

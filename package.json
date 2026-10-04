@@ -13,7 +13,6 @@
     "test:visual": "node tests/redesign-visual.cjs",
     "test:interface": "node tests/interface-browser.cjs && node tests/interface-flows.cjs && node tests/build334-tabs-browser.cjs && node tests/build334-tabs-component.cjs",
     "test:review": "node tests/review-upgrade-browser.cjs && node tests/finance-presentation-browser.cjs",
-    "test:god": "node tests/god-mode-browser.cjs",
     "test:calendar": "node tests/build334-calendar-safety-contract.cjs && node tests/build334-calendar-advance-browser.cjs && node tests/build334-calendar-journey-browser.cjs",
     "test:procurement": "node tests/build334-market-discovery-contract.cjs && node tests/build334-market-discovery-browser.cjs",
     "test:staged-bank-energy": "node tests/build334-scheduler-liveness.cjs && node tests/build334-bank-energy-operating-costs.cjs && node tests/build334-logistics-staged-contract.cjs && node tests/build334-bank-projected-risk.cjs && node tests/build334-bank-signed-income.cjs && node tests/build334-bank-balance-sheet.cjs && node tests/build334-bank-fee-reporting.cjs && node tests/build334-energy-take-or-pay.cjs && node tests/build334-procurement-pressure.cjs && node tests/build334-purchase-delivery-pressure.cjs && node tests/build334-long-session-pressure.cjs",

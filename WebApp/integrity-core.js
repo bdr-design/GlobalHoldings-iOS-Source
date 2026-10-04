@@ -72,16 +72,6 @@
     const ledger=state.businessLedger?.events;if(ledger!=null&&!Array.isArray(ledger))issues.push(issue('EVENT_LEDGER_INVALID','critical','دفتر الأحداث غير صالح','businessLedger.events يجب أن يكون مصفوفة.','integrity'));
     financeChecks(state,issues);
     domainDepthChecks(state,issues);
-    const dl=state.advanced?.departmentLife,day=Math.floor((Number(state.simSeconds)||0)/86400);
-    if(dl){
-      const work=Array.isArray(dl.workItems)?dl.workItems:[];
-      for(const item of work.filter(x=>x&&x.status!=='مغلق')){
-        if(Number.isFinite(Number(item.dueDay))&&day>Number(item.dueDay))issues.push(issue(`DEPARTMENT_TASK_OVERDUE_${item.id}`,(item.severity==='critical'?'critical':'warning'),'مهمة إدارة متأخرة',`${item.title||item.id} متأخرة عن يوم ${item.dueDay}.`,'department',{id:item.id,dept:item.dept,dueDay:item.dueDay,status:item.status}));
-        if(!item.owner)issues.push(issue(`DEPARTMENT_TASK_OWNER_MISSING_${item.id}`,'warning','مهمة إدارة بلا مالك',`${item.title||item.id} لا تملك مسؤولًا محددًا.`,'department',{id:item.id,dept:item.dept}));
-      }
-      const defs=globalThis.GH_DEPARTMENT_CORE?.definitions||{};
-      for(const [dept,d] of Object.entries(defs)){const last=dl.reviews?.[dept];if(last&&day-Number(last.day||0)>Math.max(1,Number(d.cadence)||1)*2)issues.push(issue(`DEPARTMENT_REVIEW_STALE_${dept}`,'warning','دورة إدارة متأخرة',`${d.name||dept} لم تُراجع ضمن دوريتها.`,'department',{dept,lastDay:last.day,cadence:d.cadence}));}
-    }
     const w=state.workflowControl;if(w&&(!Array.isArray(w.history)||!finite(w.sequence)))issues.push(issue('WORKFLOW_CONTROL_INVALID','warning','حالة Workflow Control غير صالحة','workflowControl يحتاج sequence رقمي وhistory مصفوفة.','workflow'));
     return {version:VERSION,status:issues.some(x=>x.severity==='critical')?'critical':issues.length?'warning':'healthy',counts:{critical:issues.filter(x=>x.severity==='critical').length,warning:issues.filter(x=>x.severity==='warning').length,total:issues.length},byDomain:issues.reduce((o,x)=>(o[x.domain]=(o[x.domain]||0)+1,o),{}),issues};
   }

@@ -31,16 +31,14 @@
     state.advanced=object(state.advanced)?state.advanced:{};
     state.advanced.companies=object(state.advanced.companies)?state.advanced.companies:{};
     state.advanced.groupManagement=object(state.advanced.groupManagement)?state.advanced.groupManagement:{};
-    const group=state.advanced.groupManagement,prior=object(group.plan)?group.plan:{};
-    group.plan={annualRevenueTarget:num(prior.annualRevenueTarget),netMarginTarget:Math.max(-50,Math.min(80,Number(prior.netMarginTarget)||0)),liquidityFloor:num(prior.liquidityFloor),debtCeiling:num(prior.debtCeiling),capitalAllocationBudget:num(prior.capitalAllocationBudget),priority:String(prior.priority||'نمو ربحي منضبط مع حماية السيولة').slice(0,180),lastReviewedAt:num(prior.lastReviewedAt)};
+    const group=state.advanced.groupManagement;delete group.plan;
     group.history=Array.isArray(group.history)?group.history:[];return state;
   }
   function model(state,companyId){
-    ensure(state);const current=state.advanced.companies[companyId]||(state.advanced.companies[companyId]={}),management=object(current.management)?current.management:{};
-    for(const legacy of ['budget','growthTarget','capitalPlan','customerScore'])delete current[legacy];
-    current.serviceLevel=Math.max(0,Math.min(100,Number(current.serviceLevel)||0));current.automation=Math.max(0,Math.min(100,Number(current.automation)||0));current.riskLimit=Math.max(0,Math.min(100,Number.isFinite(Number(current.riskLimit))?Number(current.riskLimit):100));current.lastDecision=num(current.lastDecision);
+    ensure(state);const current=state.advanced.companies[companyId]||(state.advanced.companies[companyId]={});
+    for(const legacy of ['budget','growthTarget','capitalPlan','customerScore','management','riskLimit'])delete current[legacy];
+    current.serviceLevel=Math.max(0,Math.min(100,Number(current.serviceLevel)||0));current.automation=Math.max(0,Math.min(100,Number(current.automation)||0));current.lastDecision=num(current.lastDecision);
     current.upgradeCooldowns=object(current.upgradeCooldowns)?current.upgradeCooldowns:{};current.history=Array.isArray(current.history)?current.history:[];
-    current.management={annualRevenueTarget:num(management.annualRevenueTarget),netMarginTarget:Math.max(-50,Math.min(80,Number(management.netMarginTarget)||0)),expansionBudget:num(management.expansionBudget),expansionTarget:Math.max(0,Math.floor(Number(management.expansionTarget)||0)),priority:String(management.priority||'ربحية مستقرة وتوسع منضبط').slice(0,160),lastReviewedAt:num(management.lastReviewedAt)};
     return current;
   }
   function companyIdOf(payload={}){return String(payload.companyId||payload.type||'').trim();}
@@ -74,7 +72,7 @@
       }
       if(command==='rename-company')checkedText(String(payload.legalName||''),'invalid-company-name',60);
       if(command==='set-logo')checkedLogo(payload.logo);
-      if(['decision','rename-company','set-logo','set-management-plan'].includes(command))platform().requireCompany(state,companyId,{registered:true,operational:command!=='rename-company'&&command!=='set-logo'});
+      if(['decision','rename-company','set-logo'].includes(command))platform().requireCompany(state,companyId,{registered:true,operational:command!=='rename-company'&&command!=='set-logo'});
       if(command==='unlock-sector'&&!platform().isKnownSector(payload.sectorId||payload.type))return {ok:false,reason:'sector-not-found'};
       return true;
     }catch(error){return {ok:false,reason:String(error?.message||error)};}
@@ -88,17 +86,6 @@
       state.profile={...payload.profile};state.companyRegistry={group:{...payload.registry,...metadata,status:'active',legalName:payload.registry.legalName||payload.profile.name,shortName:payload.registry.shortName||payload.profile.shortName||definition.identity.short}};state.groupValue=num(payload.capital);
       state.openedCompanies=[];state.unlockedSectors=[];state.ownedCompanies=[];state.stakes={};state.maDeals={};state.onboardingComplete=true;
       return {profile:state.profile,registry:state.companyRegistry.group};
-    }
-    if(command==='acquire-stake'){
-      const amount=num(payload.amount),id=String(payload.id||''),target=Math.max(0,Math.min(100,Number(payload.stake)||0));
-      if(!id||amount<=0||target<=0)throw new Error('invalid-acquisition');
-      const current=Number(state.stakes[id])||0;if(target<=current)throw new Error('stake-not-increased');
-      const finance=globalThis.GH_FINANCE_CORE;if(!finance?.execute)throw new Error('finance-core-missing');
-      const payment=finance.execute({state},'pay-by-cheque',{company:'group',amount,note:`استحواذ ${target}% · ${payload.name||id}`,beneficiary:payload.name||id,taxable:false,line:'capex'});
-      state.stakes[id]=target;const deal=state.maDeals[id]||(state.maDeals[id]={stage:'screening',dd:null,offer:null,integration:0});deal.offer={at:now(state),target,cost:amount,premium:Number(payload.premium)||1};deal.stage=target>=51?'integration':'investment';
-      if(target>=51){state.ownedCompanies=Array.isArray(state.ownedCompanies)?state.ownedCompanies:[];if(!state.ownedCompanies.includes(id))state.ownedCompanies.push(id);deal.integration=Math.max(20,Number(deal.integration)||0);}
-      state.groupValue=num(state.groupValue)+amount*.72+num(payload.synergy)*2;
-      return {id,name:payload.name||id,stake:target,amount,acquiredAt:now(state),status:target>=51?'سيطرة':'استثمار',paymentRef:payment.cheque.id,invoiceRef:payment.invoice.number};
     }
     if(command==='open-company'){
       const companyId=companyIdOf(payload);if(state.openedCompanies.includes(companyId))return state.companyRegistry[companyId];
@@ -130,20 +117,12 @@
     if(command==='set-credit-rating'){state.profile=state.profile||{};state.profile.creditRating=String(payload.grade||'BBB');return state.profile.creditRating;}
     if(command==='set-reputation'){state.profile=state.profile||{};state.profile.reputation=Math.max(0,Math.min(100,Number(payload.value)||0));return state.profile.reputation;}
     if(command==='set-ipo'){state.ipo={listed:!!payload.listed,ticker:String(payload.ticker||'GH').toUpperCase()};return state.ipo;}
-    if(command==='set-group-plan'){
-      const group=state.advanced.groupManagement,prior=group.plan||{};group.plan={annualRevenueTarget:num(payload.annualRevenueTarget),netMarginTarget:Math.max(-50,Math.min(80,Number(payload.netMarginTarget)||0)),liquidityFloor:num(payload.liquidityFloor),debtCeiling:num(payload.debtCeiling),capitalAllocationBudget:num(payload.capitalAllocationBudget),priority:String(payload.priority||prior.priority||'نمو ربحي منضبط مع حماية السيولة').slice(0,180),lastReviewedAt:now(state)};group.history.unshift({at:now(state),action:'group-plan',snapshot:{...group.plan}});group.history=group.history.slice(0,60);return {...group.plan};
-    }
-    if(command==='set-management-plan'){
-      const companyId=companyIdOf(payload),company=model(state,companyId);company.management={annualRevenueTarget:num(payload.annualRevenueTarget),netMarginTarget:Math.max(-50,Math.min(80,Number(payload.netMarginTarget)||0)),expansionBudget:num(payload.expansionBudget),expansionTarget:Math.max(0,Math.floor(Number(payload.expansionTarget)||0)),priority:String(payload.priority||company.management.priority||'ربحية مستقرة وتوسع منضبط').slice(0,160),lastReviewedAt:now(state)};company.history.unshift({at:now(state),action:'management-plan',snapshot:{...company.management}});company.history=company.history.slice(0,50);return {...company.management};
-    }
     if(command==='decision'){
-      const companyId=companyIdOf(payload),company=model(state,companyId),action=payload.action,allowed=new Set(['company-service','company-automation','company-risk']);if(!allowed.has(action))throw new Error('obsolete-or-unknown-company-decision');const cost=num(payload.cost),finance=globalThis.GH_FINANCE_CORE;
+      const companyId=companyIdOf(payload),company=model(state,companyId),action=payload.action,allowed=new Set(['company-service','company-automation']);if(!allowed.has(action))throw new Error('obsolete-or-unknown-company-decision');const cost=num(payload.cost),finance=globalThis.GH_FINANCE_CORE;
       if(cost)finance.execute({state},'spend',{company:companyId,amount:cost,note:`قرار ${action} · ${state.companyRegistry[companyId]?.legalName||companyId}`,method:'تحويل بنكي',line:'other'});
-      if(action==='company-service')company.serviceLevel=Math.min(100,company.serviceLevel+5);if(action==='company-automation')company.automation=Math.min(100,company.automation+8);if(['company-service','company-automation'].includes(action))company.upgradeCooldowns[action]=now(state);if(action==='company-risk')company.riskLimit=Math.max(35,company.riskLimit-5);
+      if(action==='company-service')company.serviceLevel=Math.min(100,company.serviceLevel+5);if(action==='company-automation')company.automation=Math.min(100,company.automation+8);if(['company-service','company-automation'].includes(action))company.upgradeCooldowns[action]=now(state);
       company.lastDecision=now(state);company.history.unshift({at:now(state),action});company.history=company.history.slice(0,50);return company;
     }
-    if(command==='set-stake'){const percent=Math.max(0,Math.min(100,Number(payload.percent)||0));state.stakes[payload.id]=percent;const deal=state.maDeals[payload.id]||(state.maDeals[payload.id]={});deal.stage=percent>=100?'owned':percent>=51?'control':percent>0?'minority':'none';return percent;}
-    if(command==='record-dd'){const deal=state.maDeals[payload.id]||(state.maDeals[payload.id]={});deal.dd={...payload.data,at:now(state)};deal.stage='diligence';return deal.dd;}
     throw new Error(`Unknown corporate command: ${command}`);
   }
 

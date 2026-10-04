@@ -112,7 +112,7 @@
       if(['bulk-transfer','cash-pool-sweep','set-central-treasury-policy','initialize-capital'].includes(name))add('group');
       if(['ensure','consume-trip-accruals','apply-simulation-journal','record-daily-close','close-vat-period'].includes(name))addAllCompanies();
     }else if(domain==='corporate'){
-      const scoped=new Set(['decision','rename-company','set-logo','set-management-plan']);if(scoped.has(name)){add(payload.companyId||payload.type);if(!ids.length)unresolved(payload.id||payload.type);}else add('group');
+      const scoped=new Set(['decision','rename-company','set-logo']);if(scoped.has(name)){add(payload.companyId||payload.type);if(!ids.length)unresolved(payload.id||payload.type);}else add('group');
     }else if(domain==='contracts'){
       const doc=contractById(payload.id);if(doc)add(doc.company||doc.companyId||doc.sector);if(!ids.length)add(payload.sector);if(name==='tick-day')addAllCompanies();
     }else if(domain==='fleet'){
@@ -129,7 +129,6 @@
     else if(domain==='hr'){
       if(payload.company==='all'||name==='tick-day')addAllCompanies();else add(payload.company);const candidateId=String(payload.candidateId||payload.id||''),candidate=(globalThis.GH_HR_CORE?.OFFICIAL_MANAGER_CANDIDATES||[]).find(row=>row.id===candidateId);if(candidate)add(candidate.company);if(!ids.length&&['appoint-official-manager','dismiss-official-manager','hire-executive','hire','requisition','apply-salary-raise'].includes(name))unresolved(candidateId);
     }else if(domain==='governance'){if(!ids.length)add(payload.sector);if(!ids.length)add('group');}
-    else if(domain==='departments'){if(payload.company==='all')addAllCompanies();else add(payload.company);if(!ids.length)add('group');}
     else if(['conference','business-world','market','operations','strategy'].includes(domain))add('group');
     else unresolved('resolver-missing');
     if(!ids.length)unresolved(payload.id||payload.number||payload.type);return ids;

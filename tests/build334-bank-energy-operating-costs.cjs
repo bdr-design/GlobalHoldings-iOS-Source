@@ -44,9 +44,9 @@ check('solar site and total expense include the existing fixed charge exactly on
  const e=environment(),r=reports(e).power,site=e.s.GH_ENERGY_CORE.siteEconomics(e.state)[0];
  assert.equal(site.facilityOpex,38000);closeEnough(site.dailyExpense,site.variableOpex+38000);assert.equal(r.facilityOpex,38000);closeEnough(r.powerExpense,r.variableOpex+38000);closeEnough(r.powerExpense,r.sites[0].expense);closeEnough(r.ebitda,r.powerRevenue-r.powerExpense);
 });
-check('storage, construction and regional office keep separate existing costs',()=>{
+check('storage and construction keep separate existing costs; a retired regional office costs nothing',()=>{
  const e=environment();const f=e.state.customHubs.find(x=>x.id==='SOLAR-F');f.energyKind='storage';f.capacityAmount=100;f.capacity='100 MWh';e.state.energy.sites=[];e.state.energy.regionalOffices=[{id:'OFFICE',status:'نشط',dailyOpex:12000}];let r=reports(e).power;
- assert.equal(r.facilityOpex,38000);assert.equal(r.regionalOfficeOpex,12000);closeEnough(r.powerExpense,r.sites[0].expense+12000);
+ assert.equal(r.facilityOpex,38000);assert.equal(r.regionalOfficeOpex,undefined);closeEnough(r.powerExpense,r.sites[0].expense);
  const c=environment();c.state.customHubs.find(x=>x.id==='SOLAR-F').commissioned=false;c.state.customHubs.find(x=>x.id==='SOLAR-F').dailyCost=0;c.state.energy.sites=[];r=reports(c).power;assert.equal(r.powerRevenue,0);assert.equal(r.powerExpense,0);
 });
 check('canonical energy owner is used, not a conflicting legacy company alias',()=>{
