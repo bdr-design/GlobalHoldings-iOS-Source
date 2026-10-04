@@ -2756,8 +2756,9 @@
     // same single transaction, rollback point, order of work and post-commit checks, run one or more stages per frame
     // (snapshot, fleet advance, each step of the financial close, the market hour, each critical check). runChunk()
     // reports {pending:true} until the transaction has finished; cancel() (pause, speed change, hidden app, another
-    // operation) aborts it, which rolls everything back exactly. Calendar advance keeps the one-call path.
-    const stagedDay=!manual&&meta.boundary?.day!=null&&meta.staged!==false&&typeof financialDayStages==='function'&&typeof TX.beginStaged==='function';
+    // operation) aborts it, which rolls everything back exactly. Calendar advance stages its days the same way: run in one
+    // call, each day of a calendar jump was a 60-80 ms frame on iPhone (diagnostic, 9,000 assets, "next year").
+    const stagedDay=meta.boundary?.day!=null&&meta.staged!==false&&typeof financialDayStages==='function'&&typeof TX.beginStaged==='function';
     let out=null,journal=null;
     const transactionOptions=()=>{
         const boundaryRequested=meta.boundary||{},deliveryWorkPending=window.GH_REALISM?.hasPendingDeliveries?.(state)!==false,
