@@ -301,7 +301,8 @@ final class GlobalSaveVault {
         stages["envelopeBytes"] = Double(data.count)
         timingLock.lock()
         commitTimings[generation] = stages
-        if commitTimings.count > 8, let oldest = commitTimings.keys.min() { commitTimings.removeValue(forKey: oldest) }
+        // Bounded: the oldest other entry goes (generations restart at 1 after reset(), which also clears these).
+        if commitTimings.count > 8, let oldest = commitTimings.keys.filter({ $0 != generation }).min() { commitTimings.removeValue(forKey: oldest) }
         timingLock.unlock()
         return generation
     }
@@ -535,6 +536,9 @@ final class GlobalSaveVault {
             try? fm.removeItem(at: folder)
             slotHeaders = [:]
             chunkPresence = [:]
+            timingLock.lock()
+            commitTimings = [:]
+            timingLock.unlock()
         }
     }
 

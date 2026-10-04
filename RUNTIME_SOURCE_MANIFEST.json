@@ -3,7 +3,7 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "b6774764d05f7f6be78f9b00aec9a0411eaea41a1c4cd8c92bc8bb6c259cf0ef",
+  "source_tree_sha256": "f977a19d72104bc73d835a64bba3685b99efb6056a35367408421b5ae6c7d135",
   "webapp_tree_sha256": "0d1850e02fcf674f215cdc89e5503be21cd95faf784cf2eb584af426b599cc26",
   "files": {
     "WebApp/advanced-core.js": {
@@ -1987,8 +1987,8 @@
       "sha256": "63a17c82ccfaa52d0a2ef01bc484a3e80bc2080322dc039e763ca8b5359105a5"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
-      "bytes": 50809,
-      "sha256": "8f349193a6fc2d68667f902a67aea413be5c92bdee87df24089ec4d7952d1eba"
+      "bytes": 51047,
+      "sha256": "dde61591a0c965959955ce8ba3d56f2af865b80a90a9ea92e7b7749d339f3c30"
     },
     "iOS/GlobalHoldings/LaunchScreen.storyboard": {
       "bytes": 1728,
