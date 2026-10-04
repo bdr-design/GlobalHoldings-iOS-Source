@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "c049b8ac682a189febcb127b5ccda59bfbe22f39da4afc9e139f8f29a9987f7e",
-  "webapp_tree_sha256": "0f93b974919d58ac650645d137230805bdc108f081d0514f38830c78bec55422",
+  "source_tree_sha256": "b6774764d05f7f6be78f9b00aec9a0411eaea41a1c4cd8c92bc8bb6c259cf0ef",
+  "webapp_tree_sha256": "0d1850e02fcf674f215cdc89e5503be21cd95faf784cf2eb584af426b599cc26",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 232246,
@@ -1635,8 +1635,8 @@
       "sha256": "a0d207bf3511ea0db3f249526f115595297eded7d3b9b01dcdfda9401f10baaf"
     },
     "WebApp/control-plane-core.js": {
-      "bytes": 34359,
-      "sha256": "d0801dba391faad67e10480a24be0e74a86f3cf559e847b8174e25ebf787e548"
+      "bytes": 35001,
+      "sha256": "4357214236cd2ad49a97b1038fce900cdcc95baa595e03df72734c1a36f7ba69"
     },
     "WebApp/corporate-core.js": {
       "bytes": 19068,
@@ -1867,8 +1867,8 @@
       "sha256": "de547f1114bec519816a79cbad66b9c4d8bcd3ef3e7b9e3f3416fceb0d4ae309"
     },
     "WebApp/save-schema.js": {
-      "bytes": 72420,
-      "sha256": "21955e3a989eaef788df882b772fd887bbd7199f9547c5e4ed01ff0aad6a1ba7"
+      "bytes": 73378,
+      "sha256": "df30c7296a4884b734511fab51ec673deb4f377edefbd497f63be8aac68492cd"
     },
     "WebApp/section-identities.css": {
       "bytes": 2444,
@@ -1911,8 +1911,8 @@
       "sha256": "503db0866a66c7250138f64937c2a67586897983b5c5c5c5465c3e5adc365c11"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 60522,
-      "sha256": "bde1517ba78027c8e041669c50b9111f22dbacfa97adc11161ad7a12a55453db"
+      "bytes": 61857,
+      "sha256": "289c205849ca25ae5257d068a3501668944b0a48265f527d5f94a3b316e0a1dc"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 6648,
@@ -1996,7 +1996,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "40500a5a758d04e8d2b0e66c484b0340ac181458a9ab7fc495b889f2d4777afd"
+      "sha256": "cb3e67584613655b31662b38fa5762b54e673b15a2ddc21a3a1e3a9f4de0c8ac"
     },
     "BUILD": {
       "bytes": 4,

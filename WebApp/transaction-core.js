@@ -353,8 +353,12 @@
       }
       if(task.key)ctx.postCommit=ctx.postCommit.filter(x=>x.key!==task.key);
       ctx.postCommit.push(task);
-    }else fn();
+    }else drainSteps(fn());
   }
+  // Build 358: a critical post-commit task may return an iterator (a check in sections, e.g. the schema validation). A
+  // staged transaction runs one section per step; anything else runs it to the end at once.
+  function isStepIterator(value){return !!value&&typeof value==='object'&&typeof value.next==='function'&&typeof value[Symbol.iterator]==='function';}
+  function drainSteps(value){if(isStepIterator(value))while(!value.next().done){}return value;}
   function journalAdmissionReason(options,scope,contracts){
     if(options.rollbackMode!=='journal')return null;
     if(!scope)return 'journal-requires-scope';
@@ -524,10 +528,20 @@
       if(stageToken)yield 'post-commit';
       phase='post-commit-critical';
       const criticalTasks=context.postCommit.filter(x=>x.critical).sort((a,b)=>a.priority-b.priority),reversibleCritical=criticalTasks.filter(task=>!task.irreversible),irreversibleCritical=criticalTasks.filter(task=>task.irreversible);
-      const runCritical=tasks=>{for(const task of tasks){const taskStart=runtimeClock(),row={key:task.key||null,owner:task.owner||null,priority:task.priority,durationMs:0,ok:false,irreversible:task.irreversible===true};try{task.fn();row.ok=true;}finally{row.durationMs=Math.max(0,runtimeClock()-taskStart);timing.postCommitCriticalTasks.push(row);}}};
-      const criticalStart=runtimeClock();try{
-        // Staged: one reversible critical task per step (no transaction is active during post-commit either way).
-        if(stageToken){for(let i=0;i<reversibleCritical.length;i++){runCritical([reversibleCritical[i]]);if(i<reversibleCritical.length-1)yield 'post-commit';}}
+      // A task's duration counts only its own work, not the frames a staged task waits between its sections.
+      const runCriticalTask=function*(task,staged){
+        const row={key:task.key||null,owner:task.owner||null,priority:task.priority,durationMs:0,ok:false,irreversible:task.irreversible===true};let active=0,at=runtimeClock();
+        try{
+          const out=task.fn();active+=runtimeClock()-at;
+          if(isStepIterator(out))for(;;){at=runtimeClock();let section;try{section=out.next();}finally{active+=runtimeClock()-at;}if(section.done)break;if(staged)yield typeof section.value==='string'&&section.value?`post-commit:${section.value.slice(0,40)}`:'post-commit';}
+          row.ok=true;
+        }finally{row.durationMs=Math.max(0,active);timing.postCommitCriticalTasks.push(row);}
+      };
+      const runCritical=tasks=>{for(const task of tasks)drainSteps(runCriticalTask(task,false));};
+      let criticalActiveMs=0,criticalStart=runtimeClock();try{
+        // Staged: one reversible critical task per step, and one section per step of a task that returns sections (no
+        // transaction is active during post-commit either way).
+        if(stageToken){for(let i=0;i<reversibleCritical.length;i++){const task=runCriticalTask(reversibleCritical[i],true);for(;;){const at=runtimeClock();let section;try{section=task.next();}finally{criticalActiveMs+=runtimeClock()-at;}if(section.done)break;yield section.value;}if(i<reversibleCritical.length-1)yield 'post-commit';}criticalStart=runtimeClock();}
         else runCritical(reversibleCritical);
         if(context.rollbackStorage==='journal'){
           const postCritical=validateJournalPostState(target,context.journal);if(!postCritical.ok){const error=new Error(`transaction-journal-contract-violation:${postCritical.reason}`);error.code='TRANSACTION_JOURNAL_CONTRACT_VIOLATION';throw error;}
@@ -538,7 +552,7 @@
           if(options.enforceWriteRoots===true&&undeclared.length){const error=new Error(`transaction-write-set-violation:${undeclared.join(',')}`);error.code='TRANSACTION_WRITE_SET_VIOLATION';error.undeclaredRoots=undeclared;throw error;}
         }
         phase='post-commit-irreversible';runCritical(irreversibleCritical);
-      }finally{timing.postCommitCriticalMs=Math.max(0,runtimeClock()-criticalStart);}
+      }finally{timing.postCommitCriticalMs=Math.max(0,criticalActiveMs+runtimeClock()-criticalStart);}
       releaseUndos();
       const nonCriticalStart=runtimeClock();for(const task of context.postCommit.filter(x=>!x.critical)){const taskStart=runtimeClock(),row={key:task.key||null,owner:task.owner||null,priority:task.priority,durationMs:0,ok:false};try{task.fn();row.ok=true;}catch(error){row.error=String(error?.message||error).slice(0,240);globalThis.console?.warn?.(`${label}: non-critical post-commit side effect failed`,error);}finally{row.durationMs=Math.max(0,runtimeClock()-taskStart);timing.postCommitNonCriticalTasks.push(row);}}timing.postCommitNonCriticalMs=Math.max(0,runtimeClock()-nonCriticalStart);
       advanceRevision(target);timing.committed=true;timing.stage='committed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);
