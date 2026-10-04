@@ -204,9 +204,19 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .vehicle-pin.mobility .vehicle-sprite img{width: 12px; height: 24px;}
 .vehicle-pin.mobility .vehicle-beacon{display: none;}
 .mobility-car-marker{width: 44px !important; height: 44px !important; margin-left: -22px !important; margin-top: -22px !important;}
-.fleet-map-cluster,.facility-map-cluster{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;align-content:center;background:rgba(251,253,252,.97);border:2px solid var(--teal);box-shadow:0 6px 16px rgba(13,59,87,.2);color:var(--text);line-height:1.1;}
-.fleet-map-cluster span,.facility-map-cluster span{font-size: 7px; color: var(--blue);}
-.fleet-map-cluster b,.facility-map-cluster b{font-size: 12px;}
+.facility-map-cluster{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;align-content:center;background:rgba(251,253,252,.97);border:2px solid var(--teal);box-shadow:0 6px 16px rgba(13,59,87,.2);color:var(--text);line-height:1.1;}
+.facility-map-cluster span{font-size: 7px; color: var(--blue);}
+.facility-map-cluster b{font-size: 12px;}
+.fleet-cluster-marker{width:52px!important;height:52px!important;margin-left:-26px!important;margin-top:-26px!important;display:grid!important;place-items:center!important;}
+.fleet-stack{--mode-color:var(--road);position:relative;width:var(--stack-size,34px);height:var(--stack-size,34px);filter:drop-shadow(0 3px 4px rgba(13,59,87,.38));cursor:pointer;}
+.fleet-stack.air{--mode-color:var(--air)}.fleet-stack.sea{--mode-color:var(--sea)}.fleet-stack.road{--mode-color:var(--road)}.fleet-stack.mobility{--mode-color:var(--mobility)}
+.fleet-stack img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none;}
+.fleet-stack-ghost{opacity:.32;transform:translate(-5px,4px) rotate(-14deg) scale(.86);}
+.fleet-stack-ghost.second{opacity:.2;transform:translate(5px,6px) rotate(16deg) scale(.8);}
+.fleet-stack.is-parked .fleet-stack-main{opacity:.78;filter:saturate(.45) brightness(1.08);}
+.fleet-stack.is-parked .fleet-stack-ghost{opacity:.18;}
+.fleet-stack-count{position:absolute;inset-inline-end:-9px;bottom:-5px;min-width:19px;height:17px;padding:0 5px;border-radius:9px;font:700 10px/17px system-ui,-apple-system,sans-serif;color:#fff;background:var(--mode-color);border:1.5px solid #fff;text-align:center;box-shadow:0 2px 4px rgba(13,59,87,.3);white-space:nowrap;}
+.fleet-stack.is-parked .fleet-stack-count{background:#fff;color:var(--mode-color);border-color:var(--mode-color);}
 .marker-core{display:grid;place-items:center;width:40px;height:40px;background:rgba(251,253,252,.97);border:2px solid var(--blue);border-radius:12px;box-shadow:0 7px 18px rgba(13,59,87,.2);}
 .marker-core{position:relative}.marker-core.airport{border-color:var(--air)}.marker-core.port{border-color:var(--sea)}.marker-core.logistics{border-color:var(--road)}.marker-core.power{border-color:var(--power)}.marker-core.bank{border-color:var(--bank)}.marker-core.mobility{border-color:var(--mobility)}.facility-brand-logo{position:absolute;inset:auto -5px -5px auto;width:16px;height:16px;object-fit:contain;border:1px solid #fff;border-radius:5px;background:#fff;box-shadow:0 2px 6px rgba(13,59,87,.2)}
 .marker-core svg{width: 25px; height: 25px; color: var(--blue);}

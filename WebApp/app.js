@@ -1791,15 +1791,35 @@
     if(kind==='facilities')return zoom<4?24:zoom<6?40:zoom<9?60:84;
     return zoom<4?24:zoom<6?36:zoom<9?54:72;
   }
-  function fleetClusterHtml(type,count,label=''){
-    const key=markerKind(type),symbol=key==='mobility'?'M':key==='air'?'AIR':key==='sea'?'SEA':'LOG';
-    return `<div class="fleet-map-cluster ${key}" title="${esc(label)}"><span>${symbol}</span><b>${fmtNumber(count)}</b></div>`;
+  // Build 358 (reported with screenshots: overlapping white "AIR 18" boxes all over the map): a fleet cluster is drawn as
+  // the vehicle itself (the same top-down aircraft/ship/truck/car sprite as single assets) over two faint copies that
+  // read as "several", with a compact count badge in the mode colour; parked groups are dimmed. Clusters are queued and
+  // merged on screen (same mode, closer than FLEET_CLUSTER_MERGE_PX) before drawing, so they never pile up.
+  const FLEET_CLUSTER_MERGE_PX=46,FLEET_COUNT_FORMAT=new Intl.NumberFormat('ar',{notation:'compact',maximumFractionDigits:1});
+  let pendingFleetClusters=[];
+  function fleetClusterHtml(type,count,label='',moving=true){
+    const kind=markerKind(type),photo=VEHICLE_MARKER_PHOTOS[kind],size=Math.round(30+Math.min(14,4*Math.log10(Math.max(1,count))));
+    return `<div class="fleet-stack ${kind} ${moving?'is-moving':'is-parked'}" style="--stack-size:${size}px" title="${esc(label)}"><img class="fleet-stack-ghost" src="${photo}" alt=""><img class="fleet-stack-ghost second" src="${photo}" alt=""><img class="fleet-stack-main" src="${photo}" alt=""><b class="fleet-stack-count">${count<1000?fmtNumber(count):FLEET_COUNT_FORMAT.format(count)}</b></div>`;
   }
-  function addFleetCluster(key,coords,type,count,label,onClick){
+  function addFleetCluster(key,coords,type,count,label,onClick,{moving=false,assetIds=null}={}){
     if(!Array.isArray(coords)||coords.length!==2||count<=0)return;
-    const icon=L.divIcon({className:`fleet-cluster-marker ${type}`,html:fleetClusterHtml(type,count,label),iconSize:[34,34],iconAnchor:[17,17]});
-    const marker=L.marker(markerDisplayStart(`own:${key}`,coords),{icon,zIndexOffset:610}).addTo(map).bindTooltip(`${esc(label)} · ${fmtNumber(count)} أصل`,{direction:'top',permanent:false,opacity:.9});
-    marker.on('click',onClick);ownMarkers.set(key,marker);return marker;
+    pendingFleetClusters.push({key,coords,type,kind:markerKind(type),count,label,onClick,moving,assetIds});
+  }
+  function flushFleetClusters(){
+    const queued=pendingFleetClusters.sort((a,b)=>b.count-a.count);pendingFleetClusters=[];const kept=[];
+    for(const item of queued){
+      const point=map.latLngToContainerPoint(item.coords);
+      const host=kept.find(row=>row.kind===item.kind&&row.moving===item.moving&&Math.hypot(row.point.x-point.x,row.point.y-point.y)<FLEET_CLUSTER_MERGE_PX);
+      if(!host){kept.push({...item,point,merged:0});continue;}
+      const total=host.count+item.count;host.coords=[(host.coords[0]*host.count+item.coords[0]*item.count)/total,(host.coords[1]*host.count+item.coords[1]*item.count)/total];host.count=total;host.merged++;
+      host.assetIds=host.assetIds&&item.assetIds?[...host.assetIds,...item.assetIds]:null;
+    }
+    for(const row of kept){
+      const label=row.merged?`${row.label} و${fmtNumber(row.merged)} مجموعة قريبة`:row.label;
+      const icon=L.divIcon({className:`fleet-cluster-marker ${row.type}`,html:fleetClusterHtml(row.type,row.count,label,row.moving),iconSize:[52,52],iconAnchor:[26,26]});
+      const marker=L.marker(markerDisplayStart(`own:${row.key}`,row.coords),{icon,zIndexOffset:row.moving?620:610}).addTo(map).bindTooltip(`${esc(label)} · ${fmtNumber(row.count)} أصل`,{direction:'top',permanent:false,opacity:.9});
+      marker.on('click',row.onClick);ownMarkers.set(row.key,marker);if(row.moving)movingFleetClusters.set(row.key,{marker,assetIds:row.assetIds});
+    }
   }
   function averageMapPoint(rows,positionOf){let lat=0,lng=0,count=0;for(const row of rows){const point=positionOf(row);if(!Array.isArray(point)||!Number.isFinite(point[0])||!Number.isFinite(point[1]))continue;lat+=point[0];lng+=point[1];count++;}return count?[lat/count,lng/count]:null;}
   function movingHeroSelection(rows,zoom,limit){
@@ -1881,7 +1901,7 @@
     let cell=zoom<4?28:zoom<6?12:zoom<9?4:1.2,clusters=[];
     const build=()=>{const out=new Map();for(const {group,point} of positioned){const key=`${group.owner}:${group.mode}:${Math.floor((point[0]+90)/cell)}:${Math.floor((point[1]+180)/cell)}`;let cluster=out.get(key);if(!cluster){cluster={key,owner:group.owner,mode:group.mode,count:0,lat:0,lng:0};out.set(key,cluster);}cluster.count+=group.count;cluster.lat+=point[0]*group.count;cluster.lng+=point[1]*group.count;}return [...out.values()];};
     clusters=build();while(clusters.length>Math.max(4,movingClusterBudget)&&cell<180){cell*=1.7;clusters=build();}
-    for(const cluster of clusters){const key=`moving:${cluster.key}`,label=`${companyFinanceName(cluster.owner)} · أصول متحركة`,marker=addFleetCluster(key,[cluster.lat/cluster.count,cluster.lng/cluster.count],cluster.mode,cluster.count,label,()=>openDrawer('assets',cluster.mode));if(marker)movingFleetClusters.set(key,{marker,assetIds:null});}
+    for(const cluster of clusters)addFleetCluster(`moving:${cluster.key}`,[cluster.lat/cluster.count,cluster.lng/cluster.count],cluster.mode,cluster.count,`${companyFinanceName(cluster.owner)} · أصول متحركة`,()=>openDrawer('assets',cluster.mode),{moving:true});
     // Parked groups: the selected asset's group first, then by size; a group of at most three goes one by one while
     // the budget allows (their rows are found by one pass that stops when all are found).
     let stationarySlots=Math.max(0,standardBudget-individual.length);
@@ -1894,7 +1914,7 @@
     }
     if(singles.size){let wanted=[...singles.values()].reduce((n,group)=>n+group.count,0);fleet.scan(state,['ownerCompanyId','companyId','assetMode','type','baseFacility','phase'],(row,index)=>{if(row.phase==='moving')return;const group=singles.get(`${assetOwnerCompanyId(row)}:${row.baseFacility||'unbased'}`);if(!group)return;const view=fleet.viewAt(state,index);if(view)individual.push(view);if(--wanted===0)return fleet.STOP;});}
     for(const {group,count} of clustersToDraw){const base=findFacility(group.baseFacility),firstAsset=base?.coords?null:fleet.get(state,fleet.idAtRow(state,group.first)),coords=base?.coords||(firstAsset?assetPosition(firstAsset):null),label=base?.name||'مركز تشغيل';addFleetCluster(`cluster:${group.key}`,coords,group.type,count,label,()=>openDrawer('assets',group.type));}
-    addIndividualAssetMarkers(individual);
+    flushFleetClusters();addIndividualAssetMarkers(individual);
   }
   function renderMap(){
     if(!map)return;
@@ -1930,7 +1950,7 @@
     const individual=[...movingHeroes],workerPending=presentationRequest.worker===true&&presentationRequest.pending===true,nonHeroMoving=presentationPlan||workerPending?[]:movingAssets.filter(asset=>!movingHeroIds.has(asset.id)),movingGroups=presentationPlan?presentationPlan.groups.map(group=>({...group,assets:Array.from(presentationPlan.members.slice(group.start,group.start+group.count),index=>movingAssets[index]).filter(Boolean)})):workerPending?[]:movingAssetRenderGroups(nonHeroMoving,zoom,movingClusterBudget);
     for(const group of movingGroups){
       if(!group.assets.length)continue;const coords=group.coords||averageMapPoint(group.assets,assetPosition),key=`moving:${group.key}`,label=`${companyFinanceName(group.owner)} · أصول متحركة`;
-      const marker=addFleetCluster(key,coords,group.mode,group.count||group.assets.length,label,()=>openDrawer('assets',group.mode));if(marker)movingFleetClusters.set(key,{marker,assetIds:group.assets.map(asset=>asset.id)});
+      addFleetCluster(key,coords,group.mode,group.count||group.assets.length,label,()=>openDrawer('assets',group.mode),{moving:true,assetIds:group.assets.map(asset=>asset.id)});
     }
     let stationarySlots=Math.max(0,standardBudget-individual.length);
     const orderedStationaryGroups=[...stationaryGroups].sort((a,b)=>Number(b[1].assets.some(asset=>asset.id===selectedAssetId))-Number(a[1].assets.some(asset=>asset.id===selectedAssetId))||b[1].assets.length-a[1].assets.length);
@@ -1943,7 +1963,7 @@
       const base=findFacility(group.baseFacility),coords=base?.coords||assetPosition(group.assets[0]),label=base?.name||'مركز تشغيل';
       addFleetCluster(`cluster:${key}`,coords,group.type,clusteredAssets.length,label,()=>openDrawer('assets',group.type));
     }
-    addIndividualAssetMarkers(individual);
+    flushFleetClusters();addIndividualAssetMarkers(individual);
     }
 
     if(mapLayerVisible('assets','mobility','mobility-fleet')){
