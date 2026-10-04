@@ -4,7 +4,7 @@ const {chromium}=require('playwright');
 const root=process.env.GH_AUDIT_ROOT||path.resolve(__dirname,'../..');
 const {drawFounderSignature}=require(path.join(root,'tests/helpers/signature-input'));
 async function boot(options={}){
- const web=path.join(options.root||root,'WebApp'),browser=options.browser||await chromium.launch({headless:true}),page=await browser.newPage({viewport:options.viewport||{width:844,height:390}}),errors=options.errors||[];
+ const web=path.join(options.root||root,'WebApp'),browser=options.browser||await chromium.launch({headless:true}),page=await browser.newPage({viewport:options.viewport||{width:844,height:390},...(options.bypassCSP?{bypassCSP:true}:{})}),errors=options.errors||[];
  page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
  let html=fs.readFileSync(path.join(web,'index.html'),'utf8');const scripts=[...html.matchAll(/<script\b[^>]*src=["']([^"']+)["'][^>]*>\s*<\/script>/g)].map(m=>m[1]);
  html=html.replace(/<script\b[^>]*src=["']([^"']+)["'][^>]*>\s*<\/script>/g,'');

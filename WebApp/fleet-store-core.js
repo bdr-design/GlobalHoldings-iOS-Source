@@ -836,9 +836,81 @@
     return {length:store.length,live:store.live,capacity:store.capacity,values:store.values.length,freeValues:r.free.length,extras:Object.keys(store.extras).length,columnBytes:bytes,bytesPerAsset:store.length?STRIDE:0};
   }
 
+  // ------------------------------------------------------------- replica ---
+  // Build 358 (fleet engine thread): a Worker keeps a replica of the store and runs the event engine on it; the main
+  // thread replays the result. Rows travel as whole 128-byte records; values are mirrored by reference number in both
+  // directions, so a row's references mean the same values on both sides whatever order each free list holds.
+  // The store's counters, value table, extras and a copy of its rows: a replica starts from this.
+  function exportReplica(store){
+    return {schema:store.schema,version:store.version,length:store.length,live:store.live,structure:store.structure,revision:store.revision,
+      values:store.values.map(value=>value===undefined?null:value),extras:{...store.extras},rows:store.rows.slice(0,store.length*STRIDE)};
+  }
+  function importReplica(payload){
+    const length=Math.max(0,Math.floor(Number(payload?.length)||0));
+    if(!(payload?.rows instanceof ArrayBuffer)||payload.rows.byteLength!==length*STRIDE||!Array.isArray(payload.values))throw new Error('fleet-replica-invalid');
+    return {schema:SCHEMA,version:VERSION,length,live:Math.max(0,Math.floor(Number(payload.live)||0)),capacity:length,structure:Number(payload.structure)||0,revision:Number(payload.revision)||0,
+      values:payload.values,rows:payload.rows,extras:isObject(payload.extras)?payload.extras:{}};
+  }
+  // Value-table changes since `previous` (a copy of store.values taken at the last exchange): [ref, value|null] pairs.
+  function valueChanges(store,previous){
+    const values=store.values,changes=[],n=Math.max(values.length,previous.length);
+    for(let ref=1;ref<n;ref++){const a=ref<values.length?values[ref]??null:null,b=ref<previous.length?previous[ref]??null:null;if(a!==b)changes.push([ref,a]);}
+    return {length:values.length,changes};
+  }
+  // Replica side, outside any journal: sets values by reference number, then rebuilds the free list in ascending order.
+  function applyValueChanges(store,{length,changes}){
+    const r=rt(store),values=store.values;
+    for(const [ref,value] of changes){
+      if(ref<values.length)unindexValue(r,values[ref],ref);
+      while(values.length<ref)values.push(null);
+      values[ref]=value===undefined?null:value;
+      if(values[ref]!==null){const key=valueKey(values[ref]);if(!r.index.has(key))r.index.set(key,ref);}
+    }
+    if(values.length>length){for(let ref=length;ref<values.length;ref++)unindexValue(r,values[ref],ref);values.length=length;}
+    while(values.length<length)values.push(null);
+    r.free=[];for(let ref=1;ref<values.length;ref++)if(values[ref]===null)r.free.push(ref);
+    r.indexedTo=values.length;r.valuesGeneration=++epochCounter;
+  }
+  // Main side: interns `value` at the reference another realm's intern() gave it. Journaled like intern() (an appended
+  // value is removed and a reused slot freed again on rollback). False when that reference holds another value or is not
+  // the next slot: the replicas disagree and the caller must not use the result.
+  function internAt(store,ref,value){
+    if(value===null||value===undefined)return ref===0;
+    const r=rt(store),key=valueKey(value),found=r.index.get(key);
+    if(found!==undefined)return found===ref;
+    const stored=typeof value==='string'?value:jsonCopy(value);
+    if(ref===store.values.length){store.values.push(stored);r.indexedTo=store.values.length;r.index.set(key,ref);r.valuesGeneration=++epochCounter;return true;}
+    if(!(ref>0&&ref<store.values.length)||(store.values[ref]!==null&&store.values[ref]!==undefined))return false;
+    const at=r.free.lastIndexOf(ref);if(at<0)return false;
+    r.free.splice(at,1);store.values[ref]=stored;if(r.journal&&r.journal.active)r.journal.reused.push(ref);r.index.set(key,ref);r.valuesGeneration=++epochCounter;return true;
+  }
+  // Copies of whole records and their extras, for the rows listed (to send to the other side).
+  function readRows(store,indices){
+    const bytes=new ArrayBuffer(indices.length*STRIDE),dst=new Uint32Array(bytes),src=views(store).u32,extras=new Array(indices.length);
+    for(let k=0;k<indices.length;k++){const index=indices[k];for(let w=0,from=index*WORDS_PER_ROW,to=k*WORDS_PER_ROW;w<WORDS_PER_ROW;w++)dst[to+w]=src[from+w];extras[k]=own(store.extras,index)?store.extras[index]:undefined;}
+    return {bytes,extras};
+  }
+  // Writes whole records computed by the other side, each row through the toucher as the event engine's own writes go
+  // (journaled once inside a transaction, marked for the engine and the dirty log), then moves the revision by at least
+  // `revisionDelta` (the writer's own count). `staticRows`: the writes may reach fields outside the engine's (the general
+  // path), so class tables over those rows are invalidated too.
+  function writeRows(store,indices,bytes,extras,{revisionDelta=0,staticRows=false}={}){
+    const before=store.revision,touch=toucher(store),src=new Uint32Array(bytes),dst=views(store).u32;
+    if(src.length!==indices.length*WORDS_PER_ROW)throw new Error('fleet-replica-rows-invalid');
+    for(let k=0;k<indices.length;k++){
+      const index=indices[k];if(!(index>=0&&index<store.length))throw new Error('fleet-replica-row-out-of-range');
+      touch(index);for(let w=0,from=k*WORDS_PER_ROW,to=index*WORDS_PER_ROW;w<WORDS_PER_ROW;w++)dst[to+w]=src[from+w];
+      const extra=extras?.[k];if(extra===undefined||extra===null)delete store.extras[index];else store.extras[index]=extra;
+    }
+    const r=rt(store);
+    if(staticRows&&indices.length){invalidateProfiles(store);for(let k=0;k<indices.length;k++){const chunk=indices[k]>>>CHUNK_SHIFT;r.staticVersions[chunk]++;}}
+    const target=before+Math.max(0,Math.floor(Number(revisionDelta)||0));if(store.revision<target)store.revision=target;
+    if(r.journal&&r.journal.active)r.journal.high=Math.max(r.journal.high,store.revision);
+  }
+
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,I32_NULL,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
     create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
-    views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,distinctRefs,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
+    views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,distinctRefs,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,exportReplica,importReplica,valueChanges,applyValueChanges,internAt,readRows,writeRows,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

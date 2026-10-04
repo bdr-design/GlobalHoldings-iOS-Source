@@ -603,7 +603,14 @@
   const competitorAssets=state.simulationWorld.competitorAssets;
   const simRandom=stream=>window.GH_DETERMINISM.nextFloat(state,stream);
   const nextId=prefix=>window.GH_DETERMINISM.nextId(state,prefix);
-  const diag=(type,detail={})=>window.GH_DIAGNOSTICS.record(state,type,detail);
+  // Build 358: between the steps of a staged transaction (the daily close, captured root by root over several frames)
+  // nothing outside it writes the state; a diagnostic recorded then (the engine's governor, between frames) waits until
+  // it settles. Recorded inside a step it belongs to the transaction, and a rollback removes it, as before.
+  const diag=(type,detail={})=>{
+    const tx=window.GH_TRANSACTION_CORE;
+    if(tx?.isStaged?.(state)===true&&tx.isActive?.()!==true){afterStagedState(()=>window.GH_DIAGNOSTICS.record(state,type,detail));return;}
+    return window.GH_DIAGNOSTICS.record(state,type,detail);
+  };
   const nonCritical=(stage,error)=>{diag('NONCRITICAL_ERROR',{stage,message:String(error?.message||error)});console.warn(`[${stage}]`,error);};
   window.GH_MIGRATION_CORE.completeBusinessState(state,{defaultState,initialStocks,crewRolesSeed});
   const legacyBankMigration=window.GH_BANKING_CORE?.migrateLegacyBranches?.(state)||{changed:false,added:0};
@@ -761,7 +768,11 @@
   const appMetricClock=()=>globalThis.performance?.now?.()??Date.now();
   function recordRenderMetric(kind,durationMs,detail={}){const render=runtimeInstrumentation.render,row={kind,durationMs:Math.max(0,Number(durationMs)||0),recordedAtMs:Date.now(),...detail};if(kind==='frame'){render.lastFrame=row;render.maxFrameMs=Math.max(render.maxFrameMs,row.durationMs);}else if(kind==='target-update'){render.lastTargetUpdate=row;render.maxTargetUpdateMs=Math.max(render.maxTargetUpdateMs,row.durationMs);}else if(kind==='marker-animation'){render.lastMarkerAnimation=row;render.maxMarkerAnimationMs=Math.max(render.maxMarkerAnimationMs,row.durationMs);}else if(kind==='structural-render'){render.lastStructuralRender=row;render.maxStructuralRenderMs=Math.max(render.maxStructuralRenderMs,row.durationMs);}render.samples.push(row);if(render.samples.length>120)render.samples.shift();return row;}
   window.__GH_APP_RUNTIME_INSTRUMENTATION__=runtimeInstrumentation;
-  window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,durable:runtimeInstrumentation.durable,render:runtimeInstrumentation.render}))});
+  // The fleet engine thread's client (created with the first simulation slice, see fleetEngineThread()).
+  let fleetEngineThreadClient=null;
+  window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,durable:runtimeInstrumentation.durable,render:runtimeInstrumentation.render,
+    // Build 358: whether the fleet engine thread runs the steps (stats: steps replayed, fallbacks and why, syncs, last timings).
+    fleetEngineThread:fleetEngineThreadClient?fleetEngineThreadClient.stats():{created:false,worker:typeof Worker==='function',disabledByFlag:globalThis.__GH_FLEET_ENGINE_THREAD__===false}}))});
   function cancelSimulationPersistence(){
     const task=simulationPersistenceTask;simulationPersistenceTask=null;if(!task)return;
     if(task.idle&&typeof window.cancelIdleCallback==='function')window.cancelIdleCallback(task.handle);
@@ -866,6 +877,7 @@
     durableCommandInProgress=true;
     let draft=null,committed=false,settleDurableCommand=null,rootSessions=[];
     durableCommandSettlement=new Promise(resolve=>{settleDurableCommand=resolve;});
+    await fleetStepSettled();
     // Build 358: phase timings of every player command (diagnostics: GH_APP_RUNTIME_METRICS.snapshot().durable).
     const clockNow=()=>globalThis.performance?.now?.()??Date.now(),durableStart=clockNow(),timing={name,cloneMs:0,prepareMs:0,baselineIntegrityMs:0,applyMs:0,validateMs:0,integrityMs:0,persistMs:0,publishMs:0,afterMs:0,totalMs:0,committed:false};let mark=durableStart;const lap=key=>{const now=clockNow();timing[key]+=Math.max(0,now-mark);mark=now;};
     try{
@@ -967,6 +979,7 @@
     const envelope=window.GH_AUTHORIZATION.buildActiveEnvelope(state,{domain,name,payload,principalId:FOUNDER_PRINCIPAL_ID,actor:{kind:'player',principalId:FOUNDER_PRINCIPAL_ID},idempotencyKey:options.idempotencyKey||authorizationIdempotencyKey(state,domain,name,payload)});
     durableCommandInProgress=true;let committed=false,settle=null;durableCommandSettlement=new Promise(resolve=>{settle=resolve;});
     try{
+      await fleetStepSettled();
       const result=await window.GH_DOMAIN_COMMANDS.dispatchDurable({...(options.context||{}),state},envelope,{transactionId:options.transactionId,persistence:{storageKey,appVersion:APP_VERSION},publish:(_live,draft)=>replaceLiveState(draft),afterCommit:options.afterCommit});committed=true;diag('AUTHORIZED_COMMAND_COMMITTED',{domain,name,transactionId:result.transactionId,authorizationProofId:result.value?.authorizationProofId});return result.value;
     }catch(error){diag('AUTHORIZED_COMMAND_ROLLED_BACK',{domain,name,reason:String(error?.message||error)},'warning');if(!options.silent)notice(`أُلغيت المعاملة بالكامل: ${String(error?.message||error)}`);throw error;}
     finally{durableCommandInProgress=false;settle?.({committed,saveRevision:Number(state.saveRevision)||0});}
@@ -2811,13 +2824,47 @@
     fleetRouteCache.set(key,plan);return plan;
   }
 
+  // Build 358: the fleet engine's step runs on its own thread (fleet-engine-worker.js, GH_FLEET_ENGINE_THREAD) whenever it
+  // can. A slice asks for it first ({pending:true} until the result arrives), then replays it inside its transaction; on
+  // any refusal it runs the step here exactly as before. Commands that write the fleet wait for a step in flight.
+  const FLEET_THREAD_EVENT_BUDGET=40000;
+  function fleetEngineThread(){
+    if(globalThis.__GH_FLEET_ENGINE_THREAD__===false||typeof Worker!=='function'||!window.GH_FLEET_ENGINE_THREAD?.create)return null;
+    if(!fleetEngineThreadClient)fleetEngineThreadClient=window.GH_FLEET_ENGINE_THREAD.create({
+      workerFactory:()=>typeof globalThis.__GH_FLEET_ENGINE_WORKER_FACTORY__==='function'?globalThis.__GH_FLEET_ENGINE_WORKER_FACTORY__():new Worker('fleet-engine-worker.js'),resolveRoute:fleetResolveRoute,routesRevision:()=>Math.max(0,Math.floor(Number(state.routesRevision)||0)),
+      catalogSpecs:()=>{const out={};for(const [type,group] of Object.entries(assetCatalog||{})){const rows={};for(const item of [...(group?.new||[]),...(group?.used||[])])if(item?.id&&!(item.id in rows))rows[item.id]=item.specs||null;out[type]=rows;}return out;}
+    });
+    return fleetEngineThreadClient.disabled?null:fleetEngineThreadClient;
+  }
+  const fleetContextKey=context=>{try{return JSON.stringify(context);}catch(_error){return '';}};
+  // A command that may write the fleet waits until no step is in flight on the thread. It runs with the simulation held
+  // (durableCommandInProgress: the frame loop resets the engine, which cancels the slice and rolls the thread's step
+  // back), so this is at most a frame; after 2 s it proceeds anyway (a step replayed onto a changed fleet is refused).
+  function fleetStepSettled(){
+    const client=fleetEngineThreadClient;if(!client?.busy)return Promise.resolve();
+    return Promise.race([client.idle(),new Promise(resolve=>setTimeout(resolve,2000))]);
+  }
   let activeStagedSlice=null;
   function createSimulationSliceJob(sliceSeconds,meta={}){
     const TX=window.GH_TRANSACTION_CORE,EVENTS=window.GH_FLEET_EVENTS,TIME=window.GH_SIMULATION_TIME_CORE;
     if(!TX?.execute||!EVENTS?.advance||!TIME?.boundaryAt)throw new Error('Fleet event simulation owners unavailable');
     const from=Math.max(0,Number(meta.from)||0),to=Math.max(from,Number(meta.to)||from+Math.max(0,Number(sliceSeconds)||0)),
       manual=meta.manualAdvance===true,order=manual?'sweep':'events',maxEvents=manual?undefined:1500;
-    let ready=false,cancelled=false,completeTo=from,staged=null,stagedConflict=false;
+    let ready=false,cancelled=false,completeTo=from,staged=null,stagedConflict=false,fleetTicket=null;
+    // The fleet step on its thread: requested on the first runChunk; false once this slice runs it here.
+    const fleetStepPending=()=>{
+      if(fleetTicket===false)return false;
+      if(fleetTicket===null){
+        const thread=fleetEngineThread();
+        if(!thread||!window.GH_FLEET_STORE?.isStore?.(state.fleet)||Math.abs((Number(state.simSeconds)||0)-from)>1e-6){fleetTicket=false;return false;}
+        const context=simulationAssetRuntimeContext();
+        // A live slice is bounded by events as here (it then commits up to the last whole timestamp); a calendar slice is
+        // already sized by the thread's event budget (getManualSliceLimit).
+        fleetTicket=thread.request(state.fleet,{from,to,context,contextKey:fleetContextKey(context),tripAlertLimit:64,order,...(manual?{}:{maxEvents:FLEET_THREAD_EVENT_BUDGET}),budget:FLEET_THREAD_EVENT_BUDGET})||false;
+        if(fleetTicket===false)return false;
+      }
+      return fleetTicket.status==='pending';
+    };
     // Build 358: a live slice that reaches a day boundary is a STAGED transaction (GH_TRANSACTION_CORE.beginStaged): the
     // same single transaction, rollback point, order of work and post-commit checks, run one or more stages per frame
     // (snapshot, fleet advance, each step of the financial close, the market hour, each critical check). runChunk()
@@ -2833,9 +2880,13 @@
         journal=makeSimulationEffects();
         const sliceWork=function*(measure){
             const context=simulationAssetRuntimeContext();
-            out=EVENTS.advance(state.fleet,{from,to,context,resolveRoute:fleetResolveRoute,
-              catalogSpecs:asset=>asset?.specs?null:(catalogItem(asset?.type,asset?.catalogId)?.specs||null),
-              tripAlertLimit:64,...(manual?{}:{maxEvents}),order});
+            out=fleetTicket?fleetEngineThreadClient?.apply(fleetTicket,state.fleet,{contextKey:fleetContextKey(context),tx:TX})||null:null;
+            if(!out){
+              if(fleetTicket)fleetEngineThreadClient?.markStale();
+              out=EVENTS.advance(state.fleet,{from,to,context,resolveRoute:fleetResolveRoute,
+                catalogSpecs:asset=>asset?.specs?null:(catalogItem(asset?.type,asset?.catalogId)?.specs||null),
+                tripAlertLimit:64,...(manual?{}:{maxEvents}),order});
+            }
             completeTo=Math.max(from,Math.min(to,Number(out.completeTo)));
             if(!Number.isFinite(completeTo))throw new Error('fleet-event-complete-to-invalid');
             state.simSeconds=completeTo;
@@ -2870,7 +2921,7 @@
       };
     return {
       runChunk(_items,options={}){
-        if(cancelled)return true;if(!stagedDay){ready=true;return true;}
+        if(cancelled)return true;if(!staged&&fleetStepPending())return {pending:true};if(!stagedDay){ready=true;return true;}
         if(!staged){
           if(Math.abs((Number(state.simSeconds)||0)-from)>1e-6){stagedConflict=true;ready=true;return true;}
           staged=TX.beginStaged(state,transactionOptions());activeStagedSlice=staged;
@@ -2897,7 +2948,7 @@
         for(const id of new Set(journal.saleIds))queueAssetSaleFinalize(id);
         return {committed:true,completeTo,boundary:completedBoundary,events:out.events,order};
       },
-      cancel(){cancelled=true;if(staged&&!staged.done)staged.abort('simulation-slice-cancelled');if(activeStagedSlice===staged)activeStagedSlice=null;staged=null;}
+      cancel(){cancelled=true;if(staged&&!staged.done)staged.abort('simulation-slice-cancelled');if(activeStagedSlice===staged)activeStagedSlice=null;staged=null;if(fleetTicket)fleetEngineThreadClient?.discard(fleetTicket);}
     };
   }
 
@@ -2925,7 +2976,7 @@
     setSimTime:value=>{state.simSeconds=value;},
     createSliceJob:createSimulationSliceJob,
     getManualSliceLimit:()=>{
-      const budgetTime=window.GH_FLEET_EVENTS?.timeForEventBudget?.(state.fleet,1500),now=Number(state.simSeconds)||0;
+      const thread=fleetEngineThread(),budgetTime=thread?thread.budgetTime():window.GH_FLEET_EVENTS?.timeForEventBudget?.(state.fleet,1500),now=Number(state.simSeconds)||0;
       const eventWindow=Number.isFinite(budgetTime)?budgetTime-now:3600;
       const limits=[eventWindow,window.GH_REALISM?.simulationSliceLimit?.(state),window.GH_MOBILITY_CORE?.simulationSliceLimit?.(state)].map(Number).filter(value=>Number.isFinite(value)&&value>0);
       return Math.max(60,Math.min(3600,...(limits.length?limits:[3600])));

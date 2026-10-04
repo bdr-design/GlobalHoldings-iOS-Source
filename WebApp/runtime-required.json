@@ -430,6 +430,8 @@
     "finance-report-worker.js",
     "fleet-access-core.js",
     "fleet-core.js",
+    "fleet-engine-thread.js",
+    "fleet-engine-worker.js",
     "fleet-event-core.js",
     "fleet-list-virtualizer.js",
     "fleet-store-core.js",
