@@ -1080,7 +1080,8 @@
     onPositions:result=>{
       if(!map||mapInteractionActive||result.generation!==mapPresentationPlanGeneration)return;
       const now=(window.performance?.now?.()||Date.now());
-      for(const group of result.groups){const cluster=movingFleetClusters.get(`moving:${group.key}`);if(cluster?.marker&&Array.isArray(group.coords))setMapMarkerTarget(`own:moving:${group.key}`,cluster.marker,group.coords,now,false);}
+      const groups=new Map(result.groups.map(group=>[`moving:${group.key}`,group]));
+      for(const [key,cluster] of movingFleetClusters){if(!cluster.members)continue;const point=mergedClusterPoint(cluster.members,member=>{const group=groups.get(member.key);return group?{coords:group.coords,count:member.count}:null;});if(point)setMapMarkerTarget(`own:${key}`,cluster.marker,point,now,false);}
     }
   })||null;
   let financeReportWorkerResult=null,financeReportSnapshotCache=null,financeReportFallbackCache=null;
@@ -1794,16 +1795,19 @@
   // Build 358 (reported with screenshots: overlapping white "AIR 18" boxes all over the map): a fleet cluster is drawn as
   // the vehicle itself (the same top-down aircraft/ship/truck/car sprite as single assets) over two faint copies that
   // read as "several", with a compact count badge in the mode colour; parked groups are dimmed. Clusters are queued and
-  // merged on screen (same mode, closer than FLEET_CLUSTER_MERGE_PX) before drawing, so they never pile up.
+  // merged on screen (same mode and state, closer than FLEET_CLUSTER_MERGE_PX) before drawing, so they never pile up.
+  // renderMap empties the queue first and flushes it once after the fleet and car layers, so car clusters merge and draw
+  // in the same pass. A merged moving marker keeps its members (route groups or car centres) and follows their
+  // count-weighted centre.
   const FLEET_CLUSTER_MERGE_PX=46,FLEET_COUNT_FORMAT=new Intl.NumberFormat('ar',{notation:'compact',maximumFractionDigits:1});
   let pendingFleetClusters=[];
   function fleetClusterHtml(type,count,label='',moving=true){
     const kind=markerKind(type),photo=VEHICLE_MARKER_PHOTOS[kind],size=Math.round(30+Math.min(14,4*Math.log10(Math.max(1,count))));
     return `<div class="fleet-stack ${kind} ${moving?'is-moving':'is-parked'}" style="--stack-size:${size}px" title="${esc(label)}"><img class="fleet-stack-ghost" src="${photo}" alt=""><img class="fleet-stack-ghost second" src="${photo}" alt=""><img class="fleet-stack-main" src="${photo}" alt=""><b class="fleet-stack-count">${count<1000?fmtNumber(count):FLEET_COUNT_FORMAT.format(count)}</b></div>`;
   }
-  function addFleetCluster(key,coords,type,count,label,onClick,{moving=false,assetIds=null}={}){
-    if(!Array.isArray(coords)||coords.length!==2||count<=0)return;
-    pendingFleetClusters.push({key,coords,type,kind:markerKind(type),count,label,onClick,moving,assetIds});
+  function addFleetCluster(key,coords,type,count,label,onClick,{moving=false,assetIds=null,centerId=null}={}){
+    if(!Array.isArray(coords)||coords.length!==2||!Number.isFinite(coords[0])||!Number.isFinite(coords[1])||count<=0)return;
+    pendingFleetClusters.push({key,coords,type,kind:markerKind(type),count,label,onClick,moving,assetIds,members:[{key,count,centerId}]});
   }
   function flushFleetClusters(){
     const queued=pendingFleetClusters.sort((a,b)=>b.count-a.count);pendingFleetClusters=[];const kept=[];
@@ -1812,14 +1816,23 @@
       const host=kept.find(row=>row.kind===item.kind&&row.moving===item.moving&&Math.hypot(row.point.x-point.x,row.point.y-point.y)<FLEET_CLUSTER_MERGE_PX);
       if(!host){kept.push({...item,point,merged:0});continue;}
       const total=host.count+item.count;host.coords=[(host.coords[0]*host.count+item.coords[0]*item.count)/total,(host.coords[1]*host.count+item.coords[1]*item.count)/total];host.count=total;host.merged++;
-      host.assetIds=host.assetIds&&item.assetIds?[...host.assetIds,...item.assetIds]:null;
+      host.assetIds=host.assetIds&&item.assetIds?[...host.assetIds,...item.assetIds]:null;host.members.push(...item.members);
     }
     for(const row of kept){
       const label=row.merged?`${row.label} و${fmtNumber(row.merged)} مجموعة قريبة`:row.label;
       const icon=L.divIcon({className:`fleet-cluster-marker ${row.type}`,html:fleetClusterHtml(row.type,row.count,label,row.moving),iconSize:[52,52],iconAnchor:[26,26]});
       const marker=L.marker(markerDisplayStart(`own:${row.key}`,row.coords),{icon,zIndexOffset:row.moving?620:610}).addTo(map).bindTooltip(`${esc(label)} · ${fmtNumber(row.count)} أصل`,{direction:'top',permanent:false,opacity:.9});
-      marker.on('click',row.onClick);ownMarkers.set(row.key,marker);if(row.moving)movingFleetClusters.set(row.key,{marker,assetIds:row.assetIds});
+      marker.on('click',row.onClick);ownMarkers.set(row.key,marker);
+      if(!row.moving)continue;
+      if(row.kind==='mobility')movingMobilityClusters.set(row.key,{marker,centerIds:row.members.map(member=>member.centerId).filter(Boolean)});
+      else movingFleetClusters.set(row.key,{marker,assetIds:row.assetIds,members:row.members});
     }
+  }
+  // The count-weighted centre of a merged marker's members, from a lookup of each member's live point and weight.
+  function mergedClusterPoint(members,pointOf){
+    let lat=0,lng=0,weight=0;
+    for(const member of members){const live=pointOf(member);if(!live||!Array.isArray(live.coords)||!Number.isFinite(live.coords[0])||!Number.isFinite(live.coords[1]))continue;const w=Math.max(1,Number(live.count)||0);lat+=live.coords[0]*w;lng+=live.coords[1]*w;weight+=w;}
+    return weight?[lat/weight,lng/weight]:null;
   }
   function averageMapPoint(rows,positionOf){let lat=0,lng=0,count=0;for(const row of rows){const point=positionOf(row);if(!Array.isArray(point)||!Number.isFinite(point[0])||!Number.isFinite(point[1]))continue;lat+=point[0];lng+=point[1];count++;}return count?[lat/count,lng/count]:null;}
   function movingHeroSelection(rows,zoom,limit){
@@ -1914,7 +1927,7 @@
     }
     if(singles.size){let wanted=[...singles.values()].reduce((n,group)=>n+group.count,0);fleet.scan(state,['ownerCompanyId','companyId','assetMode','type','baseFacility','phase'],(row,index)=>{if(row.phase==='moving')return;const group=singles.get(`${assetOwnerCompanyId(row)}:${row.baseFacility||'unbased'}`);if(!group)return;const view=fleet.viewAt(state,index);if(view)individual.push(view);if(--wanted===0)return fleet.STOP;});}
     for(const {group,count} of clustersToDraw){const base=findFacility(group.baseFacility),firstAsset=base?.coords?null:fleet.get(state,fleet.idAtRow(state,group.first)),coords=base?.coords||(firstAsset?assetPosition(firstAsset):null),label=base?.name||'مركز تشغيل';addFleetCluster(`cluster:${group.key}`,coords,group.type,count,label,()=>openDrawer('assets',group.type));}
-    flushFleetClusters();addIndividualAssetMarkers(individual);
+    addIndividualAssetMarkers(individual);
   }
   function renderMap(){
     if(!map)return;
@@ -1922,7 +1935,7 @@
     captureMarkerVisualPositions();markerMotionStates.clear();
     routeLayers.forEach(layer=>{try{map.removeLayer(layer)}catch(error){nonCritical('map-route-remove',error);}}); routeLayers=[];
     ownMarkers.forEach(marker=>{try{map.removeLayer(marker)}catch(error){nonCritical('map-layer-remove',error);}}); ownMarkers.clear();
-    movingFleetClusters.clear();movingMobilityClusters.clear();
+    movingFleetClusters.clear();movingMobilityClusters.clear();pendingFleetClusters=[];
     facilityMarkers.forEach(marker=>{try{map.removeLayer(marker)}catch(error){nonCritical('map-layer-remove',error);}}); facilityMarkers.clear();
     competitorMarkers.forEach(marker=>{try{map.removeLayer(marker)}catch(error){nonCritical('map-layer-remove',error);}}); competitorMarkers.clear();
 
@@ -1963,7 +1976,7 @@
       const base=findFacility(group.baseFacility),coords=base?.coords||assetPosition(group.assets[0]),label=base?.name||'مركز تشغيل';
       addFleetCluster(`cluster:${key}`,coords,group.type,clusteredAssets.length,label,()=>openDrawer('assets',group.type));
     }
-    flushFleetClusters();addIndividualAssetMarkers(individual);
+    addIndividualAssetMarkers(individual);
     }
 
     if(mapLayerVisible('assets','mobility','mobility-fleet')){
@@ -1985,11 +1998,12 @@
         marker.on('click',()=>{selectedAssetId=null;selectedMobilityId=vehicle.id;renderMap();openDrawer('mobilityAsset',vehicle.id);});ownMarkers.set(`mobility:${vehicle.id}`,marker);renderedMobilityIds.add(vehicle.id);
         if(!moving){const centerId=vehicle.centerId||'RUH';renderedAvailableByCenter.set(centerId,(renderedAvailableByCenter.get(centerId)||0)+1);}
       }
-      for(const cluster of (window.GH_MOBILITY_CORE?.movingClusters?.(state,[...renderedMobilityIds])||[])){const key=`mobility-moving-cluster:${cluster.centerId}`,label=`${cluster.city} · سيارات متحركة${cluster.waiting?` · ${cluster.waiting} بانتظار المسار`:''}`,marker=addFleetCluster(key,cluster.coords,'mobility',cluster.count,label,()=>openDrawer('assets','mobility'));if(marker)movingMobilityClusters.set(key,{marker,centerId:cluster.centerId});}
+      for(const cluster of (window.GH_MOBILITY_CORE?.movingClusters?.(state,[...renderedMobilityIds])||[]))addFleetCluster(`mobility-moving-cluster:${cluster.centerId}`,cluster.coords,'mobility',cluster.count,`${cluster.city} · سيارات متحركة${cluster.waiting?` · ${cluster.waiting} بانتظار المسار`:''}`,()=>openDrawer('assets','mobility'),{moving:true,centerId:cluster.centerId});
       // Every parked owned car remains represented by its centre cluster. There are
       // finitely many supported capitals, so truncating this list only hid ownership.
       for(const cluster of (window.GH_MOBILITY_CORE?.centerClusters?.(state)||[]).map(row=>({...row,available:Math.max(0,row.available-(renderedAvailableByCenter.get(row.centerId)||0))})).filter(row=>row.available>0).sort((a,b)=>b.available-a.available))addFleetCluster(`mobility-cluster:${cluster.centerId}`,cluster.coords,'mobility',cluster.available,`${cluster.city} · سيارات متاحة`,()=>openDrawer('assets','mobility'));
     }
+    flushFleetClusters();
 
     if(mapCategoryVisible('facilities')){
       const assetBaseIds=new Set([...window.GH_FLEET_DATA.countByFields(state,['baseFacility'],a=>a.baseFacility).keys()].filter(Boolean));
@@ -2176,7 +2190,7 @@
     }
     if(!movingCentersQueued)for(const [key,cluster] of movingFleetClusters){if(!cluster.assetIds)continue;const assets=cluster.assetIds.map(id=>assetIndex.get(id)).filter(Boolean),point=averageMapPoint(assets,assetPosition);if(point)setMapMarkerTarget(`own:${key}`,cluster.marker,point,now,force);}
     const liveIds=[...renderedMobilityIds];for(const vehicle of (window.GH_MOBILITY_CORE?.liveVehicles?.(state,Math.max(1,liveIds.length),{onlyIds:liveIds})||[])){const m=ownMarkers.get(`mobility:${vehicle.id}`);if(m){const motionKey=`own:mobility:${vehicle.id}`,route=vehicle.phase==='moving'?vehicle.route:null;setMapMarkerTarget(motionKey,m,interpolatePresentationRoute(vehicle.route,vehicle.progress),now,force,{route,routeKey:route?`${vehicle.id}:${vehicle.routeKey||vehicle.route?.length||0}`:null,progress:route?vehicle.progress:null,type:'mobility',moving:vehicle.phase==='moving'});const row=markerMotionStates.get(motionKey),bridge=row?.routeBridge?.[0],visualProgress=bridge?.visualProgress??row?.visualProgress??vehicle.progress;refreshVehicleMarker(m,'mobility',routeBearing(bridge?.route||vehicle.route,visualProgress),vehicle.phase==='moving'||!!bridge);}}
-    const mobilityClusterIndex=new Map((window.GH_MOBILITY_CORE?.movingClusters?.(state,liveIds)||[]).map(cluster=>[cluster.centerId,cluster]));for(const [key,cluster] of movingMobilityClusters){const live=mobilityClusterIndex.get(cluster.centerId);if(live?.coords)setMapMarkerTarget(`own:${key}`,cluster.marker,live.coords,now,force);}
+    const mobilityClusterIndex=new Map((window.GH_MOBILITY_CORE?.movingClusters?.(state,liveIds)||[]).map(cluster=>[cluster.centerId,cluster]));for(const [key,cluster] of movingMobilityClusters){const point=mergedClusterPoint(cluster.centerIds,centerId=>mobilityClusterIndex.get(centerId));if(point)setMapMarkerTarget(`own:${key}`,cluster.marker,point,now,force);}
     competitorAssets.forEach(a=>{const m=competitorMarkers.get(a.id);if(m){setMapMarkerTarget(`competitor:${a.id}`,m,interpolatePresentationRoute(a.route,a.progress),now,force,{route:a.route,routeKey:`${a.id}:${a.route?.length||0}`,progress:a.progress,type:a.type,moving:true});refreshVehicleMarker(m,a.type,routeBearing(a.route,a.progress),true);}});
     if(previousMarkerFrameAt===0&&force)animateMapMarkerPositions(now);
   }
