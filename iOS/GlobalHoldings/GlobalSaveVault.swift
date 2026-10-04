@@ -26,6 +26,20 @@ final class GlobalSaveVault {
         let payload: String
     }
 
+    /// The envelope without its payload: encoded by JSONEncoder, then the payload is appended as an escaped JSON string
+    /// (encodeEnvelope). Decoding the result with JSONDecoder gives exactly the Envelope.
+    private struct EnvelopeHeader: Encodable {
+        let generation: Int
+        let slot: String
+        let schemaVersion: String
+        let runtimeVersion: String?
+        let simSeconds: Double
+        let saveRevision: Int?
+        let resetEpoch: Double?
+        let savedAt: Double
+        let sha256: String
+    }
+
     struct Snapshot {
         let generation: Int
         let runtimeVersion: String?
@@ -226,10 +240,13 @@ final class GlobalSaveVault {
     }
 
     func commitAsync(_ json: String, runtimeVersion: String? = nil, envelope: [String: Any]? = nil, completion: ((Result<Int, Error>) -> Void)? = nil) {
+        let enqueuedAt = DispatchTime.now().uptimeNanoseconds
         queue.async {
             let result = Result<Int, Error> {
+                let startedAt = DispatchTime.now().uptimeNanoseconds
                 let prepared = try envelope.map { try self.validateBridgeEnvelope($0, json: json, action: "commitSave") }
-                return try self.commitLocked(json, runtimeVersion: runtimeVersion, prepared: prepared)
+                let checkedAt = DispatchTime.now().uptimeNanoseconds
+                return try self.commitLocked(json, runtimeVersion: runtimeVersion, prepared: prepared, extraStages: ["queueWaitMs": Double(startedAt - enqueuedAt) / 1e6, "bridgeMs": Double(checkedAt - startedAt) / 1e6])
             }
             if let completion { DispatchQueue.main.async { completion(result) } }
         }
@@ -240,8 +257,8 @@ final class GlobalSaveVault {
         try queue.sync { try commitLocked(json, runtimeVersion: runtimeVersion) }
     }
 
-    private func commitLocked(_ json: String, runtimeVersion: String? = nil, allowRegression: Bool = false, prepared: PreparedPayload? = nil) throws -> Int {
-        var stages: [String: Double] = [:]
+    private func commitLocked(_ json: String, runtimeVersion: String? = nil, allowRegression: Bool = false, prepared: PreparedPayload? = nil, extraStages: [String: Double] = [:]) throws -> Int {
+        var stages: [String: Double] = extraStages
         var mark = DispatchTime.now().uptimeNanoseconds
         func lap(_ name: String) {
             let now = DispatchTime.now().uptimeNanoseconds
@@ -269,7 +286,7 @@ final class GlobalSaveVault {
         guard (current?.generation ?? 0) < 9_007_199_254_740_991 else { throw VaultError.message("Native save generation exhausted.") }
         let generation = (current?.generation ?? 0) + 1
         let slot = current?.slot == "A" ? "B" : "A"
-        let envelope = Envelope(
+        let header = EnvelopeHeader(
             generation: generation,
             slot: slot,
             schemaVersion: schemaVersion,
@@ -278,10 +295,9 @@ final class GlobalSaveVault {
             saveRevision: validation.saveRevision,
             resetEpoch: validation.resetEpoch,
             savedAt: Date().timeIntervalSince1970,
-            sha256: payload.sha256,
-            payload: json
+            sha256: payload.sha256
         )
-        let data = try JSONEncoder().encode(envelope)
+        let data = try encodeEnvelope(header, payload: payload.data)
         lap("encodeMs")
         // Foundation's atomic option writes an auxiliary file first then replaces
         // the destination only after the write succeeds.
@@ -674,25 +690,31 @@ final class GlobalSaveVault {
               payload["saveJSON"] as? String == json,
               let hash = payload["saveHash"] as? String, hash.utf8.count == 64,
               hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
-              let data = json.data(using: .utf8), data.count <= 30 * 1024 * 1024,
-              let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              root["saveVersion"] as? String == saveSchemaVersion,
+              let data = json.data(using: .utf8), data.count <= 30 * 1024 * 1024 else { throw VaultError.message("Invalid save envelope.") }
+        let root = try SaveJSONHeader.inspect(data)
+        func rootInteger(_ value: SaveJSONHeader.Value, absent: Double?) -> Double? {
+            switch value {
+            case .absent: return absent
+            case .number(let v): return v.isFinite && v >= 0 && v <= 9_007_199_254_740_991 && v.rounded(.down) == v ? v : nil
+            default: return nil
+            }
+        }
+        guard case .string(let rootVersion) = root.saveVersion, rootVersion == saveSchemaVersion,
               let revision = integer(payload["saveRevision"]),
-              let rootRevision = integer(root["saveRevision"]), revision == rootRevision,
+              let rootRevision = rootInteger(root.saveRevision, absent: nil), revision == rootRevision,
               let epoch = integer(payload["resetEpoch"]),
-              let rootEpoch = integer(root["resetEpoch"] ?? NSNumber(value: 0)), epoch == rootEpoch else { throw VaultError.message("Invalid save envelope.") }
+              let rootEpoch = rootInteger(root.resetEpoch, absent: 0), epoch == rootEpoch else { throw VaultError.message("Invalid save envelope.") }
         let digest = sha256(data)
         guard digest == hash else { throw VaultError.message("Invalid save envelope.") }
         return PreparedPayload(data: data, sha256: digest, info: try payloadInfo(root))
     }
 
-    /// One parse of a payload: its UTF-8 bytes and what its root holds.
+    /// One scan of a payload: its UTF-8 bytes and what its root holds.
     private func parsedPayload(_ json: String) throws -> (data: Data, info: PayloadInfo) {
-        guard let data = json.data(using: .utf8), data.count <= 30 * 1024 * 1024,
-              let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let data = json.data(using: .utf8), data.count <= 30 * 1024 * 1024 else {
             throw VaultError.message("Save payload is not valid JSON.")
         }
-        return (data, try payloadInfo(root))
+        return (data, try payloadInfo(SaveJSONHeader.inspect(data)))
     }
 
     private func preparePayload(_ json: String) throws -> PreparedPayload {
@@ -705,21 +727,67 @@ final class GlobalSaveVault {
         return (info.simSeconds, info.saveRevision, info.resetEpoch)
     }
 
-    private func payloadInfo(_ root: [String: Any]) throws -> PayloadInfo {
-        guard let saveSchemaVersion = root["saveVersion"] as? String, supportedSaveSchemaVersions.contains(saveSchemaVersion) else {
+    private func payloadInfo(_ root: SaveJSONHeader) throws -> PayloadInfo {
+        guard case .string(let saveSchemaVersion) = root.saveVersion, supportedSaveSchemaVersions.contains(saveSchemaVersion) else {
             throw VaultError.message("Unsupported save schema.")
         }
-        func validNumber(_ key: String, fallback: Double?, strings: Bool = false) -> Double? {
-            guard let value = root[key] else { return fallback }
-            if let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() { return n.doubleValue }
-            if strings, let text = value as? String { return Double(text) }
-            return nil
+        func validNumber(_ value: SaveJSONHeader.Value, fallback: Double?, strings: Bool = false) -> Double? {
+            switch value {
+            case .absent: return fallback
+            case .number(let n): return n
+            case .string(let text): return strings ? Double(text) : nil
+            default: return nil
+            }
         }
-        guard let sim = validNumber("simSeconds", fallback: nil, strings: true), sim.isFinite, sim >= 0 else { throw VaultError.message("Invalid simulation clock in save.") }
-        guard let revisionValue = validNumber("saveRevision", fallback: 0), revisionValue.isFinite, revisionValue >= 0, revisionValue <= 9_007_199_254_740_991, revisionValue.rounded(.down) == revisionValue else { throw VaultError.message("Invalid save revision.") }
+        guard let sim = validNumber(root.simSeconds, fallback: nil, strings: true), sim.isFinite, sim >= 0 else { throw VaultError.message("Invalid simulation clock in save.") }
+        guard let revisionValue = validNumber(root.saveRevision, fallback: 0), revisionValue.isFinite, revisionValue >= 0, revisionValue <= 9_007_199_254_740_991, revisionValue.rounded(.down) == revisionValue else { throw VaultError.message("Invalid save revision.") }
         let revision = Int(revisionValue)
-        guard let reset = validNumber("resetEpoch", fallback: 0), reset.isFinite, reset >= 0, reset <= 9_007_199_254_740_991, reset.rounded(.down) == reset else { throw VaultError.message("Invalid reset epoch.") }
+        guard let reset = validNumber(root.resetEpoch, fallback: 0), reset.isFinite, reset >= 0, reset <= 9_007_199_254_740_991, reset.rounded(.down) == reset else { throw VaultError.message("Invalid reset epoch.") }
         return PayloadInfo(simSeconds: sim, saveRevision: revision, resetEpoch: reset, chunkIds: chunkManifest(root))
+    }
+
+    /// The A/B envelope as JSON: the header encoded by JSONEncoder, then `"payload":"<the payload escaped>"` (quote,
+    /// backslash and control characters escaped; every other byte is the payload's own UTF-8). JSONDecoder reads it back
+    /// as the Envelope with this exact payload. JSONEncoder escaping a 15 MB string cost 450-550 ms on iPhone.
+    private func encodeEnvelope(_ header: EnvelopeHeader, payload: Data) throws -> Data {
+        var head = try JSONEncoder().encode(header)
+        guard head.count >= 2, head.last == UInt8(ascii: "}") else { throw VaultError.message("Native save envelope encoding failed.") }
+        head.removeLast()
+        var out = Data(capacity: head.count + payload.count + payload.count / 8 + 16)
+        out.append(head)
+        out.append(contentsOf: Array(",\"payload\":\"".utf8))
+        let hex = Array("0123456789abcdef".utf8)
+        payload.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            let bytes = raw.bindMemory(to: UInt8.self)
+            var run = 0
+            for index in 0..<bytes.count {
+                let byte = bytes[index]
+                guard byte == 0x22 || byte == 0x5C || byte < 0x20 else { continue }
+                out.append(UnsafeBufferPointer(rebasing: bytes[run..<index]))
+                if byte < 0x20 { out.append(contentsOf: [0x5C, 0x75, 0x30, 0x30, hex[Int(byte >> 4)], hex[Int(byte & 0x0F)]]) }
+                else { out.append(contentsOf: [0x5C, byte]) }
+                run = index + 1
+            }
+            out.append(UnsafeBufferPointer(rebasing: bytes[run..<bytes.count]))
+        }
+        out.append(contentsOf: [0x22, 0x7D])
+        return out
+    }
+
+    /// Test access: the header fields a payload's scan yields, or nil when the scan refuses it.
+    static func inspectSaveJSONForTesting(_ data: Data) -> [String: String]? {
+        guard let root = try? SaveJSONHeader.inspect(data) else { return nil }
+        func text(_ value: SaveJSONHeader.Value) -> String {
+            switch value {
+            case .absent: return "absent"
+            case .null: return "null"
+            case .bool(let b): return "bool:\(b)"
+            case .number(let n): return "number:\(n)"
+            case .string(let t): return "string:\(t)"
+            case .container: return "container"
+            }
+        }
+        return ["saveVersion": text(root.saveVersion), "saveRevision": text(root.saveRevision), "resetEpoch": text(root.resetEpoch), "simSeconds": text(root.simSeconds), "binary": text(root.rowsBinary), "chunks": root.chunks.map { $0.joined(separator: ",") } ?? (root.chunksSeen ? "invalid" : "absent"), "fleetRows": root.fleetRows ? "yes" : "no"]
     }
 
     // MARK: - Build 358 chunked fleet records (million-asset saves)
@@ -800,18 +868,15 @@ final class GlobalSaveVault {
 
     /// Chunk ids a payload lists (fleet.rows.chunks of a 'chunks-v1' manifest); [] for a payload without one.
     func referencedChunks(_ json: String) throws -> [String] {
-        guard let data = json.data(using: .utf8), let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw VaultError.message("Save payload is not valid JSON.")
-        }
-        guard let ids = chunkManifest(root) else { throw VaultError.message("Invalid save chunk manifest.") }
+        guard let data = json.data(using: .utf8) else { throw VaultError.message("Save payload is not valid JSON.") }
+        guard let ids = chunkManifest(try SaveJSONHeader.inspect(data)) else { throw VaultError.message("Invalid save chunk manifest.") }
         return ids
     }
 
     /// fleet.rows.chunks of a 'chunks-v1' manifest; [] for a root without one; nil for an invalid manifest.
-    private func chunkManifest(_ root: [String: Any]) -> [String]? {
-        guard let fleet = root["fleet"] as? [String: Any], let rows = fleet["rows"] as? [String: Any],
-              rows["$ghBinary"] as? String == "chunks-v1" else { return [] }
-        guard let ids = rows["chunks"] as? [String], ids.allSatisfy({ isValidChunkId($0) }) else { return nil }
+    private func chunkManifest(_ root: SaveJSONHeader) -> [String]? {
+        guard root.fleetRows, case .string("chunks-v1") = root.rowsBinary else { return [] }
+        guard let ids = root.chunks, ids.allSatisfy({ isValidChunkId($0) }) else { return nil }
         return ids
     }
 
@@ -855,6 +920,291 @@ final class GlobalSaveVault {
 
     private func sha256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Build 358: what the vault reads from a save payload, found in one pass over its UTF-8 bytes. The whole text is
+    /// checked against the JSON grammar (RFC 8259, the root an object), but only the root's saveVersion, saveRevision,
+    /// resetEpoch and simSeconds and fleet.rows' $ghBinary and chunks are decoded; nothing becomes an object.
+    /// JSONSerialization built the whole 15 MB save as objects to read these (about 1.2 s per commit on iPhone).
+    /// The bytes come from a Swift String, so they are valid UTF-8. Of a repeated key, the last one counts.
+    private struct SaveJSONHeader {
+        enum Value { case absent, null, bool(Bool), number(Double), string(String), container }
+        var saveVersion: Value = .absent
+        var saveRevision: Value = .absent
+        var resetEpoch: Value = .absent
+        var simSeconds: Value = .absent
+        /// root.fleet is an object holding an object `rows`; rowsBinary and chunks are read from that object.
+        var fleetRows = false
+        var rowsBinary: Value = .absent
+        /// rows.chunks when it is an array of strings, nil otherwise; chunksSeen: rows has a `chunks` key.
+        var chunks: [String]? = nil
+        var chunksSeen = false
+
+        static func inspect(_ data: Data) throws -> SaveJSONHeader {
+            try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) throws -> SaveJSONHeader in
+                var scanner = Scanner(bytes: raw.bindMemory(to: UInt8.self))
+                return try scanner.document()
+            }
+        }
+
+        private struct Scanner {
+            let bytes: UnsafeBufferPointer<UInt8>
+            var i = 0
+
+            init(bytes: UnsafeBufferPointer<UInt8>) { self.bytes = bytes }
+
+            private var invalid: VaultError { VaultError.message("Save payload is not valid JSON.") }
+            private var peek: UInt8 { i < bytes.count ? bytes[i] : 0 }
+
+            mutating func document() throws -> SaveJSONHeader {
+                var header = SaveJSONHeader()
+                skipSpace()
+                guard peek == 0x7B else { throw invalid }
+                i += 1
+                var first = true
+                while try nextMember(&first) {
+                    let key = try string()
+                    try colon()
+                    switch key {
+                    case "saveVersion": header.saveVersion = try value()
+                    case "saveRevision": header.saveRevision = try value()
+                    case "resetEpoch": header.resetEpoch = try value()
+                    case "simSeconds": header.simSeconds = try value()
+                    case "fleet":
+                        header.fleetRows = false; header.rowsBinary = .absent; header.chunks = nil; header.chunksSeen = false
+                        if peek == 0x7B { try fleet(&header) } else { try skipValue() }
+                    default: try skipValue()
+                    }
+                }
+                skipSpace()
+                guard i == bytes.count else { throw invalid }
+                return header
+            }
+
+            private mutating func fleet(_ header: inout SaveJSONHeader) throws {
+                i += 1
+                var first = true
+                while try nextMember(&first) {
+                    let key = try string()
+                    try colon()
+                    guard key == "rows" else { try skipValue(); continue }
+                    header.fleetRows = false; header.rowsBinary = .absent; header.chunks = nil; header.chunksSeen = false
+                    guard peek == 0x7B else { try skipValue(); continue }
+                    header.fleetRows = true
+                    i += 1
+                    var firstRow = true
+                    while try nextMember(&firstRow) {
+                        let rowKey = try string()
+                        try colon()
+                        switch rowKey {
+                        case "$ghBinary": header.rowsBinary = try value()
+                        case "chunks":
+                            header.chunksSeen = true
+                            header.chunks = try stringArray()
+                        default: try skipValue()
+                        }
+                    }
+                }
+            }
+
+            /// An array of strings as [String]; nil (after checking it) for any other value.
+            private mutating func stringArray() throws -> [String]? {
+                guard peek == 0x5B else { try skipValue(); return nil }
+                i += 1
+                var items: [String] = [], allStrings = true, first = true
+                while try nextElement(&first) {
+                    if peek == 0x22 { items.append(try string()) } else { try skipValue(); allStrings = false }
+                }
+                return allStrings ? items : nil
+            }
+
+            /// A value read for the header: scalars decoded, an object or array checked and passed over.
+            private mutating func value() throws -> Value {
+                switch peek {
+                case 0x22: return .string(try string())
+                case 0x7B, 0x5B: try skipValue(); return .container
+                case 0x74: try literal(Scanner.trueWord); return .bool(true)
+                case 0x66: try literal(Scanner.falseWord); return .bool(false)
+                case 0x6E: try literal(Scanner.nullWord); return .null
+                default:
+                    let start = i
+                    try number()
+                    let text = String(decoding: UnsafeBufferPointer(rebasing: bytes[start..<i]), as: UTF8.self)
+                    return .number(Double(text) ?? .nan)
+                }
+            }
+
+            /// Checks one value of any depth and passes over it without decoding it (an explicit stack, no recursion).
+            mutating func skipValue() throws {
+                var open: [Bool] = []   // true: object, false: array
+                var first = false
+                while true {
+                    switch peek {
+                    case 0x7B: i += 1; open.append(true); first = true
+                    case 0x5B: i += 1; open.append(false); first = true
+                    case 0x22: try skipString()
+                    case 0x74: try literal(Scanner.trueWord)
+                    case 0x66: try literal(Scanner.falseWord)
+                    case 0x6E: try literal(Scanner.nullWord)
+                    default: try number()
+                    }
+                    // Move to the next value in the innermost open container, closing the finished ones.
+                    while let isObject = open.last {
+                        if isObject {
+                            if try nextMember(&first) { try skipString(); try colon(); break }
+                        } else if try nextElement(&first) {
+                            break
+                        }
+                        open.removeLast()
+                        first = false
+                    }
+                    if open.isEmpty { return }
+                }
+            }
+
+            /// Inside an object: false at its closing brace (passed over), true when a member's key follows.
+            private mutating func nextMember(_ first: inout Bool) throws -> Bool {
+                skipSpace()
+                guard i < bytes.count else { throw invalid }
+                if bytes[i] == 0x7D { i += 1; return false }
+                if first { first = false; return true }
+                guard bytes[i] == 0x2C else { throw invalid }
+                i += 1
+                skipSpace()
+                return true
+            }
+
+            /// Inside an array: false at its closing bracket (passed over), true when an element follows.
+            private mutating func nextElement(_ first: inout Bool) throws -> Bool {
+                skipSpace()
+                guard i < bytes.count else { throw invalid }
+                if bytes[i] == 0x5D { i += 1; return false }
+                if first { first = false; return true }
+                guard bytes[i] == 0x2C else { throw invalid }
+                i += 1
+                skipSpace()
+                return true
+            }
+
+            private mutating func colon() throws {
+                skipSpace()
+                guard peek == 0x3A else { throw invalid }
+                i += 1
+                skipSpace()
+            }
+
+            private mutating func skipSpace() {
+                while i < bytes.count {
+                    let c = bytes[i]
+                    guard c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 else { return }
+                    i += 1
+                }
+            }
+
+            private static let trueWord = Array("true".utf8), falseWord = Array("false".utf8), nullWord = Array("null".utf8)
+
+            private mutating func literal(_ word: [UInt8]) throws {
+                guard bytes.count - i >= word.count else { throw invalid }
+                for byte in word {
+                    guard bytes[i] == byte else { throw invalid }
+                    i += 1
+                }
+            }
+
+            /// -?(0|[1-9][0-9]*)(.[0-9]+)?([eE][+-]?[0-9]+)?
+            private mutating func number() throws {
+                if peek == 0x2D { i += 1 }
+                if peek == 0x30 { i += 1 } else if peek >= 0x31 && peek <= 0x39 { skipDigits() } else { throw invalid }
+                if peek == 0x2E {
+                    i += 1
+                    guard peek >= 0x30 && peek <= 0x39 else { throw invalid }
+                    skipDigits()
+                }
+                if peek == 0x65 || peek == 0x45 {
+                    i += 1
+                    if peek == 0x2B || peek == 0x2D { i += 1 }
+                    guard peek >= 0x30 && peek <= 0x39 else { throw invalid }
+                    skipDigits()
+                }
+            }
+
+            private mutating func skipDigits() {
+                while i < bytes.count, bytes[i] >= 0x30, bytes[i] <= 0x39 { i += 1 }
+            }
+
+            /// Checks a string and passes over it: no raw control character, only JSON's escapes.
+            private mutating func skipString() throws {
+                guard peek == 0x22 else { throw invalid }
+                i += 1
+                while i < bytes.count {
+                    let c = bytes[i]
+                    if c == 0x22 { i += 1; return }
+                    if c == 0x5C { try escape(); continue }
+                    guard c >= 0x20 else { throw invalid }
+                    i += 1
+                }
+                throw invalid
+            }
+
+            /// At a backslash: checks the escape, passes over it and returns the UTF-16 code unit it stands for.
+            @discardableResult
+            private mutating func escape() throws -> UInt32 {
+                guard bytes.count - i >= 2 else { throw invalid }
+                let c = bytes[i + 1]
+                i += 2
+                switch c {
+                case 0x22, 0x5C, 0x2F: return UInt32(c)
+                case 0x62: return 0x08
+                case 0x66: return 0x0C
+                case 0x6E: return 0x0A
+                case 0x72: return 0x0D
+                case 0x74: return 0x09
+                case 0x75:
+                    guard bytes.count - i >= 4 else { throw invalid }
+                    var unit: UInt32 = 0
+                    for _ in 0..<4 {
+                        let h = bytes[i]
+                        let digit: UInt8
+                        switch h {
+                        case 0x30...0x39: digit = h - 0x30
+                        case 0x41...0x46: digit = h - 0x37
+                        case 0x61...0x66: digit = h - 0x57
+                        default: throw invalid
+                        }
+                        unit = unit << 4 | UInt32(digit)
+                        i += 1
+                    }
+                    return unit
+                default: throw invalid
+                }
+            }
+
+            /// A string decoded; a lone surrogate escape becomes U+FFFD.
+            private mutating func string() throws -> String {
+                let start = i + 1
+                try skipString()
+                let end = i - 1
+                let body = UnsafeBufferPointer(rebasing: bytes[start..<end])
+                guard body.contains(0x5C) else { return String(decoding: body, as: UTF8.self) }
+                var out: [UInt8] = []
+                out.reserveCapacity(body.count)
+                i = start
+                while i < end {
+                    guard bytes[i] == 0x5C else { out.append(bytes[i]); i += 1; continue }
+                    let unit = try escape()
+                    var scalar = Unicode.Scalar(unit)
+                    if unit >= 0xD800 && unit <= 0xDBFF && end - i >= 6 && bytes[i] == 0x5C && bytes[i + 1] == 0x75 {
+                        let mark = i
+                        let low = try escape()
+                        if low >= 0xDC00 && low <= 0xDFFF { scalar = Unicode.Scalar(0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00)) } else { i = mark }
+                    }
+                    let decoded: Unicode.Scalar = scalar ?? "\u{FFFD}"
+                    out.append(contentsOf: String(Character(decoded)).utf8)
+                }
+                i = end + 1
+                return String(decoding: out, as: UTF8.self)
+            }
+        }
     }
 
     private enum VaultError: LocalizedError {

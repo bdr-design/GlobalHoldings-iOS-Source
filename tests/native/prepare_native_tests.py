@@ -285,6 +285,151 @@ test("bootstrap of a chunked save installs the boot gate") {
     try check(script.contains("__GH_BOOT_GATE__") && script.contains("gh://app/save-chunk/"),"Boot gate missing")
 }
 }
+// Build 358: the vault reads a payload with its own one-pass scan (no longer JSONSerialization) and writes the A/B
+// envelope without JSONEncoder escaping the payload. The scan must accept and refuse what JSONSerialization does and
+// read the same fields; the envelope must give back every payload byte.
+do {
+func scanReference(_ data:Data)->[String:String]? {
+    guard let root=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] else {return nil}
+    func text(_ value:Any?)->String {
+        guard let value else {return "absent"}
+        if value is NSNull {return "null"}
+        if let s=value as? String {return "string:\\(s)"}
+        if let n=value as? NSNumber {return CFGetTypeID(n)==CFBooleanGetTypeID() ? "bool:\\(n.boolValue)" : "number:\\(n.doubleValue)"}
+        return "container"
+    }
+    var out=["saveVersion":text(root["saveVersion"]),"saveRevision":text(root["saveRevision"]),"resetEpoch":text(root["resetEpoch"]),"simSeconds":text(root["simSeconds"]),"binary":"absent","chunks":"absent","fleetRows":"no"]
+    if let fleet=root["fleet"] as? [String:Any],let rows=fleet["rows"] as? [String:Any] {
+        out["fleetRows"]="yes";out["binary"]=text(rows["$ghBinary"])
+        if let chunks=rows["chunks"] {out["chunks"]=(chunks as? [String]).map{$0.joined(separator:",")} ?? "invalid"}
+    }
+    return out
+}
+let scanCorpus:[String]=[
+    #"{"saveVersion":"3.0.0","saveRevision":4,"resetEpoch":0,"simSeconds":120.25}"#,
+    "{\\n\\t\\"saveVersion\\" :\\r\\n \\"3.0.0\\" , \\"simSeconds\\":\\"60\\" ,\\"saveRevision\\": 7 }\\n\\t ",
+    #"{"save\\u0056ersion":"3.\\u0030.0","simSeconds":1e3,"saveRevision":2.5E-1,"resetEpoch":1E+2}"#,
+    #"{"saveVersion":true,"saveRevision":null,"resetEpoch":false,"simSeconds":[1,{"a":[]}]}"#,
+    #"{"label":"\\"\\\\\\/\\b\\f\\n\\r\\t\\u00e9\\ud83d\\udea2 العساف 海 🚢","x":[[[[{}]]]],"saveVersion":"3.0.0","simSeconds":{"a":"}"}}"#,
+    #"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["a.1","b-2","c_3"]}},"saveVersion":"3.0.0"}"#,
+    #"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":[]}}}"#,
+    #"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["a",1]}}}"#,
+    #"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":"a"}}}"#,
+    #"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":[" a\\"b",null,["c"]]}}}"#,
+    #"{"fleet":{"rows":[1,2]}}"#,
+    #"{"fleet":[{"rows":{}}]}"#,
+    #"{"fleet":"rows"}"#,
+    #"{"fleet":{"other":{"rows":{"$ghBinary":"chunks-v1"}},"rows":{"$ghBinary":7,"chunks":["x"]}}}"#,
+    #"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["\\u0061b"],"nested":{"chunks":["no"]}}},"chunks":["root"]}"#,
+    #"{"fleet":{"rows":{"$gh\\u0042inary":{"x":1},"chunks":["k"]}}}"#,
+    #"{}"#, #" {} "#,
+    #"{"a":{"b":{"c":{"d":[1,-2.5,3e2,"s",null,true,false,0,0.5,10]}}}}"#,
+    // Refused by both.
+    "", "   ", "[]", #"[{"saveVersion":"3.0.0"}]"#, #""x""#, "3", "null", "true",
+    "{", "}", #"{"a"}"#, #"{"a":}"#, #"{"a":1,}"#, #"{"a":[1,]}"#, "{,}", #"{"a":1,,"b":2}"#,
+    #"{"a" 1}"#, "{a:1}", "{'a':1}", #"{"a":1}x"#, #"{"a":1}{}"#, #"{"a":[1 2]}"#, #"{"a":{"b":1 "c":2}}"#,
+    #"{"a":tru}"#, #"{"a":nul}"#, #"{"a":True}"#, #"{"a":falsey}"#,
+    #"{"a":"\\x"}"#, #"{"a":"\\u12G4"}"#, #"{"a":"\\u12"}"#, #"{"a":"abc}"#, "{\\"a\\":\\"tab\\there\\"}", "{\\"a\\":\\"line\\nbreak\\"}", "{\\"a\\":\\"nul\\u{0}\\"}",
+    #"{"a":[}"#, #"{"a":]}"#, #"{"a":{]}"#, #"{"a":[1}"#, #"{"a":{"b":[1,{"c":2]}}"#,
+    #"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["a",]}}}"#, #"{"fleet":{"rows":{"chunks":["a" "b"]}}}"#,
+    #"{"saveVersion":"3.0.0"} "x""#, #"{"saveVersion":"3.0.0""#
+]
+test("payload scan reads what JSONSerialization reads (fixed corpus)") {
+    var bad:[String]=[]
+    for text in scanCorpus {
+        let data=Data(text.utf8),got=GlobalSaveVault.inspectSaveJSONForTesting(data),want=scanReference(data)
+        if got != want {bad.append("\\(text.prefix(80)) => \\(String(describing:got)) / \\(String(describing:want))")}
+    }
+    try check(bad.isEmpty,"Scan differs: \\(bad.prefix(4))")
+}
+test("payload scan refuses what RFC 8259 refuses") {
+    let strict=[#"{"a":01}"#,#"{"a":-01}"#,#"{"a":1.}"#,#"{"a":.5}"#,#"{"a":+1}"#,#"{"a":0x10}"#,#"{"a":-}"#,#"{"a":NaN}"#,#"{"a":Infinity}"#,#"{"a":1e}"#,#"{"a":1e+}"#,#"{"a":1.e3}"#,"{\\"a\\":1}\\u{0}","\\u{FEFF}{}","{\\"a\\":1}\\u{0B}",#"{"a":"\\U0041"}"#]
+    let accepted=strict.filter{GlobalSaveVault.inspectSaveJSONForTesting(Data($0.utf8)) != nil}
+    try check(accepted.isEmpty,"Accepted: \\(accepted)")
+}
+test("payload scan: deep nesting, lone surrogates and repeated keys") {
+    let deep="{\\"a\\":"+String(repeating:"[",count:20000)+String(repeating:"]",count:20000)+",\\"saveVersion\\":\\"3.0.0\\"}"
+    try check(GlobalSaveVault.inspectSaveJSONForTesting(Data(deep.utf8))?["saveVersion"]=="string:3.0.0","Deep nesting refused")
+    try check(GlobalSaveVault.inspectSaveJSONForTesting(Data(String(repeating:"[",count:20000).utf8))==nil,"Unclosed nesting accepted")
+    // JSON.stringify writes a lone surrogate (a name cut inside an emoji) as \\udXXX: the save stays valid.
+    let lone=GlobalSaveVault.inspectSaveJSONForTesting(Data(#"{"saveVersion":"\\ud800","n":"\\udc00x\\ud83d"}"#.utf8))
+    try check(lone?["saveVersion"]=="string:\\u{FFFD}","Lone surrogate: \\(String(describing:lone))")
+    let pair=GlobalSaveVault.inspectSaveJSONForTesting(Data(#"{"saveVersion":"\\ud83d\\n\\ud83d\\udea2"}"#.utf8))
+    try check(pair?["saveVersion"]=="string:\\u{FFFD}\\n🚢","Surrogate then escape: \\(String(describing:pair))")
+    let repeated=GlobalSaveVault.inspectSaveJSONForTesting(Data(#"{"saveRevision":1,"saveRevision":2,"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["a"]}},"fleet":7}"#.utf8))
+    try check(repeated?["saveRevision"]=="number:2.0" && repeated?["fleetRows"]=="no" && repeated?["chunks"]=="absent","Repeated keys: \\(String(describing:repeated))")
+}
+test("payload scan reads what JSONSerialization reads (generated saves, cut short)") {
+    var rng=SystemRandomNumberGenerator()
+    let pool:[String]=(0..<32).map{String(Character(UnicodeScalar(UInt8($0))))}+["\\"","\\\\","/","a","Z"," ","é","العساف","海","🚢","\\u{2028}","\\u{7F}","$ghBinary","chunks-v1"]
+    func word()->String {(0..<Int.random(in:0...6,using:&rng)).map{_ in pool.randomElement(using:&rng)!}.joined()}
+    func scalar()->Any {
+        switch Int.random(in:0...5,using:&rng) {
+        case 0: return Int.random(in:-1_000_000...1_000_000,using:&rng)
+        case 1: return Double(Int.random(in:0...1_000_000,using:&rng))/64
+        case 2: return word()
+        case 3: return Bool.random(using:&rng)
+        case 4: return NSNull()
+        default: return Int.random(in:0...9_007_199_254_740_991,using:&rng)
+        }
+    }
+    func value(_ depth:Int)->Any {
+        if depth>4 || Int.random(in:0...2,using:&rng)==0 {return scalar()}
+        if Bool.random(using:&rng) {return (0..<Int.random(in:0...4,using:&rng)).map{_ in value(depth+1)}}
+        var o:[String:Any]=[:];for _ in 0..<Int.random(in:0...4,using:&rng) {o[word()]=value(depth+1)};return o
+    }
+    var bad:[String]=[],count=0
+    for round in 0..<400 {
+        var root:[String:Any]=["saveVersion":Bool.random(using:&rng) ? ("3.0.0" as Any):scalar(),"payload":value(0)]
+        for key in ["saveRevision","resetEpoch","simSeconds"] where Bool.random(using:&rng) {root[key]=Int.random(in:0...3,using:&rng)==0 ? value(1):scalar()}
+        switch round%4 {
+        case 0: root["fleet"]=["rows":["$ghBinary":"chunks-v1","chunks":(0..<Int.random(in:0...5,using:&rng)).map{"c.\\($0)"},"byteLength":8] as [String:Any]]
+        case 1: root["fleet"]=["rows":["$ghBinary":scalar(),"chunks":value(2)]]
+        case 2: root["fleet"]=value(1)
+        default: break
+        }
+        let data=try JSONSerialization.data(withJSONObject:root,options:Bool.random(using:&rng) ? [.prettyPrinted]:[])
+        for cut in [data.count,Int.random(in:0..<data.count,using:&rng)] {
+            let piece=data.prefix(cut)
+            guard String(data:piece,encoding:.utf8) != nil else {continue}
+            count+=1
+            let got=GlobalSaveVault.inspectSaveJSONForTesting(piece),want=scanReference(piece)
+            if got != want {bad.append("\\(String(decoding:piece.prefix(120),as:UTF8.self)) => \\(String(describing:got)) / \\(String(describing:want))")}
+        }
+    }
+    try check(count>=500 && bad.isEmpty,"Scan differs (\\(bad.count) of \\(count)): \\(bad.prefix(3))")
+}
+test("the A/B envelope keeps every payload byte") {
+    vault.reset()
+    var label="";for c in 0..<32 {label.unicodeScalars.append(UnicodeScalar(UInt8(c)))}
+    label+="\\"\\\\/ \\u{7F} é العساف 海 🚢 \\u{2028}\\u{2029} \\\\u0041"
+    let obj:[String:Any]=["saveVersion":"3.0.0","saveRevision":1,"resetEpoch":0,"simSeconds":60,"label":label,"nested":["a":[1,2,["b":label]] as [Any]]]
+    let json=String(data:try JSONSerialization.data(withJSONObject:obj,options:[.prettyPrinted,.sortedKeys]),encoding:.utf8)!+"\\n\\t\\r "
+    let gen:Int=try wait{commit(json,try! envelope(json),$0)}
+    try check(vault.currentSave()==json,"Payload changed through the envelope")
+    var found=false
+    for name in ["save-A.json","save-B.json"] {
+        let file=folder.appendingPathComponent(name)
+        guard let data=try? Data(contentsOf:file),let env=try JSONSerialization.jsonObject(with:data) as? [String:Any],(env["generation"] as? Int)==gen else {continue}
+        found=true
+        try check(env["payload"] as? String==json && env["sha256"] as? String==hash(json),"Envelope payload or hash differs")
+        try check(env["schemaVersion"] != nil && env["simSeconds"] as? Double==60 && env["saveRevision"] as? Int==1 && env["slot"] as? String==String(name.dropFirst(5).prefix(1)),"Envelope header differs: \\(env.filter{$0.key != "payload"})")
+    }
+    try check(found,"No slot holds generation \\(gen)")
+    let next=try makeJSON(2,extra:label);let gen2:Int=try wait{commit(next,try! envelope(next),$0)}
+    try check(gen2==gen+1 && vault.currentSave()==next,"Second commit through the envelope")
+}
+test("bridge check refuses an envelope whose save is not JSON") {
+    let base=try makeJSON(9)
+    var payload=try envelope(base)
+    let broken=String(base.dropLast())
+    payload["saveJSON"]=broken;payload["saveHash"]=hash(broken)
+    let before=try diskDigest();var failed=false
+    do {let _:Int=try wait {commit(broken,payload,$0)}}catch{failed=true}
+    let after=try diskDigest()
+    try check(failed && after==before,"Truncated save accepted or disk changed")
+}
+}
 // Baseline validation runs in the main-thread probe; candidate enqueues it on the real vault queue.
 vault.reset()
 let perf=try makeJSON(1,extra:String(repeating:"x",count:14_000_000)),perfEnvelope=try envelope(perf)
