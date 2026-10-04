@@ -478,8 +478,9 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
                     switch result {
                     case .success(let generation):
                         GlobalGameStorage.shared.noteCurrentSaveGeneration(generation)
+                        let stages = GlobalSaveVault.shared.takeCommitTimings(generation: generation)
                         guard self?.isCurrentDocument(requestDocument) == true else { return }
-                        self?.reportSaveAck(payload: payload, success: true, generation: generation, message: nil, nativeVaultCommitMs: nativeVaultCommitMs)
+                        self?.reportSaveAck(payload: payload, success: true, generation: generation, message: nil, nativeVaultCommitMs: nativeVaultCommitMs, nativeVaultStages: stages)
                     case .failure(let error):
                         guard self?.isCurrentDocument(requestDocument) == true else { return }
                         print("GlobalSaveVault commit failed: \(error.localizedDescription)")
@@ -871,13 +872,15 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
         webView.evaluateJavaScript(script)
     }
 
-    private func reportSaveAck(payload: [String: Any], success: Bool, generation: Int?, message: String?, nativeVaultCommitMs: Double? = nil) {
+    private func reportSaveAck(payload: [String: Any], success: Bool, generation: Int?, message: String?, nativeVaultCommitMs: Double? = nil, nativeVaultStages: [String: Double]? = nil) {
         var detail: [String: Any] = ["success": success, "message": message ?? ""]
         for key in ["requestId", "action", "saveRevision", "resetEpoch", "saveSchemaVersion", "saveHash"] {
             if let value = payload[key] { detail[key] = value }
         }
         if let generation { detail["generation"] = generation }
         if let nativeVaultCommitMs, nativeVaultCommitMs.isFinite { detail["nativeVaultCommitMs"] = nativeVaultCommitMs }
+        // Build 358: where a commit's time went (parse, current slot, encode, write, verify, chunk collection; sizes).
+        if let nativeVaultStages { detail["nativeVaultStages"] = nativeVaultStages.filter { $0.value.isFinite } }
         let event = payload["action"] as? String == "resetGameSave" ? "gh-native-reset-ack" : "gh-native-save-ack"
         reportBridgeEvent(event, detail: detail)
     }

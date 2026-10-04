@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "8d535dd2724feed013cc9f648cf98870f5c0ea0c96d6a033fac47a8ebcf0b8a8",
-  "webapp_tree_sha256": "cd76307c5e2d4e715705d68943227688abe7d00d4a7c0b1c9c9ef52ee2c88f02",
+  "source_tree_sha256": "c049b8ac682a189febcb127b5ccda59bfbe22f39da4afc9e139f8f29a9987f7e",
+  "webapp_tree_sha256": "0f93b974919d58ac650645d137230805bdc108f081d0514f38830c78bec55422",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 232246,
@@ -1831,8 +1831,8 @@
       "sha256": "a60a12c745e33195b2eeb998a6118f9eae056e67c837eec672f42778181a75f4"
     },
     "WebApp/persistence-core.js": {
-      "bytes": 42234,
-      "sha256": "cf1c411066b55a8248cc872579cafc57dc2c0507cc4c192aabb425880d5229bf"
+      "bytes": 42741,
+      "sha256": "600855524598f5f2353d84a497d236dfb9553edcb87373c662d7451a8b8cf686"
     },
     "WebApp/policy-core.js": {
       "bytes": 1915,
@@ -1979,16 +1979,16 @@
       "sha256": "0fd49ba3c3585c709678e0046a821c3c60685ec7063720d30d3a3448be3a208b"
     },
     "iOS/GlobalHoldings/GameViewController.swift": {
-      "bytes": 59415,
-      "sha256": "f25ca94ef731c405de9c9f85829cdf9a4437bccdb90ea2c8b2892c528308525a"
+      "bytes": 59822,
+      "sha256": "22d5b19d933d5675029b80a348817110f09f432c5eae4bacdc0608f07f53e305"
     },
     "iOS/GlobalHoldings/GlobalGameStorage.swift": {
       "bytes": 66664,
       "sha256": "63a17c82ccfaa52d0a2ef01bc484a3e80bc2080322dc039e763ca8b5359105a5"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
-      "bytes": 41830,
-      "sha256": "14796f577852a4ea718f5a22d176370834f0b55b5e57b8ef97a5a4e89cd74ac7"
+      "bytes": 50809,
+      "sha256": "8f349193a6fc2d68667f902a67aea413be5c92bdee87df24089ec4d7952d1eba"
     },
     "iOS/GlobalHoldings/LaunchScreen.storyboard": {
       "bytes": 1728,
@@ -1996,7 +1996,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "ca2fed4651c4a7dc0d989e2a601b7115e996e0cc1ce5d893fcc56119aff0192f"
+      "sha256": "40500a5a758d04e8d2b0e66c484b0340ac181458a9ab7fc495b889f2d4777afd"
     },
     "BUILD": {
       "bytes": 4,

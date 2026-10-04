@@ -15,7 +15,7 @@ const P=s.GH_PERSISTENCE,CODEC=s.GH_STATE_CODEC,results=[];
 async function test(name,fn){try{results.push({name,ok:true,detail:await fn()});}catch(error){results.push({name,ok:false,error:String(error.stack||error).slice(0,2000)});}}
 
 // ---- stand-in native vault ----------------------------------------------------------------------------------------
-const vault={chunks:new Map(),saves:[],slots:new Map(),messages:[],generation:0,ackDelay:0,holdChunkAcks:null};
+const vault={chunks:new Map(),saves:[],slots:new Map(),messages:[],generation:0,ackDelay:0,holdChunkAcks:null,stages:null};
 const sha=text=>crypto.createHash('sha256').update(text,'utf8').digest('hex');
 function referenced(json){const rows=JSON.parse(json)?.fleet?.rows;return rows?.$ghBinary==='chunks-v1'?rows.chunks:[];}
 function deliver(name,detail){setTimeout(()=>s.dispatchEvent(new s.CustomEvent(name,{detail})),vault.ackDelay);}
@@ -32,7 +32,7 @@ const bridge={postMessage(message){
     if(message.action==='saveManualSlot'){if(ok)vault.slots.set(message.index,message.saveJSON);return deliver('gh-native-slot-ack',{requestId:message.requestId,action:message.action,index:message.index,success:ok,message:missing?`Missing save chunk: ${missing}`:ok?'':'bad hash'});}
     if(ok)vault.saves.push(message.saveJSON);
     const event=message.action==='resetGameSave'?'gh-native-reset-ack':'gh-native-save-ack';
-    deliver(event,{requestId:message.requestId,action:message.action,saveRevision:message.saveRevision,resetEpoch:message.resetEpoch,saveSchemaVersion:message.saveSchemaVersion,saveHash:message.saveHash,success:ok,generation:ok?++vault.generation:undefined,message:missing?`Missing save chunk: ${missing}`:ok?'':'bad hash'});
+    deliver(event,{requestId:message.requestId,action:message.action,saveRevision:message.saveRevision,resetEpoch:message.resetEpoch,saveSchemaVersion:message.saveSchemaVersion,saveHash:message.saveHash,success:ok,generation:ok?++vault.generation:undefined,message:missing?`Missing save chunk: ${missing}`:ok?'':'bad hash',...(vault.stages?{nativeVaultStages:vault.stages}:{})});
   }
 }};
 // Saves and chunks travel over saveBridge; a reset over updateBridge (GameViewController owns both).
@@ -129,6 +129,20 @@ const rowsOf=json=>JSON.parse(json).fleet.rows;
       assert(posted.length>0&&uploads().length===posted.length,'a 404 sends each chunk over the bridge instead');
       return {posted:posted.length};
     }finally{s.fetch=previousFetch;s.location=previousLocation;}
+  });
+  // Build 358 (iPhone diagnostic: 3.4-5.3 s per native commit): GlobalSaveVault reports where a commit's time went and the
+  // diagnostics keep it next to the ACK latency. Only short names with finite numbers are kept, rounded to 0.1 ms.
+  await test('the native ACK carries the vault commit stages into the save telemetry',async()=>{
+    vault.stages={parseMs:182.456,currentSlotMs:0.04,encodeMs:96.21,writeMs:41,verifyMs:22.5,chunkGcMs:0.3,payloadBytes:21634300,envelopeBytes:24100000,'bad key':5,dropped:'NaN',nested:{x:1}};
+    try{
+      await P.commitState(state,{storageKey:key}).native;
+      const ack=P.telemetry().timings.lastNativeAck;
+      assert.equal(ack.kind,'native-ack');assert.equal(ack.success,true);
+      assert.deepEqual(ack.nativeVaultStages,{parseMs:182.5,currentSlotMs:0,encodeMs:96.2,writeMs:41,verifyMs:22.5,chunkGcMs:0.3,payloadBytes:21634300,envelopeBytes:24100000});
+      vault.stages=null;await P.commitState(state,{storageKey:key}).native;
+      assert.equal(P.telemetry().timings.lastNativeAck.nativeVaultStages,null,'an ACK without stages (an older app) records none');
+      return {stages:Object.keys(ack.nativeVaultStages).length};
+    }finally{vault.stages=null;}
   });
   const passed=results.filter(r=>r.ok).length;
   console.log(JSON.stringify({suite:'build358-native-chunked-save',passed,total:results.length,results},null,2));

@@ -88,11 +88,13 @@
     if(detail.action!==row.envelope.action||detail.saveRevision!==row.envelope.saveRevision||detail.resetEpoch!==row.envelope.resetEpoch||detail.saveHash!==row.envelope.saveHash||detail.saveSchemaVersion!==row.envelope.saveSchemaVersion||typeof detail.success!=='boolean')return false;
     if(detail.success&&(!Number.isSafeInteger(detail.generation)||detail.generation<=generation))return false;
     const ackAt=clock(),nativeVaultCommitMs=Number(detail.nativeVaultCommitMs);
-    lastNativeAck=rememberTiming({kind:'native-ack',requestId:detail.requestId,action:detail.action,saveRevision:Number(detail.saveRevision)||0,generation:Number(detail.generation)||0,success:detail.success===true,bridgeDispatchMs:Number.isFinite(row.bridgeDispatchMs)?row.bridgeDispatchMs:null,nativeAckLatencyMs:Number.isFinite(row.dispatchedAt)?Math.max(0,ackAt-row.dispatchedAt):null,nativeVaultCommitMs:Number.isFinite(nativeVaultCommitMs)?Math.max(0,nativeVaultCommitMs):null});
+    // Build 358: the native commit's stage timings (GlobalSaveVault: parse, current slot, encode, write, verify, chunk collection).
+    const nativeVaultStages=detail.nativeVaultStages&&typeof detail.nativeVaultStages==='object'?Object.fromEntries(Object.entries(detail.nativeVaultStages).filter(([key,value])=>/^[A-Za-z]{1,32}$/.test(key)&&Number.isFinite(Number(value))).slice(0,16).map(([key,value])=>[key,Math.round(Number(value)*10)/10])):null;
+    lastNativeAck=rememberTiming({kind:'native-ack',requestId:detail.requestId,action:detail.action,saveRevision:Number(detail.saveRevision)||0,generation:Number(detail.generation)||0,success:detail.success===true,bridgeDispatchMs:Number.isFinite(row.bridgeDispatchMs)?row.bridgeDispatchMs:null,nativeAckLatencyMs:Number.isFinite(row.dispatchedAt)?Math.max(0,ackAt-row.dispatchedAt):null,nativeVaultCommitMs:Number.isFinite(nativeVaultCommitMs)?Math.max(0,nativeVaultCommitMs):null,nativeVaultStages});
     clearTimeout(row.timer);pending.delete(detail.requestId);
     if(detail.success){generation=detail.generation;row.resolve({ok:true,native:true,...detail});}
     else{const e=new Error(detail.message||'native-save-nack');e.code='NATIVE_NACK';row.reject(e);}
-    const statusDetail={...detail};delete statusDetail.nativeVaultCommitMs;status({ok:detail.success,validated:true,...statusDetail});return true;
+    const statusDetail={...detail};delete statusDetail.nativeVaultCommitMs;delete statusDetail.nativeVaultStages;status({ok:detail.success,validated:true,...statusDetail});return true;
   }
   function saveHash(json,encoded=null){
     const text=String(json),owner=globalThis.GH_CONTROL_PLANE?.sha256;if(!owner)throw new Error('save-hash-owner-unavailable');

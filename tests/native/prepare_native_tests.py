@@ -248,6 +248,38 @@ test("collection keeps chunks only because a vault file lists them, and removes 
     try check(!files.contains("old.session.9.chunk"),"Stale chunk kept: \\(files.sorted())")
     try check(try vault.chunkData(id:"prev.ab.5")==chunkB,"Kept chunk unreadable")
 }
+// Build 358 (iPhone diagnostic: 3.4-5.3 s per commit): the vault keeps the header of the envelopes it verified and the
+// chunk ids it found in unchanged files. These cases prove the shortcuts never hide a change on disk.
+test("a chunk only a manual slot lists stays across commits and goes once the slot is cleared") {
+    for rev in 4...5 {let j=try chunkJSON(rev,["s1.a.1"]);let _:Int=try wait{commit(j,try! envelope(j),$0)}}
+    try check(chunkFiles().contains("prev.slot.6.chunk"),"Manual-slot chunk collected: \\(chunkFiles().sorted())")
+    try check(!chunkFiles().contains("prev.ab.5.chunk"),"Chunk no file lists kept: \\(chunkFiles().sorted())")
+    let _:Void=try wait{vault.clearManualSlotAsync(0,completion:$0)}
+    let j=try chunkJSON(6,["s1.a.1"]);let _:Int=try wait{commit(j,try! envelope(j),$0)}
+    try check(!chunkFiles().contains("prev.slot.6.chunk"),"Chunk of a cleared slot kept: \\(chunkFiles().sorted())")
+    try check(chunkFiles().contains("s1.a.1.chunk"),"Referenced chunk collected: \\(chunkFiles().sorted())")
+}
+test("a commit reports its stage timings once") {
+    let j=try chunkJSON(7,["s1.a.1"]);let gen:Int=try wait{commit(j,try! envelope(j),$0)}
+    let stages=vault.takeCommitTimings(generation:gen) ?? [:]
+    try check(["parseMs","currentSlotMs","encodeMs","writeMs","verifyMs","chunkGcMs","payloadBytes","envelopeBytes"].allSatisfy{stages[$0] != nil},"Stage timings missing: \\(stages)")
+    try check(vault.takeCommitTimings(generation:gen)==nil,"Stage timings reported twice")
+}
+test("a slot file changed on disk is verified again before the next commit") {
+    let gen=vault.currentGeneration()
+    for name in ["save-A.json","save-B.json"] {
+      let file=folder.appendingPathComponent(name)
+      let obj=try JSONSerialization.jsonObject(with:Data(contentsOf:file)) as! [String:Any]
+      if (obj["generation"] as? Int)==gen {try Data("broken".utf8).write(to:file)}
+    }
+    // The newest slot is no longer valid: the commit follows the verified peer (generation gen-1) and writes over it.
+    let j=try chunkJSON(8,["s1.a.1"]);let next:Int=try wait{commit(j,try! envelope(j),$0)}
+    try check(next==gen,"Generation after a corrupt newest slot: \\(next), newest was \\(gen)")
+    try check(vault.currentSave()==j && vault.currentGeneration()==gen,"Commit after corruption is not current")
+    let stale=try chunkJSON(7,["s1.a.1"]);var refused=false
+    do{let _:Int=try wait{commit(stale,try! envelope(stale),$0)}}catch{refused=true}
+    try check(refused,"Stale revision accepted after a slot was rewritten")
+}
 test("bootstrap of a chunked save installs the boot gate") {
     let script=vault.bootstrapJavaScript(force:false)
     try check(script.contains("__GH_BOOT_GATE__") && script.contains("gh://app/save-chunk/"),"Boot gate missing")
@@ -263,7 +295,14 @@ let dispatchMS=Double(DispatchTime.now().uptimeNanoseconds-begin)/1e6
 let deadline=Date().addingTimeInterval(60)
 while !perfDone && Date()<deadline {RunLoop.current.run(until:Date().addingTimeInterval(0.002))}
 let totalMS=Double(DispatchTime.now().uptimeNanoseconds-begin)/1e6
-let performance:[String:Any]=["bytes":perf.utf8.count,"handler_validation_and_enqueue_ms":dispatchMS,"completed_ms":totalMS,"success":perfSuccess,"single_sample":true,"iphone_measurement":false,"includes_bootstrap_refresh":false]
+// Build 358: the steady state of a session, a second large commit while the first is the current slot.
+let perfNext=try makeJSON(2,extra:String(repeating:"y",count:14_000_000)),nextBegin=DispatchTime.now().uptimeNanoseconds
+var nextGeneration=0
+do {nextGeneration=try wait{commit(perfNext,try! envelope(perfNext),$0)}} catch {print("FAIL: second large commit: \\(error)")}
+let nextMS=Double(DispatchTime.now().uptimeNanoseconds-nextBegin)/1e6
+let nextStages=vault.takeCommitTimings(generation:nextGeneration) ?? [:]
+test("a second large commit succeeds and reports its stages") {try check(nextGeneration>0 && vault.currentSave()==perfNext && nextStages["envelopeBytes"] != nil,"Second large commit failed")}
+let performance:[String:Any]=["bytes":perf.utf8.count,"handler_validation_and_enqueue_ms":dispatchMS,"completed_ms":totalMS,"success":perfSuccess,"second_commit_ms":nextMS,"second_commit_stages":nextStages,"single_sample":true,"iphone_measurement":false,"includes_bootstrap_refresh":false]
 try JSONSerialization.data(withJSONObject:performance,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"save-enqueue-measurement.json"))
 vault.reset()
 let failed=rows.filter{($0["ok"] as? Bool) != true}.count

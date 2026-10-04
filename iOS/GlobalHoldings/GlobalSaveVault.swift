@@ -63,6 +63,47 @@ final class GlobalSaveVault {
         let payload: String
     }
 
+    /// Build 358 (iPhone diagnostic, 21 MB save: every commit took 3.4-5.3 s and each player command waited for it).
+    /// A commit parsed the payload five times (bridge check, payload check, chunk manifest, then the A and B files read
+    /// back to find the current slot), re-read both slot files before writing, decoded the new file again to verify it,
+    /// and read every vault file as text to collect chunks. A payload is now parsed once; the current slot is known from
+    /// the header of the envelope this process last verified (read in full, or written and compared byte for byte) as
+    /// long as the file is the same one (inode, size and modification date); the write is verified by comparing the
+    /// bytes on disk with the envelope encoded; chunk collection reads files as bytes and only when a chunk is not
+    /// already known to be referenced. The on-disk format and every check are unchanged.
+    private struct PayloadInfo {
+        let simSeconds: Double
+        let saveRevision: Int
+        let resetEpoch: Double
+        /// fleet.rows.chunks of a 'chunks-v1' manifest; [] without one; nil when the manifest is invalid.
+        let chunkIds: [String]?
+    }
+    /// A payload checked once: its UTF-8 bytes, their SHA-256 and what its JSON root holds.
+    private struct PreparedPayload {
+        let data: Data
+        let sha256: String
+        let info: PayloadInfo
+    }
+    private struct FileIdentity: Equatable {
+        let number: UInt64
+        let size: UInt64
+        let modified: Date
+    }
+    /// The header of a verified A/B envelope and the identity of the file it was verified in.
+    private struct SlotHeader {
+        let generation: Int
+        let slot: String
+        let saveRevision: Int
+        let resetEpoch: Double
+        let chunkIds: [String]
+        let file: FileIdentity
+    }
+    private var slotHeaders: [String: SlotHeader] = [:]
+    /// Chunk ids found in a vault file, by path, while the file stays the same one.
+    private var chunkPresence: [String: (file: FileIdentity, ids: Set<String>)] = [:]
+    private let timingLock = NSLock()
+    private var commitTimings: [Int: [String: Double]] = [:]
+
     private let fm = FileManager.default
     private let queue = DispatchQueue(label: "com.globalholdings.save-vault", qos: .utility)
     private let schemaVersion = "2.0.0"
@@ -91,9 +132,10 @@ final class GlobalSaveVault {
         }
         let checkpoint = try JSONDecoder().decode(ResetCheckpoint.self, from: Data(contentsOf: resetCheckpointURL))
         if let payload = checkpoint.payload {
-            guard checkpoint.sha256 == sha256(Data(payload.utf8)) else { throw VaultError.message("Reset checkpoint hash mismatch.") }
-            _ = try commitLocked(payload, runtimeVersion: checkpoint.runtimeVersion, allowRegression: true)
-            _ = try commitLocked(payload, runtimeVersion: checkpoint.runtimeVersion, allowRegression: true)
+            let prepared = try preparePayload(payload)
+            guard checkpoint.sha256 == prepared.sha256 else { throw VaultError.message("Reset checkpoint hash mismatch.") }
+            _ = try commitLocked(payload, runtimeVersion: checkpoint.runtimeVersion, allowRegression: true, prepared: prepared)
+            _ = try commitLocked(payload, runtimeVersion: checkpoint.runtimeVersion, allowRegression: true, prepared: prepared)
         } else {
             for slot in ["A", "B"] { if fm.fileExists(atPath: url(slot).path) { try fm.removeItem(at: url(slot)) } }
         }
@@ -186,8 +228,8 @@ final class GlobalSaveVault {
     func commitAsync(_ json: String, runtimeVersion: String? = nil, envelope: [String: Any]? = nil, completion: ((Result<Int, Error>) -> Void)? = nil) {
         queue.async {
             let result = Result<Int, Error> {
-                if let envelope { try self.validateBridgeEnvelope(envelope, json: json, action: "commitSave") }
-                return try self.commitLocked(json, runtimeVersion: runtimeVersion)
+                let prepared = try envelope.map { try self.validateBridgeEnvelope($0, json: json, action: "commitSave") }
+                return try self.commitLocked(json, runtimeVersion: runtimeVersion, prepared: prepared)
             }
             if let completion { DispatchQueue.main.async { completion(result) } }
         }
@@ -198,16 +240,26 @@ final class GlobalSaveVault {
         try queue.sync { try commitLocked(json, runtimeVersion: runtimeVersion) }
     }
 
-    private func commitLocked(_ json: String, runtimeVersion: String? = nil, allowRegression: Bool = false) throws -> Int {
+    private func commitLocked(_ json: String, runtimeVersion: String? = nil, allowRegression: Bool = false, prepared: PreparedPayload? = nil) throws -> Int {
+        var stages: [String: Double] = [:]
+        var mark = DispatchTime.now().uptimeNanoseconds
+        func lap(_ name: String) {
+            let now = DispatchTime.now().uptimeNanoseconds
+            stages[name] = (stages[name] ?? 0) + Double(now - mark) / 1e6
+            mark = now
+        }
         if !allowRegression && fm.fileExists(atPath: resetCheckpointURL.path) { throw VaultError.message("Reset recovery is pending.") }
-        let validation = try validatePayload(json)
-        try requireChunksLocked(json)
+        let payload = try prepared ?? preparePayload(json)
+        let validation = payload.info
+        lap("parseMs")
+        let chunkIds = try requireChunksLocked(validation.chunkIds)
         try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
-        let current = bestEnvelope()
+        let current = currentSlotHeaderLocked()
+        lap("currentSlotMs")
         if !allowRegression && current == nil && ["A", "B"].contains(where: { fm.fileExists(atPath: url($0).path) }) { throw VaultError.message("No valid native save remains; recovery required.") }
         if !allowRegression, let current {
-            let epoch = current.resetEpoch ?? 0
-            let currentRevision = current.saveRevision ?? 0
+            let epoch = current.resetEpoch
+            let currentRevision = current.saveRevision
             let nativeRevision = validation.saveRevision
             let monotonicRevision = nativeRevision>currentRevision || nativeRevision == currentRevision
             if validation.resetEpoch < epoch || (validation.resetEpoch == epoch && !monotonicRevision) {
@@ -226,22 +278,69 @@ final class GlobalSaveVault {
             saveRevision: validation.saveRevision,
             resetEpoch: validation.resetEpoch,
             savedAt: Date().timeIntervalSince1970,
-            sha256: sha256(Data(json.utf8)),
+            sha256: payload.sha256,
             payload: json
         )
         let data = try JSONEncoder().encode(envelope)
+        lap("encodeMs")
         // Foundation's atomic option writes an auxiliary file first then replaces
         // the destination only after the write succeeds.
+        slotHeaders[slot] = nil
         try data.write(to: url(slot), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-        guard let verified = readEnvelope(url(slot)),
-              verified.generation == generation,
-              verified.sha256 == envelope.sha256,
-              verified.runtimeVersion == envelope.runtimeVersion,
-              (verified.saveRevision ?? 0) == validation.saveRevision else {
+        lap("writeMs")
+        // The file must hold exactly the envelope encoded above from the checked payload: comparing the bytes read back
+        // proves what decoding them again did (generation, hash, runtime version and revision come from these bytes).
+        guard let written = try? Data(contentsOf: url(slot)), written == data, let file = fileIdentity(url(slot)) else {
             throw VaultError.message("Native save verification failed after write.")
         }
+        slotHeaders[slot] = SlotHeader(generation: generation, slot: slot, saveRevision: validation.saveRevision, resetEpoch: validation.resetEpoch, chunkIds: chunkIds, file: file)
+        lap("verifyMs")
         collectChunkGarbageLocked()
+        lap("chunkGcMs")
+        stages["payloadBytes"] = Double(payload.data.count)
+        stages["envelopeBytes"] = Double(data.count)
+        timingLock.lock()
+        commitTimings[generation] = stages
+        if commitTimings.count > 8, let oldest = commitTimings.keys.min() { commitTimings.removeValue(forKey: oldest) }
+        timingLock.unlock()
         return generation
+    }
+
+    /// Stage timings of the commit that produced `generation` (milliseconds, and the payload and envelope sizes), once.
+    func takeCommitTimings(generation: Int) -> [String: Double]? {
+        timingLock.lock()
+        defer { timingLock.unlock() }
+        return commitTimings.removeValue(forKey: generation)
+    }
+
+    /// The newest verified A/B header. A slot file this process verified (read in full or written and compared) and that
+    /// is still the same file is not read again; any other file is read and verified in full, as bestEnvelope() does.
+    private func currentSlotHeaderLocked() -> SlotHeader? {
+        var best: SlotHeader?
+        for slot in ["A", "B"] {
+            guard let header = slotHeaderLocked(slot) else { continue }
+            if let current = best, header.generation <= current.generation { continue }
+            best = header
+        }
+        return best
+    }
+
+    private func slotHeaderLocked(_ slot: String) -> SlotHeader? {
+        let file = url(slot)
+        guard let identity = fileIdentity(file) else { slotHeaders[slot] = nil; return nil }
+        if let cached = slotHeaders[slot], cached.file == identity { return cached }
+        slotHeaders[slot] = nil
+        guard let read = readVerifiedEnvelope(file) else { return nil }
+        let header = SlotHeader(generation: read.envelope.generation, slot: read.envelope.slot, saveRevision: read.envelope.saveRevision ?? 0, resetEpoch: read.envelope.resetEpoch ?? 0, chunkIds: read.info.chunkIds ?? [], file: identity)
+        slotHeaders[slot] = header
+        return header
+    }
+
+    private func fileIdentity(_ file: URL) -> FileIdentity? {
+        guard let attributes = try? fm.attributesOfItem(atPath: file.path),
+              let size = (attributes[.size] as? NSNumber)?.uint64Value,
+              let modified = attributes[.modificationDate] as? Date else { return nil }
+        return FileIdentity(number: (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0, size: size, modified: modified)
     }
 
     func currentSave() -> String? { queue.sync { bestEnvelope()?.payload } }
@@ -339,10 +438,11 @@ final class GlobalSaveVault {
     func saveManualSlotAsync(_ index: Int, json: String, label: String, runtimeVersion: String? = nil, envelope: [String: Any]? = nil, completion: ((Result<ManualSlotMetadata, Error>) -> Void)? = nil) {
         queue.async {
             let result = Result<ManualSlotMetadata, Error> {
-                if let envelope { try self.validateBridgeEnvelope(envelope, json: json, action: "saveManualSlot") }
+                let bridged = try envelope.map { try self.validateBridgeEnvelope($0, json: json, action: "saveManualSlot") }
                 let index = try self.validatedManualSlotIndex(index)
-                let validation = try self.validatePayload(json)
-                try self.requireChunksLocked(json)
+                let payload = try bridged ?? self.preparePayload(json)
+                let validation = payload.info
+                _ = try self.requireChunksLocked(validation.chunkIds)
                 try self.fm.createDirectory(at: self.folder, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
                 let metadata = ManualSlotMetadata(
                     index: index,
@@ -353,22 +453,20 @@ final class GlobalSaveVault {
                     savedAt: Date().timeIntervalSince1970,
                     label: String(label.prefix(120))
                 )
-                let envelope = ManualSlotEnvelope(
+                let stored = ManualSlotEnvelope(
                     format: "global-holdings-native-slot-v1",
                     schemaVersion: self.schemaVersion,
                     metadata: metadata,
-                    sha256: self.sha256(Data(json.utf8)),
+                    sha256: payload.sha256,
                     payload: json
                 )
-                let data = try JSONEncoder().encode(envelope)
+                let data = try JSONEncoder().encode(stored)
                 try data.write(to: self.manualSlotURL(index), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-                guard let verified = self.readManualSlot(index),
-                      verified.sha256 == envelope.sha256,
-                      verified.metadata.saveRevision == metadata.saveRevision,
-                      verified.metadata.resetEpoch == metadata.resetEpoch else {
+                // As for A/B commits: the slot holds exactly the envelope encoded from the checked payload.
+                guard let written = try? Data(contentsOf: self.manualSlotURL(index)), written == data else {
                     throw VaultError.message("Manual save slot verification failed.")
                 }
-                return verified.metadata
+                return metadata
             }
             if let completion { DispatchQueue.main.async { completion(result) } }
         }
@@ -387,8 +485,9 @@ final class GlobalSaveVault {
                 try checkpointData.write(to: self.resetCheckpointURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
                 guard try Data(contentsOf: self.resetCheckpointURL) == checkpointData else { throw VaultError.message("Manual slot load checkpoint verification failed.") }
                 do {
-                    _ = try self.commitLocked(envelope.payload, runtimeVersion: runtimeVersion ?? envelope.metadata.runtimeVersion, allowRegression: true)
-                    let generation = try self.commitLocked(envelope.payload, runtimeVersion: runtimeVersion ?? envelope.metadata.runtimeVersion, allowRegression: true)
+                    let prepared = try self.preparePayload(envelope.payload)
+                    _ = try self.commitLocked(envelope.payload, runtimeVersion: runtimeVersion ?? envelope.metadata.runtimeVersion, allowRegression: true, prepared: prepared)
+                    let generation = try self.commitLocked(envelope.payload, runtimeVersion: runtimeVersion ?? envelope.metadata.runtimeVersion, allowRegression: true, prepared: prepared)
                     try self.fm.removeItem(at: self.resetCheckpointURL)
                     return generation
                 } catch {
@@ -432,7 +531,11 @@ final class GlobalSaveVault {
     }
 
     func reset() {
-        queue.sync { try? fm.removeItem(at: folder) }
+        queue.sync {
+            try? fm.removeItem(at: folder)
+            slotHeaders = [:]
+            chunkPresence = [:]
+        }
     }
 
     /// Reset without a resurrection window: write the pristine reset save twice
@@ -441,8 +544,7 @@ final class GlobalSaveVault {
     func resetToAsync(_ json: String, runtimeVersion: String? = nil, clearManualSlots: Bool = false, envelope: [String: Any]? = nil, completion: ((Result<Int, Error>) -> Void)? = nil) {
         queue.async {
             let result = Result<Int, Error> {
-                if let envelope { try self.validateBridgeEnvelope(envelope, json: json, action: "resetGameSave") }
-                _ = try self.validatePayload(json)
+                let prepared = try envelope.map { try self.validateBridgeEnvelope($0, json: json, action: "resetGameSave") } ?? self.preparePayload(json)
                 try self.recoverPendingReset()
                 try self.fm.createDirectory(at: self.folder, withIntermediateDirectories: true)
                 let current = self.bestEnvelope()
@@ -453,8 +555,8 @@ final class GlobalSaveVault {
                 guard try Data(contentsOf: self.resetCheckpointURL) == data else { throw VaultError.message("Reset checkpoint verification failed.") }
                 do {
                     if let manualSlotHashes { try self.stageManualSlotsForReset(expectedHashes: manualSlotHashes) }
-                    _ = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true)
-                    let generation = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true)
+                    _ = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true, prepared: prepared)
+                    let generation = try self.commitLocked(json, runtimeVersion: runtimeVersion, allowRegression: true, prepared: prepared)
                     try self.fm.removeItem(at: self.resetCheckpointURL)
                     if clearManualSlots { self.discardManualSlotResetBackups() }
                     return generation
@@ -526,27 +628,36 @@ final class GlobalSaveVault {
         """
     }
 
-    private func envelopes() -> [Envelope] { ["A", "B"].compactMap { readEnvelope(url($0)) } }
+    private func envelopes() -> [Envelope] {
+        ["A", "B"].compactMap { slot -> Envelope? in
+            let file = url(slot)
+            guard let identity = fileIdentity(file), let read = readVerifiedEnvelope(file) else { slotHeaders[slot] = nil; return nil }
+            slotHeaders[slot] = SlotHeader(generation: read.envelope.generation, slot: read.envelope.slot, saveRevision: read.envelope.saveRevision ?? 0, resetEpoch: read.envelope.resetEpoch ?? 0, chunkIds: read.info.chunkIds ?? [], file: identity)
+            return read.envelope
+        }
+    }
     private func bestEnvelope() -> Envelope? { envelopes().max { $0.generation < $1.generation } }
 
-    private func readEnvelope(_ file: URL) -> Envelope? {
+    private func readVerifiedEnvelope(_ file: URL) -> (envelope: Envelope, info: PayloadInfo)? {
         guard let data = try? Data(contentsOf: file),
               let envelope = try? JSONDecoder().decode(Envelope.self, from: data),
               envelope.schemaVersion == schemaVersion,
               envelope.slot == "A" || envelope.slot == "B",
               envelope.generation > 0, envelope.generation <= 9_007_199_254_740_991,
               envelope.simSeconds.isFinite, envelope.simSeconds >= 0,
-              sha256(Data(envelope.payload.utf8)) == envelope.sha256,
-              let validated = try? validatePayload(envelope.payload),
-              validated.simSeconds == envelope.simSeconds,
-              validated.saveRevision == (envelope.saveRevision ?? 0),
-              validated.resetEpoch == (envelope.resetEpoch ?? 0) else { return nil }
-        return envelope
+              let parsed = try? parsedPayload(envelope.payload),
+              sha256(parsed.data) == envelope.sha256,
+              parsed.info.simSeconds == envelope.simSeconds,
+              parsed.info.saveRevision == (envelope.saveRevision ?? 0),
+              parsed.info.resetEpoch == (envelope.resetEpoch ?? 0) else { return nil }
+        return (envelope, parsed.info)
     }
 
     /// Browser envelopes are authenticated inside the same FIFO queue as the write.
     /// Large JSON/SHA work must not execute in WKScriptMessageHandler on the UI thread.
-    private func validateBridgeEnvelope(_ payload: [String: Any], json: String, action: String) throws {
+    /// The payload is parsed and hashed here once; the commit uses what this returns.
+    @discardableResult
+    private func validateBridgeEnvelope(_ payload: [String: Any], json: String, action: String) throws -> PreparedPayload {
         dispatchPrecondition(condition: .onQueue(queue))
         func integer(_ value: Any?) -> Double? {
             guard let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { return nil }
@@ -559,22 +670,38 @@ final class GlobalSaveVault {
               payload["saveJSON"] as? String == json,
               let hash = payload["saveHash"] as? String, hash.utf8.count == 64,
               hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
-              json.utf8.count <= 30 * 1024 * 1024,
-              let data = json.data(using: .utf8),
+              let data = json.data(using: .utf8), data.count <= 30 * 1024 * 1024,
               let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               root["saveVersion"] as? String == saveSchemaVersion,
               let revision = integer(payload["saveRevision"]),
               let rootRevision = integer(root["saveRevision"]), revision == rootRevision,
               let epoch = integer(payload["resetEpoch"]),
-              let rootEpoch = integer(root["resetEpoch"] ?? NSNumber(value: 0)), epoch == rootEpoch,
-              sha256(data) == hash else { throw VaultError.message("Invalid save envelope.") }
+              let rootEpoch = integer(root["resetEpoch"] ?? NSNumber(value: 0)), epoch == rootEpoch else { throw VaultError.message("Invalid save envelope.") }
+        let digest = sha256(data)
+        guard digest == hash else { throw VaultError.message("Invalid save envelope.") }
+        return PreparedPayload(data: data, sha256: digest, info: try payloadInfo(root))
     }
 
-    private func validatePayload(_ json: String) throws -> (simSeconds: Double, saveRevision: Int, resetEpoch: Double) {
+    /// One parse of a payload: its UTF-8 bytes and what its root holds.
+    private func parsedPayload(_ json: String) throws -> (data: Data, info: PayloadInfo) {
         guard let data = json.data(using: .utf8), data.count <= 30 * 1024 * 1024,
               let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw VaultError.message("Save payload is not valid JSON.")
         }
+        return (data, try payloadInfo(root))
+    }
+
+    private func preparePayload(_ json: String) throws -> PreparedPayload {
+        let parsed = try parsedPayload(json)
+        return PreparedPayload(data: parsed.data, sha256: sha256(parsed.data), info: parsed.info)
+    }
+
+    private func validatePayload(_ json: String) throws -> (simSeconds: Double, saveRevision: Int, resetEpoch: Double) {
+        let info = try parsedPayload(json).info
+        return (info.simSeconds, info.saveRevision, info.resetEpoch)
+    }
+
+    private func payloadInfo(_ root: [String: Any]) throws -> PayloadInfo {
         guard let saveSchemaVersion = root["saveVersion"] as? String, supportedSaveSchemaVersions.contains(saveSchemaVersion) else {
             throw VaultError.message("Unsupported save schema.")
         }
@@ -588,7 +715,7 @@ final class GlobalSaveVault {
         guard let revisionValue = validNumber("saveRevision", fallback: 0), revisionValue.isFinite, revisionValue >= 0, revisionValue <= 9_007_199_254_740_991, revisionValue.rounded(.down) == revisionValue else { throw VaultError.message("Invalid save revision.") }
         let revision = Int(revisionValue)
         guard let reset = validNumber("resetEpoch", fallback: 0), reset.isFinite, reset >= 0, reset <= 9_007_199_254_740_991, reset.rounded(.down) == reset else { throw VaultError.message("Invalid reset epoch.") }
-        return (sim, revision, reset)
+        return PayloadInfo(simSeconds: sim, saveRevision: revision, resetEpoch: reset, chunkIds: chunkManifest(root))
     }
 
     // MARK: - Build 358 chunked fleet records (million-asset saves)
@@ -672,31 +799,54 @@ final class GlobalSaveVault {
         guard let data = json.data(using: .utf8), let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw VaultError.message("Save payload is not valid JSON.")
         }
+        guard let ids = chunkManifest(root) else { throw VaultError.message("Invalid save chunk manifest.") }
+        return ids
+    }
+
+    /// fleet.rows.chunks of a 'chunks-v1' manifest; [] for a root without one; nil for an invalid manifest.
+    private func chunkManifest(_ root: [String: Any]) -> [String]? {
         guard let fleet = root["fleet"] as? [String: Any], let rows = fleet["rows"] as? [String: Any],
               rows["$ghBinary"] as? String == "chunks-v1" else { return [] }
-        guard let ids = rows["chunks"] as? [String], ids.allSatisfy({ isValidChunkId($0) }) else {
-            throw VaultError.message("Invalid save chunk manifest.")
+        guard let ids = rows["chunks"] as? [String], ids.allSatisfy({ isValidChunkId($0) }) else { return nil }
+        return ids
+    }
+
+    /// The manifest's chunk ids once every one is on disk.
+    private func requireChunksLocked(_ manifest: [String]?) throws -> [String] {
+        guard let ids = manifest else { throw VaultError.message("Invalid save chunk manifest.") }
+        for id in ids where !fm.fileExists(atPath: chunkURL(id).path) {
+            throw VaultError.message("Missing save chunk: \(id)")
         }
         return ids
     }
 
-    private func requireChunksLocked(_ json: String) throws {
-        for id in try referencedChunks(json) where !fm.fileExists(atPath: chunkURL(id).path) {
-            throw VaultError.message("Missing save chunk: \(id)")
-        }
-    }
-
+    /// Deletes chunks no vault file mentions and that were not uploaded in the grace period. A chunk is kept when its id
+    /// appears anywhere in a vault file, as before. Ids listed by the current A/B headers, or found earlier in a file that
+    /// is still the same file, are known to be referenced without reading anything; other files are read as bytes (not
+    /// decoded as text) and only while some chunk is still unaccounted for.
     private func collectChunkGarbageLocked() {
         guard let names = try? fm.contentsOfDirectory(atPath: chunkFolder.path) else { return }
-        let vaultFiles = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
-        let corpus = vaultFiles.filter { $0.pathExtension == "json" }.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
         let cutoff = Date().addingTimeInterval(-GlobalSaveVault.chunkGracePeriod)
         recentChunkUploads = recentChunkUploads.filter { $0.value > cutoff }
-        for name in names where name.hasSuffix(".chunk") {
-            let id = String(name.dropLast(6))
-            if recentChunkUploads[id] != nil || corpus.contains(where: { $0.contains(id) }) { continue }
-            try? fm.removeItem(at: chunkFolder.appendingPathComponent(name))
+        var candidates = Set(names.filter { $0.hasSuffix(".chunk") }.map { String($0.dropLast(6)) })
+        candidates.subtract(recentChunkUploads.keys)
+        for slot in ["A", "B"] {
+            if let header = slotHeaders[slot], fileIdentity(url(slot)) == header.file { candidates.subtract(header.chunkIds) }
         }
+        guard !candidates.isEmpty else { return }
+        let vaultFiles = ((try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension == "json" }
+        var identities: [String: FileIdentity] = [:]
+        for file in vaultFiles { if let identity = fileIdentity(file) { identities[file.path] = identity } }
+        chunkPresence = chunkPresence.filter { identities[$0.key] == $0.value.file }
+        for entry in chunkPresence.values { candidates.subtract(entry.ids) }
+        for file in vaultFiles where !candidates.isEmpty {
+            guard let identity = identities[file.path], let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { continue }
+            let found = candidates.filter { data.range(of: Data($0.utf8)) != nil }
+            guard !found.isEmpty else { continue }
+            chunkPresence[file.path] = (file: identity, ids: (chunkPresence[file.path]?.ids ?? []).union(found))
+            candidates.subtract(found)
+        }
+        for id in candidates { try? fm.removeItem(at: chunkFolder.appendingPathComponent(id + ".chunk")) }
     }
 
     private func sha256(_ data: Data) -> String {
