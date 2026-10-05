@@ -11,7 +11,7 @@
 - **ما بعده:**
   - `dbf75ec` بُني في CI، وفشلت فيه حالة اختبار واحدة أُصلحت محليًا.
   - `b3b828f` و`dce57dc` وحفظ التصميم الجديد محلية وغير مرفوعة: المالك طلب ألا يُرفع شيء حتى يقول «ارفع».
-- **القبول:** 193 بوابة (`required=193`).
+- **القبول:** 196 بوابة (`required=196`).
 - **الملاحظات التقنية المفصلة:** `docs/BUILD358_NOTES_AR.md`، وآخر أقسامه «10. المرحلة 3: التشغيل».
 - **سكربت البصمات:** `tools/refresh_fingerprints.py` (أُضيف مع هذا التقرير، وكان في مجلد مؤقت).
 
@@ -192,7 +192,7 @@
 - **Node 24 مطلوب** للقبول: `export NVM_DIR=/opt/nvm; . /opt/nvm/nvm.sh && nvm use 24`.
 - **Playwright** يُحمّل دون `npm install`: `NODE_PATH=/opt/node22/lib/node_modules`، و Chromium في `/opt/pw-browsers`.
 - **بوابة منفردة:** `GH_TEST_SOURCE_DIR=$PWD node tests/<name>.cjs`.
-- **القبول كاملًا:** `python3 tools/run_acceptance.py --output <مجلد جديد خارج المستودع>`. يشغّل كل أوامر `npm test`، والمطلوب 193/193 (`required=193` في `.github/workflows/build350-unsigned-ipa.yml`).
+- **القبول كاملًا:** `python3 tools/run_acceptance.py --output <مجلد جديد خارج المستودع>`. يشغّل كل أوامر `npm test`، والمطلوب 196/196 (`required=196` في `.github/workflows/build350-unsigned-ipa.yml`).
 - **Node 24** إن لم يكن مثبتًا: `export NVM_DIR=/opt/nvm; . /opt/nvm/nvm.sh; nvm install 24`.
 - **البصمات:** بعد أي تعديل في `WebApp/` أو ملف متتبَّع، شغّل من جذر المستودع:
   ```
