@@ -55,3 +55,24 @@
 .asset-card{position:absolute;inset:0;overflow-y:auto;background:var(--surface)}
 .ui-confirm{top:calc(var(--safe-top) + var(--header) + 8px);right:calc(var(--rail) + var(--rail-safe) + 8px);width:var(--sheet);max-height:calc(100dvh - var(--safe-top) - var(--header) - 16px)}
 @media(max-width:760px){.topbar{gap:6px}.map-style button span{display:none}.top-kpis{gap:10px}.top-kpis strong{font-size:13px}.sim-clock-copy small{display:none}.ui-speeds button{min-width:36px;padding:0 4px}.topbar .icon-btn{width:30px;flex-basis:30px}}
+
+/* Build 358 — glass frame (owner's choice): the map runs under the top bar, the bottom strip and the rail, which
+   become translucent glass tinted to the map in use. A section still opens in its own column beside the map and the
+   map narrows; nothing is drawn over the map but the glass frame. The natural map gets light glass. */
+.app-shell{--glass:rgba(9,16,22,.52);--glass-line:rgba(255,255,255,.09);--chip:rgba(28,40,52,.5);--chip-line:rgba(255,255,255,.10);grid-template-rows:minmax(0,1fr)}
+.app-shell:has(.map-stage.map-natural),.app-shell:has(.map-stage.map-street){--glass:rgba(248,244,234,.58);--glass-line:rgba(20,40,56,.14);--chip:rgba(255,255,255,.55);--chip-line:rgba(20,40,56,.16)}
+.app-shell:has(.map-stage.map-natural) :is(.topbar,.side-nav,.map-strip),.app-shell:has(.map-stage.map-street) :is(.topbar,.side-nav,.map-strip){--text:#122130;--muted:#3d5466;--faint:#5c7282;--surface-2:rgba(255,255,255,.75);color:var(--text)}
+.topbar{position:absolute;inset:0 0 auto 0;height:calc(var(--safe-top) + var(--header));grid-row:auto;background:var(--glass);border-bottom:1px solid var(--glass-line);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4)}
+.game-frame{grid-row:1;grid-template-rows:minmax(0,1fr)}
+.map-stage{grid-row:1;grid-column:1/-1;z-index:0}
+.app-shell:has(.drawer.open,#simCalendarPanel:not(.hidden),#filterPopover:not(.hidden),#assetCard:not(.hidden)) .map-stage{grid-column:1}
+.map-strip{position:absolute;inset:auto 0 0 0;z-index:500;background:var(--glass);border-top:1px solid var(--glass-line);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);padding-right:calc(var(--rail) + var(--rail-safe) + 10px)}
+.app-shell:has(.drawer.open,#simCalendarPanel:not(.hidden),#filterPopover:not(.hidden),#assetCard:not(.hidden)) .map-strip{padding-right:10px}
+.map-strip .map-status{color:var(--muted)}
+.sheet-dock{grid-row:1;z-index:1;margin-top:calc(var(--safe-top) + var(--header))}
+.side-nav{grid-row:1;z-index:1;padding-top:calc(var(--safe-top) + var(--header) + 6px);background:var(--glass);border-left:1px solid var(--glass-line);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4)}
+.side-nav button{color:var(--muted)}.side-nav button.active{background:var(--chip);box-shadow:inset 0 0 0 1px var(--chip-line)}
+.topbar .icon-btn,.sim-clock-toggle,.ui-time,.map-style{background:var(--chip);border-color:var(--chip-line);color:var(--text)}
+.topbar .ui-pause{background:var(--chip)}.topbar .ui-speeds button{color:var(--muted)}.topbar .sim-clock-copy small,.topbar .top-kpis span{color:var(--muted)}
+.topbar .top-kpis strong,.topbar .sim-clock-copy strong{color:var(--text)}
+#map .leaflet-control-container .leaflet-top{top:calc(var(--safe-top) + var(--header))}

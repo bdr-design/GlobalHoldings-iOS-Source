@@ -21,6 +21,9 @@
   // A shape is an ordered key list, or {"k":keys,"c":[[position,cell],...]} where the listed positions hold a value
   // that is IDENTICAL in every row of that shape (stored once, omitted from the rows). Key order is always preserved.
   // The root carries  stateCodec:{version,paths}  so decoding needs no external configuration.
+  // Build 358: a collection of SEGMENT_MIN+ rows is written as consecutive segments of SEGMENT_ROWS rows,
+  //   {"$gh":3,"a":1|0,"g":[segment,...]}                   each segment a $gh:1 (array) or $gh:2 (map) collection
+  // so a save re-encodes only the segments whose members changed (see serialize). Such a save is SEG_VERSION.
 
   const VERSION='gh-shape-1';
   // Build 358 (million-asset save): runs of sequential ids. An array of RUN_MIN+ strings `prefix + digits` whose
@@ -44,7 +47,7 @@
     if(cell.length!==5||tag!==-3||typeof prefix!=='string'||!Number.isInteger(width)||width<0||width>10||!Number.isSafeInteger(first)||first<0||!Number.isInteger(count)||count<1||count>RUN_MAX||first+count-1>0xFFFFFFFF)throw corrupt('run');
     const out=new Array(count);for(let i=0;i<count;i++)out[i]=runText(prefix,width,first+i);return out;
   }
-  const MIN_ROWS=64;
+  const MIN_ROWS=64,SEGMENT_ROWS=256,SEGMENT_MIN=SEGMENT_ROWS*2,SEG_VERSION='gh-shape-3';
   const MIN_POOL_CHARS=40;
   const MIN_CONSTANT_ROWS=4;
   const MAX_DEPTH=64;
@@ -260,6 +263,13 @@
   }
 
   function decodeCollection(node){
+    if(node&&typeof node==='object'&&!Array.isArray(node)&&node.$gh===3){
+      if((node.a!==1&&node.a!==0)||!Array.isArray(node.g)||!node.g.length)throw corrupt('segments');
+      const parts=node.g.map(part=>{if(!part||part.$gh!==(node.a?1:2))throw corrupt('segment-marker');return decodeCollection(part);});
+      if(node.a)return [].concat(...parts);
+      const out={};for(const part of parts)for(const key of Object.keys(part)){if(own(out,key))throw corrupt('segment-duplicate-key');assign(out,key,part[key]);}
+      return out;
+    }
     if(!node||typeof node!=='object'||Array.isArray(node)||(node.$gh!==1&&node.$gh!==2))throw corrupt('collection-marker');
     const {s:shapes,p:pool,r:rows}=node;
     if(!Array.isArray(shapes)||!Array.isArray(pool)||!Array.isArray(rows))throw corrupt('collection-shape');
@@ -307,7 +317,7 @@
     return out;
   }
 
-  function encodeCollection(value){
+  function encodeRows(value){
     const encoder=createEncoder(),isArray=Array.isArray(value),keys=isArray?null:Object.keys(value);
     const count=isArray?value.length:keys.length,raw=new Array(count);
     for(let i=0;i<count;i++)raw[i]=encoder.row(isArray?value[i]:value[keys[i]]);
@@ -323,6 +333,19 @@
       rows[i]=row;
     }
     return isArray?{$gh:1,s:shapes,p:pooler.pool,r:rows}:{$gh:2,k:keys,s:shapes,p:pooler.pool,r:rows};
+  }
+  function segmentSlices(value){
+    const isArray=Array.isArray(value),keys=isArray?null:Object.keys(value),count=isArray?value.length:keys.length,out=[];
+    for(let start=0;start<count;start+=SEGMENT_ROWS){
+      if(isArray){out.push(value.slice(start,start+SEGMENT_ROWS));continue;}
+      const part={};for(const key of keys.slice(start,start+SEGMENT_ROWS))part[key]=value[key];out.push(part);
+    }
+    return out;
+  }
+  function segmented(value){return (Array.isArray(value)?value.length:Object.keys(value).length)>=SEGMENT_MIN;}
+  function encodeCollection(value){
+    if(!segmented(value))return encodeRows(value);
+    return {$gh:3,a:Array.isArray(value)?1:0,g:segmentSlices(value).map(encodeRows)};
   }
 
   function collectionCandidate(value){
@@ -358,6 +381,10 @@
     cursor[path[path.length-1]]=value;return copies[0];
   }
 
+  function codecMeta(paths,binaryPaths,runs,segments){
+    const version=segments?SEG_VERSION:runs.length?RUN_VERSION:VERSION;
+    return runs.length?{version,paths,binaryPaths,runPaths:runs.map(row=>row.path)}:{version,paths,binaryPaths};
+  }
   function encodeState(state){
     if(!isPlain(state))return state;
     const binaryPaths=[];let out=state;
@@ -366,16 +393,17 @@
     if(isArrayBuffer(state.fleet?.rows)){const path=['fleet','rows'];out=writePathCopy(out,path,binaryMarker(state.fleet.rows));binaryPaths.push(path);}
     const scan=scanPaths(out),paths=scan.paths;
     if(!paths.length&&!binaryPaths.length&&!scan.runs.length)return state;
-    for(const path of paths)out=writePathCopy(out,path,encodeCollection(readPath(out,path)));
+    let segments=false;
+    for(const path of paths){const value=readPath(out,path);if(segmented(value))segments=true;out=writePathCopy(out,path,encodeCollection(value));}
     for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
-    out.stateCodec=scan.runs.length?{version:RUN_VERSION,paths,binaryPaths,runPaths:scan.runs.map(row=>row.path)}:{version:VERSION,paths,binaryPaths};
+    out.stateCodec=codecMeta(paths,binaryPaths,scan.runs,segments);
     return out;
   }
 
   function decodeState(tree,options={}){
     if(!isPlain(tree)||!own(tree,'stateCodec'))return tree;
     const meta=tree.stateCodec;
-    if(!isPlain(meta)||(meta.version!==VERSION&&meta.version!==RUN_VERSION)||!Array.isArray(meta.paths))throw corrupt('meta');
+    if(!isPlain(meta)||![VERSION,RUN_VERSION,SEG_VERSION].includes(meta.version)||!Array.isArray(meta.paths))throw corrupt('meta');
     let out={...tree};delete out.stateCodec;
     for(const path of meta.paths){
       if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('path');
@@ -389,7 +417,7 @@
       out=writePathCopy(out,path,binaryBuffer(node,options));
     }
     const runPaths=meta.runPaths===undefined?[]:meta.runPaths;
-    if(!Array.isArray(runPaths)||(runPaths.length&&meta.version!==RUN_VERSION))throw corrupt('run-paths');
+    if(!Array.isArray(runPaths)||(runPaths.length&&meta.version===VERSION))throw corrupt('run-paths');
     for(const path of runPaths){
       if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('run-path');
       const node=readPath(out,path);if(!Array.isArray(node)||node[0]!==-3)throw corrupt('run-path-missing');
@@ -425,17 +453,25 @@
     }
     const scan=scanPaths(out),paths=scan.paths;
     if(!paths.length&&!binaryPaths.length&&!scan.runs.length)return JSON.stringify(state);
+    let segments=false;
     for(const path of paths){
-      const value=readPath(out,path),key=JSON.stringify(path),current=sealedMembers(value);
-      if(!current){COLLECTION_TEXT.delete(key);out=writePathCopy(out,path,encodeCollection(value));continue;}
-      live.add(key);let entry=COLLECTION_TEXT.get(key);
-      if(entry&&sameMembers(entry,current))collectionCacheStats.hits++;
-      else{entry={keys:current.keys,members:current.members,text:JSON.stringify(encodeCollection(value))};COLLECTION_TEXT.set(key,entry);collectionCacheStats.misses++;}
-      const token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;fragments.push({token:JSON.stringify(token),text:entry.text});out=writePathCopy(out,path,token);
+      const value=readPath(out,path),key=JSON.stringify(path),split=segmented(value);if(split)segments=true;
+      const parts=split?segmentSlices(value):[value],texts=[];let cached=true;
+      for(let index=0;index<parts.length;index++){
+        const partKey=split?`${key}#${index}`:key,current=sealedMembers(parts[index]);
+        if(!current){cached=false;break;}
+        live.add(partKey);let entry=COLLECTION_TEXT.get(partKey);
+        if(entry&&sameMembers(entry,current))collectionCacheStats.hits++;
+        else{entry={keys:current.keys,members:current.members,text:JSON.stringify(encodeRows(parts[index]))};COLLECTION_TEXT.set(partKey,entry);collectionCacheStats.misses++;}
+        texts.push(entry.text);
+      }
+      if(!cached){out=writePathCopy(out,path,encodeCollection(value));continue;}
+      const text=split?`{"$gh":3,"a":${Array.isArray(value)?1:0},"g":[${texts.join(',')}]}`:texts[0];
+      const token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;fragments.push({token:JSON.stringify(token),text});out=writePathCopy(out,path,token);
     }
     for(const key of [...COLLECTION_TEXT.keys()])if(!live.has(key))COLLECTION_TEXT.delete(key);
     for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
-    out.stateCodec=scan.runs.length?{version:RUN_VERSION,paths,binaryPaths,runPaths:scan.runs.map(row=>row.path)}:{version:VERSION,paths,binaryPaths};
+    out.stateCodec=codecMeta(paths,binaryPaths,scan.runs,segments);
     const text=JSON.stringify(out);if(!fragments.length)return text;
     for(const fragment of fragments){fragment.at=text.indexOf(fragment.token);if(fragment.at<0||text.indexOf(fragment.token,fragment.at+1)>=0)throw new Error('state-codec-fragment-token');}
     fragments.sort((a,b)=>a.at-b.at);const parts=[];let cursor=0;

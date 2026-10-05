@@ -117,15 +117,17 @@
   function routeSignature(route){const points=(Array.isArray(route?.route)?route.route:[]).filter(validPoint).map(point=>`${point[0].toFixed(5)},${point[1].toFixed(5)}`);if(points.length<2)return'';const a=points.join(';'),b=[...points].reverse().join(';');return `${routeOwner(route)||routeMode(route)}:${routeMode(route)}:${a<b?a:b}`;}
   function retiredFeatureKey(){return String.fromCharCode(97,105);}
   function retiredPanelName(){return String.fromCharCode(105,110,116,101,108,108,105,103,101,110,99,101);}
-  function retiredVehicleOptionKey(){return String.fromCharCode(97,117,116,111,110,111,109,111,117,115);}
+  // Build 358: the catalogue is real models. An owned asset whose catalogue line was replaced takes the real model that
+  // line stood for (its legacyIds): the new id, name and specs, so its revenue, fuel, crew and resale follow the model.
+  let legacyCatalog=null;
+  function catalogByLegacyId(){
+    const catalog=globalThis.GH_ASSET_CATALOG;if(!catalog)return null;if(legacyCatalog&&legacyCatalog.source===catalog)return legacyCatalog.map;
+    const map=new Map();for(const mode of ['air','sea','road'])for(const item of [...(catalog[mode]?.new||[]),...(catalog[mode]?.used||[])])for(const id of item.legacyIds||[])map.set(id,item);
+    legacyCatalog={source:catalog,map};return map;
+  }
   function refreshRetiredCatalogAsset(asset){
-    if(!object(asset)||!['N-T4','N-T28'].includes(asset.catalogId))return false;
-    const updated=asset.catalogId==='N-T4'
-      ?{model:'Hybrid Safety 24T · هجينة آمنة',drivetrain:'ديزل هجين'}
-      :{model:'Electric Long Range 20T · كهربائية بعيدة',drivetrain:'كهربائي 900V'};
-    let changed=false;if(asset.model!==updated.model){asset.model=updated.model;changed=true;}
-    if(object(asset.specs)){const retired=retiredVehicleOptionKey();if(Object.prototype.hasOwnProperty.call(asset.specs,retired)){delete asset.specs[retired];changed=true;}if(asset.specs.drivetrain!==updated.drivetrain){asset.specs.drivetrain=updated.drivetrain;changed=true;}}
-    return changed;
+    if(!object(asset))return false;const item=catalogByLegacyId()?.get(asset.catalogId);if(!item)return false;
+    asset.catalogId=item.id;asset.model=item.name;asset.specs=JSON.parse(JSON.stringify(item.specs));return true;
   }
   function transitionalRouteUser(asset){return asset?.phase==='moving'&&asset?.releaseExclusiveRouteOnArrival===true;}
   // Build 358: a route may carry more than its mode's base capacity when its record says so (GH_FLEET_CORE.routeCapacity).
@@ -177,7 +179,7 @@
     });
     // Writable drafts: the repair below edits assets in place; commit() applies it.
     const fleet=fleetData(),assets=fleet.drafts(state);
-    for(const asset of assets)if(['N-T4','N-T28'].includes(asset.catalogId)){const copy=fleet.plain(asset);if(refreshRetiredCatalogAsset(copy)){asset.model=copy.model;asset.specs=copy.specs;changed=true;}}
+    {const legacy=catalogByLegacyId();if(legacy?.size)for(const asset of assets)if(legacy.has(asset.catalogId)){const copy=fleet.plain(asset);if(refreshRetiredCatalogAsset(copy)){asset.catalogId=copy.catalogId;asset.model=copy.model;asset.specs=copy.specs;changed=true;}}}
     for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[]){if(fleetData().isCompactReceipt(delivery)){const rows=fleetData().receiptAssets(delivery);let refreshed=false;for(const asset of rows)if(refreshRetiredCatalogAsset(asset))refreshed=true;if(refreshed){delivery.assets=rows;delete delivery.assetReceipt;fleetData().compactReceipt(delivery);changed=true;}continue;}for(const asset of Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[])if(refreshRetiredCatalogAsset(asset))changed=true;}
     for(const asset of assets)if(asset.routeId&&invalidRouteIds.has(asset.routeId)){clearLegacyRouteAssignment(asset);changed=true;}
     const routeById=new Map(state.customRoutes.map(route=>[route.id,route])),assignmentGroups=new Map();for(const asset of assets)if(asset.routeId){const rows=assignmentGroups.get(asset.routeId)||[];rows.push(asset);assignmentGroups.set(asset.routeId,rows);}

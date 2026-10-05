@@ -47,17 +47,16 @@ function legacyNormalize(asset){
   return asset;
 }
 function legacyEconomics(asset,tpl){
-  const distanceKm=tpl.distanceKm,hours=(asset.tripSeconds||tpl.tripSeconds)/3600,specs=asset.specs||{};let revenue=0,fuelCost=0;
-  if(asset.type==='air'){const yieldRate=specs.cargo?.32:.11;revenue=(specs.capacity||0)*.82*distanceKm*yieldRate*(specs.yieldMultiplier||1);fuelCost=(specs.fuelBurnKgPerKm||0)*distanceKm*.86;}
-  else if(asset.type==='sea'){const distanceNm=distanceKm/1.852,seaYield=specs.capacityUnit==='TEU'?.031:specs.capacityUnit==='راكب'?.34:.018;revenue=(specs.capacity||0)*.78*distanceNm*seaYield*(specs.yieldMultiplier||1);fuelCost=(specs.fuelTonPerDay||0)*(hours/24)*640;}
-  else{revenue=(specs.capacity||0)*.86*distanceKm*.15*(specs.yieldMultiplier||1);fuelCost=specs.electric?(distanceKm/100)*(specs.energyKWhPer100km||115)*.14:(distanceKm/100)*(specs.fuelLPer100km||0)*.98;}
-  const monthlyPayroll=Math.max(0,Number(asset.staffing?.monthlyPayroll)||0),crewCost=0,payrollAllocation=monthlyPayroll/(30*24)*hours,maintReserve=revenue*.04,model=economicsState.advanced.companies.air;
+  // Build 358: the base trip (market tariffs, fuel, maintenance, fees) is GH_SIMULATION_ASSET_CORE.baseTripEconomics;
+  // this reference keeps checking that the engine applies the company modifiers around it exactly.
+  const distanceKm=tpl.distanceKm,hours=(asset.tripSeconds||tpl.tripSeconds)/3600,base=Core.baseTripEconomics(asset,distanceKm,hours);let revenue=base.revenue,fuelCost=base.fuelCost,fees=base.fees;
+  const monthlyPayroll=Math.max(0,Number(asset.staffing?.monthlyPayroll)||0),crewCost=0,payrollAllocation=monthlyPayroll/(30*24)*hours,maintReserve=base.maintenance,model=economicsState.advanced.companies.air;
   const serviceRevenue=1+Math.max(-.05,Math.min(.08,(model.serviceLevel-85)*.002)),fuelEfficiency=1-Math.min(.12,(economicsState.research.efficiency||0)/100*.08+model.automation/100*.025),crewEfficiency=1-Math.min(.10,(economicsState.research.automation||0)/100*.05+model.automation/100*.035),maintenanceEfficiency=1-Math.min(.08,model.automation/100*.04+(economicsState.research.efficiency||0)/100*.025),su=economicsState.sustainability,sustainabilityFuel=1-Math.min(.06,(su.safShare||0)*.0004);
   revenue*=serviceRevenue;fuelCost*=fuelEfficiency*sustainabilityFuel;let maintenance=maintReserve*maintenanceEfficiency;const mode=asset.assetMode||asset.type,real=economicsState.realism,share=real.market.share.air??5,pressure=real.market.competitorPressure.air??50,rep=real.reputation.air??70,demand=real.economy.airDemand;
   const demandFactor=legacyClamp((demand/100)*(1+(rep-70)*.003)*(1+(share-5)*.006)*(1-(pressure-50)*.0015),.65,1.35);revenue*=demandFactor;fuelCost*=real.economy.jetFuel/.86;
   const eff=legacyClamp((Number(economicsState.research.efficiency)||0)/100,0,1),auto=legacyClamp((Number(economicsState.research.automation)||0)/100,0,1),clean=legacyClamp((Number(economicsState.research.cleanEnergy)||0)/100,0,1);
   fuelCost*=1-eff*.055-clean*.018;maintenance*=1-eff*.045;let adjustedCrew=crewCost*(1-auto*.025);if((Number(su.safShare)||0)>0)fuelCost*=1-Math.min(.03,(Number(su.safShare)||0)/100*.03);
-  const margin=revenue-fuelCost-adjustedCrew-maintenance;return {revenue,fuelCost,crewCost:adjustedCrew,payrollAllocation,fixedMonthlyPayroll:monthlyPayroll,maintReserve:maintenance,margin,cashContribution:revenue-fuelCost-maintenance,hours,distanceKm,modifiers:{serviceRevenue,fuelEfficiency,crewEfficiency,maintenanceEfficiency},market:{demandFactor,share,pressure},capabilityEffects:{efficiencyResearch:eff,automationResearch:auto,cleanEnergyResearch:clean}};
+  const margin=revenue-fuelCost-adjustedCrew-maintenance-fees;return {revenue,fuelCost,crewCost:adjustedCrew,fees,payrollAllocation,fixedMonthlyPayroll:monthlyPayroll,maintReserve:maintenance,margin,cashContribution:revenue-fuelCost-maintenance-fees,hours,distanceKm,modifiers:{serviceRevenue,fuelEfficiency,crewEfficiency,maintenanceEfficiency},market:{demandFactor,share,pressure},capabilityEffects:{efficiencyResearch:eff,automationResearch:auto,cleanEnergyResearch:clean}};
 }
 function legacyDepart(asset,tpl){
   if(asset.phase!=='turnaround')throw new Error('asset-not-ready-to-depart');

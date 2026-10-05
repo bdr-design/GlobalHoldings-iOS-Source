@@ -1,159 +1,149 @@
 (() => {
   'use strict';
-
+  // Build 358: real models only. Every number that reaches the simulation comes from the model's published or market
+  // figures (2025-26): price is the market value of a new delivery (not the list price), cabin layouts are typical
+  // airline configurations, burn and crew are per model. GH_SIMULATION_ASSET_CORE.computeTripEconomics reads:
+  //   air  — cabin by class, bellyCargoT, payload for freighters, charterPerHour for business jets, fuelBurnKgPerKm,
+  //          maintenancePerBlockHour, mtowTon (landing fees), rangeKm (technical stops).
+  //   sea  — market (container / dry-bulk / crude / product / lng / lpg / car-carrier / ropax / cruise / tug /
+  //          offshore / heavy-lift), capacity, fuelTonPerDay, maintenancePerDay, dayRate for chartered types.
+  //   road — market (parcel / urban / general / reefer / fuel / chemical / container / heavy / vehicles), capacity,
+  //          diesel litres, electric kWh or hydrogen kg per 100 km, maintenancePerKm.
+  // crewPlan drives the asset's fixed payroll (GH_FLEET_CORE.staffingPlan); deliveryDays the delivery date;
+  // residual5y the resale value. legacyIds map the catalogue lines of earlier builds to the real model they stood for.
   const photo = name => `assets/images/${name}.webp`;
-  const air = (id,name,segment,price,image,rangeKm,speedKmh,capacity,fuelBurnKgPerKm,extra={}) => ({
-    id,name,segment,icon:'✈️',base:extra.base||'AP-RUH',price,photo:photo(image),
-    leaseMonthly:Math.round(price*.0092),downPayment:.20,delivery:extra.delivery||'8–18 شهر',warranty:extra.warranty||'5 سنوات',
-    residual5y:extra.residual5y||62,rating:extra.rating||4.4,description:extra.description||'منصة حديثة بهيكل اقتصادي وتشغيل رقمي كامل.',
-    specs:{rangeKm,speedKmh,capacity,capacityUnit:extra.cargo?'طن':'راكب',fuelBurnKgPerKm,cargo:!!extra.cargo,
-      runwayM:extra.runwayM||2100,crew:extra.crew||2,mtowTon:extra.mtowTon||70,maintenancePerFlightHour:extra.maintenance||980,
-      co2Band:extra.co2Band||'B',reliability:extra.reliability||98.4,yieldMultiplier:extra.yieldMultiplier||1}
+  const days = n => `${Math.round(n/30)} شهرًا تقريبًا`;
+  const air = (id,manufacturer,model,segment,price,image,s,extra={}) => ({
+    id,manufacturer,model,name:`${manufacturer} ${model}`,segment,icon:'✈️',base:extra.base||'AP-RUH',price,photo:photo(image),
+    leaseMonthly:Math.round(price*.0085),downPayment:.20,deliveryDays:extra.deliveryDays||540,delivery:days(extra.deliveryDays||540),warranty:extra.warranty||'5 سنوات للهيكل · سنتان للمحركات',
+    residual5y:extra.residual5y||70,description:extra.description,legacyIds:extra.legacyIds||[],
+    specs:{rangeKm:s.rangeKm,speedKmh:s.speedKmh,capacity:s.capacity,capacityUnit:s.cargo?'طن':'راكب',cargo:!!s.cargo,
+      market:s.cargo?'air-freight':s.charterPerHour?'air-charter':'air-pax',cabin:s.cabin||null,bellyCargoT:s.bellyCargoT||0,charterPerHour:s.charterPerHour||0,
+      fuelBurnKgPerKm:s.burn,mtowTon:s.mtowTon,runwayM:s.runwayM,lengthM:s.lengthM,engines:s.engines,
+      crewPlan:s.crewPlan,maintenancePerBlockHour:s.maint,co2Band:s.co2Band||'B'}
   });
-  const ship = (id,name,segment,price,image,rangeNm,speedKn,capacity,capacityUnit,fuelTonPerDay,draftM,extra={}) => ({
-    id,name,segment,icon:'🚢',base:extra.base||'PT-JED',price,photo:photo(image),
-    leaseMonthly:Math.round(price*.0084),downPayment:.25,delivery:extra.delivery||'14–30 شهر',warranty:extra.warranty||'3 سنوات',
-    residual5y:extra.residual5y||68,rating:extra.rating||4.3,description:extra.description||'تصميم بحري حديث مع إدارة وقود وصيانة تنبؤية.',
-    specs:{rangeNm,speedKn,capacity,capacityUnit,fuelTonPerDay,draftM,lengthM:extra.lengthM||210,beamM:extra.beamM||32,
-      crew:extra.crew||24,engine:extra.engine||'ثنائي الوقود',maintenancePerDay:extra.maintenance||14500,
-      co2Band:extra.co2Band||'B',reliability:extra.reliability||97.8,yieldMultiplier:extra.yieldMultiplier||1}
+  const cabin = (first,business,premium,economy) => ({first,business,premium,economy});
+  const ship = (id,builder,model,segment,price,image,s,extra={}) => ({
+    id,manufacturer:builder,model,name:model,segment,icon:'🚢',base:extra.base||'PT-JED',price,photo:photo(image),
+    leaseMonthly:Math.round(price*.0078),downPayment:.25,deliveryDays:extra.deliveryDays||720,delivery:days(extra.deliveryDays||720),warranty:extra.warranty||'سنة واحدة من حوض البناء',
+    residual5y:extra.residual5y||64,description:extra.description,legacyIds:extra.legacyIds||[],
+    specs:{rangeNm:s.rangeNm,speedKn:s.speedKn,capacity:s.capacity,capacityUnit:s.unit,market:s.market,dayRate:s.dayRate||0,
+      fuelTonPerDay:s.fuel,draftM:s.draftM,lengthM:s.lengthM,beamM:s.beamM,engine:s.engine||'ديزل ثنائي الشوط',
+      crewPlan:s.crewPlan,maintenancePerDay:s.maint,co2Band:s.co2Band||'B'}
   });
-  const truck = (id,name,segment,price,image,rangeKm,speedKmh,capacity,extra={}) => ({
-    id,name,segment,icon:'🚛',base:extra.base||'DP-RUH',price,photo:photo(image),
-    leaseMonthly:Math.round(price*.018),downPayment:.15,delivery:extra.delivery||'4–18 أسبوع',warranty:extra.warranty||'4 سنوات / 600 ألف كم',
-    residual5y:extra.residual5y||48,rating:extra.rating||4.2,description:extra.description||'مركبة أسطول متصلة بالتليماتكس والصيانة التنبؤية.',
-    specs:{rangeKm,speedKmh,capacity,capacityUnit:extra.capacityUnit||'طن',fuelLPer100km:extra.fuelLPer100km||0,
-      electric:!!extra.electric,hydrogen:!!extra.hydrogen,energyKWhPer100km:extra.energyKWhPer100km||0,
-      refrigerated:!!extra.refrigerated,tanker:!!extra.tanker,container:!!extra.container,
-      axles:extra.axles||5,drivetrain:extra.drivetrain||'ديزل Euro VI',maintenancePerKm:extra.maintenancePerKm||.18,
-      co2Band:extra.co2Band||'C',safety:extra.safety||92,reliability:extra.reliability||97.2,yieldMultiplier:extra.yieldMultiplier||1}
+  const truck = (id,manufacturer,model,segment,price,image,s,extra={}) => ({
+    id,manufacturer,model,name:`${manufacturer} ${model}`,segment,icon:'🚛',base:extra.base||'DP-RUH',price,photo:photo(image),
+    leaseMonthly:Math.round(price*.017),downPayment:.15,deliveryDays:extra.deliveryDays||60,delivery:days(extra.deliveryDays||60),warranty:extra.warranty||'سنتان · قطع الدفع 3 سنوات',
+    residual5y:extra.residual5y||42,description:extra.description,legacyIds:extra.legacyIds||[],
+    specs:{rangeKm:s.rangeKm,speedKmh:s.speedKmh,capacity:s.capacity,capacityUnit:s.unit||'طن',market:s.market,
+      fuelLPer100km:s.diesel||0,electric:!!s.kwh,energyKWhPer100km:s.kwh||0,hydrogen:!!s.h2,hydrogenKgPer100km:s.h2||0,
+      drivetrain:s.drivetrain,axles:s.axles,crewPlan:s.crewPlan||{drivers:2,mech:1},maintenancePerKm:s.maint,co2Band:s.co2Band||'C'}
   });
 
   const airNew = [
-    air('N-A4','Regional 48 · توربيني إقليمي','إقليمي',23500000,'air-regional',1900,555,48,1.02,{runwayM:1250,mtowTon:23,maintenance:520,delivery:'6–10 أشهر',residual5y:66,co2Band:'A'}),
-    air('N-A5','Regional 78 · توربيني عالي الكفاءة','إقليمي',31500000,'air-regional',3300,630,78,1.35,{runwayM:1450,mtowTon:29,maintenance:610,co2Band:'A'}),
-    air('N-A6','Regional Jet 100 · نفاث إقليمي','إقليمي',48500000,'air-narrow',4600,830,100,1.72,{runwayM:1750,mtowTon:52,maintenance:780}),
-    air('N-A7','Single Aisle 150 · ممر واحد اقتصادي','ممر واحد',54500000,'air-narrow',6100,828,150,2.12,{runwayM:1950,mtowTon:69,maintenance:910}),
-    air('N-A1','Single Aisle 180 · ممر واحد حديث','ممر واحد',62000000,'air-narrow',6300,828,180,2.40,{runwayM:2100,mtowTon:79,maintenance:980}),
-    air('N-A8','Single Aisle 220 · كثافة عالية','ممر واحد',74500000,'air-narrow',6500,835,220,2.72,{runwayM:2350,mtowTon:92,maintenance:1090}),
-    air('N-A9','Mid-Market 260 · مدى متوسط ممتد','ثنائي الممر',128000000,'air-widebody',10500,890,260,4.35,{runwayM:2600,mtowTon:168,maintenance:1960,base:'AP-DXB'}),
-    air('N-A10','Widebody 290 · عريضة بعيدة المدى','ثنائي الممر',172000000,'air-widebody',14500,903,290,5.35,{runwayM:2850,mtowTon:242,maintenance:2550,base:'AP-DXB'}),
-    air('N-A2','Widebody 325 · عريضة بعيدة المدى','ثنائي الممر',188000000,'air-widebody',15000,903,325,6.10,{runwayM:3000,mtowTon:278,maintenance:2840,base:'AP-DXB'}),
-    air('N-A11','Widebody 410 · سعة عالمية','ثنائي الممر',247000000,'air-widebody',14200,905,410,7.45,{runwayM:3200,mtowTon:352,maintenance:3380,base:'AP-DXB'}),
-    air('N-A12','Feeder Freighter 27T · شحن إقليمي','شحن',42000000,'air-cargo',3900,650,27,3.10,{cargo:true,runwayM:1750,mtowTon:61,maintenance:920}),
-    air('N-A13','Express Freighter 62T · شحن سريع','شحن',128000000,'air-cargo',7300,850,62,6.35,{cargo:true,runwayM:2550,mtowTon:185,maintenance:2350,base:'AP-DXB'}),
-    air('N-A3','Global Freighter 112T · شحن بعيد','شحن',210000000,'air-cargo',8200,878,112,9.80,{cargo:true,runwayM:3100,mtowTon:347,maintenance:3880,base:'AP-SIN'}),
-    air('N-A14','Executive 12 · رجال أعمال','تنفيذي',41500000,'air-executive',9400,890,12,1.62,{runwayM:1650,mtowTon:42,maintenance:1480,yieldMultiplier:6.2,residual5y:71}),
-    air('N-A15','Executive 16 · فائق المدى','تنفيذي',73500000,'air-executive',13800,904,16,2.10,{runwayM:1850,mtowTon:54,maintenance:2010,yieldMultiplier:7.5,residual5y:73,base:'AP-DXB'}),
-    air('N-A16','VIP Airliner 44 · نقل تنفيذي','VIP',109000000,'air-executive',12100,890,44,3.28,{runwayM:2300,mtowTon:112,maintenance:2480,yieldMultiplier:4.8,residual5y:69,base:'AP-DXB'}),
-    air('N-A17','Ultra Long Range 360 · عريضة اقتصادية','ثنائي الممر',232000000,'air-widebody',16200,905,360,6.65,{runwayM:3100,mtowTon:315,maintenance:3150,base:'AP-SIN',reliability:99.0}),
-    air('N-A18','Heavy Freighter 132T · شحن استراتيجي','شحن',246000000,'air-cargo',8700,880,132,10.6,{cargo:true,runwayM:3150,mtowTon:365,maintenance:4140,base:'AP-DXB',yieldMultiplier:1.45}),
-    air('N-A19','Commuter 30 · إقليمي خفيف','إقليمي',14800000,'air-regional',1500,515,30,.72,{runwayM:980,mtowTon:14,maintenance:390,co2Band:'A'}),
-    air('N-A20','Regional 120 · نفاث مرن','إقليمي',56500000,'air-narrow',5200,835,120,1.88,{runwayM:1800,mtowTon:59,maintenance:840}),
-    air('N-A21','Single Aisle LR 190 · مدى ممتد','ممر واحد',81500000,'air-narrow',8700,838,190,2.58,{runwayM:2200,mtowTon:86,maintenance:1160,co2Band:'A'}),
-    air('N-A22','Widebody 250 · اقتصاد بعيد','ثنائي الممر',149000000,'air-widebody',13200,900,250,4.72,{runwayM:2700,mtowTon:205,maintenance:2180,co2Band:'A'}),
-    air('N-A23','Widebody 375 · شبكة عالمية','ثنائي الممر',259000000,'air-widebody',17100,907,375,6.82,{runwayM:3150,mtowTon:329,maintenance:3260,co2Band:'A',reliability:99.1}),
-    air('N-A24','Cargo 45T · شحن متوسط','شحن',76000000,'air-cargo',5600,790,45,4.25,{cargo:true,runwayM:2200,mtowTon:118,maintenance:1620}),
-    air('N-A25','Cargo 95T · شحن عابر للقارات','شحن',184000000,'air-cargo',9600,868,95,8.1,{cargo:true,runwayM:2950,mtowTon:292,maintenance:3460,yieldMultiplier:1.25}),
-    air('N-A26','Executive 8 · أعمال إقليمي','تنفيذي',23800000,'air-executive',6100,825,8,1.08,{runwayM:1250,mtowTon:23,maintenance:970,yieldMultiplier:5.5}),
-    air('N-A27','Executive 19 · Global Elite','تنفيذي',89500000,'air-executive',15100,910,19,2.26,{runwayM:1900,mtowTon:58,maintenance:2180,yieldMultiplier:8.0,co2Band:'A'}),
-    air('N-A28','VIP 70 · وفود وحكومات','VIP',154000000,'air-executive',13900,900,70,3.9,{runwayM:2450,mtowTon:137,maintenance:2730,yieldMultiplier:5.1})
+    air('A-ATR42','ATR','42-600','إقليمي توربيني',20000000,'air-regional',{rangeKm:1326,speedKmh:535,capacity:48,cabin:cabin(0,0,0,48),burn:1.1,mtowTon:18.6,runwayM:1165,lengthM:22.7,engines:'2 × PW127M',crewPlan:{pilots:8,cabin:4,aeng:2},maint:550,co2Band:'A'},{deliveryDays:270,residual5y:70,legacyIds:['N-A19'],description:'أقصر مدرج في الأسطول. يخدم المطارات الصغيرة والرحلات دون ساعة بأقل حرق للوقود.'}),
+    air('A-ATR72','ATR','72-600','إقليمي توربيني',26000000,'air-regional',{rangeKm:1403,speedKmh:510,capacity:70,cabin:cabin(0,0,0,70),burn:1.4,mtowTon:23,runwayM:1333,lengthM:27.2,engines:'2 × PW127M',crewPlan:{pilots:8,cabin:6,aeng:2},maint:650,co2Band:'A'},{deliveryDays:300,residual5y:70,legacyIds:['N-A4'],description:'أكثر طائرة إقليمية مبيعًا. 70 مقعدًا اقتصاديًا بتكلفة مقعد أقل من أي نفاثة على الرحلات القصيرة.'}),
+    air('A-Q400','De Havilland','Dash 8-400','إقليمي توربيني',33000000,'air-regional',{rangeKm:2040,speedKmh:667,capacity:78,cabin:cabin(0,0,0,78),burn:1.9,mtowTon:29.6,runwayM:1425,lengthM:32.8,engines:'2 × PW150A',crewPlan:{pilots:8,cabin:6,aeng:2},maint:780,co2Band:'A'},{deliveryDays:360,residual5y:62,legacyIds:['N-A5'],description:'أسرع مروحية ركاب: سرعة قريبة من النفاثة على مسارات حتى 2,000 كم.'}),
+    air('A-E175','Embraer','E175','نفاث إقليمي',32000000,'air-narrow',{rangeKm:3700,speedKmh:829,capacity:76,cabin:cabin(0,12,0,64),burn:2.2,mtowTon:40.4,runwayM:2244,lengthM:31.7,engines:'2 × CF34-8E',crewPlan:{pilots:9,cabin:8,aeng:3},maint:1000},{deliveryDays:300,residual5y:64,legacyIds:['N-A6'],description:'نفاثة إقليمية بدرجتين: 12 مقعد أعمال يرفع إيراد الرحلات القصيرة.'}),
+    air('A-E195E2','Embraer','E195-E2','نفاث إقليمي',60000000,'air-narrow',{rangeKm:4815,speedKmh:833,capacity:120,cabin:cabin(0,12,0,108),burn:2.5,mtowTon:61.5,runwayM:1970,lengthM:41.5,engines:'2 × PW1900G',crewPlan:{pilots:10,cabin:12,aeng:3},maint:1150,co2Band:'A'},{deliveryDays:420,residual5y:72,legacyIds:['N-A20'],description:'أكبر نفاثة إقليمية وأقلها حرقًا للمقعد في فئتها.'}),
+    air('A-A220','Airbus','A220-300','ممر واحد',52000000,'air-narrow',{rangeKm:6297,speedKmh:829,capacity:137,cabin:cabin(0,12,0,125),burn:2.3,mtowTon:70.9,runwayM:1890,lengthM:38.7,engines:'2 × PW1500G',crewPlan:{pilots:10,cabin:14,aeng:3},maint:1200,co2Band:'A'},{deliveryDays:450,residual5y:70,legacyIds:['N-A7'],description:'مدى طائرة كبيرة بحجم طائرة متوسطة: يفتح مسارات طويلة قليلة الطلب.'}),
+    air('A-A320N','Airbus','A320neo','ممر واحد',55000000,'air-narrow',{rangeKm:6300,speedKmh:833,capacity:162,cabin:cabin(0,12,0,150),burn:2.6,mtowTon:79,runwayM:2100,lengthM:37.6,engines:'2 × CFM LEAP-1A',crewPlan:{pilots:10,cabin:16,aeng:4},maint:1350},{deliveryDays:540,residual5y:74,legacyIds:['N-A1'],description:'العمود الفقري لشبكات المدى القصير والمتوسط بدرجتين.'}),
+    air('A-B38M','Boeing','737 MAX 8','ممر واحد',54000000,'air-narrow',{rangeKm:6570,speedKmh:839,capacity:162,cabin:cabin(0,12,0,150),burn:2.6,mtowTon:82.2,runwayM:2500,lengthM:39.5,engines:'2 × CFM LEAP-1B',crewPlan:{pilots:10,cabin:16,aeng:4},maint:1350},{deliveryDays:480,residual5y:72,description:'منافسة A320neo بمدى أطول قليلًا ومدرج أطول.'}),
+    air('A-A321N','Airbus','A321neo','ممر واحد',65000000,'air-narrow',{rangeKm:7400,speedKmh:833,capacity:196,cabin:cabin(0,16,0,180),burn:3.0,mtowTon:97,runwayM:2100,lengthM:44.5,engines:'2 × CFM LEAP-1A',crewPlan:{pilots:12,cabin:20,aeng:4},maint:1500},{deliveryDays:600,residual5y:76,legacyIds:['N-A8'],description:'أعلى سعة في الممر الواحد: أقل تكلفة للمقعد على المسارات المزدحمة.'}),
+    air('A-A321XLR','Airbus','A321XLR','ممر واحد بعيد',75000000,'air-narrow',{rangeKm:8700,speedKmh:833,capacity:180,cabin:cabin(0,20,0,160),burn:3.1,mtowTon:101,runwayM:2700,lengthM:44.5,engines:'2 × CFM LEAP-1A',crewPlan:{pilots:12,cabin:20,aeng:4},maint:1550,co2Band:'A'},{deliveryDays:660,residual5y:76,legacyIds:['N-A21'],description:'طائرة ممر واحد تعبر الأطلسي: مسارات طويلة بلا تكلفة طائرة عريضة.'}),
+    air('A-A339','Airbus','A330-900','عريضة',115000000,'air-widebody',{rangeKm:13334,speedKmh:871,capacity:287,cabin:cabin(0,30,21,236),bellyCargoT:18,burn:6.3,mtowTon:251,runwayM:2770,lengthM:63.7,engines:'2 × Trent 7000',crewPlan:{pilots:16,cabin:40,aeng:6},maint:2700},{deliveryDays:540,residual5y:66,legacyIds:['N-A9'],base:'AP-DXB',description:'أرخص طائرة عريضة حديثة: ثلاث درجات وشحن في الجوف.'}),
+    air('A-B789','Boeing','787-9','عريضة',150000000,'air-widebody',{rangeKm:14010,speedKmh:903,capacity:290,cabin:cabin(0,30,28,232),bellyCargoT:20,burn:5.8,mtowTon:254,runwayM:2800,lengthM:62.8,engines:'2 × GEnx-1B',crewPlan:{pilots:16,cabin:40,aeng:6},maint:2800,co2Band:'A'},{deliveryDays:600,residual5y:70,legacyIds:['N-A22'],base:'AP-DXB',description:'أقل حرق للمقعد بين العريضات: مسارات حتى 14,000 كم بثلاث درجات.'}),
+    air('A-B78X','Boeing','787-10','عريضة',165000000,'air-widebody',{rangeKm:11750,speedKmh:903,capacity:330,cabin:cabin(0,36,28,266),bellyCargoT:24,burn:6.4,mtowTon:254,runwayM:2900,lengthM:68.3,engines:'2 × GEnx-1B',crewPlan:{pilots:16,cabin:44,aeng:6},maint:2950,co2Band:'A'},{deliveryDays:600,residual5y:70,legacyIds:['N-A10'],base:'AP-DXB',description:'أطول 787: مقاعد أكثر بمدى أقصر، للمسارات الكثيفة حتى 11,700 كم.'}),
+    air('A-A359','Airbus','A350-900','عريضة',160000000,'air-widebody',{rangeKm:15000,speedKmh:903,capacity:300,cabin:cabin(0,40,24,236),bellyCargoT:22,burn:6.2,mtowTon:283,runwayM:2600,lengthM:66.8,engines:'2 × Trent XWB-84',crewPlan:{pilots:16,cabin:42,aeng:6},maint:2900,co2Band:'A'},{deliveryDays:600,residual5y:72,legacyIds:['N-A2'],base:'AP-DXB',description:'مدى 15,000 كم بثلاث درجات وأكبر درجة أعمال في فئتها.'}),
+    air('A-A35K','Airbus','A350-1000','عريضة',185000000,'air-widebody',{rangeKm:16100,speedKmh:903,capacity:350,cabin:cabin(0,46,32,272),bellyCargoT:28,burn:6.9,mtowTon:322,runwayM:2750,lengthM:73.8,engines:'2 × Trent XWB-97',crewPlan:{pilots:18,cabin:48,aeng:7},maint:3200,co2Band:'A'},{deliveryDays:660,residual5y:72,legacyIds:['N-A17'],base:'AP-SIN',description:'أبعد مدى في الأسطول: رحلات بلا توقف حتى 16,100 كم.'}),
+    air('A-B779','Boeing','777-9','عريضة كبيرة',210000000,'air-widebody',{rangeKm:13500,speedKmh:905,capacity:426,cabin:cabin(8,48,40,330),bellyCargoT:32,burn:8.3,mtowTon:351.5,runwayM:3050,lengthM:76.7,engines:'2 × GE9X',crewPlan:{pilots:20,cabin:58,aeng:8},maint:3600},{deliveryDays:720,residual5y:70,legacyIds:['N-A11','N-A23'],base:'AP-DXB',description:'أكبر طائرة ثنائية المحرك: أربع درجات بما فيها الأولى، وأعلى إيراد للرحلة.'}),
+    air('A-AT7F','ATR','72-600F','شحن',28000000,'air-cargo',{cargo:true,rangeKm:1520,speedKmh:510,capacity:9,burn:1.45,mtowTon:23,runwayM:1333,lengthM:27.2,engines:'2 × PW127M',crewPlan:{pilots:8,cabin:0,aeng:2},maint:700,co2Band:'A'},{deliveryDays:300,residual5y:66,legacyIds:['N-A12'],description:'شحن طرود إقليمي من مطارات صغيرة بأقل تكلفة طن-كم على المسافات القصيرة.'}),
+    air('A-B763F','Boeing','767-300F','شحن',80000000,'air-cargo',{cargo:true,rangeKm:6025,speedKmh:851,capacity:52,burn:5.0,mtowTon:186.9,runwayM:2700,lengthM:54.9,engines:'2 × CF6-80C2',crewPlan:{pilots:10,cabin:0,aeng:4},maint:2200},{deliveryDays:360,residual5y:60,legacyIds:['N-A24','N-A13'],description:'طائرة الشحن السريع المتوسطة: 52 طنًا على مسارات قارية.'}),
+    air('A-B77F','Boeing','777F','شحن',190000000,'air-cargo',{cargo:true,rangeKm:9200,speedKmh:905,capacity:102,burn:8.9,mtowTon:347.8,runwayM:2830,lengthM:63.7,engines:'2 × GE90-110B',crewPlan:{pilots:14,cabin:0,aeng:6},maint:3400},{deliveryDays:540,residual5y:70,legacyIds:['N-A25','N-A3'],base:'AP-SIN',description:'أكثر طائرة شحن عابرة للقارات استخدامًا: 102 طن حتى 9,200 كم.'}),
+    air('A-A35F','Airbus','A350F','شحن',200000000,'air-cargo',{cargo:true,rangeKm:8700,speedKmh:903,capacity:111,burn:7.6,mtowTon:319,runwayM:2800,lengthM:70.8,engines:'2 × Trent XWB-97',crewPlan:{pilots:14,cabin:0,aeng:6},maint:3300,co2Band:'A'},{deliveryDays:720,residual5y:72,legacyIds:['N-A18'],base:'AP-DXB',description:'أحدث طائرة شحن كبيرة: 111 طنًا بحرق أقل بنحو 15% من 777F.'}),
+    air('A-B778F','Boeing','777-8F','شحن',215000000,'air-cargo',{cargo:true,rangeKm:8165,speedKmh:905,capacity:112,burn:8.0,mtowTon:365.1,runwayM:3050,lengthM:70.9,engines:'2 × GE9X',crewPlan:{pilots:14,cabin:0,aeng:6},maint:3500,co2Band:'A'},{deliveryDays:900,residual5y:72,base:'AP-SIN',description:'أكبر حمولة ثنائية المحرك: 112 طنًا، وتسليم بعيد.'}),
+    air('A-PH300','Embraer','Phenom 300E','طيران خاص',11000000,'air-executive',{rangeKm:3650,speedKmh:839,capacity:9,charterPerHour:4800,burn:.75,mtowTon:8.4,runwayM:956,lengthM:15.6,engines:'2 × PW535E1',crewPlan:{pilots:3,cabin:0,aeng:1},maint:900,co2Band:'A'},{deliveryDays:180,residual5y:70,legacyIds:['N-A26'],description:'أكثر طائرة خاصة خفيفة مبيعًا. تؤجَّر بالساعة على الرحلات الإقليمية.'}),
+    air('A-CL350','Bombardier','Challenger 3500','طيران خاص',27000000,'air-executive',{rangeKm:6297,speedKmh:870,capacity:10,charterPerHour:7500,burn:1.2,mtowTon:18.4,runwayM:1474,lengthM:20.9,engines:'2 × HTF7350',crewPlan:{pilots:4,cabin:1,aeng:1},maint:1300},{deliveryDays:300,residual5y:66,legacyIds:['N-A14'],description:'طائرة خاصة متوسطة الحجم تقطع المسافات القارية بتأجير بالساعة.'}),
+    air('A-G650','Gulfstream','G650ER','طيران خاص بعيد',75000000,'air-executive',{rangeKm:13890,speedKmh:956,capacity:16,charterPerHour:14000,burn:2.0,mtowTon:47.6,runwayM:1786,lengthM:30.4,engines:'2 × BR725',crewPlan:{pilots:5,cabin:2,aeng:2},maint:2300},{deliveryDays:420,residual5y:68,legacyIds:['N-A15'],description:'أسرع طائرة خاصة بعيدة المدى: دبي–نيويورك بلا توقف.'}),
+    air('A-G7500','Bombardier','Global 7500','طيران خاص بعيد',78000000,'air-executive',{rangeKm:14260,speedKmh:956,capacity:17,charterPerHour:15500,burn:2.1,mtowTon:52.2,runwayM:1768,lengthM:33.8,engines:'2 × Passport 20',crewPlan:{pilots:5,cabin:2,aeng:2},maint:2400},{deliveryDays:420,residual5y:68,legacyIds:['N-A27'],description:'أكبر مقصورة خاصة بأربع مناطق، وأبعد مدى بين الطائرات الخاصة.'}),
+    air('A-ACJ','Airbus','ACJ320neo','VIP',110000000,'air-executive',{rangeKm:11100,speedKmh:833,capacity:25,charterPerHour:22000,burn:2.7,mtowTon:79,runwayM:2100,lengthM:37.6,engines:'2 × CFM LEAP-1A',crewPlan:{pilots:6,cabin:4,aeng:2},maint:1800},{deliveryDays:540,residual5y:60,legacyIds:['N-A16','N-A28'],base:'AP-DXB',description:'طائرة ركاب بمقصورة VIP لـ 25 ضيفًا: للوفود والحكومات بتأجير بالساعة.'})
   ];
 
   const seaNew = [
-    ship('N-S9','Feeder 1,300 TEU · مغذّية','حاويات',31000000,'ship-container',7600,18.5,1300,'TEU',24,8.9,{lengthM:156,beamM:25,crew:18}),
-    ship('N-S1','Feedermax 2,800 TEU · حاويات','حاويات',48000000,'ship-container',9000,19,2800,'TEU',38,11.2,{lengthM:210,beamM:32,crew:21}),
-    ship('N-S10','Panamax 5,100 TEU · حاويات','حاويات',79000000,'ship-container',10500,21,5100,'TEU',52,13.2,{lengthM:280,beamM:32.3,crew:23}),
-    ship('N-S2','Neo-Panamax 8,500 TEU · حاويات','حاويات',112000000,'ship-container',11000,22,8500,'TEU',68,14.6,{lengthM:335,beamM:48,crew:25,base:'PT-SIN'}),
-    ship('N-S11','Ultra 15,000 TEU · حاويات عملاقة','حاويات',168000000,'ship-container',12800,22.5,15000,'TEU',91,15.8,{lengthM:366,beamM:51,crew:26,base:'PT-SIN'}),
-    ship('N-S12','Handysize 38,000T · بضائع سائبة','بضائع سائبة',41000000,'ship-bulk',9800,14,38000,'طن',25,10.4,{lengthM:180,beamM:30,crew:21}),
-    ship('N-S5','Kamsarmax 82,000T · بضائع سائبة','بضائع سائبة',56000000,'ship-bulk',10500,14.5,82000,'طن',33,14.4,{lengthM:229,beamM:32.3,crew:22}),
-    ship('N-S13','Aframax 115,000T · ناقلة نفط','ناقلات',76000000,'ship-tanker',11800,15,115000,'طن',43,15.0,{lengthM:245,beamM:44,crew:25,base:'PT-RTM'}),
-    ship('N-S3','Suezmax 160,000T · ناقلة نفط','ناقلات',98000000,'ship-tanker',12500,15.5,160000,'طن',54,17.2,{lengthM:274,beamM:48,crew:27,base:'PT-RTM'}),
-    ship('N-S14','VLCC 300,000T · ناقلة نفط عملاقة','ناقلات',142000000,'ship-tanker',13800,15.2,300000,'طن',78,20.5,{lengthM:333,beamM:60,crew:29,base:'PT-RTM'}),
-    ship('N-S4','LNG 174,000m³ · ناقلة غاز','غاز',218000000,'ship-lng',11800,19.5,82000,'طن',76,12.1,{lengthM:295,beamM:46,crew:31,base:'PT-SIN',yieldMultiplier:1.4,engine:'LNG ثنائي الوقود'}),
-    ship('N-S15','LPG 84,000m³ · ناقلة غاز','غاز',104000000,'ship-lng',11000,17.5,46000,'طن',49,12.0,{lengthM:228,beamM:36,crew:27,base:'PT-SIN',yieldMultiplier:1.25}),
-    ship('N-S6','Ro-Ro 6,700LM · سيارات ومقطورات','Ro-Ro',124000000,'ship-roro',8800,21,11200,'طن',61,9.8,{lengthM:238,beamM:34,crew:28,base:'PT-RTM',yieldMultiplier:1.2}),
-    ship('N-S16','General Cargo 22,000T · بضائع عامة','بضائع عامة',39000000,'ship-bulk',9200,15,22000,'طن',27,9.6,{lengthM:168,beamM:26,crew:20}),
-    ship('N-S7','Cruise 3,850 · سفينة سياحية','سياحي',690000000,'ship-cruise',7200,22,3850,'راكب',145,8.8,{lengthM:316,beamM:39,crew:1280,base:'PT-SIN',yieldMultiplier:1.15,warranty:'4 سنوات'}),
-    ship('N-S17','Expedition 720 · سياحة فاخرة','سياحي',248000000,'ship-cruise',9100,18,720,'راكب',54,7.4,{lengthM:183,beamM:28,crew:390,base:'PT-RTM',yieldMultiplier:2.2}),
-    ship('N-S8','Harbor Tug 85T · دعم موانئ','دعم موانئ',18500000,'ship-support',2800,13,620,'طن',8,5.4,{lengthM:36,beamM:13,crew:9,yieldMultiplier:4.5}),
-    ship('N-S18','Offshore Support 1,200T · إمداد بحري','دعم موانئ',46000000,'ship-support',5200,15,1200,'طن',15,6.2,{lengthM:82,beamM:18,crew:22,yieldMultiplier:2.8}),
-    ship('N-S19','PCTC 7,600 · ناقلة سيارات عالمية','Ro-Ro',148000000,'ship-roro',10400,20,13600,'طن',58,10.1,{lengthM:230,beamM:36,crew:29,base:'PT-SIN',yieldMultiplier:1.32}),
-    ship('N-S20','ULCV 24,000 TEU · حاويات فائقة','حاويات',236000000,'ship-container',13200,22,24000,'TEU',108,16.0,{lengthM:400,beamM:61,crew:28,base:'PT-SIN',reliability:98.6}),
-    ship('N-S21','Micro Feeder 750 TEU · ساحلية','حاويات',22000000,'ship-container',5400,17,750,'TEU',16,7.2,{lengthM:128,beamM:21,crew:15}),
-    ship('N-S22','Eco 3,600 TEU · حاويات اقتصادية','حاويات',61000000,'ship-container',9800,20,3600,'TEU',39,11.8,{lengthM:238,beamM:35,crew:21,co2Band:'A'}),
-    ship('N-S23','Mega 18,500 TEU · حاويات عالمية','حاويات',194000000,'ship-container',13000,22,18500,'TEU',96,15.9,{lengthM:385,beamM:58,crew:27,base:'PT-SIN'}),
-    ship('N-S24','Supramax 58,000T · بضائع سائبة','بضائع سائبة',49000000,'ship-bulk',10300,14.3,58000,'طن',29,12.7,{lengthM:200,beamM:32,crew:21}),
-    ship('N-S25','Newcastlemax 210,000T · سائبة ضخمة','بضائع سائبة',91000000,'ship-bulk',12600,14.5,210000,'طن',58,18.4,{lengthM:300,beamM:50,crew:25}),
-    ship('N-S26','MR Tanker 50,000T · منتجات نفطية','ناقلات',53000000,'ship-tanker',9800,15.2,50000,'طن',28,11.2,{lengthM:183,beamM:32,crew:22}),
-    ship('N-S27','LR2 115,000T · منتجات بعيدة','ناقلات',84000000,'ship-tanker',11600,15.5,115000,'طن',42,15.1,{lengthM:250,beamM:44,crew:25}),
-    ship('N-S28','LNG 200K · ناقلة غاز متقدمة','غاز',248000000,'ship-lng',12400,20,94000,'طن',80,12.5,{lengthM:305,beamM:48,crew:31,co2Band:'A',yieldMultiplier:1.48}),
-    ship('N-S29','RoPax 2,200 · ركاب ومركبات','Ro-Ro',188000000,'ship-roro',6200,23,2200,'راكب',72,7.9,{lengthM:215,beamM:31,crew:185,yieldMultiplier:1.65}),
-    ship('N-S30','Heavy Lift 18,000T · مشاريع','متخصص',88000000,'ship-support',8200,15,18000,'طن',33,9.1,{lengthM:168,beamM:36,crew:32,yieldMultiplier:2.1})
+    ship('S-FDR1800','Huangpu Wenchong','سفينة مغذّية 1,800 حاوية','حاويات',32000000,'ship-container',{market:'container',rangeNm:9000,speedKn:19,capacity:1800,unit:'TEU',fuel:25,draftM:10.5,lengthM:172,beamM:28,crewPlan:{captains:2,sailors:14,seng:4},maint:4500},{deliveryDays:540,residual5y:62,legacyIds:['N-S9','N-S21'],description:'تربط الموانئ الصغيرة بالموانئ المحورية. ترسو حيث لا تصل السفن الكبيرة.'}),
+    ship('S-WB3500','Jiangsu New Yangzi','سفينة حاويات 3,500 عريضة','حاويات',50000000,'ship-container',{market:'container',rangeNm:10000,speedKn:20,capacity:3500,unit:'TEU',fuel:34,draftM:11.5,lengthM:200,beamM:35,crewPlan:{captains:2,sailors:16,seng:4},maint:5500},{deliveryDays:600,residual5y:62,legacyIds:['N-S1','N-S22'],description:'خطوط إقليمية بين الخليج والهند وشرق أفريقيا بتكلفة حاوية منخفضة.'}),
+    ship('S-NPX8200','HD Hyundai Heavy','نيوباناماكس 8,200 حاوية','حاويات',112000000,'ship-container',{market:'container',rangeNm:12000,speedKn:22,capacity:8200,unit:'TEU',fuel:62,draftM:14.5,lengthM:300,beamM:48.2,crewPlan:{captains:2,sailors:18,seng:5},maint:8000},{deliveryDays:720,residual5y:64,legacyIds:['N-S10','N-S2'],base:'PT-SIN',description:'أكبر سفينة تعبر قناة بنما الجديدة: خطوط آسيا–الأمريكتين.'}),
+    ship('S-15K','Samsung Heavy','حاويات 15,000 بوقود LNG','حاويات',185000000,'ship-container',{market:'container',rangeNm:13000,speedKn:22,capacity:15000,unit:'TEU',fuel:88,draftM:15.5,lengthM:366,beamM:51,engine:'ثنائي الوقود LNG',crewPlan:{captains:2,sailors:18,seng:6},maint:10500,co2Band:'A'},{deliveryDays:840,residual5y:64,legacyIds:['N-S11','N-S23'],base:'PT-SIN',description:'خطوط آسيا–أوروبا الرئيسية بوقود LNG أقل انبعاثًا.'}),
+    ship('S-ULCV24','Yangzijiang','حاويات عملاقة 24,000','حاويات',270000000,'ship-container',{market:'container',rangeNm:14000,speedKn:22,capacity:24000,unit:'TEU',fuel:108,draftM:16.5,lengthM:400,beamM:61.3,crewPlan:{captains:2,sailors:19,seng:6},maint:13000},{deliveryDays:900,residual5y:64,legacyIds:['N-S20'],base:'PT-SIN',description:'أكبر سفن العالم من فئة MSC Irina: أقل تكلفة لكل حاوية بين آسيا وأوروبا.'}),
+    ship('S-HANDY','Oshima','هاندي سايز 40,000 طن','بضائع سائبة',32000000,'ship-bulk',{market:'dry-bulk',rangeNm:12000,speedKn:14,capacity:40000,unit:'طن',fuel:22,draftM:10.5,lengthM:180,beamM:32,crewPlan:{captains:2,sailors:15,seng:4},maint:4000},{deliveryDays:540,residual5y:60,legacyIds:['N-S12','N-S16'],description:'روافع على ظهرها: تحمّل الحبوب والأسمدة والصلب في موانئ بلا معدات.'}),
+    ship('S-UMAX','Tsuneishi','ألترامكس 64,000 طن','بضائع سائبة',35000000,'ship-bulk',{market:'dry-bulk',rangeNm:12000,speedKn:14,capacity:64000,unit:'طن',fuel:26,draftM:13.3,lengthM:200,beamM:32.2,crewPlan:{captains:2,sailors:16,seng:4},maint:4500},{deliveryDays:600,residual5y:60,legacyIds:['N-S24'],description:'أكثر سفن الصب مرونة: حبوب وفحم ومعادن بروافعها الخاصة.'}),
+    ship('S-KMAX','Jiangsu Hantong','كامسارماكس 82,000 طن','بضائع سائبة',37000000,'ship-bulk',{market:'dry-bulk',rangeNm:12000,speedKn:14,capacity:82000,unit:'طن',fuel:29,draftM:14.5,lengthM:229,beamM:32.3,crewPlan:{captains:2,sailors:16,seng:4},maint:5000},{deliveryDays:600,residual5y:60,legacyIds:['N-S5'],description:'أكبر سفينة صب تدخل ميناء كامسار: فحم وحبوب على المسارات الطويلة.'}),
+    ship('S-NCM','Qingdao Beihai','نيوكاسلماكس 208,000 طن','بضائع سائبة',72000000,'ship-bulk',{market:'dry-bulk',rangeNm:14000,speedKn:14.5,capacity:208000,unit:'طن',fuel:48,draftM:18.5,lengthM:300,beamM:50,crewPlan:{captains:2,sailors:17,seng:5},maint:6500},{deliveryDays:720,residual5y:60,legacyIds:['N-S25'],description:'خام الحديد من أستراليا والبرازيل إلى الصين بأقل تكلفة للطن.'}),
+    ship('S-MR','Hyundai Mipo','ناقلة منتجات MR 50,000 طن','ناقلات منتجات',47000000,'ship-tanker',{market:'product',rangeNm:12000,speedKn:14.5,capacity:50000,unit:'طن',fuel:25,draftM:13.3,lengthM:183,beamM:32.2,crewPlan:{captains:2,sailors:18,seng:5},maint:5500},{deliveryDays:600,residual5y:62,legacyIds:['N-S26'],description:'ديزل وبنزين ووقود طائرات بخزانات مطلية: أجرة أعلى من النفط الخام.'}),
+    ship('S-LR2','Daehan','ناقلة منتجات LR2 115,000 طن','ناقلات منتجات',70000000,'ship-tanker',{market:'product',rangeNm:13000,speedKn:15,capacity:115000,unit:'طن',fuel:40,draftM:15,lengthM:250,beamM:44,crewPlan:{captains:2,sailors:19,seng:5},maint:6500},{deliveryDays:660,residual5y:62,legacyIds:['N-S27'],description:'منتجات مكررة على المسافات الطويلة من الخليج إلى أوروبا وآسيا.'}),
+    ship('S-AFRA','Samsung Heavy','أفراماكس 115,000 طن','ناقلات نفط خام',70000000,'ship-tanker',{market:'crude',rangeNm:13000,speedKn:15,capacity:115000,unit:'طن',fuel:40,draftM:15,lengthM:250,beamM:44,crewPlan:{captains:2,sailors:19,seng:5},maint:6500},{deliveryDays:660,residual5y:62,legacyIds:['N-S13'],base:'PT-RTM',description:'نفط خام على المسارات المتوسطة والموانئ التي لا تستقبل الناقلات العملاقة.'}),
+    ship('S-SUEZ','HD Hyundai Heavy','سويزماكس 158,000 طن','ناقلات نفط خام',83000000,'ship-tanker',{market:'crude',rangeNm:14000,speedKn:15,capacity:158000,unit:'طن',fuel:48,draftM:17,lengthM:274,beamM:48,crewPlan:{captains:2,sailors:20,seng:5},maint:7500},{deliveryDays:720,residual5y:62,legacyIds:['N-S3'],base:'PT-RTM',description:'أكبر ناقلة تعبر قناة السويس محمّلة.'}),
+    ship('S-VLCC','Hanwha Ocean','ناقلة عملاقة VLCC 300,000 طن','ناقلات نفط خام',127000000,'ship-tanker',{market:'crude',rangeNm:15000,speedKn:15,capacity:300000,unit:'طن',fuel:70,draftM:22.5,lengthM:333,beamM:60,crewPlan:{captains:2,sailors:21,seng:6},maint:9500},{deliveryDays:780,residual5y:62,legacyIds:['N-S14'],base:'PT-RTM',description:'مليونا برميل في رحلة واحدة من الخليج إلى الصين.'}),
+    ship('S-LNG','Hanwha Ocean','ناقلة غاز مسال 174,000 م³','غاز',250000000,'ship-lng',{market:'lng',rangeNm:12000,speedKn:19.5,capacity:174000,unit:'م³',dayRate:60000,fuel:90,draftM:11.5,lengthM:299,beamM:46.4,engine:'ثنائي الوقود ME-GA',crewPlan:{captains:2,sailors:22,seng:8},maint:14000,co2Band:'A'},{deliveryDays:900,residual5y:66,legacyIds:['N-S4','N-S28'],base:'PT-SIN',description:'تُستأجر بأجرة يومية طويلة الأمد: دخل ثابت لا يتأثر بأسعار الشحن.'}),
+    ship('S-VLGC','Hyundai Mipo','ناقلة غاز بترولي VLGC 88,000 م³','غاز',118000000,'ship-lng',{market:'lpg',rangeNm:12000,speedKn:17,capacity:88000,unit:'م³',dayRate:45000,fuel:45,draftM:11.6,lengthM:230,beamM:37.2,crewPlan:{captains:2,sailors:18,seng:6},maint:9000},{deliveryDays:720,residual5y:62,legacyIds:['N-S15'],base:'PT-SIN',description:'غاز البترول المسال من الخليج وأمريكا إلى آسيا بأجرة يومية.'}),
+    ship('S-PCTC','China Merchants Jinling','ناقلة سيارات PCTC 7,000','ناقلات سيارات',100000000,'ship-roro',{market:'car-carrier',rangeNm:12000,speedKn:19,capacity:7000,unit:'سيارة',fuel:50,draftM:9.5,lengthM:200,beamM:38,engine:'ثنائي الوقود LNG',crewPlan:{captains:2,sailors:18,seng:5},maint:7000,co2Band:'A'},{deliveryDays:720,residual5y:64,legacyIds:['N-S6','N-S19'],base:'PT-RTM',description:'14 طابقًا للسيارات والمعدات: صادرات المصانع من آسيا وأوروبا.'}),
+    ship('S-ROPAX','CMJL Weihai','عبّارة ركاب ومركبات 1,800','عبّارات',210000000,'ship-roro',{market:'ropax',rangeNm:4000,speedKn:22,capacity:1800,unit:'راكب',fuel:70,draftM:6.5,lengthM:240,beamM:32,crewPlan:{captains:3,sailors:96,seng:12},maint:18000},{deliveryDays:780,residual5y:62,legacyIds:['N-S29'],description:'ركاب وسيارات وشاحنات معًا على الخطوط القصيرة المتكررة.'}),
+    ship('S-CRUISE','Fincantieri','سفينة سياحية 3,100 ضيف','سياحي',1050000000,'ship-cruise',{market:'cruise',rangeNm:7500,speedKn:21.5,capacity:3100,unit:'راكب',fuel:160,draftM:8.3,lengthM:294,beamM:36,engine:'ديزل كهربائي',crewPlan:{captains:4,sailors:1150,seng:46},maint:95000},{deliveryDays:1080,residual5y:70,legacyIds:['N-S7'],warranty:'سنتان من حوض البناء',base:'PT-SIN',description:'إيرادها لكل ضيف في كل ليلة، بما فيه الإنفاق على متنها.'}),
+    ship('S-EXPED','Vard','سفينة استكشاف قطبية 260 ضيفًا','سياحي',230000000,'ship-cruise',{market:'cruise',rangeNm:9000,speedKn:15.5,capacity:260,unit:'راكب',fuel:28,draftM:5.2,lengthM:138,beamM:21,crewPlan:{captains:4,sailors:160,seng:16},maint:22000},{deliveryDays:900,residual5y:68,legacyIds:['N-S17'],base:'PT-RTM',description:'هيكل قطبي PC6 ورحلات فاخرة إلى القطبين بأعلى سعر لليلة.'}),
+    ship('S-TUG','Damen','قاطرة موانئ ASD 80 طن','خدمات موانئ',12000000,'ship-support',{market:'tug',rangeNm:2800,speedKn:13,capacity:80,unit:'طن شد',dayRate:6500,fuel:8,draftM:5.6,lengthM:28,beamM:11,crewPlan:{captains:2,sailors:4,seng:2},maint:2000},{deliveryDays:240,residual5y:66,legacyIds:['N-S8'],description:'تقطر السفن الكبيرة في الموانئ بأجرة يومية من سلطة الميناء.'}),
+    ship('S-PSV','Ulstein','سفينة إمداد بحري PSV 4,700 طن','خدمات بحرية',40000000,'ship-support',{market:'offshore',rangeNm:5200,speedKn:14,capacity:4700,unit:'طن',dayRate:26000,fuel:15,draftM:6.5,lengthM:89,beamM:19,crewPlan:{captains:2,sailors:16,seng:4},maint:4500},{deliveryDays:540,residual5y:60,legacyIds:['N-S18'],description:'تمد منصات النفط والغاز البحرية بأجرة يومية من المشغّل.'}),
+    ship('S-HLV','Guangzhou Shipyard','سفينة رفع ثقيل نصف غاطسة 30,000 طن','رفع ثقيل',95000000,'ship-support',{market:'heavy-lift',rangeNm:12000,speedKn:14,capacity:30000,unit:'طن',dayRate:48000,fuel:38,draftM:10,lengthM:216,beamM:43,crewPlan:{captains:2,sailors:26,seng:6},maint:7000},{deliveryDays:720,residual5y:60,legacyIds:['N-S30'],description:'تنقل منصات ووحدات مصانع كاملة بأجرة يومية للمشروع.'})
   ];
 
   const roadNew = [
-    truck('N-T8','Urban Van 2T · توصيل سريع','حضري',72000,'truck-urban',330,120,2,{electric:true,energyKWhPer100km:31,drivetrain:'كهربائي 400V',axles:2,co2Band:'A',safety:94}),
-    truck('N-T7','Urban Electric 8T · توزيع حضري','حضري',129000,'truck-urban',420,75,8,{electric:true,energyKWhPer100km:72,drivetrain:'كهربائي 600V',axles:2,co2Band:'A',safety:95}),
-    truck('N-T9','Rigid 12T · توزيع إقليمي','توزيع',116000,'truck-longhaul-v2',1100,88,12,{fuelLPer100km:22,axles:3,safety:91}),
-    truck('N-T1','Long Haul 24T · شاحنة ثقيلة','نقل ثقيل',168000,'truck-longhaul-v2',1800,90,24,{fuelLPer100km:32,axles:5,safety:93}),
-    truck('N-T10','Heavy Haul 30T · حمولة ثقيلة','نقل ثقيل',205000,'truck-longhaul-v2',1600,85,30,{fuelLPer100km:38,axles:6,safety:92}),
-    truck('N-T2','Cold Chain 20T · شاحنة تبريد','تبريد',214000,'truck-reefer',1600,88,20,{fuelLPer100km:35,refrigerated:true,capacityUnit:'طن مبرد',axles:5,safety:95}),
-    truck('N-T3','Electric Long Haul 21T · كهربائية','كهربائي',248000,'truck-electric',800,90,21,{electric:true,energyKWhPer100km:118,drivetrain:'كهربائي 800V',co2Band:'A',safety:96}),
-    truck('N-T11','Hydrogen Long Haul 22T · هيدروجين','هيدروجين',312000,'truck-electric',1050,90,22,{hydrogen:true,drivetrain:'خلية وقود 300kW',co2Band:'A',safety:95,delivery:'18–28 أسبوع'}),
-    truck('N-T4','Hybrid Safety 24T · هجينة آمنة','نقل ثقيل',286000,'truck-longhaul-v2',1500,86,24,{fuelLPer100km:29,drivetrain:'ديزل هجين',safety:98}),
-    truck('N-T5','Fuel Tanker 36,000L · ناقلة وقود','صهريج',198000,'truck-tanker',1300,82,29,{fuelLPer100km:38,tanker:true,axles:6,safety:97}),
-    truck('N-T12','Chemical Tanker 30,000L · كيميائيات','صهريج',236000,'truck-tanker',1250,80,27,{fuelLPer100km:39,tanker:true,axles:6,safety:98,warranty:'5 سنوات للخزان'}),
-    truck('N-T6','Intermodal 30T · ناقلة حاويات','حاويات',182000,'truck-container',1700,88,30,{fuelLPer100km:34,container:true,axles:5,safety:94}),
-    truck('N-T13','Low Loader 45T · معدات ثقيلة','متخصص',264000,'truck-container',1200,75,45,{fuelLPer100km:46,axles:7,safety:96}),
-    truck('N-T14','Car Carrier 20T · ناقلة مركبات','متخصص',225000,'truck-container',1450,82,20,{fuelLPer100km:36,axles:5,safety:94}),
-    truck('N-T15','Mining Haul 55T · تعدين ومحاجر','طرق وعرة',398000,'truck-longhaul-v2',950,68,55,{fuelLPer100km:64,axles:6,drivetrain:'ديزل دفع ثقيل',safety:95,delivery:'20–34 أسبوع'}),
-    truck('N-T16','Executive Support 3T · دعم VIP','تنفيذي',158000,'truck-urban',620,130,3,{electric:true,energyKWhPer100km:44,drivetrain:'كهربائي فاخر',co2Band:'A',safety:98,yieldMultiplier:2.2}),
-    truck('N-T17','e-Regional 18T · شاحنة كهربائية إقليمية','كهربائي',274000,'truck-electric',980,88,18,{electric:true,energyKWhPer100km:104,drivetrain:'كهربائي 800V',co2Band:'A',safety:97,reliability:98.1}),
-    truck('N-T18','Mega Reefer 26T · تبريد بعيد','تبريد',298000,'truck-reefer',1850,86,26,{fuelLPer100km:37,refrigerated:true,capacityUnit:'طن مبرد',axles:6,safety:97,reliability:98.0}),
-    truck('N-T19','City EV 4T · توصيل كهربائي','حضري',94000,'truck-urban',390,105,4,{electric:true,energyKWhPer100km:42,axles:2,co2Band:'A',safety:96}),
-    truck('N-T20','Regional 16T · توزيع سريع','توزيع',142000,'truck-longhaul-v2',1350,90,16,{fuelLPer100km:25,axles:3,safety:93}),
-    truck('N-T21','Hybrid 22T · نقل هجين','نقل ثقيل',227000,'truck-longhaul-v2',1500,90,22,{fuelLPer100km:24,drivetrain:'هجين ديزل/كهرباء',co2Band:'B',safety:96}),
-    truck('N-T22','Battery 27T · كهربائية ثقيلة','كهربائي',348000,'truck-electric',1150,88,27,{electric:true,energyKWhPer100km:126,drivetrain:'كهربائي 900V',co2Band:'A',safety:98}),
-    truck('N-T23','Hydrogen 30T · خلية وقود','هيدروجين',385000,'truck-electric',1350,90,30,{hydrogen:true,drivetrain:'خلية وقود 420kW',co2Band:'A',safety:97}),
-    truck('N-T24','Pharma Reefer 18T · أدوية','تبريد',262000,'truck-reefer',1400,88,18,{fuelLPer100km:31,refrigerated:true,capacityUnit:'طن دوائي',axles:4,safety:99}),
-    truck('N-T25','Food Reefer 28T · أغذية','تبريد',318000,'truck-reefer',1900,86,28,{fuelLPer100km:38,refrigerated:true,capacityUnit:'طن مبرد',axles:6,safety:97}),
-    truck('N-T26','Fuel Tanker 45KL · صهريج كبير','صهريج',248000,'truck-tanker',1450,80,34,{fuelLPer100km:42,tanker:true,axles:7,safety:99}),
-    truck('N-T27','Intermodal 34T · حاويات مزدوجة','حاويات',214000,'truck-container',1800,86,34,{fuelLPer100km:36,container:true,axles:6,safety:96}),
-    truck('N-T28','Electric Long Range 20T · كهربائية بعيدة','كهربائي',412000,'truck-electric',1050,85,20,{electric:true,energyKWhPer100km:110,drivetrain:'كهربائي 900V',co2Band:'A',safety:99}),
-    truck('N-T29','Construction Mixer 26T · خرسانة','إنشاءات',238000,'truck-longhaul-v2',750,72,26,{fuelLPer100km:44,axles:6,safety:95}),
-    truck('N-T30','Recovery 18T · إنقاذ أساطيل','دعم',198000,'truck-longhaul-v2',900,78,18,{fuelLPer100km:29,axles:4,safety:98,yieldMultiplier:2.4})
+    truck('T-ETRANSIT','Ford','E-Transit','توصيل حضري',55000,'truck-urban',{market:'parcel',rangeKm:250,speedKmh:60,capacity:1.6,kwh:32,drivetrain:'كهربائي 68 كيلوواط ساعة',axles:2,crewPlan:{drivers:2,mech:0},maint:.05,co2Band:'A'},{deliveryDays:45,residual5y:40,legacyIds:['N-T8'],description:'توصيل طرود داخل المدن: الإيراد لكل كيلومتر توصيل لا لكل طن.'}),
+    truck('T-ESPRINTER','Mercedes-Benz','eSprinter','توصيل حضري',70000,'truck-urban',{market:'parcel',rangeKm:400,speedKmh:60,capacity:1.4,kwh:30,drivetrain:'كهربائي 113 كيلوواط ساعة',axles:2,crewPlan:{drivers:2,mech:0},maint:.05,co2Band:'A'},{deliveryDays:60,residual5y:42,legacyIds:['N-T19','N-T16'],description:'مدى 400 كم لتوصيل الطرود بين المدن القريبة دون شحن.'}),
+    truck('T-NPR','Isuzu','NPR 7.5 طن','توزيع',72000,'truck-urban',{market:'urban',rangeKm:600,speedKmh:65,capacity:3.6,diesel:17,drivetrain:'ديزل 5.2 لتر',axles:2,crewPlan:{drivers:2,mech:1},maint:.07},{deliveryDays:45,residual5y:45,legacyIds:['N-T9'],description:'توزيع على المتاجر داخل المدن: أجرة الطن-كم أعلى من النقل الطويل.'}),
+    truck('T-FLE','Volvo','FL Electric 16 طن','توزيع',260000,'truck-electric',{market:'urban',rangeKm:300,speedKmh:65,capacity:8,kwh:95,drivetrain:'كهربائي 565 كيلوواط ساعة',axles:2,crewPlan:{drivers:2,mech:1},maint:.06,co2Band:'A'},{deliveryDays:120,residual5y:40,legacyIds:['N-T7','N-T20'],description:'توزيع حضري بلا انبعاثات ولا ضجيج، وتكلفة طاقة أقل من الديزل.'}),
+    truck('T-ACTROS','Mercedes-Benz','Actros 1845 + مقطورة ستارية','نقل طويل',185000,'truck-longhaul-v2',{market:'general',rangeKm:2000,speedKmh:80,capacity:25,diesel:31,drivetrain:'ديزل OM471 · 450 حصانًا',axles:5,maint:.12},{deliveryDays:60,residual5y:42,legacyIds:['N-T1','N-T21','N-T4','N-T29','N-T30'],description:'شاحنة النقل الطويل الأكثر انتشارًا: بضائع عامة بين المدن والدول.'}),
+    truck('T-TSEMI','Tesla','Semi','نقل طويل كهربائي',260000,'truck-electric',{market:'general',rangeKm:800,speedKmh:85,capacity:20,kwh:106,drivetrain:'كهربائي 3 محركات',axles:5,maint:.08,co2Band:'A'},{deliveryDays:180,residual5y:40,description:'نقل كهربائي لمسافات حتى 800 كم بتكلفة طاقة نحو ثلث الديزل.'}),
+    truck('T-EACTROS','Mercedes-Benz','eActros 600 + مقطورة ستارية','نقل طويل كهربائي',420000,'truck-electric',{market:'general',rangeKm:500,speedKmh:80,capacity:22,kwh:110,drivetrain:'كهربائي 621 كيلوواط ساعة',axles:5,maint:.08,co2Band:'A'},{deliveryDays:150,residual5y:40,legacyIds:['N-T3','N-T22','N-T17','N-T28'],description:'كهربائية للنقل الإقليمي بلا انبعاثات. سعر أعلى وتكلفة تشغيل أقل.'}),
+    truck('T-XCIENT','Hyundai','XCIENT Fuel Cell','نقل هيدروجيني',350000,'truck-electric',{market:'general',rangeKm:400,speedKmh:80,capacity:19,h2:8,drivetrain:'خلية وقود 180 كيلوواط',axles:3,maint:.09,co2Band:'A'},{deliveryDays:210,residual5y:35,legacyIds:['N-T11','N-T23'],description:'هيدروجين بتزويد سريع خلال 15 دقيقة. الوقود أغلى من الديزل اليوم.'}),
+    truck('T-FH16','Volvo','FH16 750 + مقطورة منخفضة','نقل ثقيل',380000,'truck-longhaul-v2',{market:'heavy',rangeKm:1500,speedKmh:70,capacity:60,diesel:52,drivetrain:'ديزل D17 · 750 حصانًا',axles:8,maint:.18},{deliveryDays:120,residual5y:48,legacyIds:['N-T13','N-T10','N-T15'],description:'معدات ومحولات وآليات حتى 60 طنًا بأجرة نقل استثنائي.'}),
+    truck('T-SCANIA-R','Scania','R 500 + مقطورة مبردة','تبريد',230000,'truck-reefer',{market:'reefer',rangeKm:1800,speedKmh:80,capacity:22,diesel:34,drivetrain:'ديزل 13 لتر · 500 حصان + وحدة Thermo King',axles:5,maint:.14},{deliveryDays:75,residual5y:42,legacyIds:['N-T2','N-T18','N-T25','N-T24'],description:'أغذية وأدوية بحرارة مضبوطة: أجرة أعلى ووقود إضافي لوحدة التبريد.'}),
+    truck('T-FH-TANK','Volvo','FH 500 + صهريج وقود 36,000 لتر','صهاريج',240000,'truck-tanker',{market:'fuel',rangeKm:1600,speedKmh:75,capacity:28,diesel:33,drivetrain:'ديزل D13 · 500 حصان · ADR',axles:5,maint:.13},{deliveryDays:90,residual5y:44,legacyIds:['N-T5','N-T26'],description:'نقل الوقود إلى المحطات بترخيص مواد خطرة.'}),
+    truck('T-TGX-CHEM','MAN','TGX 26.510 + صهريج كيميائي ISO','صهاريج',250000,'truck-tanker',{market:'chemical',rangeKm:1500,speedKmh:75,capacity:24,diesel:34,drivetrain:'ديزل D2676 · 510 حصانًا · ADR',axles:5,maint:.14},{deliveryDays:90,residual5y:44,legacyIds:['N-T12'],description:'مواد كيميائية بخزان مخصص: أعلى أجرة صهاريج وأشد اشتراطات.'}),
+    truck('T-DAF-CONT','DAF','XG 480 + هيكل حاويات','حاويات',175000,'truck-container',{market:'container',rangeKm:1700,speedKmh:80,capacity:26,diesel:31,drivetrain:'ديزل PACCAR MX-13 · 480 حصانًا',axles:5,maint:.12},{deliveryDays:60,residual5y:44,legacyIds:['N-T6','N-T27'],description:'نقل الحاويات بين الموانئ والمستودعات: حاوية 40 قدمًا أو حاويتان 20 قدمًا.'}),
+    truck('T-LOHR','Lohr','ناقلة سيارات على Actros','نقل مركبات',260000,'truck-container',{market:'vehicles',rangeKm:1600,speedKmh:75,capacity:8,unit:'سيارات',diesel:32,drivetrain:'ديزل 450 حصانًا',axles:5,maint:.13},{deliveryDays:90,residual5y:42,legacyIds:['N-T14'],description:'ثماني سيارات من الموانئ إلى الوكلاء. الأجرة لكل سيارة.'})
   ];
 
-  const used = (item,id,condition,discount,year,image=item.photo) => ({...item,id,condition,priceOriginal:item.price,price:Math.round(item.price*discount),photo:image,
-    leaseMonthly:Math.round(item.leaseMonthly*.72),delivery:'جاهز خلال 2–6 أسابيع',warranty:'فحص معتمد 12 شهر',
-    residual5y:Math.max(24,item.residual5y-22),rating:Math.max(3.4,item.rating-.5),description:`مستعمل موديل ${year} مع سجل صيانة وفحص هيكلي موثق.`});
+  const byId = list => id => list.find(x=>x.id===id);
+  const used = (item,id,model,year,condition,price,overrides={},legacyIds=[]) => ({...item,id,model,name:`${item.manufacturer} ${model}`,year,condition,price,priceOriginal:item.price,
+    leaseMonthly:Math.round(price*(item.icon==='🚛'?.022:.012)),deliveryDays:30,delivery:'جاهز خلال شهر',warranty:'فحص معتمد 12 شهرًا',
+    residual5y:Math.max(20,item.residual5y-18),description:overrides.description||`مستعمل من ${year}، بسجل صيانة وفحص موثقين.`,legacyIds,
+    specs:{...item.specs,...(overrides.specs||{})}});
+  const A=byId(airNew),S=byId(seaNew),T=byId(roadNew);
 
   window.GH_ASSET_CATALOG = {
+    version:358,
     air:{new:airNew,used:[
-      used(airNew.find(x=>x.id==='N-A1'),'U-A1',82,.55,2021,photo('air-narrow')),
-      used(airNew.find(x=>x.id==='N-A3'),'U-A2',76,.56,2020,photo('air-cargo')),
-      used(airNew.find(x=>x.id==='N-A5'),'U-A3',88,.68,2023,photo('air-regional')),
-      used(airNew.find(x=>x.id==='N-A10'),'U-A4',79,.58,2019,photo('air-widebody')),
-      used(airNew.find(x=>x.id==='N-A21'),'U-A5',91,.76,2024,photo('air-narrow')),
-      used(airNew.find(x=>x.id==='N-A24'),'U-A6',84,.67,2022,photo('air-cargo'))
+      used(A('A-A320N'),'UA-A320C','A320ceo',2014,78,24000000,{specs:{fuelBurnKgPerKm:2.9,crewPlan:{pilots:10,cabin:16,aeng:4},maintenancePerBlockHour:1650,co2Band:'C'},description:'الجيل السابق من A320 (2014): نصف السعر وحرق أعلى بنحو 15%.'},['U-A1']),
+      used(A('A-B38M'),'UA-B738','737-800',2015,80,26000000,{specs:{fuelBurnKgPerKm:2.9,maintenancePerBlockHour:1600,co2Band:'C'},description:'737-800 من 2015: أرخص طريقة لبدء شبكة قصيرة المدى.'},['U-A5']),
+      used(A('A-B779'),'UA-B77W','777-300ER',2013,76,45000000,{specs:{cabin:cabin(8,42,24,280),capacity:354,bellyCargoT:28,fuelBurnKgPerKm:8.6,mtowTon:351.5,rangeKm:13650,crewPlan:{pilots:18,cabin:50,aeng:7},maintenancePerBlockHour:3900,co2Band:'C'},description:'777-300ER من 2013 بأربع درجات: سعة كبيرة بسعر منخفض وحرق أعلى.'},['U-A4']),
+      used(A('A-B779'),'UA-A388','A380-800',2012,74,35000000,{specs:{cabin:cabin(14,76,0,399),capacity:489,bellyCargoT:15,fuelBurnKgPerKm:13.2,mtowTon:575,rangeKm:14800,runwayM:2900,lengthM:72.7,engines:'4 × Trent 900',crewPlan:{pilots:24,cabin:80,aeng:10},maintenancePerBlockHour:6500,co2Band:'D'},description:'A380 من 2012: أكبر طائرة ركاب، 489 مقعدًا بأربع محركات وحرق مرتفع. للمطارات المحورية المزدحمة فقط.'}),
+      used(A('A-B77F'),'UA-B744F','747-400F',2008,72,28000000,{specs:{capacity:113,fuelBurnKgPerKm:11.8,mtowTon:396.9,rangeKm:8230,engines:'4 × CF6-80C2',crewPlan:{pilots:16,cabin:0,aeng:8},maintenancePerBlockHour:5200,co2Band:'D'},description:'747-400F من 2008 بباب أمامي للشحنات الطويلة: حمولة كبيرة بحرق مرتفع.'},['U-A2']),
+      used(A('A-B763F'),'UA-B738BCF','737-800BCF',2005,74,18000000,{specs:{capacity:23,fuelBurnKgPerKm:3.0,mtowTon:79,rangeKm:3750,runwayM:2300,crewPlan:{pilots:10,cabin:0,aeng:4},maintenancePerBlockHour:1700},description:'737-800 محوّلة للشحن: طرود سريعة إقليمية بسعر منخفض.'},['U-A6']),
+      used(A('A-ATR72'),'UA-ATR72','72-600',2017,84,14000000,{},['U-A3'])
     ]},
     sea:{new:seaNew,used:[
-      used(seaNew.find(x=>x.id==='N-S1'),'U-S1',74,.44,2014,photo('ship-container')),
-      used(seaNew.find(x=>x.id==='N-S3'),'U-S2',81,.59,2018,photo('ship-tanker')),
-      used(seaNew.find(x=>x.id==='N-S5'),'U-S3',77,.52,2016,photo('ship-bulk')),
-      used(seaNew.find(x=>x.id==='N-S6'),'U-S4',86,.66,2021,photo('ship-roro')),
-      used(seaNew.find(x=>x.id==='N-S22'),'U-S5',90,.74,2023,photo('ship-container')),
-      used(seaNew.find(x=>x.id==='N-S26'),'U-S6',83,.64,2020,photo('ship-tanker'))
+      used(S('S-WB3500'),'US-PMX4250','باناماكس 4,250 حاوية',2008,72,18000000,{specs:{capacity:4250,fuelTonPerDay:48,co2Band:'D'},description:'باناماكس من 2008: سعة جيدة بسعر منخفض، وحرق أعلى من السفن الحديثة.'},['U-S1','U-S5']),
+      used(S('S-SUEZ'),'US-SUEZ','سويزماكس 158,000 طن',2015,80,55000000,{},['U-S2']),
+      used(S('S-UMAX'),'US-SPX','سوبرامكس 58,000 طن',2012,74,18000000,{specs:{capacity:58000,fuelTonPerDay:28,co2Band:'C'}},['U-S3']),
+      used(S('S-PCTC'),'US-PCTC','ناقلة سيارات 6,500',2011,76,45000000,{specs:{capacity:6500,fuelTonPerDay:52,engine:'ديزل',co2Band:'C'}},['U-S4']),
+      used(S('S-MR'),'US-MR','ناقلة منتجات MR',2016,82,34000000,{},['U-S6']),
+      used(S('S-VLCC'),'US-VLCC','ناقلة عملاقة VLCC',2010,72,62000000,{specs:{fuelTonPerDay:78,co2Band:'C'}})
     ]},
     road:{new:roadNew,used:[
-      used(roadNew.find(x=>x.id==='N-T1'),'U-T1',68,.55,2020,photo('truck-longhaul-v2')),
-      used(roadNew.find(x=>x.id==='N-T2'),'U-T2',79,.63,2022,photo('truck-reefer')),
-      used(roadNew.find(x=>x.id==='N-T6'),'U-T3',84,.69,2023,photo('truck-container')),
-      used(roadNew.find(x=>x.id==='N-T5'),'U-T4',73,.58,2019,photo('truck-tanker')),
-      used(roadNew.find(x=>x.id==='N-T22'),'U-T5',92,.78,2024,photo('truck-electric')),
-      used(roadNew.find(x=>x.id==='N-T24'),'U-T6',87,.71,2023,photo('truck-reefer'))
+      used(T('T-ACTROS'),'UT-ACTROS','Actros 1845 + مقطورة ستارية',2019,70,75000,{},['U-T1']),
+      used(T('T-SCANIA-R'),'UT-SCANIA-R','R 450 + مقطورة مبردة',2020,76,95000,{},['U-T2','U-T6']),
+      used(T('T-DAF-CONT'),'UT-DAF-CONT','XF 480 + هيكل حاويات',2021,80,85000,{},['U-T3']),
+      used(T('T-FH-TANK'),'UT-FH-TANK','FH 460 + صهريج وقود',2018,70,90000,{},['U-T4']),
+      used(T('T-EACTROS'),'UT-EACTROS','eActros 300',2024,90,240000,{specs:{rangeKm:330,energyKWhPer100km:105}},['U-T5'])
     ]}
   };
 })();

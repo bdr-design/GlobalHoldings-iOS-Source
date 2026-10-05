@@ -40,7 +40,7 @@
     return `${(seconds/86400).toFixed(seconds<259200?1:0)} يوم`;
   }
   function loadLabel(asset){
-    const specs=asset.specs||{},util=asset.type==='air'?.82:asset.type==='sea'?.78:.86,used=Math.round((specs.capacity||0)*util);
+    const specs=asset.specs||{},used=Math.round((specs.capacity||0)*marketOf(asset).load);
     return `${fmtNumber(used)} / ${fmtNumber(specs.capacity||0)} ${specs.capacityUnit||''}`;
   }
   function normalizeAsset(asset,route,catalogSpecs){
@@ -64,21 +64,79 @@
   // (GH_MARKET_CORE hedge-fuel). The factor scales the reference-priced fuel cost of a trip.
   const FUEL_OF_MODE=Object.freeze({air:'jet',sea:'bunker',road:'diesel'}),FUEL_MARKET=Object.freeze({jet:['jetFuel',.86],bunker:['bunker',640],diesel:['diesel',.98]});
   function fuelPriceFactor(economy,mode,hedge){const [field,reference]=FUEL_MARKET[FUEL_OF_MODE[mode]||'diesel'],market=number(economy?.[field],reference),share=Math.max(0,Math.min(.8,number(hedge?.share)));return (share>0?share*number(hedge.price,market)+(1-share)*market:market)/reference;}
-  function computeTripEconomics(asset,route,ctx){
-    const distanceKm=route.distanceKm,hours=(asset.tripSeconds||route.tripSeconds)/3600,specs=asset.specs||{};let revenue=0,fuelCost=0;
-    if(asset.type==='air'){
-      const yieldRate=specs.cargo?.32:.11;
-      revenue=(specs.capacity||0)*.82*distanceKm*yieldRate*(specs.yieldMultiplier||1);
-      fuelCost=(specs.fuelBurnKgPerKm||0)*distanceKm*.86;
-    }else if(asset.type==='sea'){
-      const distanceNm=distanceKm/1.852,seaYield=specs.capacityUnit==='TEU'?.031:specs.capacityUnit==='راكب'?.34:.018;
-      revenue=(specs.capacity||0)*.78*distanceNm*seaYield*(specs.yieldMultiplier||1);
-      fuelCost=(specs.fuelTonPerDay||0)*(hours/24)*640;
+  // Build 358: what a trip earns and costs follows the real asset, at 2025-26 market levels. Each market has its own
+  // tariff; a one-way trade (bulk, crude, products, cars, fuel and chemical tankers) sails or drives back empty, so its
+  // load is averaged over both legs. Fuel is at the reference price (fuelPriceFactor scales it to the market).
+  //   air-pax      economy fare 45$ + 0.075$/km to 3,000 km, 0.055$/km beyond; premium ×1.7, business ×3.8, first ×6.5;
+  //                belly cargo 0.28$ per tonne-km; airport and navigation charges from MTOW and distance.
+  //   air-freight  0.30$ per tonne-km on long haul, up to 0.55$ on short haul.
+  //   air-charter  the hourly charter rate for 75% of the hours (positioning legs fly empty).
+  //   sea          container 260$ + 0.11$/nm per TEU; dry bulk 4$ + 0.0016$/nm per tonne; crude 3$ + 0.0018$/nm, products
+  //                ×1.35; cars 130$ + 0.08$/nm each; ferry 25$ + 0.12$/nm per passenger with vehicles; cruise 230$ per
+  //                guest-night; LNG, LPG, offshore and heavy-lift on a day rate with the charterer paying fuel; tugs on
+  //                a day rate at 65% use. Port dues from the hull length.
+  //   road         per tonne-km: general 0.075$, container 0.085$, fuel 0.095$, reefer 0.10$, chemical 0.12$, heavy
+  //                0.16$, urban distribution 0.25$; cars 0.12$ each per km; parcel vans 1.30$ per km driven. Reefer
+  //                units burn 2.5 l/h; electricity 0.14$/kWh; hydrogen 12$/kg.
+  const MARKETS=Object.freeze({
+    'air-pax':{load:.82},'air-freight':{load:.75},'air-charter':{load:.75},
+    container:{load:.82},'dry-bulk':{load:.95*.5},crude:{load:.97*.5},product:{load:.95*.6},'car-carrier':{load:.85*.6},ropax:{load:.70},cruise:{load:.95},
+    lng:{load:1,charter:true},lpg:{load:1,charter:true},offshore:{load:1,charter:true},'heavy-lift':{load:1,charter:true},tug:{load:.65},
+    parcel:{load:1},urban:{load:.70},general:{load:.82},reefer:{load:.80},fuel:{load:.5},chemical:{load:.5},container_road:{load:.75},heavy:{load:.6},vehicles:{load:.7}
+  });
+  const CABIN=Object.freeze({economy:[1,.84],premium:[1.7,.78],business:[3.8,.70],first:[6.5,.55]});
+  const ROAD_RATE=Object.freeze({general:.075,container:.085,fuel:.095,reefer:.10,chemical:.12,heavy:.16,urban:.25});
+  // A spec without a market (a fixture or an asset from before the real catalogue) reads as the plain market of its mode.
+  function marketId(asset){
+    const specs=asset?.specs||{},mode=assetMode(asset);if(specs.market)return specs.market;
+    if(mode==='air')return specs.cargo?'air-freight':'air-pax';
+    if(mode==='sea')return specs.capacityUnit==='TEU'?'container':specs.capacityUnit==='راكب'?'cruise':'dry-bulk';
+    return 'general';
+  }
+  function marketOf(asset){const id=marketId(asset),key=assetMode(asset)==='road'&&id==='container'?'container_road':id;return {id,...(MARKETS[key]||MARKETS.general)};}
+  function economyFare(km){return 45+.075*Math.min(km,3000)+.055*Math.max(0,km-3000);}
+  function baseTripEconomics(asset,distanceKm,hours){
+    const specs=asset?.specs||{},mode=assetMode(asset),market=marketOf(asset),km=Math.max(0,number(distanceKm)),h=Math.max(0,number(hours)),capacity=Math.max(0,number(specs.capacity));
+    let revenue=0,fuelCost=0,maintenance=0,fees=0;
+    if(mode==='air'){
+      if(market.id==='air-charter')revenue=number(specs.charterPerHour)*h*.75;
+      else if(market.id==='air-freight')revenue=capacity*market.load*km*(.30+.25*Math.max(0,(3000-km)/3000));
+      else{
+        const cabin=specs.cabin||{economy:capacity},fare=economyFare(km);
+        for(const [cls,[factor,load]] of Object.entries(CABIN))revenue+=Math.max(0,number(cabin[cls]))*load*fare*factor;
+        revenue+=Math.max(0,number(specs.bellyCargoT))*.60*km*.28;
+      }
+      fuelCost=number(specs.fuelBurnKgPerKm)*km*.86;
+      maintenance=number(specs.maintenancePerBlockHour)*h;
+      const mtow=Math.max(0,number(specs.mtowTon));fees=mtow*10+(km/100)*Math.sqrt(mtow/50)*60;
+    }else if(mode==='sea'){
+      const nm=km/1.852,load=market.load;
+      if(market.charter)revenue=number(specs.dayRate)*h/24;
+      else if(market.id==='tug')revenue=number(specs.dayRate)*h/24*load;
+      else if(market.id==='container')revenue=capacity*load*(260+.11*nm);
+      else if(market.id==='dry-bulk')revenue=capacity*load*(4+.0016*nm);
+      else if(market.id==='crude')revenue=capacity*load*(3+.0018*nm);
+      else if(market.id==='product')revenue=capacity*load*(3+.0018*nm)*1.35;
+      else if(market.id==='car-carrier')revenue=capacity*load*(130+.08*nm);
+      else if(market.id==='ropax')revenue=capacity*load*(25+.12*nm)*1.6;
+      else if(market.id==='cruise')revenue=capacity*load*(h/24)*230;
+      fuelCost=market.charter?0:number(specs.fuelTonPerDay)*(h/24)*640;
+      maintenance=number(specs.maintenancePerDay)*h/24;
+      fees=Math.max(0,number(specs.lengthM))*150;
     }else{
-      revenue=(specs.capacity||0)*.86*distanceKm*.15*(specs.yieldMultiplier||1);
-      fuelCost=specs.electric?(distanceKm/100)*(specs.energyKWhPer100km||115)*.14:(distanceKm/100)*(specs.fuelLPer100km||0)*.98;
+      const load=market.load;
+      if(market.id==='parcel')revenue=km*1.30;
+      else if(market.id==='vehicles')revenue=capacity*load*km*.12;
+      else revenue=capacity*load*km*(ROAD_RATE[market.id]||ROAD_RATE.general);
+      fuelCost=specs.hydrogen?(km/100)*number(specs.hydrogenKgPer100km)*12:specs.electric?(km/100)*number(specs.energyKWhPer100km)*.14:(km/100)*number(specs.fuelLPer100km)*.98;
+      if(market.id==='reefer')fuelCost+=h*2.5*.98;
+      maintenance=number(specs.maintenancePerKm)*km;
     }
-    const monthlyPayroll=Math.max(0,number(asset.staffing?.monthlyPayroll)),payrollAllocation=monthlyPayroll/(30*24)*hours,maintReserve=revenue*.04,owner=assetOwner(asset);let crewCost=0;
+    return {revenue,fuelCost,maintenance,fees,market:market.id,load:market.load};
+  }
+  function computeTripEconomics(asset,route,ctx){
+    const distanceKm=route.distanceKm,hours=(asset.tripSeconds||route.tripSeconds)/3600,base=baseTripEconomics(asset,distanceKm,hours);let revenue=base.revenue,fuelCost=base.fuelCost,fees=base.fees;
+    const monthlyPayroll=Math.max(0,number(asset.staffing?.monthlyPayroll)),payrollAllocation=monthlyPayroll/(30*24)*hours,maintReserve=base.maintenance,owner=assetOwner(asset);let crewCost=0;
     const company=ctx.companies?.[owner]||{},serviceLevel=clampPercent(company.serviceLevel),automation=clampPercent(company.automation),research=ctx.research||{},sustainability=ctx.sustainability||{};
     const serviceRevenue=1+Math.max(-.05,Math.min(.08,(serviceLevel-85)*.002));
     // Fleet wear (GH_REALISM.fleetWear, from the company's maintenance policy): worn assets burn more and run late.
@@ -96,15 +154,15 @@
     const share=number(shareMap[owner]??shareMap[mode],5),pressure=number(pressureMap[owner]??pressureMap[mode],50),rep=number(reputation[owner]??reputation[mode],70);
     const demand=mode==='air'?number(economy.airDemand,100):mode==='sea'?number(economy.seaDemand,100):number(economy.roadDemand,100);
     const demandFactor=clamp((demand/100)*(1+(rep-70)*.003)*(1+(share-5)*.006)*(1-(pressure-50)*.0015),.65,1.35);
-    revenue*=serviceRevenue*demandFactor*wearRevenue*flown*managed;fuelCost*=fuelEfficiency*sustainabilityFuel*wearFuel*flown;crewCost*=crewEfficiency;let maintenance=maintReserve*maintenanceEfficiency*flown;
+    revenue*=serviceRevenue*demandFactor*wearRevenue*flown*managed;fuelCost*=fuelEfficiency*sustainabilityFuel*wearFuel*flown;fees*=flown;crewCost*=crewEfficiency;let maintenance=maintReserve*maintenanceEfficiency*flown;
     const economyFuel=fuelPriceFactor(economy,mode,ctx.fuelHedges?.[owner]?.[FUEL_OF_MODE[mode]||'diesel']);
     fuelCost*=economyFuel;
     const researchEfficiency=clamp(number(research.efficiency)/100,0,1),researchAutomation=clamp(number(research.automation)/100,0,1),cleanEnergy=clamp(number(research.cleanEnergy)/100,0,1);
     fuelCost*=1-researchEfficiency*.055-cleanEnergy*.018;maintenance*=1-researchEfficiency*.045;crewCost*=1-researchAutomation*.025;
     if(mode==='air'&&number(sustainability.safShare)>0)fuelCost*=1-Math.min(.03,number(sustainability.safShare)/100*.03);
     if(mode==='road'&&number(sustainability.electricRoadShare)>0)fuelCost*=1-Math.min(.08,number(sustainability.electricRoadShare)/100*.08);
-    const margin=revenue-fuelCost-crewCost-maintenance;
-    return {revenue,fuelCost,crewCost,payrollAllocation,fixedMonthlyPayroll:monthlyPayroll,maintReserve:maintenance,margin,cashContribution:revenue-fuelCost-maintenance,hours,distanceKm,modifiers:{serviceRevenue,fuelEfficiency,crewEfficiency,maintenanceEfficiency},market:{demandFactor,share,pressure},capabilityEffects:{efficiencyResearch:researchEfficiency,automationResearch:researchAutomation,cleanEnergyResearch:cleanEnergy}};
+    const margin=revenue-fuelCost-crewCost-maintenance-fees;
+    return {revenue,fuelCost,crewCost,fees,payrollAllocation,fixedMonthlyPayroll:monthlyPayroll,maintReserve:maintenance,margin,cashContribution:revenue-fuelCost-maintenance-fees,hours,distanceKm,modifiers:{serviceRevenue,fuelEfficiency,crewEfficiency,maintenanceEfficiency},market:{demandFactor,share,pressure},capabilityEffects:{efficiencyResearch:researchEfficiency,automationResearch:researchAutomation,cleanEnergyResearch:cleanEnergy}};
   }
   function departDraft(asset,route){
     const owner=assetOwner(asset);
@@ -184,6 +242,6 @@
   }
   const API=Object.freeze({VERSION,MAX_BATCH_ITEMS,WRITE_FIELDS,makeEffects,validateBatch,validateResults,processRow,processBatch(input){validateBatch(input);return input.rows.map(row=>processRow(row,input));},
     // Fleet Core v4 shares the exact trip economics and labels with the slice engine.
-    computeTripEconomics,fuelPriceFactor,FUEL_OF_MODE,loadLabel,normalizeAsset,assetOwner,assetMode,routeMode,routeOwner,fmtMoney,formatDuration});
+    computeTripEconomics,baseTripEconomics,marketOf,fuelPriceFactor,FUEL_OF_MODE,loadLabel,normalizeAsset,assetOwner,assetMode,routeMode,routeOwner,fmtMoney,formatDuration});
   return API;
 });

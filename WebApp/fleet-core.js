@@ -2,14 +2,17 @@
   'use strict';
   const VERSION='3.0.0';
   const ROLE_DEFAULTS=Object.freeze({
-    pilots:{name:'الطيارون',dailyRate:300},
-    cabin:{name:'طاقم الضيافة',dailyRate:375},
-    aeng:{name:'مهندسو الطيران',dailyRate:375},
-    captains:{name:'قباطنة السفن',dailyRate:320},
-    sailors:{name:'بحارة وملاحون',dailyRate:200},
-    seng:{name:'مهندسو السفن',dailyRate:290},
-    drivers:{name:'سائقو الشاحنات',dailyRate:150},
-    mech:{name:'فنيو الصيانة',dailyRate:170}
+    // Build 358: market pay per day (monthly ÷ 30) — a captain and first officer average 18,000$ a month, cabin
+    // crew 3,900$, licensed engineers 6,900$; a master or chief officer 13,500$, ratings 2,250$, marine engineers
+    // 8,400$; a truck driver 3,300$, a fleet mechanic 4,200$.
+    pilots:{name:'الطيارون',dailyRate:600},
+    cabin:{name:'طاقم الضيافة',dailyRate:130},
+    aeng:{name:'مهندسو الطيران',dailyRate:230},
+    captains:{name:'قباطنة السفن',dailyRate:450},
+    sailors:{name:'بحارة وملاحون',dailyRate:75},
+    seng:{name:'مهندسو السفن',dailyRate:280},
+    drivers:{name:'سائقو الشاحنات',dailyRate:110},
+    mech:{name:'فنيو الصيانة',dailyRate:140}
   });
   // Every transport mode shares canonical route geometry across a bounded fleet.
   // Aircraft preserve separation through unique route slots and staggered
@@ -251,16 +254,12 @@
   }
   function crewRole(id){const fixed=ROLE_DEFAULTS[id]||{name:id,dailyRate:0};return {id,name:fixed.name,dailyRate:fixed.dailyRate};}
   function staffingPlan(asset){
-    let counts={};
-    if(assetMode(asset)==='air'){
-      counts={pilots:4,cabin:6,aeng:2};
-    }else if(assetMode(asset)==='sea'){
-      counts={captains:2,sailors:14,seng:4};
-    }else if(assetMode(asset)==='road'){
-      counts={drivers:2,mech:1};
-    }else{
-      throw new Error('asset-staffing-type-unsupported');
-    }
+    // Build 358: the crew is the model's (catalogue crewPlan: crew sets for the aircraft's utilisation, a ship's
+    // complement, a truck's drivers); an asset without one keeps the plain plan of its mode.
+    const mode=assetMode(asset),DEFAULT={air:{pilots:10,cabin:16,aeng:4},sea:{captains:2,sailors:16,seng:4},road:{drivers:2,mech:1}}[mode];
+    if(!DEFAULT)throw new Error('asset-staffing-type-unsupported');
+    const plan=asset?.specs?.crewPlan&&typeof asset.specs.crewPlan==='object'?asset.specs.crewPlan:DEFAULT,counts={};
+    for(const role of Object.keys(DEFAULT))counts[role]=Math.max(0,Math.round(Number(plan[role])||0));
     const roles=Object.entries(counts).filter(([,count])=>count>0).map(([id,count])=>{
       const role=crewRole(id);
       return {...role,count,monthlyPayroll:role.dailyRate*30*count};

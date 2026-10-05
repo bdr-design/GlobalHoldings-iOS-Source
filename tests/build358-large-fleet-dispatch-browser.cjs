@@ -38,7 +38,8 @@ function installVault(){
       const definition=GH_COMPANY_PLATFORM.definitionFor(s(),type);
       if(!s().openedCompanies.includes(type))await a.runAuthorizedDomainCommand('corporate','open-company',{type,companyId:type,capital:Math.max(400000000,definition.founding.minimumCapital),legalName:'QA Large Air',formationContract:'QA-LARGE-AIR'},{silent:true});
       s().godMoney=true;s().infiniteMoney=true;
-      const model=[...GH_ASSET_CATALOG[type].used].sort((x,y)=>(x.leaseMonthly||0)-(y.leaseMonthly||0)||x.price-y.price)[0];let bought=0,order=0;
+      // Build 358: real models; an international network needs a jet's range (an ATR 72 flies 1,400 km).
+      const model=[...GH_ASSET_CATALOG[type].used].filter(x=>!x.specs.cargo&&Number(x.specs.rangeKm)>=6000).sort((x,y)=>(x.leaseMonthly||0)-(y.leaseMonthly||0)||x.price-y.price)[0];let bought=0,order=0;
       for(const site of sites){
         const airport=WORLD.airports.find(r=>r[0]===site),facility={id:`QA-air-${airport[0]}`,name:`QA Airport ${airport[0]}`,kind:'airport-base',company:type,ownerCompanyId:type,owned:true,sourceKey:`air:${airport[0]}`,code:airport[1]||airport[0],icao:airport[0],iata:airport[1],city:airport[3]||airport[4]||'—',country:String(airport[5]||'—'),coords:[airport[6],airport[7]]};
         await a.runAuthorizedDomainCommand('facilities','create',{facility,bucket:'globalBases'},{silent:true});

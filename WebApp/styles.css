@@ -356,3 +356,10 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .market-row strong{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .market-spark{display:block;width:100%;height:24px}
 .market-spark polyline{fill:none;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
+
+/* Build 358: asset card groups and the reference trip. */
+.spec-grid .spec-group{grid-column:1/-1;margin:6px 0 2px;font-size:10.5px;font-weight:600;color:var(--accent)}
+.asset-reference-trip{grid-column:1/-1;display:grid;gap:2px;margin-top:8px;padding:9px 11px;border-radius:10px;background:var(--bg-deep);border:1px solid var(--line)}.asset-reference-trip span{font-size:10.5px;color:var(--faint)}.asset-reference-trip b{font-size:15px;font-variant-numeric:tabular-nums}.asset-reference-trip small{font-size:10.5px;color:var(--muted)}
+.asset-market-card .spec-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:5px 0;border-bottom:1px solid var(--line-soft)}
+.asset-market-card .spec-row>span{flex:0 0 auto;font-size:11px;color:var(--muted)}
+.asset-market-card .spec-row>b{min-width:0;font-size:12px;font-weight:600;text-align:left;overflow-wrap:anywhere}

@@ -91,7 +91,7 @@ function test(name,run){run();results.push(name);console.log('PASS',name);}
     assert.equal(Fleet.assetOwnerCompanyId(assetOne),'air-one');assert.equal(Fleet.assetOwnerCompanyId(assetTwo),'air-two');assert.equal(assetOne.staffing.ready,true);assert.equal(assetTwo.staffing.ready,true);
     const contracts=state.advanced.labor.employmentContracts.filter(row=>row.automaticAssetStaffing);assert.equal(contracts.length,2);
     assert.equal(contracts.find(row=>row.assetId===assetOne.id).ownerCompanyId,'air-one');assert.equal(contracts.find(row=>row.assetId===assetTwo.id).ownerCompanyId,'air-two');
-    assert.equal(Fleet.headcount(state,'air-one'),12);assert.equal(Fleet.headcount(state,'air-two'),12);assert.equal(Fleet.monthlyPayroll(state,'air-one'),Fleet.monthlyPayroll(state,'air-two'));
+    assert.equal(Fleet.headcount(state,'air-one'),Fleet.staffingPlan(assetOne).total);assert.equal(Fleet.headcount(state,'air-two'),Fleet.staffingPlan(assetTwo).total);assert.equal(Fleet.monthlyPayroll(state,'air-one'),Fleet.monthlyPayroll(state,'air-two'));
   });
 
   const routeOne=Route.execute({state},'create',{route:{id:'R-AIR-ONE',ownerCompanyId:'air-one',routeMode:'air',fromFacility:'air-one-OERK',toFacility:'air-one-OEDF',from:'Riyadh',to:'Dammam',route:[[24.9576,46.6988],[26.4712,49.7979]]}}),

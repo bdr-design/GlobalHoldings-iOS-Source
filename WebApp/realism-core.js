@@ -508,7 +508,7 @@
     const research=state.research||{},eff=clamp((Number(research.efficiency)||0)/100,0,1),auto=clamp((Number(research.automation)||0)/100,0,1),clean=clamp((Number(research.cleanEnergy)||0)/100,0,1),su=state.sustainability||{};
     eco.fuelCost*=1-eff*.055-clean*.018;eco.maintReserve*=1-eff*.045;eco.crewCost*=1-auto*.025;
     if(mode==='air'&&(Number(su.safShare)||0)>0)eco.fuelCost*=1-Math.min(.03,(Number(su.safShare)||0)/100*.03);if(mode==='road'&&(Number(su.electricRoadShare)||0)>0)eco.fuelCost*=1-Math.min(.08,(Number(su.electricRoadShare)||0)/100*.08);
-    eco.margin=eco.revenue-eco.fuelCost-eco.crewCost-eco.maintReserve;eco.cashContribution=eco.revenue-eco.fuelCost-eco.maintReserve;eco.market={demandFactor,share,pressure};eco.capabilityEffects={efficiencyResearch:eff,automationResearch:auto,cleanEnergyResearch:clean};return eco;
+    eco.margin=eco.revenue-eco.fuelCost-eco.crewCost-eco.maintReserve-(Number(eco.fees)||0);eco.cashContribution=eco.revenue-eco.fuelCost-eco.maintReserve-(Number(eco.fees)||0);eco.market={demandFactor,share,pressure};eco.capabilityEffects={efficiencyResearch:eff,automationResearch:auto,cleanEnergyResearch:clean};return eco;
   }
   function metric(label,value,cls=''){return `<div><span>${esc(label)}</span><b class="${cls}">${esc(value)}</b></div>`;}
   function section(title,copy,body){return `<article class="list-item realism-section"><div class="list-item-head"><div><h3>${esc(title)}</h3><p>${esc(copy)}</p></div><span class="tag">2.0</span></div>${body}</article>`;}

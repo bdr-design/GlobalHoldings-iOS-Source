@@ -686,9 +686,9 @@
     const crewEfficiency=1-Math.min(.10,(research.automation||0)/100*.05+company.automation/100*.035);
     const maintenanceEfficiency=1-Math.min(.08,company.automation/100*.04+(research.efficiency||0)/100*.025),su=state.sustainability||{},sustainabilityFuel=mode==='air'?1-Math.min(.06,(su.safShare||0)*.0004):mode==='sea'?1-Math.min(.05,(su.shorePower||0)*.00025):1-Math.min(.08,(su.electricRoadShare||0)*.00045);
     const wear=Math.max(0,Math.min(.45,Number(globalThis.GH_REALISM?.fleetWear?.(state,owner))||0)),flown=1-Math.max(0,Math.min(.5,Number(globalThis.GH_REALISM?.crewShortage?.(state,owner))||0)),skillRead=globalThis.GH_HR_CORE?.managerSkill?.(state,owner),skill=Math.max(0,Math.min(100,Number(skillRead)||0)),managed=skillRead===undefined?1:skill>0?1+(skill-80)*.002:.97;
-    eco.revenue*=serviceRevenue*(1-wear*.15)*flown*managed;eco.fuelCost*=fuelEfficiency*sustainabilityFuel*(1+wear*.2)*flown;eco.crewCost*=crewEfficiency;eco.maintReserve*=maintenanceEfficiency*flown;
-    eco.margin=eco.revenue-eco.fuelCost-eco.crewCost-eco.maintReserve;
-    eco.cashContribution=eco.revenue-eco.fuelCost-eco.maintReserve;
+    eco.revenue*=serviceRevenue*(1-wear*.15)*flown*managed;eco.fuelCost*=fuelEfficiency*sustainabilityFuel*(1+wear*.2)*flown;eco.crewCost*=crewEfficiency;eco.maintReserve*=maintenanceEfficiency*flown;eco.fees=(Number(eco.fees)||0)*flown;
+    eco.margin=eco.revenue-eco.fuelCost-eco.crewCost-eco.maintReserve-(Number(eco.fees)||0);
+    eco.cashContribution=eco.revenue-eco.fuelCost-eco.maintReserve-(Number(eco.fees)||0);
     eco.modifiers={serviceRevenue,fuelEfficiency,crewEfficiency,maintenanceEfficiency};
     return eco;
   }

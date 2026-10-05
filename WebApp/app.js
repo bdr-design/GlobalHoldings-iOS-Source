@@ -73,12 +73,6 @@
     return {assetMode,ownerCompanyId,assetClass,operationProfileId};
   }
 
-  // ---- اقتصاد حقيقي: أسعار ومعدلات مرجعية تُستخدم فعليًا في حساب كل رحلة ----
-  const FUEL_PRICE = { jetA1: 0.86, bunker: 640, diesel: 0.98 }; // $/kg وقود طائرات، $/طن وقود سفن، $/لتر ديزل
-  const YIELD_RATE = { paxKm: 0.11, cargoTonKm: 0.32, teuNm: 0.031, seaTonNm:0.018, cruiseGuestNm:.34, roadTonKm: 0.15 }; // إيراد لكل وحدة-مسافة
-  const UTIL = { air: 0.82, sea: 0.78, road: 0.86 }; // معدل إشغال افتراضي عند التشغيل الطبيعي
-  const MAINT_RESERVE_RATE = 0.04; // نسبة من إيراد كل رحلة تُحجز احتياطي صيانة
-
   function haversine(a, b) {
     const rad = Math.PI / 180;
     const lat1 = a[0] * rad, lat2 = b[0] * rad;
@@ -1283,40 +1277,18 @@
   }
   function typeName(type){const definition=companyDefinition(type);return definition?.identity?.trade?.ar||definition?.identity?.trade?.en||({air:'طيران',sea:'شحن بحري',road:'نقل بري',power:'طاقة',bank:'خدمات مالية',mobility:'تنقل ذكي حسب الطلب'})[type]||'قطاع متنوع';}
 
-  // ---- محرك اقتصاد الرحلة: كل رقم مالي مشتق فعليًا من مواصفات الأصل والمسار والطاقم ----
+  // ---- اقتصاد الرحلة: الإيراد والتكاليف من الأصل الحقيقي وسوقه (GH_SIMULATION_ASSET_CORE.baseTripEconomics) ----
   function computeTripEconomics(asset, tpl){
-    const distanceKm = tpl.distanceKm;
-    const hours = (asset.tripSeconds||tpl.tripSeconds)/3600;
-    const specs = asset.specs || {};
-    let revenue=0, fuelCost=0;
-    if(asset.type==='air'){
-      const yieldRate = specs.cargo ? YIELD_RATE.cargoTonKm : YIELD_RATE.paxKm;
-      revenue = (specs.capacity||0) * UTIL.air * distanceKm * yieldRate * (specs.yieldMultiplier||1);
-      fuelCost = (specs.fuelBurnKgPerKm||0) * distanceKm * FUEL_PRICE.jetA1;
-    } else if(asset.type==='sea'){
-      const distanceNm = distanceKm/1.852;
-      const seaYield=specs.capacityUnit==='TEU'?YIELD_RATE.teuNm:specs.capacityUnit==='راكب'?YIELD_RATE.cruiseGuestNm:YIELD_RATE.seaTonNm;
-      revenue = (specs.capacity||0) * UTIL.sea * distanceNm * seaYield * (specs.yieldMultiplier||1);
-      fuelCost = (specs.fuelTonPerDay||0) * (hours/24) * FUEL_PRICE.bunker;
-    } else {
-      revenue = (specs.capacity||0) * UTIL.road * distanceKm * YIELD_RATE.roadTonKm * (specs.yieldMultiplier||1);
-      fuelCost = specs.electric ? (distanceKm/100)*(specs.energyKWhPer100km||115)*.14 : (distanceKm/100) * (specs.fuelLPer100km||0) * FUEL_PRICE.diesel;
-    }
+    const hours=(asset.tripSeconds||tpl.tripSeconds)/3600,base=window.GH_SIMULATION_ASSET_CORE.baseTripEconomics(asset,tpl.distanceKm,hours);
     const monthlyPayroll=Math.max(0,Number(asset.staffing?.monthlyPayroll)||0);
     // الراتب ثابت ويُثبت مرة واحدة في مسير يوم 27؛ لا يصبح تكلفة متغيرة لكل رحلة.
-    const crewCost = 0, payrollAllocation=monthlyPayroll/(30*24)*hours;
-    const maintReserve = revenue * MAINT_RESERVE_RATE;
-    const margin = revenue - fuelCost - crewCost - maintReserve;
-    const economics={revenue, fuelCost, crewCost, payrollAllocation,fixedMonthlyPayroll:monthlyPayroll,maintReserve, margin, cashContribution:revenue-fuelCost-maintReserve, hours,distanceKm};
+    const crewCost=0,payrollAllocation=monthlyPayroll/(30*24)*hours,maintReserve=base.maintenance,fees=base.fees;
+    const economics={revenue:base.revenue,fuelCost:base.fuelCost,crewCost,fees,payrollAllocation,fixedMonthlyPayroll:monthlyPayroll,maintReserve,margin:base.revenue-base.fuelCost-crewCost-maintReserve-fees,cashContribution:base.revenue-base.fuelCost-maintReserve-fees,hours,distanceKm:tpl.distanceKm};
     let adjusted=window.GH_ADVANCED?window.GH_ADVANCED.adjustTripEconomics(state,asset,economics):economics;
     if(window.GH_REALISM)adjusted=window.GH_REALISM.tripModifier(state,asset,adjusted);
     return adjusted;
   }
-  function loadLabel(asset){
-    const specs=asset.specs||{}; const util = asset.type==='air'?UTIL.air:asset.type==='sea'?UTIL.sea:UTIL.road;
-    const used = Math.round((specs.capacity||0)*util);
-    return `${fmtNumber(used)} / ${fmtNumber(specs.capacity||0)} ${specs.capacityUnit||''}`;
-  }
+  function loadLabel(asset){return window.GH_SIMULATION_ASSET_CORE.loadLabel(asset);}
 
   function routeFacility(id){return getDynamicFacilities().find(f=>f.id===id);}
   async function requestRoadGeometry(fromCoords,toCoords){
@@ -3585,15 +3557,42 @@
   }
 
   // ---- شراء الأصول: جديد/مستعمل بمواصفات فعلية (أسلوب صور المرجع) ----
+  // Build 358: the card shows what the model is, in two groups. «يؤثر في التشغيل» are the figures the trip engine reads
+  // (GH_SIMULATION_ASSET_CORE.baseTripEconomics) and the crew plan; «مواصفات» are the model's facts. A reference trip
+  // shows what those figures earn and cost.
+  const MARKET_LABEL=Object.freeze({'air-pax':'ركاب بالدرجات','air-freight':'شحن جوي','air-charter':'تأجير بالساعة',container:'حاويات',
+    'dry-bulk':'بضائع سائبة','crude':'نفط خام',product:'منتجات نفطية',lng:'غاز مسال · أجرة يومية',lpg:'غاز بترولي · أجرة يومية','car-carrier':'نقل سيارات',
+    ropax:'ركاب ومركبات',cruise:'رحلات سياحية','tug':'قطر في الموانئ',offshore:'إمداد بحري · أجرة يومية','heavy-lift':'رفع ثقيل · أجرة يومية',
+    parcel:'توصيل طرود',urban:'توزيع حضري',general:'بضائع عامة',reefer:'نقل مبرد',fuel:'نقل وقود',chemical:'نقل كيميائيات',heavy:'نقل ثقيل',vehicles:'نقل مركبات'});
+  const specLine=(label,value)=>`<div class="spec-row"><span>${esc(label)}</span><b>${value}</b></div>`;
+  function crewText(plan={}){const names={pilots:'طيار',cabin:'ضيافة',aeng:'مهندس',captains:'قبطان وضابط',sailors:'بحار',seng:'مهندس بحري',drivers:'سائق',mech:'فني'};return Object.entries(plan).filter(([,n])=>n>0).map(([role,n])=>`${fmtNumber(n)} ${names[role]||role}`).join(' · ')||'—';}
+  function referenceTrip(item){
+    const s=item.specs,mode=item.icon==='✈️'?'air':item.icon==='🚢'?'sea':'road';
+    const km=mode==='air'?Math.min(Number(s.rangeKm)*.6,5000):mode==='sea'?Math.min(Number(s.rangeNm)*1.852*.5,9000):Math.min(Number(s.rangeKm)*.8,800);
+    const speed=mode==='sea'?Number(s.speedKn)*1.852*.88:Number(s.speedKmh)*(mode==='air'?.9:.76),hours=km/Math.max(1,speed);
+    const eco=window.GH_SIMULATION_ASSET_CORE.baseTripEconomics({assetMode:mode,type:mode,specs:s},km,hours);
+    return {km,hours,eco};
+  }
   function specRow(item){
-    const s=item.specs;
+    const s=item.specs,market=MARKET_LABEL[s.market]||'—',trip=referenceTrip(item),e=trip.eco;
+    let effect,facts;
     if(item.icon==='✈️'){
-      return `<div class="spec-row"><span>المدى</span><b>${fmtNumber(s.rangeKm)} كم</b></div><div class="spec-row"><span>السرعة</span><b>${fmtNumber(s.speedKmh)} كم/س</b></div><div class="spec-row"><span>السعة</span><b>${fmtNumber(s.capacity)} ${s.capacityUnit}</b></div><div class="spec-row"><span>المدرج المطلوب</span><b>${fmtNumber(s.runwayM)} م</b></div><div class="spec-row"><span>MTOW</span><b>${fmtNumber(s.mtowTon)} طن</b></div><div class="spec-row"><span>استهلاك الوقود</span><b>${s.fuelBurnKgPerKm} كغم/كم</b></div><div class="spec-row"><span>صيانة/ساعة</span><b>${fmtMoney(s.maintenancePerFlightHour)}</b></div><div class="spec-row"><span>الاعتمادية</span><b>${s.reliability}%</b></div>`;
+      const c=s.cabin||{},classes=[['أولى',c.first],['أعمال',c.business],['مميزة',c.premium],['اقتصادية',c.economy]].filter(([,n])=>n>0).map(([n,v])=>`${n} ${fmtNumber(v)}`).join(' · ');
+      effect=specLine('السوق',market)+(s.market==='air-pax'?specLine('المقصورة',classes):s.market==='air-freight'?specLine('الحمولة',`${fmtNumber(s.capacity)} طن`):specLine('أجرة الساعة',fmtMoney(s.charterPerHour))+specLine('الضيوف',fmtNumber(s.capacity)))
+        +(s.bellyCargoT?specLine('شحن الجوف',`${fmtNumber(s.bellyCargoT)} طن`):'')+specLine('المدى',`${fmtNumber(s.rangeKm)} كم`)+specLine('الوقود',`${s.fuelBurnKgPerKm} كغم/كم`)
+        +specLine('الصيانة',`${fmtMoney(s.maintenancePerBlockHour)} لكل ساعة طيران`)+specLine('الوزن الأقصى للإقلاع',`${fmtNumber(s.mtowTon)} طن · يحدد رسوم الهبوط`)+specLine('الطاقم',crewText(s.crewPlan));
+      facts=specLine('السرعة',`${fmtNumber(s.speedKmh)} كم/س`)+specLine('المحركات',esc(s.engines||'—'))+specLine('الطول',`${s.lengthM} م`)+specLine('المدرج',`${fmtNumber(s.runwayM)} م`);
+    }else if(item.icon==='🚢'){
+      effect=specLine('السوق',market)+specLine('السعة',`${fmtNumber(s.capacity)} ${esc(s.capacityUnit)}`)+(s.dayRate?specLine('الأجرة اليومية',fmtMoney(s.dayRate)):'')
+        +specLine('الوقود',s.dayRate&&s.market!=='tug'?'على المستأجر':`${s.fuelTonPerDay} طن/يوم`)+specLine('الصيانة والتشغيل',`${fmtMoney(s.maintenancePerDay)} يوميًا`)+specLine('السرعة',`${s.speedKn} عقدة`)+specLine('الطاقم',crewText(s.crewPlan));
+      facts=specLine('المدى',`${fmtNumber(s.rangeNm)} ميل بحري`)+specLine('الغاطس',`${s.draftM} م`)+specLine('الأبعاد',`${s.lengthM}×${s.beamM} م`)+specLine('المحرك',esc(s.engine||'—'));
+    }else{
+      const energy=s.hydrogen?`${s.hydrogenKgPer100km} كغم هيدروجين/100 كم`:s.electric?`${s.energyKWhPer100km} ك.و.س/100 كم`:`${s.fuelLPer100km} لتر ديزل/100 كم`;
+      effect=specLine('السوق',market)+specLine('الحمولة',`${fmtNumber(s.capacity)} ${esc(s.capacityUnit)}`)+specLine('الطاقة',energy)+specLine('الصيانة',`${s.maintenancePerKm}$ لكل كم`)+specLine('المدى',`${fmtNumber(s.rangeKm)} كم`)+specLine('الطاقم',crewText(s.crewPlan));
+      facts=specLine('السرعة',`${fmtNumber(s.speedKmh)} كم/س`)+specLine('نظام الدفع',esc(s.drivetrain||'—'))+specLine('المحاور',fmtNumber(s.axles));
     }
-    if(item.icon==='🚢'){
-      return `<div class="spec-row"><span>المدى</span><b>${fmtNumber(s.rangeNm)} ميل بحري</b></div><div class="spec-row"><span>السرعة القصوى</span><b>${s.speedKn} عقدة</b></div><div class="spec-row"><span>السعة</span><b>${fmtNumber(s.capacity)} ${s.capacityUnit}</b></div><div class="spec-row"><span>الغاطس</span><b>${s.draftM} م</b></div><div class="spec-row"><span>الأبعاد</span><b>${s.lengthM}×${s.beamM} م</b></div><div class="spec-row"><span>استهلاك الوقود</span><b>${s.fuelTonPerDay} طن/يوم</b></div><div class="spec-row"><span>الطاقم</span><b>${fmtNumber(s.crew)}</b></div><div class="spec-row"><span>الاعتمادية</span><b>${s.reliability}%</b></div>`;
-    }
-    return `<div class="spec-row"><span>المدى</span><b>${fmtNumber(s.rangeKm)} كم</b></div><div class="spec-row"><span>السرعة</span><b>${fmtNumber(s.speedKmh)} كم/س</b></div><div class="spec-row"><span>السعة</span><b>${fmtNumber(s.capacity)} ${s.capacityUnit}</b></div><div class="spec-row"><span>نظام الدفع</span><b>${s.drivetrain}</b></div><div class="spec-row"><span>${s.electric?'استهلاك الطاقة':'استهلاك الوقود'}</span><b>${s.electric?`${s.energyKWhPer100km} kWh/100كم`:`${s.fuelLPer100km} لتر/100كم`}</b></div><div class="spec-row"><span>المحاور</span><b>${s.axles}</b></div><div class="spec-row"><span>صيانة/كم</span><b>$${s.maintenancePerKm}</b></div><div class="spec-row"><span>السلامة</span><b>${s.safety}/100</b></div>`;
+    const tripLine=`<div class="asset-reference-trip"><span>رحلة مرجعية ${fmtNumber(Math.round(trip.km))} كم · ${trip.hours.toFixed(1)} ساعة</span><b class="positive">${fmtMoney(e.revenue)}</b><small>وقود ${fmtMoney(e.fuelCost)} · صيانة ${fmtMoney(e.maintenance)} · رسوم ${fmtMoney(e.fees)}</small></div>`;
+    return `<h4 class="spec-group">يؤثر في التشغيل</h4>${effect}<h4 class="spec-group">مواصفات</h4>${facts}${tripLine}`;
   }
   let marketFilterType='air', marketFilterTab='new',marketSegment='all',marketQuery='',marketCompare=[],ownedFilterType='all',ownedFilterStatus='all',ownedQuery='',ownedVirtualModel=null,ownedVirtualScrollFrame=0,routeFilterType='all',routeQuery='',routeAssignQuery='';
   function companyAssetClassForMode(target,companyId,assetMode,requestedAssetClass=''){
@@ -3673,8 +3672,8 @@
     const filterBar=`<div class="asset-filters"><input id="assetSearch" value="${esc(marketQuery)}" placeholder="بحث في الطراز أو الفئة"><select id="assetSegment"><option value="all">كل الفئات</option>${segments.map(s=>`<option value="${esc(s)}" ${marketSegment===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>`;
     const q=normalizeSearch(marketQuery);const items=source.filter(a=>(marketSegment==='all'||a.segment===marketSegment)&&(!q||normalizeSearch(`${a.name} ${a.segment} ${a.description}`).includes(q)));
     const bases=compatibleBases(activeType),hasDeliveryBase=bases.length>0;
-    const list = items.map(a=>`<article class="list-item sector-${activeType} asset-market-card"><div class="asset-thumb"><img src="${a.photo}" alt="${esc(a.name)}" loading="lazy"><span class="thumb-tag">${activeTab==='new'?'جديد':`مستعمل ${a.condition}%`}</span></div><div class="list-item-head"><div><h3>${a.icon} ${esc(a.name)}</h3><p>${esc(a.segment)} · ${esc(a.description)}</p></div><span class="tag">★ ${a.rating}</span></div><div class="spec-grid">${specRow(a)}</div>
-      <div class="ownership-grid"><div><span>التسليم</span><b>${a.delivery}</b></div><div><span>الضمان</span><b>${a.warranty}</b></div><div><span>قيمة بعد 5 سنوات</span><b>${a.residual5y}%</b></div><div><span>الانبعاثات</span><b>${a.specs.co2Band}</b></div></div>
+    const list = items.map(a=>`<article class="list-item sector-${activeType} asset-market-card"><div class="asset-thumb"><img src="${a.photo}" alt="${esc(a.name)}" loading="lazy"><span class="thumb-tag">${activeTab==='new'?'جديد':`مستعمل ${a.condition}%`}</span></div><div class="list-item-head"><div><h3>${a.icon} ${esc(a.name)}</h3><p>${esc(a.segment)} · ${esc(a.description)}</p></div><span class="tag">${esc(a.manufacturer||'')}</span></div><div class="spec-grid">${specRow(a)}</div>
+      <div class="ownership-grid"><div><span>التسليم</span><b>${a.delivery}</b></div><div><span>الضمان</span><b>${a.warranty}</b></div><div><span>قيمة بعد 5 سنوات</span><b>${a.residual5y}% · تحدد سعر البيع</b></div><div><span>الانبعاثات</span><b>${a.specs.co2Band}</b></div></div>
       <div class="asset-price">${a.priceOriginal?`<s>${fmtMoney(a.priceOriginal)}</s> `:''}<b>${fmtMoney(a.price)}</b><small>تأجير ${fmtMoney(a.leaseMonthly)}/شهر · دفعة تمويل ${Math.round(a.downPayment*100)}%</small></div>
       <div class="asset-request-routing"><div><span>شراء يدوي مباشر</span><b>أنت تختار الأصل والعدد والقاعدة وطريقة التملك</b><small>${hasDeliveryBase?'تحدد القاعدة الشركة المالكة صراحةً، ثم يبقى كامل التوزيع داخل منشآت الشركة نفسها وفي معاملة واحدة.':'افتح منشأة تسليم متوافقة أولًا؛ لن يسمح النظام بشراء أصل بلا وجهة وصول صحيحة.'}</small></div>${hasDeliveryBase?`<div class="route-builder manual-asset-purchase"><label>الشركة وقاعدة التسليم الأولى<select class="manual-asset-base">${bases.map(f=>`<option value="${esc(f.id)}" data-company="${esc(facilityOwnerCompanyId(f))}">${esc(companyFinanceName(facilityOwnerCompanyId(f)))} · ${esc(f.name)} · ${esc(f.city)} · متاح ${fmtNumber(facilityFreeAssetCapacity(f))}/${fmtNumber(window.GH_FACILITY_CORE.assetCapacity(f))}</option>`).join('')}</select></label><label>العدد<input class="manual-asset-qty" type="number" min="1" max="${window.GH_PROCUREMENT_CORE?.MAX_ASSET_PURCHASE_QUANTITY||3000}" value="1"></label><label>التملك<select class="manual-asset-mode"><option value="cash">شراء نقدي</option><option value="finance">تمويل</option><option value="lease">تأجير تشغيلي</option></select></label></div>`:''}<div class="action-row"><button class="primary-btn manual-buy-asset" data-type="${activeType}" data-tab="${activeTab}" data-id="${a.id}" ${hasDeliveryBase?'':'disabled'}>شراء وتسليم الآن</button><button class="secondary-btn compare-asset ${marketCompare.includes(a.id)?'active':''}" data-id="${a.id}">${marketCompare.includes(a.id)?'إزالة من المقارنة':'قارن'}</button></div></div></article>`).join('');
     const fleetCompanies=operationalCompanyInstances(state).filter(company=>activeType==='mobility'?company.definition?.capabilities?.includes('operations.mobility'):(company.definition?.classification?.routeModes||[]).includes(activeType));
@@ -4438,7 +4437,7 @@
     if(!Number.isFinite(totalPrice)||totalPrice<=0||!Number.isFinite(upfront)||upfront<0){if(!silent)notice('تعذر تنفيذ الشراء بسبب بيانات سعر غير صالحة.');return null;}
     let allocations;try{allocations=allocateAssetPurchase(type,qty,base.id,ownerCompanyId,assetClass);}catch(error){if(!silent)notice(String(error.message||error));return null;}
     const fundingGap=ownerCompanyId==='group'||canCompanySpend(ownerCompanyId,upfront,'capex')?0:Math.max(0,upfront-companyOperatingBalance(ownerCompanyId));
-    const realism=window.GH_REALISM?.migrate(state),leadBase=Number(realism?.procurement?.leadTimes?.[type])||(type==='air'?120:type==='sea'?210:21),documentLeadDays=tab==='used'?Math.max(5,Math.round(leadBase*.12)):mode==='lease'?Math.max(7,Math.round(leadBase*.18)):leadBase;
+    const realism=window.GH_REALISM?.migrate(state),leadBase=Number(item.deliveryDays)||Number(realism?.procurement?.leadTimes?.[type])||(type==='air'?120:type==='sea'?210:21),documentLeadDays=tab==='used'?Math.max(5,Math.round(leadBase*.12)):mode==='lease'?Math.max(7,Math.round(leadBase*.18)):leadBase;
     try{return await runAuthorizedCompositeCommand('asset-purchase',({state:draft,dispatch,recordAlert})=>{
       const batch=window.GH_TRANSACTION_CORE.execute(draft,{label:'asset-purchase-composite',discardableDraft:true,apply:()=>window.GH_PROCUREMENT_CORE.withPurchaseBatch(draft,()=>{
       if(fundingGap>0){
@@ -4544,7 +4543,15 @@
     if(asset.departureScheduled){notice(`${asset.name} مجدول بالفعل ضمن دفعة الأسطول.`);return false;}
     const ok=await departRouteAssets(asset.routeId,assetOwnerCompanyId(asset),id);if(ok)openDrawer('assetManage',id);return ok;
   }
-  function saleEstimate(a){const item=catalogItem(a.type,a.catalogId),basis=Number(a.purchasePrice)||Number(item?.price)||1000000;return a.ownership==='lease'?-(Number(a.monthlyLease)||0)*2:basis*.72*(Number(a.condition||100)/100);}
+  // Build 358: resale follows the model's value curve (residual5y: share of the price kept after five years, at a
+  // constant yearly rate) for the years since it was bought (a used asset was bought at its used price), then its
+  // condition: a worn asset loses up to 30% more.
+  function saleEstimate(a){
+    if(a.ownership==='lease')return -(Number(a.monthlyLease)||0)*2;
+    const item=catalogItem(a.type,a.catalogId),basis=Number(a.purchasePrice)||Number(item?.price)||1000000,residual=Math.max(.15,Math.min(.95,(Number(item?.residual5y)||60)/100));
+    const built=Number(a.year)||2026,ageYears=Math.max(0,2026+(Number(state.simSeconds)||0)/(365*86400)-built),value=(Number(a.purchasePrice)?basis*Math.pow(residual,Math.max(0,ageYears-Math.max(0,2026-built))/5):basis*Math.pow(residual,ageYears/5));
+    return value*(.7+.3*Math.max(0,Math.min(100,Number(a.condition??100)))/100);
+  }
   async function disposeAsset(id,{automatic=false,bulk=false}={}){
     const a=window.GH_FLEET_DATA.get(state,id);if(!a)return false;if(a.salePending&&!automatic)return true;
     const proceeds=Math.max(0,saleEstimate(a)),fee=a.ownership==='lease'?Math.max(0,(Number(a.monthlyLease)||0)*2):0;
