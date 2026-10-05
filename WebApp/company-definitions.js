@@ -15,8 +15,11 @@
     legacyLegalNames,marks:{default:logo,symbol:logo,horizontal:logo,seal:logo,mono:logo},
     palette:{accent,secondary,route,onAccent:'#ffffff'},hero
   });
+  // Build 358: how the group's name brands each subsidiary (GH_COMPANY_PLATFORM.brandedIdentity): «العساف» + «للطيران».
+  const BRAND=Object.freeze({air:{ar:'للطيران',en:'Aviation',short:'AIR'},sea:{ar:'للشحن البحري',en:'Marine',short:'MARINE'},road:{ar:'للنقل',en:'Logistics',short:'LOGISTICS'},
+    power:{ar:'للطاقة',en:'Energy',short:'ENERGY'},bank:{prefix:'بنك',legalAr:'المصرفية',en:'Bank',short:'BANK'},mobility:{ar:'للتنقل الذكي',en:'Mobility',short:'MOBILITY'}});
   const subsidiary=(data)=>({
-    ...data,schema:FORMAT,definitionVersion:1,kind:'subsidiary',lifecycle:'active',
+    ...data,identity:{...data.identity,brand:BRAND[data.id]||null},schema:FORMAT,definitionVersion:1,kind:'subsidiary',lifecycle:'active',
     instancePolicy:{mode:'multi',stateScope:'company',...(data.instancePolicy||{})},
     capabilities:[...COMMON_CAPABILITIES,...data.capabilities],
     founding:{legalForm:'شركة تابعة مملوكة للمجموعة',checklistIds:[...COMMON_CHECKLIST],...data.founding},

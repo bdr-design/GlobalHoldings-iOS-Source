@@ -7,13 +7,14 @@ require(path.join(web,'company-platform-core.js'));
 delete require.cache[require.resolve(path.join(web,'identity-system.js'))];
 const identity=require(path.join(web,'identity-system.js'));
 assert.equal(identity.VERSION,'GH-IDENTITY-334.2.0');
+// Build 358: a player-named group brands its subsidiaries; a former stock or legacy name follows the group.
 const expected={
- air:['GH AIR','شركة جلوبال هولدينغز للطيران'],
- sea:['GH MARINE','شركة جلوبال هولدينغز للشحن البحري'],
- road:['GH LOGISTICS','شركة جلوبال هولدينغز للخدمات اللوجستية'],
- power:['GH ENERGY','شركة جلوبال هولدينغز للطاقة'],
- bank:['GH BANK','شركة جلوبال هولدينغز المصرفية'],
- mobility:['GH MOBILITY','شركة جلوبال هولدينغز للتنقل الذكي']
+ air:['PGRP AIR','شركة اللاعب الخاصة للطيران'],
+ sea:['PGRP MARINE','شركة اللاعب الخاصة للشحن البحري'],
+ road:['PGRP LOGISTICS','شركة اللاعب الخاصة للنقل'],
+ power:['PGRP ENERGY','شركة اللاعب الخاصة للطاقة'],
+ bank:['PGRP BANK','شركة اللاعب الخاصة المصرفية'],
+ mobility:['PGRP MOBILITY','شركة اللاعب الخاصة للتنقل الذكي']
 };
 const legacy={air:'الشركة العالمية للطيران',sea:'الشركة العالمية للشحن البحري',road:'اللوجستيات العالمية',power:'شركة الطاقة العالمية',bank:'بنك المجموعة',mobility:'GH Mobility للتنقل الذكي'};
 const customLogo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -27,7 +28,7 @@ for(const [type,[short,legal]] of Object.entries(expected)){
 assert.equal(identity.legalName(state,'group'),'مجموعة اللاعب الخاصة');
 assert.equal(identity.shortName(state,'group'),'PGRP');
 assert.equal(identity.logo(state,'group'),customLogo);
-state.companyRegistry.air={legalName:'شركة سماوات اللاعب',shortName:'SKY-X',logo:customLogo};
+state.companyRegistry.air={legalName:'شركة سماوات اللاعب',shortName:'SKY-X',logo:customLogo,customName:true};
 assert.equal(identity.legalName(state,'air'),'شركة سماوات اللاعب','custom company name must win');
 assert.equal(identity.shortName(state,'air'),'SKY-X','custom company short name must win');
 assert.equal(identity.logo(state,'air'),customLogo,'custom company logo must win');

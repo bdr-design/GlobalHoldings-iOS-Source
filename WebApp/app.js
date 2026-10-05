@@ -1275,7 +1275,7 @@
     const key=facilityKindKey(kind),svg=(FACILITY_SVG[key]||FACILITY_SVG.hq).replace('<svg ','<svg width="12" height="12" aria-hidden="true" focusable="false" fill="currentColor" ');
     return `<span class="${esc(className)}" aria-hidden="true" style="display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;background:rgba(13,59,87,.09);color:#0d3b57;vertical-align:middle">${svg}</span>`;
   }
-  function typeName(type){const definition=companyDefinition(type);return definition?.identity?.trade?.ar||definition?.identity?.trade?.en||({air:'طيران',sea:'شحن بحري',road:'نقل بري',power:'طاقة',bank:'خدمات مالية',mobility:'تنقل ذكي حسب الطلب'})[type]||'قطاع متنوع';}
+  function typeName(type){const definition=companyDefinition(type);return COMPANY_PLATFORM.resolveIdentity?.(state,type)?.tradeName||definition?.identity?.trade?.ar||definition?.identity?.trade?.en||({air:'طيران',sea:'شحن بحري',road:'نقل بري',power:'طاقة',bank:'خدمات مالية',mobility:'تنقل ذكي حسب الطلب'})[type]||'قطاع متنوع';}
 
   // ---- اقتصاد الرحلة: الإيراد والتكاليف من الأصل الحقيقي وسوقه (GH_SIMULATION_ASSET_CORE.baseTripEconomics) ----
   function computeTripEconomics(asset, tpl){
@@ -4341,12 +4341,12 @@
     return shortfall>0?`ينقص الحساب الجاري للقابضة ${fmtMoney(shortfall)}. وفّر السيولة من «المال» ثم وقّع العقد.`:null;
   }
   async function openCompany(type){
-    type=String(type||'').trim();const definition=COMPANY_PLATFORM.getDefinition(type),companyName=definition?.identity?.legalDefault?.ar||definition?.identity?.legalDefault?.en||type,cost=Number(definition?.founding?.defaultCapital)||0;
+    type=String(type||'').trim();const definition=COMPANY_PLATFORM.getDefinition(type),branded=COMPANY_PLATFORM.brandedIdentity?.(state,type)||null,companyName=branded?.legalName||definition?.identity?.legalDefault?.ar||definition?.identity?.legalDefault?.en||type,cost=Number(definition?.founding?.defaultCapital)||0;
     if(state.openedCompanies.includes(type)){openDrawer('formationContract',type);return false;}
     const blocked=openingBlocker(type);if(blocked){notice(blocked,'warning');return false;}
     const authority=founderAuthorization(state);if(!authority.signature||!authority.mandate){openSignatureDialog({required:true});notice('اعتمد توقيعك المرئي قبل توقيع عقد الفتح.');return false;}
     const place=window.GH_GAME_LIFECYCLE.locationFor(state.profile),location={id:place.id,city:place.city,country:place.country};
-    let plan;try{plan=window.GH_FORMATION_ENGINE.prepare({entityKind:'company',companyId:type,legalName:companyName,displayName:definition.identity?.trade?.ar||companyName,shortName:definition.identity?.short||type.toUpperCase(),englishName:definition.identity?.legalDefault?.en||'',founder:state.profile?.founder,location,capital:cost,currency:state.profile?.currency||'USD',signatureRef:authority.signature.id,signatureVersion:authority.signature.version,createdAt:Number(state.simSeconds)||0});window.GH_FORMATION_ENGINE.validatePlan(plan);}catch(error){notice(`تعذر تجهيز عقد الفتح: ${error.message}`);return false;}
+    let plan;try{plan=window.GH_FORMATION_ENGINE.prepare({entityKind:'company',companyId:type,legalName:companyName,displayName:branded?.tradeName||definition.identity?.trade?.ar||companyName,shortName:branded?.shortName||definition.identity?.short||type.toUpperCase(),englishName:branded?.englishName||definition.identity?.legalDefault?.en||'',founder:state.profile?.founder,location,capital:cost,currency:state.profile?.currency||'USD',signatureRef:authority.signature.id,signatureVersion:authority.signature.version,createdAt:Number(state.simSeconds)||0});window.GH_FORMATION_ENGINE.validatePlan(plan);}catch(error){notice(`تعذر تجهيز عقد الفتح: ${error.message}`);return false;}
     const result=await runDurableStateCommand(`open-company:${type}`,({state:draft})=>{
       const draftAuthority=founderAuthorization(draft),stamp=plan.planHash.slice(0,10).toUpperCase(),short=(draft.profile.shortName||'GH').toUpperCase(),payload={companyId:type,definitionId:plan.definitionId,capital:plan.capital.amount,legalName:plan.identity.legalName,shortName:plan.identity.shortName,owner:draft.profile.name,authorizedSignatory:draft.profile.founder,taxId:`${short}-${type.toUpperCase()}-${stamp}`,commercialRegistration:`CR-${simDate().getUTCFullYear()}-${stamp}`,businessLicense:`LIC-${type.toUpperCase()}-${stamp}`,formationContract:`INC-${type.toUpperCase()}-${stamp}`,invoices:[{id:`INV-${type.toUpperCase()}-${stamp}`,status:'تأسيس',amount:plan.capital.amount,issuedAt:draft.simSeconds,note:'قيد رأس المال المدفوع عند التأسيس'}]};
       if(!draftAuthority.signature||draftAuthority.signature.id!==plan.signature.signatureRef||draftAuthority.signature.version!==plan.signature.version)throw new Error('formation-signature-version-conflict');
@@ -4710,7 +4710,7 @@
   function companyCharterDoc(type){
     const definition=COMPANY_PLATFORM.getDefinition(type);if(!definition||definition.kind!=='subsidiary')return null;
     const opened=state.openedCompanies.includes(type),record=opened?state.companyRegistry?.[type]||{}:{},place=window.GH_GAME_LIFECYCLE.locationFor(state.profile),groupName=state.profile?.name||'المجموعة',founder=state.profile?.founder||'المؤسس';
-    const legalName=record.legalName||definition.identity?.legalDefault?.ar||type,shortName=record.shortName||definition.identity?.short||type.toUpperCase(),sector=CHARTER_ACTIVITY[definition.classification?.primarySectorId]||typeName(type);
+    const identity=COMPANY_PLATFORM.resolveIdentity(state,type),branded=COMPANY_PLATFORM.brandedIdentity?.(state,type),legalName=identity?.legalName||definition.identity?.legalDefault?.ar||type,shortName=identity?.shortName||definition.identity?.short||type.toUpperCase(),sector=CHARTER_ACTIVITY[definition.classification?.primarySectorId]||typeName(type);
     const capital=opened?Number(record.paidInCapital)||0:Number(definition.founding?.defaultCapital)||0,groupAccount=window.GH_FINANCE_CORE.book(state,'group').accounts[0]?.id||'—';
     const sourceAccount=opened?record.formationPlan?.sourceAccountId||groupAccount:groupAccount,holding=holdingOperatingCash();
     let signatureHtml;
@@ -4718,7 +4718,7 @@
     else{const authority=founderAuthorization(state),snapshot=authority.signature?signatureSnapshot(state,authority.signature.id):null;signatureHtml=snapshot?`<span class="formation-signature-visual is-preview">${window.GH_SIGNATURE_PAD.svgMarkup(snapshot.strokes,{width:snapshot.width,height:snapshot.height,ink:snapshot.ink})}<small>يُختم بالإصدار ${Number(snapshot.version)||1} من توقيعك</small></span>`:charterPendingSignature('اعتمد توقيعك المرئي أولًا');}
     const facts=[['النشاط',sector],['المقر',`${place.city} · ${place.country}`],['الشكل القانوني',definition.founding?.legalForm||'شركة تابعة مملوكة للمجموعة'],['المفوض بالتوقيع',founder]];
     if(!opened)facts.push(['رصيد حساب القابضة الآن',Number.isFinite(holding)?fmtMoney(holding):'غير محدود',holding>=capital?'is-good':'is-short']);
-    return {kind:'company',company:type,status:opened?'signed':'draft',title:'عقد فتح شركة تابعة',legalName,englishName:definition.identity?.legalDefault?.en||'',shortName,sealMark:String(definition.founding?.documentPrefix||type).toUpperCase(),
+    return {kind:'company',company:type,status:opened?'signed':'draft',title:'عقد فتح شركة تابعة',legalName,englishName:branded?.englishName||definition.identity?.legalDefault?.en||'',shortName,sealMark:String(definition.founding?.documentPrefix||type).toUpperCase(),
       logoHtml:window.GH_IDENTITY?.logoMarkup?.(state,type,'normal','charter-logo')||charterLogo(null,shortName),capital,currency:record.currency||'USD',
       flow:{from:groupName,fromAccount:sourceAccount,to:shortName,toAccount:opened?record.bankAccount||'—':'حساب جديد'},facts,
       articles:window.GH_GAME_LIFECYCLE.openingArticles({groupName,legalName,sector,capitalText:fmtMoney(capital),sourceAccount}),founder,

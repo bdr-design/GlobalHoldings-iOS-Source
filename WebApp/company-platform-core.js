@@ -188,9 +188,38 @@
   function getOperationProfile(stateOrCompanyId,maybeCompanyId){const withState=object(stateOrCompanyId),definition=withState?definitionFor(stateOrCompanyId,maybeCompanyId):getDefinition(stateOrCompanyId);return definition?.classification.operationProfileId||null;}
   function getAssetClasses(stateOrCompanyId,maybeCompanyId){const withState=object(stateOrCompanyId),definition=withState?definitionFor(stateOrCompanyId,maybeCompanyId):getDefinition(stateOrCompanyId);return definition?[...definition.classification.assetClasses]:[];}
   function getRouteModes(stateOrCompanyId,maybeCompanyId){const withState=object(stateOrCompanyId),definition=withState?definitionFor(stateOrCompanyId,maybeCompanyId):getDefinition(stateOrCompanyId);return definition?[...definition.classification.routeModes]:[];}
+  // Build 358: the group's name brands every subsidiary. «العساف القابضة» opens «شركة العساف للطيران» (trade name
+  // «العساف للطيران», short «ASF AIR»). The root drops a leading «شركة»/«مجموعة» and trailing «القابضة»/«المحدودة»; the
+  // English root drops Holding/Group/Company. A subsidiary follows the group, also after a group rename, until it is
+  // renamed itself (record.customName). A save from before this keeps a name the player typed: only the stock names of
+  // the definition count as following the group.
+  const AR_LEAD=/^(?:شركة|مجموعة)\s+/u,AR_TRAIL=/\s+(?:القابضة|القابضه|المحدودة|للاستثمار)$/u,EN_TRAIL=/[\s,]+(?:holdings?|group|company|co\.?|ltd\.?|llc|inc\.?|plc)$/i;
+  // The stock group keeps the stock subsidiary names (شركة جلوبال هولدينغز للطيران).
+  const STOCK_GROUP_NAME='المجموعة العالمية القابضة';
+  function trimRoot(value,lead,trail){let text=String(value||'').replace(/\s+/g,' ').trim(),prev;if(lead){const cut=text.replace(lead,'');if(cut.trim())text=cut.trim();}do{prev=text;const cut=text.replace(trail,'');if(cut.trim())text=cut.trim();}while(text!==prev);return text;}
+  function groupBrand(state){const profile=object(state?.profile)?state.profile:{},ar=trimRoot(profile.name,AR_LEAD,AR_TRAIL),en=trimRoot(profile.englishName,null,EN_TRAIL),short=String(profile.shortName||'').trim().toUpperCase();return ar&&String(profile.name||'').trim()!==STOCK_GROUP_NAME?{ar,en,short:short||'GH'}:null;}
+  function brandedIdentity(state,companyId){
+    const definition=definitionFor(state,companyId)||getDefinition(companyId),brand=definition?.identity?.brand,root=definition?.kind==='subsidiary'&&object(brand)?groupBrand(state):null;if(!root)return null;
+    const trade=brand.prefix?`${brand.prefix} ${root.ar}`:`${root.ar} ${brand.ar}`,legal=brand.legalAr?`شركة ${root.ar} ${brand.legalAr}`:`شركة ${root.ar} ${brand.ar}`;
+    return {legalName:legal,tradeName:trade,shortName:`${root.short} ${brand.short}`,englishName:`${root.en||root.short} ${brand.en}`};
+  }
+  function stockNames(definition){const identity=definition?.identity||{};return new Set([identity.legalDefault?.ar,identity.legalDefault?.en,identity.trade?.ar,identity.trade?.en,identity.short,...(identity.legacyLegalNames||[])].map(value=>String(value||'').trim()).filter(Boolean));}
+  function followsGroup(state,companyId,record){
+    if(!object(record))return true;if(record.customName===true)return false;if(record.customName===false)return true;
+    const name=String(record.legalName||'').trim();return !name||name===brandedIdentity(state,companyId)?.legalName||stockNames(definitionFor(state,companyId)||getDefinition(companyId)).has(name);
+  }
+  // Writes the branded names into every following subsidiary record (opening, group rename, load).
+  function syncBrandedNames(state){
+    let changed=0;for(const [companyId,record] of Object.entries(object(state?.companyRegistry)?state.companyRegistry:{})){
+      if(companyId==='group'||!object(record))continue;const branded=brandedIdentity(state,companyId);if(!branded)continue;
+      if(!followsGroup(state,companyId,record)){if(record.customName===undefined)record.customName=true;continue;}
+      record.customName=false;if(record.legalName!==branded.legalName||record.shortName!==branded.shortName||record.tradeName!==branded.tradeName){record.legalName=branded.legalName;record.tradeName=branded.tradeName;record.shortName=branded.shortName;changed++;}
+    }
+    return changed;
+  }
   function resolveIdentity(state,companyId){
     const company=resolveCompany(state,companyId);if(!company)return null;
-    const defaults=company.definition?.identity||{},saved=company.record||{},profile=companyId==='group'&&object(state?.profile)?state.profile:{},legalName=String(profile.name||saved.legalName||saved.name||defaults.legalDefault?.ar||defaults.legalDefault?.en||'').trim(),tradeName=String(saved.tradeName||profile.tradeName||defaults.trade?.ar||defaults.trade?.en||legalName).trim(),shortName=String(profile.shortName||saved.shortName||defaults.short||tradeName||legalName).trim(),logo=String(profile.logo||saved.logo||defaults.marks?.default||'').trim();
+    const branded=companyId==='group'?null:brandedIdentity(state,companyId),following=branded&&followsGroup(state,companyId,company.record),defaults=following?{legalDefault:{ar:branded.legalName},trade:{ar:branded.tradeName},short:branded.shortName,marks:company.definition?.identity?.marks}:company.definition?.identity||{},saved=following?{...(company.record||{}),legalName:'',name:'',tradeName:'',shortName:''}:company.record||{},profile=companyId==='group'&&object(state?.profile)?state.profile:{},legalName=String(profile.name||saved.legalName||saved.name||defaults.legalDefault?.ar||defaults.legalDefault?.en||'').trim(),tradeName=String(saved.tradeName||profile.tradeName||defaults.trade?.ar||defaults.trade?.en||legalName).trim(),shortName=String(profile.shortName||saved.shortName||defaults.short||tradeName||legalName).trim(),logo=String(profile.logo||saved.logo||defaults.marks?.default||'').trim();
     return {companyId,definitionId:company.definition?.definitionId||saved.definitionId||null,definitionVersion:Number(saved.definitionVersion||company.definition?.definitionVersion)||null,legalName,tradeName,shortName,logo,custom:{legalName:Boolean(profile.name||saved.legalName||saved.name),tradeName:Boolean(saved.tradeName||profile.tradeName),shortName:Boolean(profile.shortName||saved.shortName),logo:Boolean(profile.logo||saved.logo)},orphan:company.orphan};
   }
   function resolveDocumentProfile(state,companyId){
@@ -262,6 +291,7 @@
       state.companyRegistry[companyId]=enrichRecord(state,companyId,state.companyRegistry[companyId]);
       const definition=definitionFor(state,companyId);if(definition)for(const sectorId of definition.classification.sectorIds)if(!state.unlockedSectors.includes(sectorId)&&state.openedCompanies.includes(companyId))state.unlockedSectors.push(sectorId);
     }
+    syncBrandedNames(state);
     {const fleet=fleetData();fleet.forEach(state,asset=>{const patch=assetMigrationPatch(asset);if(patch)fleet.update(state,asset,patch);});}
     for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[])for(const asset of Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[])migrateAsset(asset);
     for(const route of Array.isArray(state.customRoutes)?state.customRoutes:[])migrateRoute(route);
@@ -326,7 +356,7 @@
   function snapshot(){return Object.freeze({version:VERSION,stateSchema:STATE_SCHEMA,stateSchemaVersion:STATE_SCHEMA_VERSION,sealed,definitions:definitionsById.size,companyIds:Object.freeze(companyIds()),origins:Object.freeze(Object.fromEntries(origins))});}
 
   installDefinitions(source.list(),{source:'builtin'});
-  const API=Object.freeze({VERSION,STATE_SCHEMA,STATE_SCHEMA_VERSION,MINIMUM_DYNAMIC_COMPANY_BUILD,installDefinition,installDefinitions,listDefinitions,getDefinition,normalizeSectorId,getInstancePolicy,companyIds,listByCapability,isKnownCompany,isKnownSector,isKnownRouteMode,isKnownAssetClass,definitionFor,resolveCompany,requireCompany,listInstances,hasCapability,getSectorIds,getOperationProfile,getAssetClasses,getRouteModes,resolveIdentity,resolveDocumentProfile,ownerForLegacyAssetMode,ownerForLegacyRouteMode,assetClassForLegacyMode,operationProfileForLegacyMode,adapterFor,instanceMetadata,planInstance,migrateState,validateState,validateDefinition,validateRegistry,seal,isSealed,snapshot});
+  const API=Object.freeze({VERSION,STATE_SCHEMA,STATE_SCHEMA_VERSION,MINIMUM_DYNAMIC_COMPANY_BUILD,installDefinition,installDefinitions,listDefinitions,getDefinition,normalizeSectorId,getInstancePolicy,companyIds,listByCapability,isKnownCompany,isKnownSector,isKnownRouteMode,isKnownAssetClass,definitionFor,resolveCompany,requireCompany,listInstances,hasCapability,getSectorIds,getOperationProfile,getAssetClasses,getRouteModes,resolveIdentity,resolveDocumentProfile,brandedIdentity,followsGroup,syncBrandedNames,ownerForLegacyAssetMode,ownerForLegacyRouteMode,assetClassForLegacyMode,operationProfileForLegacyMode,adapterFor,instanceMetadata,planInstance,migrateState,validateState,validateDefinition,validateRegistry,seal,isSealed,snapshot});
   globalThis.GH_COMPANY_PLATFORM=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_COMPANY_PLATFORM=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

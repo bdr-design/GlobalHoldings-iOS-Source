@@ -113,11 +113,15 @@ function brand(type='group',state=null){return legacyBrand(definition(type,state
 function record(state,type){if(type!=='group')return state?.companyRegistry?.[type]||{};const registered=state?.companyRegistry?.group||{},profile=state?.profile||{};return {...registered,...profile,identity:{...(registered.identity||{}),...(profile.identity||{})}};}
 function isLegacyDefault(type,value,state=null){return definition(type,state).legacyNames.includes(String(value||'').trim());}
 function preferredLanguage(options={}){return options.language==='en'?'en':'ar';}
+// Build 358: a subsidiary that follows the group is named from it (GH_COMPANY_PLATFORM.brandedIdentity).
+function brandedName(state,type,field,options){if(!state||type==='group'||preferredLanguage(options)!=='ar'||!PLATFORM.followsGroup)return '';const row=state.companyRegistry?.[type];if(!PLATFORM.followsGroup(state,type,row))return '';return String(PLATFORM.brandedIdentity?.(state,type)?.[field]||'');}
 function legalName(state,type='group',options={}){
+  const branded=brandedName(state,type,'legalName',options);if(branded)return branded;
   const row=record(state,type),saved=String(type==='group'?(row.name||row.legalName||''):(row.legalName||row.name||'')).trim();if(saved&&validPlainText(saved,{maximum:120})&&!isLegacyDefault(type,saved,state))return saved;
   return definition(type,state).labels[preferredLanguage(options)].legal;
 }
 function shortName(state,type='group',options={}){
+  const branded=brandedName(state,type,'shortName',options);if(branded)return branded;
   const saved=String(record(state,type).shortName||'').trim();if(saved&&validPlainText(saved,{maximum:28}))return saved;
   return definition(type,state).labels[preferredLanguage(options)].short;
 }

@@ -57,7 +57,7 @@
     if(definition.kind!=='subsidiary'||definition.lifecycle!=='active')throw new Error('company-definition-not-openable');
     if(capital<Number(definition.founding.minimumCapital||0))throw new Error('company-capital-below-minimum');
     const existing=plan.existing||{};
-    const legalName=checkedText(String(payload.legalName||payload.name||existing.legalName||definition.identity.legalDefault.ar||definition.identity.legalDefault.en),'invalid-company-name',120),shortName=checkedText(String(payload.shortName||existing.shortName||definition.identity.short),'invalid-company-short-name',28),identifiers={};for(const key of ['taxId','commercialRegistration','businessLicense','formationContract'])identifiers[key]=checkedIdentifier(payload[key]??existing[key]??'',`invalid-company-${key}`);
+    const branded=platform().brandedIdentity?.(state,companyId)||null,legalName=checkedText(String(payload.legalName||payload.name||existing.legalName||branded?.legalName||definition.identity.legalDefault.ar||definition.identity.legalDefault.en),'invalid-company-name',120),shortName=checkedText(String(payload.shortName||existing.shortName||branded?.shortName||definition.identity.short),'invalid-company-short-name',28),identifiers={};for(const key of ['taxId','commercialRegistration','businessLicense','formationContract'])identifiers[key]=checkedIdentifier(payload[key]??existing[key]??'',`invalid-company-${key}`);
     if(Object.prototype.hasOwnProperty.call(payload,'logo'))checkedLogo(payload.logo);
     return {companyId,definition,capital,existing,metadata:plan.metadata,legalName,shortName,identifiers};
   }
@@ -100,11 +100,13 @@
       state.openedCompanies.push(companyId);for(const sectorId of plan.definition.classification.sectorIds)if(!state.unlockedSectors.includes(sectorId))state.unlockedSectors.push(sectorId);
       const logo=Object.prototype.hasOwnProperty.call(payload,'logo')?checkedLogo(payload.logo):checkedLogo(existing.logo);
       const record={...existing,...plan.metadata,status:'active',legalName:plan.legalName,shortName:plan.shortName,owner:payload.owner||existing.owner||state.profile?.name||'المجموعة',authorizedSignatory:payload.authorizedSignatory||existing.authorizedSignatory||state.profile?.founder||'المؤسس',logo:logo??null,legalForm:payload.legalForm||existing.legalForm||plan.definition.founding.legalForm,currency:payload.currency||existing.currency||plan.definition.finance.currency||state.profile?.currency||'USD',...plan.identifiers,incorporatedAt:existing.incorporatedAt??now(state),paidInCapital:num(existing.paidInCapital)+plan.capital,budget:existing.budget??plan.capital,financeBookId:companyId,bankAccount:finance.book(state,companyId).accounts[0].id,documentPrefix:existing.documentPrefix||plan.metadata.documentPrefix,accountPrefix:existing.accountPrefix||plan.metadata.accountPrefix,incorporationChecklist:Array.isArray(payload.incorporationChecklist)?payload.incorporationChecklist:(Array.isArray(existing.incorporationChecklist)?existing.incorporationChecklist:[...plan.definition.founding.checklistIds]),invoiceSequence:Math.max(1,Number(existing.invoiceSequence)||1),invoices:Array.isArray(existing.invoices)?existing.invoices:(Array.isArray(payload.invoices)?payload.invoices:[])};
-      state.companyRegistry[companyId]=record;model(state,companyId);return record;
+      state.companyRegistry[companyId]=record;platform().syncBrandedNames?.(state);model(state,companyId);return record;
     }
     if(command==='rename-company'){
       const companyId=companyIdOf(payload),name=checkedText(String(payload.legalName||''),'invalid-company-name',60),record=platform().requireCompany(state,companyId,{registered:true}).record,oldName=record?.legalName;
       record.legalName=name;if(companyId==='group'&&state.profile)state.profile.name=name;
+      // A renamed subsidiary keeps its own name; a renamed group re-brands every subsidiary that follows it.
+      if(companyId!=='group'){record.customName=true;delete record.tradeName;}else{platform().syncBrandedNames?.(state);for(const id of Object.keys(state.companyRegistry||{}))if(id!=='group'&&state.companyRegistry[id]?.customName===false)globalThis.GH_FINANCE_CORE?.execute?.({state},'refresh-identity',{company:id});}
       if(state.bank?.corporateClients?.[companyId])state.bank.corporateClients[companyId].name=name;globalThis.GH_FINANCE_CORE?.execute?.({state},'refresh-identity',{company:companyId});return record;
     }
     if(command==='set-logo'){

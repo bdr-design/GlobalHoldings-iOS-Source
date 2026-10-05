@@ -69,10 +69,20 @@ const {drawFounderSignature}=require('./helpers/signature-input');
     assert.match(await page.locator('#drawerBody .charter-blocker').innerText(),/ينقص الحساب الجاري للقابضة/,'the reason is in the contract');
     assert.equal(await page.evaluate(()=>__GH_STATE__.openedCompanies.includes('sea')),false);
 
+    // The group's name brands its subsidiaries: «مجموعة الأفق القابضة» opens «شركة الأفق للطيران».
+    assert.equal(opened.record.legalName,'شركة الأفق للطيران','the subsidiary carries the group name');
+    assert.equal(await page.evaluate(()=>GH_COMPANY_PLATFORM.resolveIdentity(__GH_STATE__,'sea').tradeName),'الأفق للشحن البحري','an unopened company already reads the group name');
+    const rename=async(type,name)=>{await page.evaluate(type=>qaContext.openDrawer('companyManage',{type,tab:'overview'}),type);await page.evaluate(([type,name])=>{const input=document.querySelector(`#drawerBody .company-name-input[data-company="${type}"]`),save=document.querySelector(`#drawerBody .company-name-save[data-company="${type}"]`);if(!input||!save)throw new Error(`no rename field for ${type}`);input.value=name;save.click();},[type,name]);await page.waitForFunction(([type,name])=>__GH_STATE__.companyRegistry[type]?.legalName===name||(type==='group'&&__GH_STATE__.profile.name===name),[type,name]);};
+    await rename('group','مجموعة السدرة القابضة');
+    await page.waitForFunction(()=>__GH_STATE__.companyRegistry.air.legalName==='شركة السدرة للطيران');
+    await rename('air','طيران النخبة');
+    await rename('group','مجموعة الندى القابضة');
+    assert.equal(await page.evaluate(()=>__GH_STATE__.companyRegistry.air.legalName),'طيران النخبة','a subsidiary renamed by the player keeps its name');
+
     // An old save sheds the retired founding fields.
     const cleaned=await page.evaluate(()=>{const s=__GH_STATE__;Object.assign(s.profile,{riskAppetite:'growth',procurementPolicy:'board',signingAuthority:'board',logoStyle:'gold'});s.companyRegistry.air.riskAppetite='growth';GH_ADVANCED.migrate(s);return ['riskAppetite','procurementPolicy','signingAuthority','logoStyle'].some(key=>key in s.profile)||'riskAppetite' in s.companyRegistry.air;});
     assert.equal(cleaned,false,'migrate() removes the retired fields from an old save');
     assert.deepEqual(errors,[]);
-    console.log('PASS build358-founding-charter-browser: two-step founding, HQ city on the map, opening contract signs from the holding account, no phantom group value');
+    console.log('PASS build358-founding-charter-browser: two-step founding, HQ city on the map, opening contract signs from the holding account, no phantom group value, the group name brands its subsidiaries');
   }finally{await browser.close();await server.close?.();}
 })().catch(error=>{console.error(error);process.exit(1);});
