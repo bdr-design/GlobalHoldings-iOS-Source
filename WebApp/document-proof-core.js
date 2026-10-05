@@ -45,6 +45,14 @@
   // period; each period has one digest over its checkpoints (periodDigests), so any edit of a checkpoint is detected.
   // The current version of every document (what documents, cheques and the documents view verify) stays a whole record.
   const CHECKPOINT_AGE_SECONDS=30*86400,CHECKPOINT_PERIOD_SECONDS=30*86400,CHECKPOINT_BATCH=400,CHECKPOINT_FIELDS=Object.freeze(['id','documentId','documentType','companyId','chainDepth','contentDigest','previousProofId','previousContentDigest','transition','createdAtSim','period']);
+  // Build 358 (save size): the current version of a document kept in the finance audit archive (archived rows are
+  // sealed: never edited again) is stored in a compact archived form: the fields the chain, authorization and residency
+  // checks read, the chain link and issue time of its signed content, and a digest of its signature snapshot. The signed
+  // content (~1.8 KB) and the issuer, counterparty and signature snapshots (~0.9 KB) are not copied again: verification
+  // rebuilds the signed content from the archived document and compares its digest with contentDigest (the digest the
+  // authorization proof signed), so a change to the document or to the record is detected as with a whole record.
+  const ARCHIVED_FORM='archived-document-v1',ARCHIVED_BATCH=200,ARCHIVED_FIELDS=Object.freeze(['id','version','form','documentId','documentType','companyId','materialProfile','contentDigest','previousProofId','previousContentDigest','transition','chainDepth','authorizationKind','authorizationProofId','createdAtSim','issuedAtSim','chain','signatureDigest']),ARCHIVED_KEYS=[...ARCHIVED_FIELDS].sort().join(',');
+  const isArchivedForm=record=>!!record&&typeof record==='object'&&record.form===ARCHIVED_FORM;
   const checkpointPeriod=createdAtSim=>`P${String(Math.max(0,Math.floor((Number(createdAtSim)||0)/CHECKPOINT_PERIOD_SECONDS))).padStart(4,'0')}`;
   function getCheckpoint(state,id){const row=state?.documentProofs?.checkpointsById?.[id];return row&&typeof row==='object'&&!Array.isArray(row)?row:null;}
   function checkpointEntry(row){return CHECKPOINT_FIELDS.map(field=>row[field]??null);}
@@ -100,6 +108,26 @@
     for(const period of touched){const list=grouped.get(period);periods[period]={period,count:list.length,digest:periodDigestOf(list)};}
     store.recordsById=nextHot;store.archiveById=nextCold;store.checkpointsById=rows;store.periodDigests=periods;
     return {checkpointed:made.length,remaining:Math.max(0,candidates.length-made.length)};
+  }
+  // Up to ARCHIVED_BATCH records of documents in the finance audit archive are rewritten in the archived form, each only
+  // when its document verifies whole now. Every rewritten record is verified again in its new form against its
+  // document before the store is published, so a failure changes nothing.
+  function compactArchivedRecords(state,{limit=ARCHIVED_BATCH}={}){
+    const store=ensure(state),cache={records:new Map(),signedContentStable:new Map()},made=[];
+    for(const entry of stateDocumentEntries(state)){
+      if(made.length>=limit)break;if(entry.role!=='canonical-archive')continue;
+      const document=entry.document,record=getRecord(state,document?.documentProofId);
+      if(!record||isArchivedForm(record)||Number(record.version)!==RECORD_VERSION||record.signedContent?.schema!==CONTENT_SCHEMA||archivedDocument(state,record.id)!==document)continue;
+      if(!verifyDocument(state,document,cache).ok)continue;
+      const compact={};for(const field of ARCHIVED_FIELDS)compact[field]=field==='form'?ARCHIVED_FORM:field==='issuedAtSim'?Number(record.signedContent.issuedAtSim)||0:field==='chain'?clone(record.signedContent.chain??null):field==='signatureDigest'?signatureDigestOf(record.signatureSnapshot):(record[field]??null);
+      made.push({compact,hot:store.recordsById[record.id]===record});
+    }
+    if(!made.length)return {compacted:0};
+    const nextHot={...store.recordsById},nextCold={...(store.archiveById||{})};for(const {compact,hot} of made)(hot?nextHot:nextCold)[compact.id]=compact;
+    const trial={...state,documentProofs:{...store,recordsById:nextHot,archiveById:nextCold}};
+    for(const {compact} of made){const check=verifyDocument(trial,archivedDocument(state,compact.id));if(!check.ok)throw new Error(`document-proof-archived-form:${compact.id}:${check.reason}`);}
+    store.recordsById=nextHot;if(store.archiveById||made.some(row=>!row.hot))store.archiveById=nextCold;
+    return {compacted:made.length};
   }
   function archiveForAdmission(state){
     const store=ensure(state),hot=store.recordsById,cold=store.archiveById||{};
@@ -190,6 +218,8 @@
   function transitionId(value){const id=String(value||'').trim();if(id.length>64||!TRANSITION_ID.test(id)||!TRANSITION_SET.has(id))throw new Error('document-transition-unsupported');return id;}
   function amendDocument(state,document,options={}){
     if(!document||typeof document!=='object'||Array.isArray(document))throw new TypeError('document-object-required');if(typeof options.mutate!=='function')throw new TypeError('document-amendment-mutator-required');
+    // An archived document (sealed, its record in the archived form) is never amended.
+    if(globalThis.GH_TRANSACTION_CORE?.isSealed?.(document)||isArchivedForm(getRecord(state,document.documentProofId)))throw new Error('document-proof-archived-read-only');
     // Rollback snapshot of the proof store: an amendment only advances the sequence and adds, removes or archives
     // whole records (records are never edited here), so copying the store and its two record maps is exact. Build 357
     // deep-cloned the whole store (~1.5 MB) on every amendment.
@@ -213,37 +243,101 @@
     if(!globalThis.GH_TRANSACTION_CORE?.isSealed?.(record)){out.record=clone(record);return out;}
     let copy;Object.defineProperty(out,'record',{enumerable:true,configurable:true,get(){if(copy===undefined)copy=clone(record);return copy;},set(value){copy=value;}});return out;
   }
+  // proofId -> the canonical document in the finance audit archive. One position index per bucket array: archiveFull
+  // replaces a bucket with a longer one and a rollback restores an earlier prefix, so a position is re-checked on use and
+  // the index is rebuilt when the bucket's length changed since it was built.
+  const ARCHIVE_BUCKET_INDEX=new WeakMap();
+  function bucketIndex(list){
+    let index=ARCHIVE_BUCKET_INDEX.get(list);
+    if(!index||index.length!==list.length){index={length:list.length,at:new Map()};for(let i=0;i<list.length;i++){const id=list[i]?.documentProofId;if(id&&!index.at.has(id))index.at.set(id,i);}ARCHIVE_BUCKET_INDEX.set(list,index);}
+    return index;
+  }
+  function archivedDocument(state,proofId){
+    for(const [bucket,list] of Object.entries(state?.finance?.auditArchive?.records||{})){
+      if(String(bucket).startsWith('companyLedger-')||!Array.isArray(list))continue;
+      const at=bucketIndex(list).at.get(proofId);if(at!==undefined&&list[at]?.documentProofId===proofId)return list[at];
+    }
+    return null;
+  }
+  function archivedSignedContent(document,record){const issuer={...clone(document.issuerSnapshot),companyId:clean(document.company||document.companyId||'group',100)};return signedContent(document,issuer,counterpartySnapshot(document),{issuedAtSim:record.issuedAtSim,fixedIssuedAt:true,chain:record.chain});}
+  const signatureDigestOf=snapshot=>snapshot&&typeof snapshot==='object'?digest(stable(snapshot)):null;
+  // What the document itself must carry for an archived-form record (the envelope a whole record checks against its copies).
+  function archivedEnvelope(document,record){
+    const currentCompanyId=clean(document.company||document.companyId||'group',100);
+    if(document.documentProofId!==record.id||document.contentDigest!==record.contentDigest)return {ok:false,reason:'document-digest-reference-mismatch'};if(currentCompanyId!==record.companyId)return {ok:false,reason:'document-issuer-company-mismatch'};if(document.documentId!==record.documentId)return {ok:false,reason:'document-id-mismatch'};if(document.documentType!==record.documentType)return {ok:false,reason:'document-type-mismatch'};
+    if(!document.issuerSnapshot||typeof document.issuerSnapshot!=='object'||Array.isArray(document.issuerSnapshot))return {ok:false,reason:'document-issuer-snapshot-mismatch'};
+    const currentCounterparty=counterpartySnapshot(document);if(!document.counterpartySnapshot||typeof document.counterpartySnapshot!=='object'||Array.isArray(document.counterpartySnapshot)||stable(currentCounterparty)!==stable(document.counterpartySnapshot))return {ok:false,reason:'document-counterparty-mismatch'};
+    if(clean(document.authorizationKind,40)!==clean(record.authorizationKind,40))return {ok:false,reason:'document-authorization-kind-mismatch'};if((document.authorizationProofId||null)!==(record.authorizationProofId||null))return {ok:false,reason:'document-authorization-reference-mismatch'};
+    if(record.signatureDigest!==null&&signatureDigestOf(document.signatureSnapshot)!==record.signatureDigest)return {ok:false,reason:'document-signature-snapshot-mismatch'};
+    return {ok:true,currentCompanyId,currentCounterparty};
+  }
+  // The rebuilt signed content of a sealed record and sealed document is computed once per pair.
+  const ARCHIVED_CONTENT=new WeakMap();
+  function archivedContentStable(document,record){
+    const sealed=globalThis.GH_TRANSACTION_CORE?.isSealed,known=ARCHIVED_CONTENT.get(record);if(known&&known.document===document)return known;
+    const content=archivedSignedContent(document,record),out={stable:stable(content),profile:content.material?.profile,documentId:content.documentId,documentType:content.documentType};
+    if(typeof sealed==='function'&&sealed(record)&&sealed(document))ARCHIVED_CONTENT.set(record,{...out,document});return out;
+  }
+  function verifyArchivedRecord(state,proofRecord,seen,cache){
+    if(Object.keys(proofRecord).sort().join(',')!==ARCHIVED_KEYS||Number(proofRecord.version)!==RECORD_VERSION||!/^[a-f0-9]{64}$/i.test(String(proofRecord.contentDigest||''))||(proofRecord.signatureDigest!==null&&!/^[a-f0-9]{64}$/i.test(String(proofRecord.signatureDigest||''))))return {ok:false,reason:'document-proof-archived-shape'};
+    const authorization=verifyAuthorizationReference(state,proofRecord,cache);if(!authorization.ok)return authorization;
+    let profile;try{profile=profileFor(proofRecord.documentType);}catch(error){return {ok:false,reason:String(error?.message||error)};}if(proofRecord.materialProfile!==profile)return {ok:false,reason:'document-material-profile-mismatch'};
+    const document=archivedDocument(state,proofRecord.id);if(!document)return {ok:false,reason:'document-proof-archived-document-missing'};
+    const envelope=archivedEnvelope(document,proofRecord);if(!envelope.ok)return envelope;
+    let content;try{content=archivedContentStable(document,proofRecord);}catch(error){return {ok:false,reason:String(error?.message||error)};}
+    if(content.profile!==profile||content.documentId!==proofRecord.documentId||content.documentType!==proofRecord.documentType)return {ok:false,reason:'document-proof-record-envelope-mismatch'};
+    if(digest(content.stable)!==proofRecord.contentDigest)return {ok:false,reason:'document-proof-record-tampered'};cache?.signedContentStable?.set(proofRecord.id,content.stable);
+    const chainError=chainFailure(state,proofRecord,proofRecord.chain,seen,cache);if(chainError)return chainError;
+    const verified=withRecordCopy({ok:true,modern:true},proofRecord);cache?.records?.set(proofRecord.id,verified);return verified;
+  }
+  // The chain link of a record (whole or archived form): its depth, its link fields against the chain its content
+  // signed, and its predecessor (a record, verified recursively, or a checkpoint). A failure, or null.
+  function chainFailure(state,proofRecord,chain,seen,cache){
+    const chainDepth=Number(proofRecord.chainDepth);if(!Number.isSafeInteger(chainDepth)||chainDepth<0||chainDepth>LIMITS.chainDepth)return {ok:false,reason:'document-proof-chain-depth'};
+    if(chainDepth===0){if(chain!==null||proofRecord.previousProofId||proofRecord.previousContentDigest||proofRecord.transition)return {ok:false,reason:'document-proof-root-chain-invalid'};}
+    else{
+      if(!chain||typeof chain!=='object'||Array.isArray(chain)||Object.keys(chain).sort().join(',')!=='depth,previousContentDigest,previousProofId,transition')return {ok:false,reason:'document-proof-chain-shape'};let transition;try{transition=transitionId(chain.transition);}catch(error){return {ok:false,reason:String(error?.message||error)};}
+      if(chain.previousProofId!==proofRecord.previousProofId||chain.previousContentDigest!==proofRecord.previousContentDigest||transition!==proofRecord.transition||Number(chain.depth)!==chainDepth)return {ok:false,reason:'document-proof-chain-reference-mismatch'};
+      // Build 359: a predecessor kept as a checkpoint ends the walk: its link fields are checked here and its period's
+      // digest by verifyCheckpoints (its own chain verified when it was checkpointed).
+      const checkpoint=getRecord(state,proofRecord.previousProofId)?null:getCheckpoint(state,proofRecord.previousProofId);
+      if(checkpoint){
+        if(checkpoint.contentDigest!==proofRecord.previousContentDigest)return {ok:false,reason:'document-proof-chain-predecessor-mismatch'};if(checkpoint.documentId!==proofRecord.documentId||checkpoint.documentType!==proofRecord.documentType||checkpoint.companyId!==proofRecord.companyId)return {ok:false,reason:'document-proof-chain-identity-mismatch'};if(Number(checkpoint.chainDepth)+1!==chainDepth)return {ok:false,reason:'document-proof-chain-depth-mismatch'};
+        const periods=verifyCheckpoints(state,cache);return periods.ok?null:periods;
+      }
+      const previous=getRecord(state,proofRecord.previousProofId);if(!previous||previous.contentDigest!==proofRecord.previousContentDigest)return {ok:false,reason:'document-proof-chain-predecessor-mismatch'};if(previous.documentId!==proofRecord.documentId||previous.documentType!==proofRecord.documentType||previous.companyId!==proofRecord.companyId)return {ok:false,reason:'document-proof-chain-identity-mismatch'};if(Number(previous.chainDepth)+1!==chainDepth)return {ok:false,reason:'document-proof-chain-depth-mismatch'};
+      const ancestor=verifyRecord(state,previous.id,seen,cache);if(!ancestor.ok)return ancestor;
+    }
+    return null;
+  }
   function verifyRecord(state,proofId,seen=new Set(),cache=null){
     const cached=cache?.records?.get(proofId);if(cached)return cached;const proofRecord=getRecord(state,proofId);if(!proofRecord)return {ok:false,reason:'document-proof-not-found'};if(seen.size>=LIMITS.chainDepth+1)return {ok:false,reason:'document-proof-chain-depth'};if(seen.has(proofId))return {ok:false,reason:'document-proof-chain-cycle'};seen.add(proofId);
     try{
+      if(isArchivedForm(proofRecord))return verifyArchivedRecord(state,proofRecord,seen,cache);
       // Build 358: a sealed record (frozen, see GH_TRANSACTION_CORE.registerSealedCollections) cannot change, so its signed
       // content is canonicalized and hashed once; the chain and authorization checks below still run on every call.
       const sealedContent=SEALED_RECORD_CONTENT.get(proofRecord);let signedContentStable=sealedContent??cache?.signedContentStable?.get(proofId);if(signedContentStable===undefined){signedContentStable=stable(proofRecord.signedContent);}cache?.signedContentStable?.set(proofId,signedContentStable);if(sealedContent===undefined){if(digest(signedContentStable)!==proofRecord.contentDigest)return {ok:false,reason:'document-proof-record-tampered'};if(globalThis.GH_TRANSACTION_CORE?.isSealed?.(proofRecord))SEALED_RECORD_CONTENT.set(proofRecord,signedContentStable);}const authorization=verifyAuthorizationReference(state,proofRecord,cache);if(!authorization.ok)return authorization;
       if(Number(proofRecord.version)===2&&proofRecord.signedContent?.schema==='gh-signed-document-content-v2')return {ok:false,legacy:true,readOnly:true,recordIntegrity:true,modern:false,reason:'document-proof-v2-legacy-read-only',record:clone(proofRecord)};
       if(Number(proofRecord.version)!==RECORD_VERSION||proofRecord.signedContent?.schema!==CONTENT_SCHEMA)return {ok:false,reason:'document-proof-version-unsupported'};let profile;try{profile=profileFor(proofRecord.documentType);}catch(error){return {ok:false,reason:String(error?.message||error)};}
       if(proofRecord.materialProfile!==profile||proofRecord.signedContent?.material?.profile!==profile)return {ok:false,reason:'document-material-profile-mismatch'};if(proofRecord.signedContent.documentId!==proofRecord.documentId||proofRecord.signedContent.documentType!==proofRecord.documentType)return {ok:false,reason:'document-proof-record-envelope-mismatch'};if(stable(proofRecord.signedContent.issuer)!==stable(proofRecord.issuerSnapshot)||stable(proofRecord.signedContent.recipient)!==stable(proofRecord.counterpartySnapshot))return {ok:false,reason:'document-proof-record-snapshot-mismatch'};
-      const chain=proofRecord.signedContent.chain,chainDepth=Number(proofRecord.chainDepth);if(!Number.isSafeInteger(chainDepth)||chainDepth<0||chainDepth>LIMITS.chainDepth)return {ok:false,reason:'document-proof-chain-depth'};
-      if(chainDepth===0){if(chain!==null||proofRecord.previousProofId||proofRecord.previousContentDigest||proofRecord.transition)return {ok:false,reason:'document-proof-root-chain-invalid'};}
-      else{
-        if(!chain||typeof chain!=='object'||Array.isArray(chain)||Object.keys(chain).sort().join(',')!=='depth,previousContentDigest,previousProofId,transition')return {ok:false,reason:'document-proof-chain-shape'};let transition;try{transition=transitionId(chain.transition);}catch(error){return {ok:false,reason:String(error?.message||error)};}
-        if(chain.previousProofId!==proofRecord.previousProofId||chain.previousContentDigest!==proofRecord.previousContentDigest||transition!==proofRecord.transition||Number(chain.depth)!==chainDepth)return {ok:false,reason:'document-proof-chain-reference-mismatch'};
-        // Build 359: a predecessor kept as a checkpoint ends the walk: its link fields are checked here and its period's
-        // digest by verifyCheckpoints (its own chain verified when it was checkpointed).
-        const checkpoint=getRecord(state,proofRecord.previousProofId)?null:getCheckpoint(state,proofRecord.previousProofId);
-        if(checkpoint){
-          if(checkpoint.contentDigest!==proofRecord.previousContentDigest)return {ok:false,reason:'document-proof-chain-predecessor-mismatch'};if(checkpoint.documentId!==proofRecord.documentId||checkpoint.documentType!==proofRecord.documentType||checkpoint.companyId!==proofRecord.companyId)return {ok:false,reason:'document-proof-chain-identity-mismatch'};if(Number(checkpoint.chainDepth)+1!==chainDepth)return {ok:false,reason:'document-proof-chain-depth-mismatch'};
-          const periods=verifyCheckpoints(state,cache);if(!periods.ok)return periods;
-          const verified=withRecordCopy({ok:true,modern:true},proofRecord);cache?.records?.set(proofId,verified);return verified;
-        }
-        const previous=getRecord(state,proofRecord.previousProofId);if(!previous||previous.contentDigest!==proofRecord.previousContentDigest)return {ok:false,reason:'document-proof-chain-predecessor-mismatch'};if(previous.documentId!==proofRecord.documentId||previous.documentType!==proofRecord.documentType||previous.companyId!==proofRecord.companyId)return {ok:false,reason:'document-proof-chain-identity-mismatch'};if(Number(previous.chainDepth)+1!==chainDepth)return {ok:false,reason:'document-proof-chain-depth-mismatch'};
-        const ancestor=verifyRecord(state,previous.id,seen,cache);if(!ancestor.ok)return ancestor;
-      }
+      const chainError=chainFailure(state,proofRecord,proofRecord.signedContent.chain,seen,cache);if(chainError)return chainError;
       const verified=withRecordCopy({ok:true,modern:true},proofRecord);cache?.records?.set(proofId,verified);return verified;
     }finally{seen.delete(proofId);}
   }
   function verifyEnvelope(document,record){if(document.contentDigest!==record.contentDigest)return {ok:false,reason:'document-digest-reference-mismatch'};const currentCompanyId=clean(document.company||document.companyId||'group',100);if(currentCompanyId!==record.companyId)return {ok:false,reason:'document-issuer-company-mismatch'};if(document.documentId!==record.documentId)return {ok:false,reason:'document-id-mismatch'};if(document.documentType!==record.documentType)return {ok:false,reason:'document-type-mismatch'};if(!document.issuerSnapshot||typeof document.issuerSnapshot!=='object'||Array.isArray(document.issuerSnapshot)||stable(document.issuerSnapshot)!==stable(record.issuerSnapshot))return {ok:false,reason:'document-issuer-snapshot-mismatch'};const currentCounterparty=counterpartySnapshot(document);if(!document.counterpartySnapshot||typeof document.counterpartySnapshot!=='object'||Array.isArray(document.counterpartySnapshot)||stable(currentCounterparty)!==stable(record.counterpartySnapshot)||stable(document.counterpartySnapshot)!==stable(record.counterpartySnapshot))return {ok:false,reason:'document-counterparty-mismatch'};if(clean(document.authorizationKind,40)!==clean(record.authorizationKind,40))return {ok:false,reason:'document-authorization-kind-mismatch'};if((document.authorizationProofId||null)!==(record.authorizationProofId||null))return {ok:false,reason:'document-authorization-reference-mismatch'};if(record.signatureSnapshot&&stable(document.signatureSnapshot)!==stable(record.signatureSnapshot))return {ok:false,reason:'document-signature-snapshot-mismatch'};return {ok:true,currentCompanyId,currentCounterparty};}
+  // A document whose record is in the archived form: its envelope, the record (verified against the canonical archived
+  // document), then this document's own rebuilt content against the verified content.
+  function verifyArchivedDocument(state,document,record,cache){
+    const envelope=archivedEnvelope(document,record);if(!envelope.ok)return envelope;
+    const recordVerification=verifyRecord(state,record.id,new Set(),cache);if(!recordVerification.ok)return recordVerification;
+    if(Number(document.documentVersion)!==RECORD_VERSION||document.documentSchema!==CONTENT_SCHEMA)return {ok:false,reason:'document-proof-version-unsupported'};
+    let content;try{content=archivedContentStable(document,record);}catch(error){return {ok:false,reason:String(error?.message||error)};}
+    if(content.profile!==record.materialProfile)return {ok:false,reason:'document-material-profile-mismatch'};
+    const verifiedStable=cache?.signedContentStable?.get(record.id);if(verifiedStable!==undefined?content.stable!==verifiedStable:digest(content.stable)!==record.contentDigest)return {ok:false,reason:'document-content-tampered'};
+    return withRecordCopy({ok:true,modern:true},record);
+  }
   function verifyDocument(state,document,cache=null){
-    const record=getRecord(state,document?.documentProofId);if(!record)return {ok:false,reason:'document-proof-not-found'};const envelope=verifyEnvelope(document,record);if(!envelope.ok)return envelope;const recordVerification=verifyRecord(state,record.id,new Set(),cache),issuer={...clone(record.issuerSnapshot),companyId:envelope.currentCompanyId};
+    const record=getRecord(state,document?.documentProofId);if(!record)return {ok:false,reason:'document-proof-not-found'};if(isArchivedForm(record))return verifyArchivedDocument(state,document,record,cache);const envelope=verifyEnvelope(document,record);if(!envelope.ok)return envelope;const recordVerification=verifyRecord(state,record.id,new Set(),cache),issuer={...clone(record.issuerSnapshot),companyId:envelope.currentCompanyId};
     if(Number(record.version)===2&&record.signedContent?.schema==='gh-signed-document-content-v2'){if(!(recordVerification.legacy&&recordVerification.recordIntegrity))return recordVerification;const content=signedContentV2(document,issuer,envelope.currentCounterparty,{issuedAtSim:record.signedContent?.issuedAtSim});const verifiedStable=cache?.signedContentStable?.get(record.id);if(verifiedStable!==undefined?stable(content)!==verifiedStable:digest(content)!==record.contentDigest)return {ok:false,reason:'document-content-tampered'};return recordVerification;}
     if(!recordVerification.ok)return recordVerification;if(Number(document.documentVersion)!==RECORD_VERSION||document.documentSchema!==CONTENT_SCHEMA)return {ok:false,reason:'document-proof-version-unsupported'};let content;try{content=signedContent(document,issuer,envelope.currentCounterparty,{issuedAtSim:record.signedContent?.issuedAtSim,fixedIssuedAt:true,chain:record.signedContent?.chain||null});}catch(error){return {ok:false,reason:String(error?.message||error)};}if(record.materialProfile!==content.material.profile)return {ok:false,reason:'document-material-profile-mismatch'};const verifiedStable=cache?.signedContentStable?.get(record.id);if(verifiedStable!==undefined?stable(content)!==verifiedStable:digest(content)!==record.contentDigest)return {ok:false,reason:'document-content-tampered'};return withRecordCopy({ok:true,modern:true},record);
   }
@@ -262,7 +356,8 @@
   function forensicDocument(state,entry){
     const document=entry?.document,proofId=document?.documentProofId||null,record=proofId?getRecord(state,proofId):null,verification=proofId?verifyDocument(state,document):{ok:true,reason:null};let differencePath=null,actualContentDigest=null;
     const envelopePaths={'document-digest-reference-mismatch':'$.contentDigest','document-issuer-company-mismatch':'$.company','document-id-mismatch':'$.documentId','document-type-mismatch':'$.documentType','document-issuer-snapshot-mismatch':'$.issuerSnapshot','document-counterparty-mismatch':'$.counterpartySnapshot','document-authorization-kind-mismatch':'$.authorizationKind','document-authorization-reference-mismatch':'$.authorizationProofId','document-signature-snapshot-mismatch':'$.signatureSnapshot'};differencePath=envelopePaths[verification?.reason]||null;
-    if(proofId&&record&&verification?.reason==='document-content-tampered')try{const issuer={...clone(record.issuerSnapshot),companyId:clean(document.company||document.companyId||'group',100)},counterparty=counterpartySnapshot(document),content=Number(record.version)===2?signedContentV2(document,issuer,counterparty,{issuedAtSim:record.signedContent?.issuedAtSim}):signedContent(document,issuer,counterparty,{issuedAtSim:record.signedContent?.issuedAtSim,fixedIssuedAt:true,chain:record.signedContent?.chain||null});differencePath=firstDifferencePath(record.signedContent,content);actualContentDigest=digest(content);}catch(error){differencePath=`$<recompute:${String(error?.message||error)}>`;}
+    if(proofId&&record&&verification?.reason==='document-content-tampered'&&isArchivedForm(record))try{actualContentDigest=digest(archivedSignedContent(document,record));differencePath='$';}catch(error){differencePath=`$<recompute:${String(error?.message||error)}>`;}
+    else if(proofId&&record&&verification?.reason==='document-content-tampered')try{const issuer={...clone(record.issuerSnapshot),companyId:clean(document.company||document.companyId||'group',100)},counterparty=counterpartySnapshot(document),content=Number(record.version)===2?signedContentV2(document,issuer,counterparty,{issuedAtSim:record.signedContent?.issuedAtSim}):signedContent(document,issuer,counterparty,{issuedAtSim:record.signedContent?.issuedAtSim,fixedIssuedAt:true,chain:record.signedContent?.chain||null});differencePath=firstDifferencePath(record.signedContent,content);actualContentDigest=digest(content);}catch(error){differencePath=`$<recompute:${String(error?.message||error)}>`;}
     return {path:entry?.path||null,role:entry?.role||null,documentId:documentId(document||{}),proofId,ok:verification?.ok===true,reason:verification?.reason||null,differencePath,expectedContentDigest:record?.contentDigest||null,actualContentDigest};
   }
   function forensicInspectStateProofs(state){
@@ -305,11 +400,11 @@
   }
   function locateDocument(state,proofId){return stateDocuments(state).find(document=>document?.documentProofId===proofId)||null;}
   function collectResultDocuments(state,result){const found=new Map(),seen=new Set();function visit(value,depth){if(!value||typeof value!=='object'||depth>7||seen.has(value))return;seen.add(value);if(value.documentProofId&&value.contentDigest){const actual=locateDocument(state,value.documentProofId)||value;found.set(value.documentProofId,{proofId:value.documentProofId,documentId:documentId(actual),digest:actual.contentDigest,document:actual});}if(Array.isArray(value)){for(const item of value)visit(item,depth+1);return;}for(const nested of Object.values(value))visit(nested,depth+1);}visit(result,0);return [...found.values()];}
-  function bindAuthorization(state,documents,proof){if(!proof?.id)throw new Error('authorization-proof-required');ensure(state);const rows=Array.isArray(documents)?documents:[];for(const item of rows){const document=item.document||locateDocument(state,item.proofId),record=getRecord(state,item.proofId||document?.documentProofId);if(!document||!record)throw new Error('document-proof-not-found');if(Number(record.version)!==RECORD_VERSION)throw new Error('document-proof-legacy-read-only');const verification=verifyDocument(state,document);if(!verification.ok)throw new Error(`document-proof-invalid:${verification.reason}`);if(record.authorizationProofId&&record.authorizationProofId!==proof.id)throw new Error('document-already-authorized');if(!Array.isArray(proof.documentDigests)||!proof.documentDigests.includes(record.contentDigest))throw new Error('proof-document-digest-mismatch');if(!Array.isArray(proof.documentIds)||!proof.documentIds.includes(record.documentId))throw new Error('proof-document-id-mismatch');const store=state.documentProofs,bound={...record,authorizationProofId:proof.id,authorizationKind:proof.mode,signatureSnapshot:{kind:'visual-authorization-seal',visualSealAssetId:proof.visualSealAssetId||proof.signatureAssetId,visualSealVersion:proof.visualSealVersion??proof.signatureVersion,visualSealDigest:proof.visualSealDigest||proof.signatureDigest,signatureAssetId:proof.signatureAssetId,signatureVersion:proof.signatureVersion,signatureDigest:proof.signatureDigest,signerPersonId:proof.signerPersonId,signerNameSnapshot:proof.signerNameSnapshot,mandateId:proof.mandateId,mandateVersion:proof.mandateVersion,mandateDigest:proof.mandateDigest,signedAtSim:proof.signedAtSim}};
+  function bindAuthorization(state,documents,proof){if(!proof?.id)throw new Error('authorization-proof-required');ensure(state);const rows=Array.isArray(documents)?documents:[];for(const item of rows){const document=item.document||locateDocument(state,item.proofId),record=getRecord(state,item.proofId||document?.documentProofId);if(!document||!record)throw new Error('document-proof-not-found');if(Number(record.version)!==RECORD_VERSION)throw new Error('document-proof-legacy-read-only');if(isArchivedForm(record))throw new Error('document-proof-archived-read-only');const verification=verifyDocument(state,document);if(!verification.ok)throw new Error(`document-proof-invalid:${verification.reason}`);if(record.authorizationProofId&&record.authorizationProofId!==proof.id)throw new Error('document-already-authorized');if(!Array.isArray(proof.documentDigests)||!proof.documentDigests.includes(record.contentDigest))throw new Error('proof-document-digest-mismatch');if(!Array.isArray(proof.documentIds)||!proof.documentIds.includes(record.documentId))throw new Error('proof-document-id-mismatch');const store=state.documentProofs,bound={...record,authorizationProofId:proof.id,authorizationKind:proof.mode,signatureSnapshot:{kind:'visual-authorization-seal',visualSealAssetId:proof.visualSealAssetId||proof.signatureAssetId,visualSealVersion:proof.visualSealVersion??proof.signatureVersion,visualSealDigest:proof.visualSealDigest||proof.signatureDigest,signatureAssetId:proof.signatureAssetId,signatureVersion:proof.signatureVersion,signatureDigest:proof.signatureDigest,signerPersonId:proof.signerPersonId,signerNameSnapshot:proof.signerNameSnapshot,mandateId:proof.mandateId,mandateVersion:proof.mandateVersion,mandateDigest:proof.mandateDigest,signedAtSim:proof.signedAtSim}};
       // Proof records are sealed (shared with durable drafts, never edited): binding replaces the record where it lives.
       if(store.recordsById?.[record.id]===record)store.recordsById[record.id]=bound;else if(store.archiveById?.[record.id]===record)store.archiveById[record.id]=bound;else throw new Error('document-proof-residency-conflict');document.authorizationProofId=proof.id;document.authorizationKind=proof.mode;document.signatureSnapshot=clone(bound.signatureSnapshot);}return rows.length;}
   function markLegacy(state,document,options={}){if(document.documentProofId)return verifyDocument(state,document);return sealDocument(state,document,{...options,authorizationKind:'legacy-name-only'});}
   // Proof records are inserted whole and replaced, never edited (bindAuthorization replaces): durable drafts share them sealed.
   (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('documentProofs',['recordsById','archiveById','checkpointsById']);
-  const API=Object.freeze({VERSION,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,compact,checkpoint:getCheckpoint,checkpointAncestors,verifyCheckpoints,CHECKPOINT_AGE_SECONDS,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,compact,checkpoint:getCheckpoint,checkpointAncestors,compactArchivedRecords,ARCHIVED_FORM,verifyCheckpoints,CHECKPOINT_AGE_SECONDS,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

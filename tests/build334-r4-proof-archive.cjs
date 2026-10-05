@@ -28,7 +28,9 @@ test('cold record tampering is rejected rather than treated as an opaque summary
  assert.equal(P.verifyRecord(saved,id).ok,false);assert.equal(s.GH_SAVE_SCHEMA.validate(saved).ok,false);
 });
 test('amendment of a cold predecessor retains and verifies its full chain',()=>{
- const d=v.finance.auditArchive.records.invoices[0],prior=d.documentProofId;assert(v.documentProofs.archiveById[prior]);
+ // Build 358: the finance audit archive is sealed (its rows are never edited), so the document being amended is taken
+ // back to the live list first; its proof record stays cold, which is what this case is about.
+ const archived=v.finance.auditArchive.records.invoices,d=structuredClone(archived[0]),prior=d.documentProofId;archived.shift();v.finance.invoices.unshift(d);assert(v.documentProofs.archiveById[prior]);
  T.execute(v,{label:'amend-history',apply:()=>P.amendDocument(v,d,{transition:'invoice-collected',mutate:x=>{x.collectedAt=12;}})});
  assert(P.record(v,prior));assert(P.verifyDocument(v,d).ok);assert(P.verifyDocument(JSON.parse(JSON.stringify(v)),structuredClone(d)).ok);
 });

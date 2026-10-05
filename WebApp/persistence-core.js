@@ -22,7 +22,7 @@
   function parseState(json){return decodeTree(JSON.parse(json));}
   const clock=()=>globalThis.performance?.now?.()??Date.now();
   const pending=new Map(), slotPending=new Map(), samples=[],timingSamples=[];
-  let lastSaveBreakdown=null,lastNativeAck=null,lastSaveAtMs=null;
+  let lastSaveBreakdown=null,lastNativeAck=null,lastSaveAtMs=null,lastSaveSimSeconds=null;
   function rememberTiming(row){const value={...row,recordedAtMs:Date.now()};timingSamples.push(value);if(timingSamples.length>24)timingSamples.shift();return value;}
   let sequence=0,slotSequence=0,generation=0,locked=false,durableLocked=false,recoveryRequired=false,ordinaryInFlight=null,ordinaryDirty=false,ordinaryDirtyState=null,ordinaryDirtyOptions=null,ordinaryError=null;
   const nativeSlotMeta=new Map((Array.isArray(globalThis.__GH_NATIVE_SLOT_META__)?globalThis.__GH_NATIVE_SLOT_META__:[]).filter(row=>Number.isInteger(Number(row?.index))&&Number(row.index)>=0&&Number(row.index)<=2).map(row=>[Number(row.index),clone(row)]));
@@ -236,7 +236,7 @@
       }else{
         cache=writeJSON(storageKey,json,options);if(!cache.ok)throw Object.assign(new Error(cache.reason),{measurement:cache});
       }
-      timing.browserCacheMs=Math.max(0,clock()-stageStart);timing.cacheReason=cache?.ok===false?cache.reason:null;timing.ok=true;timing.totalSyncMs=Math.max(0,clock()-syncStart);lastSaveBreakdown=rememberTiming(timing);lastSaveAtMs=clock();
+      timing.browserCacheMs=Math.max(0,clock()-stageStart);timing.cacheReason=cache?.ok===false?cache.reason:null;timing.ok=true;timing.totalSyncMs=Math.max(0,clock()-syncStart);lastSaveBreakdown=rememberTiming(timing);lastSaveAtMs=clock();lastSaveSimSeconds=Number(state.simSeconds)||0;
     }catch(error){state.saveRevision=previousRevision;timing.totalSyncMs=Math.max(0,clock()-syncStart);timing.error=String(error.message||error);lastSaveBreakdown=rememberTiming(timing);return {ok:false,reason:`serialization-or-schema:${error.message||error}`,...error.measurement};}
     const out={ok:true,json,...measurement,browserCache:cache?.ok!==false,cacheReason:cache?.ok===false?cache.reason:null,previous:cache?.previous??null,saveRevision:nextRevision};
     if(!nativeBridge){ordinaryError=null;return out;}
@@ -278,7 +278,7 @@
     try{
       await waitOrdinaryIdle({supersedeDirty:true});
       const durableTiming={kind:'durable-save',saveRevision:Number(state?.saveRevision)||0,schemaMs:0,stringifyMs:0,measurementMs:0,totalSyncMs:0,utf8Bytes:null,ok:false};let stageStart=clock();const syncStart=stageStart;
-      assertRecurringState(state,{prevalidated:options.prevalidated===true});durableTiming.schemaMs=Math.max(0,clock()-stageStart);stageStart=clock();const nativeBridge=!!bridgeFor('commitSave'),nativeSave=nativeBridge?serializeNative(state):null,json=nativeSave?nativeSave.json:serializeState(state);durableTiming.stringifyMs=Math.max(0,clock()-stageStart);durableTiming.chunkUploads=nativeSave?.uploads.length||0;lastSaveAtMs=clock();
+      assertRecurringState(state,{prevalidated:options.prevalidated===true});durableTiming.schemaMs=Math.max(0,clock()-stageStart);stageStart=clock();const nativeBridge=!!bridgeFor('commitSave'),nativeSave=nativeBridge?serializeNative(state):null,json=nativeSave?nativeSave.json:serializeState(state);durableTiming.stringifyMs=Math.max(0,clock()-stageStart);durableTiming.chunkUploads=nativeSave?.uploads.length||0;lastSaveAtMs=clock();lastSaveSimSeconds=Number(state.simSeconds)||0;
       if(nativeBridge){
         stageStart=clock();const encoded=utf8(json),measurement=inspectNativeJSON(json,encoded);durableTiming.measurementMs=Math.max(0,clock()-stageStart);durableTiming.utf8Bytes=measurement.utf8Bytes;durableTiming.totalSyncMs=Math.max(0,clock()-syncStart);durableTiming.ok=true;rememberTiming(durableTiming);let ack;try{await uploadChunks(nativeSave?.uploads);ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),encoded});}catch(error){throw noteNativeRefusal(error);}ordinaryError=null;
         const cache=nativeSave?.chunked?{ok:false,reason:'chunked-native-save',previous:null,bypassed:true}:(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
@@ -385,7 +385,8 @@
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
   const API=Object.freeze({VERSION,noteVaultChunks,forgetVaultChunks,vaultChunkCount:()=>vaultChunks.size,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,
-    // Cheap per-frame read for save pacing: when the last save ran and what it blocked the main thread for.
-    saveCadence:()=>({lastSaveAtMs,lastSaveCostMs:Number(lastSaveBreakdown?.totalSyncMs)||0}),telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
+    // Cheap read for the save policy (GH_SAVE_POLICY): when the last save of any kind ran and the simulated instant it
+    // saved.
+    saveCadence:()=>({lastSaveAtMs,lastSaveSimSeconds}),telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

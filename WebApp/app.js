@@ -762,8 +762,7 @@
     }catch(error){console.warn('تعذر تنظيف التخزين القديم',error);}
   }
   cleanupObsoleteStorage();
-  let simulationPersistenceTask=null,deferredPersistenceTimer=null;
-  const DEFERRED_PERSISTENCE_MS=3000,DEFERRED_SAVE_MIN_GAP_MS=15000,RECURRING_SAVE_COST_FACTOR=150,RECURRING_SAVE_MAX_GAP_MS=120000;
+  let simulationPersistenceTask=null;
   const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,durable:{last:null,samples:[]},render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]}};
   const appMetricClock=()=>globalThis.performance?.now?.()??Date.now();
   function recordRenderMetric(kind,durationMs,detail={}){const render=runtimeInstrumentation.render,row={kind,durationMs:Math.max(0,Number(durationMs)||0),recordedAtMs:Date.now(),...detail};if(kind==='frame'){render.lastFrame=row;render.maxFrameMs=Math.max(render.maxFrameMs,row.durationMs);}else if(kind==='target-update'){render.lastTargetUpdate=row;render.maxTargetUpdateMs=Math.max(render.maxTargetUpdateMs,row.durationMs);}else if(kind==='marker-animation'){render.lastMarkerAnimation=row;render.maxMarkerAnimationMs=Math.max(render.maxMarkerAnimationMs,row.durationMs);}else if(kind==='structural-render'){render.lastStructuralRender=row;render.maxStructuralRenderMs=Math.max(render.maxStructuralRenderMs,row.durationMs);}render.samples.push(row);if(render.samples.length>120)render.samples.shift();return row;}
@@ -810,26 +809,44 @@
     catch(error){simulationPersistenceTask=null;throw error;}
     return true;
   }
-  // Build 353: preferences (map focus/filters/layers, speed), derived caches (street/road
-  // geometry) and health-check events never need their own full save. On iPhone WebKit there
-  // is no requestIdleCallback, so "idle" persistence ran right after every tap. Coalesce them
-  // into one save a few seconds later; business commands keep their durable save, and hiding
-  // the app still saves immediately.
-  // Build 358: these saves are also spaced from the previous save of any kind by the same cost rule as recurring saves
-  // (at least 15 s). GH Mobility street-route results and diagnostics events used to chain a full save every ~3 s.
-  function scheduleDeferredPersistence(delayMs=DEFERRED_PERSISTENCE_MS){
-    if(deferredPersistenceTimer!==null)return true;
-    const cadence=window.GH_PERSISTENCE?.saveCadence?.(),last=Number(cadence?.lastSaveAtMs),gap=Math.max(DEFERRED_SAVE_MIN_GAP_MS,recurringSaveMinIntervalMs()),
-      wait=Math.max(Math.max(0,Number(delayMs)||0),Number.isFinite(last)?last+gap-appMetricClock():0);
-    deferredPersistenceTimer=setTimeout(()=>{deferredPersistenceTimer=null;scheduleSimulationPersistence();},wait);
-    return true;
+  // Build 358 (save policy, GH_SAVE_POLICY in save-policy-core.js): the game does not save on a timer while it runs.
+  // Player commands save themselves (runDurableStateCommand) and hiding or closing the app saves (setHidden ->
+  // onPersist, persistForBackground). Between those, a checkpoint is taken when a new quarter of the game calendar
+  // begins, and when the real-time cap (settings, 15 min by default) has passed since the last save of any kind: at the
+  // first quiet moment (time stopped, no calendar advance), or regardless of it once the grace period has also passed.
+  // Preferences (map mode, filters, layers, focus, speed), route geometry caches and health events are not saved on
+  // their own: they ride along with the next save. The policy is checked at most once a second from the frame loop.
+  const saveBaseline={atMs:appMetricClock(),simSeconds:Number(state.simSeconds)||0};
+  // The last checkpoint attempt; its retry spacing applies only while no save has happened since (the revision held).
+  let lastCheckpointAttempt=null,lastCheckpointCheckMs=-Infinity;
+  function lastSaveMark(){const cadence=window.GH_PERSISTENCE?.saveCadence?.()||{};return {atMs:cadence.lastSaveAtMs==null?saveBaseline.atMs:Number(cadence.lastSaveAtMs),simSeconds:cadence.lastSaveSimSeconds==null?saveBaseline.simSeconds:Number(cadence.lastSaveSimSeconds)};}
+  function checkpointQuiet(){return !(Number(state.speed)>0)&&!simulationEngine.snapshot().manualAdvance&&!stagedStateBusy();}
+  function checkpointDue(nowMs){
+    const policy=window.GH_SAVE_POLICY;if(!policy)return null;const last=lastSaveMark();
+    return policy.due({nowMs,lastSaveAtMs:last.atMs,lastSaveSimSeconds:last.simSeconds,simSeconds:Number(state.simSeconds)||0,simStartMs:SIM_START,capMinutes:policy.capMinutes(state),quiet:checkpointQuiet,lastAttemptAtMs:lastCheckpointAttempt&&(Number(state.saveRevision)||0)<=lastCheckpointAttempt.revision?lastCheckpointAttempt.atMs:null});
   }
-  // Recurring saves only checkpoint simulated progress (commands persist durably on their own).
-  // A save that blocked the main thread for C ms is spaced at least 150*C ms apart (<=0.7% of
-  // frame time), capped at 2 minutes. Hiding the app still saves immediately. Build 358: C is the
-  // real cost of the last save (validation, serialization, measurement); a native save is
-  // prepared here in ~2 ms and serialized later, so the preparation time alone hid the real cost.
-  function recurringSaveMinIntervalMs(){const cost=Math.max(Number(runtimeInstrumentation?.lastSavePreparation?.totalMs)||0,Number(window.GH_PERSISTENCE?.saveCadence?.()?.lastSaveCostMs)||0);return Math.min(RECURRING_SAVE_MAX_GAP_MS,Math.max(0,cost)*RECURRING_SAVE_COST_FACTOR);}
+  function maybeSaveCheckpoint(nowMs){
+    if(nowMs-lastCheckpointCheckMs<1000)return false;lastCheckpointCheckMs=nowMs;
+    if(document.hidden||hardResetInProgress||durableCommandInProgress||simulationPersistenceTask||window.GH_PERSISTENCE.isLocked())return false;
+    const reason=checkpointDue(nowMs);if(!reason)return false;
+    lastCheckpointAttempt={atMs:nowMs,revision:Number(state.saveRevision)||0};diag('SAVE_CHECKPOINT',{reason,simSeconds:Number(state.simSeconds)||0,saveRevision:Number(state.saveRevision)||0});
+    return scheduleSimulationPersistence();
+  }
+  // Save Now (settings): one ordinary save, right away (after the day close in progress, if any).
+  function saveNow(){
+    if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked()){notice('الحفظ مشغول الآن بعملية أخرى. أعد المحاولة بعد لحظات.');return false;}
+    const staged=stagedStateBusy(),ok=persistStateNow();diag('SAVE_MANUAL',{ok,staged,saveRevision:Number(state.saveRevision)||0});
+    notice(!ok?'تعذر حفظ اللعبة الآن. التفاصيل في صحة النظام.':staged?'سيُحفظ التقدم فور انتهاء إقفال اليوم الجاري.':'تم حفظ اللعبة.');
+    return ok;
+  }
+  function setSaveCap(minutes){
+    const policy=window.GH_SAVE_POLICY,value=Number(minutes);if(!policy?.CAP_CHOICES.includes(value))return false;
+    state.savePolicy={...(state.savePolicy&&typeof state.savePolicy==='object'?state.savePolicy:{}),capMinutes:value};return true;
+  }
+  function savePolicyStatus(){
+    const policy=window.GH_SAVE_POLICY,last=lastSaveMark(),nowMs=appMetricClock(),sim=Number(state.simSeconds)||0;
+    return {capMinutes:policy?.capMinutes(state)??15,choices:policy?.CAP_CHOICES||[],lastSaveAgoMs:Math.max(0,nowMs-last.atMs),lastSaveSimDate:new Date(SIM_START+last.simSeconds*1000),nextQuarterDate:new Date(SIM_START+(policy?.nextQuarterStartSeconds(sim,SIM_START)??sim)*1000)};
+  }
   function persistStateNow(options={}){
     if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
     if(stagedStateBusy()){if(!stagedSaveQueued){stagedSaveQueued=true;afterStagedState(()=>{stagedSaveQueued=false;persistStateNow({...options,throwOnError:false});});}diag('SAVE_DEFERRED_STAGED',{saveRevision:Number(state.saveRevision)||0});return true;}
@@ -1347,7 +1364,6 @@
       if(geometry){applyRoadGeometry(tpl.id,geometry,true);changedRouteIds.add(tpl.id);stateChanged=true;}
       else if(cached?.route){applyRoadGeometry(tpl.id,cached,false);changedRouteIds.add(tpl.id);stateChanged=true;} // نستمر بالمسار المخزن القديم بدل خط مستقيم مفاجئ
     }));
-    if(stateChanged)scheduleDeferredPersistence();
     if(changedRouteIds.size){
       const selected=selectedAssetId?window.GH_FLEET_DATA.get(state,selectedAssetId):null;
       // Moving marker targets can consume the new geometry directly. Rebuild only
@@ -1368,7 +1384,7 @@
         if(!result?.ok||!result.geometry?.route){const previous=mobilityStreetRetries.get(request.key),attempts=Math.min(8,(previous?.attempts||0)+1),delayMs=Math.min(120000,2500*(2**Math.min(5,attempts-1)));mobilityStreetRetries.set(request.key,{attempts,retryAt:Date.now()+delayMs});continue;}
         try{dispatchSystemCommand({state},'mobility','cache-street-route',{...request,...result.geometry},{actor:'system-mobility-routing-provider'});mobilityStreetRetries.delete(request.key);changed=true;}catch(error){nonCritical('mobility-street-route-cache',error);}
       }
-      if(changed){scheduleDeferredPersistence();renderMap();}
+      if(changed)renderMap();
       return changed;
     })().finally(()=>{mobilityStreetHydration=null;});
     return mobilityStreetHydration;
@@ -1826,7 +1842,7 @@
   }
   function setMapMode(mode){
     const next=MAP_VIEW.normalizeMode(mode);if(state.mapMode===next){syncMapModeButtons();return;}
-    state.mapMode=next;syncMapModeButtons();renderMap();scheduleDeferredPersistence();
+    state.mapMode=next;syncMapModeButtons();renderMap();
   }
   function movingHeroSelection(rows,zoom,limit){
     const representatives=new Map();for(const asset of rows){const owner=assetOwnerCompanyId(asset),key=asset.routeId?`${owner}:${asset.routeId}`:`${owner}:${asset.id}`;if(asset.id===selectedAssetId||!representatives.has(key))representatives.set(key,asset);}
@@ -2654,11 +2670,13 @@
   }
 
   // Build 359: earlier versions of documents older than 30 game days become checkpoints (GH_DOCUMENT_PROOF.checkpointAncestors),
-  // at most 400 per maintenance pass so a large existing save converts over a few passes without a long frame. Only
-  // the proof store is written, in its own transaction (joined when one is active).
+  // at most 400 per maintenance pass so a large existing save converts over a few passes without a long frame.
+  // Build 358 (save size): the records of documents in the finance audit archive take the compact archived form
+  // (GH_DOCUMENT_PROOF.compactArchivedRecords), at most 200 per pass. Only the proof store is written, in its own
+  // transaction (joined when one is active).
   function checkpointProofHistory(){
     const proofs=window.GH_DOCUMENT_PROOF,tx=window.GH_TRANSACTION_CORE;if(typeof proofs?.checkpointAncestors!=='function'||!tx?.execute||!tx?.join)return null;
-    let out=null;const result=(tx.isActive()?tx.join:tx.execute)(state,{label:'proof-history-checkpoints',apply:()=>{out=proofs.checkpointAncestors(state);},scope:['documentProofs'],writeRoots:['documentProofs'],auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true});
+    let out=null;const result=(tx.isActive()?tx.join:tx.execute)(state,{label:'proof-history-checkpoints',apply:()=>{out=proofs.checkpointAncestors(state);out.archived=proofs.compactArchivedRecords?.(state)?.compacted||0;},scope:['documentProofs'],writeRoots:['documentProofs'],auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true});
     if(!result.committed)throw new Error(result.reason||'proof-checkpoints-rejected');return out;
   }
 
@@ -2934,10 +2952,9 @@
       if(!jobActive&&!document.hidden&&!hardResetInProgress){
         const now=performance.now();
         if(now-lastMobilityStreetHydrationMs>=1200){lastMobilityStreetHydrationMs=now;void hydrateMobilityStreetRoutes();}
-        if(now-lastRealtimeHealthMs>=REALTIME_HEALTH_MS){lastRealtimeHealthMs=now;try{const beforeEvents=state.diagnostics?.events?.length||0;window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:false,trackTransitions:true});const afterEvents=state.diagnostics?.events?.length||0;if(afterEvents!==beforeEvents)scheduleDeferredPersistence();if(activeDrawerPanel==='diagnostics')openDrawer('diagnostics');}catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}}
+        if(now-lastRealtimeHealthMs>=REALTIME_HEALTH_MS){lastRealtimeHealthMs=now;try{window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:false,trackTransitions:true});if(activeDrawerPanel==='diagnostics')openDrawer('diagnostics');}catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}}
       }
     },
-    persistMinIntervalMs:()=>recurringSaveMinIntervalMs(),
     onPersist:()=>scheduleSimulationPersistence(),
     onAdvance:detail=>{
       const active=!!detail?.active;updateDayStepControl();if(!active)renderSimulationCalendar();
@@ -2954,7 +2971,7 @@
     onWarning:({stage,error})=>{diag('SIM_WARNING',{stage,message:String(error?.message||error)});console.warn(`Simulation Core warning [${stage}]`,error);},
     onThrottle:({took,reason,stage})=>{diag('SIM_THROTTLE',{took,reason,stage});console.warn(`Simulation watchdog throttled after ${Math.round(took)}ms ${stage||'work'} stage`);},
     onGovernor:({level,avgChunkMs,avgWorkMs,stage,took})=>{diag('SIM_GOVERNOR',{level,avgChunkMs,avgWorkMs,stage,took});runtimeGovernor={level,avgChunkMs,avgWorkMs,stage,took};}
-  },{minRealSliceSeconds:1,allowedSpeeds:[0,30,120,300,600],fallbackSpeed:30,frameBudgetMs:4,manualFrameBudgetMs:10,chunkItems:32,manualChunkItems:64,renderEveryNormalMs:260,renderEveryFastMs:650,persistEveryNormalMs:60000,persistEveryFastMs:90000,maintenanceEveryHours:12,manualBatchSeconds:3600,manualMinBatchSeconds:300,manualRetryLimit:3});
+  },{minRealSliceSeconds:1,allowedSpeeds:[0,30,120,300,600],fallbackSpeed:30,frameBudgetMs:4,manualFrameBudgetMs:10,chunkItems:32,manualChunkItems:64,renderEveryNormalMs:260,renderEveryFastMs:650,maintenanceEveryHours:12,manualBatchSeconds:3600,manualMinBatchSeconds:300,manualRetryLimit:3});
   window.GH_SIM_KERNEL={version:window.GH_SIMULATION_CORE.VERSION,transactionVersion:window.GH_TRANSACTION_CORE.VERSION,snapshot:()=>simulationEngine.snapshot(),health:()=>simulationEngine.health()};
   window.GH_DIAGNOSTICS.installGlobalHandlers(()=>state,()=>({appVersion:APP_VERSION,simulation:simulationEngine.snapshot()}));
   window.GH_CONTROL_PLANE?.installDOMObserver?.(()=>state);
@@ -3313,7 +3330,7 @@
 
   function advancedContext(){
     return {state,fmtMoney,fmtNumber,formatDuration,esc,typeName,facilityKind,findFacility,competitors,assetCatalog,WORLD,storageKey,
-    candidates,getDynamicFacilities,strategicPartners,supplierFor,awardConstruction,payNamedSupplier,canSpend,spend,canCompanySpend,spendCompany,companyOperatingBalance,companyTotalBalance,companyBudget,companyBudgetRemaining,transferBetweenCompanies,bulkTransferFromGroup,transferWithinCompany,creditCompany,companyPerformance:(type,days=30)=>window.GH_FINANCE_CORE.performance(state,type,days),pushAlert,save,runDurableStateCommand,runAuthorizedDomainCommand,dispatchAuthorizedDomain:runAuthorizedDomainCommand,dispatchSystemCommand,authorizationSignatureMarkup,openSignatureDialog,activeAuthorization:()=>clone(founderAuthorization(state)),signatureStatus:()=>{const authority=founderAuthorization(state);return {principalId:FOUNDER_PRINCIPAL_ID,ready:Boolean(authority.signature&&authority.mandate),signatureId:authority.signature?.id||null,signatureVersion:authority.signature?.version||null,mandateId:authority.mandate?.id||null,mandateVersion:authority.mandate?.version||null};},updateKpis,renderMap,panMapTo,openDrawer,openWorldDirectory,buyAsset,routeRuntimeSnapshot:()=>clone(routeTemplates),restoreRouteRuntime:snapshot=>{for(const key of Object.keys(routeTemplates))delete routeTemplates[key];Object.assign(routeTemplates,clone(snapshot||{}));state.routesRevision=(Math.max(0,Math.floor(Number(state.routesRevision)||0))+1);},assignRoute,ensureFacilityWorkforce,ensureBankCorporateClients,bankLiquidityMetrics,bankReviewCorporateLimits,bankDrawCorporateFacility,bankIssueTradeInstrument,bankCashSweep,hardResetGame,worldEntityByKey,appVersion:APP_VERSION,runtimeBuild:RUNTIME_BUILD,saveSchemaVersion:SAVE_SCHEMA_VERSION,runDiagnostics:runFullDiagnostics,exportDiagnostics:exportDiagnosticsFile,startFaultRecorder:startSimulationFaultRecorder,finishFaultRecorder:finishSimulationFaultRecorder,faultRecorder:simulationFaultRecorder,exportControlPlane:exportControlPlaneFile,controlPlane:()=>window.GH_CONTROL_PLANE?.ensure?.(state),controlHealth:()=>window.GH_CONTROL_PLANE?.check?.(state),controlTrace:id=>window.GH_CONTROL_PLANE?.trace?.(state,id),clearDiagnostics:()=>window.GH_DIAGNOSTICS.clear(state),diagnostics:()=>state.diagnostics,businessIntegrity:()=>window.GH_INTEGRITY_CORE.check(state),businessLedger:()=>window.GH_EVENT_LEDGER.summary(state),deliveryClosure:()=>window.GH_DELIVERY_MONITOR.reconcile(state),dependencyGraph:()=>state.dependencyGraph,getSimulationSpeed:()=>state.speed,setSimulationSpeed:value=>setSpeed(value),currentPanel:activeDrawerPanel,currentArg:activeDrawerArg};
+    candidates,getDynamicFacilities,strategicPartners,supplierFor,awardConstruction,payNamedSupplier,canSpend,spend,canCompanySpend,spendCompany,companyOperatingBalance,companyTotalBalance,companyBudget,companyBudgetRemaining,transferBetweenCompanies,bulkTransferFromGroup,transferWithinCompany,creditCompany,companyPerformance:(type,days=30)=>window.GH_FINANCE_CORE.performance(state,type,days),pushAlert,save,savePolicyStatus,runDurableStateCommand,runAuthorizedDomainCommand,dispatchAuthorizedDomain:runAuthorizedDomainCommand,dispatchSystemCommand,authorizationSignatureMarkup,openSignatureDialog,activeAuthorization:()=>clone(founderAuthorization(state)),signatureStatus:()=>{const authority=founderAuthorization(state);return {principalId:FOUNDER_PRINCIPAL_ID,ready:Boolean(authority.signature&&authority.mandate),signatureId:authority.signature?.id||null,signatureVersion:authority.signature?.version||null,mandateId:authority.mandate?.id||null,mandateVersion:authority.mandate?.version||null};},updateKpis,renderMap,panMapTo,openDrawer,openWorldDirectory,buyAsset,routeRuntimeSnapshot:()=>clone(routeTemplates),restoreRouteRuntime:snapshot=>{for(const key of Object.keys(routeTemplates))delete routeTemplates[key];Object.assign(routeTemplates,clone(snapshot||{}));state.routesRevision=(Math.max(0,Math.floor(Number(state.routesRevision)||0))+1);},assignRoute,ensureFacilityWorkforce,ensureBankCorporateClients,bankLiquidityMetrics,bankReviewCorporateLimits,bankDrawCorporateFacility,bankIssueTradeInstrument,bankCashSweep,hardResetGame,worldEntityByKey,appVersion:APP_VERSION,runtimeBuild:RUNTIME_BUILD,saveSchemaVersion:SAVE_SCHEMA_VERSION,runDiagnostics:runFullDiagnostics,exportDiagnostics:exportDiagnosticsFile,startFaultRecorder:startSimulationFaultRecorder,finishFaultRecorder:finishSimulationFaultRecorder,faultRecorder:simulationFaultRecorder,exportControlPlane:exportControlPlaneFile,controlPlane:()=>window.GH_CONTROL_PLANE?.ensure?.(state),controlHealth:()=>window.GH_CONTROL_PLANE?.check?.(state),controlTrace:id=>window.GH_CONTROL_PLANE?.trace?.(state,id),clearDiagnostics:()=>window.GH_DIAGNOSTICS.clear(state),diagnostics:()=>state.diagnostics,businessIntegrity:()=>window.GH_INTEGRITY_CORE.check(state),businessLedger:()=>window.GH_EVENT_LEDGER.summary(state),deliveryClosure:()=>window.GH_DELIVERY_MONITOR.reconcile(state),dependencyGraph:()=>state.dependencyGraph,getSimulationSpeed:()=>state.speed,setSimulationSpeed:value=>setSpeed(value),currentPanel:activeDrawerPanel,currentArg:activeDrawerArg};
   }
 
   // Native imports arrive after iOS has already validated and atomically
@@ -4432,6 +4449,9 @@
     if(!result)notice('لم يتغير وضع التجربة؛ تعذر تأكيد الحفظ.','warning');
   }
   document.addEventListener('click',event=>{const button=event.target.closest?.('.god-mode-toggle');if(!button)return;event.preventDefault();event.stopPropagation();toggleGodMode();},true);
+  // Build 358 (save policy): Save Now and the real-time cap choice in Settings.
+  document.addEventListener('click',event=>{const now=event.target.closest?.('.save-now-btn'),cap=event.target.closest?.('[data-save-cap]');if(!now&&!cap)return;event.preventDefault();event.stopPropagation();
+    if(now){saveNow();return;}if(setSaveCap(cap.dataset.saveCap)&&activeDrawerPanel==='settings')openDrawer('settings',activeDrawerArg);},true);
   // Build 358: which side the camera housing is on in landscape (see --rail-safe in interface-layout.css).
   function syncNotchSide(){
     const legacy=Number(window.orientation),angle=Number.isFinite(legacy)?legacy:Number(window.screen?.orientation?.angle),turn=((angle%360)+360)%360;
@@ -4532,9 +4552,9 @@
     const release=beginButtonOperation(button,'جارٍ شراء وتسليم السيارات…');if(!release)return null;
     try{const result=(await runAuthorizedDomainCommand('mobility','buy-fleet',{quantity,centerId,classId})).result;if(!result)throw new Error('محرك Mobility غير متاح');pushAlert(`تم شراء وتسليم ${quantity} سيارة إلى ${window.GH_MOBILITY_CORE.centerMeta(state,centerId)?.city||centerId}، وتعيين ${quantity} سائق برواتب ثابتة تلقائيًا.`);updateKpis();renderMap();openDrawer('assets','mobility');return result;}catch(error){notice(`ألغي شراء سيارات Mobility بالكامل: ${error.message}`);return null;}finally{release();}
   }
-  function focusOwnedAsset(id){const asset=window.GH_FLEET_DATA.get(state,id);if(!asset)return;selectedMobilityId=null;selectedAssetId=id;setMapFilterSelection(assetOwnerCompanyId(asset)||'all');scheduleDeferredPersistence();renderMap();panMapTo(assetPosition(asset),7);closeDrawer();showAsset(id);}
-  function focusMobilityAsset(id){const vehicle=window.GH_MOBILITY_CORE?.findVehicle?.(state,id),position=window.GH_MOBILITY_CORE?.vehiclePosition?.(state,id);if(!vehicle||!position)return;selectedAssetId=null;selectedMobilityId=id;setMapFilterSelection('mobility');scheduleDeferredPersistence();renderMap();panMapTo(position,13);closeDrawer();}
-  function focusFacility(id){const facility=findFacility(id);if(!facility?.coords)return;selectedAssetId=null;selectedMobilityId=null;selectedFacilityId=facility.id;setMapFilterSelection('facility');scheduleDeferredPersistence();renderMap();panMapTo(facility.coords,9);closeDrawer();}
+  function focusOwnedAsset(id){const asset=window.GH_FLEET_DATA.get(state,id);if(!asset)return;selectedMobilityId=null;selectedAssetId=id;setMapFilterSelection(assetOwnerCompanyId(asset)||'all');renderMap();panMapTo(assetPosition(asset),7);closeDrawer();showAsset(id);}
+  function focusMobilityAsset(id){const vehicle=window.GH_MOBILITY_CORE?.findVehicle?.(state,id),position=window.GH_MOBILITY_CORE?.vehiclePosition?.(state,id);if(!vehicle||!position)return;selectedAssetId=null;selectedMobilityId=id;setMapFilterSelection('mobility');renderMap();panMapTo(position,13);closeDrawer();}
+  function focusFacility(id){const facility=findFacility(id);if(!facility?.coords)return;selectedAssetId=null;selectedMobilityId=null;selectedFacilityId=facility.id;setMapFilterSelection('facility');renderMap();panMapTo(facility.coords,9);closeDrawer();}
   async function serviceMobilityAsset(id){try{const result=(await runAuthorizedDomainCommand('mobility','service-vehicle',{id})).result;if(!result)throw new Error('سيارة غير موجودة');pushAlert(`اكتملت صيانة وشحن ${result.name} وأصبحت الحالة والبطارية 100%.`);updateKpis();openDrawer('mobilityAsset',id);return true;}catch(error){notice(`تعذر صيانة السيارة: ${error.message}`);return false;}}
   async function sellMobilityAsset(id){const vehicle=window.GH_MOBILITY_CORE?.findVehicle?.(state,id);if(!vehicle)return false;if(!ask(`بيع ${vehicle.name}؟\nلن يتم البيع أثناء الرحلة.`,'high'))return false;try{const result=(await runAuthorizedDomainCommand('mobility','sell-vehicle',{id})).result;if(!result?.vehicle)throw new Error('لم يرجع محرك Mobility إثبات البيع');pushAlert(`تم بيع ${result.vehicle.name} بقيمة ${fmtMoney(result.proceeds)} وإنهاء وظيفة السائق المرتبطة بها.`);if(selectedMobilityId===id)selectedMobilityId=null;updateKpis();renderMap();openDrawer('assets','mobility');return true;}catch(error){notice(`تعذر بيع السيارة: ${error.message}`);return false;}}
   async function buyAsset(type,tab,id,mode='cash',qty=1,baseId=null,silent=false,requestRef=null,requestedOwnerCompanyId=null){
@@ -4710,7 +4730,7 @@
     return requestCalendarAdvance(calendarAdvanceTargetDays(1),'calendar-next-day','بيوم واحد');
   }
   let resumeSpeed=startupSignatureResumeSpeed>0?startupSignatureResumeSpeed:(state.speed>0?state.speed:1);
-  function setSpeed(value,options={}){if(state.speed>0)resumeSpeed=state.speed;const next=Number(value);simulationEngine.cancelAdvance?.('user-speed-change');state.speed=SAFE_SPEED_VALUES.includes(next)?next:1;simulationEngine.reset(performance.now(),'user-speed-change');document.querySelectorAll('#speedMenu button[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===state.speed));$('speedLabel').textContent=SPEED_LABEL_BY_LEVEL[state.speed];$('speedToggle').querySelector('span').textContent=state.speed===0?'▶':'Ⅱ';$('speedToggle').setAttribute('aria-pressed',String(state.speed===0));updateDayStepControl();if(options.persist!==false)scheduleDeferredPersistence();}
+  function setSpeed(value){if(state.speed>0)resumeSpeed=state.speed;const next=Number(value);simulationEngine.cancelAdvance?.('user-speed-change');state.speed=SAFE_SPEED_VALUES.includes(next)?next:1;simulationEngine.reset(performance.now(),'user-speed-change');document.querySelectorAll('#speedMenu button[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===state.speed));$('speedLabel').textContent=SPEED_LABEL_BY_LEVEL[state.speed];$('speedToggle').querySelector('span').textContent=state.speed===0?'▶':'Ⅱ';$('speedToggle').setAttribute('aria-pressed',String(state.speed===0));updateDayStepControl();}
 
   function openWorld(){closeDrawer();closeMapPopovers();$('assetCard').classList.add('hidden');setActiveNav('map');updateMapStatus();}
   document.querySelectorAll('[data-panel]').forEach(btn=>btn.addEventListener('click',()=>openDrawer(btn.dataset.panel)));
@@ -4718,7 +4738,7 @@
   $('mapNavBtn').addEventListener('click',()=>{const framed=!document.querySelector('.sheet-dock>.open,.sheet-dock>:not(.hidden):not(.drawer):not(.god-panel)');openWorld();if(framed&&map)map.setView([22,28],3);});
   $('brandBtn').addEventListener('click',openWorld);
   $('alertsBtn').addEventListener('click',()=>openDrawer('news')); $('healthBtn')?.addEventListener('click',()=>openDrawer('diagnostics')); $('settingsBtn').addEventListener('click',()=>openDrawer('systemHub'));
-  document.querySelectorAll('[data-map-style]').forEach(btn=>btn.addEventListener('click',()=>{setMapLayer(btn.dataset.mapStyle);scheduleDeferredPersistence();}));
+  document.querySelectorAll('[data-map-style]').forEach(btn=>btn.addEventListener('click',()=>{setMapLayer(btn.dataset.mapStyle);}));
   document.querySelectorAll('button[data-map-mode]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setMapMode(btn.dataset.mapMode);}));
   $('executionLogBtn')?.addEventListener('click',()=>openDrawer('executionLog'));
   $('drawerClose').addEventListener('click',closeDrawer);
@@ -4736,10 +4756,10 @@
   $('simCalendarNext')?.addEventListener('click',e=>{e.stopPropagation();if(!calendarViewMonth)return;calendarViewMonth=new Date(Date.UTC(calendarViewMonth.getUTCFullYear(),calendarViewMonth.getUTCMonth()+1,1));renderSimulationCalendar();});
   $('simCalendarGo')?.addEventListener('click',e=>{e.stopPropagation();const selected=calendarDateFromKey(calendarSelectedKey);if(selected&&requestCalendarAdvance(calendarDayStartSeconds(selected),'calendar-date-picker',`إلى ${calendarSelectedKey}`))toggleSimulationCalendar(false);});
   document.addEventListener('click',e=>{if(!e.target.closest('.map-popover')&&!e.target.closest('#filterToggle'))closeMapPopovers();if(!e.target.closest('#simClockChip')&&!e.target.closest('#simCalendarPanel'))toggleSimulationCalendar(false);});
-  $('filterPopover').addEventListener('click',e=>{const btn=e.target.closest?.('.filter-btn');if(!btn||!$('filterPopover').contains(btn))return;e.stopPropagation();const camera=map?{center:map.getCenter(),zoom:map.getZoom()}:null;setMapFilterSelection(btn.dataset.filter);document.querySelectorAll('.filter-btn').forEach(b=>{const selected=b===btn;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});scheduleDeferredPersistence();renderMap();if(camera&&map){const current=map.getCenter();if(map.getZoom()!==camera.zoom||Math.abs(current.lat-camera.center.lat)>1e-9||Math.abs(current.lng-camera.center.lng)>1e-9)map.setView(camera.center,camera.zoom,{animate:false});}});
-  $('competitorToggle').addEventListener('change',e=>{state.showCompetitors=e.target.checked;const next=clone(currentMapFilter());next.market.competitors=state.showCompetitors;state.mapFilterState=clone(MAP_FEATURE_CORE.normalizeFilterState(next,{state,companyPlatform:COMPANY_PLATFORM}));scheduleDeferredPersistence();renderMap();});
+  $('filterPopover').addEventListener('click',e=>{const btn=e.target.closest?.('.filter-btn');if(!btn||!$('filterPopover').contains(btn))return;e.stopPropagation();const camera=map?{center:map.getCenter(),zoom:map.getZoom()}:null;setMapFilterSelection(btn.dataset.filter);document.querySelectorAll('.filter-btn').forEach(b=>{const selected=b===btn;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});renderMap();if(camera&&map){const current=map.getCenter();if(map.getZoom()!==camera.zoom||Math.abs(current.lat-camera.center.lat)>1e-9||Math.abs(current.lng-camera.center.lng)>1e-9)map.setView(camera.center,camera.zoom,{animate:false});}});
+  $('competitorToggle').addEventListener('change',e=>{state.showCompetitors=e.target.checked;const next=clone(currentMapFilter());next.market.competitors=state.showCompetitors;state.mapFilterState=clone(MAP_FEATURE_CORE.normalizeFilterState(next,{state,companyPlatform:COMPANY_PLATFORM}));renderMap();});
   document.querySelectorAll('.speed-menu button').forEach(el=>el.addEventListener('click',e=>e.stopPropagation()));
-  document.querySelectorAll('#layerMenu button').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setMapLayer(btn.dataset.layer);scheduleDeferredPersistence();/* keep menu open for consecutive choices */}));
+  document.querySelectorAll('#layerMenu button').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setMapLayer(btn.dataset.layer);/* keep menu open for consecutive choices */}));
   document.querySelectorAll('#speedMenu button[data-speed]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setSpeed(btn.dataset.speed);/* keep menu open */}));
 
 
@@ -4879,7 +4899,7 @@
   $('founderForm').addEventListener('submit',event=>{event.preventDefault();return finishFounder();});
   if(!state.onboardingComplete){$('founderFlow').classList.remove('hidden');$('app').setAttribute('inert','');$('app').setAttribute('aria-hidden','true');}
 
-  updateKpis();setSpeed(state.speed,{persist:false});$('competitorToggle').checked=!!state.showCompetitors;
+  updateKpis();setSpeed(state.speed);$('competitorToggle').checked=!!state.showCompetitors;
   document.querySelectorAll('.filter-btn').forEach(b=>{const selected=b.dataset.filter===state.activeFilter;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});
   initMap();
   if(startupSignatureRequired){state.speed=0;setTimeout(()=>{openSignatureDialog({required:true});startupSignatureRequired=false;pendingAuthorizedResumeSpeed=startupSignatureResumeSpeed;setSignatureDialogError('المحاكاة متوقفة وقائيًا. اعتمد توقيع المؤسس المرئي قبل استئناف العمليات الآلية أو اليدوية.');updateKpis();},0);}
@@ -4903,6 +4923,8 @@
     // A staged day boundary lives only as long as the engine's slice job; one without a job is rolled back.
     if(stagedStateBusy()&&!simulationEngine.snapshot().jobActive)window.GH_TRANSACTION_CORE.abortStaged(state,'staged-transaction-orphaned');
     let stageStarted=measureFrame?appMetricClock():0;simulationEngine.frame(now);if(measureFrame)simulationMs=Math.max(0,appMetricClock()-stageStarted);
+    // Build 358: a save checkpoint when a game quarter begins or the real-time cap has passed (GH_SAVE_POLICY).
+    maybeSaveCheckpoint(now);
     // The simulation remains authoritative on every frame. Expensive target
     // collection is sampled separately from bounded visible-marker animation.
     // Device thermal/memory acceptance still requires a real iPhone trace.

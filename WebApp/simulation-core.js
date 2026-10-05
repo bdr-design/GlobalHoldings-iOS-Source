@@ -19,8 +19,6 @@
     manualChunkItems:64,
     renderEveryNormalMs:180,
     renderEveryFastMs:450,
-    persistEveryNormalMs:12000,
-    persistEveryFastMs:30000,
     minRealSliceSeconds:0,
     maintenanceEveryHours:6,
     manualBatchSeconds:3600,
@@ -38,7 +36,7 @@
     const cfg={...DEFAULTS,...options};
     cfg.allowedSpeeds=Array.from(options.allowedSpeeds||DEFAULTS.allowedSpeeds).map(Number).filter(Number.isFinite);
     if(!cfg.allowedSpeeds.length)cfg.allowedSpeeds=Array.from(DEFAULTS.allowedSpeeds);
-    const positive=['quantumRealSeconds','maxRealDelta','maxBacklogNormal','maxBacklogFast','frameBudgetMs','manualFrameBudgetMs','chunkItems','manualChunkItems','renderEveryNormalMs','renderEveryFastMs','persistEveryNormalMs','persistEveryFastMs','maintenanceEveryHours','manualBatchSeconds','manualMinBatchSeconds','manualRetryLimit','longTaskWarnMs','hardTaskMs','hardTaskLimit','conflictLimit'];
+    const positive=['quantumRealSeconds','maxRealDelta','maxBacklogNormal','maxBacklogFast','frameBudgetMs','manualFrameBudgetMs','chunkItems','manualChunkItems','renderEveryNormalMs','renderEveryFastMs','maintenanceEveryHours','manualBatchSeconds','manualMinBatchSeconds','manualRetryLimit','longTaskWarnMs','hardTaskMs','hardTaskLimit','conflictLimit'];
     for(const key of positive){const n=Number(cfg[key]);cfg[key]=Number.isFinite(n)&&n>0?n:DEFAULTS[key];}
     const minRealSliceSeconds=Number(cfg.minRealSliceSeconds);cfg.minRealSliceSeconds=Number.isFinite(minRealSliceSeconds)?Math.max(0,Math.min(1,minRealSliceSeconds)):0;
     cfg.chunkItems=Math.max(1,Math.floor(cfg.chunkItems));
@@ -85,7 +83,7 @@
     // repeatedly selecting the same fallback: otherwise no slice can reach its
     // atomic commit under pressure.
     const fast=s=>s>=8&&s>cfg.fallbackSpeed;
-    // Wall-clock pacing, backlog, frame execution budget and render/persist cadence are
+    // Wall-clock pacing, backlog, frame execution budget and render cadence are
     // runtime-only concerns. They never own or write authoritative economic time.
     const pacing=PACING.create({...cfg,nowMs:clock,isFast:fast});
     const manualSnapshot=()=>manualAdvance?{target:manualAdvance.target,remaining:Math.max(0,manualAdvance.target-simNow()),speed:manualAdvance.speed,requestedSpeed:manualAdvance.requestedSpeed,batchSeconds:manualAdvance.batchSeconds,reason:manualAdvance.reason,requestedAt:manualAdvance.requestedAt,retries:manualAdvance.retries||0,yields:manualAdvance.yields||0}:null;
@@ -274,10 +272,6 @@
     function maybeRender(now,speed){
       if(pacing.shouldRender(now,speed)){try{adapter.onRender?.({now,speed,backlog:pacing.backlog(),jobActive:!!job});}catch(error){report('render',error,false);}}
     }
-    function maybePersist(now,speed){
-      let minimum=0;try{minimum=Number(adapter.persistMinIntervalMs?.())||0;}catch(error){report('persist-interval',error,false);}
-      if(pacing.shouldPersist(now,speed,minimum)){try{adapter.onPersist?.({now,speed});}catch(error){report('persist',error,false);}}
-    }
 
     function advanceTo(target,options={}){
       const current=simNow(),requested=Number(target),maxSeconds=Math.max(86400,Math.min(366*86400,Number(options.maxSeconds)||366*86400));
@@ -304,11 +298,11 @@
       health.frames++;completeManualAdvance();
       const advancing=manualAdvance,speed=advancing?advancing.speed:getSpeed();
       if(lastObservedSpeed===null)lastObservedSpeed=speed;
-      if(speed!==lastObservedSpeed){cancelJob('speed-change');pacing.reset(now);lastObservedSpeed=speed;maybeRender(now,speed);maybePersist(now,speed);return;}
+      if(speed!==lastObservedSpeed){cancelJob('speed-change');pacing.reset(now);lastObservedSpeed=speed;maybeRender(now,speed);return;}
       const suspended=!!adapter.isSuspended?.();
       if(advancing){
         const remaining=Math.max(0,advancing.target-simNow());
-        if(remaining<=1e-6&&!job){completeManualAdvance();pacing.reset(now);maybeRender(now,speed);maybePersist(now,speed);return;}
+        if(remaining<=1e-6&&!job){completeManualAdvance();pacing.reset(now);maybeRender(now,speed);return;}
         // Manual calendar navigation is target-driven. It never accrues wall-clock
         // backlog, but it refreshes the wall-clock anchor every frame so its own
         // duration can never be replayed as live catch-up after completion.
@@ -321,7 +315,7 @@
       }
       const hidden=pacing.snapshot().hidden;
       if(hidden||suspended||(speed<=0&&!advancing)){pacing.clearBacklog();cancelJob(hidden?'hidden':speed<=0?'paused':'suspended');maybeRender(now,speed);return;}
-      work(now,speed);completeManualAdvance();maybeRender(now,speed);maybePersist(now,speed);
+      work(now,speed);completeManualAdvance();maybeRender(now,speed);
     }
 
     function reset(now=clock(),reason='reset'){
@@ -329,6 +323,7 @@
       if(cancelled)try{adapter.onAdvance?.({active:false,cancelled:true,target:cancelled.target,reason});}catch(error){report('advance-reset',error,false);}
       lastHourCommitted=Math.floor((simNow()+1e-6)/3600);lastDayCommitted=Math.floor((simNow()+1e-6)/86400);lastObservedSpeed=getSpeed();
     }
+    // Build 358: hiding the app is the engine's only save request (onPersist); the host owns every other save (GH_SAVE_POLICY).
     function setHidden(v){const hidden=!!v;reset(clock(),hidden?'hidden':'visible');pacing.setHidden(hidden,clock());if(hidden){try{adapter.onPersist?.({reason:'hidden',speed:getSpeed()});}catch(error){report('persist-hidden',error,false);}}}
     function snapshot(){const pace=pacing.snapshot();return {...health,simSeconds:simNow(),speed:getSpeed(),backlog:pace.backlog,jobActive:!!job,jobReadyToFinish,jobSlice,jobSpeed,hidden:pace.hidden,manualAdvance:manualSnapshot(),pacing:pace,config:{...cfg,allowedSpeeds:[...cfg.allowedSpeeds],nowMs:undefined}};}
 

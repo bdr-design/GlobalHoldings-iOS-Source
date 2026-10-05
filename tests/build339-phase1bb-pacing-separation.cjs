@@ -30,7 +30,7 @@ assert.doesNotMatch(simSource,/let\s+lastRender\s*=/,'render cadence must live i
 // 2. Wall-clock backlog math is isolated and deterministic.
 {
   const sandbox={console,Math,Date};sandbox.globalThis=sandbox;sandbox.window=sandbox;vm.createContext(sandbox);vm.runInContext(pacingSource,sandbox,{filename:'simulation-pacing-core.js'});
-  const clock=fakeClock(0),p=sandbox.GH_SIMULATION_PACING_CORE.create({nowMs:clock.now,isFast:s=>s>30,maxRealDelta:3,maxBacklogNormal:1000,maxBacklogFast:5000,frameBudgetMs:7,manualFrameBudgetMs:11,renderEveryNormalMs:180,renderEveryFastMs:450,persistEveryNormalMs:12000,persistEveryFastMs:30000});
+  const clock=fakeClock(0),p=sandbox.GH_SIMULATION_PACING_CORE.create({nowMs:clock.now,isFast:s=>s>30,maxRealDelta:3,maxBacklogNormal:1000,maxBacklogFast:5000,frameBudgetMs:7,manualFrameBudgetMs:11,renderEveryNormalMs:180,renderEveryFastMs:450});
   p.reset(0);assert.equal(p.observeLiveFrame(1000,30).backlog,30);assert.equal(p.consume(10),20);
   const stalled=p.observeLiveFrame(6000,30);assert.equal(stalled.stalled,true);assert.equal(stalled.droppedRealSeconds,5);assert.equal(p.backlog(),20,'stall must not manufacture simulation backlog');
   p.setManualBacklog(90000,7000);assert.equal(p.backlog(),90000);assert.equal(p.consume(3600),86400);

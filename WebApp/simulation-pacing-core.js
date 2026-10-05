@@ -9,9 +9,7 @@
     frameBudgetMs:5.5,
     manualFrameBudgetMs:10,
     renderEveryNormalMs:180,
-    renderEveryFastMs:450,
-    persistEveryNormalMs:12000,
-    persistEveryFastMs:30000
+    renderEveryFastMs:450
   });
   const systemNowMs=()=>globalThis.performance?.now?.() ?? Date.now();
   const positive=(value,fallback)=>{const n=Number(value);return Number.isFinite(n)&&n>0?n:fallback;};
@@ -24,15 +22,13 @@
       frameBudgetMs:positive(options.frameBudgetMs,DEFAULTS.frameBudgetMs),
       manualFrameBudgetMs:positive(options.manualFrameBudgetMs,DEFAULTS.manualFrameBudgetMs),
       renderEveryNormalMs:positive(options.renderEveryNormalMs,DEFAULTS.renderEveryNormalMs),
-      renderEveryFastMs:positive(options.renderEveryFastMs,DEFAULTS.renderEveryFastMs),
-      persistEveryNormalMs:positive(options.persistEveryNormalMs,DEFAULTS.persistEveryNormalMs),
-      persistEveryFastMs:positive(options.persistEveryFastMs,DEFAULTS.persistEveryFastMs)
+      renderEveryFastMs:positive(options.renderEveryFastMs,DEFAULTS.renderEveryFastMs)
     };
   }
 
   function create(options={}){
     const cfg=normalizeConfig(options),clock=typeof options.nowMs==='function'?options.nowMs:systemNowMs;
-    let lastReal=clock(),backlog=0,lastRender=0,lastPersist=0,hidden=false,droppedRealSeconds=0,backlogClamps=0,stallGaps=0;
+    let lastReal=clock(),backlog=0,lastRender=0,hidden=false,droppedRealSeconds=0,backlogClamps=0,stallGaps=0;
     const fast=s=>!!options.isFast?.(s);
     const backlogCap=s=>Math.max(fast(s)?cfg.maxBacklogFast:cfg.maxBacklogNormal,Math.max(0,Number(s)||0)*cfg.maxRealDelta*2);
 
@@ -57,11 +53,9 @@
     function clearBacklog(){backlog=0;return 0;}
     function executionDeadline(manual=false){return clock()+(manual?cfg.manualFrameBudgetMs:cfg.frameBudgetMs);}
     function shouldRender(now,speed){const every=fast(speed)?cfg.renderEveryFastMs:cfg.renderEveryNormalMs;if(Number(now)-lastRender<every)return false;lastRender=Number(now);return true;}
-    // minimumMs lets the host widen the cadence (e.g. when one save is expensive); it never shortens it.
-    function shouldPersist(now,speed,minimumMs=0){const every=Math.max(fast(speed)?cfg.persistEveryFastMs:cfg.persistEveryNormalMs,Number(minimumMs)>0?Number(minimumMs):0);if(Number(now)-lastPersist<every)return false;lastPersist=Number(now);return true;}
-    function snapshot(){return {version:VERSION,lastReal,backlog,hidden,lastRender,lastPersist,droppedRealSeconds,backlogClamps,stallGaps,config:{...cfg}};}
+    function snapshot(){return {version:VERSION,lastReal,backlog,hidden,lastRender,droppedRealSeconds,backlogClamps,stallGaps,config:{...cfg}};}
 
-    return {version:VERSION,reset,setHidden,observeLiveFrame,setManualBacklog,limitBacklog,consume,clearBacklog,backlog:()=>backlog,executionDeadline,shouldRender,shouldPersist,snapshot,config:()=>({...cfg})};
+    return {version:VERSION,reset,setHidden,observeLiveFrame,setManualBacklog,limitBacklog,consume,clearBacklog,backlog:()=>backlog,executionDeadline,shouldRender,snapshot,config:()=>({...cfg})};
   }
 
   const API=Object.freeze({VERSION,DEFAULTS,normalizeConfig,create});

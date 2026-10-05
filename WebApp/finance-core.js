@@ -670,5 +670,10 @@ function execute(ctx,cmd,p={},meta={}){
   }
  }finally{activeExecutionMeta=previousMeta;activeEnsureTarget=previousEnsureTarget;activeEnsureComplete=previousEnsureComplete;}
 }
+// Build 358 (save size): the finance audit archive (finance.auditArchive.records, filled by the daily compaction) holds
+// copies made when rows leave the live lists; they are never edited afterwards (a migration replaces a row, never edits
+// it). Its collections are sealed: a save reuses the text (and vault chunk) of every unchanged archive part, and durable
+// drafts and rollback snapshots share the rows instead of copying the whole archive.
+(globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('finance',['auditArchive.records.*']);
 const API={VERSION,RATING_SPREAD,floatingDebtRate,fixedDebtQuote,debtRate,interestBearing,payableChequeBlocker,zeroRateFleetPurchaseVat,FLEET_PURCHASE_NOTE,COMPANY_METRIC_KEYSPACE:'company-instance-id/v1',annualPerformance,TYPES,companyIds,supportsCompany,requireCompany,companyMetricMap,collectionProfile,ensure,makeBook,book,operating,total,budget,remaining,lineRemaining,lineFor,canSpend,consumeBudget,reserveBudget,consumeReserved,releaseReserved,reconcile,journal,invoice,issueInvoice,payByCheque,performance,monthlyStatement,calendarMonthForDay,centralTreasuryPolicy,intercompanyLoanSnapshot,closeVatPeriod,withCollectionBatch,execute};globalThis.GH_FINANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('finance',API);if(globalThis.window&&window!==globalThis)window.GH_FINANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

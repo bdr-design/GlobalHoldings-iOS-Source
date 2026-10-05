@@ -58,12 +58,31 @@
     const out={...collection};for(const key of Object.keys(out)){const member=out[key];if(member&&typeof member==='object'&&!sealValue(member))out[key]=deepClone(member);}return out;
   }
   const isSealed=value=>!!value&&typeof value==='object'&&SEALED.has(value);
+  // A registered name is a key of the root, or a path inside it whose steps may be '*' (every key of that object):
+  // 'auditArchive.records.*' is every collection of finance.auditArchive.records. The collections a name reaches now,
+  // with their path inside the root.
+  function sealedTargets(root,name){
+    const steps=String(name).split('.'),out=[];
+    (function walk(value,index,path){
+      if(!value||typeof value!=='object'||Array.isArray(value)||!plainData(value))return;
+      const step=steps[index],keys=step==='*'?Object.keys(value):Object.prototype.hasOwnProperty.call(value,step)?[step]:[];
+      for(const key of keys){const child=value[key];if(index===steps.length-1){if(child&&typeof child==='object'&&plainData(child))out.push({path:[...path,key],collection:child});}else walk(child,index+1,[...path,key]);}
+    })(root,0,[]);
+    return out;
+  }
+  // A copy of root in which each target collection is replaced by null (same key order), copying only the objects
+  // on the targets' paths; the collections and everything beside them are shared.
+  function withoutTargets(root,targets){
+    const copies=new Set(),top={...root};copies.add(top);
+    for(const {path} of targets){let node=top;for(let i=0;i<path.length-1;i++){let child=node[path[i]];if(!copies.has(child)){child={...child};copies.add(child);node[path[i]]=child;}node=child;}node[path[path.length-1]]=null;}
+    return top;
+  }
   // Owners loaded before this module queue their registration.
   for(const [root,keys] of Array.isArray(globalThis.__GH_PENDING_SEALED_COLLECTIONS__)?globalThis.__GH_PENDING_SEALED_COLLECTIONS__:[])registerSealedCollections(root,keys);delete globalThis.__GH_PENDING_SEALED_COLLECTIONS__;
   // Seals the members of every registered collection in place (a quiescent live state, e.g. before a save).
   function sealCollections(state){
     let sealed=0;if(!state||typeof state!=='object')return sealed;
-    for(const [root,names] of SEALED_COLLECTIONS){const value=state[root];if(!value||typeof value!=='object'||Array.isArray(value)||JOURNALED_ROOTS.has(root))continue;for(const name of names){const collection=value[name];if(!collection||typeof collection!=='object'||!plainData(collection))continue;const members=Array.isArray(collection)?collection:Object.values(collection);for(const member of members)if(member&&typeof member==='object'&&!SEALED.has(member)&&sealValue(member))sealed++;}}
+    for(const [root,names] of SEALED_COLLECTIONS){const value=state[root];if(!value||typeof value!=='object'||Array.isArray(value)||JOURNALED_ROOTS.has(root))continue;for(const name of names)for(const {collection} of sealedTargets(value,name)){const members=Array.isArray(collection)?collection:Object.values(collection);for(const member of members)if(member&&typeof member==='object'&&!SEALED.has(member)&&sealValue(member))sealed++;}}
     return sealed;
   }
   function cloneWithoutJournaledRoots(value,{shareJournaledRoots=false,shareSealed=shareJournaledRoots}={}){
@@ -75,13 +94,13 @@
     for(const key of keys){
       if(JOURNALED_ROOTS.has(key))continue;const root=value[key],collections=sealed&&SEALED_COLLECTIONS.get(key);
       if(collections&&root&&typeof root==='object'&&!Array.isArray(root)&&plainData(root)){
-        const shared=collections.filter(name=>{const item=root[name];return item&&typeof item==='object'&&plainData(item);});
-        if(shared.length){const rest={};for(const name of Object.keys(root))if(!shared.includes(name))rest[name]=root[name];sealed.set(key,{order:Object.keys(root),shared});source[key]=rest;continue;}
+        const targets=collections.flatMap(name=>sealedTargets(root,name));
+        if(targets.length){sealed.set(key,targets);source[key]=withoutTargets(root,targets);continue;}
       }
       source[key]=root;
     }
     let cloned;if(typeof globalThis.structuredClone==='function'){try{cloned=globalThis.structuredClone(source);}catch(_error){cloned=jsonClone(source);}}else cloned=jsonClone(source);
-    if(sealed)for(const [key,plan] of sealed){const rest=cloned[key],root=value[key],out={};for(const name of plan.order)out[name]=plan.shared.includes(name)?sealedCopy(root[name]):rest[name];cloned[key]=out;}
+    if(sealed)for(const [key,targets] of sealed)for(const {path,collection} of targets){let node=cloned[key];for(let i=0;i<path.length-1;i++)node=node[path[i]];node[path[path.length-1]]=sealedCopy(collection);}
     const out={};for(const key of keys){if(JOURNALED_ROOTS.has(key)){if(shareJournaledRoots)out[key]=value[key];}else out[key]=cloned[key];}return out;
   }
   // State roots registered as self-journaled are excluded from transaction
