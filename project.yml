@@ -27,7 +27,7 @@ targets:
         CFBundleIconName: "AppIcon"
         CFBundleShortVersionString: "3.0.0"
         CFBundleVersion: "358"
-        GHSourceSnapshotSHA256: "985d4f4abede6b1c3a4b98df3622d82d26cb7cabd81e151872f7cb253250cbd2"
+        GHSourceSnapshotSHA256: "2d61e13c3d025d35a396cc5aac368f655627623f15d5d61d3135400a69b2c5f0"
         LSRequiresIPhoneOS: true
         UIRequiresFullScreen: true
         UILaunchStoryboardName: LaunchScreen

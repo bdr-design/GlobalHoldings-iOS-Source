@@ -17,7 +17,7 @@ async function test(name,fn){try{results.push({name,ok:true,detail:await fn()});
 // ---- stand-in native vault ----------------------------------------------------------------------------------------
 const vault={chunks:new Map(),saves:[],slots:new Map(),messages:[],generation:0,ackDelay:0,holdChunkAcks:null,stages:null};
 const sha=text=>crypto.createHash('sha256').update(text,'utf8').digest('hex');
-function referenced(json){const rows=JSON.parse(json)?.fleet?.rows;return rows?.$ghBinary==='chunks-v1'?rows.chunks:[];}
+function referenced(json){const root=JSON.parse(json),rows=root?.fleet?.rows;return [...(rows?.$ghBinary==='chunks-v1'?rows.chunks:[]),...(Array.isArray(root?.stateCodec?.chunks)?root.stateCodec.chunks:[])];}
 function deliver(name,detail){setTimeout(()=>s.dispatchEvent(new s.CustomEvent(name,{detail})),vault.ackDelay);}
 const bridge={postMessage(message){
   vault.messages.push({action:message.action,id:message.id,bytes:message.bytes});
@@ -78,12 +78,12 @@ const rowsOf=json=>JSON.parse(json).fleet.rows;
   });
   await test('a bootstrap from the vault loads the exact state, then the next save uploads nothing',async()=>{
     await P.commitState(state,{storageKey:key}).native;const json=vault.saves.at(-1);
-    s.__GH_NATIVE_SAVE_JSON__=json;s.__GH_NATIVE_SAVE_CHUNKS__=new Map(rowsOf(json).chunks.map(id=>[id,new Uint8Array(vault.chunks.get(id)).buffer]));
+    s.__GH_NATIVE_SAVE_JSON__=json;s.__GH_NATIVE_SAVE_CHUNKS__=new Map(referenced(json).map(id=>[id,new Uint8Array(vault.chunks.get(id)).buffer]));
     P.forgetVaultChunks();
     const loaded=s.GH_MIGRATION_CORE.load({defaultState:e.defaultState||structuredClone(state),storageKey:key,saveSchema:s.GH_SAVE_SCHEMA});
     assert.equal(loaded.source,'native');assert.deepEqual(new Uint8Array(loaded.state.fleet.rows),new Uint8Array(state.fleet.rows),'rows are exact');
     assert.equal(s.__GH_NATIVE_SAVE_CHUNKS__,undefined,'the chunk map is released after the load');
-    assert.equal(P.vaultChunkCount(),rowsOf(json).chunks.length,'the loaded chunks are known to be in the vault');
+    assert.equal(P.vaultChunkCount(),referenced(json).length,'the loaded chunks are known to be in the vault');
     resetLog();const out=P.commitState(loaded.state,{storageKey:key});await out.native;assert.equal(uploads().length,0,'the first save of the session uploads nothing');
     return {chunks:rowsOf(json).chunks.length};
   });

@@ -125,6 +125,9 @@
     };
     try{const hashed=saveHash(json,options.encoded||null);return hashed&&typeof hashed.then==='function'?hashed.then(post):post(hashed);}catch(error){return Promise.reject(error);}
   }
+  // Build 358 (save size): the same path carries the text chunks of sealed collections (document and authorization
+  // proofs, idempotency receipts; GH_STATE_CODEC 'chunk-v1' markers). A save then sends only what changed through the
+  // bridge: the 21 MB iPhone save of the diagnostic was ~20 MB of proofs written again by every commit.
   // Build 358 (million-asset save): with the native vault, the fleet record buffer is saved as 'chunks-v1' (one id per
   // 4 MiB store chunk, GH_STATE_CODEC.serializeChunked) instead of base64 in the JSON. serializeNative copies the bytes
   // of every chunk the vault has not acknowledged at the moment the save is taken (the simulation may write rows while
@@ -139,7 +142,8 @@
   function serializeNative(state){
     if(!chunkedNative(state))return {json:serializeState(state),uploads:[],chunked:false};
     const out=stateCodec().serializeChunked(state),uploads=[];
-    for(const chunk of out.chunks)if(!vaultChunks.has(chunk.id))uploads.push({id:chunk.id,bytes:new Uint8Array(state.fleet.rows,chunk.byteOffset,chunk.byteLength).slice()});
+    // Fleet chunks copy their bytes now (rows keep changing); a text chunk (a sealed collection's JSON) is immutable.
+    for(const chunk of out.chunks)if(!vaultChunks.has(chunk.id))uploads.push({id:chunk.id,bytes:typeof chunk.text==='string'?utf8(chunk.text):new Uint8Array(state.fleet.rows,chunk.byteOffset,chunk.byteLength).slice()});
     return {json:out.text,uploads,chunked:true,chunkIds:out.chunks.map(chunk=>chunk.id)};
   }
   function receiveChunkAck(detail={}){

@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "4811741cdc341b3c6d9938431bcf4d3d822335eee6ace6ccde9a765355912f77",
-  "webapp_tree_sha256": "985d4f4abede6b1c3a4b98df3622d82d26cb7cabd81e151872f7cb253250cbd2",
+  "source_tree_sha256": "0457ef4d73e3b0231bc6463b519ea3d843966e80d890543839b2b19dc89ea0d1",
+  "webapp_tree_sha256": "2d61e13c3d025d35a396cc5aac368f655627623f15d5d61d3135400a69b2c5f0",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 194299,
@@ -3199,8 +3199,8 @@
       "sha256": "766809780c747b3a896cdb04764c42a5349ce857953c338e8e0b7a0aeffab0c5"
     },
     "WebApp/migration-core.js": {
-      "bytes": 24936,
-      "sha256": "ccaa6301cb21210f58bdc27f978950227f10be7f069e63ccdde7cf1bc04e4c84"
+      "bytes": 25260,
+      "sha256": "0b22a8023ba64cc2c691a58947a55a00893992a5f2103e8b62c9e159ce9e5533"
     },
     "WebApp/mobility-core.js": {
       "bytes": 67285,
@@ -3211,8 +3211,8 @@
       "sha256": "a60a12c745e33195b2eeb998a6118f9eae056e67c837eec672f42778181a75f4"
     },
     "WebApp/persistence-core.js": {
-      "bytes": 42741,
-      "sha256": "600855524598f5f2353d84a497d236dfb9553edcb87373c662d7451a8b8cf686"
+      "bytes": 43246,
+      "sha256": "7d12425337205a0a7f9b1d7c9e852e716c127e6ac22af72e1848c95167124eed"
     },
     "WebApp/policy-core.js": {
       "bytes": 1915,
@@ -3283,8 +3283,8 @@
       "sha256": "7fba65430a479155bf423b5adca04c620bff3948b3da2c1bdab09927aecf6c15"
     },
     "WebApp/state-codec-core.js": {
-      "bytes": 36898,
-      "sha256": "7639a0de07e87502fdfdc16b57e911b7028a0198786c5d4c567a3cfc6886918b"
+      "bytes": 41769,
+      "sha256": "668cc31b0347849467ba4f44a4d1ef12e001ec948c4cf3b0d81bd3c11d4c5e3f"
     },
     "WebApp/strategy-core.js": {
       "bytes": 4799,
@@ -3371,8 +3371,8 @@
       "sha256": "63a17c82ccfaa52d0a2ef01bc484a3e80bc2080322dc039e763ca8b5359105a5"
     },
     "iOS/GlobalHoldings/GlobalSaveVault.swift": {
-      "bytes": 68039,
-      "sha256": "a773c5a566c608b1352d84c21e5ad62aab9513b00fc214044b0a6f0cf5893149"
+      "bytes": 70065,
+      "sha256": "31044608a7775a23200f3b0957daad37f86b1c1e3b6ad22307d5f8ec3edb8a69"
     },
     "iOS/GlobalHoldings/LaunchScreen.storyboard": {
       "bytes": 1728,
@@ -3380,7 +3380,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "f4ace71646cef7e58bde7d1bc411cfa950cd7bf16acf9619b6da7b3674a91468"
+      "sha256": "4403abe08c4b384d256c3893107fb535b4dda95493a804847ac50b7c6485e48a"
     },
     "BUILD": {
       "bytes": 4,

@@ -94,7 +94,7 @@
     // Build 358: a native save may keep the fleet records in vault chunks ('chunks-v1'); the native bootstrap fetched
     // them into __GH_NATIVE_SAVE_CHUNKS__ (id -> ArrayBuffer). A missing chunk is a corrupt save, like invalid JSON.
     const nativeChunks=nativeRaw&&typeof globalThis.__GH_NATIVE_SAVE_CHUNKS__?.get==='function'?globalThis.__GH_NATIVE_SAVE_CHUNKS__:null;let chunkManifest=null;
-    let saved;try{saved=JSON.parse(raw);chunkManifest=saved?.fleet?.rows?.$ghBinary==='chunks-v1'?saved.fleet.rows:null;if(globalThis.GH_STATE_CODEC?.decodeState)saved=globalThis.GH_STATE_CODEC.decodeState(saved,{resolveChunk:id=>nativeChunks?.get(id)});}catch{throw new Error('MIGRATION_JSON_INVALID');}
+    let saved,textChunkIds=[];try{saved=JSON.parse(raw);chunkManifest=saved?.fleet?.rows?.$ghBinary==='chunks-v1'?saved.fleet.rows:null;textChunkIds=nativeChunks&&Array.isArray(saved?.stateCodec?.chunks)?saved.stateCodec.chunks.slice():[];if(globalThis.GH_STATE_CODEC?.decodeState)saved=globalThis.GH_STATE_CODEC.decodeState(saved,{resolveChunk:id=>nativeChunks?.get(id)});}catch{throw new Error('MIGRATION_JSON_INVALID');}
     if(nativeRaw)try{delete globalThis.__GH_NATIVE_SAVE_JSON__;}catch{globalThis.__GH_NATIVE_SAVE_JSON__=null;}
     if(nativeChunks)try{delete globalThis.__GH_NATIVE_SAVE_CHUNKS__;}catch{globalThis.__GH_NATIVE_SAVE_CHUNKS__=null;}
     const currentFleet=globalThis.GH_FLEET_STORE?.isStore?.(saved.fleet)===true&&saved.saveVersion===SAVE_V3,
@@ -128,6 +128,8 @@
     // The loaded fleet keeps the chunk ids it was read from, and the vault already holds them: the first save of the
     // session uploads only the chunks it changes.
     if(chunkManifest&&state?.fleet&&globalThis.GH_STATE_CODEC?.adoptChunkIds?.(state.fleet,chunkManifest))globalThis.GH_PERSISTENCE?.noteVaultChunks?.(chunkManifest.chunks);
+    // The text chunks of the sealed collections are in the vault too (the codec reuses their ids for the same text).
+    if(textChunkIds.length)globalThis.GH_PERSISTENCE?.noteVaultChunks?.(textChunkIds);
     return {state,source,migratedLegacyKey,needsCanonicalPersist};
   }
   function structural(state,defaultState){

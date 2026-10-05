@@ -89,7 +89,8 @@ final class GlobalSaveVault {
         let simSeconds: Double
         let saveRevision: Int
         let resetEpoch: Double
-        /// fleet.rows.chunks of a 'chunks-v1' manifest; [] without one; nil when the manifest is invalid.
+        /// fleet.rows.chunks of a 'chunks-v1' manifest and stateCodec.chunks (text chunks of sealed collections);
+        /// [] without them; nil when either list is invalid.
         let chunkIds: [String]?
     }
     /// A payload checked once: its UTF-8 bytes, their SHA-256 and what its JSON root holds.
@@ -631,13 +632,14 @@ final class GlobalSaveVault {
           // payload out of WebKit localStorage so large worlds are not constrained
           // by the browser quota. Migration Core consumes this value once at boot.
           window.__GH_NATIVE_SAVE_JSON__=raw;
-          // Build 358 (million-asset save): fleet records kept in vault chunks are fetched before app.js runs.
-          // app.js defers itself to __GH_BOOT_GATE__ until every chunk has arrived (or one failed: the load then
-          // reports a corrupt save and the recovery path takes over).
-          try{if(raw.includes('"$ghBinary":"chunks-v1"')){const rows=JSON.parse(raw)?.fleet?.rows;if(rows&&rows.$ghBinary==='chunks-v1'&&Array.isArray(rows.chunks)){
+          // Build 358 (million-asset save): fleet records kept in vault chunks are fetched before app.js runs, and so
+          // are the text chunks of sealed collections (stateCodec.chunks). app.js defers itself to __GH_BOOT_GATE__
+          // until every chunk has arrived (or one failed: the load then reports a corrupt save and the recovery path
+          // takes over).
+          try{if(raw.includes('"$ghBinary":"chunks-v1"')||raw.includes('"$ghText":"chunk-v1"')){const parsed=JSON.parse(raw),rows=parsed?.fleet?.rows,ids=[...(rows&&rows.$ghBinary==='chunks-v1'&&Array.isArray(rows.chunks)?rows.chunks:[]),...(Array.isArray(parsed?.stateCodec?.chunks)?parsed.stateCodec.chunks:[])];if(ids.length){
             const chunks=new Map(),gate={ready:false,failed:null,deferred:null,defer(script){this.deferred=(script&&script.src)||'app.js';}};
             window.__GH_NATIVE_SAVE_CHUNKS__=chunks;window.__GH_BOOT_GATE__=gate;
-            Promise.all(rows.chunks.map(id=>fetch('gh://app/save-chunk/'+encodeURIComponent(id),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('save-chunk-'+r.status);return r.arrayBuffer();}).then(buffer=>{chunks.set(id,buffer);})))
+            Promise.all(ids.map(id=>fetch('gh://app/save-chunk/'+encodeURIComponent(id),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('save-chunk-'+r.status);return r.arrayBuffer();}).then(buffer=>{chunks.set(id,buffer);})))
               .catch(error=>{gate.failed=String(error&&error.message||error);console.error('GH native save chunks failed',error);})
               .finally(()=>{gate.ready=true;if(gate.deferred){const s=document.createElement('script');s.src=gate.deferred;(document.body||document.documentElement).appendChild(s);}});
           }}}catch(e){console.error('GH native save chunk manifest failed',e);}
@@ -687,7 +689,10 @@ final class GlobalSaveVault {
         guard let requestId = payload["requestId"] as? String, !requestId.isEmpty, requestId.count <= 200,
               payload["action"] as? String == action,
               let saveSchemaVersion = payload["saveSchemaVersion"] as? String, supportedSaveSchemaVersions.contains(saveSchemaVersion),
-              payload["saveJSON"] as? String == json,
+              // Build 358 (iPhone diagnostic: 1.5 s of this check per commit of a 21 MB save): the envelope must carry
+              // exactly this text. String == tests canonical equivalence (Unicode normalization), which is costly for
+              // Arabic text; the vault needs the same characters, compared literally.
+              let envelopeJSON = payload["saveJSON"] as? NSString, envelopeJSON.isEqual(to: json),
               let hash = payload["saveHash"] as? String, hash.utf8.count == 64,
               hash.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
               let data = json.data(using: .utf8), data.count <= 30 * 1024 * 1024 else { throw VaultError.message("Invalid save envelope.") }
@@ -787,7 +792,7 @@ final class GlobalSaveVault {
             case .container: return "container"
             }
         }
-        return ["saveVersion": text(root.saveVersion), "saveRevision": text(root.saveRevision), "resetEpoch": text(root.resetEpoch), "simSeconds": text(root.simSeconds), "binary": text(root.rowsBinary), "chunks": root.chunks.map { $0.joined(separator: ",") } ?? (root.chunksSeen ? "invalid" : "absent"), "fleetRows": root.fleetRows ? "yes" : "no"]
+        return ["saveVersion": text(root.saveVersion), "saveRevision": text(root.saveRevision), "resetEpoch": text(root.resetEpoch), "simSeconds": text(root.simSeconds), "binary": text(root.rowsBinary), "chunks": root.chunks.map { $0.joined(separator: ",") } ?? (root.chunksSeen ? "invalid" : "absent"), "stateChunks": root.stateChunks.map { $0.joined(separator: ",") } ?? (root.stateChunksSeen ? "invalid" : "absent"), "fleetRows": root.fleetRows ? "yes" : "no"]
     }
 
     // MARK: - Build 358 chunked fleet records (million-asset saves)
@@ -866,17 +871,25 @@ final class GlobalSaveVault {
         return raw
     }
 
-    /// Chunk ids a payload lists (fleet.rows.chunks of a 'chunks-v1' manifest); [] for a payload without one.
+    /// Chunk ids a payload lists (fleet.rows.chunks of a 'chunks-v1' manifest, then stateCodec.chunks); [] without them.
     func referencedChunks(_ json: String) throws -> [String] {
         guard let data = json.data(using: .utf8) else { throw VaultError.message("Save payload is not valid JSON.") }
         guard let ids = chunkManifest(try SaveJSONHeader.inspect(data)) else { throw VaultError.message("Invalid save chunk manifest.") }
         return ids
     }
 
-    /// fleet.rows.chunks of a 'chunks-v1' manifest; [] for a root without one; nil for an invalid manifest.
+    /// fleet.rows.chunks of a 'chunks-v1' manifest followed by stateCodec.chunks (the text chunks of sealed
+    /// collections); [] for a root without either; nil when either list is present but invalid.
     private func chunkManifest(_ root: SaveJSONHeader) -> [String]? {
-        guard root.fleetRows, case .string("chunks-v1") = root.rowsBinary else { return [] }
-        guard let ids = root.chunks, ids.allSatisfy({ isValidChunkId($0) }) else { return nil }
+        var ids: [String] = []
+        if root.fleetRows, case .string("chunks-v1") = root.rowsBinary {
+            guard let fleet = root.chunks, fleet.allSatisfy({ isValidChunkId($0) }) else { return nil }
+            ids = fleet
+        }
+        if root.stateChunksSeen {
+            guard let text = root.stateChunks, text.allSatisfy({ isValidChunkId($0) }) else { return nil }
+            ids += text
+        }
         return ids
     }
 
@@ -939,6 +952,9 @@ final class GlobalSaveVault {
         /// rows.chunks when it is an array of strings, nil otherwise; chunksSeen: rows has a `chunks` key.
         var chunks: [String]? = nil
         var chunksSeen = false
+        /// Build 358 (save size): root.stateCodec.chunks, the text chunks of sealed collections, read like rows.chunks.
+        var stateChunks: [String]? = nil
+        var stateChunksSeen = false
 
         static func inspect(_ data: Data) throws -> SaveJSONHeader {
             try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) throws -> SaveJSONHeader in
@@ -973,6 +989,9 @@ final class GlobalSaveVault {
                     case "fleet":
                         header.fleetRows = false; header.rowsBinary = .absent; header.chunks = nil; header.chunksSeen = false
                         if peek == 0x7B { try fleet(&header) } else { try skipValue() }
+                    case "stateCodec":
+                        header.stateChunks = nil; header.stateChunksSeen = false
+                        if peek == 0x7B { try stateCodec(&header) } else { try skipValue() }
                     default: try skipValue()
                     }
                 }
@@ -1004,6 +1023,18 @@ final class GlobalSaveVault {
                         default: try skipValue()
                         }
                     }
+                }
+            }
+
+            private mutating func stateCodec(_ header: inout SaveJSONHeader) throws {
+                i += 1
+                var first = true
+                while try nextMember(&first) {
+                    let key = try string()
+                    try colon()
+                    guard key == "chunks" else { try skipValue(); continue }
+                    header.stateChunksSeen = true
+                    header.stateChunks = try stringArray()
                 }
             }
 

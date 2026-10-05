@@ -24,6 +24,12 @@
   // Build 358: a collection of SEGMENT_MIN+ rows is written as consecutive segments of SEGMENT_ROWS rows,
   //   {"$gh":3,"a":1|0,"g":[segment,...]}                   each segment a $gh:1 (array) or $gh:2 (map) collection
   // so a save re-encodes only the segments whose members changed (see serialize). Such a save is SEG_VERSION.
+  // Build 358 (save size): with the native vault, a sealed segment (or a whole sealed collection) of TEXT_CHUNK_MIN+
+  // characters is kept out of the save text as a vault chunk holding its JSON text (UTF-8):
+  //   {"$ghText":"chunk-v1","id":id,"bytes":byteLength}
+  // stateCodec.chunks lists every such id in order, so the vault can require them before a commit and keep them while
+  // a save mentions them. Such a save is TEXT_VERSION. Only serializeChunked writes these; serialize, encodeState and
+  // exports stay self-contained.
 
   const VERSION='gh-shape-1';
   // Build 358 (million-asset save): runs of sequential ids. An array of RUN_MIN+ strings `prefix + digits` whose
@@ -47,7 +53,7 @@
     if(cell.length!==5||tag!==-3||typeof prefix!=='string'||!Number.isInteger(width)||width<0||width>10||!Number.isSafeInteger(first)||first<0||!Number.isInteger(count)||count<1||count>RUN_MAX||first+count-1>0xFFFFFFFF)throw corrupt('run');
     const out=new Array(count);for(let i=0;i<count;i++)out[i]=runText(prefix,width,first+i);return out;
   }
-  const MIN_ROWS=64,SEGMENT_ROWS=256,SEGMENT_MIN=SEGMENT_ROWS*2,SEG_VERSION='gh-shape-3';
+  const MIN_ROWS=64,SEGMENT_ROWS=256,SEGMENT_MIN=SEGMENT_ROWS*2,SEG_VERSION='gh-shape-3',TEXT_VERSION='gh-shape-4',TEXT_CHUNK_MIN=16384;
   const MIN_POOL_CHARS=40;
   const MIN_CONSTANT_ROWS=4;
   const MAX_DEPTH=64;
@@ -381,9 +387,9 @@
     cursor[path[path.length-1]]=value;return copies[0];
   }
 
-  function codecMeta(paths,binaryPaths,runs,segments){
-    const version=segments?SEG_VERSION:runs.length?RUN_VERSION:VERSION;
-    return runs.length?{version,paths,binaryPaths,runPaths:runs.map(row=>row.path)}:{version,paths,binaryPaths};
+  function codecMeta(paths,binaryPaths,runs,segments,chunks=[]){
+    const version=chunks.length?TEXT_VERSION:segments?SEG_VERSION:runs.length?RUN_VERSION:VERSION,meta=runs.length?{version,paths,binaryPaths,runPaths:runs.map(row=>row.path)}:{version,paths,binaryPaths};
+    if(chunks.length)meta.chunks=chunks;return meta;
   }
   function encodeState(state){
     if(!isPlain(state))return state;
@@ -403,13 +409,20 @@
   function decodeState(tree,options={}){
     if(!isPlain(tree)||!own(tree,'stateCodec'))return tree;
     const meta=tree.stateCodec;
-    if(!isPlain(meta)||![VERSION,RUN_VERSION,SEG_VERSION].includes(meta.version)||!Array.isArray(meta.paths))throw corrupt('meta');
+    if(!isPlain(meta)||![VERSION,RUN_VERSION,SEG_VERSION,TEXT_VERSION].includes(meta.version)||!Array.isArray(meta.paths))throw corrupt('meta');
+    const listed=meta.chunks===undefined?[]:meta.chunks;
+    if(!Array.isArray(listed)||(listed.length&&meta.version!==TEXT_VERSION)||listed.some(id=>typeof id!=='string'||!CHUNK_ID.test(id)))throw corrupt('text-chunks');
+    const pending=new Set(listed);if(pending.size!==listed.length)throw corrupt('text-chunk-duplicate');
+    const text=(node,partKey)=>{if(!isTextMarker(node))return node;if(!pending.delete(node.id))throw corrupt('text-chunk-unlisted');return resolveTextChunk(node,options,partKey);};
     let out={...tree};delete out.stateCodec;
     for(const path of meta.paths){
       if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('path');
-      const node=readPath(out,path);if(node===undefined)throw corrupt('path-missing');
+      let node=readPath(out,path);if(node===undefined)throw corrupt('path-missing');
+      const key=JSON.stringify(path);node=text(node,key);
+      if(isPlain(node)&&node.$gh===3&&Array.isArray(node.g))node={...node,g:node.g.map((part,index)=>text(part,`${key}#${index}`))};
       out=writePathCopy(out,path,decodeCollection(node));
     }
+    if(pending.size)throw corrupt('text-chunk-unused');
     const binaryPaths=meta.binaryPaths===undefined?[]:meta.binaryPaths;if(!Array.isArray(binaryPaths))throw corrupt('binary-paths');
     for(const path of binaryPaths){
       if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('binary-path');
@@ -424,6 +437,39 @@
       out=writePathCopy(out,path,expandRun(node));
     }
     return out;
+  }
+
+  // Build 358 (save size): text chunks. A marker is resolved through options.resolveChunk (the vault's bytes), checked
+  // for length and decoded as strict UTF-8 JSON; it must be a $gh:1/$gh:2 collection. The loaded text's checksum is
+  // remembered by its place (path and segment): when the first save of the session encodes the same place to the same
+  // text, it reuses the chunk id the vault already holds instead of uploading the same bytes again.
+  function isTextMarker(node){return isPlain(node)&&own(node,'$ghText');}
+  function textChecksum(text){let a=0x811c9dc5|0,b=0x01000193|0;const imul=Math.imul;for(let i=0;i<text.length;i++){a=imul(a^text.charCodeAt(i),0x01000193);b=(b+a)|0;}return `${text.length}.${(a>>>0).toString(36)}.${(b>>>0).toString(36)}`;}
+  const ADOPTED_TEXT=new Map();
+  function resolveTextChunk(marker,options,partKey){
+    const {id,bytes}=marker;
+    if(marker.$ghText!=='chunk-v1'||typeof id!=='string'||!CHUNK_ID.test(id)||!Number.isSafeInteger(bytes)||bytes<2||bytes>67108864)throw corrupt('text-marker');
+    if(typeof options.resolveChunk!=='function')throw corrupt('text-chunk-unresolved');
+    let data;try{data=options.resolveChunk(id,{text:true,byteLength:bytes});}catch{throw corrupt('text-chunk-missing');}
+    const view=ArrayBuffer.isView(data)?new Uint8Array(data.buffer,data.byteOffset,data.byteLength):isArrayBuffer(data)?new Uint8Array(data):null;
+    if(!view)throw corrupt('text-chunk-missing');if(view.length!==bytes)throw corrupt('text-chunk-length');
+    let text,node;try{text=new TextDecoder('utf-8',{fatal:true}).decode(view);node=JSON.parse(text);}catch{throw corrupt('text-chunk-json');}
+    if(!isPlain(node)||(node.$gh!==1&&node.$gh!==2))throw corrupt('text-chunk-collection');
+    if(partKey)ADOPTED_TEXT.set(partKey,{id,sum:textChecksum(text)});
+    return node;
+  }
+  function utf8Length(text){let n=0;for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);if(c<128)n++;else if(c<2048)n+=2;else if(c>=0xD800&&c<=0xDBFF&&i+1<text.length){const d=text.charCodeAt(i+1);if(d>=0xDC00&&d<=0xDFFF){n+=4;i++;}else n+=3;}else n+=3;}return n;}
+  let textChunkSequence=0,textChunkStats={named:0,adopted:0,referenced:0};
+  // The chunk of a cached collection text: an id that never changes while the text does not (the entry is replaced when
+  // its members change), the vault's id when the loaded save held the same text at the same place.
+  function textChunkOf(entry,partKey){
+    if(!entry.chunk){
+      const adopted=ADOPTED_TEXT.get(partKey);ADOPTED_TEXT.delete(partKey);
+      const id=adopted&&adopted.sum===textChecksum(entry.text)?adopted.id:`${NONCE}.t.${(++textChunkSequence).toString(36)}`;
+      if(adopted&&id===adopted.id)textChunkStats.adopted++;else textChunkStats.named++;
+      entry.chunk={id,bytes:utf8Length(entry.text)};
+    }
+    textChunkStats.referenced++;return entry.chunk;
   }
 
   // Build 358: encoded-collection cache. A collection whose members are all sealed (deep-frozen by their owners, see
@@ -444,7 +490,7 @@
     if(current.keys)for(let i=0;i<current.keys.length;i++)if(entry.keys[i]!==current.keys[i])return false;
     return true;
   }
-  function serialize(state,{rowsText=null}={}){
+  function serialize(state,{rowsText=null,textChunks=null}={}){
     if(!isPlain(state))return JSON.stringify(encodeState(state));
     const binaryPaths=[],fragments=[],live=new Set();let out=state;
     if(isArrayBuffer(state.fleet?.rows)){
@@ -463,7 +509,8 @@
         live.add(partKey);let entry=COLLECTION_TEXT.get(partKey);
         if(entry&&sameMembers(entry,current))collectionCacheStats.hits++;
         else{entry={keys:current.keys,members:current.members,text:JSON.stringify(encodeRows(parts[index]))};COLLECTION_TEXT.set(partKey,entry);collectionCacheStats.misses++;}
-        texts.push(entry.text);
+        if(textChunks&&entry.text.length>=TEXT_CHUNK_MIN){const chunk=textChunkOf(entry,partKey);textChunks.push({id:chunk.id,byteLength:chunk.bytes,text:entry.text});texts.push(`{"$ghText":"chunk-v1","id":${JSON.stringify(chunk.id)},"bytes":${chunk.bytes}}`);}
+        else texts.push(entry.text);
       }
       if(!cached){out=writePathCopy(out,path,encodeCollection(value));continue;}
       const text=split?`{"$gh":3,"a":${Array.isArray(value)?1:0},"g":[${texts.join(',')}]}`:texts[0];
@@ -471,7 +518,7 @@
     }
     for(const key of [...COLLECTION_TEXT.keys()])if(!live.has(key))COLLECTION_TEXT.delete(key);
     for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
-    out.stateCodec=codecMeta(paths,binaryPaths,scan.runs,segments);
+    out.stateCodec=codecMeta(paths,binaryPaths,scan.runs,segments,textChunks?textChunks.map(chunk=>chunk.id):[]);
     const text=JSON.stringify(out);if(!fragments.length)return text;
     for(const fragment of fragments){fragment.at=text.indexOf(fragment.token);if(fragment.at<0||text.indexOf(fragment.token,fragment.at+1)>=0)throw new Error('state-codec-fragment-token');}
     fragments.sort((a,b)=>a.at-b.at);const parts=[];let cursor=0;
@@ -520,13 +567,14 @@
     const ids=entry.ids.slice();
     return {marker:{$ghBinary:'chunks-v1',byteLength:bytes.length,chunkBytes,chunks:ids},chunks:ids.map((id,index)=>({id,index,byteOffset:index*chunkBytes,byteLength:Math.min(chunkBytes,bytes.length-index*chunkBytes)}))};
   }
+  // Text chunks follow the fleet chunks as {id,byteLength,text}; the caller uploads the UTF-8 bytes of text.
   function serializeChunked(state){
     if(!isPlain(state)||!isArrayBuffer(state.fleet?.rows))return {text:serialize(state),chunks:[]};
-    const manifest=chunkManifest(state.fleet),text=serialize(state,{rowsText:JSON.stringify(manifest.marker)});
-    return {text,chunks:manifest.chunks};
+    const manifest=chunkManifest(state.fleet),textChunks=[],text=serialize(state,{rowsText:JSON.stringify(manifest.marker),textChunks});
+    return {text,chunks:[...manifest.chunks,...textChunks]};
   }
 
-  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,deserialize,selectPaths,serializeChunked,adoptChunkIds,bytesToBase64:bytes=>base64Encode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)),cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size,rows:{...rowCacheStats},chunks:{...chunkCacheStats}}),isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
+  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,deserialize,selectPaths,serializeChunked,adoptChunkIds,bytesToBase64:bytes=>base64Encode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)),cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size,rows:{...rowCacheStats},chunks:{...chunkCacheStats},text:{...textChunkStats,adoptable:ADOPTED_TEXT.size}}),textChunkMin:TEXT_CHUNK_MIN,isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
   globalThis.GH_STATE_CODEC=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_STATE_CODEC=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

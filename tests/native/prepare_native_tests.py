@@ -280,6 +280,27 @@ test("a slot file changed on disk is verified again before the next commit") {
     do{let _:Int=try wait{commit(stale,try! envelope(stale),$0)}}catch{refused=true}
     try check(refused,"Stale revision accepted after a slot was rewritten")
 }
+// Build 358 (save size): text chunks of sealed collections listed in stateCodec.chunks are required and kept like fleet chunks.
+func textJSON(_ rev:Int,fleet:[String],text:[String]) throws -> String {
+    let rows:[String:Any]=["$ghBinary":"chunks-v1","byteLength":fleet.count*8,"chunkBytes":8,"chunks":fleet]
+    let obj:[String:Any]=["saveVersion":"3.0.0","saveRevision":rev,"resetEpoch":0,"simSeconds":Double(rev)*60,"fleet":["rows":rows],"stateCodec":["version":"gh-shape-4","paths":[["documentProofs","recordsById"]],"chunks":text]]
+    return String(data:try JSONSerialization.data(withJSONObject:obj,options:[.sortedKeys]),encoding:.utf8)!
+}
+test("a commit that lists a missing text chunk is refused; with it on disk it commits and the chunk is kept") {
+    let rev=vault.currentSave().flatMap{try? JSONSerialization.jsonObject(with:Data($0.utf8)) as? [String:Any]}?["saveRevision"] as? Int ?? 8
+    let missing=try textJSON(rev+1,fleet:["s1.a.1"],text:["s2.t.1"])
+    var refused=false;do{let _:Int=try wait{commit(missing,try! envelope(missing),$0)}}catch{refused=true}
+    try check(refused,"Commit with a missing text chunk accepted")
+    _=try vault.storeChunk(id:"s2.t.1",data:Data(#"{"$gh":2,"k":[],"s":[],"p":[],"r":[]}"#.utf8))
+    let ok=try textJSON(rev+1,fleet:["s1.a.1"],text:["s2.t.1"]);let _:Int=try wait{commit(ok,try! envelope(ok),$0)}
+    try check(vault.currentSave()==ok,"Text-chunked save not current")
+    let refs=try vault.referencedChunks(ok)
+    try check(refs==["s1.a.1","s2.t.1"],"Manifest is not fleet then text: \\(refs)")
+    let next=try textJSON(rev+2,fleet:["s1.a.1"],text:["s2.t.1"]);let _:Int=try wait{commit(next,try! envelope(next),$0)}
+    try check(chunkFiles().contains("s2.t.1.chunk"),"Referenced text chunk collected: \\(chunkFiles().sorted())")
+    let script=vault.bootstrapJavaScript(force:false)
+    try check(script.contains("stateCodec") && script.contains("$ghText"),"Bootstrap does not fetch text chunks")
+}
 test("bootstrap of a chunked save installs the boot gate") {
     let script=vault.bootstrapJavaScript(force:false)
     try check(script.contains("__GH_BOOT_GATE__") && script.contains("gh://app/save-chunk/"),"Boot gate missing")
@@ -298,11 +319,12 @@ func scanReference(_ data:Data)->[String:String]? {
         if let n=value as? NSNumber {return CFGetTypeID(n)==CFBooleanGetTypeID() ? "bool:\\(n.boolValue)" : "number:\\(n.doubleValue)"}
         return "container"
     }
-    var out=["saveVersion":text(root["saveVersion"]),"saveRevision":text(root["saveRevision"]),"resetEpoch":text(root["resetEpoch"]),"simSeconds":text(root["simSeconds"]),"binary":"absent","chunks":"absent","fleetRows":"no"]
+    var out=["saveVersion":text(root["saveVersion"]),"saveRevision":text(root["saveRevision"]),"resetEpoch":text(root["resetEpoch"]),"simSeconds":text(root["simSeconds"]),"binary":"absent","chunks":"absent","stateChunks":"absent","fleetRows":"no"]
     if let fleet=root["fleet"] as? [String:Any],let rows=fleet["rows"] as? [String:Any] {
         out["fleetRows"]="yes";out["binary"]=text(rows["$ghBinary"])
         if let chunks=rows["chunks"] {out["chunks"]=(chunks as? [String]).map{$0.joined(separator:",")} ?? "invalid"}
     }
+    if let codec=root["stateCodec"] as? [String:Any],let chunks=codec["chunks"] {out["stateChunks"]=(chunks as? [String]).map{$0.joined(separator:",")} ?? "invalid"}
     return out
 }
 let scanCorpus:[String]=[
@@ -322,6 +344,14 @@ let scanCorpus:[String]=[
     #"{"fleet":{"other":{"rows":{"$ghBinary":"chunks-v1"}},"rows":{"$ghBinary":7,"chunks":["x"]}}}"#,
     #"{"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["\\u0061b"],"nested":{"chunks":["no"]}}},"chunks":["root"]}"#,
     #"{"fleet":{"rows":{"$gh\\u0042inary":{"x":1},"chunks":["k"]}}}"#,
+    // Build 358 (save size): stateCodec.chunks, the text chunks of sealed collections.
+    #"{"saveVersion":"3.0.0","stateCodec":{"version":"gh-shape-4","paths":[["a"]],"chunks":["n.t.1","n.t.2"]}}"#,
+    #"{"stateCodec":{"chunks":[]}}"#,
+    #"{"stateCodec":{"chunks":["a",2]}}"#,
+    #"{"stateCodec":{"chunks":"a"}}"#,
+    #"{"stateCodec":["chunks"]}"#,
+    #"{"stateCodec":{"chunks":["x"]},"stateCodec":{"version":"v"}}"#,
+    #"{"stateCodec":{"chunks":["x"],"chunks":["y"],"nested":{"chunks":["no"]}},"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["f"]}}}"#,
     #"{}"#, #" {} "#,
     #"{"a":{"b":{"c":{"d":[1,-2.5,3e2,"s",null,true,false,0,0.5,10]}}}}"#,
     // Refused by both.
@@ -448,7 +478,22 @@ do {nextGeneration=try wait{commit(perfNext,try! envelope(perfNext),$0)}} catch 
 let nextMS=Double(DispatchTime.now().uptimeNanoseconds-nextBegin)/1e6
 let nextStages=vault.takeCommitTimings(generation:nextGeneration) ?? [:]
 test("a second large commit succeeds and reports its stages") {try check(nextGeneration>0 && vault.currentSave()==perfNext && nextStages["envelopeBytes"] != nil,"Second large commit failed")}
-let performance:[String:Any]=["bytes":perf.utf8.count,"handler_validation_and_enqueue_ms":dispatchMS,"completed_ms":totalMS,"success":perfSuccess,"second_commit_ms":nextMS,"second_commit_stages":nextStages,"single_sample":true,"iphone_measurement":false,"includes_bootstrap_refresh":false]
+// Build 358: the envelope check compared the save text with String ==, which tests canonical equivalence for non-ASCII
+// text; the vault now compares literally (NSString isEqual). Both timed on two separate 15 MB Arabic copies, then an
+// Arabic commit through the real vault queue reports its check stage (bridgeMs).
+let arabicText=String(repeating:"العساف للطيران · شحن ",count:400_000),copyA=NSString(string:arabicText),copyB=NSString(string:arabicText)
+var equalBegin=DispatchTime.now().uptimeNanoseconds
+let swiftEqual=(copyA as String)==(copyB as String)
+let swiftEqualMS=Double(DispatchTime.now().uptimeNanoseconds-equalBegin)/1e6
+equalBegin=DispatchTime.now().uptimeNanoseconds
+let literalEqual=copyA.isEqual(to:copyB as String)
+let literalEqualMS=Double(DispatchTime.now().uptimeNanoseconds-equalBegin)/1e6
+let arabicSave=try makeJSON(3,extra:arabicText)
+var arabicGeneration=0
+do {arabicGeneration=try wait{commit(arabicSave,try! envelope(arabicSave),$0)}} catch {print("FAIL: Arabic commit: \\(error)")}
+let arabicStages=vault.takeCommitTimings(generation:arabicGeneration) ?? [:]
+test("a large Arabic save commits; text comparison is literal") {try check(swiftEqual && literalEqual && arabicGeneration>0 && vault.currentSave()==arabicSave && arabicStages["bridgeMs"] != nil,"Arabic commit or comparison failed")}
+let performance:[String:Any]=["bytes":perf.utf8.count,"handler_validation_and_enqueue_ms":dispatchMS,"completed_ms":totalMS,"success":perfSuccess,"second_commit_ms":nextMS,"second_commit_stages":nextStages,"arabic_text_bytes":arabicText.utf8.count,"arabic_text_swift_equal_ms":swiftEqualMS,"arabic_text_literal_equal_ms":literalEqualMS,"arabic_commit_stages":arabicStages,"single_sample":true,"iphone_measurement":false,"includes_bootstrap_refresh":false]
 try JSONSerialization.data(withJSONObject:performance,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:"save-enqueue-measurement.json"))
 print("SAVE_MEASUREMENT "+String(data:try JSONSerialization.data(withJSONObject:performance,options:[.sortedKeys]),encoding:.utf8)!)
 vault.reset()
