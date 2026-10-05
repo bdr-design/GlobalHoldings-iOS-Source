@@ -3,12 +3,12 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "3819add322511f61d95beb6f6bd0b02eec1b884e1977553cde5e8021709d950b",
-  "webapp_tree_sha256": "4c65775383abeb7d8d040454a1a39e5d2162ab52129d3b935455637bc95ebbb0",
+  "source_tree_sha256": "59429c71b16abb5f924af7d09082e0eeb1143578e0bd3c98e7736cf7cdfaad8f",
+  "webapp_tree_sha256": "60fd650544cc938990906d762a37d25833eed549d2565426a88c9c8b5b1cec0e",
   "files": {
     "WebApp/advanced-core.js": {
-      "bytes": 193290,
-      "sha256": "213072ce5ae81d1209f37752bd961ec618c0c082e65740a2c626b4852b3c35a5"
+      "bytes": 194057,
+      "sha256": "2e6a852be1fe3fca551c2f4e31da7ec520f7d6d183e3efbb16a266ace77d17cd"
     },
     "WebApp/air-sea-network-core.js": {
       "bytes": 10998,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 715205,
-      "sha256": "54bdfaa849443f327c71319d52a0fcfa580731d2a6d566a646d6652b89e1183c"
+      "bytes": 717913,
+      "sha256": "7eb022ff30de5461323cdac4a1e943b237583b438db8b204263fdb1fcbaec3a2"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -3151,8 +3151,8 @@
       "sha256": "cbd2402ff5e1ec0dcbbb6d78a73fb95ebb7b1ade9d409784377bcd6e9da61757"
     },
     "WebApp/interface-layout.css": {
-      "bytes": 7536,
-      "sha256": "3f92b3b7df18d7079d729d715959320d83a655240fb8dae583db6828c0c9b83b"
+      "bytes": 7964,
+      "sha256": "55eab8428886e93d22cb339976fc819323a61c930dd9af26e2f9e1e58588e355"
     },
     "WebApp/lifecycle-core.js": {
       "bytes": 1576,
@@ -3287,8 +3287,8 @@
       "sha256": "edacf776f6832178ea0e7678e0180b9381b56a3d6aeb57fff33165e24df554d9"
     },
     "WebApp/styles.css": {
-      "bytes": 38800,
-      "sha256": "973bda35bc5a671e751a298a507274bdf55b0c93db44d1442995c194d3b6065b"
+      "bytes": 39237,
+      "sha256": "2ade24fedae1f195722c2e9d47c7749557969f4ec50879978a6e1af95a7ab563"
     },
     "WebApp/transaction-core.js": {
       "bytes": 62727,
@@ -3376,7 +3376,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "ce49b5dafcc040a77ff2dd549113a581dfedfc74dcab905c6ba7a14972ae8a53"
+      "sha256": "8ec9b54420991da67e2f808399f70bada2a3bdc57d6c9a5b932fc9b831fda4cf"
     },
     "BUILD": {
       "bytes": 4,

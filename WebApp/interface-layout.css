@@ -4,42 +4,47 @@
 :root{
   --safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px);
   --safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);
-  --header:44px;--rail:68px;--status:24px;
-  --sheet:min(400px,calc((100vw - var(--rail) - var(--safe-right)) * .42));
+  --header:38px;--rail:56px;--status:20px;
+  /* Build 358: in landscape iOS reports an inset on both sides, but the camera housing is on one only. app.js sets
+     data-notch from the device orientation; the side without it keeps a small margin instead of the full inset. */
+  --rail-safe:var(--safe-right);--left-safe:var(--safe-left);
+  --sheet:min(400px,calc((100vw - var(--rail) - var(--rail-safe)) * .42));
 }
+:root[data-notch=left]{--rail-safe:min(var(--safe-right),6px)}
+:root[data-notch=right]{--left-safe:min(var(--safe-left),6px)}
 .app-shell{position:fixed;inset:0;display:grid;grid-template-rows:calc(var(--safe-top) + var(--header)) minmax(0,1fr);background:var(--ground);isolation:isolate}
-.topbar{grid-row:1;position:relative;z-index:20;display:flex;align-items:center;gap:8px;min-width:0;direction:rtl;padding:calc(var(--safe-top) + 4px) calc(var(--safe-right) + 10px) 4px calc(var(--safe-left) + 10px);background:var(--ground);border-bottom:1px solid var(--line)}
+.topbar{grid-row:1;position:relative;z-index:20;display:flex;align-items:center;gap:8px;min-width:0;direction:rtl;padding:calc(var(--safe-top) + 3px) calc(var(--rail-safe) + 8px) 3px calc(var(--left-safe) + 8px);background:var(--ground);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:8px;min-width:0;flex:0 1 auto;padding:0;border:0;background:none;text-align:right;color:var(--text)}
-.brand-mark{height:34px;width:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:10px;overflow:hidden;background:var(--surface);border:1.5px solid var(--accent);color:var(--accent);font:700 13px var(--font-head)}
+.brand-mark{height:30px;width:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;overflow:hidden;background:var(--surface);border:1.5px solid var(--accent);color:var(--accent);font:700 13px var(--font-head)}
 .brand-mark img{display:block;width:100%;height:100%;object-fit:contain}
 .brand-copy{display:none}.brand-copy strong{display:block;font-size:12px;font-weight:600;line-height:1.45;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.brand-copy small{display:none}
 .sim-clock-chip{flex:0 0 auto}
-.sim-clock-toggle{display:flex;align-items:center;min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);text-align:right}
-.sim-clock-copy{display:grid}.sim-clock-copy strong{font-size:12px;font-weight:600;line-height:1.25;white-space:nowrap}.sim-clock-copy small{font-size:10px;line-height:1.2;color:var(--muted)}
+.sim-clock-toggle{display:flex;align-items:center;min-height:32px;padding:0 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);text-align:right}
+.sim-clock-copy{display:grid}.sim-clock-copy strong{font-size:11.5px;font-weight:600;line-height:1.25;white-space:nowrap}.sim-clock-copy small{font-size:9px;line-height:1.15;color:var(--muted)}
 .ui-time{direction:ltr;display:flex;align-items:center;gap:2px;flex:0 0 auto;padding:2px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.ui-pause{border:0;border-radius:9px;background:var(--surface-2);color:var(--text);font:600 14px var(--font);width:36px;height:32px;padding:0;display:grid;place-items:center}
-.ui-speeds{display:flex;gap:2px}.ui-speeds button{border:0;border-radius:9px;background:transparent;min-height:32px;min-width:42px;padding:0 6px;font:600 11px var(--font);color:var(--muted)}.ui-speeds button.active{background:var(--accent);color:var(--accent-ink)}
+.ui-pause{border:0;border-radius:9px;background:var(--surface-2);color:var(--text);font:600 13px var(--font);width:32px;height:28px;padding:0;display:grid;place-items:center}
+.ui-speeds{display:flex;gap:2px}.ui-speeds button{border:0;border-radius:9px;background:transparent;min-height:28px;min-width:40px;padding:0 5px;font:600 11px var(--font);color:var(--muted)}.ui-speeds button.active{background:var(--accent);color:var(--accent-ink)}
 .top-kpis{display:flex;align-items:center;gap:14px;flex:1 1 auto;justify-content:center;min-width:0;overflow:hidden;padding:0 6px}
-.top-kpis>div{min-width:0}.top-kpis span{display:block;font-size:10px;line-height:1.2;color:var(--muted);white-space:nowrap}.top-kpis strong{display:block;font-size:14px;font-weight:600;line-height:1.25;direction:ltr;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.top-kpis>div{min-width:0}.top-kpis span{display:block;font-size:9px;line-height:1.15;color:var(--muted);white-space:nowrap}.top-kpis strong{display:block;font-size:13px;font-weight:600;line-height:1.2;direction:ltr;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .map-style{display:flex;gap:2px;flex:0 0 auto;padding:2px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-.map-style button{display:flex;align-items:center;gap:5px;min-height:32px;padding:0 9px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:600 11px var(--font)}.map-style button svg{width:15px;height:15px}
+.map-style button{display:flex;align-items:center;gap:5px;min-height:28px;padding:0 9px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:600 11px var(--font)}.map-style button svg{width:15px;height:15px}
 .map-style button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
 .top-actions{display:flex;align-items:center;gap:4px;flex:0 0 auto}
-.topbar .icon-btn{width:36px;height:36px;flex:0 0 36px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text)}.topbar .icon-btn svg{width:18px;height:18px}
+.topbar .icon-btn{width:32px;height:32px;flex:0 0 32px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text)}.topbar .icon-btn svg{width:16px;height:16px}
 .topbar .icon-btn b{font-size:10px;min-width:18px;height:18px;line-height:18px;top:-5px;right:auto;left:-5px;padding:0 4px;border-radius:999px;background:var(--danger);color:var(--danger-ink)}
-.game-frame{grid-row:2;position:relative;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) auto calc(var(--rail) + var(--safe-right));direction:ltr}
+.game-frame{grid-row:2;position:relative;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) auto calc(var(--rail) + var(--rail-safe));direction:ltr}
 .map-stage{grid-column:1;position:relative;min-width:0;display:flex;flex-direction:column;overflow:hidden;direction:rtl;background:var(--sea-ground)}
 #map{position:relative;flex:1 1 auto;min-height:0}
-.map-strip{flex:0 0 auto;display:flex;align-items:center;gap:10px;min-height:var(--status);padding:0 10px var(--safe-bottom) calc(var(--safe-left) + 10px);background:var(--ground);border-top:1px solid var(--line)}
+.map-strip{flex:0 0 auto;display:flex;align-items:center;gap:10px;min-height:var(--status);padding:0 10px calc(var(--safe-bottom) * .35) calc(var(--left-safe) + 10px);background:var(--ground);border-top:1px solid var(--line)}
 .map-status{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .map-credit{flex:0 0 auto;font-size:8px;color:var(--faint)}
 .placing-route .map-status{white-space:normal;padding-block:6px}
 .sheet-dock{grid-column:2;position:relative;width:0;min-height:0;overflow:hidden;direction:rtl;background:var(--surface);border-left:1px solid var(--line)}
 .app-shell:has(.drawer.open,#simCalendarPanel:not(.hidden),#filterPopover:not(.hidden),#assetCard:not(.hidden)) .sheet-dock{width:var(--sheet)}
 .sheet-dock>*{position:absolute;inset:0;padding-bottom:var(--safe-bottom)}
-.side-nav{grid-column:3;position:relative;display:flex;flex-direction:column;gap:4px;min-height:0;padding:8px calc(var(--safe-right) + 6px) calc(var(--safe-bottom) + 8px) 6px;direction:rtl;overflow-y:auto;background:var(--ground);border-left:1px solid var(--line);scrollbar-width:none}
-.side-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:56px;flex:0 0 56px;padding:4px 0;border:0;border-radius:13px;background:transparent;color:var(--muted);font:500 10px var(--font)}
-.side-nav svg{width:20px;height:20px}.side-nav button.active{background:var(--surface-2);color:var(--accent);font-weight:600}.side-nav button:hover:not(.active){color:var(--text)}
+.side-nav{grid-column:3;position:relative;display:flex;flex-direction:column;gap:4px;min-height:0;padding:6px calc(var(--rail-safe) + 4px) calc(var(--safe-bottom) * .35 + 6px) 4px;direction:rtl;overflow-y:auto;background:var(--ground);border-left:1px solid var(--line);scrollbar-width:none}
+.side-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;flex:0 0 48px;padding:3px 0;border:0;border-radius:11px;background:transparent;color:var(--muted);font:500 10px var(--font)}
+.side-nav svg{width:19px;height:19px}.side-nav button.active{background:var(--surface-2);color:var(--accent);font-weight:600}.side-nav button:hover:not(.active){color:var(--text)}
 .drawer{display:none;flex-direction:column;direction:rtl;background:var(--surface)}
 .drawer.open{display:flex}
 .drawer-head{display:flex;align-items:center;justify-content:space-between;flex:0 0 56px;min-height:56px;padding:6px 12px;gap:8px;border-bottom:1px solid var(--line)}.drawer-head>div{min-width:0;flex:1}.drawer-head h2{font:700 16px/1.45 var(--font-head);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.drawer-head .eyebrow{display:block;font-size:10px;line-height:1.3;color:var(--muted)}
@@ -48,5 +53,5 @@
 .map-popover{position:absolute;inset:0;display:flex;flex-direction:column;gap:10px;padding:12px;overflow-y:auto;background:var(--surface)}
 .sim-calendar-panel{position:absolute;inset:0;overflow-y:auto;background:var(--surface)}
 .asset-card{position:absolute;inset:0;overflow-y:auto;background:var(--surface)}
-.ui-confirm{top:calc(var(--safe-top) + var(--header) + 8px);right:calc(var(--rail) + var(--safe-right) + 8px);width:var(--sheet);max-height:calc(100dvh - var(--safe-top) - var(--header) - 16px)}
-@media(max-width:760px){.topbar{gap:6px}.map-style button span{display:none}.top-kpis{gap:10px}.top-kpis strong{font-size:13px}.sim-clock-copy small{display:none}.ui-speeds button{min-width:36px;padding:0 4px}.topbar .icon-btn{width:34px;flex-basis:34px}}
+.ui-confirm{top:calc(var(--safe-top) + var(--header) + 8px);right:calc(var(--rail) + var(--rail-safe) + 8px);width:var(--sheet);max-height:calc(100dvh - var(--safe-top) - var(--header) - 16px)}
+@media(max-width:760px){.topbar{gap:6px}.map-style button span{display:none}.top-kpis{gap:10px}.top-kpis strong{font-size:13px}.sim-clock-copy small{display:none}.ui-speeds button{min-width:36px;padding:0 4px}.topbar .icon-btn{width:30px;flex-basis:30px}}

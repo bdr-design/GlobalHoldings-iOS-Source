@@ -707,8 +707,6 @@
     competitors:competitors.map(x=>({...x,sectors:competitorBusinessSectors(x.sector)})),
     opportunities:contracts.map(x=>({...x,status:state.acceptedContracts?.includes(x.id)?'نشط':state.contractRegistry?.[x.id]?.status==='بانتظار التوقيع'?'بانتظار التوقيع':state.contractRegistry?.[x.id]?.status==='منتهي'?'منتهي':state.failedBids?.includes(x.id)?'خسر العرض':'متاحة'}))
   });
-  // Build 358: the developer panel is gone; a save made with it switched on returns to the real treasury.
-  state.godMoney=false;state.infiniteMoney=false;
   if (!state.governance) state.governance=clone(defaultState.governance);
   if (!state.research) state.research=clone(defaultState.research);
   if (!state.esg) state.esg=clone(defaultState.esg);
@@ -1785,12 +1783,23 @@
     if(!needFine&&!group.majorIndices)group.majorIndices=worldInfrastructureMajorIndexes(group.rows,filter);
     return group;
   }
+  // Build 358: the view holds more airports or ports than are drawn. Taking the first rows in file order filled the
+  // map with one region and left the rest (Riyadh, Dubai) empty, so the drawn ones are spread over a 12×8 grid of
+  // the view, one per cell per round.
+  function spreadInfrastructure(indexes,coordsOf,bounds,limit){
+    if(!Number.isFinite(limit)||indexes.length<=limit)return indexes;
+    const west=bounds.getWest(),south=bounds.getSouth(),width=Math.max(1e-6,bounds.getEast()-west),height=Math.max(1e-6,bounds.getNorth()-south),cols=12,rows=8,cells=new Map();
+    for(const index of indexes){const [lat,lng]=coordsOf(index),key=Math.max(0,Math.min(rows-1,Math.floor((lat-south)/height*rows)))*cols+Math.max(0,Math.min(cols-1,Math.floor((lng-west)/width*cols)));if(!cells.has(key))cells.set(key,[]);cells.get(key).push(index);}
+    const queues=[...cells.values()],out=[];
+    for(let round=0;out.length<limit;round++){let took=false;for(const queue of queues){if(round>=queue.length)continue;out.push(queue[round]);took=true;if(out.length>=limit)break;}if(!took)break;}
+    return out.sort((a,b)=>a-b);
+  }
   function worldInfrastructureRowIndexes(filter,bounds,zoom,limit=Infinity){
-    const group=worldInfrastructureSpatialIndex(filter,zoom>=5);
-    if(zoom<5){const indexes=[];for(const index of group.majorIndices){const row=group.rows[index],coords=filter==='airport'?[row[6],row[7]]:[row[3],row[4]];if(!bounds.contains(coords))continue;indexes.push(index);if(indexes.length>=limit)break;}return indexes;}
+    const group=worldInfrastructureSpatialIndex(filter,zoom>=5),rowsOf=zoom<5?group.rows:group.fine.rows,coordsOf=index=>{const row=rowsOf[index];return filter==='airport'?[row[6],row[7]]:[row[3],row[4]];};
+    if(zoom<5)return spreadInfrastructure(group.majorIndices.filter(index=>bounds.contains(coordsOf(index))),coordsOf,bounds,limit);
     const fine=group.fine,bandDeg=fine.bandDeg,south=Math.max(-90,Math.min(90,bounds.getSouth())),north=Math.max(-90,Math.min(90,bounds.getNorth())),start=Math.max(0,Math.min(fine.bands.length-1,Math.floor((south+90)/bandDeg))),end=Math.max(0,Math.min(fine.bands.length-1,Math.floor((Math.min(89.999999,north)+90)/bandDeg))),indexes=[];
-    for(let band=start;band<=end;band++)for(const index of fine.bands[band]){const row=fine.rows[index],coords=filter==='airport'?[row[6],row[7]]:[row[3],row[4]];if(bounds.contains(coords))indexes.push(index);}
-    indexes.sort((a,b)=>a-b);return Number.isFinite(limit)?indexes.slice(0,limit):indexes;
+    for(let band=start;band<=end;band++)for(const index of fine.bands[band])if(bounds.contains(coordsOf(index)))indexes.push(index);
+    indexes.sort((a,b)=>a-b);return spreadInfrastructure(indexes,coordsOf,bounds,limit);
   }
 
   function worldInfrastructureIcon(filter){
@@ -2295,7 +2304,7 @@
 
   function updateKpis(){
     if(window.GH_IDENTITY)window.GH_IDENTITY.applyDocument(state);else{$('groupName').textContent=state.profile.name;$('brandMark').textContent=(state.profile.shortName||'GH').slice(0,4).toUpperCase();}
-    $('cashKpi').textContent=fmtMoney(state.cash);
+    $('cashKpi').textContent=state.godMoney&&state.infiniteMoney?'∞':fmtMoney(state.cash);
     $('profitKpi').textContent=`${state.todayProfit>=0?'+':''}${fmtMoney(state.todayProfit)}`;
     $('profitKpi').classList.toggle('positive',state.todayProfit>=0);
     $('profitKpi').classList.toggle('negative',state.todayProfit<0);
@@ -4328,6 +4337,19 @@
     },{silent:true,afterCommit:()=>{syncMapCompanyFilterButtons();updateKpis();renderMap();openDrawer('formationContract',type);}});
     if(!result){notice(`لم تُفتح ${companyName}. ${openingBlocker(type)||'تعذر تأكيد الحفظ؛ لم يتغير شيء. أعد المحاولة.'}`,'warning');return false;}return true;
   }
+  // Build 358: God Mode returns at the owner's request, as a test switch in Settings (System). Both engine flags turn
+  // on together: purchases, payroll and transfers are no longer refused for cash. The top bar shows ∞ while it is on.
+  async function toggleGodMode(){
+    const result=await runDurableStateCommand('god-mode',({state:draft})=>{const next=!(draft.godMoney&&draft.infiniteMoney);draft.godMoney=next;draft.infiniteMoney=next;window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`[God Mode] ${next?'تفعيل المال غير المحدود للتجربة.':'إيقاف المال غير المحدود؛ عادت الخزينة الفعلية.'}`,type:'god-mode'});return next;},{silent:true,afterCommit:()=>{updateKpis();if(activeDrawerPanel)openDrawer(activeDrawerPanel,activeDrawerArg);}});
+    if(result===null||result===undefined)notice('لم يتغير وضع التجربة؛ تعذر تأكيد الحفظ.','warning');
+  }
+  document.addEventListener('click',event=>{const button=event.target.closest?.('.god-mode-toggle');if(!button)return;event.preventDefault();event.stopPropagation();toggleGodMode();},true);
+  // Build 358: which side the camera housing is on in landscape (see --rail-safe in interface-layout.css).
+  function syncNotchSide(){
+    const legacy=Number(window.orientation),angle=Number.isFinite(legacy)?legacy:Number(window.screen?.orientation?.angle),turn=((angle%360)+360)%360;
+    document.documentElement.dataset.notch=turn===90?'left':turn===270?'right':'both';
+  }
+  syncNotchSide();window.addEventListener('orientationchange',syncNotchSide);window.screen?.orientation?.addEventListener?.('change',syncNotchSide);window.addEventListener('resize',syncNotchSide);
   document.addEventListener('click',event=>{
     const button=event.target.closest?.('.sign-charter');if(!button)return;
     event.preventDefault();event.stopPropagation();if(button.disabled)return;button.disabled=true;button.classList.add('is-busy');
@@ -4561,6 +4583,7 @@
     grid.replaceChildren();for(const company of COMPANY_PLATFORM.listInstances(state,{includeGroup:false,openedOnly:true}).filter(row=>row.operational)){
       const identity=COMPANY_PLATFORM.resolveIdentity(state,company.id),definition=company.definition,button=document.createElement('button'),title=document.createElement('span'),detail=document.createElement('small'),selected=company.id===state.activeFilter;button.type='button';button.className=`filter-btn${selected?' active':''}`;button.dataset.filter=company.id;button.setAttribute('aria-pressed',String(selected));title.textContent=identity?.tradeName||identity?.shortName||identity?.legalName||company.id;detail.textContent=definition?.classification?.routeModes?.length?'الأصول والمسارات والمنشآت':'منشآت الشركة وتشغيلها';button.append(title,detail);grid.append(button);
     }
+    grid.closest('.filter-section').hidden=!grid.children.length;
   }
   function advanceToNextSimulationDay(){
     const active=simulationEngine.snapshot().manualAdvance;
@@ -4595,7 +4618,7 @@
   document.addEventListener('click',e=>{if(!e.target.closest('.map-popover')&&!e.target.closest('#filterToggle'))closeMapPopovers();if(!e.target.closest('#simClockChip')&&!e.target.closest('#simCalendarPanel'))toggleSimulationCalendar(false);});
   $('filterPopover').addEventListener('click',e=>{const btn=e.target.closest?.('.filter-btn');if(!btn||!$('filterPopover').contains(btn))return;e.stopPropagation();const camera=map?{center:map.getCenter(),zoom:map.getZoom()}:null;setMapFilterSelection(btn.dataset.filter);document.querySelectorAll('.filter-btn').forEach(b=>{const selected=b===btn;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});scheduleDeferredPersistence();renderMap();if(camera&&map){const current=map.getCenter();if(map.getZoom()!==camera.zoom||Math.abs(current.lat-camera.center.lat)>1e-9||Math.abs(current.lng-camera.center.lng)>1e-9)map.setView(camera.center,camera.zoom,{animate:false});}});
   $('competitorToggle').addEventListener('change',e=>{state.showCompetitors=e.target.checked;const next=clone(currentMapFilter());next.market.competitors=state.showCompetitors;state.mapFilterState=clone(MAP_FEATURE_CORE.normalizeFilterState(next,{state,companyPlatform:COMPANY_PLATFORM}));scheduleDeferredPersistence();renderMap();});
-  document.querySelectorAll('.map-popover button,.map-popover input,.speed-menu button').forEach(el=>el.addEventListener('click',e=>e.stopPropagation()));
+  document.querySelectorAll('.speed-menu button').forEach(el=>el.addEventListener('click',e=>e.stopPropagation()));
   document.querySelectorAll('#layerMenu button').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setMapLayer(btn.dataset.layer);scheduleDeferredPersistence();/* keep menu open for consecutive choices */}));
   document.querySelectorAll('#speedMenu button[data-speed]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setSpeed(btn.dataset.speed);/* keep menu open */}));
 
