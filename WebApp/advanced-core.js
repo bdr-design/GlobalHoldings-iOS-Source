@@ -622,7 +622,7 @@
     // Business artwork owns its own sector-aware recovery. Leaflet also renders
     // basemap tiles as <img>; enrolling those images here used to turn every
     // failed/offline tile into a headquarters photograph.
-    rootNode.querySelectorAll('img[data-gh-image],.asset-thumb img,.thumb-sm img,.asset-marker img').forEach(img=>{
+    rootNode.querySelectorAll('img[data-gh-image],.asset-thumb img,.asset-hero img,.thumb-sm img,.asset-marker img').forEach(img=>{
       if(img.classList.contains('leaflet-tile')||img.closest('.leaflet-tile-pane'))return;
       if(img.dataset.ghImageBound)return;img.dataset.ghImageBound='1';
       const originalSrc=img.getAttribute('src')||'';
@@ -630,7 +630,7 @@
         if(img.dataset.fallbackApplied)return;img.dataset.fallbackApplied='1';
         const src=originalSrc;
         img.src=/ship|port/.test(src)?photos.port:/air|airport/.test(src)?photos.airport:/truck|logistics/.test(src)?photos.logistics:photos.hq;
-        img.closest('.asset-thumb,.visual-hero,.company-visual-card')?.classList.add('image-recovered');
+        img.closest('.asset-thumb,.asset-hero,.visual-hero,.company-visual-card')?.classList.add('image-recovered');
       };
       // Only the genuine 'error' event (network/404/decode failure) counts as a real failure.
       img.addEventListener('error',fail);

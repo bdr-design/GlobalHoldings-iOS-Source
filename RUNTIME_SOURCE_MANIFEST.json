@@ -3,12 +3,12 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "643c1a38fbdf746002a79acdd8627d7e85b31b1a45ec5134f6771407f04dcac4",
-  "webapp_tree_sha256": "f9f6bf37b3cf953fb37c7a17a1ede7e52c40e2ab1a0a7d29ec40889304d46b92",
+  "source_tree_sha256": "f88cf1fce708381ea495d111e3d24aba46d6c01c61e617ba04f64c956fe59fce",
+  "webapp_tree_sha256": "5c0003abc5f180b29dff3b7af15711e7dc63c217ac0ede7f9cc0aacd919a75e6",
   "files": {
     "WebApp/advanced-core.js": {
-      "bytes": 194138,
-      "sha256": "888aed68e2f769042056e41136af342f0f218155d25d1ced23c3b91a085f9800"
+      "bytes": 194166,
+      "sha256": "93000e34f5e373fc303a5a2ef435e183f469b5f92e4d4f89946f49c370125fa0"
     },
     "WebApp/air-sea-network-core.js": {
       "bytes": 10998,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 719791,
-      "sha256": "660e3bb6104ce4584a2f87f6fdd3d287f38c3d52b96780b45f3c68035d2cc52f"
+      "bytes": 722147,
+      "sha256": "c3419a309e21244c9b289cdfb7d104c97cb8195f0a88914d84ef6c09dd78e497"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -2967,8 +2967,8 @@
       "sha256": "14291806b8569125f4723d393bce606d4266ed3b5808265614ec420d6c2beec6"
     },
     "WebApp/catalog.js": {
-      "bytes": 37512,
-      "sha256": "1d22197c6d03dff04dc7bbb3de5fe98ec3dacd8fa7eda17ee1e563ceb7082930"
+      "bytes": 37511,
+      "sha256": "36c2642889595cd233e702b3de7faa61c0fccd15e406f88a2dd89e4cfed7ccb5"
     },
     "WebApp/company-adapters-core.js": {
       "bytes": 13412,
@@ -3259,8 +3259,8 @@
       "sha256": "a232973e5a74617d48f52b20e0eb9ec2a96583bfb6741400641eb118eb705182"
     },
     "WebApp/simulation-asset-core.js": {
-      "bytes": 25648,
-      "sha256": "83b207749ab89d9c88c65ebc2782602bc6d3b3f865a0b5b652708ae2856487f6"
+      "bytes": 26138,
+      "sha256": "17731cf564de33ff84473a6df8da9db055268fa6735301bdb79cfdcf51b7532e"
     },
     "WebApp/simulation-asset-worker.js": {
       "bytes": 1677,
@@ -3287,8 +3287,8 @@
       "sha256": "edacf776f6832178ea0e7678e0180b9381b56a3d6aeb57fff33165e24df554d9"
     },
     "WebApp/styles.css": {
-      "bytes": 40130,
-      "sha256": "550a685599d1687df523d8748c0d995b846fb04c3c075f88702fc72c374602ce"
+      "bytes": 43931,
+      "sha256": "5b7f1a89786063bae96ede31ed69568ef79a0230513f63876cfe9899954e4f46"
     },
     "WebApp/transaction-core.js": {
       "bytes": 62727,
@@ -3376,7 +3376,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "944fde4fd96c9da15cca0a354dbebc16f0c1da1407f8023559897d954c0c4056"
+      "sha256": "7044d9cef2a2208a55df64622bb1a73cc7b1bb6030a8a5497ada6437679fc1bc"
     },
     "BUILD": {
       "bytes": 4,

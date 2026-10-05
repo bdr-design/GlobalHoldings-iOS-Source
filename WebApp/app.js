@@ -2952,6 +2952,8 @@
     return issues.some(issue=>issue?.severity==='critical'&&GLOBAL_HALT_IDS.some(id=>String(issue.id||issue.code||'').startsWith(id)));
   }
   let runtimeGovernor={level:'green',avgChunkMs:0,avgWorkMs:0};
+  // Build 358: the recurring save runs every 60 s of real time (90 s at fast speeds). Every action already saves at once
+  // through its durable command, and leaving the app saves on the hidden event, so a longer gap loses nothing.
   const simulationEngine=window.GH_SIMULATION_CORE.create({
     getSpeed:()=>effectiveSimulationRate(state.speed),
     setSpeed:(value,meta)=>{
@@ -3000,7 +3002,7 @@
     onWarning:({stage,error})=>{diag('SIM_WARNING',{stage,message:String(error?.message||error)});console.warn(`Simulation Core warning [${stage}]`,error);},
     onThrottle:({took,reason,stage})=>{diag('SIM_THROTTLE',{took,reason,stage});console.warn(`Simulation watchdog throttled after ${Math.round(took)}ms ${stage||'work'} stage`);},
     onGovernor:({level,avgChunkMs,avgWorkMs,stage,took})=>{diag('SIM_GOVERNOR',{level,avgChunkMs,avgWorkMs,stage,took});runtimeGovernor={level,avgChunkMs,avgWorkMs,stage,took};}
-  },{minRealSliceSeconds:1,allowedSpeeds:[0,30,120,300,600],fallbackSpeed:30,frameBudgetMs:4,manualFrameBudgetMs:10,chunkItems:32,manualChunkItems:64,renderEveryNormalMs:260,renderEveryFastMs:650,persistEveryNormalMs:20000,persistEveryFastMs:45000,maintenanceEveryHours:12,manualBatchSeconds:3600,manualMinBatchSeconds:300,manualRetryLimit:3});
+  },{minRealSliceSeconds:1,allowedSpeeds:[0,30,120,300,600],fallbackSpeed:30,frameBudgetMs:4,manualFrameBudgetMs:10,chunkItems:32,manualChunkItems:64,renderEveryNormalMs:260,renderEveryFastMs:650,persistEveryNormalMs:60000,persistEveryFastMs:90000,maintenanceEveryHours:12,manualBatchSeconds:3600,manualMinBatchSeconds:300,manualRetryLimit:3});
   window.GH_SIM_KERNEL={version:window.GH_SIMULATION_CORE.VERSION,transactionVersion:window.GH_TRANSACTION_CORE.VERSION,snapshot:()=>simulationEngine.snapshot(),health:()=>simulationEngine.health()};
   window.GH_DIAGNOSTICS.installGlobalHandlers(()=>state,()=>({appVersion:APP_VERSION,simulation:simulationEngine.snapshot()}));
   window.GH_CONTROL_PLANE?.installDOMObserver?.(()=>state);
@@ -3557,42 +3559,58 @@
   }
 
   // ---- شراء الأصول: جديد/مستعمل بمواصفات فعلية (أسلوب صور المرجع) ----
-  // Build 358: the card shows what the model is, in two groups. «يؤثر في التشغيل» are the figures the trip engine reads
-  // (GH_SIMULATION_ASSET_CORE.baseTripEconomics) and the crew plan; «مواصفات» are the model's facts. A reference trip
-  // shows what those figures earn and cost.
+  // Build 358: the card shows the model at a glance: the photo with its name, four figures the trip engine reads, the
+  // cabin split for passenger aircraft, and a reference trip split into fuel, maintenance, fees and what is left. Every
+  // figure that changes a number the game uses stays under «كل المواصفات» (GH_SIMULATION_ASSET_CORE.baseTripEconomics).
   const MARKET_LABEL=Object.freeze({'air-pax':'ركاب بالدرجات','air-freight':'شحن جوي','air-charter':'تأجير بالساعة',container:'حاويات',
     'dry-bulk':'بضائع سائبة','crude':'نفط خام',product:'منتجات نفطية',lng:'غاز مسال · أجرة يومية',lpg:'غاز بترولي · أجرة يومية','car-carrier':'نقل سيارات',
     ropax:'ركاب ومركبات',cruise:'رحلات سياحية','tug':'قطر في الموانئ',offshore:'إمداد بحري · أجرة يومية','heavy-lift':'رفع ثقيل · أجرة يومية',
     parcel:'توصيل طرود',urban:'توزيع حضري',general:'بضائع عامة',reefer:'نقل مبرد',fuel:'نقل وقود',chemical:'نقل كيميائيات',heavy:'نقل ثقيل',vehicles:'نقل مركبات'});
   const specLine=(label,value)=>`<div class="spec-row"><span>${esc(label)}</span><b>${value}</b></div>`;
-  function crewText(plan={}){const names={pilots:'طيار',cabin:'ضيافة',aeng:'مهندس',captains:'قبطان وضابط',sailors:'بحار',seng:'مهندس بحري',drivers:'سائق',mech:'فني'};return Object.entries(plan).filter(([,n])=>n>0).map(([role,n])=>`${fmtNumber(n)} ${names[role]||role}`).join(' · ')||'—';}
+  const metricTile=(label,value,unit='')=>`<div><span>${esc(label)}</span><b>${value}</b>${unit?`<small>${esc(unit)}</small>`:''}</div>`;
+  const CREW_NAMES=Object.freeze({pilots:'طيار',cabin:'ضيافة',aeng:'مهندس',captains:'قبطان وضابط',sailors:'بحار',seng:'مهندس بحري',drivers:'سائق',mech:'فني'});
+  function crewText(plan={}){return Object.entries(plan).filter(([,n])=>n>0).map(([role,n])=>`${fmtNumber(n)} ${CREW_NAMES[role]||role}`).join(' · ')||'—';}
+  const crewTotal=plan=>Object.values(plan||{}).reduce((sum,n)=>sum+(Number(n)||0),0);
+  const catalogMode=item=>item.icon==='✈️'?'air':item.icon==='🚢'?'sea':'road';
   function referenceTrip(item){
-    const s=item.specs,mode=item.icon==='✈️'?'air':item.icon==='🚢'?'sea':'road';
+    const s=item.specs,mode=catalogMode(item);
     const km=mode==='air'?Math.min(Number(s.rangeKm)*.6,5000):mode==='sea'?Math.min(Number(s.rangeNm)*1.852*.5,9000):Math.min(Number(s.rangeKm)*.8,800);
     const speed=mode==='sea'?Number(s.speedKn)*1.852*.88:Number(s.speedKmh)*(mode==='air'?.9:.76),hours=km/Math.max(1,speed);
     const eco=window.GH_SIMULATION_ASSET_CORE.baseTripEconomics({assetMode:mode,type:mode,specs:s},km,hours);
     return {km,hours,eco};
   }
+  function cabinBar(cabin={}){
+    const rows=[['first','أولى',cabin.first],['business','أعمال',cabin.business],['premium','مميزة',cabin.premium],['economy','اقتصادية',cabin.economy]].filter(([,,n])=>n>0);
+    const total=rows.reduce((sum,[,,n])=>sum+n,0);if(!total)return '';
+    return `<div class="asset-cabin"><div class="asset-cabin-bar">${rows.map(([key,,n])=>`<i class="cabin-${key}" style="flex:${n}"></i>`).join('')}</div><div class="asset-legend">${rows.map(([key,label,n])=>`<span class="cabin-${key}"><i></i>${label} ${fmtNumber(n)}</span>`).join('')}</div></div>`;
+  }
+  function tripBar(trip){
+    const e=trip.eco,costs=[['fuel','وقود',e.fuelCost],['maint','صيانة',e.maintenance],['fees','رسوم',e.fees]],spent=costs.reduce((sum,[,,v])=>sum+(Number(v)||0),0),left=e.revenue-spent;
+    const scale=Math.max(e.revenue,spent,1),parts=[...costs,['left','يتبقى',Math.max(0,left)]].filter(([,,v])=>v>0);
+    return `<div class="asset-trip"><div class="asset-trip-head"><span>رحلة مرجعية · ${fmtNumber(Math.round(trip.km))} كم · ${trip.hours.toFixed(1)} ساعة</span><b>${fmtMoney(e.revenue)}</b></div><div class="asset-trip-bar">${parts.map(([key,,v])=>`<i class="trip-${key}" style="flex:${v/scale}"></i>`).join('')}</div><div class="asset-legend">${parts.map(([key,label,v])=>`<span class="trip-${key}"><i></i>${label} ${fmtMoney(v)}</span>`).join('')}${left<0?`<span class="negative">عجز ${fmtMoney(-left)}</span>`:''}</div><small>قبل الرواتب والتمويل. الإيراد من السوق ونسبة الإشغال؛ الصيانة والرسوم من مواصفات الطراز.</small></div>`;
+  }
   function specRow(item){
-    const s=item.specs,market=MARKET_LABEL[s.market]||'—',trip=referenceTrip(item),e=trip.eco;
-    let effect,facts;
+    const s=item.specs,market=MARKET_LABEL[s.market]||'—';
+    let metrics,effect,facts,extra='';
     if(item.icon==='✈️'){
-      const c=s.cabin||{},classes=[['أولى',c.first],['أعمال',c.business],['مميزة',c.premium],['اقتصادية',c.economy]].filter(([,n])=>n>0).map(([n,v])=>`${n} ${fmtNumber(v)}`).join(' · ');
-      effect=specLine('السوق',market)+(s.market==='air-pax'?specLine('المقصورة',classes):s.market==='air-freight'?specLine('الحمولة',`${fmtNumber(s.capacity)} طن`):specLine('أجرة الساعة',fmtMoney(s.charterPerHour))+specLine('الضيوف',fmtNumber(s.capacity)))
-        +(s.bellyCargoT?specLine('شحن الجوف',`${fmtNumber(s.bellyCargoT)} طن`):'')+specLine('المدى',`${fmtNumber(s.rangeKm)} كم`)+specLine('الوقود',`${s.fuelBurnKgPerKm} كغم/كم`)
+      const seats=s.market==='air-freight'?metricTile('الحمولة',fmtNumber(s.capacity),'طن'):s.market==='air-charter'?metricTile('أجرة الساعة',fmtMoney(s.charterPerHour)):metricTile('المقاعد',fmtNumber(s.capacity));
+      metrics=seats+metricTile('المدى',fmtNumber(s.rangeKm),'كم')+metricTile('الوقود',s.fuelBurnKgPerKm,'كغم/كم')+metricTile('الطاقم',fmtNumber(crewTotal(s.crewPlan)),'موظف');
+      if(s.market==='air-pax')extra=cabinBar(s.cabin);
+      effect=(s.market==='air-charter'?specLine('الضيوف',fmtNumber(s.capacity)):'')+(s.bellyCargoT?specLine('شحن الجوف',`${fmtNumber(s.bellyCargoT)} طن`):'')
         +specLine('الصيانة',`${fmtMoney(s.maintenancePerBlockHour)} لكل ساعة طيران`)+specLine('الوزن الأقصى للإقلاع',`${fmtNumber(s.mtowTon)} طن · يحدد رسوم الهبوط`)+specLine('الطاقم',crewText(s.crewPlan));
       facts=specLine('السرعة',`${fmtNumber(s.speedKmh)} كم/س`)+specLine('المحركات',esc(s.engines||'—'))+specLine('الطول',`${s.lengthM} م`)+specLine('المدرج',`${fmtNumber(s.runwayM)} م`);
     }else if(item.icon==='🚢'){
-      effect=specLine('السوق',market)+specLine('السعة',`${fmtNumber(s.capacity)} ${esc(s.capacityUnit)}`)+(s.dayRate?specLine('الأجرة اليومية',fmtMoney(s.dayRate)):'')
-        +specLine('الوقود',s.dayRate&&s.market!=='tug'?'على المستأجر':`${s.fuelTonPerDay} طن/يوم`)+specLine('الصيانة والتشغيل',`${fmtMoney(s.maintenancePerDay)} يوميًا`)+specLine('السرعة',`${s.speedKn} عقدة`)+specLine('الطاقم',crewText(s.crewPlan));
-      facts=specLine('المدى',`${fmtNumber(s.rangeNm)} ميل بحري`)+specLine('الغاطس',`${s.draftM} م`)+specLine('الأبعاد',`${s.lengthM}×${s.beamM} م`)+specLine('المحرك',esc(s.engine||'—'));
+      const fuel=s.dayRate&&s.market!=='tug'?'على المستأجر':`${s.fuelTonPerDay} طن/يوم`;
+      metrics=metricTile('السعة',fmtNumber(s.capacity),s.capacityUnit)+metricTile('السرعة',s.speedKn,'عقدة')+(s.dayRate?metricTile('الأجرة اليومية',fmtMoney(s.dayRate)):metricTile('الوقود',s.fuelTonPerDay,'طن/يوم'))+metricTile('الطاقم',fmtNumber(crewTotal(s.crewPlan)),'بحّار');
+      effect=specLine('الوقود',fuel)+specLine('الصيانة والتشغيل',`${fmtMoney(s.maintenancePerDay)} يوميًا`)+specLine('الطول',`${s.lengthM} م · يحدد رسوم الموانئ`)+specLine('الطاقم',crewText(s.crewPlan));
+      facts=specLine('المدى',`${fmtNumber(s.rangeNm)} ميل بحري`)+specLine('الغاطس',`${s.draftM} م`)+specLine('العرض',`${s.beamM} م`)+specLine('المحرك',esc(s.engine||'—'));
     }else{
-      const energy=s.hydrogen?`${s.hydrogenKgPer100km} كغم هيدروجين/100 كم`:s.electric?`${s.energyKWhPer100km} ك.و.س/100 كم`:`${s.fuelLPer100km} لتر ديزل/100 كم`;
-      effect=specLine('السوق',market)+specLine('الحمولة',`${fmtNumber(s.capacity)} ${esc(s.capacityUnit)}`)+specLine('الطاقة',energy)+specLine('الصيانة',`${s.maintenancePerKm}$ لكل كم`)+specLine('المدى',`${fmtNumber(s.rangeKm)} كم`)+specLine('الطاقم',crewText(s.crewPlan));
+      const energy=s.hydrogen?[s.hydrogenKgPer100km,'كغم H₂/100 كم']:s.electric?[s.energyKWhPer100km,'ك.و.س/100 كم']:[s.fuelLPer100km,'لتر/100 كم'];
+      metrics=metricTile('الحمولة',fmtNumber(s.capacity),s.capacityUnit)+metricTile('المدى',fmtNumber(s.rangeKm),'كم')+metricTile(s.hydrogen?'هيدروجين':s.electric?'كهرباء':'ديزل',energy[0],energy[1])+metricTile('الطاقم',fmtNumber(crewTotal(s.crewPlan)),'موظف');
+      effect=specLine('الصيانة',`${s.maintenancePerKm}$ لكل كم`)+specLine('الطاقم',crewText(s.crewPlan));
       facts=specLine('السرعة',`${fmtNumber(s.speedKmh)} كم/س`)+specLine('نظام الدفع',esc(s.drivetrain||'—'))+specLine('المحاور',fmtNumber(s.axles));
     }
-    const tripLine=`<div class="asset-reference-trip"><span>رحلة مرجعية ${fmtNumber(Math.round(trip.km))} كم · ${trip.hours.toFixed(1)} ساعة</span><b class="positive">${fmtMoney(e.revenue)}</b><small>وقود ${fmtMoney(e.fuelCost)} · صيانة ${fmtMoney(e.maintenance)} · رسوم ${fmtMoney(e.fees)}</small></div>`;
-    return `<h4 class="spec-group">يؤثر في التشغيل</h4>${effect}<h4 class="spec-group">مواصفات</h4>${facts}${tripLine}`;
+    return `<div class="asset-metrics">${metrics}</div>${extra}${tripBar(referenceTrip(item))}<details class="asset-details"><summary>كل المواصفات <small>${esc(market)}</small></summary><div class="spec-grid"><h4 class="spec-group">يؤثر في التشغيل</h4>${specLine('السوق',esc(market))}${effect}<h4 class="spec-group">مواصفات</h4>${facts}</div></details>`;
   }
   let marketFilterType='air', marketFilterTab='new',marketSegment='all',marketQuery='',marketCompare=[],ownedFilterType='all',ownedFilterStatus='all',ownedQuery='',ownedVirtualModel=null,ownedVirtualScrollFrame=0,routeFilterType='all',routeQuery='',routeAssignQuery='';
   function companyAssetClassForMode(target,companyId,assetMode,requestedAssetClass=''){
@@ -3672,8 +3690,8 @@
     const filterBar=`<div class="asset-filters"><input id="assetSearch" value="${esc(marketQuery)}" placeholder="بحث في الطراز أو الفئة"><select id="assetSegment"><option value="all">كل الفئات</option>${segments.map(s=>`<option value="${esc(s)}" ${marketSegment===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>`;
     const q=normalizeSearch(marketQuery);const items=source.filter(a=>(marketSegment==='all'||a.segment===marketSegment)&&(!q||normalizeSearch(`${a.name} ${a.segment} ${a.description}`).includes(q)));
     const bases=compatibleBases(activeType),hasDeliveryBase=bases.length>0;
-    const list = items.map(a=>`<article class="list-item sector-${activeType} asset-market-card"><div class="asset-thumb"><img src="${a.photo}" alt="${esc(a.name)}" loading="lazy"><span class="thumb-tag">${activeTab==='new'?'جديد':`مستعمل ${a.condition}%`}</span></div><div class="list-item-head"><div><h3>${a.icon} ${esc(a.name)}</h3><p>${esc(a.segment)} · ${esc(a.description)}</p></div><span class="tag">${esc(a.manufacturer||'')}</span></div><div class="spec-grid">${specRow(a)}</div>
-      <div class="ownership-grid"><div><span>التسليم</span><b>${a.delivery}</b></div><div><span>الضمان</span><b>${a.warranty}</b></div><div><span>قيمة بعد 5 سنوات</span><b>${a.residual5y}% · تحدد سعر البيع</b></div><div><span>الانبعاثات</span><b>${a.specs.co2Band}</b></div></div>
+    const list = items.map(a=>`<article class="list-item sector-${activeType} asset-market-card"><div class="asset-hero"><img src="${a.photo}" alt="${esc(a.name)}" loading="lazy"><span class="thumb-tag">${activeTab==='new'?'جديد':`مستعمل ${a.condition}% · ${a.year||''}`}</span><div class="asset-hero-title"><div><small>${esc(a.manufacturer||'')} · ${esc(a.segment)}</small><h3>${esc(a.name)}</h3></div><b>${fmtMoney(a.price)}</b></div></div><p class="asset-blurb">${esc(a.description||'')}</p>${specRow(a)}
+      <div class="asset-chips"><span>التسليم <b>${a.delivery}</b></span><span>الضمان <b>${esc(a.warranty)}</b></span><span>بعد 5 سنوات <b>${a.residual5y}%</b> من السعر</span><span>الانبعاثات <b>${a.specs.co2Band}</b></span></div>
       <div class="asset-price">${a.priceOriginal?`<s>${fmtMoney(a.priceOriginal)}</s> `:''}<b>${fmtMoney(a.price)}</b><small>تأجير ${fmtMoney(a.leaseMonthly)}/شهر · دفعة تمويل ${Math.round(a.downPayment*100)}%</small></div>
       <div class="asset-request-routing"><div><span>شراء يدوي مباشر</span><b>أنت تختار الأصل والعدد والقاعدة وطريقة التملك</b><small>${hasDeliveryBase?'تحدد القاعدة الشركة المالكة صراحةً، ثم يبقى كامل التوزيع داخل منشآت الشركة نفسها وفي معاملة واحدة.':'افتح منشأة تسليم متوافقة أولًا؛ لن يسمح النظام بشراء أصل بلا وجهة وصول صحيحة.'}</small></div>${hasDeliveryBase?`<div class="route-builder manual-asset-purchase"><label>الشركة وقاعدة التسليم الأولى<select class="manual-asset-base">${bases.map(f=>`<option value="${esc(f.id)}" data-company="${esc(facilityOwnerCompanyId(f))}">${esc(companyFinanceName(facilityOwnerCompanyId(f)))} · ${esc(f.name)} · ${esc(f.city)} · متاح ${fmtNumber(facilityFreeAssetCapacity(f))}/${fmtNumber(window.GH_FACILITY_CORE.assetCapacity(f))}</option>`).join('')}</select></label><label>العدد<input class="manual-asset-qty" type="number" min="1" max="${window.GH_PROCUREMENT_CORE?.MAX_ASSET_PURCHASE_QUANTITY||3000}" value="1"></label><label>التملك<select class="manual-asset-mode"><option value="cash">شراء نقدي</option><option value="finance">تمويل</option><option value="lease">تأجير تشغيلي</option></select></label></div>`:''}<div class="action-row"><button class="primary-btn manual-buy-asset" data-type="${activeType}" data-tab="${activeTab}" data-id="${a.id}" ${hasDeliveryBase?'':'disabled'}>شراء وتسليم الآن</button><button class="secondary-btn compare-asset ${marketCompare.includes(a.id)?'active':''}" data-id="${a.id}">${marketCompare.includes(a.id)?'إزالة من المقارنة':'قارن'}</button></div></div></article>`).join('');
     const fleetCompanies=operationalCompanyInstances(state).filter(company=>activeType==='mobility'?company.definition?.capabilities?.includes('operations.mobility'):(company.definition?.classification?.routeModes||[]).includes(activeType));

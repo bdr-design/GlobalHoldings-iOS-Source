@@ -50,6 +50,15 @@ assert(trip('road',xcient,400,5).fuelCost>0,'hydrogen is paid for');
 assert(trip('road',semi,500,6).fuelCost<trip('road',actros,500,6).fuelCost,'electricity costs less than diesel');
 assert.equal(trip('road',actros,500,6).maintenance,actros.maintenancePerKm*500);
 
+// Balance: on its reference trip every aircraft and ship covers fuel, maintenance and fees, and none is a money press
+// (container carriers pay terminal handling per box; bulk and tanker rates per tonne fall with ship size).
+for(const mode of ['air','sea'])for(const item of catalog[mode].new){
+  const s=item.specs,km=mode==='air'?Math.min(s.rangeKm*.6,5000):Math.min(s.rangeNm*1.852*.5,9000),speed=mode==='air'?s.speedKmh*.9:s.speedKn*1.852*.88;
+  const e=trip(mode,s,km,km/speed),margin=(e.revenue-e.fuelCost-e.maintenance-e.fees)/e.revenue;
+  assert(margin>.05&&margin<.85,`${item.id} reference-trip margin is plausible (${(margin*100).toFixed(0)}%)`);
+}
+assert(trip('sea',boxes,9000,300).fees>boxes.capacity*.82*300,'a container ship pays handling per box');
+{const small=SH('S-HANDY'),cape=SH('S-NCM');assert(trip('sea',small,9000,300).revenue/small.capacity>trip('sea',cape,9000,300).revenue/cape.capacity,'a Handysize earns more per tonne');}
 // A spec from before the real catalogue still reads (plain market of its mode).
 assert(trip('air',{capacity:180,fuelBurnKgPerKm:3},1000,2).revenue>0);
 

@@ -100,7 +100,7 @@
     let revenue=0,fuelCost=0,maintenance=0,fees=0;
     if(mode==='air'){
       if(market.id==='air-charter')revenue=number(specs.charterPerHour)*h*.75;
-      else if(market.id==='air-freight')revenue=capacity*market.load*km*(.30+.25*Math.max(0,(3000-km)/3000));
+      else if(market.id==='air-freight')revenue=capacity*market.load*km*(.30+.60*Math.max(0,(2000-km)/2000));
       else{
         const cabin=specs.cabin||{economy:capacity},fare=economyFare(km);
         for(const [cls,[factor,load]] of Object.entries(CABIN))revenue+=Math.max(0,number(cabin[cls]))*load*fare*factor;
@@ -110,19 +110,22 @@
       maintenance=number(specs.maintenancePerBlockHour)*h;
       const mtow=Math.max(0,number(specs.mtowTon));fees=mtow*10+(km/100)*Math.sqrt(mtow/50)*60;
     }else if(mode==='sea'){
-      const nm=km/1.852,load=market.load;
+      // Bulk and tanker rates per tonne fall with ship size (a Handysize earns more per tonne than a Capesize).
+      const nm=km/1.852,load=market.load,size=Math.pow(Math.max(1,capacity)/60000,-.15);
       if(market.charter)revenue=number(specs.dayRate)*h/24;
       else if(market.id==='tug')revenue=number(specs.dayRate)*h/24*load;
       else if(market.id==='container')revenue=capacity*load*(260+.11*nm);
-      else if(market.id==='dry-bulk')revenue=capacity*load*(4+.0016*nm);
-      else if(market.id==='crude')revenue=capacity*load*(3+.0018*nm);
-      else if(market.id==='product')revenue=capacity*load*(3+.0018*nm)*1.35;
+      else if(market.id==='dry-bulk')revenue=capacity*load*(6+.0028*nm)*size;
+      else if(market.id==='crude')revenue=capacity*load*(4+.0022*nm)*size;
+      else if(market.id==='product')revenue=capacity*load*(4+.0022*nm)*size*1.35;
       else if(market.id==='car-carrier')revenue=capacity*load*(130+.08*nm);
       else if(market.id==='ropax')revenue=capacity*load*(25+.12*nm)*1.6;
       else if(market.id==='cruise')revenue=capacity*load*(h/24)*230;
-      fuelCost=market.charter?0:number(specs.fuelTonPerDay)*(h/24)*640;
+      // A harbour tug burns full power only while towing, about a third of its day.
+      fuelCost=market.charter?0:number(specs.fuelTonPerDay)*(h/24)*640*(market.id==='tug'?.35:1);
       maintenance=number(specs.maintenancePerDay)*h/24;
-      fees=Math.max(0,number(specs.lengthM))*150;
+      // Port dues by length; the carrier also pays terminal handling and equipment per box, and handling per car.
+      fees=Math.max(0,number(specs.lengthM))*150+(market.id==='container'?capacity*load*320:market.id==='car-carrier'?capacity*load*45:0);
     }else{
       const load=market.load;
       if(market.id==='parcel')revenue=km*1.30;
