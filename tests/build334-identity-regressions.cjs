@@ -41,7 +41,7 @@ for(const file of ['identity-system.js',...['global-holdings.svg','group-default
 const html=fs.readFileSync(path.join(web,'index.html'),'utf8');
 assert(html.indexOf('identity-system.js')>html.indexOf('catalog.js')&&html.indexOf('identity-system.js')<html.indexOf('finance-core.js'),'identity must load before feature renderers');
 const layout=fs.readFileSync(path.join(web,'interface-layout.css'),'utf8');
-assert.match(layout,/--header:56px/);assert.match(layout,/--rail:68px/);assert.match(layout,/\.game-frame\{[^}]*grid-template-columns:minmax\(0,1fr\) auto/);assert.doesNotMatch(layout,/orientation:portrait/);
+assert.match(layout,/--header:44px/);assert.match(layout,/--rail:68px/);assert.match(layout,/\.game-frame\{[^}]*grid-template-columns:minmax\(0,1fr\) auto/);assert.doesNotMatch(layout,/orientation:portrait/);
 const app=fs.readFileSync(path.join(web,'app.js'),'utf8');
 const build=fs.readFileSync(path.join(root,'BUILD'),'utf8').trim();
 assert(app.includes(`const RUNTIME_BUILD = ${build};`),`app runtime build must match source BUILD ${build}`);assert.match(app,/identityRouteColor/);
