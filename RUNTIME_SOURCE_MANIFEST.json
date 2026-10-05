@@ -3,12 +3,12 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "d319a1553e8fd1286d91234f1d3f5fe9dce9900bcfb47c428c01a334f9d2aa24",
-  "webapp_tree_sha256": "bda3a71c9d7c74fa5e9131b2aaad2a37a16543c1c4fb2697303f649fec65f47b",
+  "source_tree_sha256": "2cee3f0248143f79869efb2d18b3924a517a80d0976624967dfe19b72378ada9",
+  "webapp_tree_sha256": "ec97823f0fef0db358efc808cd0f5b7becaa146cc3e18b01c3cf8f8f19948698",
   "files": {
     "WebApp/advanced-core.js": {
-      "bytes": 191655,
-      "sha256": "f24e51eac52d8e995fdeec839d4ab135fc8304b82caa1ce9ad323d139d5de6a5"
+      "bytes": 193290,
+      "sha256": "213072ce5ae81d1209f37752bd961ec618c0c082e65740a2c626b4852b3c35a5"
     },
     "WebApp/air-sea-network-core.js": {
       "bytes": 10998,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 707916,
-      "sha256": "fd361911bf25897753057aba292b2a039307a297762498c7b37ed8712610799d"
+      "bytes": 715205,
+      "sha256": "54bdfaa849443f327c71319d52a0fcfa580731d2a6d566a646d6652b89e1183c"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -2995,8 +2995,8 @@
       "sha256": "648eb23c9fbc86cb86adc32f8907a068f003790a36d9f6b0acaee6033c5027b5"
     },
     "WebApp/conference-core.js": {
-      "bytes": 74783,
-      "sha256": "6d2740fc4c8fc48e0f14be5cc9ad94780830ea83361a1ce8e5f1a3679ef935b2"
+      "bytes": 74693,
+      "sha256": "5df7d2ce57068901a3f49133c8ac80f735482b6a763bf42ea1027e48237fe343"
     },
     "WebApp/conference-model.js": {
       "bytes": 13677,
@@ -3015,8 +3015,8 @@
       "sha256": "4357214236cd2ad49a97b1038fce900cdcc95baa595e03df72734c1a36f7ba69"
     },
     "WebApp/corporate-core.js": {
-      "bytes": 16047,
-      "sha256": "0304545f1221561f47b52e2484c70dd6df8f139ac263489fa329da259834fb0b"
+      "bytes": 15676,
+      "sha256": "b73268e7eba3fc23bbe2fa3cf6881c14a04bb80326c1c9fcd28fce6ba597a251"
     },
     "WebApp/delivery-monitor-core.js": {
       "bytes": 1442,
@@ -3111,16 +3111,16 @@
       "sha256": "949349835404bb3d1374fd11f53beb4e1477185a5c86fab0c833991518a764fd"
     },
     "WebApp/formation-engine.js": {
-      "bytes": 10555,
-      "sha256": "bea329c7bf28faf22e4ef745203064eb38e8e3f331892865f5a628a633d0fb6b"
+      "bytes": 10243,
+      "sha256": "cf50425a9159c69e4856992990c772b945a92ee0636b73f2161339485f088459"
     },
     "WebApp/founding.css": {
-      "bytes": 9305,
-      "sha256": "a1cdf2800218b05b88f41b6f747b25ac9429dc16f41ea4f2595d65ea142e8ca3"
+      "bytes": 14730,
+      "sha256": "34edb6717b4102071b611fa4c88793e2bf52aca69476867b60385b1aee9643c5"
     },
     "WebApp/game-lifecycle-core.js": {
-      "bytes": 12415,
-      "sha256": "263040824997b4c03fb41ee18ff824eb8c70df1df943fc1952e77917cb655818"
+      "bytes": 12277,
+      "sha256": "d584b9e973c0693e4314b7fd83fcb0640fb1ecb569b4f7bb4ecc534d517206d8"
     },
     "WebApp/governance-core.js": {
       "bytes": 6083,
@@ -3135,8 +3135,8 @@
       "sha256": "03898d1c92402ea437c53996c7c5341f7be4afb7fc0a58dc5d460c0fa8c0cadc"
     },
     "WebApp/index.html": {
-      "bytes": 25165,
-      "sha256": "190baee8a470406ec93051ec7e808997a82b319337f81747348d1e3178eb2b03"
+      "bytes": 22750,
+      "sha256": "b9b054a9d9474f785f6c9800c8c38731a14454748857b4a81af98c73c4cae96e"
     },
     "WebApp/integrity-core.js": {
       "bytes": 23293,
@@ -3223,8 +3223,8 @@
       "sha256": "c5715713fda7554bdfd4e85f8b981caba930f23448236f03ab5dfec365cd40cc"
     },
     "WebApp/realism-core.js": {
-      "bytes": 94569,
-      "sha256": "b38742b8d38ffb7e042ba6b0c6136c93f8bc6d2f6c99b77f02c0b10321ad1174"
+      "bytes": 94491,
+      "sha256": "f898e1c7319bfb7ef8d66760434bef0f93e1f7b4a675334baef528c316fc166c"
     },
     "WebApp/road-planner-worker-core.js": {
       "bytes": 3722,
@@ -3376,7 +3376,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "741b3fb1cd015edd65438bdce451c85b969e66853e8ac4a82b8eca4fad14131d"
+      "sha256": "69bf2eefa6379803fcaeb75aacc32a85510e48fcdedbec094ffcd025e07f7795"
     },
     "BUILD": {
       "bytes": 4,

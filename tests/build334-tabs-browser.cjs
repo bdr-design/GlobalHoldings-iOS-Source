@@ -29,12 +29,10 @@ fs.mkdirSync(out,{recursive:true});
      if(kind==='companies'){
       await click(page.locator('.side-nav [data-panel=companies]'));
       await click(page.getByRole('button',{name:'الشركات التابعة',exact:true}));
-      assert.equal(await page.locator('#drawerBody .company-visual-grid').count(),1,'actual subsidiaries click must render company cards');
+      assert.equal(await page.locator('#drawerBody .company-open-list').count(),1,'actual subsidiaries click must render the companies available to open');
       assert.equal(await page.locator('#drawerBody [data-companytab="subs"].active').count(),1);
-      assert((await page.locator('#drawerBody .company-visual-card').count())>0);
-      const pendingCard=page.locator('#drawerBody .company-visual-card').filter({has:page.locator('.open-company')}).first();
-      await click(pendingCard.locator('details.ui-more > summary'));
-      assert(await pendingCard.locator('.open-company').isVisible(),'the founding entry must be reachable through the real details control');
+      assert((await page.locator('#drawerBody .company-open-row').count())>0);
+      assert(await page.locator('#drawerBody .company-open-row [data-open="formationContract"]').first().isVisible(),'the opening contract must be reachable without opening a collapsed section');
       await page.screenshot({path:path.join(out,`334-tabs-companies-${orientation}.png`)});
       assert.equal(await page.evaluate(()=>qaTabContext.save()),true,'persist the UI selection through the original save owner');
       await page.reload();await page.waitForFunction(()=>__GH_STATE__?.onboardingComplete);

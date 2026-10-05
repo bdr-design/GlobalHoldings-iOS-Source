@@ -30,7 +30,6 @@ function normalizedIdentity(input={},definition={}){
  const identity=clone(input.identity||{});if(!identity||typeof identity!=='object'||Array.isArray(identity))throw new Error('formation-identity-assets-invalid');
  return {legalName,displayName,shortName,englishName:clean(input.englishName,100),identity};
 }
-function normalizedGovernance(input={}){return {riskAppetite:clean(input.riskAppetite||'balanced',32),procurementPolicy:clean(input.procurementPolicy||'competitive',48),signingAuthority:clean(input.signingAuthority||'founder',48)};}
 function validateEffects(effects){if(!Array.isArray(effects)||!effects.length)throw new Error('formation-effects-missing');for(const effect of effects){if(!effect||typeof effect!=='object'||!clean(effect.type,80))throw new Error('formation-effect-invalid');if(FORBIDDEN_EFFECTS.has(effect.type)||effect.grantsAsset===true||effect.grantsFacility===true)throw new Error(`formation-free-operational-asset-forbidden:${effect.type}`);}}
 function planBody(plan){const body=clone(plan);delete body.planHash;delete body.planId;return body;}
 function validatePlan(plan){
@@ -50,10 +49,10 @@ function prepare(input={},hooks={}){
  const definitionVersion=Math.max(1,Math.floor(Number(definition.definitionVersion||definition.version)||1)),identity=normalizedIdentity(input,definition),location=normalizedLocation(input.location||input),capitalAmount=positive(input.capital??input.capitalAmount??definition.founding?.defaultCapital??definition.founding?.recommendedCapital);
  const founder=clean(input.founder||input.owner,80);if(!founder)throw new Error('formation-founder-required');
  const signatureRef=clean(input.signatureRef||input.signature?.signatureRef||input.signature?.ref,120),signatureVersion=Math.max(1,Math.floor(Number(input.signatureVersion||input.signatureRevision||input.signature?.version||input.signature?.revision)||1));if(!signatureRef)throw new Error('formation-signature-required');
- const createdAt=Math.max(0,Number(input.createdAt)||0),governance=normalizedGovernance(input.governance||input),currency=clean(input.currency||definition.founding?.currency||'USD',8).toUpperCase();
- const payload={entityKind,companyId,definitionId:resolvedDefinitionId,definitionVersion,identity,founder,location,capital:{amount:capitalAmount,currency,source:entityKind==='group'?'founder':'group'},governance,signature:{signatureRef,version:signatureVersion},openingAssets:[],openingFacilities:[],openingRoutes:[]};
+ const createdAt=Math.max(0,Number(input.createdAt)||0),currency=clean(input.currency||definition.founding?.currency||'USD',8).toUpperCase();
+ const payload={entityKind,companyId,definitionId:resolvedDefinitionId,definitionVersion,identity,founder,location,capital:{amount:capitalAmount,currency,source:entityKind==='group'?'founder':'group'},signature:{signatureRef,version:signatureVersion},openingAssets:[],openingFacilities:[],openingRoutes:[]};
  const effects=[{type:'formation.commit-entity',domain:'formation',command:entityKind==='group'?'found-group':'open-company',payload}];
- const draft={schema:SCHEMA,engineVersion:VERSION,entityKind,companyId,definitionId:resolvedDefinitionId,definitionVersion,createdAt,identity,founder,location,capital:payload.capital,governance,signature:payload.signature,openingAssets:[],openingFacilities:[],openingRoutes:[],effects,constraints:{freeOperationalAssets:false,freeOperationalFacilities:false,freeRoutes:false,allOrNothing:true,durableSaveRequired:true},metadata:{definitionHash:hash({id:resolvedDefinitionId,version:definitionVersion,capabilities:definition.capabilities||[]})}};
+ const draft={schema:SCHEMA,engineVersion:VERSION,entityKind,companyId,definitionId:resolvedDefinitionId,definitionVersion,createdAt,identity,founder,location,capital:payload.capital,signature:payload.signature,openingAssets:[],openingFacilities:[],openingRoutes:[],effects,constraints:{freeOperationalAssets:false,freeOperationalFacilities:false,freeRoutes:false,allOrNothing:true,durableSaveRequired:true},metadata:{definitionHash:hash({id:resolvedDefinitionId,version:definitionVersion,capabilities:definition.capabilities||[]})}};
  draft.planHash=hash(planBody(draft));draft.planId=`FORM-${draft.planHash.slice(0,20).toUpperCase()}`;validatePlan(draft);return deepFreeze(draft);
 }
 async function commit(plan,{hooks={},actor='formation-ui',timeoutMs=15000}={}){

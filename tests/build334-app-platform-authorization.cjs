@@ -68,7 +68,8 @@ for(const renderer of ['chequeArt','invoiceArt','transferArt','payrollArt','taxS
 assert.match(app,/آلي بموجب التفويض — لا يُستخدم اسم نصي كتوقيع/);
 assert.doesNotMatch(app,/esc\(signatory\)/,'new financial renderers must not use a typed name as a signature');
 
-assert.match(lifecycle,/FOUNDING_GOVERNANCE/);
+assert.doesNotMatch(lifecycle,/FOUNDING_GOVERNANCE|riskAppetite|procurementPolicy|signingAuthority/,'the founding governance choices had no effect and are retired');
+assert.match(lifecycle,/openingArticles/,'the subsidiary opening contract states its clauses');
 assert.match(lifecycle,/prepareFormationPlan/);
 assert.match(lifecycle,/FOUNDING_SIGNATURE_REQUIRED/);
 assert.match(lifecycle,/GH_FORMATION_ENGINE/);

@@ -205,7 +205,6 @@
 
   // ---- المنشآت: بيانات تشغيلية حقيقية لكل مطار/ميناء (وليست نصوصًا وصفية فقط) ----
   const facilities = [
-    {id:'HQ-RUH', kind:'hq', owned:false, icon:'🏛️', name:'المقر العالمي — الرياض', city:'الرياض', country:'السعودية', coords:[24.7136,46.6753], photo:PHOTOS.facility_hq, detail:'المقر القانوني والإدارة التنفيذية ومركز التحكم العالمي.', capacity:'إدارة المجموعة', cost:0},
     {id:'AP-RUH', kind:'airport', public:true, icon:'🛫', name:'مطار الملك خالد الدولي', city:'الرياض', country:'السعودية', coords:[24.9576,46.6988], photo:PHOTOS.facility_airport,
       iata:'RUH', icao:'OERK', runwayM:4205, elevationM:625, gates:94, landingFeePerTon:14.2, jetA1Price:2.35, congestion:.28, detail:'مطار دولي وقاعدة تشغيل محتملة للطيران والشحن الجوي.', capacity:'ركاب + شحن', cost:0},
     {id:'AP-DXB', kind:'airport', public:true, icon:'🛫', name:'مطار دبي الدولي', city:'دبي', country:'الإمارات', coords:[25.2532,55.3657], photo:PHOTOS.facility_airport,
@@ -513,7 +512,7 @@
 
   const defaultState = {
     saveVersion:SAVE_SCHEMA_VERSION,saveRevision:0,onboardingComplete:false,lastPanel:null,lastPanelArg:null,mapLayer:'dark',
-    profile:{name:'المجموعة العالمية القابضة',shortName:'GH',founder:'المؤسس',englishName:'Global Holdings Group',country:'السعودية',city:'الرياض',firstSector:'air',mode:'balanced',legalForm:'شركة قابضة مساهمة مقفلة',currency:'USD',fiscalYear:'calendar',riskAppetite:'balanced',procurementPolicy:'competitive',signingAuthority:'board',reputation:12,creditRating:'BBB',logo:null,logoStyle:'teal'},
+    profile:{name:'المجموعة العالمية القابضة',shortName:'GH',founder:'المؤسس',englishName:'Global Holdings Group',country:'السعودية',city:'الرياض',locationId:'RUH',mode:'balanced',legalForm:'شركة قابضة مساهمة مقفلة',currency:'USD',fiscalYear:'calendar',reputation:12,creditRating:'BBB',logo:null},
     cash:250000000,debt:84000000,groupValue:412000000,todayProfit:0,
     sectorProfitToday:{air:0,sea:0,road:0,power:0,bank:0,mobility:0},
     speed:1,simSeconds:0,lastFinancialDay:0,lastMarketHour:0,
@@ -1450,6 +1449,13 @@
     hydrateRoadRoutes();
   }
 
+  // Build 358: the group headquarters stands in the city chosen at founding, not in a fixed city.
+  // Called during startup before this block's bindings run, so the cache lives on the function itself.
+  function headquartersFacility(target){
+    const place=window.GH_GAME_LIFECYCLE.locationFor(target?.profile||{}),headquartersCache=headquartersFacility.cache||(headquartersFacility.cache=new Map());
+    if(!headquartersCache.has(place.id))headquartersCache.set(place.id,{id:'HQ-GROUP',kind:'hq',owned:false,icon:'🏛️',name:`المقر العالمي — ${place.city}`,city:place.city,country:place.country,coords:[...place.coords],photo:PHOTOS.facility_hq,detail:'المقر القانوني والإدارة التنفيذية ومركز التحكم العالمي.',capacity:'إدارة المجموعة',cost:0});
+    return headquartersCache.get(place.id);
+  }
   function dynamicFacilitiesFor(target){
     const branches = (target.branches||[]).map(id=>{
       const site=expansionSites.find(x=>x.id===id);
@@ -1457,7 +1463,7 @@
     }).filter(Boolean);
     const acquired = competitors.filter(c=>(target.stakes?.[c.id]||0)>=51).map(c=>({id:`ACQ-${c.id}`,kind:'acquired',owned:true,icon:'🏢',photo:PHOTOS.facility_hq,name:`${c.name} — شركة تابعة`,city:c.hq,country:'دولي',coords:c.coords,detail:`حصة المجموعة ${target.stakes[c.id]}%. أصبحت الشركة ضمن نطاق السيطرة التشغيلية.`,capacity:c.sector}));
     const publicEndpoints=Object.values(target.routeEndpoints||{}).filter(endpoint=>endpoint&&endpoint.id&&Array.isArray(endpoint.coords));
-    return [...facilities,...(target.globalBases||[]),...(target.customHubs||[]),...publicEndpoints,...branches,...acquired];
+    return [headquartersFacility(target),...facilities,...(target.globalBases||[]),...(target.customHubs||[]),...publicEndpoints,...branches,...acquired];
   }
   function getDynamicFacilities(){return dynamicFacilitiesFor(state);}
   function routeFacilityFor(target,id){return dynamicFacilitiesFor(target).find(f=>f.id===id)||null;}
@@ -2027,7 +2033,7 @@
       const assetBaseIds=new Set([...window.GH_FLEET_DATA.countByFields(state,['baseFacility'],a=>a.baseFacility).keys()].filter(Boolean));
       const visibleFacilities=getDynamicFacilities().filter(f=>{
         // المنشآت المرجعية تخدم الحسابات والدليل فقط؛ لا تظهر كملكية عند بداية لعبة جديدة.
-        const belongsToPlayer=f.owned===true||assetBaseIds.has(f.id);
+        const belongsToPlayer=f.owned===true||assetBaseIds.has(f.id)||(f.id==='HQ-GROUP'&&state.onboardingComplete);
         if(!belongsToPlayer)return false;
         const owner=facilityOwnerCompanyId(f);if(owner&&!mapCompanyVisible(owner))return false;
         return filter==='airport'?['airport','airport-base'].includes(f.kind):filter==='port'?['port','port-base'].includes(f.kind):true;
@@ -3293,7 +3299,7 @@
   }
 
   const panelMeta={
-    formationContract:['الشركات','عقد التأسيس'],leadershipHub:['الإدارة','الإدارة'],executionLog:['النظام','سجل التنفيذ'],actionCenter:['الإدارة','المهام الآن'],companies:['الشركات','الشركات التابعة'],control:['العمليات','العمليات'],governanceHub:['الإدارة','الحوكمة والمخاطر'],systemHub:['النظام','النظام'],network:['العمليات','الدليل العالمي'],routes:['العمليات','المسارات'],globalRoute:['العمليات','مسار عالمي'],companyFacilities:['العمليات','قواعد ومراكز الشركة'],market:['المال','الأسواق والمحفظة'],budgets:['المال','الميزانيات'],maintenance:['العمليات','الصيانة والتأمين'],crews:['الإدارة','الأجور والطواقم'],contracts:['العمليات','العقود والعملاء'],businessWorld:['الإدارة','العلاقات التجارية'],labor:['الإدارة','الموارد البشرية'],assets:['العمليات','الأصول المملوكة'],assetMarket:['العمليات','شراء الأصول'],assetManage:['العمليات','إدارة الأصل'],mobilityAsset:['العمليات','إدارة سيارة التنقل'],expansion:['العمليات','الشبكة والمنشآت'],finance:['المال','المركز المالي'],monthlyFinance:['المال','الدخل والمصروفات الشهرية'],invoices:['المال','المستندات والالتزامات'],news:['الإدارة','أحداث المجموعة'],settings:['النظام','الحفظ والإعدادات'],diagnostics:['النظام','صحة اللعبة'],energy:['الشركات','الطاقة'],bank:['الشركات','البنك'],research:['الإدارة','البحث والتطوير'],esg:['الإدارة','الاستدامة'],realism:['الإدارة','السوق والاقتصاد'],ports:['العمليات','شبكة الموانئ']
+    formationContract:arg=>['الشركات',arg&&arg!=='group'?'عقد فتح شركة':'عقد التأسيس'],leadershipHub:['الإدارة','الإدارة'],executionLog:['النظام','سجل التنفيذ'],actionCenter:['الإدارة','المهام الآن'],companies:['الشركات','الشركات التابعة'],control:['العمليات','العمليات'],governanceHub:['الإدارة','الحوكمة والمخاطر'],systemHub:['النظام','النظام'],network:['العمليات','الدليل العالمي'],routes:['العمليات','المسارات'],globalRoute:['العمليات','مسار عالمي'],companyFacilities:['العمليات','قواعد ومراكز الشركة'],market:['المال','الأسواق والمحفظة'],budgets:['المال','الميزانيات'],maintenance:['العمليات','الصيانة والتأمين'],crews:['الإدارة','الأجور والطواقم'],contracts:['العمليات','العقود والعملاء'],businessWorld:['الإدارة','العلاقات التجارية'],labor:['الإدارة','الموارد البشرية'],assets:['العمليات','الأصول المملوكة'],assetMarket:['العمليات','شراء الأصول'],assetManage:['العمليات','إدارة الأصل'],mobilityAsset:['العمليات','إدارة سيارة التنقل'],expansion:['العمليات','الشبكة والمنشآت'],finance:['المال','المركز المالي'],monthlyFinance:['المال','الدخل والمصروفات الشهرية'],invoices:['المال','المستندات والالتزامات'],news:['الإدارة','أحداث المجموعة'],settings:['النظام','الحفظ والإعدادات'],diagnostics:['النظام','صحة اللعبة'],energy:['الشركات','الطاقة'],bank:['الشركات','البنك'],research:['الإدارة','البحث والتطوير'],esg:['الإدارة','الاستدامة'],realism:['الإدارة','السوق والاقتصاد'],ports:['العمليات','شبكة الموانئ']
   };
 
 
@@ -3416,7 +3422,7 @@
     activeDrawerPanel=panel;activeDrawerArg=arg;
     $('drawer').dataset.panel=String(panel||'');
     state.lastPanel=panel;state.lastPanelArg=arg??null;
-    const [eyebrow,title]=window.GH_ADVANCED?.meta(panel,arg)||panelMeta[panel]||['الإدارة','لوحة'];
+    const metaEntry=panelMeta[panel],[eyebrow,title]=window.GH_ADVANCED?.meta(panel,arg)||(typeof metaEntry==='function'?metaEntry(arg):metaEntry)||['الإدارة','لوحة'];
     $('drawerEyebrow').textContent=eyebrow; $('drawerTitle').textContent=title; $('drawerBody').innerHTML=renderPanel(panel,arg); window.GH_INTERFACE.prepare($('drawerBody'),activeDrawerPanel,activeDrawerArg,advancedContext());bindDrawerActions();
     $('drawerBody').scrollTop=previousPanel===panel&&JSON.stringify(previousArg)===JSON.stringify(arg)?previousScroll:['companyFacilities','network'].includes(panel)?0:(drawerScrollMemory[panel]||0);
     if(panel==='assets')installOwnedVirtualizer();
@@ -3447,7 +3453,7 @@
     if(ADVANCED_OWNED_PANELS.has(panel))return '<div class="empty">تعذر تحميل مكوّن الإدارة لهذا القسم. أعد فتح اللعبة بدل تشغيل واجهة قديمة احتياطية.</div>';
     if(panel==='control')return renderControl(); if(panel==='market')return renderMarket(arg); if(panel==='budgets')return renderBudgets(); if(panel==='maintenance')return renderMaintenance(); if(panel==='crews')return renderCrews();
     if(panel==='contracts')return renderContracts(); if(panel==='assets')return renderOwnedAssets(arg); if(panel==='assetMarket')return renderAssetMarket(arg);
-    if(panel==='formationContract')return renderFormationContract(); if(panel==='expansion')return renderExpansion(arg); if(panel==='companyFacilities')return renderCompanyFacilities(typeof arg==='object'?arg.type:arg); if(panel==='finance')return renderFinance(); if(panel==='monthlyFinance')return renderMonthlyFinance(); if(panel==='invoices')return renderInvoices(arg);
+    if(panel==='formationContract')return renderFormationContract(arg); if(panel==='expansion')return renderExpansion(arg); if(panel==='companyFacilities')return renderCompanyFacilities(typeof arg==='object'?arg.type:arg); if(panel==='finance')return renderFinance(); if(panel==='monthlyFinance')return renderMonthlyFinance(); if(panel==='invoices')return renderInvoices(arg);
     if(panel==='assetManage')return renderAssetManage(arg); if(panel==='mobilityAsset')return renderMobilityAsset(arg); if(panel==='ports')return renderPorts();
     if(panel==='network')return renderWorldNetwork(); if(panel==='routes')return renderRouteCenter(arg); if(panel==='globalRoute')return renderGlobalRoute(arg);
     return '<div class="empty">القسم غير متاح.</div>';
@@ -3997,8 +4003,8 @@
   }
   function companyLogoMarkup(type,size='normal'){
     if(window.GH_IDENTITY?.logoMarkup)return window.GH_IDENTITY.logoMarkup(state,type,size);
-    const record=type==='group'?state.profile:(state.companyRegistry?.[type]||{}),identity=COMPANY_PLATFORM.resolveIdentity?.(state,type),definition=COMPANY_PLATFORM.definitionFor?.(state,type)||companyDefinition(type),logo=record.logo||identity?.logo||null,style=record.logoStyle||definition?.classification?.primarySectorId||state.profile.logoStyle||'teal',abbr=identity?.shortName||definition?.identity?.short||'CO';
-    return `<div class="company-logo-badge ${size==='small'?'small':size==='tiny'?'tiny':''}" data-style="${esc(style)}">${logo?`<img src="${esc(logo)}" alt="">`:`<span>${esc(abbr)}</span>`}</div>`;
+    const record=type==='group'?state.profile:(state.companyRegistry?.[type]||{}),identity=COMPANY_PLATFORM.resolveIdentity?.(state,type),definition=COMPANY_PLATFORM.definitionFor?.(state,type)||companyDefinition(type),logo=record.logo||identity?.logo||null,abbr=identity?.shortName||definition?.identity?.short||'CO';
+    return `<div class="company-logo-badge ${size==='small'?'small':size==='tiny'?'tiny':''}">${logo?`<img src="${esc(logo)}" alt="">`:`<span>${esc(abbr)}</span>`}</div>`;
   }
   function renderFinance(){
     const opened=companyFinanceTypes(state,{openedOnly:true}).filter((value,index,rows)=>rows.indexOf(value)===index),subs=opened.filter(t=>t!=='group'),debtRatio=Math.round(state.debt/Math.max(1,state.debt+state.groupValue)*100),groupBalance=companyOperatingBalance('group');
@@ -4239,7 +4245,6 @@
     document.querySelectorAll('[data-companytab]').forEach(b=>b.addEventListener('click',()=>openDrawer('companies',b.dataset.companytab)));
     document.querySelectorAll('[data-labortab]').forEach(b=>b.addEventListener('click',()=>openDrawer('labor',b.dataset.labortab)));
     
-    document.querySelectorAll('.open-company').forEach(b=>b.addEventListener('click',()=>openCompany(b.dataset.type)));
     document.querySelectorAll('[data-markettype]').forEach(b=>b.addEventListener('click',()=>{marketFilterType=b.dataset.markettype;marketSegment='all';marketCompare=[];renderAssetMarketInto();}));
     document.querySelectorAll('[data-markettab]').forEach(b=>b.addEventListener('click',()=>{marketFilterTab=b.dataset.markettab;marketSegment='all';marketCompare=[];renderAssetMarketInto();}));
     const assetSearch=$('assetSearch');if(assetSearch)assetSearch.addEventListener('input',e=>{marketQuery=e.target.value;scheduleDrawerSearch('assetMarket',()=>renderAssetMarketInto(true));});
@@ -4298,26 +4303,35 @@
   async function bidContract(id){const c=contracts.find(x=>x.id===id);if(!c){pushAlert('تعذر تقديم العرض؛ المناقصة لم تعد متاحة. أعد فتح قسم العقود.');return;}if(state.acceptedContracts.includes(id)){pushAlert('هذه المناقصة موقّعة بالفعل ولا يمكن تقديم عرض جديد عليها.');return;}if(!hasContractCapacity(c)){notice(`لا يمكن تقديم العرض: المجموعة لا تملك قدرة تشغيلية صالحة في قطاع ${typeName(c.sector)}.`);return;}const reputation=.78+state.hired.length*.012+state.branches.length*.01,winChance=clamp(c.bidBase*reputation,.45,.93),won=simRandom('contract-bid')<winChance,rival=won?null:window.GH_BUSINESS_WORLD?.competitorForSector?.(state,c.sector);try{await runAuthorizedDomainCommand('contracts','bid',{id,won,number:won?nextId('GH-CN'):null,client:c.client,sector:c.sector,title:c.name,value:c.value,termMonths:c.termMonths,competitorId:rival?.id||null,competitorName:rival?.displayName||null});pushAlert(won?`فازت المجموعة بمناقصة ${c.name}. العقد بانتظار توقيعك قبل بدء التشغيل.`:`لم يفز عرض المجموعة بمناقصة ${c.name}. تمت الترسية على ${rival?.displayName||'منافس آخر'} وسُجلت النتيجة في السوق التجاري.`);openDrawer('contracts');}catch(error){notice(`تعذر تسجيل نتيجة المناقصة: ${error.message}`);}}
   async function signContract(id,companyInput=null){const c=contracts.find(x=>x.id===id);if(!c){pushAlert('تعذر توقيع هذا العقد؛ لم يعد متاحًا.');return;}const eligible=eligibleContractCompanyIds(c),companyId=companyInput&&eligible.includes(companyInput)?companyInput:(eligible.length===1?eligible[0]:null);if(!companyId){notice(eligible.length?'اختر الشركة المنفذة لهذا العقد قبل التوقيع.':'لا توجد شركة تشغيلية مؤهلة لهذا العقد.');return false;}try{const doc=(await runAuthorizedDomainCommand('contracts','sign',{id,company:companyId,companyId,ownerCompanyId:companyId,sector:c.sector,deposit:Math.round(c.value*.1),name:c.name,client:c.client,value:c.value,termMonths:c.termMonths,taxable:companyTaxable(state,companyId)})).result;pushAlert(`تم توقيع ${doc.number} باسم ${companyFinanceName(companyId)} مع ${c.client} وتحويل الدفعة المقدمة إلى حساب الشركة المنفذة.`);updateKpis();openDrawer('contracts');return true;}catch(error){notice(`تعذر توقيع العقد: ${error.message}`);return false;}}
 
-  async function hire(id){const c=candidates.find(x=>x.id===id);if(!c){pushAlert('تعذر التوظيف؛ هذا المرشح لم يعد متاحًا.');return;}try{const center=findFacility('HQ-RUH')?.name||'المقر الرئيسي';await runAuthorizedDomainCommand('hr','hire-executive',{candidateId:id,company:executivePayrollCompany(id),center,source:'استقطاب قيادة فردي'},{context:{candidates}});pushAlert(`انضم ${c.name} إلى المجموعة بمنصب ${c.role} بعقد عمل ساري وربط مالي بالمقر الرئيسي.`);openDrawer('labor','contracts');}catch(error){notice(`تعذر التوظيف: ${error.message}`);}}
+  async function hire(id){const c=candidates.find(x=>x.id===id);if(!c){pushAlert('تعذر التوظيف؛ هذا المرشح لم يعد متاحًا.');return;}try{const center=headquartersFacility(state).name;await runAuthorizedDomainCommand('hr','hire-executive',{candidateId:id,company:executivePayrollCompany(id),center,source:'استقطاب قيادة فردي'},{context:{candidates}});pushAlert(`انضم ${c.name} إلى المجموعة بمنصب ${c.role} بعقد عمل ساري وربط مالي بالمقر الرئيسي.`);openDrawer('labor','contracts');}catch(error){notice(`تعذر التوظيف: ${error.message}`);}}
   async function tradeStock(sym,qty){try{const result=(await runAuthorizedDomainCommand('market','trade-stock',{sym,qty})).result;pushAlert(`${qty>0?'شراء':'بيع'} ${fmtNumber(Math.abs(qty))} سهم من ${sym} بقيمة ${fmtMoney(result.value)}.`);updateKpis();openDrawer('market');return true;}catch(error){notice(`تعذر تنفيذ الصفقة: ${error.message}`);return false;}}
+  // Build 358: a subsidiary opens by signing its opening contract (the formationContract panel). The contract is the
+  // confirmation step, and it states the capital that leaves the holding's current account, which must cover it.
+  function holdingOperatingCash(target=state){return target.godMoney&&target.infiniteMoney?Infinity:Math.max(0,Number(window.GH_FINANCE_CORE.operating(target,'group'))||0);}
+  function openingBlocker(type,target=state){
+    const definition=COMPANY_PLATFORM.getDefinition(type),cost=Number(definition?.founding?.defaultCapital)||0;
+    if(!definition||definition.kind!=='subsidiary'||definition.lifecycle!=='active'||cost<=0)return 'تعريف هذه الشركة غير متاح للفتح.';
+    const shortfall=cost-holdingOperatingCash(target);
+    return shortfall>0?`ينقص الحساب الجاري للقابضة ${fmtMoney(shortfall)}. وفّر السيولة من «المال» ثم وقّع العقد.`:null;
+  }
   async function openCompany(type){
     type=String(type||'').trim();const definition=COMPANY_PLATFORM.getDefinition(type),companyName=definition?.identity?.legalDefault?.ar||definition?.identity?.legalDefault?.en||type,cost=Number(definition?.founding?.defaultCapital)||0;
-    if(!definition||definition.kind!=='subsidiary'||definition.lifecycle!=='active'||cost<=0){pushAlert('تعذر تأسيس هذه الشركة؛ تعريف الشركة غير متاح أو غير صالح للتأسيس.');return false;}
-    if(state.openedCompanies.includes(type)){pushAlert(`${companyFinanceName(type)} مؤسَّسة بالفعل.`);openDrawer('companies','subs');return false;}
-    const authority=founderAuthorization(state);if(!authority.signature||!authority.mandate){openSignatureDialog({required:true});notice('اعتمد توقيعك المرئي قبل تأسيس شركة جديدة.');return false;}
-    const location=window.GH_GAME_LIFECYCLE.FOUNDING_LOCATIONS.find(row=>row.city===state.profile?.city)||{id:'GROUP-HQ',city:state.profile?.city||'الرياض',country:state.profile?.country||'السعودية'};
-    let plan;try{plan=window.GH_FORMATION_ENGINE.prepare({entityKind:'company',companyId:type,legalName:companyName,displayName:definition.identity?.trade?.ar||companyName,shortName:definition.identity?.short||type.toUpperCase(),englishName:definition.identity?.legalDefault?.en||'',founder:state.profile?.founder,location,capital:cost,currency:state.profile?.currency||'USD',riskAppetite:state.profile?.riskAppetite,procurementPolicy:state.profile?.procurementPolicy,signingAuthority:state.profile?.signingAuthority,signatureRef:authority.signature.id,signatureVersion:authority.signature.version,createdAt:Number(state.simSeconds)||0});window.GH_FORMATION_ENGINE.validatePlan(plan);}catch(error){notice(`تعذر تجهيز خطة التأسيس: ${error.message}`);return false;}
+    if(state.openedCompanies.includes(type)){openDrawer('formationContract',type);return false;}
+    const blocked=openingBlocker(type);if(blocked){notice(blocked,'warning');return false;}
+    const authority=founderAuthorization(state);if(!authority.signature||!authority.mandate){openSignatureDialog({required:true});notice('اعتمد توقيعك المرئي قبل توقيع عقد الفتح.');return false;}
+    const place=window.GH_GAME_LIFECYCLE.locationFor(state.profile),location={id:place.id,city:place.city,country:place.country};
+    let plan;try{plan=window.GH_FORMATION_ENGINE.prepare({entityKind:'company',companyId:type,legalName:companyName,displayName:definition.identity?.trade?.ar||companyName,shortName:definition.identity?.short||type.toUpperCase(),englishName:definition.identity?.legalDefault?.en||'',founder:state.profile?.founder,location,capital:cost,currency:state.profile?.currency||'USD',signatureRef:authority.signature.id,signatureVersion:authority.signature.version,createdAt:Number(state.simSeconds)||0});window.GH_FORMATION_ENGINE.validatePlan(plan);}catch(error){notice(`تعذر تجهيز عقد الفتح: ${error.message}`);return false;}
     const result=await runDurableStateCommand(`open-company:${type}`,({state:draft})=>{
-      const draftAuthority=founderAuthorization(draft),stamp=plan.planHash.slice(0,10).toUpperCase(),short=(draft.profile.shortName||'GH').toUpperCase(),payload={companyId:type,definitionId:plan.definitionId,capital:plan.capital.amount,legalName:plan.identity.legalName,shortName:plan.identity.shortName,owner:draft.profile.name,authorizedSignatory:draft.profile.founder,logoStyle:type,riskAppetite:plan.governance.riskAppetite,procurementPolicy:plan.governance.procurementPolicy,signingAuthority:plan.governance.signingAuthority,taxId:`${short}-${type.toUpperCase()}-${stamp}`,commercialRegistration:`CR-${simDate().getUTCFullYear()}-${stamp}`,businessLicense:`LIC-${type.toUpperCase()}-${stamp}`,formationContract:`INC-${type.toUpperCase()}-${stamp}`,invoices:[{id:`INV-${type.toUpperCase()}-${stamp}`,status:'تأسيس',amount:plan.capital.amount,issuedAt:draft.simSeconds,note:'قيد رأس المال المدفوع عند التأسيس'}]};
+      const draftAuthority=founderAuthorization(draft),stamp=plan.planHash.slice(0,10).toUpperCase(),short=(draft.profile.shortName||'GH').toUpperCase(),payload={companyId:type,definitionId:plan.definitionId,capital:plan.capital.amount,legalName:plan.identity.legalName,shortName:plan.identity.shortName,owner:draft.profile.name,authorizedSignatory:draft.profile.founder,taxId:`${short}-${type.toUpperCase()}-${stamp}`,commercialRegistration:`CR-${simDate().getUTCFullYear()}-${stamp}`,businessLicense:`LIC-${type.toUpperCase()}-${stamp}`,formationContract:`INC-${type.toUpperCase()}-${stamp}`,invoices:[{id:`INV-${type.toUpperCase()}-${stamp}`,status:'تأسيس',amount:plan.capital.amount,issuedAt:draft.simSeconds,note:'قيد رأس المال المدفوع عند التأسيس'}]};
       if(!draftAuthority.signature||draftAuthority.signature.id!==plan.signature.signatureRef||draftAuthority.signature.version!==plan.signature.version)throw new Error('formation-signature-version-conflict');
-      window.GH_FORMATION_ENGINE.validatePlan(plan);const receipt=authorizedDraftDispatch(draft,'corporate','open-company',payload,{idempotencyKey:plan.planId}),record=receipt.result;if(!record||record.companyId!==type)throw new Error('formation-company-record-mismatch');record.formationPlan={id:plan.planId,hash:plan.planHash,definitionId:plan.definitionId,definitionVersion:plan.definitionVersion,capital:clone(plan.capital),governance:clone(plan.governance),location:clone(plan.location),signature:clone(plan.signature),createdAt:plan.createdAt};record.signatureSnapshot=signatureSnapshot(draft,plan.signature.signatureRef);record.authorizationProofId=receipt.authorizationProofId||null;window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`تأسست ${plan.identity.legalName} بحساب قانوني ومالي فقط. الأصول والمنشآت والقدرات تبدأ من صفر ولا تُنشأ إلا بشراء يدوي.`,type:'formation'});return {companyId:type,record,planId:plan.planId};
-    },{silent:true,afterCommit:()=>{syncMapCompanyFilterButtons();updateKpis();renderMap();openDrawer('companies','subs');}});
-    if(!result){notice(`لم تُفتح ${companyName}. لم يعتمد الحفظ الدائم أي أثر.`);return false;}return true;
+      window.GH_FORMATION_ENGINE.validatePlan(plan);const receipt=authorizedDraftDispatch(draft,'corporate','open-company',payload,{idempotencyKey:plan.planId}),record=receipt.result;if(!record||record.companyId!==type)throw new Error('formation-company-record-mismatch');record.formationPlan={id:plan.planId,hash:plan.planHash,definitionId:plan.definitionId,definitionVersion:plan.definitionVersion,capital:clone(plan.capital),location:clone(plan.location),signature:clone(plan.signature),createdAt:plan.createdAt,sourceAccountId:window.GH_FINANCE_CORE.book(draft,'group').accounts[0].id};record.signatureSnapshot=signatureSnapshot(draft,plan.signature.signatureRef);record.authorizationProofId=receipt.authorizationProofId||null;window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`وُقّع عقد فتح ${plan.identity.legalName} وحُوّل رأس ماله ${fmtMoney(plan.capital.amount)} من حساب القابضة. الأصول والمنشآت تبدأ من صفر وتُشترى بأوامر مستقلة.`,type:'formation'});return {companyId:type,record,planId:plan.planId};
+    },{silent:true,afterCommit:()=>{syncMapCompanyFilterButtons();updateKpis();renderMap();openDrawer('formationContract',type);}});
+    if(!result){notice(`لم تُفتح ${companyName}. ${openingBlocker(type)||'تعذر تأكيد الحفظ؛ لم يتغير شيء. أعد المحاولة.'}`,'warning');return false;}return true;
   }
-  // ضمان وصول زر التأسيس حتى داخل اللوحات التي يعيد GH Advanced رسمها على الهاتف.
   document.addEventListener('click',event=>{
-    const button=event.target.closest?.('.open-company');if(!button)return;
-    event.preventDefault();event.stopPropagation();openCompany(button.dataset.type);
+    const button=event.target.closest?.('.sign-charter');if(!button)return;
+    event.preventDefault();event.stopPropagation();if(button.disabled)return;button.disabled=true;button.classList.add('is-busy');
+    openCompany(button.dataset.company).finally(()=>{if(button.isConnected){button.disabled=false;button.classList.remove('is-busy');}});
   },true);
   async function collectReceivable(number){try{const result=(await runAuthorizedDomainCommand('finance','collect-receivable',{number})).result;pushAlert(`تم تحصيل ${fmtMoney(result.amount)} إلى حساب ${companyFinanceName(result.company)}.`);updateKpis();openDrawer('invoices',{company:result.company,tab:'obligations',view:'receivables'});}catch(error){pushAlert('هذه الذمة محصّلة بالفعل أو لم تعد موجودة.');openDrawer('invoices');}}
   // Build 358: settle every open payable (by transfer or by issuing its cheque), or cash every issued cheque, in ONE
@@ -4586,8 +4600,8 @@
   document.querySelectorAll('#speedMenu button[data-speed]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setSpeed(btn.dataset.speed);/* keep menu open */}));
 
 
-  let founderLogoData=null,founderLogoStyle='teal',founderLogoRequest=0,founderLogoLoading=false,founderReviewedInput=null,founderSubmitting=false,founderSignaturePad=null,signatureDialogPad=null,signatureDialogRequired=false,pendingAuthorizedResumeSpeed=startupSignatureResumeSpeed;
-  function founderInput(){return {name:$('founderName').value,founder:$('founderOwner').value,shortName:$('founderShort').value,englishName:$('founderEnglishName').value,locationId:$('founderLocation').value,mode:$('founderMode').value,logo:founderLogoData,logoStyle:founderLogoStyle,riskAppetite:$('founderRisk').value,procurementPolicy:$('founderProcurement').value,signingAuthority:$('founderAuthority').value};}
+  let founderLogoData=null,founderLogoRequest=0,founderLogoLoading=false,founderReviewedInput=null,founderSubmitting=false,founderSignaturePad=null,signatureDialogPad=null,signatureDialogRequired=false,pendingAuthorizedResumeSpeed=startupSignatureResumeSpeed;
+  function founderInput(){return {name:$('founderName').value,founder:$('founderOwner').value,shortName:$('founderShort').value,englishName:$('founderEnglishName').value,locationId:$('founderLocation').value,mode:$('founderMode').value,logo:founderLogoData};}
   function founderFeedback(message=''){const box=$('founderError');box.textContent=message;box.hidden=!message;if(message)box.focus?.();}
   function ensureFounderSignaturePad(){if(!founderSignaturePad){const mount=$('founderSignatureMount');if(!mount||!window.GH_SIGNATURE_PAD?.mount)throw new Error('FOUNDING_SIGNATURE_PAD_UNAVAILABLE');founderSignaturePad=window.GH_SIGNATURE_PAD.mount(mount,{title:'توقيع المؤسس المرئي'});}return founderSignaturePad;}
   function setSignatureDialogError(message=''){const node=$('signatureDialogError');if(!node)return;node.textContent=message;node.hidden=!message;}
@@ -4606,51 +4620,92 @@
   $('signatureDialogSave')?.addEventListener('click',saveSignatureDialog);
   document.addEventListener('click',event=>{const trigger=event.target.closest?.('[data-open-signature]');if(trigger){event.preventDefault();openSignatureDialog();}});
   function updateFounderLogoPreview(){
-    const box=$('founderLogoPreview');if(!box)return;box.dataset.style=founderLogoStyle;
-    const short=($('founderShort')?.value||'GH').slice(0,4).toUpperCase();
-    box.innerHTML=founderLogoData?`<img src="${esc(founderLogoData)}" alt="شعار المجموعة">`:`<span>${esc(short)}</span>`;
-    document.querySelectorAll('.inc-logo-option').forEach(button=>{const selected=button.dataset.logoStyle===founderLogoStyle&&!founderLogoData;button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));});
-    $('founderLogoClear').hidden=!founderLogoData;$('founderReview').disabled=founderLogoLoading||founderSubmitting;
+    const box=$('founderLogoPreview');if(!box)return;
+    box.innerHTML=charterLogo(founderLogoData,$('founderShort')?.value||'GH');
+    $('founderLogoClear').hidden=!founderLogoData;$('founderReview').disabled=founderLogoLoading||founderSubmitting;renderFounderPreview();
   }
-  function updateFounderCapitalPreview(){const value=window.GH_GAME_LIFECYCLE.FOUNDING_CAPITALS[$('founderMode').value];$('founderCapitalPreview').textContent=Number.isFinite(value)?`$${value.toLocaleString('en-US')}`:'—';founderReviewedInput=null;}
-  function formationDocumentMarkup(document){
-    const signed=document.status==='signed',articles=document.articles||window.GH_GAME_LIFECYCLE.FOUNDING_ARTICLES;
-    const signatureVisual=authorizationSignatureMarkup(document,{legacyLabel:'عقد تاريخي بلا توقيع مرئي محفوظ'});
-    return `<article class="formation-paper${signed?' is-signed':''}" aria-label="عقد تأسيس المجموعة">
-      <header class="formation-header"><div><small dir="ltr">GLOBAL HOLDINGS / INCORPORATION</small><h2>عقد تأسيس المجموعة</h2><p>${esc(document.legalForm)}</p></div><div class="formation-monogram" data-compact="${String(document.shortName||'GH').length>2}" aria-hidden="true"><b>${esc(document.shortName||'GH')}</b></div></header>
-      <div class="formation-reference"><span class="formation-status">${signed?'عقد معتمد':'نسخة للمراجعة'}</span><span>${signed?`سنة التأسيس · ${esc(document.year)}`:'رقم العقد يصدر عند الاعتماد'}</span></div>
-      <dl class="formation-identity">
-        <div class="formation-company"><dt>اسم المجموعة</dt><dd>${esc(document.name)}${document.englishName?`<bdi>${esc(document.englishName)}</bdi>`:''}</dd></div>
-        <div class="formation-capital"><dt>رأس المال عند التأسيس</dt><dd>${Number(document.capital).toLocaleString('en-US')} <span class="formation-currency">USD</span></dd><dd class="formation-capital-note">${signed?'رأس المال المعتمد في العقد':'يودع كاملًا في الحساب الجاري للقابضة بعد الاعتماد'}</dd></div>
-        <div class="formation-detail"><dt>المؤسس والمالك</dt><dd>${esc(document.founder)}</dd></div><div class="formation-detail"><dt>المقر الرئيسي</dt><dd>${esc(document.city)} · ${esc(document.country)}</dd></div>
-        <div class="formation-detail"><dt>المخاطر</dt><dd>${esc(document.riskAppetite||'متوازنة')}</dd></div><div class="formation-detail"><dt>سلطة الاعتماد</dt><dd>${esc(document.signingAuthority||'المؤسس')}</dd></div>
-      </dl>
-      <div class="formation-terms"><div class="formation-terms-title"><h3>بنود التأسيس</h3><span>${String(articles.length).padStart(2,'0')} مواد</span></div>
-        ${articles.map((article,index)=>`<section class="formation-article"><span class="formation-article-number" aria-hidden="true">${String(index+1).padStart(2,'0')}</span><div><h4>${esc(article.title)}</h4><p>${esc(article.text)}</p></div></section>`).join('')}
-      </div>
-      <div class="formation-signature"><div><small>التوقيع المرئي المعتمد</small>${signatureVisual}</div><span>${signed?'تم الاعتماد':'بانتظار التوقيع'}</span></div>
-      <footer class="formation-footer">${signed?`<span>رقم العقد · <bdi>${esc(document.id)}</bdi></span><span>الحساب الجاري · <bdi>${esc(document.accountId)}</bdi></span>`:'<span>نسخة العقد تحفظ في ملف المجموعة عند التأسيس.</span><span dir="ltr">GH / 01</span>'}</footer>
+  // ---- Build 358: one renderer for the founding contract and every subsidiary opening contract ----
+  let charterSerial=0;
+  const CHARTER_ACTIVITY=Object.freeze({air:'النقل الجوي للركاب والشحن',sea:'الشحن البحري',road:'النقل البري والخدمات اللوجستية',power:'توليد الكهرباء وبيعها',bank:'الخدمات المصرفية',mobility:'التنقل الذكي حسب الطلب'});
+  const charterAmount=value=>Number(value||0).toLocaleString('en-US');
+  function charterSeal(doc){
+    const signed=doc.status==='signed',ring=`charterRing${++charterSerial}`;
+    return `<div class="charter-seal" aria-hidden="true"><svg viewBox="0 0 120 120"><defs><path id="${ring}" d="M60,60 m-45,0 a45,45 0 1,1 90,0 a45,45 0 1,1 -90,0"/></defs><circle cx="60" cy="60" r="57" class="charter-seal-outer"/><circle cx="60" cy="60" r="34" class="charter-seal-inner"/><text class="charter-seal-ring"><textPath href="#${ring}" textLength="270" lengthAdjust="spacing">GLOBAL HOLDINGS · ${signed?'SIGNED':'DRAFT'} · ${esc(String(doc.year||''))} ·</textPath></text><text x="60" y="${signed?64:67}" text-anchor="middle" class="charter-seal-mark">${esc(String(doc.sealMark||'GH').slice(0,4))}</text>${signed?`<text x="60" y="79" text-anchor="middle" class="charter-seal-code">${esc(String(doc.sealCode||'').slice(0,8))}</text>`:''}</svg></div>`;
+  }
+  function charterMarkup(doc){
+    const signed=doc.status==='signed';
+    const capital=doc.flow?`<section class="charter-flow" aria-label="مسار رأس المال"><div class="charter-node"><small>من</small><b>${esc(doc.flow.from)}</b><code dir="ltr">${esc(doc.flow.fromAccount)}</code></div><div class="charter-transfer"><strong dir="ltr"><span>${esc(doc.currency)}</span>${charterAmount(doc.capital)}</strong><i aria-hidden="true"></i></div><div class="charter-node is-new"><small>إلى</small><b>${esc(doc.flow.to)}</b><code dir="ltr">${esc(doc.flow.toAccount)}</code></div></section>`
+      :`<section class="charter-capital"><small>رأس المال عند التأسيس</small><strong dir="ltr"><span>${esc(doc.currency)}</span>${charterAmount(doc.capital)}</strong><p>${esc(doc.capitalNote)}</p></section>`;
+    return `<article class="charter" data-company="${esc(doc.company)}" data-kind="${esc(doc.kind)}" data-status="${signed?'signed':'draft'}" aria-label="${esc(doc.title)}">
+      <header class="charter-top"><span class="charter-kicker" dir="ltr">GH · ${doc.kind==='group'?'INCORPORATION':'SUBSIDIARY CHARTER'}</span><span class="charter-status">${signed?'موقّع ومختوم':'مسودة للمراجعة'}</span></header>
+      <section class="charter-hero"><div class="charter-mark">${doc.logoHtml}</div><div><small>${esc(doc.title)}</small><h2>${esc(doc.legalName)}</h2>${doc.englishName?`<bdi dir="ltr">${esc(doc.englishName)}</bdi>`:''}</div></section>
+      ${capital}
+      <dl class="charter-facts">${doc.facts.map(([label,value,tone])=>`<div${tone?` class="${esc(tone)}"`:''}><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>
+      <ol class="charter-clauses">${doc.articles.map((article,index)=>`<li><span dir="ltr">${String(index+1).padStart(2,'0')}</span><div><h4>${esc(article.title)}</h4><p>${esc(article.text)}</p></div></li>`).join('')}</ol>
+      <footer class="charter-sign"><div class="charter-signature"><small>${signed?'التوقيع المعتمد':'التوقيع'}</small>${doc.signatureHtml}<b>${esc(doc.founder)}</b></div>${charterSeal(doc)}</footer>
+      ${doc.refs?.length?`<dl class="charter-refs">${doc.refs.filter(([,value])=>value).map(([label,value])=>`<div><dt>${esc(label)}</dt><dd dir="ltr">${esc(value)}</dd></div>`).join('')}</dl>`:''}
     </article>`;
   }
-  function renderFormationContract(){const document=state.companyRegistry?.group?.formationDocument;if(!document)return '<div class="empty">لا توجد نسخة تفصيلية للعقد في هذا الحفظ القديم.</div>';return `<div class="list">${formationDocumentMarkup(document)}<button class="secondary-btn" data-open="companies">العودة إلى المجموعة</button></div>`;}
+  const charterPendingSignature=text=>`<span class="charter-signature-pending">${esc(text)}</span>`;
+  function charterLogo(logo,shortName){return logo?`<img src="${esc(logo)}" alt="">`:`<span>${esc(String(shortName||'GH').slice(0,4).toUpperCase())}</span>`;}
+  // source: the reviewed founding input (draft) or the stored formation document (signed).
+  function groupCharterDoc(source,signed){
+    const registry=state.companyRegistry?.group||{},year=signed?source.year:simDate().getUTCFullYear();
+    return {kind:'group',company:'group',status:signed?'signed':'draft',title:'عقد تأسيس المجموعة',legalName:source.name,englishName:source.englishName,shortName:source.shortName,sealMark:String(source.shortName||'GH').toUpperCase(),
+      logoHtml:charterLogo(signed?state.profile?.logo:source.logo,source.shortName),capital:source.capital,currency:source.currency||'USD',
+      capitalNote:signed?'أودع كاملًا في الحساب الجاري للقابضة.':'يودع كاملًا في الحساب الجاري للقابضة عند التوقيع.',
+      facts:[['المقر الرئيسي',`${source.city} · ${source.country}`],['المؤسس والمالك',source.founder],['الشكل القانوني',source.legalForm||'شركة قابضة مساهمة مقفلة'],['السنة المالية','يناير – ديسمبر']],
+      articles:source.articles||window.GH_GAME_LIFECYCLE.FOUNDING_ARTICLES,founder:source.founder,year,sealCode:String(source.formationPlanHash||source.id||'').toUpperCase(),
+      signatureHtml:signed?authorizationSignatureMarkup(source,{legacyLabel:'عقد تاريخي بلا توقيع مرئي محفوظ'}):charterPendingSignature('بانتظار توقيعك'),
+      refs:signed?[['رقم العقد',source.id],['السجل التجاري',registry.commercialRegistration],['الرقم الضريبي',registry.taxId],['الحساب الجاري',source.accountId]]:[]};
+  }
+  function companyCharterDoc(type){
+    const definition=COMPANY_PLATFORM.getDefinition(type);if(!definition||definition.kind!=='subsidiary')return null;
+    const opened=state.openedCompanies.includes(type),record=opened?state.companyRegistry?.[type]||{}:{},place=window.GH_GAME_LIFECYCLE.locationFor(state.profile),groupName=state.profile?.name||'المجموعة',founder=state.profile?.founder||'المؤسس';
+    const legalName=record.legalName||definition.identity?.legalDefault?.ar||type,shortName=record.shortName||definition.identity?.short||type.toUpperCase(),sector=CHARTER_ACTIVITY[definition.classification?.primarySectorId]||typeName(type);
+    const capital=opened?Number(record.paidInCapital)||0:Number(definition.founding?.defaultCapital)||0,groupAccount=window.GH_FINANCE_CORE.book(state,'group').accounts[0]?.id||'—';
+    const sourceAccount=opened?record.formationPlan?.sourceAccountId||groupAccount:groupAccount,holding=holdingOperatingCash();
+    let signatureHtml;
+    if(opened)signatureHtml=authorizationSignatureMarkup(record,{legacyLabel:'عقد بلا توقيع مرئي محفوظ'});
+    else{const authority=founderAuthorization(state),snapshot=authority.signature?signatureSnapshot(state,authority.signature.id):null;signatureHtml=snapshot?`<span class="formation-signature-visual is-preview">${window.GH_SIGNATURE_PAD.svgMarkup(snapshot.strokes,{width:snapshot.width,height:snapshot.height,ink:snapshot.ink})}<small>يُختم بالإصدار ${Number(snapshot.version)||1} من توقيعك</small></span>`:charterPendingSignature('اعتمد توقيعك المرئي أولًا');}
+    const facts=[['النشاط',sector],['المقر',`${place.city} · ${place.country}`],['الشكل القانوني',definition.founding?.legalForm||'شركة تابعة مملوكة للمجموعة'],['المفوض بالتوقيع',founder]];
+    if(!opened)facts.push(['رصيد حساب القابضة الآن',Number.isFinite(holding)?fmtMoney(holding):'غير محدود',holding>=capital?'is-good':'is-short']);
+    return {kind:'company',company:type,status:opened?'signed':'draft',title:'عقد فتح شركة تابعة',legalName,englishName:definition.identity?.legalDefault?.en||'',shortName,sealMark:String(definition.founding?.documentPrefix||type).toUpperCase(),
+      logoHtml:window.GH_IDENTITY?.logoMarkup?.(state,type,'normal','charter-logo')||charterLogo(null,shortName),capital,currency:record.currency||'USD',
+      flow:{from:groupName,fromAccount:sourceAccount,to:shortName,toAccount:opened?record.bankAccount||'—':'حساب جديد'},facts,
+      articles:window.GH_GAME_LIFECYCLE.openingArticles({groupName,legalName,sector,capitalText:fmtMoney(capital),sourceAccount}),founder,
+      year:opened?new Date(SIM_START+(Number(record.incorporatedAt)||0)*1000).getUTCFullYear():simDate().getUTCFullYear(),sealCode:String(record.formationPlan?.hash||'').toUpperCase(),signatureHtml,
+      refs:opened?[['رقم العقد',record.formationContract],['السجل التجاري',record.commercialRegistration],['الرقم الضريبي',record.taxId],['الرخصة',record.businessLicense]]:[]};
+  }
+  function renderFormationContract(arg){
+    const type=String(arg||'group');
+    if(type==='group'){const document=state.companyRegistry?.group?.formationDocument;if(!document)return '<div class="empty">لا توجد نسخة تفصيلية للعقد في هذا الحفظ القديم.</div>';return `<div class="charter-page">${charterMarkup(groupCharterDoc(document,true))}<div class="charter-actions"><button class="secondary-btn" data-open="companies">العودة إلى المجموعة</button></div></div>`;}
+    const doc=companyCharterDoc(type);if(!doc)return '<div class="empty">تعريف هذه الشركة غير متاح.</div>';
+    if(doc.status==='signed'){const fleet=COMPANY_PLATFORM.getDefinition(type)?.capabilities?.includes('operations.fleet')&&!window.GH_FLEET_DATA.some(state,asset=>assetOwnerCompanyId(asset)===type);return `<div class="charter-page">${charterMarkup(doc)}<div class="charter-actions">${fleet?`<button class="primary-btn" data-open="assetMarket" data-arg="${esc(type)}">اشترِ أول أصل</button>`:''}<button class="${fleet?'secondary-btn':'primary-btn'}" data-open="companyManage" data-arg="${esc(type)}">إدارة الشركة</button><button class="secondary-btn" data-open="companies" data-arg="subs">الشركات التابعة</button></div></div>`;}
+    const blocked=openingBlocker(type);
+    return `<div class="charter-page">${charterMarkup(doc)}<div class="charter-actions charter-sign-action">${blocked?`<p class="charter-blocker" role="status">${esc(blocked)}</p>`:'<p>بالتوقيع يُحوَّل رأس المال فورًا، وتُحفظ نسخة العقد في ملف الشركة.</p>'}<button class="primary-btn sign-charter" data-company="${esc(type)}"${blocked?' disabled':''}>توقيع العقد وفتح الشركة · ${fmtMoney(doc.capital)}</button><button class="secondary-btn" data-open="companies" data-arg="subs">رجوع</button></div></div>`;
+  }
+  function renderFounderPreview(){
+    const box=$('founderLivePreview');if(!box)return;
+    let prepared;try{prepared=window.GH_GAME_LIFECYCLE.prepareFounding(founderInput());}catch(_error){return;}
+    box.innerHTML=charterMarkup(groupCharterDoc(prepared,false));
+  }
+  function setFounderStep(review){
+    $('founderForm').classList.toggle('is-reviewing',review);$('founderDataPane').hidden=review;$('founderReviewPane').hidden=!review;
+    $('founderDataStep').toggleAttribute('aria-current',!review);$('founderReviewStep').toggleAttribute('aria-current',review);
+    if(review)$('founderReviewStep').setAttribute('aria-current','step');else $('founderDataStep').setAttribute('aria-current','step');
+    $('founderFlow').scrollTop=0;
+  }
   function reviewFounder(){
     if(founderSubmitting||founderLogoLoading)return false;
     try{founderReviewedInput=window.GH_GAME_LIFECYCLE.prepareFounding(founderInput());}catch(error){founderFeedback(error.message);return false;}
-    try{ensureFounderSignaturePad();}catch(error){founderFeedback(error.message);return false;}founderFeedback();$('founderContractPreview').innerHTML=formationDocumentMarkup(founderReviewedInput);
-    $('founderForm').classList.add('is-reviewing');
-    $('founderDataPane').hidden=true;$('founderReviewPane').hidden=false;
-    $('founderDataStep').removeAttribute('aria-current');$('founderGovernanceStep').removeAttribute('aria-current');$('founderReviewStep').setAttribute('aria-current','step');
-    $('founderFlow').scrollTop=0;$('founderReviewTitle').focus?.();return true;
+    try{ensureFounderSignaturePad();}catch(error){founderFeedback(error.message);return false;}founderFeedback();$('founderContractPreview').innerHTML=charterMarkup(groupCharterDoc(founderReviewedInput,false));
+    setFounderStep(true);$('founderReviewTitle').focus?.();return true;
   }
   function editFounder(){
-    if(founderSubmitting)return;founderReviewedInput=null;
-    $('founderForm').classList.remove('is-reviewing');
-    $('founderReviewPane').hidden=true;$('founderDataPane').hidden=false;
-    $('founderReviewStep').removeAttribute('aria-current');$('founderDataStep').setAttribute('aria-current','step');$('founderGovernanceStep').setAttribute('aria-current','step');
-    founderFeedback();$('founderFlow').scrollTop=0;$('founderName').focus?.();
+    if(founderSubmitting)return;founderReviewedInput=null;setFounderStep(false);founderFeedback();renderFounderPreview();$('founderName').focus?.();
   }
   function compressLogoFile(file){return new Promise((resolve,reject)=>{const allowed=new Set(['image/png','image/jpeg','image/webp']);if(!file||!allowed.has(String(file.type).toLowerCase())){reject(new Error('اختر شعارًا بصيغة PNG أو JPEG أو WebP.'));return;}if(file.size>8*1024*1024){reject(new Error('حجم الصورة كبير جدًا. الحد 8MB قبل الضغط.'));return;}const reader=new FileReader();reader.onerror=()=>reject(new Error('تعذر قراءة الصورة من الاستديو.'));reader.onload=()=>{const img=new Image();img.onerror=()=>reject(new Error('ملف الصورة غير قابل للقراءة.'));img.onload=()=>{const sourceWidth=Math.floor(Number(img.naturalWidth)||0),sourceHeight=Math.floor(Number(img.naturalHeight)||0);if(sourceWidth<1||sourceHeight<1||sourceWidth*sourceHeight>16000000){reject(new Error('أبعاد الشعار غير صالحة أو كبيرة جدًا للمعالجة الآمنة.'));return;}const max=360,scale=Math.min(1,max/Math.max(sourceWidth,sourceHeight)),w=Math.max(1,Math.round(sourceWidth*scale)),h=Math.max(1,Math.round(sourceHeight*scale)),canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const c=canvas.getContext('2d',{alpha:true});if(!c){reject(new Error('تعذر تجهيز مساحة الصورة.'));return;}c.clearRect(0,0,w,h);c.drawImage(img,0,0,w,h);let data;try{data=canvas.toDataURL('image/webp',.76);if(!data.startsWith('data:image/webp'))data=canvas.toDataURL('image/jpeg',.78);}catch{data=canvas.toDataURL('image/jpeg',.78);}if(data.length>280000){reject(new Error('الشعار ما زال كبيرًا بعد الضغط. اختر صورة أبسط أو أقل تفاصيل.'));return;}resolve(data);};img.src=String(reader.result);};reader.readAsDataURL(file);});}
-  document.querySelectorAll('.inc-logo-option').forEach(button=>button.addEventListener('click',()=>{founderLogoRequest++;founderLogoLoading=false;founderLogoStyle=button.dataset.logoStyle;founderLogoData=null;$('founderLogoUpload').value='';$('founderLogoStatus').textContent='';updateFounderLogoPreview();}));
   $('founderLogoUpload')?.addEventListener('change',async event=>{
     const file=event.target.files?.[0];if(!file)return;const request=++founderLogoRequest;founderLogoLoading=true;$('founderLogoStatus').textContent='جارٍ تجهيز الشعار…';updateFounderLogoPreview();
     try{const logo=await compressLogoFile(file);if(request!==founderLogoRequest)return;founderLogoData=logo;$('founderLogoStatus').textContent='الشعار جاهز';founderFeedback();}
@@ -4659,11 +4714,11 @@
   });
   $('founderLogoClear')?.addEventListener('click',()=>{founderLogoRequest++;founderLogoLoading=false;founderLogoData=null;$('founderLogoUpload').value='';$('founderLogoStatus').textContent='';updateFounderLogoPreview();});
   $('founderShort')?.addEventListener('input',updateFounderLogoPreview);
-  $('founderMode').addEventListener('change',updateFounderCapitalPreview);
+  $('founderDataPane').addEventListener('input',renderFounderPreview);$('founderDataPane').addEventListener('change',renderFounderPreview);
   $('founderLocation').innerHTML=window.GH_GAME_LIFECYCLE.FOUNDING_LOCATIONS.map(row=>`<option value="${row.id}">${esc(row.city)} · ${esc(row.country)}</option>`).join('');
   $('founderLocation').value='RUH';
   $('founderReview').addEventListener('click',reviewFounder);$('founderBack').addEventListener('click',editFounder);
-  updateFounderLogoPreview();updateFounderCapitalPreview();
+  updateFounderLogoPreview();
 
   async function finishFounder(){
     if(founderSubmitting||state.onboardingComplete||founderLogoLoading)return false;
@@ -4675,8 +4730,8 @@
     const result=await runDurableStateCommand('found-group',({state:draft})=>{const authority=createFounderSignature(draft,strokes,founderReviewedInput.founder),plan=window.GH_GAME_LIFECYCLE.prepareFormationPlan(founderReviewedInput,authority.signature,{createdAt:Number(draft.simSeconds)||0});return window.GH_GAME_LIFECYCLE.foundGroup(draft,plan,defaultState,{nextId:prefix=>window.GH_DETERMINISM.nextId(draft,prefix),simYear:()=>new Date(SIM_START+(Number(draft.simSeconds)||0)*1000).getUTCFullYear(),fmtMoney,signatureSnapshot,dispatchAuthorized:(target,domain,name,payload,options)=>authorizedDraftDispatch(target,domain,name,payload,options)});},{silent:true});
     founderSubmitting=false;$('founderForm').removeAttribute('aria-busy');$('founderSubmit').disabled=false;$('founderBack').disabled=false;$('founderSubmit').textContent='توقيع العقد وتأسيس المجموعة';
     if(!result){founderFeedback('لم يُعتمد العقد ولم يُضف رأس المال. تعذر تأكيد الحفظ؛ أعد المحاولة بعد زوال السبب.');return false;}
-    $('founderFlow').classList.add('hidden');$('founderContractPreview').innerHTML='';founderSignaturePad?.destroy?.();founderSignaturePad=null;$('founderSignatureMount')?.replaceChildren();$('app').removeAttribute('inert');$('app').removeAttribute('aria-hidden');$('app').style.pointerEvents='';
-    updateKpis();renderMap();return true;
+    $('founderFlow').classList.add('hidden');$('founderContractPreview').innerHTML='';$('founderLivePreview').innerHTML='';founderSignaturePad?.destroy?.();founderSignaturePad=null;$('founderSignatureMount')?.replaceChildren();$('app').removeAttribute('inert');$('app').removeAttribute('aria-hidden');$('app').style.pointerEvents='';
+    if(map)map.setView(headquartersFacility(state).coords,4,{animate:false});updateKpis();renderMap();return true;
   }
   $('founderForm').addEventListener('submit',event=>{event.preventDefault();return finishFounder();});
   if(!state.onboardingComplete){$('founderFlow').classList.remove('hidden');$('app').setAttribute('inert','');$('app').setAttribute('aria-hidden','true');}

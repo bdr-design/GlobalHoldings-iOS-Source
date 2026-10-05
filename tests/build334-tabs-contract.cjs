@@ -46,7 +46,7 @@ console.log(JSON.stringify({result:'passed',registeredAttributes:allowed.length,
  const before=JSON.stringify(state),pending=render('subs',ctx);
  assert.deepEqual(calls,[],'unfounded company cards must not request any financial performance');
  assert.equal(JSON.stringify(state),before,'catalogue rendering must not create a company, account, asset or funding');
- for(const instance of instances)assert(pending.includes(`data-type="${instance.id}"`),'definition must keep its actual founding entry');
+ for(const instance of instances)assert(pending.includes(`data-open="formationContract" data-arg="${instance.id}"`),'definition must keep its actual opening-contract entry');
  state.openedCompanies.push('air-two');state.companyRegistry['air-two']={taxId:'test'};
  instances[1]={...instances[1],opened:true,operational:true};
  const openedBefore=JSON.stringify(state);render('subs',ctx);
