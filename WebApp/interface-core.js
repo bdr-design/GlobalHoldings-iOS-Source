@@ -12,7 +12,6 @@ const HEROES=Object.freeze({
  companyManage:['assets/images/company-system-v2.webp','إدارة الشركة','غرفة قيادة الشركة','الأداء والتشغيل والهوية في مساحة واحدة.'],
  control:['assets/images/facility-logistics-v2.webp','العمليات العالمية','مركز التشغيل','الأصول والمسارات والمنشآت من الحالة المباشرة.'],
  assets:['assets/images/air-widebody.webp','الأصول','الأسطول المملوك','حالة كل أصل ومهمته وتكلفته الفعلية.'],
- assetMarket:['assets/images/air-regional.webp','التوسع','سوق الأصول','اختيار ممول يرتبط بالتشغيل والميزانية.'],
  routes:['assets/images/facility-airport-v2.webp','الشبكة','مركز المسارات','خطوط فعلية مرتبطة بالأصول والمنشآت.'],
  globalRoute:['assets/images/facility-port-v2.webp','الشبكة','مسار عالمي','تخطيط وتشغيل من خريطة المجموعة.'],
  finance:['assets/images/company-bank-v2.webp','الخزينة','المركز المالي','السيولة والديون والمستندات من دفاتر اللعبة.'],

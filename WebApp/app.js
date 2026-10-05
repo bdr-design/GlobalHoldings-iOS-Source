@@ -3650,12 +3650,30 @@
     value=String(value||'');const catalogs=assetMarketCatalogs(target);
     return catalogs.find(catalog=>catalog.mode===value)?.mode||catalogs.find(catalog=>catalog.companies.some(company=>company.id===value))?.mode||catalogs[0]?.mode||null;
   }
-  function assetMarketTypeTabs(activeType){
-    return `<div class="tabs small">${assetMarketCatalogs().map(catalog=>{
-      const operating=catalog.companies.filter(company=>company.operational),companies=operating.length?operating:catalog.companies;
-      const label=[...new Set(companies.map(company=>COMPANY_PLATFORM.resolveIdentity(state,company.id)?.shortName||company.id))].join(' · ');
-      return `<button class="tab-btn ${activeType===catalog.mode?'active':''}" data-markettype="${esc(catalog.mode)}">${esc(label)}</button>`;
-    }).join('')}</div>`;
+  // Build 358: the head of «شراء الأصول». One card per catalog carries its company's family logo, Arabic sector name and
+  // state; «تشتري لـ» names the company that pays, with its cash, delivery bases and fleet; then new/used and the model
+  // categories, which scroll inside their own row so nothing leaves the drawer.
+  const marketBuyer=catalog=>catalog.companies.find(company=>company.operational)||catalog.companies[0];
+  function marketSectorName(company){
+    const brand=company?.definition?.identity?.brand;
+    return brand?.ar?String(brand.ar).replace(/^لل/,'ال'):COMPANY_PLATFORM.resolveIdentity(state,company?.id)?.shortName||String(company?.id||'');
+  }
+  function marketCompanyFigures(catalog,company){
+    if(catalog.view==='mobility'){
+      const centers=getDynamicFacilities().filter(f=>f.owned===true&&f.kind==='mobility-center'&&companyOfFacility(f)===company.id);
+      return {bases:centers.length,fleet:(state.mobility?.vehicles||[]).filter(vehicle=>String(vehicle.ownerCompanyId||'mobility')===company.id).length};
+    }
+    return {bases:compatibleBases(catalog.mode,company.id).length,fleet:window.GH_FLEET_DATA.count(state,asset=>assetOwnerCompanyId(asset)===company.id&&assetModeOf(asset)===catalog.mode)};
+  }
+  function assetMarketHead(activeType,options={}){
+    const catalogs=assetMarketCatalogs(),active=catalogs.find(catalog=>catalog.mode===activeType);
+    const cards=catalogs.map(catalog=>{const company=marketBuyer(catalog),figures=company.operational?marketCompanyFigures(catalog,company):null;
+      return `<button class="market-company ${activeType===catalog.mode?'active':''}" data-markettype="${esc(catalog.mode)}"><img src="${esc(window.GH_IDENTITY.logo(state,company.id))}" alt=""><span><b>${esc(marketSectorName(company))}</b><small class="${figures?'on':'off'}">${figures?`تعمل · ${fmtNumber(figures.fleet)} أصل`:'غير مؤسسة'}</small></span></button>`;}).join('');
+    let buyer='';
+    if(active){const company=marketBuyer(active),figures=company.operational?marketCompanyFigures(active,company):null;
+      buyer=`<div class="market-buyer"><img src="${esc(window.GH_IDENTITY.logo(state,company.id))}" alt=""><div><small>تشتري لـ</small><b>${esc(companyFinanceName(company.id))}</b></div>${figures?`<div><small>السيولة</small><b>${fmtMoney(window.GH_FINANCE_CORE.operating(state,company.id))}</b></div><div><small>قواعد التسليم</small><b>${fmtNumber(figures.bases)}</b></div><div><small>الأسطول</small><b>${fmtNumber(figures.fleet)}</b></div>`:'<div><small>الحالة</small><b>غير مؤسسة</b></div>'}</div>`;}
+    const segments=options.segments||[],filters=options.tab?`<div class="market-filters"><div class="market-condition"><button class="${options.tab==='new'?'active':''}" data-markettab="new">جديد</button><button class="${options.tab==='used'?'active':''}" data-markettab="used">مستعمل</button></div><div class="market-chips">${['all',...segments].map(segment=>`<button class="${marketSegment===segment?'active':''}" data-marketsegment="${esc(segment)}">${segment==='all'?'الكل':esc(segment)}</button>`).join('')}</div></div>`:'';
+    return `<div class="market-head"><div class="market-companies">${cards}</div>${buyer}${filters}</div>`;
   }
   function assetMarketReadiness(catalog){
     if(!catalog||catalog.companies.some(company=>company.operational))return '';
@@ -3676,18 +3694,17 @@
     return `<article class="list-item comparison"><div class="list-item-head"><div><h3>المقارنة المباشرة</h3><p>حتى ثلاثة أصول ضمن القطاع الحالي.</p></div><span class="tag">${selected.length}/3</span></div><div class="compare-grid">${selected.map(a=>`<div><b>${esc(a.name)}</b><span>${fmtMoney(a.price)}</span><span>${a.specs.rangeKm?`${fmtNumber(a.specs.rangeKm)} كم`:`${fmtNumber(a.specs.rangeNm)} NM`}</span><span>${fmtNumber(a.specs.capacity)} ${a.specs.capacityUnit}</span><button class="compare-asset active" data-id="${a.id}">إزالة</button></div>`).join('')}</div></article>`;
   }
   function renderMobilityMarketBody(){
-    const catalog=assetMarketCatalogs().find(row=>row.view==='mobility'),typeTabs=assetMarketTypeTabs(catalog?.mode||''),mobilityCompanies=(catalog?.companies||[]).filter(company=>company.operational).map(company=>company.id),centers=getDynamicFacilities().filter(f=>f.owned===true&&mobilityCompanies.includes(companyOfFacility(f))&&f.kind==='mobility-center'),classes=catalog?.new||[],centerOptions=centers.map(center=>`<option value="${esc(center.capitalId)}">${esc(companyFinanceName(companyOfFacility(center)))} · ${esc(center.name)} · ${esc(center.city)}</option>`).join('');
+    const catalog=assetMarketCatalogs().find(row=>row.view==='mobility'),typeTabs=assetMarketHead(catalog?.mode||''),mobilityCompanies=(catalog?.companies||[]).filter(company=>company.operational).map(company=>company.id),centers=getDynamicFacilities().filter(f=>f.owned===true&&mobilityCompanies.includes(companyOfFacility(f))&&f.kind==='mobility-center'),classes=catalog?.new||[],centerOptions=centers.map(center=>`<option value="${esc(center.capitalId)}">${esc(companyFinanceName(companyOfFacility(center)))} · ${esc(center.name)} · ${esc(center.city)}</option>`).join('');
     const cards=classes.map(spec=>`<article class="list-item sector-mobility asset-market-card mobility-market-card"><div class="list-item-head"><div><h3>${spec.icon} ${esc(spec.name)}</h3><p>${esc(spec.manufacturer)} · ${spec.capacity} ركاب</p></div><span class="tag positive">جديد</span></div><div class="spec-grid"><div class="spec-row"><span>الطرازات</span><b>${esc(spec.models.join(' · '))}</b></div><div class="spec-row"><span>السعة</span><b>${spec.capacity} ركاب</b></div><div class="spec-row"><span>تعرفة/كم</span><b>$${Number(spec.rate).toFixed(2)}</b></div><div class="spec-row"><span>السائق</span><b>1 ثابت · راتب $6,000/شهر</b></div></div><div class="asset-price"><b>${fmtMoney(spec.cost)}</b><small>تسليم فوري للمركز المختار وتوظيف السائق تلقائيًا</small></div>${centers.length?`<div class="route-builder manual-mobility-purchase"><label>مركز التسليم<select class="mobility-purchase-center">${centerOptions}</select></label><label>العدد<input class="mobility-purchase-qty" type="number" min="1" max="${window.GH_MOBILITY_CORE?.MAX_FLEET_PURCHASE_QUANTITY||3000}" value="1"></label></div><div class="action-row"><button class="primary-btn manual-buy-mobility" data-class="${esc(spec.id)}">شراء وتسليم الآن</button></div>`:'<div class="empty">لا يوجد مركز Mobility مملوك. افتح مركز عاصمة أولًا؛ لن تُنشأ أي سيارة أو سائق قبله.</div>'}</article>`).join('');
     return `${typeTabs}${assetMarketReadiness(catalog)}<article class="list-item fleet-sale-bar"><div><b>متجر سيارات التنقل الذكي</b><small>شراء يدوي فقط · لا أسطول تأسيسي · لا أصل افتراضي</small></div>${mobilityCompanies.map(company=>`<button class="secondary-btn" data-open="companyFacilities" data-arg="${esc(company)}">إدارة المراكز</button>`).join('')}</article>${cards||'<div class="empty">كتالوج Mobility غير متاح.</div>'}`;
   }
   function renderAssetMarketBody(activeType,activeTab){
     const catalog=assetMarketCatalogs().find(row=>row.mode===activeType);
     if(catalog?.view==='mobility')return renderMobilityMarketBody();
-    const typeTabs=assetMarketTypeTabs(activeType);
-    const condTabs = `<div class="tabs"><button class="tab-btn ${activeTab==='new'?'active':''}" data-markettab="new">أصل جديد</button><button class="tab-btn ${activeTab==='used'?'active':''}" data-markettab="used">سوق مستعمل</button></div>`;
     const source = catalog?.[activeTab]||[];
-    const segments=[...new Set(source.map(x=>x.segment))];
-    const filterBar=`<div class="asset-filters"><input id="assetSearch" value="${esc(marketQuery)}" placeholder="بحث في الطراز أو الفئة"><select id="assetSegment"><option value="all">كل الفئات</option>${segments.map(s=>`<option value="${esc(s)}" ${marketSegment===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>`;
+    const segments=[...new Set(source.map(x=>x.segment))];if(marketSegment!=='all'&&!segments.includes(marketSegment))marketSegment='all';
+    const typeTabs=assetMarketHead(activeType,{tab:activeTab,segments});
+    const filterBar=`<div class="asset-filters"><input id="assetSearch" value="${esc(marketQuery)}" placeholder="بحث في الطراز أو الفئة"></div>`;
     const q=normalizeSearch(marketQuery);const items=source.filter(a=>(marketSegment==='all'||a.segment===marketSegment)&&(!q||normalizeSearch(`${a.name} ${a.segment} ${a.description}`).includes(q)));
     const bases=compatibleBases(activeType),hasDeliveryBase=bases.length>0;
     const list = items.map(a=>`<article class="list-item sector-${activeType} asset-market-card"><div class="asset-hero"><img src="${a.photo}" alt="${esc(a.name)}" loading="lazy"><span class="thumb-tag">${activeTab==='new'?'جديد':`مستعمل ${a.condition}% · ${a.year||''}`}</span><div class="asset-hero-title"><div><small>${esc(a.manufacturer||'')} · ${esc(a.segment)}</small><h3>${esc(a.name)}</h3></div><b>${fmtMoney(a.price)}</b></div></div><p class="asset-blurb">${esc(a.description||'')}</p>${specRow(a)}
@@ -3696,7 +3713,7 @@
       <div class="asset-request-routing"><div><span>شراء يدوي مباشر</span><b>أنت تختار الأصل والعدد والقاعدة وطريقة التملك</b><small>${hasDeliveryBase?'تحدد القاعدة الشركة المالكة صراحةً، ثم يبقى كامل التوزيع داخل منشآت الشركة نفسها وفي معاملة واحدة.':'افتح منشأة تسليم متوافقة أولًا؛ لن يسمح النظام بشراء أصل بلا وجهة وصول صحيحة.'}</small></div>${hasDeliveryBase?`<div class="route-builder manual-asset-purchase"><label>الشركة وقاعدة التسليم الأولى<select class="manual-asset-base">${bases.map(f=>`<option value="${esc(f.id)}" data-company="${esc(facilityOwnerCompanyId(f))}">${esc(companyFinanceName(facilityOwnerCompanyId(f)))} · ${esc(f.name)} · ${esc(f.city)} · متاح ${fmtNumber(facilityFreeAssetCapacity(f))}/${fmtNumber(window.GH_FACILITY_CORE.assetCapacity(f))}</option>`).join('')}</select></label><label>العدد<input class="manual-asset-qty" type="number" min="1" max="${window.GH_PROCUREMENT_CORE?.MAX_ASSET_PURCHASE_QUANTITY||3000}" value="1"></label><label>التملك<select class="manual-asset-mode"><option value="cash">شراء نقدي</option><option value="finance">تمويل</option><option value="lease">تأجير تشغيلي</option></select></label></div>`:''}<div class="action-row"><button class="primary-btn manual-buy-asset" data-type="${activeType}" data-tab="${activeTab}" data-id="${a.id}" ${hasDeliveryBase?'':'disabled'}>شراء وتسليم الآن</button><button class="secondary-btn compare-asset ${marketCompare.includes(a.id)?'active':''}" data-id="${a.id}">${marketCompare.includes(a.id)?'إزالة من المقارنة':'قارن'}</button></div></div></article>`).join('');
     const fleetCompanies=operationalCompanyInstances(state).filter(company=>activeType==='mobility'?company.definition?.capabilities?.includes('operations.mobility'):(company.definition?.classification?.routeModes||[]).includes(activeType));
     const fleetSale=fleetCompanies.map(company=>{const ownedCount=window.GH_FLEET_DATA.count(state,asset=>assetOwnerCompanyId(asset)===company.id&&assetModeOf(asset)===activeType),pendingSale=window.GH_FLEET_DATA.count(state,asset=>assetOwnerCompanyId(asset)===company.id&&assetModeOf(asset)===activeType&&asset.salePending);return `<article class="list-item fleet-sale-bar"><div><b>إدارة أصول ${esc(companyFinanceName(company.id))}</b><small>${ownedCount} أصل مملوك · ${pendingSale} أمر بيع قيد العودة</small></div><button class="danger-soft sell-all-assets" data-company="${esc(company.id)}" ${ownedCount?'':'disabled'}>بيع جميع أصول الشركة</button></article>`;}).join('');
-    return `${typeTabs}${assetMarketReadiness(catalog)}${condTabs}${filterBar}${fleetSale}<div class="section-mini">الشراء والتسليم والطاقم الثابت تتم فورًا وبشكل ذري. يبقى اختيار المسار والمغادرة بيدك.</div>${assetComparePanel(source)}${list||'<div class="empty">لا توجد أصول متاحة بهذا الفلتر.</div>'}`;
+    return `${typeTabs}${assetMarketReadiness(catalog)}${filterBar}${fleetSale}<div class="section-mini">الشراء والتسليم والطاقم الثابت تتم فورًا وبشكل ذري. يبقى اختيار المسار والمغادرة بيدك.</div>${assetComparePanel(source)}${list||'<div class="empty">لا توجد أصول متاحة بهذا الفلتر.</div>'}`;
   }
   function renderAssetMarket(arg){
     if(typeof arg==='string')marketFilterType=assetMarketModeFor(arg)||marketFilterType;marketFilterType=assetMarketModeFor(marketFilterType)||'';
@@ -4344,7 +4361,7 @@
     document.querySelectorAll('[data-markettype]').forEach(b=>b.addEventListener('click',()=>{marketFilterType=b.dataset.markettype;marketSegment='all';marketCompare=[];renderAssetMarketInto();}));
     document.querySelectorAll('[data-markettab]').forEach(b=>b.addEventListener('click',()=>{marketFilterTab=b.dataset.markettab;marketSegment='all';marketCompare=[];renderAssetMarketInto();}));
     const assetSearch=$('assetSearch');if(assetSearch)assetSearch.addEventListener('input',e=>{marketQuery=e.target.value;scheduleDrawerSearch('assetMarket',()=>renderAssetMarketInto(true));});
-    const assetSegment=$('assetSegment');if(assetSegment)assetSegment.addEventListener('change',e=>{marketSegment=e.target.value;renderAssetMarketInto();});
+    document.querySelectorAll('[data-marketsegment]').forEach(b=>b.addEventListener('click',()=>{marketSegment=b.dataset.marketsegment;marketCompare=[];renderAssetMarketInto();}));
     const worldSearch=$('worldSearch');if(worldSearch)worldSearch.addEventListener('input',e=>{worldQuery=e.target.value;worldPage=0;scheduleDrawerSearch('network',()=>renderWorldNetworkInto(true));});
     const worldKindSelect=$('worldKind');if(worldKindSelect)worldKindSelect.addEventListener('change',e=>{setDirectoryCompany(e.target.value);renderWorldNetworkInto();$('drawerBody').scrollTop=0;});
     const worldRegionSelect=$('worldRegion');if(worldRegionSelect)worldRegionSelect.addEventListener('change',e=>{cancelDrawerSearch();worldRegion=e.target.value;worldCountry='';worldCity='';worldPage=0;worldQuery='';renderWorldNetworkInto();});
@@ -4363,6 +4380,7 @@
   }
   function renderAssetMarketInto(restoreFocus=false){
     $('drawerBody').innerHTML=`<div class="list">${renderAssetMarketBody(marketFilterType,marketFilterTab)}</div>`; window.GH_INTERFACE.prepare($('drawerBody'),activeDrawerPanel,activeDrawerArg,advancedContext());bindDrawerActions();
+    const chip=document.querySelector('.market-chips button.active'),row=chip?.parentElement;if(chip&&row){const c=chip.getBoundingClientRect(),r=row.getBoundingClientRect();if(c.left<r.left||c.right>r.right)row.scrollLeft+=c.left<r.left?c.left-r.left-8:c.right-r.right+8;}
     if(restoreFocus){const input=$('assetSearch');input?.focus();input?.setSelectionRange(input.value.length,input.value.length);}
   }
   function renderOwnedAssetsInto(restoreFocus=false){

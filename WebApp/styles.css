@@ -306,6 +306,23 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .diagnostic-event{margin-top: 8px;}
 .tag.warning{background: var(--warn-soft); color: var(--warn);}
 .diagnostic-issue p,.diagnostic-event p{overflow-wrap: anywhere;}
+/* Build 358: head of «شراء الأصول»: company cards, the paying company, new/used and the model categories. */
+.market-head{display:grid;gap:9px;margin-bottom:10px;min-width:0}
+.market-companies{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#drawerBody .market-company{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 10px;border-radius:14px;border:1.5px solid var(--line);background:var(--surface-2);color:var(--text);text-align:right;cursor:pointer}
+#drawerBody .market-company.active{border-color:var(--accent);background:var(--accent-soft)}
+#drawerBody .market-company img{width:36px;height:36px;flex:none}
+#drawerBody .market-company span{display:grid;min-width:0;line-height:1.3}
+#drawerBody .market-company b{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#drawerBody .market-company small{font-size:10px;white-space:nowrap}#drawerBody .market-company small.on{color:var(--good)}#drawerBody .market-company small.off{color:var(--warn)}
+.market-buyer{display:flex;align-items:center;gap:10px;min-width:0;padding:9px 12px;border-radius:14px;border:1px solid var(--line);background:var(--surface-2)}
+.market-buyer img{width:30px;height:30px;flex:none}.market-buyer>div{display:grid;text-align:center;flex:none}.market-buyer>div:first-of-type{flex:1;min-width:0;text-align:right}
+.market-buyer small{font-size:10px;color:var(--muted)}.market-buyer b{font-size:12.5px}.market-buyer>div:first-of-type b{font-size:12px;line-height:1.3}
+.market-filters{display:flex;align-items:center;gap:8px;min-width:0}
+.market-condition{display:flex;flex:none;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+#drawerBody .market-condition button{min-height:40px;border-radius:0;padding:7px 14px;font-size:12px;background:transparent;color:var(--text);border:0;cursor:pointer}#drawerBody .market-condition button.active{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.market-chips{display:flex;gap:6px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}.market-chips::-webkit-scrollbar{display:none}
+#drawerBody .market-chips button{flex:none;min-height:40px;padding:6px 12px;border-radius:999px;font-size:11px;white-space:nowrap;border:1px solid var(--line);background:transparent;color:var(--text);cursor:pointer}#drawerBody .market-chips button.active{border-color:var(--accent);color:var(--accent)}
 .asset-filters,.fleet-sale-bar{display: grid; gap: 9px; margin-bottom: 10px;}
 .asset-filters > label{display: grid; gap: 3px;}
 .spec-grid{display: grid; grid-template-columns: minmax(0px, 1fr); gap: 5px; margin-top: 10px;}
