@@ -811,25 +811,24 @@
   }
   // Build 358 (save policy, GH_SAVE_POLICY in save-policy-core.js): the game does not save on a timer while it runs.
   // Player commands save themselves (runDurableStateCommand) and hiding or closing the app saves (setHidden ->
-  // onPersist, persistForBackground). Between those, a checkpoint is taken when a new quarter of the game calendar
-  // begins, and when the real-time cap (settings, 15 min by default) has passed since the last save of any kind: at the
-  // first quiet moment (time stopped, no calendar advance), or regardless of it once the grace period has also passed.
-  // Nothing is saved while a calendar advance runs.
+  // onPersist, persistForBackground). Between those, a checkpoint is taken when the real-time cap (settings, 15 min by
+  // default) has passed since the last save of any kind: at the first quiet moment (time stopped, no calendar advance),
+  // or regardless of it once the grace period has also passed. Nothing is saved while a calendar advance runs.
   // Preferences (map mode, filters, layers, focus, speed), route geometry caches and health events are not saved on
   // their own: they ride along with the next save. The policy is checked at most once a second from the frame loop.
-  const saveBaseline={atMs:appMetricClock(),simSeconds:Number(state.simSeconds)||0};
+  const saveBaselineAtMs=appMetricClock();
   // The last checkpoint attempt; its retry spacing applies only while no save has happened since (the revision held).
   let lastCheckpointAttempt=null,lastCheckpointCheckMs=-Infinity;
-  function lastSaveMark(){const cadence=window.GH_PERSISTENCE?.saveCadence?.()||{};return {atMs:cadence.lastSaveAtMs==null?saveBaseline.atMs:Number(cadence.lastSaveAtMs),simSeconds:cadence.lastSaveSimSeconds==null?saveBaseline.simSeconds:Number(cadence.lastSaveSimSeconds)};}
+  function lastSaveAtMs(){const at=window.GH_PERSISTENCE?.saveCadence?.()?.lastSaveAtMs;return at==null?saveBaselineAtMs:Number(at);}
   function checkpointQuiet(){return !(Number(state.speed)>0)&&!simulationEngine.snapshot().manualAdvance&&!stagedStateBusy();}
   function checkpointDue(nowMs){
-    const policy=window.GH_SAVE_POLICY;if(!policy)return null;const last=lastSaveMark();
-    return policy.due({nowMs,lastSaveAtMs:last.atMs,lastSaveSimSeconds:last.simSeconds,simSeconds:Number(state.simSeconds)||0,simStartMs:SIM_START,capMinutes:policy.capMinutes(state),quiet:checkpointQuiet,lastAttemptAtMs:lastCheckpointAttempt&&(Number(state.saveRevision)||0)<=lastCheckpointAttempt.revision?lastCheckpointAttempt.atMs:null});
+    const policy=window.GH_SAVE_POLICY;if(!policy)return null;
+    return policy.due({nowMs,lastSaveAtMs:lastSaveAtMs(),capMinutes:policy.capMinutes(state),quiet:checkpointQuiet,lastAttemptAtMs:lastCheckpointAttempt&&(Number(state.saveRevision)||0)<=lastCheckpointAttempt.revision?lastCheckpointAttempt.atMs:null});
   }
   function maybeSaveCheckpoint(nowMs){
     if(nowMs-lastCheckpointCheckMs<1000)return false;lastCheckpointCheckMs=nowMs;
     if(document.hidden||hardResetInProgress||durableCommandInProgress||simulationPersistenceTask||window.GH_PERSISTENCE.isLocked())return false;
-    // The owner's choice: no checkpoint while a calendar advance runs (a quarter it crossed is saved once it ends).
+    // The owner's choice: no checkpoint while a calendar advance runs.
     if(simulationEngine.snapshot().manualAdvance)return false;
     const reason=checkpointDue(nowMs);if(!reason)return false;
     lastCheckpointAttempt={atMs:nowMs,revision:Number(state.saveRevision)||0};diag('SAVE_CHECKPOINT',{reason,simSeconds:Number(state.simSeconds)||0,saveRevision:Number(state.saveRevision)||0});
@@ -847,8 +846,8 @@
     state.savePolicy={...(state.savePolicy&&typeof state.savePolicy==='object'?state.savePolicy:{}),capMinutes:value};return true;
   }
   function savePolicyStatus(){
-    const policy=window.GH_SAVE_POLICY,last=lastSaveMark(),nowMs=appMetricClock(),sim=Number(state.simSeconds)||0;
-    return {capMinutes:policy?.capMinutes(state)??15,choices:policy?.CAP_CHOICES||[],lastSaveAgoMs:Math.max(0,nowMs-last.atMs),lastSaveSimDate:new Date(SIM_START+last.simSeconds*1000),nextQuarterDate:new Date(SIM_START+(policy?.nextQuarterStartSeconds(sim,SIM_START)??sim)*1000)};
+    const policy=window.GH_SAVE_POLICY;
+    return {capMinutes:policy?.capMinutes(state)??15,choices:policy?.CAP_CHOICES||[],lastSaveAgoMs:Math.max(0,appMetricClock()-lastSaveAtMs())};
   }
   function persistStateNow(options={}){
     if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
@@ -4926,7 +4925,7 @@
     // A staged day boundary lives only as long as the engine's slice job; one without a job is rolled back.
     if(stagedStateBusy()&&!simulationEngine.snapshot().jobActive)window.GH_TRANSACTION_CORE.abortStaged(state,'staged-transaction-orphaned');
     let stageStarted=measureFrame?appMetricClock():0;simulationEngine.frame(now);if(measureFrame)simulationMs=Math.max(0,appMetricClock()-stageStarted);
-    // Build 358: a save checkpoint when a game quarter begins or the real-time cap has passed (GH_SAVE_POLICY).
+    // Build 358: a save checkpoint when the real-time cap has passed (GH_SAVE_POLICY).
     maybeSaveCheckpoint(now);
     // The simulation remains authoritative on every frame. Expensive target
     // collection is sampled separately from bounded visible-marker animation.
