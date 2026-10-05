@@ -39,7 +39,7 @@ const QTY=90,WESTERN=/^[0-9]+(\.[0-9])?[KM]?$/;
       const screen=metrics.vehiclePoints.map(point=>m.latLngToContainerPoint([point.lat,point.lng]));let closest=Infinity;
       for(let i=0;i<screen.length;i++)for(let j=i+1;j<screen.length;j++)closest=Math.min(closest,Math.hypot(screen[i].x-screen[j].x,screen[i].y-screen[j].y));
       const sample=globalThis.__sample;globalThis.__sample=null;return {...(sample?{sample}:{}),mode:metrics.mode,zoom:m.getZoom(),vehicles:metrics.vehiclePoints.length,routeLines:metrics.routeLines,facilities:metrics.facilityMarkers,world:metrics.worldMarkers,offRoute,closest,
-        bubbles:[...document.querySelectorAll('.map-place-bubble b')].map(b=>b.textContent),badges:document.querySelectorAll('.fleet-stack-count,.facility-map-cluster,.fleet-cluster-marker').length,
+        bubbles:[...document.querySelectorAll('.map-place-bubble b')].map(b=>b.textContent),badges:document.querySelectorAll('.fleet-stack-count,.facility-map-cluster,.fleet-cluster-marker').length,tiles:document.querySelectorAll('.facility-marker').length,dots:document.querySelectorAll('.map-base-dot').length,
         pressed:[...document.querySelectorAll('button[data-map-mode][aria-pressed="true"]')].map(b=>b.dataset.mapMode)};
     });
     const budget=zoom=>zoom<4?24:zoom<6?36:zoom<9?54:72;
@@ -54,6 +54,8 @@ const QTY=90,WESTERN=/^[0-9]+(\.[0-9])?[KM]?$/;
       assert.ok(row.closest>=18,`no two vehicles overlap (${row.closest}px)`);
       assert.ok(row.routeLines>0,`route lines are drawn: ${JSON.stringify(row)}`);
       assert.deepEqual(row.bubbles,[],'no count bubble in operations');assert.equal(row.badges,0,'no vehicle count badge');
+      // Build 359 (owner screenshot: base tiles all over the map): far out, bases are small dots, within the place budget.
+      if(row.zoom<6){assert.equal(row.tiles,0,`no base tiles below zoom 6: ${JSON.stringify(row)}`);assert.ok(row.dots>0&&row.dots<=(row.zoom<4?28:48),`bases are dots: ${row.dots}`);}
     }
     // Network: places only; Dubai and Abu Dhabi share one bubble far out; each stands alone closer in.
     await page.click('[data-map-mode="network"]');await setView(25,45,3);await page.waitForTimeout(200);
