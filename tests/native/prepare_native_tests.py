@@ -350,8 +350,6 @@ let scanCorpus:[String]=[
     #"{"stateCodec":{"chunks":["a",2]}}"#,
     #"{"stateCodec":{"chunks":"a"}}"#,
     #"{"stateCodec":["chunks"]}"#,
-    #"{"stateCodec":{"chunks":["x"]},"stateCodec":{"version":"v"}}"#,
-    #"{"stateCodec":{"chunks":["x"],"chunks":["y"],"nested":{"chunks":["no"]}},"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["f"]}}}"#,
     #"{}"#, #" {} "#,
     #"{"a":{"b":{"c":{"d":[1,-2.5,3e2,"s",null,true,false,0,0.5,10]}}}}"#,
     // Refused by both.
@@ -389,6 +387,11 @@ test("payload scan: deep nesting, lone surrogates and repeated keys") {
     try check(pair?["saveVersion"]=="string:\\u{FFFD}\\n🚢","Surrogate then escape: \\(String(describing:pair))")
     let repeated=GlobalSaveVault.inspectSaveJSONForTesting(Data(#"{"saveRevision":1,"saveRevision":2,"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["a"]}},"fleet":7}"#.utf8))
     try check(repeated?["saveRevision"]=="number:2.0" && repeated?["fleetRows"]=="no" && repeated?["chunks"]=="absent","Repeated keys: \\(String(describing:repeated))")
+    // JSONSerialization keeps the first of repeated keys; JSON.parse in the game keeps the last, and so does the scan.
+    let codecReplaced=GlobalSaveVault.inspectSaveJSONForTesting(Data(#"{"stateCodec":{"chunks":["x"]},"stateCodec":{"version":"v"}}"#.utf8))
+    try check(codecReplaced?["stateChunks"]=="absent","Repeated stateCodec: \\(String(describing:codecReplaced))")
+    let chunksReplaced=GlobalSaveVault.inspectSaveJSONForTesting(Data(#"{"stateCodec":{"chunks":["x"],"chunks":["y"],"nested":{"chunks":["no"]}},"fleet":{"rows":{"$ghBinary":"chunks-v1","chunks":["f"]}}}"#.utf8))
+    try check(chunksReplaced?["stateChunks"]=="y" && chunksReplaced?["chunks"]=="f" && chunksReplaced?["fleetRows"]=="yes","Repeated stateCodec.chunks: \\(String(describing:chunksReplaced))")
 }
 test("payload scan reads what JSONSerialization reads (generated saves, cut short)") {
     var rng=SystemRandomNumberGenerator()
