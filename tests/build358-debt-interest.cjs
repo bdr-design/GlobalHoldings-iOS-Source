@@ -45,5 +45,11 @@ assert.equal(command('finance','accrue-debt-interest',{day:12,company:'group'}).
 const statement=R.statements(state,'air');
 assert.ok(near(statement.interest,100000000*bondRate/12,1),`statement interest ${statement.interest}`);
 
+// 6. The annual meeting moves the rating score for a year, and with it the price of floating debt.
+R.updateRating(state);const base=state.realism.rating.score;
+command('corporate','record-agm',{year:2026,day:17,ratingAdjust:6});R.updateRating(state);
+assert.equal(state.realism.rating.score,Math.min(95,base+6));assert.equal(state.realism.rating.agmAdjust,6);
+state.simSeconds=(17+401)*DAY;R.updateRating(state);assert.equal(state.realism.rating.agmAdjust,0,'a year later it no longer counts');
+
 assert.equal(s.GH_SAVE_SCHEMA.validate(state).ok,true);
 console.log('BUILD358_DEBT_INTEREST_PASS',JSON.stringify({floating:F.floatingDebtRate(state),bond:bond.record.annualRate,groupDay:groupDay.amount,airDay:airDay.amount}));

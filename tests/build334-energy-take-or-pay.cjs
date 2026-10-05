@@ -9,12 +9,12 @@ s.GH_GAME_LIFECYCLE.foundGroup(state,{mode:'sandbox',name:'TOP Group',founder:'F
 const ctx={state};
 s.GH_DOMAIN_COMMANDS.dispatch(ctx,'corporate','open-company',{type:'power',capital:100000000,legalName:'Test Power'});
 state.customHubs.push({id:'PWR-GAS-1',name:'Gas One',kind:'power',company:'power',ownerCompanyId:'power',owned:true,energyKind:'gas',capacityAmount:100,capacity:'100 MW',commissioned:true,openedAt:0,dailyCost:38000,cost:10000000});
-const contract=s.GH_ENERGY_CORE.execute({state},'sign-fuel-contract',{siteId:'PWR-GAS-1',supplier:'Fuel Supplier',priceMWh:10,volumeMWh:1000,termDays:30,takeOrPay:.75});
+const contract=s.GH_ENERGY_CORE.execute({state},'sign-fuel-contract',{siteId:'PWR-GAS-1',termDays:365});
 const live=state.energy.fuelContracts.find(x=>x.id===contract.id);
-live.endDay=1; live.usedMWh=100; live.remainingMWh=900;
+live.endDay=1; live.usedMWh=100; live.remainingMWh=live.volumeMWh-100;
 state.simSeconds=86400;
 const first=s.GH_DOMAIN_COMMANDS.dispatchSystem({state},'energy','tick-day',{day:1,ownerCompanyId:'power'},{actor:'simulation-scheduler'}).result;
-const expected=(1000*.75-100)*10, number=`TOP-${contract.id}`;
+const expected=(live.volumeMWh*.75-100)*live.priceMWh, number=`TOP-${contract.id}`;
 assert.strictEqual(live.takeOrPayExposure,expected);assert.strictEqual(first.takeOrPayAccrued,expected);assert.strictEqual(first.powerExpense,first.sites.reduce((n,row)=>n+Number(row.expense||0),0)+expected);const eco=s.GH_ECONOMICS_CORE.sectorEconomics(state,{day:1,preferDailyReport:true});assert.strictEqual(eco.detail.powerExpense,first.powerExpense);assert.strictEqual(eco.detail.powerExpenseToPost,Math.max(0,first.powerExpense-first.facilityOpex-expected));
 assert.strictEqual(live.takeOrPayPayableNumber,number);
 assert.strictEqual(state.finance.invoices.filter(x=>x.number===number).length,1);

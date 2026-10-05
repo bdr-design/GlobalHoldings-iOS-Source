@@ -649,7 +649,7 @@ function execute(ctx,cmd,p={},meta={}){
    case'settle-cheque':return settleCheque(s,p);
    case'founder-investment':return founderInvestment(s,p);
    case'founder-withdrawal':return founderWithdrawal(s,p);
-   case'set-budget':{const b=mutableBudget(s,p.company);b.limit=num(p.limit);b.enabled=b.limit>0;if(p.lines)b.lines={...b.lines,...p.lines};if(p.resetSpent){b.spent=0;b.reserved=0;b.spentByLine={};b.reservedByLine={};}return clone(b);}
+   case'set-budget':{const b=mutableBudget(s,p.company),limit=num(p.limit),lines={...b.lines,...(p.lines||{})};if(!p.resetSpent){if(limit>0&&limit<b.spent+b.reserved)throw new Error('budget-below-month-spend');for(const [line,value] of Object.entries(lines))if(num(value)>0&&num(value)<num(b.spentByLine[line])+num(b.reservedByLine[line]))throw new Error(`budget-line-below-month-spend:${line}`);}b.limit=limit;b.enabled=b.limit>0;b.lines=lines;if(p.resetSpent){b.spent=0;b.reserved=0;b.spentByLine={};b.reservedByLine={};}return clone(b);}
    case'reset-budget':{const b=mutableBudget(s,p.company);b.limit=0;b.spent=0;b.reserved=0;b.enabled=false;b.lines={};b.spentByLine={};b.reservedByLine={};return clone(b);}
    case'refresh-identity':return refreshIdentity(s,p);
    case'raise-debt':return raiseDebt(s,p);

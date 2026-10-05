@@ -115,6 +115,8 @@
     }
     if(command==='adjust-group-value'){const delta=Number(payload.delta)||0;state.groupValue=Math.max(0,(Number(state.groupValue)||0)+delta);return state.groupValue;}
     if(command==='set-credit-rating'){state.profile=state.profile||{};state.profile.creditRating=String(payload.grade||'BBB');return state.profile.creditRating;}
+    // The annual general meeting: how shareholders read the year moves the credit rating score for a year (GH_REALISM updateRating).
+    if(command==='record-agm'){state.profile=state.profile||{};state.profile.agm={year:Math.floor(Number(payload.year)||0),day:Math.max(0,Math.floor(Number(payload.day)||0)),ratingAdjust:Math.max(-6,Math.min(6,Math.round(Number(payload.ratingAdjust)||0)))};return {...state.profile.agm};}
     if(command==='set-reputation'){state.profile=state.profile||{};state.profile.reputation=Math.max(0,Math.min(100,Number(payload.value)||0));return state.profile.reputation;}
     if(command==='set-ipo'){state.ipo={listed:!!payload.listed,ticker:String(payload.ticker||'GH').toUpperCase()};return state.ipo;}
     if(command==='decision'){
