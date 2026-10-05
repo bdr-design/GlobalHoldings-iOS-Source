@@ -6,7 +6,8 @@
 // 1. The pure rules (quarters, cap, grace, retry spacing, the cap choices).
 // 2. The real game (local DOM, an in-page native vault that records every commit):
 //    - live play at the top speed with map mode and layer changes: no save at all;
-//    - a calendar advance inside a quarter: no save; across the quarter boundary: exactly one, after April 1 begins;
+//    - nothing is saved while a calendar advance runs, even with the cap overdue; an advance across April 1 is saved
+//      once, after it ends;
 //    - the cap: no save while time runs, one at the first stopped moment, one regardless after the grace, none when
 //      the cap is "on exit only";
 //    - Settings: the card, the cap choice (saved with the next save), Save Now;
@@ -43,7 +44,7 @@ function installVault(){
   const bridge={postMessage(m){
     if(m.action==='storeSaveChunk')return deliver('gh-native-chunk-ack',{requestId:m.requestId,id:m.id,success:true});
     if(m.action==='commitSave'||m.action==='resetGameSave'){
-      const parsed=JSON.parse(m.saveJSON);vault.commits.push({simSeconds:parsed.simSeconds,savePolicy:parsed.savePolicy||null,saveRevision:m.saveRevision});
+      const parsed=JSON.parse(m.saveJSON);vault.commits.push({simSeconds:parsed.simSeconds,savePolicy:parsed.savePolicy||null,saveRevision:m.saveRevision,advancing:!!window.__AUDIT__?.simulationEngine?.snapshot?.().manualAdvance});
       deliver(m.action==='resetGameSave'?'gh-native-reset-ack':'gh-native-save-ack',{requestId:m.requestId,action:m.action,saveRevision:m.saveRevision,resetEpoch:m.resetEpoch,saveSchemaVersion:m.saveSchemaVersion,saveHash:m.saveHash,success:true,generation:vault.commits.length});
     }
   }};
@@ -82,7 +83,10 @@ function installVault(){
     assert.equal(inside.reached,true);assert.equal(inside.day,88);assert.deepEqual(inside.saves,[],'an advance inside a quarter does not save');
     const across=await advance(4);await settle();
     assert.equal(across.reached,true);assert.equal(across.saves.length,1,`one quarter save (${JSON.stringify(across.saves)})`);
-    assert.ok(across.saves[0].simSeconds>=90*86400,'the quarter save holds April 1 (the close of March 31 committed)');
+    assert.equal(across.saves[0].advancing,false,'the quarter save waits for the advance to end');assert.ok(across.saves[0].simSeconds>=92*86400-1,'and holds its end');
+    // An overdue cap does not save during an advance either.
+    await page.evaluate(()=>window.__AGE__(25*60000));const overdue=await advance(3);await page.evaluate(()=>window.__AGE__(0));await settle();
+    assert.deepEqual(overdue.saves.filter(row=>row.advancing),[],'no save while the advance runs');
 
     // The cap: not while time runs; at the first stopped moment; regardless after the grace; never on "exit only".
     const capRun=await page.evaluate(async()=>{const a=__AUDIT__,before=__VAULT__.commits.length;window.__AGE__(16*60000);a.setSpeed(2);await new Promise(r=>setTimeout(r,3000));const running=__VAULT__.commits.length-before;

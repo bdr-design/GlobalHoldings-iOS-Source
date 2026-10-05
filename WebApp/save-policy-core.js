@@ -7,6 +7,7 @@
 //   - when the real-time cap has passed since the last save of any kind: at the first quiet moment (time stopped, no
 //     calendar advance), or regardless of it once the grace period has also passed;
 //   - when the player asks (Save Now).
+// Nothing is saved while a calendar advance runs (the host skips the check then).
 // Pure functions only; the app supplies the clock, the cadence of the last save and whether the moment is quiet.
 (()=>{
   'use strict';

@@ -814,6 +814,7 @@
   // onPersist, persistForBackground). Between those, a checkpoint is taken when a new quarter of the game calendar
   // begins, and when the real-time cap (settings, 15 min by default) has passed since the last save of any kind: at the
   // first quiet moment (time stopped, no calendar advance), or regardless of it once the grace period has also passed.
+  // Nothing is saved while a calendar advance runs.
   // Preferences (map mode, filters, layers, focus, speed), route geometry caches and health events are not saved on
   // their own: they ride along with the next save. The policy is checked at most once a second from the frame loop.
   const saveBaseline={atMs:appMetricClock(),simSeconds:Number(state.simSeconds)||0};
@@ -828,6 +829,8 @@
   function maybeSaveCheckpoint(nowMs){
     if(nowMs-lastCheckpointCheckMs<1000)return false;lastCheckpointCheckMs=nowMs;
     if(document.hidden||hardResetInProgress||durableCommandInProgress||simulationPersistenceTask||window.GH_PERSISTENCE.isLocked())return false;
+    // The owner's choice: no checkpoint while a calendar advance runs (a quarter it crossed is saved once it ends).
+    if(simulationEngine.snapshot().manualAdvance)return false;
     const reason=checkpointDue(nowMs);if(!reason)return false;
     lastCheckpointAttempt={atMs:nowMs,revision:Number(state.saveRevision)||0};diag('SAVE_CHECKPOINT',{reason,simSeconds:Number(state.simSeconds)||0,saveRevision:Number(state.saveRevision)||0});
     return scheduleSimulationPersistence();
