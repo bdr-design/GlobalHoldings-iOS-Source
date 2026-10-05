@@ -47,7 +47,12 @@ const {drawFounderSignature}=require('./helpers/signature-input');
     await page.waitForFunction(()=>document.getElementById('cashKpi').textContent==='∞');
     await page.reload();await page.waitForFunction(()=>__GH_STATE__?.onboardingComplete);
     assert.deepEqual(await page.evaluate(()=>[__GH_STATE__.godMoney,__GH_STATE__.infiniteMoney]),[true,true],'God Mode survives a reload');
+    // Switching it off works (the command used to return false, read as a rejection, so it stayed on).
+    await page.tap('#settingsBtn');{const again=page.locator('#drawerBody [data-open="settings"]').first();if(await again.count())await again.tap();}
+    await page.locator('.god-mode-toggle').tap();
+    await page.waitForFunction(()=>__GH_STATE__.godMoney===false&&__GH_STATE__.infiniteMoney===false);
+    await page.waitForFunction(()=>document.getElementById('cashKpi').textContent!=='∞');
     assert.deepEqual(errors,[]);
-    console.log('PASS build358-map-controls-browser: filters apply by touch, airports cover the view, God Mode switch persists, rail keeps the inset only on the camera side');
+    console.log('PASS build358-map-controls-browser: filters apply by touch, airports cover the view, God Mode switch persists and switches off, rail keeps the inset only on the camera side');
   }finally{await browser.close();await server.close?.();}
 })().catch(error=>{console.error(error);process.exit(1);});

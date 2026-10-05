@@ -3,12 +3,12 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "97d92b54ba706a170c59864547f30cb5c45fe3a31fb6006d4aa7c61acb4c3bf0",
-  "webapp_tree_sha256": "e6a8216a30c4b2193d41b306e1a575fe0d1f43058f02241d47a32b15ec142d77",
+  "source_tree_sha256": "4811741cdc341b3c6d9938431bcf4d3d822335eee6ace6ccde9a765355912f77",
+  "webapp_tree_sha256": "985d4f4abede6b1c3a4b98df3622d82d26cb7cabd81e151872f7cb253250cbd2",
   "files": {
     "WebApp/advanced-core.js": {
-      "bytes": 194166,
-      "sha256": "93000e34f5e373fc303a5a2ef435e183f469b5f92e4d4f89946f49c370125fa0"
+      "bytes": 194299,
+      "sha256": "b0083a847b4234f24d062d957c4b60658dccd596506270a7302bb9ff77b0bb92"
     },
     "WebApp/air-sea-network-core.js": {
       "bytes": 10998,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 732611,
-      "sha256": "89941f8cbc194148d5c953629f143ca0a11acd5213f7f4073fa7d8a68641c008"
+      "bytes": 737405,
+      "sha256": "75835d6327f38f4d1e2440add58091d15a766ff68a15476f022390bda17ee585"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -3063,12 +3063,12 @@
       "sha256": "7fa95e75fc0a5de093a0ef756e5834d8248c8b4584735c3bb246ea4fb9b27ac6"
     },
     "WebApp/finance-core.js": {
-      "bytes": 129082,
-      "sha256": "78606c39c390a2cbe59328cfcd98b46b73d1b25a53d197a5dc6ba3d80c060728"
+      "bytes": 129081,
+      "sha256": "5855a85b2bd0980ef5fce13255c7f3e2769d4a3bbc9ee1d77bd54a8986f7680d"
     },
     "WebApp/finance-presentation.css": {
-      "bytes": 32973,
-      "sha256": "6f84da9657373c272f2415d98c07f5eca73657d1ef376328a8e5c6b1621d9d04"
+      "bytes": 35092,
+      "sha256": "a5e171f999a1fec6a78421cb877b5833bf6fdc95e9c74e559e67e1d45bea8947"
     },
     "WebApp/finance-presentation.js": {
       "bytes": 3100,
@@ -3380,7 +3380,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "4d2d108c20c96aae1453683c180c8bba09e741de70df5c41200576024fd8bb77"
+      "sha256": "f4ace71646cef7e58bde7d1bc411cfa950cd7bf16acf9619b6da7b3674a91468"
     },
     "BUILD": {
       "bytes": 4,

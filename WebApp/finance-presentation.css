@@ -111,8 +111,8 @@
 .cq-line span{font-size:.85em;color:#3d4a55;white-space:nowrap}.cq-line small{font-size:.85em}
 .cq-line b{flex:1;border-bottom:1px solid #6b7a86;font-size:1.2em;padding:0 .3em .1em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cq-amount{display:flex;gap:.9em;align-items:flex-start;margin-top:.5em}
-.cq-words{flex:1;font-size:.98em;line-height:2em;min-height:4em;background:repeating-linear-gradient(transparent 0 1.92em,#6b7a86 1.92em 2em);overflow:hidden}
-.cq-box{flex:0 0 30%;border:.13em solid var(--navy);background:#fff;padding:.35em .6em;text-align:left;font-size:1.3em;font-weight:600}.cq-box small{font-size:.62em}
+.cq-words{flex:1;min-width:0;font-size:calc(.98em * var(--cq-fit,1));line-height:2em;min-height:4em;background:repeating-linear-gradient(transparent 0 1.92em,#6b7a86 1.92em 2em);overflow:hidden}
+.cq-box{flex:0 0 30%;min-width:0;border:.13em solid var(--navy);background:#fff;padding:.35em .6em;text-align:left;font-size:1.3em;font-weight:600}.cq-box small{font-size:.62em}.cq-figure{display:block;white-space:nowrap;font-size:calc(1em * var(--cq-fit,1));line-height:1.6em}
 .cq-bottom{display:flex;justify-content:space-between;align-items:flex-end;gap:1em;margin:auto 0 .4em}
 .cq-memo{min-width:0;font-size:.88em;color:#3d4a55}.cq-memo small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cq-memo b{display:block;color:var(--ink);font-size:1.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cq-sig{flex:0 0 36%;text-align:center}.cq-sig>span:last-child{display:block;border-top:1px solid var(--navy);font-size:.82em;color:#3d4a55;padding-top:.15em}
@@ -143,3 +143,20 @@
 .cheque-hint{display:block;margin:-6px 0 10px;font-size:10.5px;color:var(--muted);text-align:center}
 .cq-top .bd-brand{max-width:40%}.cq-top .bd-brand>div{min-width:0}.cq-top .bd-brand b,.cq-top .bd-brand small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;unicode-bidi:plaintext}
 .cq-sig .formation-signature-visual{padding:0;margin:0;min-height:0;border:0;background:none;box-shadow:none}
+/* Build 358: each document carries its own company: the account holder band (logo, legal name, account number and
+   IBAN), the issuer at the head of the invoice, the drawer on the cheque, and the company stamp at the signature. */
+.bank-doc .bd-company-stamp{display:block;font-size:1em;position:absolute;z-index:2;width:5.6em;height:5.6em;color:var(--stamp-accent,#2d72df);color:color-mix(in srgb,var(--stamp-accent,#2d72df) 78%,#000);opacity:.9;transform:rotate(-11deg);mix-blend-mode:multiply;pointer-events:none}
+.bd-company-stamp svg{width:100%;height:100%;direction:ltr;unicode-bidi:isolate}
+.bd-company-stamp .stamp-outer{fill:none;stroke:currentColor;stroke-width:3.2}.bd-company-stamp .stamp-inner{fill:none;stroke:currentColor;stroke-width:1.3}
+.bd-company-stamp .stamp-ring{fill:currentColor;font:700 8.6px ui-sans-serif,-apple-system,'Segoe UI',Arial,sans-serif;letter-spacing:.3px}
+.bd-company-stamp .stamp-name{fill:currentColor;font:800 10.5px ui-sans-serif,-apple-system,'Segoe UI',Arial,sans-serif}
+.bd-company-stamp image{opacity:.92}
+.bd-holder{display:flex;align-items:center;gap:.7em;padding:.7em 1.4em;border-bottom:1px solid var(--rule);background:var(--soft);min-width:0}
+.bd-holder>div{min-width:0}.bd-holder span{display:block;font-size:.78em;color:var(--muted)}.bd-holder b{display:block;font-size:1.02em;color:var(--ink)}
+.bd-holder small{display:block;font-size:.8em;color:#3d4a55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-signatory,.iv-sign,.cq-sig{position:relative}
+.bank-doc .bd-signatory .bd-company-stamp{inset-inline-end:.4em;top:.9em}
+.bank-doc .iv-sign .bd-company-stamp{inset-inline-end:.2em;top:-1.6em}
+.bank-doc .cq-sig .bd-company-stamp{width:4.6em;height:4.6em;inset-inline-start:-.4em;top:-2.6em}
+.iv-issuer{display:flex;align-items:center;gap:.6em;min-width:0;flex:1}.iv-issuer b{font-size:1.02em;color:var(--ink);line-height:1.3}
+.cq-top .cq-drawer{max-width:52%}.cq-top .cq-drawer b{font-size:1.18em}

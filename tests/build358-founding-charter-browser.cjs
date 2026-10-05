@@ -48,7 +48,7 @@ const {drawFounderSignature}=require('./helpers/signature-input');
     await page.locator('#drawerBody .company-open-row[data-company="air"] [data-open="formationContract"]').click();
     const charter=page.locator('#drawerBody .charter[data-company="air"]');
     assert.equal(await charter.getAttribute('data-status'),'draft');
-    assert.match(await charter.locator('.charter-flow').innerText(),/GH-OPER-001/,'the contract names the holding account the capital leaves');
+    assert.match(await charter.locator('.charter-flow').innerText(),/\d{4}-00-01-\d{6}/,'the contract names the holding account (its bank account number) the capital leaves');
     assert.equal(await page.locator('#drawerBody .sign-charter').isEnabled(),true);
     const before=await page.evaluate(()=>({value:__GH_STATE__.groupValue,cash:__GH_STATE__.cash}));
     await page.locator('#drawerBody .sign-charter').click();
