@@ -116,6 +116,10 @@
     if(command==='adjust-group-value'){const delta=Number(payload.delta)||0;state.groupValue=Math.max(0,(Number(state.groupValue)||0)+delta);return state.groupValue;}
     if(command==='set-credit-rating'){state.profile=state.profile||{};state.profile.creditRating=String(payload.grade||'BBB');return state.profile.creditRating;}
     // The annual general meeting: how shareholders read the year moves the credit rating score for a year (GH_REALISM updateRating).
+    // A fleet company's maintenance policy: the condition at which an asset gets its check (GH_REALISM runMaintenance).
+    if(command==='set-maintenance-policy'){const companyId=companyIdOf(payload),policy=String(payload.policy||'');if(!['preventive','standard','deferred'].includes(policy))throw new Error('maintenance-policy-invalid');if(!(state.openedCompanies||[]).includes(companyId))throw new Error('company-not-open');const company=model(state,companyId);company.maintenancePolicy=policy;return {companyId,policy};}
+    // A fleet company's insurance cover: none, standard (10% deductible) or full (2%) (GH_REALISM runIncidents).
+    if(command==='set-insurance-cover'){const companyId=companyIdOf(payload),cover=String(payload.cover||'');if(!['none','standard','full'].includes(cover))throw new Error('insurance-cover-invalid');if(!(state.openedCompanies||[]).includes(companyId))throw new Error('company-not-open');const company=model(state,companyId);company.insuranceCover=cover;return {companyId,cover};}
     if(command==='record-agm'){state.profile=state.profile||{};state.profile.agm={year:Math.floor(Number(payload.year)||0),day:Math.max(0,Math.floor(Number(payload.day)||0)),ratingAdjust:Math.max(-6,Math.min(6,Math.round(Number(payload.ratingAdjust)||0)))};return {...state.profile.agm};}
     if(command==='set-reputation'){state.profile=state.profile||{};state.profile.reputation=Math.max(0,Math.min(100,Number(payload.value)||0));return state.profile.reputation;}
     if(command==='set-ipo'){state.ipo={listed:!!payload.listed,ticker:String(payload.ticker||'GH').toUpperCase()};return state.ipo;}

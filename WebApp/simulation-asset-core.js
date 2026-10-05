@@ -81,6 +81,13 @@
     const monthlyPayroll=Math.max(0,number(asset.staffing?.monthlyPayroll)),payrollAllocation=monthlyPayroll/(30*24)*hours,maintReserve=revenue*.04,owner=assetOwner(asset);let crewCost=0;
     const company=ctx.companies?.[owner]||{},serviceLevel=clampPercent(company.serviceLevel),automation=clampPercent(company.automation),research=ctx.research||{},sustainability=ctx.sustainability||{};
     const serviceRevenue=1+Math.max(-.05,Math.min(.08,(serviceLevel-85)*.002));
+    // Fleet wear (GH_REALISM.fleetWear, from the company's maintenance policy): worn assets burn more and run late.
+    const wear=Math.max(0,Math.min(.45,number(company.fleetWear))),wearRevenue=1-wear*.15,wearFuel=1+wear*.2;
+    // Crew shortage (GH_REALISM.crewShortage): that share of trips does not fly, so earns and burns nothing.
+    const flown=1-Math.max(0,Math.min(.5,number(company.crewShortage)));
+    // The appointed manager (GH_HR_CORE.managerSkill, 0 when none): a skilled one sells and runs better; none costs 3%
+    // of revenue. A context without the field (an older caller) is neutral.
+    const skill=Math.max(0,Math.min(100,number(company.managerSkill))),managed=company.managerSkill===undefined?1:skill>0?1+(skill-80)*.002:.97;
     const fuelEfficiency=1-Math.min(.12,(number(research.efficiency)/100)*.08+(automation/100)*.025);
     const crewEfficiency=1-Math.min(.10,(number(research.automation)/100)*.05+(automation/100)*.035);
     const maintenanceEfficiency=1-Math.min(.08,(automation/100)*.04+(number(research.efficiency)/100)*.025);
@@ -89,7 +96,7 @@
     const share=number(shareMap[owner]??shareMap[mode],5),pressure=number(pressureMap[owner]??pressureMap[mode],50),rep=number(reputation[owner]??reputation[mode],70);
     const demand=mode==='air'?number(economy.airDemand,100):mode==='sea'?number(economy.seaDemand,100):number(economy.roadDemand,100);
     const demandFactor=clamp((demand/100)*(1+(rep-70)*.003)*(1+(share-5)*.006)*(1-(pressure-50)*.0015),.65,1.35);
-    revenue*=serviceRevenue*demandFactor;fuelCost*=fuelEfficiency*sustainabilityFuel;crewCost*=crewEfficiency;let maintenance=maintReserve*maintenanceEfficiency;
+    revenue*=serviceRevenue*demandFactor*wearRevenue*flown*managed;fuelCost*=fuelEfficiency*sustainabilityFuel*wearFuel*flown;crewCost*=crewEfficiency;let maintenance=maintReserve*maintenanceEfficiency*flown;
     const economyFuel=fuelPriceFactor(economy,mode,ctx.fuelHedges?.[owner]?.[FUEL_OF_MODE[mode]||'diesel']);
     fuelCost*=economyFuel;
     const researchEfficiency=clamp(number(research.efficiency)/100,0,1),researchAutomation=clamp(number(research.automation)/100,0,1),cleanEnergy=clamp(number(research.cleanEnergy)/100,0,1);

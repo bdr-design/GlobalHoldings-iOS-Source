@@ -32,8 +32,8 @@
   const defaultBudget=()=>({period:0,lines:{payroll:0,fuel:0,maintenance:0,marketing:0,insurance:0,technology:0,capex:0,other:0},actual:{payroll:0,fuel:0,maintenance:0,marketing:0,insurance:0,technology:0,capex:0,other:0},forecast:{},variance:{}});
   const initial=()=>({
     schema:SCHEMA,version:VERSION,migratedAt:0,
-    economy:{oil:78,jetFuel:0.86,bunker:640,diesel:0.98,electricity:72,gas:39,carbon:52,freight:100,baseRate:.046,usdIndex:100,airDemand:100,seaDemand:100,roadDemand:100,powerDemand:100,lastEvent:null,eventHistory:[]},
-    markets:{history:[],hedges:[]},
+    economy:{oil:78,jetFuel:0.86,bunker:640,diesel:0.98,electricity:72,gas:39,carbon:52,freight:100,baseRate:.046,usdIndex:100,airDemand:100,seaDemand:100,roadDemand:100,powerDemand:100,lastEvent:null,eventHistory:[],wageIndex:1},
+    markets:{history:[],hedges:[]},crews:{},
     financial:{statements:{},consolidated:{},intercompanyEliminations:0,lastCloseDay:0},
     budgets:Object.fromEntries(LEGACY_TYPES.map(t=>[t,defaultBudget()])),
     aviation:{ask:0,rpk:0,loadFactor:0,yield:0,rask:0,cask:0,caskExFuel:0,otp:92,technicalDelayRate:1.8,maintenanceDue:0,aog:0,dispatchReliability:98,utilization:0,avgCondition:100,maintenanceReserveCoverage:100,healthMonitoringScore:80},
@@ -403,13 +403,86 @@
   // insurance and of the app's operations cycle, and the day's flight counters (written through a column writer).
   // Nothing the close computes before the operations stage reads the flight counters, and they change no field the
   // totals read, so every result is the one the separate passes gave; the memos keep the fleet revision after the writes.
-  const FLEET_DAY_FIELDS=Object.freeze([...new Set([...OWNER_TOTAL_FIELDS,...OPS_FIELDS])]);
+  // Fleet maintenance (Build 358 step 3). Each company sets the condition at which an asset gets its check. The daily
+  // close checks the assets below it (at most CHECKS_PER_DAY per company: the maintenance network's daily capacity),
+  // restores their condition through the fleet owner, and bills the work on 7-day terms. The fleet's average
+  // condition after the checks is the company's wear for the next day's trips (fuel burn and delay losses,
+  // GH_SIMULATION_ASSET_CORE.computeTripEconomics and GH_ADVANCED.adjustTripEconomics).
+  const MAINTENANCE_POLICIES=Object.freeze({preventive:90,standard:80,deferred:65}),CHECK_COST=Object.freeze({air:.004,sea:.003,road:.006}),CHECKS_PER_DAY=2000,MAINTENANCE_STEP=256;
+  function maintenancePolicy(state,companyId){const policy=state.advanced?.companies?.[companyId]?.maintenancePolicy;return Object.prototype.hasOwnProperty.call(MAINTENANCE_POLICIES,policy)?policy:'standard';}
+  function maintenanceVisitor(state){
+    const companies=new Map(),owners=new Map();
+    const visit=a=>{
+      const ownerKey=`${a.ownerCompanyId}\u0000${a.companyId}\u0000${a.company}\u0000${a.assetMode}\u0000${a.type}`;let owner=owners.get(ownerKey);if(owner===undefined){owner=assetOwnerCompanyId(state,a);owners.set(ownerKey,owner);}
+      let acc=companies.get(owner);if(!acc){acc={threshold:MAINTENANCE_POLICIES[maintenancePolicy(state,owner)],conditionSum:0,restored:0,count:0,due:[],cost:0,value:0,risk:0,premium:0,sample:[],licence:0,fine:0,unsafe:0};companies.set(owner,acc);}
+      const condition=clamp(Number(a.condition)||100,0,100),mode=assetMode(a),price=Math.max(0,Number(a.purchasePrice)||0);acc.conditionSum+=condition;acc.count++;acc.value+=price;acc.risk+=INCIDENT_RATE[mode]||INCIDENT_RATE.road;acc.premium+=price*(PREMIUM_RATE[mode]||PREMIUM_RATE.road);acc.licence+=LICENCE_FEE[mode]||LICENCE_FEE.road;if(condition<UNSAFE_CONDITION){acc.unsafe++;acc.fine+=INSPECTION_FINE[mode]||INSPECTION_FINE.road;}if(acc.sample.length<INCIDENT_SAMPLE)acc.sample.push({id:a.id,price});
+      if(condition<acc.threshold&&acc.due.length<CHECKS_PER_DAY){acc.due.push(a.id);acc.restored+=100-condition;acc.cost+=Math.max(0,Number(a.purchasePrice)||0)*(CHECK_COST[assetMode(a)]||CHECK_COST.road);}
+    };
+    return {visit,companies};
+  }
+  function* runMaintenance(state,maintenance,day){
+    const r=migrate(state),fleet=fleetData(),F=globalThis.GH_FINANCE_CORE,stamp=Number(state.simSeconds)||0;r.maintenance=r.maintenance&&typeof r.maintenance==='object'?r.maintenance:{};r.maintenance.companies={};
+    for(const [companyId,acc] of maintenance.companies){
+      for(let i=0;i<acc.due.length;i+=MAINTENANCE_STEP){for(const id of acc.due.slice(i,i+MAINTENANCE_STEP))fleet.update(state,id,{condition:100,lastMaintenanceAt:stamp});yield 'realism.maintenance';}
+      const cost=Math.round(acc.cost);if(cost>0&&F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:cost,note:`صيانة دورية لـ ${acc.due.length} ${acc.due.length===1?'أصل':'أصول'} · اليوم ${day}`,method:'فاتورة صيانة',taxable:true,dueDay:day+7,number:`MNT-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'شبكة الصيانة المعتمدة',line:'maintenance'});
+      r.maintenance.companies[companyId]={day,policy:maintenancePolicy(state,companyId),threshold:acc.threshold,assets:acc.count,checks:acc.due.length,cost,avgCondition:acc.count?(acc.conditionSum+acc.restored)/acc.count:100};
+    }
+  }
+  // Incidents and insurance (Build 358 step 3). Every asset-day carries an incident risk by mode (air, sea, road), raised
+  // by the fleet's wear before the day's checks; an incident costs a share of an asset's value and leaves it at 55%.
+  // The repair is billed in full (INC-<company>-<day>, 7-day terms). A company's cover (none / standard / full) opens a
+  // claim for the loss above its deductible, which the insurer pays after its 3-day review (updateInsurance); the
+  // premium (a share of fleet value by mode, times the market's renewal index) is billed every 30 days.
+  const INCIDENT_RATE=Object.freeze({air:.000044,sea:.000077,road:.00038}),PREMIUM_RATE=Object.freeze({air:.0035,sea:.006,road:.03}),INCIDENT_SEVERITY=.15,INCIDENT_SAMPLE=64,INCIDENT_DAMAGE_LIMIT=50;
+  // The regulator: an annual operating licence per asset (AOC, ship registry, transport licence), and a monthly
+  // inspection that fines a company whose fleet averages under 75% for each asset under 65%.
+  const LICENCE_FEE=Object.freeze({air:25000,sea:15000,road:1200}),INSPECTION_FINE=Object.freeze({air:40000,sea:30000,road:5000}),INSPECTION_LINE=75,UNSAFE_CONDITION=65;
+  const INSURANCE_COVERS=Object.freeze({none:{deductible:1,premium:0},standard:{deductible:.10,minimum:250000,premium:1},full:{deductible:.02,minimum:50000,premium:1.35}});
+  function insuranceCover(state,companyId){const cover=state.advanced?.companies?.[companyId]?.insuranceCover;return Object.prototype.hasOwnProperty.call(INSURANCE_COVERS,cover)?cover:'standard';}
+  function* runIncidents(state,maintenance,day){
+    const r=migrate(state),fleet=fleetData(),F=globalThis.GH_FINANCE_CORE,stamp=Number(state.simSeconds)||0;r.incidents=Array.isArray(r.incidents)?r.incidents:[];
+    state.advanced=state.advanced||{};const book=state.advanced.insurance=state.advanced.insurance&&typeof state.advanced.insurance==='object'?state.advanced.insurance:{claims:[],annualPremium:0};book.claims=Array.isArray(book.claims)?book.claims:[];
+    for(const [companyId,acc] of maintenance.companies){
+      if(!acc.count)continue;const cover=insuranceCover(state,companyId),terms=INSURANCE_COVERS[cover],wear=clamp((100-acc.conditionSum/acc.count)/100,0,.45),expected=acc.risk*(1+wear*6),draw=rand(`incident:${companyId}:${day}`),count=Math.floor(expected)+(draw<expected-Math.floor(expected)?1:0);
+      if(day%30===0&&terms.premium>0&&F?.execute){const premium=Math.round(acc.premium*terms.premium*clamp(r.insurance.renewalIndex||100,75,190)/100/12);if(premium>0)F.execute({state},'accrue-expense',{company:companyId,amount:premium,note:`قسط تأمين الأسطول الشهري · تغطية ${cover==='full'?'شاملة':'قياسية'}`,method:'فاتورة تأمين',taxable:false,dueDay:day+7,number:`PREM-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'شركة التأمين',line:'insurance'});}
+      if(day>0&&day%365===0&&acc.licence>0&&F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:Math.round(acc.licence),note:`تجديد رخص التشغيل السنوية لـ ${acc.count} أصل`,method:'رسوم حكومية',taxable:false,dueDay:day+7,number:`LIC-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'هيئة النقل',line:'other'});
+      if(day%30===15&&acc.unsafe>0&&acc.conditionSum/acc.count<INSPECTION_LINE){const fine=Math.round(acc.fine);if(F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:fine,note:`غرامة تفتيش السلامة: ${acc.unsafe} أصل تحت ${UNSAFE_CONDITION}%`,method:'غرامة حكومية',taxable:false,dueDay:day+7,number:`FINE-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'هيئة السلامة',line:'other'});r.inspections=Array.isArray(r.inspections)?r.inspections:[];r.inspections.unshift({day,company:companyId,unsafe:acc.unsafe,fine,avgCondition:acc.conditionSum/acc.count});r.inspections=r.inspections.slice(0,60);}
+      if(!count)continue;
+      const hit=[];for(let i=0;i<Math.min(count,INCIDENT_DAMAGE_LIMIT,acc.sample.length);i++){const pick=acc.sample[Math.floor(rand(`incident:${companyId}:${day}:${i}`)*acc.sample.length)%acc.sample.length];if(!hit.includes(pick))hit.push(pick);}
+      const average=acc.value/acc.count,loss=Math.round(count*average*INCIDENT_SEVERITY);for(const asset of hit)fleet.update(state,asset.id,{condition:55,lastIncidentAt:stamp});
+      if(loss>0&&F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:loss,note:`إصلاح أضرار ${count===1?'حادث':`${count} حوادث`} · اليوم ${day}`,method:'فاتورة إصلاح',taxable:true,dueDay:day+7,number:`INC-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'ورش الإصلاح المعتمدة',line:'maintenance'});
+      const deductible=terms.premium>0?Math.max(terms.minimum||0,loss*terms.deductible):loss,covered=Math.max(0,loss-deductible);let claimId=null;
+      if(covered>0){claimId=`CLM-${String(companyId).toUpperCase()}-${day}`;book.claims.unshift({id:claimId,company:companyId,ownerCompanyId:companyId,openedAt:stamp,status:'قيد الفحص',loss,deductible,covered,reserve:covered,incidents:count});book.claims=book.claims.slice(0,200);}
+      state.advanced.safety=state.advanced.safety||{};state.advanced.safety.incidents=(Number(state.advanced.safety.incidents)||0)+count;
+      r.incidents.unshift({day,company:companyId,count,loss,cover,deductible:Math.min(loss,deductible),covered,claimId,assets:hit.map(asset=>asset.id)});r.incidents=r.incidents.slice(0,120);
+      yield 'realism.incidents';
+    }
+  }
+  // Crews (Build 358 step 3). Market wages rise about 3% a year (economy.wageIndex). A company's pay against them
+  // (GH_HR_CORE.salaryMultiplier / wageIndex) sets how many of its crews quit (8% a year at market pay, more when
+  // underpaid, less when overpaid) and how fast it rehires (2% of the gap a day at market pay). The staffed share of what its fleet needs is the share of
+  // trips that fly; the shortage also costs overtime (computeTripEconomics / adjustTripEconomics).
+  const WAGE_GROWTH=Math.pow(1.03,1/365),BASE_QUIT=.08,BASE_HIRE=.02;
+  function payRatio(state,companyId){const index=Number(globalThis.GH_HR_CORE?.salaryMultiplier?.(state,companyId))||1;return index/Math.max(.5,Number(state.realism?.economy?.wageIndex)||1);}
+  function updateCrews(state,day,companies){
+    const r=migrate(state),e=r.economy;if(Number(r.crewsDay)>=day)return;r.crewsDay=day;e.wageIndex=Math.round((Number(e.wageIndex)||1)*WAGE_GROWTH*1e6)/1e6;r.crews=r.crews&&typeof r.crews==='object'?r.crews:{};
+    for(const companyId of companies){
+      let ratio;try{ratio=payRatio(state,companyId);}catch{continue;}
+      const row=r.crews[companyId]=r.crews[companyId]&&typeof r.crews[companyId]==='object'?r.crews[companyId]:{staffing:1};
+      const quit=BASE_QUIT*(ratio<1?1+6*(1-ratio):Math.max(.4,1-2*(ratio-1))),hire=BASE_HIRE*ratio*ratio,staffing=clamp(Number(row.staffing)||1,0,1);
+      row.staffing=Math.round(clamp(staffing-staffing*quit/365+(1-staffing)*hire,.5,1)*1e6)/1e6;row.payRatio=Math.round(ratio*1e4)/1e4;row.annualQuitRate=Math.round(quit*1e4)/1e4;row.day=day;
+    }
+  }
+  function crewShortage(state,companyId){const staffing=Number(state.realism?.crews?.[companyId]?.staffing);return Number.isFinite(staffing)?clamp(1-staffing,0,.5):0;}
+  // The wear a company's trips carry: 0 for a fleet at 100%, 0.2 at an average of 80%.
+  function fleetWear(state,companyId){const avg=Number(state.realism?.maintenance?.companies?.[companyId]?.avgCondition);return Number.isFinite(avg)?clamp((100-avg)/100,0,.45):0;}
+  const FLEET_DAY_FIELDS=Object.freeze([...new Set(['id',...OWNER_TOTAL_FIELDS,...OPS_FIELDS])]);
   function* fleetDayPass(state){
-    const fleet=fleetData(),owner=ownerTotalsVisitor(state),ops=opsVisitor(state);let insured=0,readiness=0;
-    yield* fleet.scanStages(state,FLEET_DAY_FIELDS,(a,index)=>{owner.visit(a);ops.visit(a,index);const condition=Number(a.condition);insured+=condition||100;readiness+=condition||0;},OPS_SLICE_ROWS,'realism.fleet-day');
+    const fleet=fleetData(),owner=ownerTotalsVisitor(state),ops=opsVisitor(state),maintenance=maintenanceVisitor(state);let insured=0,readiness=0;
+    yield* fleet.scanStages(state,FLEET_DAY_FIELDS,(a,index)=>{owner.visit(a);ops.visit(a,index);maintenance.visit(a);const condition=Number(a.condition);insured+=condition||100;readiness+=condition||0;},OPS_SLICE_ROWS,'realism.fleet-day');
     ownerTotalsMemo={state,key:ownerTotalsKey(state),totals:owner.totals};
     const key=conditionSumKey(state);conditionSumMemo=key?{state,key,sum:insured,readiness}:null;
-    return ops;
+    ops.maintenance=maintenance;return ops;
   }
   function* onDayStages(state,day){
     migrate(state);
@@ -417,6 +490,9 @@
     closeMemo={state,statements:new Map()};try{closeFinancials(state,day);updateBudgets(state,day);}finally{closeMemo=null;}
     yield 'realism.budgets';
     ops.finish(day);yield 'realism.operations';
+    updateCrews(state,day,[...ops.maintenance.companies.keys()]);
+    yield* runIncidents(state,ops.maintenance,day);
+    yield* runMaintenance(state,ops.maintenance,day);
     updateBank(state);updateMarketShare(state,day);updateRisk(state,day);updateRating(state);updateInsurance(state);recordMarketDay(state,day);yield 'realism.market-risk';
     updateTaxFxAndDividends(state,day);updatePrograms(state,day);updateReputation(state);supplierScores(state);yield 'realism.programs';
     deliverDueAssets(state,day);yield 'realism.deliveries';
@@ -453,5 +529,5 @@
     ${section('سلامة النواة','فحص وقائي يومي يمنع التكرار والأرصدة غير الرقمية والأحداث المكررة.',`<div class="metric-row">${metric('Integrity issues',String(r.controls.issues.length),r.controls.issues.length?'negative':'positive')}${metric('Schema',r.schema)}${metric('Core',r.version)}</div>${r.controls.issues.length?`<div class="realism-alerts">${r.controls.issues.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}`)}
   </div>`;}
   function financeHTML(state){const r=migrate(state),types=companyTypes(state);return `<article class="list-item realism-finance-appendix"><div class="list-item-head"><div><h3>القوائم المالية 2.0</h3><p>30 يومًا متحركًا · Consolidation مع استبعاد التعاملات الداخلية وLease liabilities.</p></div><span class="tag positive">${esc(r.rating.grade)}</span></div><div class="realism-mini-grid">${types.map(t=>{const s=r.financial.statements[t]||statements(state,t);return `<div><span>${esc(entityName(state,t))}</span><b>${money(s.net||0)}</b><small>إيراد ${money(s.revenue||0)} · أصول ${money(s.assets||0)}</small></div>`}).join('')}</div></article><article class="list-item realism-finance-appendix"><h3>Budget / Actual / Forecast / Variance</h3><div class="realism-budget-table">${types.map(t=>{const b=r.budgets[t]||(r.budgets[t]=defaultBudget()),plan=Object.values(b.lines).reduce((a,x)=>a+(Number(x)||0),0),actual=Object.values(b.actual).reduce((a,x)=>a+(Number(x)||0),0),forecast=Object.values(b.forecast).reduce((a,x)=>a+(Number(x)||0),0);return `<div><b>${esc(entityName(state,t))}</b><span>${money(plan)}</span><span>${money(actual)}</span><span>${money(forecast)}</span><span class="${forecast<=plan?'positive':'negative'}">${money(forecast-plan)}</span></div>`}).join('')}<div class="budget-head"><b>الشركة</b><span>Budget</span><span>Actual</span><span>Forecast</span><span>Variance</span></div></div></article>`;}
-  window.GH_REALISM={VERSION,SCHEMA,migrate,fleetReadinessTotal,reconcilePendingDeliveryCount,hasPendingDeliveries,nextDeliveryDueAt,deliveryDueBy,simulationSliceLimit,onHour,onDay,onDayStages,onSimulationTime:deliverDueAssetsAt,tripModifier,fuelForward,gasForward,recordMarketDay,updateRating,render,financeHTML,statements,bankingMetrics,deliveryCapacity,companyTypes,assetMode,assetOwnerCompanyId};
+  window.GH_REALISM={VERSION,SCHEMA,migrate,fleetReadinessTotal,reconcilePendingDeliveryCount,hasPendingDeliveries,nextDeliveryDueAt,deliveryDueBy,simulationSliceLimit,onHour,onDay,onDayStages,onSimulationTime:deliverDueAssetsAt,tripModifier,fuelForward,gasForward,recordMarketDay,updateRating,MAINTENANCE_POLICIES,maintenancePolicy,fleetWear,INSURANCE_COVERS,insuranceCover,runIncidents,updateCrews,crewShortage,payRatio,render,financeHTML,statements,bankingMetrics,deliveryCapacity,companyTypes,assetMode,assetOwnerCompanyId};
 })();

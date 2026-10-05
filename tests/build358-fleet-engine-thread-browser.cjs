@@ -112,7 +112,9 @@ const workerSource=['fleet-store-core.js','simulation-asset-core.js','fleet-even
     await page.evaluate(()=>__TO_SAFE_HOUR__());
     const rollback=await page.evaluate(async()=>{
       const before=__FINGERPRINT__(),failed=await __RUN_SLICE__({seconds:600,fail:true}),after=__FINGERPRINT__();
-      return {committed:failed.committed,error:failed.error||failed.reason||null,pendingSeen:failed.pendingSeen,identical:before===after};
+      // On a mismatch, name what differs (state roots, their changed keys, and the first changed fleet row).
+      let diff=null;if(before!==after){const A=JSON.parse(before),B=JSON.parse(after),changed=(a,b)=>Object.keys({...a,...b}).filter(k=>JSON.stringify(a?.[k])!==JSON.stringify(b?.[k]));diff={roots:changed(A.state,B.state),size:[A.size,B.size]};diff.detail=diff.roots.slice(0,6).map(k=>{const a=A.state[k],b=B.state[k];return a&&b&&typeof a==='object'&&!Array.isArray(a)?{root:k,keys:changed(a,b).slice(0,12)}:{root:k,before:JSON.stringify(a).slice(0,240),after:JSON.stringify(b).slice(0,240)};});const row=A.fleet.findIndex((x,i)=>JSON.stringify(x)!==JSON.stringify(B.fleet[i]));if(row>=0){const keys=changed(A.fleet[row],B.fleet[row]);diff.fleetRow={row,keys,before:Object.fromEntries(keys.map(k=>[k,A.fleet[row][k]])),after:Object.fromEntries(keys.map(k=>[k,B.fleet[row]?.[k]]))};}}
+      return {committed:failed.committed,error:failed.error||failed.reason||null,pendingSeen:failed.pendingSeen,identical:before===after,diff};
     });
     // A slice cancelled while its step is on the thread.
     const cancelled=await page.evaluate(async()=>{const before=__FINGERPRINT__(),r=await __RUN_SLICE__({seconds:600,cancel:true});return {...r,identical:before===__FINGERPRINT__()};});

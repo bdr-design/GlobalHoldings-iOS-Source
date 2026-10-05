@@ -2,9 +2,9 @@
   'use strict';
   const VERSION='3.0.0';
   const PANEL_DOMAIN={
-    leadershipHub:'الإدارة',actionCenter:'الإدارة',news:'الإدارة',businessWorld:'الإدارة',realism:'الإدارة',research:'الإدارة',esg:'الإدارة',conference:'الإدارة',peopleHub:'الإدارة',labor:'الإدارة',groupManagement:'الإدارة',governanceHub:'الإدارة',compliance:'الإدارة',cyber:'الإدارة',safety:'الإدارة',
+    leadershipHub:'الإدارة',actionCenter:'الإدارة',news:'الإدارة',businessWorld:'الإدارة',realism:'الإدارة',research:'الإدارة',esg:'الإدارة',conference:'الإدارة',peopleHub:'الإدارة',labor:'الإدارة',crews:'الإدارة',groupManagement:'الإدارة',governanceHub:'الإدارة',compliance:'الإدارة',cyber:'الإدارة',safety:'الإدارة',
     companies:'الشركات',companyManage:'الشركات',energy:'الشركات',bank:'الشركات',
-    control:'العمليات',network:'العمليات',expansion:'العمليات',globalRoute:'العمليات',routes:'العمليات',assets:'العمليات',assetManage:'العمليات',ports:'العمليات',procurement:'العمليات',contracts:'العمليات',facilityManage:'العمليات',
+    control:'العمليات',network:'العمليات',expansion:'العمليات',globalRoute:'العمليات',routes:'العمليات',assets:'العمليات',assetManage:'العمليات',ports:'العمليات',procurement:'العمليات',contracts:'العمليات',maintenance:'العمليات',facilityManage:'العمليات',
     finance:'المال',treasury:'المال',invoices:'المال',market:'المال',budgets:'المال',
     systemHub:'النظام',executionLog:'النظام',diagnostics:'النظام',controlPlane:'النظام',updates:'النظام',settings:'النظام'
   };

@@ -3,12 +3,12 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "103df9971b8394975887556c20a55e7b4f82c4bc871d29360cbb1bd5f8db5ef3",
-  "webapp_tree_sha256": "0c872a660ed05e7381d5fa91a48611b1e5cf7d9c66fe29af534eeab54fd26aaa",
+  "source_tree_sha256": "d319a1553e8fd1286d91234f1d3f5fe9dce9900bcfb47c428c01a334f9d2aa24",
+  "webapp_tree_sha256": "bda3a71c9d7c74fa5e9131b2aaad2a37a16543c1c4fb2697303f649fec65f47b",
   "files": {
     "WebApp/advanced-core.js": {
-      "bytes": 191016,
-      "sha256": "c567846bcaea16aeb07399865af0aebad861fe4a00712c21cefabe955fcb0190"
+      "bytes": 191655,
+      "sha256": "f24e51eac52d8e995fdeec839d4ab135fc8304b82caa1ce9ad323d139d5de6a5"
     },
     "WebApp/air-sea-network-core.js": {
       "bytes": 10998,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 698994,
-      "sha256": "1eefe233b05aafc3ef307fc390776ab41db9a32086f2f66eadda40ac09f76a76"
+      "bytes": 707916,
+      "sha256": "fd361911bf25897753057aba292b2a039307a297762498c7b37ed8712610799d"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -3015,8 +3015,8 @@
       "sha256": "4357214236cd2ad49a97b1038fce900cdcc95baa595e03df72734c1a36f7ba69"
     },
     "WebApp/corporate-core.js": {
-      "bytes": 15028,
-      "sha256": "c0a379bb6cfffc0eca56659b786527313197ae44674944a3907080747803e533"
+      "bytes": 16047,
+      "sha256": "0304545f1221561f47b52e2484c70dd6df8f139ac263489fa329da259834fb0b"
     },
     "WebApp/delivery-monitor-core.js": {
       "bytes": 1442,
@@ -3127,8 +3127,8 @@
       "sha256": "7ffd1a6e9f36f602fd65a94b965ed056cf36aa0a1434b040c1b31e3a589258f4"
     },
     "WebApp/hr-core.js": {
-      "bytes": 30345,
-      "sha256": "6df32acf27b81584cb9364f25d82c7d49a8e20cb79c2bfbf77ebc78df1aa577b"
+      "bytes": 31805,
+      "sha256": "c2bb5a33f6673371485a1f398bc8cf4b21f7f5b4e2729de200a1d4ce0f124f00"
     },
     "WebApp/identity-system.js": {
       "bytes": 23478,
@@ -3147,8 +3147,8 @@
       "sha256": "db5a33cb22928ee886604299880a0df579444fd864a15aabcf77bd9b5d907773"
     },
     "WebApp/interface-core.js": {
-      "bytes": 16927,
-      "sha256": "40ffb1754ff1ccce334c2497b9aa01f19a27921c5be75204c7b93e2775e51565"
+      "bytes": 17045,
+      "sha256": "cbd2402ff5e1ec0dcbbb6d78a73fb95ebb7b1ade9d409784377bcd6e9da61757"
     },
     "WebApp/interface-layout.css": {
       "bytes": 7536,
@@ -3223,8 +3223,8 @@
       "sha256": "c5715713fda7554bdfd4e85f8b981caba930f23448236f03ab5dfec365cd40cc"
     },
     "WebApp/realism-core.js": {
-      "bytes": 83018,
-      "sha256": "bcb51ea0ea682e6f4a1d5ff76de1a37684b6c711bc9a2717ef74c4f641643b93"
+      "bytes": 94569,
+      "sha256": "b38742b8d38ffb7e042ba6b0c6136c93f8bc6d2f6c99b77f02c0b10321ad1174"
     },
     "WebApp/road-planner-worker-core.js": {
       "bytes": 3722,
@@ -3259,8 +3259,8 @@
       "sha256": "a232973e5a74617d48f52b20e0eb9ec2a96583bfb6741400641eb118eb705182"
     },
     "WebApp/simulation-asset-core.js": {
-      "bytes": 20002,
-      "sha256": "c801128cb532e3484930625a9de3d3873a255bae9c22a83e9c08477128140440"
+      "bytes": 20801,
+      "sha256": "f04c33e96782bd1a694974f692c4c25177d71fe4edcc02b66f851aca64e9e12c"
     },
     "WebApp/simulation-asset-worker.js": {
       "bytes": 1677,
@@ -3295,8 +3295,8 @@
       "sha256": "4d1475c42121de976214a68371b90210507e34a8940cd1c5eee7cacce46c7c08"
     },
     "WebApp/ui-quality-core.js": {
-      "bytes": 5183,
-      "sha256": "f5cdae80e73eacdf1409dc560844255fc3d07ff057e83af712acd16c8ba213ec"
+      "bytes": 5237,
+      "sha256": "ec96a4f0ae111aa7e3e5c9f8ed727c4b5f98796a391cf8a3ae59e1266e4b390d"
     },
     "WebApp/vendor/leaflet/images/layers-2x.png": {
       "bytes": 1259,
@@ -3376,7 +3376,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "ddc76caf96fbf2e689d87d0d068acdc1e7e406a8c98c1b4fbaaa0e52a959d5d3"
+      "sha256": "741b3fb1cd015edd65438bdce451c85b969e66853e8ac4a82b8eca4fad14131d"
     },
     "BUILD": {
       "bytes": 4,
