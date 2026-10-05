@@ -69,6 +69,10 @@
 .map-strip{position:absolute;inset:auto 0 0 0;z-index:500;background:var(--glass);border-top:1px solid var(--glass-line);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);padding-right:calc(var(--rail) + var(--rail-safe) + 10px)}
 .app-shell:has(.drawer.open,#simCalendarPanel:not(.hidden),#filterPopover:not(.hidden),#assetCard:not(.hidden)) .map-strip{padding-right:10px}
 .map-strip .map-status{color:var(--muted)}
+.map-modes{position:absolute;z-index:520;bottom:calc(var(--status) + var(--safe-bottom) * .35 + 8px);left:50%;transform:translateX(-50%);display:flex;gap:2px;padding:2px;border:1px solid var(--chip-line);border-radius:11px;background:var(--chip);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);direction:rtl}
+.map-modes button{min-height:30px;padding:0 12px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:600 12px/1 inherit;cursor:pointer}
+.map-modes button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.app-shell:has(.drawer.open,#simCalendarPanel:not(.hidden),#filterPopover:not(.hidden),#assetCard:not(.hidden)) .map-modes{display:none}
 .sheet-dock{grid-row:1;z-index:1;margin-top:calc(var(--safe-top) + var(--header))}
 .side-nav{grid-row:1;z-index:1;padding-top:calc(var(--safe-top) + var(--header) + 6px);background:var(--glass);border-left:1px solid var(--glass-line);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4)}
 .side-nav button{color:var(--muted)}.side-nav button.active{background:var(--chip);box-shadow:inset 0 0 0 1px var(--chip-line)}

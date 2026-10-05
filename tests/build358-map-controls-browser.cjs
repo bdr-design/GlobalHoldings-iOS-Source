@@ -31,7 +31,9 @@ const {drawFounderSignature}=require('./helpers/signature-input');
     await page.tap('#filterToggle');
     assert.equal(await page.evaluate(()=>[...document.querySelectorAll('#filterPopover .filter-section')].find(section=>section.querySelector('b')?.textContent.includes('التشغيل'))?.hidden),true,'no empty operations heading before a company opens');
     await page.tap('.filter-btn[data-filter="airport"]');
-    await page.waitForFunction(()=>__GH_STATE__.activeFilter==='airport'&&/مطارًا في نطاق العرض/.test(document.getElementById('mapStatus').textContent));
+    // Build 359: the airport filter opens the expansion mode; airports are grouped in bubbles with Western counts.
+    await page.waitForFunction(()=>__GH_STATE__.activeFilter==='airport'&&__GH_STATE__.mapMode==='expansion'&&/مطار في نطاق العرض/.test(document.getElementById('mapStatus').textContent));
+    assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('.map-place-bubble b')].map(b=>b.textContent).filter(text=>!/^[0-9]+(\.[0-9])?[KM]?$/.test(text))),[],'bubble counts use Western digits');
     const spread=await page.evaluate(()=>{const map=document.getElementById('map').getBoundingClientRect(),cells=new Set();for(const marker of document.querySelectorAll('.world-infrastructure-marker')){const r=marker.getBoundingClientRect(),x=Math.floor((r.left-map.left)/map.width*4),y=Math.floor((r.top-map.top)/map.height*3);if(x>=0&&x<4&&y>=0&&y<3)cells.add(`${x}:${y}`);}return cells.size;});
     assert(spread>=8,`airports cover the view (${spread} of 12 quarters-thirds hold one)`);
     await page.tap('.filter-btn[data-filter="port"]');await page.waitForFunction(()=>__GH_STATE__.activeFilter==='port');

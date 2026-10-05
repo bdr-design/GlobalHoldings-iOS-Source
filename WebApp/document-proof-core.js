@@ -37,6 +37,70 @@
     return hot&&cold?null:(hot||cold||null);
   }
   function records(state){const store=state?.documentProofs||{};return [...Object.values(store.recordsById||{}),...Object.values(store.archiveById||{})];}
+  // Build 359 (iPhone diagnostic: proof records were 31 MB of a 71.5 MB save): every amendment of a document (issued,
+  // cheque issued, cleared, settled) adds a whole new record (~2.6-3.5 KB, its signed content copied in full), and the
+  // earlier versions stay only so the newer one can prove its link to them. An earlier version older than
+  // CHECKPOINT_AGE_SECONDS whose chain verifies is replaced by a checkpoint: the fields that link check reads (id,
+  // document, type, company, depth, content digest) and its own link, ~300 bytes. Checkpoints are grouped by 30-day
+  // period; each period has one digest over its checkpoints (periodDigests), so any edit of a checkpoint is detected.
+  // The current version of every document (what documents, cheques and the documents view verify) stays a whole record.
+  const CHECKPOINT_AGE_SECONDS=30*86400,CHECKPOINT_PERIOD_SECONDS=30*86400,CHECKPOINT_BATCH=400,CHECKPOINT_FIELDS=Object.freeze(['id','documentId','documentType','companyId','chainDepth','contentDigest','previousProofId','previousContentDigest','transition','createdAtSim','period']);
+  const checkpointPeriod=createdAtSim=>`P${String(Math.max(0,Math.floor((Number(createdAtSim)||0)/CHECKPOINT_PERIOD_SECONDS))).padStart(4,'0')}`;
+  function getCheckpoint(state,id){const row=state?.documentProofs?.checkpointsById?.[id];return row&&typeof row==='object'&&!Array.isArray(row)?row:null;}
+  function checkpointEntry(row){return CHECKPOINT_FIELDS.map(field=>row[field]??null);}
+  function periodDigestOf(rows){return digest(stable(rows.slice().sort((a,b)=>String(a.id).localeCompare(String(b.id))).map(checkpointEntry)));}
+  function checkpointsByPeriod(store){const out=new Map();for(const row of Object.values(store?.checkpointsById||{})){const list=out.get(row?.period)||[];list.push(row);out.set(row?.period,list);}return out;}
+  // A period's digest is recomputed only when its checkpoints change (kept by identity: checkpoints are sealed).
+  // The whole check is kept by the identity of the two maps: every writer replaces them (checkpointAncestors, compact)
+  // and their members are sealed, so an unchanged pair needs no new pass. A full validation passes {fresh:true}.
+  const PERIOD_VERIFIED=new Map(),CHECKPOINTS_VERIFIED=new WeakMap(),CHECKPOINT_KEYS=[...CHECKPOINT_FIELDS].sort().join(',');
+  function verifyCheckpoints(state,cache=null,{fresh=false}={}){
+    if(cache?.checkpoints&&!fresh)return cache.checkpoints;
+    const store=state?.documentProofs||{},rows=store.checkpointsById,periods=store.periodDigests;let out={ok:true};
+    if(rows===undefined&&periods===undefined)return cache?(cache.checkpoints=out):out;
+    const known=!fresh&&rows&&typeof rows==='object'?CHECKPOINTS_VERIFIED.get(rows):null;if(known&&known.periods===periods){if(cache)cache.checkpoints=known.out;return known.out;}
+    const fail=reason=>{out={ok:false,reason};if(cache)cache.checkpoints=out;return out;};
+    if(!rows||typeof rows!=='object'||Array.isArray(rows)||!periods||typeof periods!=='object'||Array.isArray(periods))return fail('document-proof-checkpoint-shape');
+    for(const [id,row] of Object.entries(rows)){
+      if(!row||typeof row!=='object'||Array.isArray(row)||row.id!==id||Object.keys(row).sort().join(',')!==CHECKPOINT_KEYS||!/^[a-f0-9]{64}$/i.test(String(row.contentDigest||''))||!clean(row.documentId)||!Number.isSafeInteger(row.chainDepth)||row.chainDepth<0||row.chainDepth>LIMITS.chainDepth||row.period!==checkpointPeriod(row.createdAtSim))return fail('document-proof-checkpoint-record');
+      if(store.recordsById?.[id]||store.archiveById?.[id])return fail('document-proof-checkpoint-residency');
+      if(row.chainDepth>0?!(row.previousProofId&&/^[a-f0-9]{64}$/i.test(String(row.previousContentDigest||''))):row.previousProofId!==null)return fail('document-proof-checkpoint-chain');
+    }
+    const grouped=checkpointsByPeriod(store);
+    for(const key of Object.keys(periods))if(!grouped.has(key))return fail('document-proof-checkpoint-period-unused');
+    for(const [period,list] of grouped){
+      const entry=periods[period];if(!entry||entry.period!==period||entry.count!==list.length||!/^[a-f0-9]{64}$/i.test(String(entry.digest||'')))return fail('document-proof-checkpoint-period');
+      const seen=PERIOD_VERIFIED.get(period);
+      if(!fresh&&seen&&seen.digest===entry.digest&&seen.rows.size===list.length&&list.every(row=>seen.rows.has(row)))continue;
+      if(periodDigestOf(list)!==entry.digest)return fail('document-proof-checkpoint-period-tampered');
+      PERIOD_VERIFIED.set(period,{digest:entry.digest,rows:new Set(list)});
+    }
+    CHECKPOINTS_VERIFIED.set(rows,{periods,out});if(cache)cache.checkpoints=out;return out;
+  }
+  // Up to CHECKPOINT_BATCH earlier versions per call, oldest first. A version becomes a checkpoint only when a newer
+  // record links to it, it is older than the age limit, no document or ledger row points at it as its current proof,
+  // and its chain verifies now. Everything is prepared before the store is published, so a failure changes nothing.
+  function checkpointAncestors(state,{now=Number(state?.simSeconds)||0,limit=CHECKPOINT_BATCH}={}){
+    const store=ensure(state),hot=store.recordsById,cold=store.archiveById||{},cutoff=now-CHECKPOINT_AGE_SECONDS,linked=new Set(),pinned=new Set();
+    for(const row of [...Object.values(hot),...Object.values(cold)])if(row?.previousProofId)linked.add(row.previousProofId);
+    for(const entry of stateDocumentEntries(state))if(entry.document?.documentProofId)pinned.add(entry.document.documentProofId);
+    for(const [,book] of Object.entries(state.companyFinance||{}))if(Array.isArray(book?.ledger))for(const row of book.ledger)if(row?.documentProofId)pinned.add(row.documentProofId);
+    for(const row of Array.isArray(state.treasury?.ledger)?state.treasury.ledger:[])if(row?.documentProofId)pinned.add(row.documentProofId);
+    const candidates=[...linked].map(id=>getRecord(state,id)).filter(row=>row&&!pinned.has(row.id)&&Number(row.version)===RECORD_VERSION&&(Number(row.createdAtSim)||0)<cutoff).sort((a,b)=>(Number(a.createdAtSim)||0)-(Number(b.createdAtSim)||0)||String(a.id).localeCompare(String(b.id)));
+    const cache={records:new Map(),signedContentStable:new Map()},made=[];
+    for(const row of candidates){
+      if(made.length>=limit)break;if(!verifyRecord(state,row.id,new Set(),cache).ok)continue;
+      const checkpoint={};for(const field of CHECKPOINT_FIELDS)checkpoint[field]=field==='period'?checkpointPeriod(row.createdAtSim):field==='chainDepth'?Number(row.chainDepth)||0:field==='createdAtSim'?Number(row.createdAtSim)||0:(row[field]??null);
+      made.push(checkpoint);
+    }
+    if(!made.length)return {checkpointed:0,remaining:0};
+    const rows={...(store.checkpointsById||{})},nextHot={...hot},nextCold={...cold},touched=new Set();
+    for(const checkpoint of made){if(rows[checkpoint.id])throw new Error('document-proof-checkpoint-collision');rows[checkpoint.id]=checkpoint;delete nextHot[checkpoint.id];delete nextCold[checkpoint.id];touched.add(checkpoint.period);}
+    const periods={...(store.periodDigests||{})},grouped=checkpointsByPeriod({checkpointsById:rows});
+    for(const period of touched){const list=grouped.get(period);periods[period]={period,count:list.length,digest:periodDigestOf(list)};}
+    store.recordsById=nextHot;store.archiveById=nextCold;store.checkpointsById=rows;store.periodDigests=periods;
+    return {checkpointed:made.length,remaining:Math.max(0,candidates.length-made.length)};
+  }
   function archiveForAdmission(state){
     const store=ensure(state),hot=store.recordsById,cold=store.archiveById||{};
     if(Object.keys(hot).length<LIMITS.records)return;
@@ -85,12 +149,15 @@
     // A replay result can outlive the corresponding live history row. Its proof
     // and ancestors are still referenced, even when no UI document is present.
     const visited=new Set();for(const cached of Object.values(state.domainRuntime?.idempotency||{}))resultProofIds(cached?.result,roots,visited);
-    const stack=[...roots];while(stack.length){const id=stack.pop();if(seen.has(id))continue;seen.add(id);const prior=getRecord(state,id)?.previousProofId;if(prior)stack.push(prior);}return seen;
+    const stack=[...roots];while(stack.length){const id=stack.pop();if(seen.has(id))continue;seen.add(id);const prior=(getRecord(state,id)||getCheckpoint(state,id))?.previousProofId;if(prior)stack.push(prior);}return seen;
   }
   function compact(state,target=Math.max(0,LIMITS.records-200),pinned=[]){
     const store=ensure(state),referenced=referencedProofs(state,pinned),removable=Object.values(store.recordsById).filter(row=>!referenced.has(row.id)).sort((a,b)=>(Number(a.createdAtSim)||0)-(Number(b.createdAtSim)||0)||String(a.id).localeCompare(String(b.id))),remove=Math.max(0,Object.keys(store.recordsById).length-target);
     for(const row of removable.slice(0,remove))delete store.recordsById[row.id];
     let archivedRemoved=0;for(const [id] of Object.entries(store.archiveById||{}))if(!referenced.has(id)){delete store.archiveById[id];archivedRemoved++;}
+    // Checkpoints no proof links to any more go too; their periods' digests are recomputed (an emptied period is dropped).
+    if(store.checkpointsById){const touched=new Set(),rows={...store.checkpointsById};for(const [id,row] of Object.entries(rows))if(!referenced.has(id)){delete rows[id];touched.add(row?.period);archivedRemoved++;}
+      if(touched.size){const grouped=checkpointsByPeriod({checkpointsById:rows}),periods={...(store.periodDigests||{})};for(const period of touched){const list=grouped.get(period);if(list)periods[period]={period,count:list.length,digest:periodDigestOf(list)};else delete periods[period];}store.checkpointsById=rows;store.periodDigests=periods;}}
     return {records:Object.keys(store.recordsById).length,archived:Object.keys(store.archiveById||{}).length,removed:Math.min(remove,removable.length)+archivedRemoved};
   }
 
@@ -160,6 +227,14 @@
       else{
         if(!chain||typeof chain!=='object'||Array.isArray(chain)||Object.keys(chain).sort().join(',')!=='depth,previousContentDigest,previousProofId,transition')return {ok:false,reason:'document-proof-chain-shape'};let transition;try{transition=transitionId(chain.transition);}catch(error){return {ok:false,reason:String(error?.message||error)};}
         if(chain.previousProofId!==proofRecord.previousProofId||chain.previousContentDigest!==proofRecord.previousContentDigest||transition!==proofRecord.transition||Number(chain.depth)!==chainDepth)return {ok:false,reason:'document-proof-chain-reference-mismatch'};
+        // Build 359: a predecessor kept as a checkpoint ends the walk: its link fields are checked here and its period's
+        // digest by verifyCheckpoints (its own chain verified when it was checkpointed).
+        const checkpoint=getRecord(state,proofRecord.previousProofId)?null:getCheckpoint(state,proofRecord.previousProofId);
+        if(checkpoint){
+          if(checkpoint.contentDigest!==proofRecord.previousContentDigest)return {ok:false,reason:'document-proof-chain-predecessor-mismatch'};if(checkpoint.documentId!==proofRecord.documentId||checkpoint.documentType!==proofRecord.documentType||checkpoint.companyId!==proofRecord.companyId)return {ok:false,reason:'document-proof-chain-identity-mismatch'};if(Number(checkpoint.chainDepth)+1!==chainDepth)return {ok:false,reason:'document-proof-chain-depth-mismatch'};
+          const periods=verifyCheckpoints(state,cache);if(!periods.ok)return periods;
+          const verified=withRecordCopy({ok:true,modern:true},proofRecord);cache?.records?.set(proofId,verified);return verified;
+        }
         const previous=getRecord(state,proofRecord.previousProofId);if(!previous||previous.contentDigest!==proofRecord.previousContentDigest)return {ok:false,reason:'document-proof-chain-predecessor-mismatch'};if(previous.documentId!==proofRecord.documentId||previous.documentType!==proofRecord.documentType||previous.companyId!==proofRecord.companyId)return {ok:false,reason:'document-proof-chain-identity-mismatch'};if(Number(previous.chainDepth)+1!==chainDepth)return {ok:false,reason:'document-proof-chain-depth-mismatch'};
         const ancestor=verifyRecord(state,previous.id,seen,cache);if(!ancestor.ok)return ancestor;
       }
@@ -235,6 +310,6 @@
       if(store.recordsById?.[record.id]===record)store.recordsById[record.id]=bound;else if(store.archiveById?.[record.id]===record)store.archiveById[record.id]=bound;else throw new Error('document-proof-residency-conflict');document.authorizationProofId=proof.id;document.authorizationKind=proof.mode;document.signatureSnapshot=clone(bound.signatureSnapshot);}return rows.length;}
   function markLegacy(state,document,options={}){if(document.documentProofId)return verifyDocument(state,document);return sealDocument(state,document,{...options,authorizationKind:'legacy-name-only'});}
   // Proof records are inserted whole and replaced, never edited (bindAuthorization replaces): durable drafts share them sealed.
-  (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('documentProofs',['recordsById','archiveById']);
-  const API=Object.freeze({VERSION,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,compact,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('documentProofs',['recordsById','archiveById','checkpointsById']);
+  const API=Object.freeze({VERSION,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,compact,checkpoint:getCheckpoint,checkpointAncestors,verifyCheckpoints,CHECKPOINT_AGE_SECONDS,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

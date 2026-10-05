@@ -47,7 +47,7 @@ small{color: var(--muted);}
 .filter-popover{width:268px;padding:10px;display:grid;gap:10px}.filter-popover .popover-title{display:flex;align-items:end;justify-content:space-between;gap:8px;padding:2px 2px 8px}.filter-popover .popover-title span{font-size:13px;font-weight:700}.filter-popover .popover-title small{font-size:9px;color:var(--muted)}
 .filter-section{display:grid;gap:6px}.filter-section>b{font-size:9px;letter-spacing:.02em;color:var(--muted);padding-inline:2px}.filter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.filter-grid .filter-btn{display:grid;gap:2px;min-height:48px;padding:7px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--text);text-align:right;font:inherit}.filter-grid .filter-btn span{font-size:11px;font-weight:650}.filter-grid .filter-btn small{font-size:8px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.filter-grid .filter-btn.active,.filter-grid [data-layer].active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
 .filter-popover .mini-switch{margin:0;padding:9px 2px 2px;border-top:1px solid var(--line)}
-.facility-marker{width:44px!important;height:44px!important;margin-left:-22px!important;margin-top:-22px!important;display:grid!important;place-items:center!important}.facility-marker .marker-core{width:22px;height:22px;border-width:1px;border-radius:7px;box-shadow:0 4px 11px rgba(0,0,0,.18)}.facility-marker .marker-core svg{width:13px;height:13px}.facility-marker .facility-brand-logo{right:-5px;bottom:-5px;width:10px;height:10px;border-radius:3px}.facility-marker.selected .marker-core{width:28px;height:28px;border-width:2px;box-shadow:0 0 0 4px rgba(45,114,223,.13),0 7px 16px rgba(0,0,0,.22)}.facility-marker.selected .marker-core svg{width:16px;height:16px}.facility-cluster-marker{width:44px!important;height:44px!important;margin-left:-22px!important;margin-top:-22px!important;display:grid!important;place-items:center!important}.facility-map-cluster{width:24px;height:24px;border-width:1px;border-radius:8px;box-shadow:0 4px 11px rgba(0,0,0,.18)}.facility-map-cluster span{display:none}.facility-map-cluster b{font-size:10px}
+.facility-marker{width:44px!important;height:44px!important;margin-left:-22px!important;margin-top:-22px!important;display:grid!important;place-items:center!important}.facility-marker .marker-core{width:22px;height:22px;border-width:1px;border-radius:7px;box-shadow:0 4px 11px rgba(0,0,0,.18)}.facility-marker .marker-core svg{width:13px;height:13px}.facility-marker .facility-brand-logo{right:-5px;bottom:-5px;width:10px;height:10px;border-radius:3px}.facility-marker.selected .marker-core{width:28px;height:28px;border-width:2px;box-shadow:0 0 0 4px rgba(45,114,223,.13),0 7px 16px rgba(0,0,0,.22)}.facility-marker.selected .marker-core svg{width:16px;height:16px}
 /* Build 358: the background choices were bare buttons; they read like the other choices now, the current one in gold. */
 .layer-pop .filter-grid button{min-height:40px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--text);font:600 12px var(--font);text-align:right}.layer-pop .filter-grid button.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
 @media(max-width:460px){.filter-popover{width:min(260px,calc(100% - 16px))}.filter-grid .filter-btn{min-height:45px;padding:6px}}
@@ -182,7 +182,7 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .workflow-step,.ma-stage span{padding: 7px; border: 1px solid var(--line); border-radius: 7px; font-size: 10px; min-width: 55px; text-align: center;}
 .workflow-step b{display: block; font-size: 9px;}
 .workflow-step.active{background: var(--teal-soft); color: var(--blue);}
-.asset-marker,.competitor-marker,.fleet-cluster-marker,.facility-cluster-marker,.mobility-car-marker{background: transparent !important; border: 0px !important; overflow: visible !important;}
+.asset-marker,.competitor-marker,.map-place-marker,.mobility-car-marker{background: transparent !important; border: 0px !important; overflow: visible !important;}
 .vehicle-pin{position: relative; width: 46px; height: 46px; display: block; isolation: isolate; overflow: visible;}
 .vehicle-heading{position: absolute; inset: 0px; transform-origin: 50% 50%;}
 .vehicle-sprite{position: absolute; left: 3px; top: 3px; width: 40px; height: 40px; display: block; transform-origin: 50% 50%; z-index: 2;}
@@ -196,19 +196,24 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .vehicle-pin.mobility .vehicle-sprite img{width: 12px; height: 24px;}
 .vehicle-pin.mobility .vehicle-beacon{display: none;}
 .mobility-car-marker{width: 44px !important; height: 44px !important; margin-left: -22px !important; margin-top: -22px !important;}
-.facility-map-cluster{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;align-content:center;background:var(--surface);border:2px solid var(--accent);box-shadow:0 4px 12px rgba(0,0,0,.4);color:var(--text);line-height:1.1;}
-.facility-map-cluster span{font-size: 7px; color: var(--blue);}
-.facility-map-cluster b{font-size: 12px;}
-.fleet-cluster-marker{width:52px!important;height:52px!important;margin-left:-26px!important;margin-top:-26px!important;display:grid!important;place-items:center!important;}
-.fleet-stack{--mode-color:var(--road);position:relative;width:var(--stack-size,34px);height:var(--stack-size,34px);filter:drop-shadow(0 3px 4px rgba(0,0,0,.38));cursor:pointer;}
-.fleet-stack.air{--mode-color:var(--air)}.fleet-stack.sea{--mode-color:var(--sea)}.fleet-stack.road{--mode-color:var(--road)}.fleet-stack.mobility{--mode-color:var(--mobility)}
-.fleet-stack img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none;}
-.fleet-stack-ghost{opacity:.32;transform:translate(-5px,4px) rotate(-14deg) scale(.86);}
-.fleet-stack-ghost.second{opacity:.2;transform:translate(5px,6px) rotate(16deg) scale(.8);}
-.fleet-stack.is-parked .fleet-stack-main{opacity:.78;filter:saturate(.45) brightness(1.08);}
-.fleet-stack.is-parked .fleet-stack-ghost{opacity:.18;}
-.fleet-stack-count{position:absolute;inset-inline-end:-9px;bottom:-5px;min-width:19px;height:17px;padding:0 5px;border-radius:9px;font:700 10px/17px system-ui,-apple-system,sans-serif;color:#0B1218;background:var(--mode-color);border:1.5px solid #0B1218;text-align:center;box-shadow:0 2px 4px rgba(0,0,0,.4);white-space:nowrap;}
-.fleet-stack.is-parked .fleet-stack-count{background:var(--ground);color:var(--mode-color);border-color:var(--mode-color);}
+/* Build 359: map modes (operations · network · expansion). Vehicles are small (30 px) and carry no count badge;
+   only places are grouped, in one bubble style with a Western count. */
+.map-vehicle.mobility-car-marker,.map-vehicle{width:30px!important;height:30px!important;margin-left:-15px!important;margin-top:-15px!important}
+.map-vehicle .vehicle-pin{width:30px;height:30px}
+.map-vehicle .vehicle-sprite{left:2px;top:2px;width:26px;height:26px}
+.map-vehicle .vehicle-sprite img{width:26px;height:26px}
+.map-vehicle .vehicle-beacon{right:3px;top:2px;width:5px;height:5px}
+.map-vehicle .vehicle-pin.mobility{width:30px;height:30px}
+.map-vehicle .vehicle-pin.mobility .vehicle-sprite{left:10px;top:5px;width:10px;height:20px}
+.map-vehicle .vehicle-pin.mobility .vehicle-sprite img{width:10px;height:20px}
+.map-vehicle.is-selected .vehicle-sprite img{filter:drop-shadow(0 0 3px var(--accent)) drop-shadow(rgba(19,36,61,.333) 0 1px 1px)}
+.map-place-marker{width:38px!important;height:38px!important;margin-left:-19px!important;margin-top:-19px!important;display:grid!important;place-items:center!important}
+.map-place-bubble{--place-color:var(--accent);min-width:30px;height:30px;padding:0 7px;border-radius:15px;display:grid;place-items:center;background:var(--surface);border:2px solid var(--place-color);box-shadow:0 3px 10px rgba(0,0,0,.35);color:var(--text);cursor:pointer}
+.map-place-bubble b{font:700 12px/1 system-ui,-apple-system,sans-serif;font-variant-numeric:tabular-nums}
+.map-place-bubble.airport{--place-color:var(--air)}.map-place-bubble.port{--place-color:var(--sea)}.map-place-bubble.mixed{--place-color:var(--blue)}
+.world-infrastructure-marker{background:transparent!important;border:0!important;overflow:visible!important}
+.world-place-dot{display:grid;place-items:center;width:22px;height:22px;border:1px solid rgba(255,255,255,.94);border-radius:50%;background:rgba(8,38,55,.9);color:#fff;box-shadow:0 2px 8px rgba(4,23,34,.24)}
+.world-place-code{position:absolute;top:24px;left:50%;transform:translateX(-50%);padding:1px 5px;border-radius:6px;background:rgba(8,38,55,.82);color:#fff;font:600 10px/14px system-ui,-apple-system,sans-serif;white-space:nowrap;pointer-events:none}
 .marker-core{display:grid;place-items:center;width:40px;height:40px;background:var(--surface);color:var(--text);border:2px solid var(--blue);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.4);}
 .marker-core{position:relative}.marker-core.airport{border-color:var(--air)}.marker-core.port{border-color:var(--sea)}.marker-core.logistics{border-color:var(--road)}.marker-core.power{border-color:var(--power)}.marker-core.bank{border-color:var(--bank)}.marker-core.mobility{border-color:var(--mobility)}.facility-brand-logo{position:absolute;inset:auto -5px -5px auto;width:16px;height:16px;object-fit:contain;border:1px solid var(--line-strong);border-radius:5px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.4)}
 .marker-core svg{width: 25px; height: 25px; color: var(--blue);}

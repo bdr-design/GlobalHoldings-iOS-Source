@@ -21,9 +21,16 @@
   // A shape is an ordered key list, or {"k":keys,"c":[[position,cell],...]} where the listed positions hold a value
   // that is IDENTICAL in every row of that shape (stored once, omitted from the rows). Key order is always preserved.
   // The root carries  stateCodec:{version,paths}  so decoding needs no external configuration.
-  // Build 358: a collection of SEGMENT_MIN+ rows is written as consecutive segments of SEGMENT_ROWS rows,
+  // Build 358: a collection of SEGMENT_MIN+ rows is written as consecutive segments,
   //   {"$gh":3,"a":1|0,"g":[segment,...]}                   each segment a $gh:1 (array) or $gh:2 (map) collection
   // so a save re-encodes only the segments whose members changed (see serialize). Such a save is SEG_VERSION.
+  // Build 359 (iPhone diagnostic: some saves re-sent 52-54 chunks, 14.6 MB, in 0.5-0.77 s): segments were 256 rows by
+  // position, so archiving one record shifted every later segment and each was re-encoded and uploaded again. A
+  // segment now ends after a member whose identity (map key, or the id/number of an array item) hashes to a boundary,
+  // once it holds SEGMENT_FLOOR rows, or at SEGMENT_CEIL rows: removing or adding a member changes its own segment and
+  // at most the next. The cached text of a segment is found by its first member's identity, not by its index. A
+  // collection whose members have no identity (or a repeated one) keeps the 256-row segments. Readers never relied on
+  // segment sizes.
   // Build 358 (save size): with the native vault, a sealed segment (or a whole sealed collection) of TEXT_CHUNK_MIN+
   // characters is kept out of the save text as a vault chunk holding its JSON text (UTF-8):
   //   {"$ghText":"chunk-v1","id":id,"bytes":byteLength}
@@ -53,7 +60,7 @@
     if(cell.length!==5||tag!==-3||typeof prefix!=='string'||!Number.isInteger(width)||width<0||width>10||!Number.isSafeInteger(first)||first<0||!Number.isInteger(count)||count<1||count>RUN_MAX||first+count-1>0xFFFFFFFF)throw corrupt('run');
     const out=new Array(count);for(let i=0;i<count;i++)out[i]=runText(prefix,width,first+i);return out;
   }
-  const MIN_ROWS=64,SEGMENT_ROWS=256,SEGMENT_MIN=SEGMENT_ROWS*2,SEG_VERSION='gh-shape-3',TEXT_VERSION='gh-shape-4',TEXT_CHUNK_MIN=16384;
+  const MIN_ROWS=64,SEGMENT_ROWS=256,SEGMENT_MIN=SEGMENT_ROWS*2,SEGMENT_FLOOR=64,SEGMENT_CEIL=1024,SEG_VERSION='gh-shape-3',TEXT_VERSION='gh-shape-4',TEXT_CHUNK_MIN=16384;
   const MIN_POOL_CHARS=40;
   const MIN_CONSTANT_ROWS=4;
   const MAX_DEPTH=64;
@@ -268,13 +275,16 @@
     return constants;
   }
 
+  function decodeSegment(isArray,part){if(!part||part.$gh!==(isArray?1:2))throw corrupt('segment-marker');return decodeCollection(part);}
+  function combineSegments(isArray,parts){
+    if(isArray)return [].concat(...parts);
+    const out={};for(const part of parts)for(const key of Object.keys(part)){if(own(out,key))throw corrupt('segment-duplicate-key');assign(out,key,part[key]);}
+    return out;
+  }
   function decodeCollection(node){
     if(node&&typeof node==='object'&&!Array.isArray(node)&&node.$gh===3){
       if((node.a!==1&&node.a!==0)||!Array.isArray(node.g)||!node.g.length)throw corrupt('segments');
-      const parts=node.g.map(part=>{if(!part||part.$gh!==(node.a?1:2))throw corrupt('segment-marker');return decodeCollection(part);});
-      if(node.a)return [].concat(...parts);
-      const out={};for(const part of parts)for(const key of Object.keys(part)){if(own(out,key))throw corrupt('segment-duplicate-key');assign(out,key,part[key]);}
-      return out;
+      return combineSegments(node.a,node.g.map(part=>decodeSegment(node.a,part)));
     }
     if(!node||typeof node!=='object'||Array.isArray(node)||(node.$gh!==1&&node.$gh!==2))throw corrupt('collection-marker');
     const {s:shapes,p:pool,r:rows}=node;
@@ -340,13 +350,25 @@
     }
     return isArray?{$gh:1,s:shapes,p:pooler.pool,r:rows}:{$gh:2,k:keys,s:shapes,p:pooler.pool,r:rows};
   }
-  function segmentSlices(value){
-    const isArray=Array.isArray(value),keys=isArray?null:Object.keys(value),count=isArray?value.length:keys.length,out=[];
-    for(let start=0;start<count;start+=SEGMENT_ROWS){
-      if(isArray){out.push(value.slice(start,start+SEGMENT_ROWS));continue;}
-      const part={};for(const key of keys.slice(start,start+SEGMENT_ROWS))part[key]=value[key];out.push(part);
-    }
-    return out;
+  function memberIdentity(member){
+    if(!member||typeof member!=='object')return null;const id=member.id??member.number;
+    return typeof id==='string'?`s:${id}`:Number.isFinite(id)?`n:${id}`:null;
+  }
+  function identityHash(text){let h=0x811c9dc5|0;for(let i=0;i<text.length;i++)h=Math.imul(h^text.charCodeAt(i),0x01000193);return h>>>0;}
+  // Segment bounds: [{start,end,key}] where key names the segment by its first member ('#index' for positional ones).
+  function segmentBounds(value){
+    const isArray=Array.isArray(value),keys=isArray?null:Object.keys(value),count=isArray?value.length:keys.length,ids=new Array(count),seen=new Set();let identified=true;
+    for(let i=0;i<count&&identified;i++){const id=isArray?memberIdentity(value[i]):`k:${keys[i]}`;if(id===null||seen.has(id))identified=false;else{seen.add(id);ids[i]=id;}}
+    const out=[];
+    if(!identified){for(let start=0,index=0;start<count;start+=SEGMENT_ROWS,index++)out.push({start,end:Math.min(count,start+SEGMENT_ROWS),key:`#${index}`});return {keys,bounds:out};}
+    let start=0;
+    for(let i=0;i<count;i++){const length=i-start+1;if((length>=SEGMENT_FLOOR&&(identityHash(ids[i])&255)===0)||length>=SEGMENT_CEIL){out.push({start,end:i+1,key:ids[start]});start=i+1;}}
+    if(start<count)out.push({start,end:count,key:ids[start]});
+    return {keys,bounds:out};
+  }
+  function segmentSlices(value,layout=segmentBounds(value)){
+    const isArray=Array.isArray(value),{keys,bounds}=layout;
+    return bounds.map(({start,end})=>{if(isArray)return value.slice(start,end);const part={};for(let i=start;i<end;i++)part[keys[i]]=value[keys[i]];return part;});
   }
   function segmented(value){return (Array.isArray(value)?value.length:Object.keys(value).length)>=SEGMENT_MIN;}
   function encodeCollection(value){
@@ -419,7 +441,17 @@
       if(!Array.isArray(path)||!path.length||path.some(key=>typeof key!=='string'))throw corrupt('path');
       let node=readPath(out,path);if(node===undefined)throw corrupt('path-missing');
       const key=JSON.stringify(path);node=text(node,key);
-      if(isPlain(node)&&node.$gh===3&&Array.isArray(node.g))node={...node,g:node.g.map((part,index)=>text(part,`${key}#${index}`))};
+      if(isPlain(node)&&node.$gh===3&&Array.isArray(node.g)){
+        if((node.a!==1&&node.a!==0)||!node.g.length)throw corrupt('segments');
+        // A text chunk's place is named as serialize() names it: by the segment layout of the decoded collection.
+        const resolved=node.g.map(part=>{const decoded=decodeSegment(node.a,text(part,null)),adopted=isTextMarker(part)?ADOPTED_TEXT.get(null):null;ADOPTED_TEXT.delete(null);return {decoded,adopted};});
+        const combined=combineSegments(node.a,resolved.map(row=>row.decoded));
+        if(resolved.some(row=>row.adopted)){
+          const layout=segmentBounds(combined),byStart=new Map(layout.bounds.map(bound=>[bound.start,bound]));let start=0;
+          for(const row of resolved){const length=node.a?row.decoded.length:Object.keys(row.decoded).length,bound=byStart.get(start);if(row.adopted&&bound&&bound.end===start+length)ADOPTED_TEXT.set(`${key}${bound.key.startsWith('#')?'':'@'}${bound.key}`,row.adopted);start+=length;}
+        }
+        out=writePathCopy(out,path,combined);continue;
+      }
       out=writePathCopy(out,path,decodeCollection(node));
     }
     if(pending.size)throw corrupt('text-chunk-unused');
@@ -455,7 +487,7 @@
     if(!view)throw corrupt('text-chunk-missing');if(view.length!==bytes)throw corrupt('text-chunk-length');
     let text,node;try{text=new TextDecoder('utf-8',{fatal:true}).decode(view);node=JSON.parse(text);}catch{throw corrupt('text-chunk-json');}
     if(!isPlain(node)||(node.$gh!==1&&node.$gh!==2))throw corrupt('text-chunk-collection');
-    if(partKey)ADOPTED_TEXT.set(partKey,{id,sum:textChecksum(text)});
+    ADOPTED_TEXT.set(partKey,{id,sum:textChecksum(text)});
     return node;
   }
   function utf8Length(text){let n=0;for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);if(c<128)n++;else if(c<2048)n+=2;else if(c>=0xD800&&c<=0xDBFF&&i+1<text.length){const d=text.charCodeAt(i+1);if(d>=0xDC00&&d<=0xDFFF){n+=4;i++;}else n+=3;}else n+=3;}return n;}
@@ -502,9 +534,9 @@
     let segments=false;
     for(const path of paths){
       const value=readPath(out,path),key=JSON.stringify(path),split=segmented(value);if(split)segments=true;
-      const parts=split?segmentSlices(value):[value],texts=[];let cached=true;
+      const layout=split?segmentBounds(value):null,parts=split?segmentSlices(value,layout):[value],texts=[];let cached=true;
       for(let index=0;index<parts.length;index++){
-        const partKey=split?`${key}#${index}`:key,current=sealedMembers(parts[index]);
+        const partKey=split?`${key}${layout.bounds[index].key.startsWith('#')?'':'@'}${layout.bounds[index].key}`:key,current=sealedMembers(parts[index]);
         if(!current){cached=false;break;}
         live.add(partKey);let entry=COLLECTION_TEXT.get(partKey);
         if(entry&&sameMembers(entry,current))collectionCacheStats.hits++;

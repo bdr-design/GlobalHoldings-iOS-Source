@@ -15,19 +15,20 @@ test('scalar JSON clone semantics with no serialization work',()=>{
  assert.equal(primitiveCalls.stringifyCalls,0,'primitive clones still allocate JSON strings');assert.equal(primitiveCalls.parseCalls,0);
  return {primitiveValues:primitives.length,primitiveCalls};
 });
-test('cluster grid coarsening computes each asset position once',()=>{
- const rows=Array.from({length:2000},(_,i)=>({id:'A'+i,owner:'air',type:'air',coords:[-70+(i%20)*7,-175+(Math.floor(i/20)%50)*7]}));let calls=0;
- const context={assetPosition:a=>{calls++;return a.coords;},assetOwnerCompanyId:a=>a.owner,assetModeOf:a=>a.type};
- vm.runInNewContext(range('  function movingAssetRenderGroups(','  function updateMarkerPositions(')+'\nglobalThis.group=movingAssetRenderGroups;',context);
- const result=context.group(rows,12,4),all=result.flatMap(g=>g.assets);
- assert.equal(all.length,rows.length);assert.equal(new Set(all.map(a=>a.id)).size,rows.length);assert(result.every(g=>g.owner==='air'&&g.mode==='air'));
- assert.equal(calls,rows.length,'coarsening repeated full-fleet position calculations');return {assets:rows.length,positionReads:calls,groups:result.length};
+test('vehicle decluttering computes each vehicle position once and never stacks two vehicles',()=>{
+ const rows=Array.from({length:2000},(_,i)=>({id:'A'+i,coords:[(i%40)*3,(Math.floor(i/40)%50)*3]}));let calls=0;
+ const context={MAP_VIEW:require('../WebApp/map-view-core.js'),selectedAssetId:'A7',map:{latLngToContainerPoint:([lat,lng])=>({x:lng*10,y:lat*10})},assetPosition:a=>{calls++;return a.coords;}};
+ vm.runInNewContext(range('  function declutterVehicles(','  function addIndividualAssetMarkers(')+'\nglobalThis.declutter=declutterVehicles;',context);
+ const kept=context.declutter(rows);
+ assert.equal(calls,rows.length,'decluttering repeated vehicle position calculations');assert.equal(kept[0].id,'A7','the selected asset is kept first');
+ for(let i=0;i<kept.length;i++)for(let j=i+1;j<kept.length;j++){const a=kept[i].coords,b=kept[j].coords;assert(Math.hypot((a[0]-b[0])*10,(a[1]-b[1])*10)>=18,'two kept vehicles overlap');}
+ return {assets:rows.length,positionReads:calls,kept:kept.length};
 });
 test('asset lookup follows collection replacement without relying on save revision',()=>{
  const {harness}=require('./helpers/core-harness'),{s}=harness(['fleet-store-core','fleet-access-core']);
  const state={saveRevision:9,simSeconds:0,fleet:s.GH_FLEET_STORE.fromAssets([{id:'A',type:'air',progress:0}],{at:0})};s.state=state;
  vm.runInContext(range('  let map, currentTile, layers = {}','  const mapAssetQueryEngine=')+'\nglobalThis.readFleetRows=fleetPresentationRows;',s);
- vm.runInContext(range('  function presentationAssetLookup()','  function movingAssetRenderGroups(')+'\nglobalThis.lookup=presentationAssetLookup;',s);
+ vm.runInContext(range('  function presentationAssetLookup()','  function updateMarkerPositions(')+'\nglobalThis.lookup=presentationAssetLookup;',s);
  const previous=s.lookup();for(let i=1;i<=50;i++){state.fleet=s.GH_FLEET_STORE.fromAssets([{id:'A',type:'air',progress:i/100}],{at:0});const next=s.lookup();assert.equal(next.get('A').progress,i/100);assert.equal(next.size,1);assert.equal(s.readFleetRows()[0].progress,i/100);}assert.notEqual(s.lookup(),previous);return {replacements:50,source:'Fleet Store + Fleet Data Access'};
 });
 function motion(interval,target=1000){

@@ -45,6 +45,28 @@
   function structured(v){if(typeof globalThis.structuredClone==='function')try{return globalThis.structuredClone(v);}catch(_e){}return JSON.parse(JSON.stringify(v));}
   function validPoint(point){return Array.isArray(point)&&point.length>=2&&typeof point[0]==='number'&&Number.isFinite(point[0])&&typeof point[1]==='number'&&Number.isFinite(point[1])&&point[0]>=-90&&point[0]<=90&&point[1]>=-180&&point[1]<=180;}
   function serializedBytes(value){try{const json=typeof value==='string'?value:JSON.stringify(value);return globalThis.TextEncoder?new TextEncoder().encode(json).byteLength:json.length*2;}catch(_error){return Infinity;}}
+  // Build 359 (iPhone diagnostic: every save spent 49-153 ms in this validation): the byte limits of the two proof
+  // archives (13 MB + 2.3 MB) were checked by stringifying and UTF-8 encoding them whole on every save. A sealed member
+  // is deep-frozen (GH_TRANSACTION_CORE), so its size is measured once and kept by identity; the size of the map is
+  // exactly the size of its JSON: braces, commas, quoted keys, colons and member sizes.
+  const SEALED_BYTES=new WeakMap();
+  function memberBytes(value){
+    if(!value||typeof value!=='object'||globalThis.GH_TRANSACTION_CORE?.isSealed?.(value)!==true)return serializedBytes(value);
+    let n=SEALED_BYTES.get(value);if(n===undefined){n=serializedBytes(value);SEALED_BYTES.set(value,n);}return n;
+  }
+  // Routes: a checked point [lat,lng] is at most 54 bytes of JSON (two numbers of at most 25 characters, brackets and
+  // a comma), so a route is within its byte limit when its other fields plus 54 bytes per point are; only a route near
+  // the limit (or with longer points) is stringified to measure it exactly.
+  function routeWithinBytes(route,limit){
+    const points=route.route;for(let i=0;i<points.length;i++)if(points[i].length!==2)return serializedBytes(route)<=limit;
+    const rest={...route};delete rest.route;if(serializedBytes(rest)+12+points.length*54<=limit)return true;
+    return serializedBytes(route)<=limit;
+  }
+  function mapBytes(map){
+    let n=2,entries=0;
+    for(const key of Object.keys(map)){const value=map[key];if(value===undefined||typeof value==='function'||typeof value==='symbol')continue;n+=serializedBytes(JSON.stringify(key))+1+memberBytes(value);entries++;if(n===Infinity)return n;}
+    return n+Math.max(0,entries-1);
+  }
   function financeSequence(value){const matches=String(value||'').match(/(\d+)(?!.*\d)/);if(!matches)return 0;const n=Number(matches[1]);return Number.isSafeInteger(n)&&n>=0?n:0;}
   function compactDigestV2(value){
     if(!object(value))return value;
@@ -290,7 +312,7 @@
     const auth=s?.authorization;if(auth===undefined)return;
     if(!object(auth)||auth.schema!=='gh-authorization-v1'){errors.push('authorization-shape');return;}
     const people=auth.peopleById,seals=object(auth.visualSealAssetsById)?auth.visualSealAssetsById:auth.signatureAssetsById,active=object(auth.activeVisualSealByPerson)?auth.activeVisualSealByPerson:auth.activeSignatureByPerson,mandates=auth.mandatesById,proofs=auth.proofsById;
-    const archived=auth.proofArchiveById||{};if(!object(archived)){errors.push('authorization-proof-archive-shape');return;}if(serializedBytes(archived)>8*1024*1024)errors.push('authorization-proof-archive-byte-limit');for(const id of Object.keys(archived))if(Object.prototype.hasOwnProperty.call(proofs||{},id))errors.push('authorization-proof-residency-conflict');const allProofs={...archived,...proofs};
+    const archived=auth.proofArchiveById||{};if(!object(archived)){errors.push('authorization-proof-archive-shape');return;}if(mapBytes(archived)>8*1024*1024)errors.push('authorization-proof-archive-byte-limit');for(const id of Object.keys(archived))if(Object.prototype.hasOwnProperty.call(proofs||{},id))errors.push('authorization-proof-residency-conflict');const allProofs={...archived,...proofs};
     if(!object(people)||!object(seals)||!object(active)||!object(mandates)||!object(proofs)){errors.push('authorization-shape');return;}
     if(Object.keys(people).length>STATE_LIMITS.authorizationPeople)errors.push('authorization-people-capacity');if(Object.keys(seals).length>STATE_LIMITS.authorizationSeals)errors.push('authorization-seal-capacity');if(Object.keys(mandates).length>STATE_LIMITS.authorizationMandates)errors.push('authorization-mandate-capacity');if(Object.keys(proofs).length>STATE_LIMITS.authorizationProofs)errors.push('authorization-proof-capacity');
     for(const [id,row] of Object.entries(people))if(!id||!object(row)||row.id!==id||!String(row.legalName||'').trim())errors.push('authorization-person');
@@ -307,10 +329,13 @@
   function validateDocumentProofState(s,errors,verificationCache,metric,trust=false){
     const store=s?.documentProofs;if(store===undefined)return;
     if(!object(store)||store.schema!=='gh-document-proofs-v1'||!object(store.recordsById)){errors.push('document-proof-shape');return;}
-    const archived=store.archiveById||{};if(!object(archived)){errors.push('document-proof-archive-shape');return;}if(serializedBytes(archived)>16*1024*1024)errors.push('document-proof-archive-byte-limit');for(const id of Object.keys(archived))if(Object.prototype.hasOwnProperty.call(store.recordsById,id))errors.push('document-proof-residency-conflict');const records={...archived,...store.recordsById};if(Object.keys(store.recordsById).length>STATE_LIMITS.documentProofs)errors.push('document-proof-capacity');
+    const archived=store.archiveById||{};if(!object(archived)){errors.push('document-proof-archive-shape');return;}if(mapBytes(archived)>16*1024*1024)errors.push('document-proof-archive-byte-limit');for(const id of Object.keys(archived))if(Object.prototype.hasOwnProperty.call(store.recordsById,id))errors.push('document-proof-residency-conflict');const records={...archived,...store.recordsById};if(Object.keys(store.recordsById).length>STATE_LIMITS.documentProofs)errors.push('document-proof-capacity');
     for(const [id,row] of Object.entries(records))if(!id||!object(row)||row.id!==id||!String(row.documentId||'').trim()||!validDigest(row.contentDigest)||!object(row.issuerSnapshot)||!object(row.signedContent)||row.authorizationProofId&&!(s.authorization?.proofsById?.[row.authorizationProofId]||s.authorization?.proofArchiveById?.[row.authorizationProofId]))errors.push('document-proof-record');
     const documentOwner=globalThis.GH_DOCUMENT_PROOF;if(typeof documentOwner?.stateDocuments!=='function'){errors.push('document-proof-owner-unavailable');return;}
     const documentCollectionStart=metric?metricClock():0,documents=documentOwner.stateDocuments(s);if(metric)metric.documentCollectionMs+=Math.max(0,metricClock()-documentCollectionStart);
+    // Build 359: earlier versions kept as checkpoints, sealed by one digest per 30-day period (GH_DOCUMENT_PROOF).
+    if(store.checkpointsById!==undefined&&(!object(store.checkpointsById)||mapBytes(store.checkpointsById)>8*1024*1024))errors.push('document-proof-checkpoint-byte-limit');
+    {const checkpoints=globalThis.GH_DOCUMENT_PROOF?.verifyCheckpoints?.(s,verificationCache?.documents,{fresh:!trust});if(checkpoints&&!checkpoints.ok)errors.push('document-proof-checkpoint');}
     const verifier=globalThis.GH_DOCUMENT_PROOF?.verifyDocument,recordVerifier=globalThis.GH_DOCUMENT_PROOF?.verifyRecord,documentCache=verificationCache?.documents;let fullState=null;const fullVerificationState=()=>{if(fullState===null&&typeof verifier==='function')fullState={...s,authorization:s.authorization?verificationView(s.authorization):s.authorization,documentProofs:verificationView(store)};return fullState;};
     // Records already verified are answered from the cache without touching state, so only a read-only view is needed for them.
     const lightState={...s,documentProofs:{...store}};
@@ -359,7 +384,7 @@
     if(routes.length>STATE_LIMITS.customRoutes)errors.push('route-capacity');
     for(const route of routes){
       const mode=routeMode(route),owner=routeOwner(route);if(!object(route)||!route.id||!knownRouteMode(mode,s,owner)||!dataId(owner)||!route.fromFacility||!route.toFacility||route.fromFacility===route.toFacility)errors.push('route-shape');if(object(route)&&route.fleetCapacity!==undefined&&!(Number.isSafeInteger(route.fleetCapacity)&&route.fleetCapacity>=1&&route.fleetCapacity<=8192))errors.push('route-shape');
-      if(!Array.isArray(route?.route)||route.route.length<2||route.route.length>STATE_LIMITS.routePoints||route.route.some(point=>!validPoint(point))||serializedBytes(route)>STATE_LIMITS.routeBytes)errors.push('route-geometry');
+      if(!Array.isArray(route?.route)||route.route.length<2||route.route.length>STATE_LIMITS.routePoints||route.route.some(point=>!validPoint(point))||!routeWithinBytes(route,STATE_LIMITS.routeBytes))errors.push('route-geometry');
       const signature=routeSignature(route);if(!signature)errors.push('route-geometry');else{const rows=routeSignatureGroups.get(signature)||[];rows.push(route);routeSignatureGroups.set(signature,rows);}
       if(route?.id){routeIds.add(route.id);if(!routeById.has(route.id))routeById.set(route.id,route);}
     }
@@ -412,5 +437,5 @@
     metric.totalMs=Math.max(0,metricClock()-validationStart-pausedMs);metric.errors=new Set(errors).size;metric.otherMs=Math.max(0,metric.totalMs-metric.authorizationMs-metric.documentProofMs-metric.companyPlatformMs);publishValidationMetric(metric);
     return {ok:errors.length===0,errors:[...new Set(errors)]};
   }
-  const API=Object.freeze({VERSION,SAVE_SCHEMA_VERSION,STATE_LIMITS,ROUTE_FLEET_CAPACITY,normalize,validate,validationSteps,inheritVerified,migrateLegacy,telemetry:()=>JSON.parse(JSON.stringify(runtimeTelemetry))});globalThis.GH_SAVE_SCHEMA=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_SAVE_SCHEMA=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,SAVE_SCHEMA_VERSION,STATE_LIMITS,ROUTE_FLEET_CAPACITY,normalize,validate,validationSteps,inheritVerified,migrateLegacy,measure:Object.freeze({mapBytes,routeWithinBytes,serializedBytes}),telemetry:()=>JSON.parse(JSON.stringify(runtimeTelemetry))});globalThis.GH_SAVE_SCHEMA=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_SAVE_SCHEMA=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

@@ -6,7 +6,7 @@ assert(app.includes('persistEveryNormalMs:60000,persistEveryFastMs:90000'));
 assert(app.includes('maintenanceEveryHours:12'));
 assert(app.includes('fleetSize>3000)return 220'));
 assert(app.includes('mapStructureInterval=fleetSizeForMap>3000?30000'));
-assert(app.includes('movingAssetRenderGroups(nonHeroMoving'));
+assert(app.includes('addIndividualAssetMarkers(declutterVehicles(heroes))'));
 assert(app.includes('presentationAssetLookup()'));
 assert(app.includes('let mapStatusCache={assetKey:'));
 assert(app.includes('if(mapStatusCache.assetKey!==assetKey)'));

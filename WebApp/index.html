@@ -98,6 +98,7 @@
     <div class="game-frame">
       <main class="map-stage">
         <div id="map" aria-label="الخريطة العالمية الموحدة"></div>
+        <div class="map-modes" role="group" aria-label="وضع الخريطة"><button type="button" data-map-mode="operations" aria-pressed="true" title="الأصول المتحركة ومساراتها">العمليات</button><button type="button" data-map-mode="network" aria-pressed="false" title="القواعد والمحاور والمقار">الشبكة</button><button type="button" data-map-mode="expansion" aria-pressed="false" title="المطارات والموانئ المتاحة">التوسع</button></div>
         <div class="map-strip"><div id="mapStatus" class="map-status">تحميل الحركة العالمية…</div><span class="map-credit" dir="ltr">Natural Earth · © OpenStreetMap contributors · Esri</span></div>
       </main>
 
@@ -221,6 +222,7 @@
   <script src="map-provider-core.js"></script>
   <script src="map-feature-core.js"></script>
   <script src="map-asset-query-core.js"></script>
+  <script src="map-view-core.js"></script>
   <script src="map-presentation-core.js"></script>
   <script src="map-layer-registry.js"></script>
   <script src="road-planner.js"></script>

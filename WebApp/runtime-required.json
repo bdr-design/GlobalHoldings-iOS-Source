@@ -798,6 +798,7 @@
     "map-presentation-core.js",
     "map-presentation-worker.js",
     "map-provider-core.js",
+    "map-view-core.js",
     "market-core.js",
     "media-asset-core.js",
     "migration-core.js",

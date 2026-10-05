@@ -80,10 +80,9 @@ async function testFallbackAndWorkerContract(){
   context.receive({data:{type:'positions',requestId:3,generation:0,progress:input.progress}});assert.equal(sent[2].message.type,'error','stale generation cannot be read as current map state');
   const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'WebApp/index.html'),'utf8'),app=fs.readFileSync(path.join(root,'WebApp/app.js'),'utf8'),runtime=JSON.parse(fs.readFileSync(path.join(root,'WebApp/runtime-required.json'),'utf8'));
   assert.match(html,/map-presentation-core\.js/);assert.ok(html.indexOf('map-presentation-core.js')<html.indexOf('app.js'));assert.match(app,/new Worker\('map-presentation-worker\.js'\)/);assert.match(app,/mapPresentationEngine\.requestPlan\(/);
-  // Build 358 (iPhone: "assets sail across the map"): a moving cluster is drawn as a vehicle, so it follows a member asset
-  // along its route (clusterLeadAsset) instead of a group centroid, which lies off every route; the app no longer asks the
-  // worker for centroids (the worker keeps the positions message, checked above).
-  assert.match(app,/clusterLeadAsset\(cluster\.assetIds/);assert.doesNotMatch(app,/mapPresentationEngine\.requestPositions\(/);assert.ok(runtime.files.includes('map-presentation-worker.js'));
+  // Build 359 (map modes): the map draws vehicles only, each on its own route (no moving clusters, no centroids): it reads
+  // the plan's heroes and never asks the worker for centroids (the worker keeps the positions message, checked above).
+  assert.match(app,/presentationPlan\.heroIndices/);assert.doesNotMatch(app,/presentationPlan\.groups/);assert.doesNotMatch(app,/mapPresentationEngine\.requestPositions\(/);assert.ok(runtime.files.includes('map-presentation-worker.js'));
 }
 
 (async()=>{await testLoadAndParity();await testAsyncLifecycle();await testFallbackAndWorkerContract();console.log('Build 340 map presentation engine: 4.3k/20k parity, fair hero selection, route interpolation, centroid updates, bounded async lifecycle and fallback PASS');})().catch(error=>{console.error(error);process.exitCode=1;});
