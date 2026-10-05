@@ -23,7 +23,8 @@ for(const [type,name] of Object.entries(legacy))state.companyRegistry[type]={leg
 for(const [type,[short,legal]] of Object.entries(expected)){
  assert.equal(identity.shortName(state,type),short,`${type} short identity`);
  assert.equal(identity.legalName(state,type),legal,`${type} legacy default maps to the central Build 334 legal identity`);
- assert.equal(identity.logo(state,type),`assets/identity/gh-${type==='sea'?'marine':type==='road'?'logistics':type==='power'?'energy':type}.svg`,`${type} vector logo`);
+ // Build 358: logo family «ج», generated from the sector glyph and the group's band (abbreviation or uploaded logo).
+ {const logo=identity.logo(state,type),svg=decodeURIComponent(logo.slice(logo.indexOf(',')+1));assert.match(logo,/^data:image\/svg\+xml/,`${type} vector logo`);assert(svg.includes('translate(48 38) scale(.6)'),`${type} logo carries its sector glyph`);assert(svg.includes('PGRP')||svg.includes('<image href="data:image/png'),`${type} logo carries the group band`);}
 }
 assert.equal(identity.legalName(state,'group'),'مجموعة اللاعب الخاصة');
 assert.equal(identity.shortName(state,'group'),'PGRP');

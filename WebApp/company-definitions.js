@@ -16,8 +16,17 @@
     palette:{accent,secondary,route,onAccent:'#ffffff'},hero
   });
   // Build 358: how the group's name brands each subsidiary (GH_COMPANY_PLATFORM.brandedIdentity): «العساف» + «للطيران».
-  const BRAND=Object.freeze({air:{ar:'للطيران',en:'Aviation',short:'AIR'},sea:{ar:'للشحن البحري',en:'Marine',short:'MARINE'},road:{ar:'للنقل',en:'Logistics',short:'LOGISTICS'},
-    power:{ar:'للطاقة',en:'Energy',short:'ENERGY'},bank:{prefix:'بنك',legalAr:'المصرفية',en:'Bank',short:'BANK'},mobility:{ar:'للتنقل الذكي',en:'Mobility',short:'MOBILITY'}});
+  // Logo family «ج» (GH_IDENTITY.familyLogo): the sector glyph above a band that carries the group's abbreviation.
+  const GLYPH=Object.freeze({
+    air:'<path d="M17 54 77 24 58 47l20 9-9 8-25-5-14 16-7-6 8-15-14 6z" fill="#fff"/><path d="m52 45 25-21-18 27z" fill="#75dcd1"/>',
+    sea:'<path d="M26 30h44v24H26z" fill="#fff" opacity=".94"/><path d="M19 51h58l-8 17c-13 8-29 8-42 0z" fill="#fff"/><path d="M19 75c9 5 18 5 28 0 9-5 18-5 30 0" fill="none" stroke="#66ddd0" stroke-width="7" stroke-linecap="round"/><path d="M35 21h25v9H35z" fill="#e5bd68"/>',
+    road:'<path d="M18 33h46v30H18zM64 43h11l8 10v10H64z" fill="#fff"/><circle cx="32" cy="68" r="8" fill="#e9b66a"/><circle cx="69" cy="68" r="8" fill="#e9b66a"/><path d="M29 24h42M65 18l8 6-8 6" fill="none" stroke="#75ddcf" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>',
+    power:'<circle cx="48" cy="48" r="28" fill="none" stroke="#f8fbfa" stroke-width="8"/><path d="M53 18 31 53h17l-6 25 24-38H49z" fill="#e8bd5f"/><path d="M18 48h10M68 48h10M48 18v8M48 70v8" stroke="#73dbce" stroke-width="5" stroke-linecap="round"/>',
+    bank:'<path d="M16 39 48 20l32 19v8H16zM22 51h9v22h-9zm21 0h10v22H43zm22 0h9v22h-9zM16 77h64v8H16z" fill="#fff"/><circle cx="48" cy="35" r="6" fill="#e3bd67"/><path d="M21 43h54" stroke="#77dfd1" stroke-width="4"/>',
+    mobility:'<path d="M48 16c-17 0-30 12-30 28 0 21 30 39 30 39s30-18 30-39c0-16-13-28-30-28z" fill="#fff"/><path d="M31 50h34l-4-13H35zM29 50h38v13H29z" fill="#1a9a6b"/><circle cx="37" cy="64" r="5" fill="#e5bc67"/><circle cx="59" cy="64" r="5" fill="#e5bc67"/><path d="M38 43h20" stroke="#8be6d9" stroke-width="4" stroke-linecap="round"/>'});
+  // Build 358: how the group's name brands each subsidiary (GH_COMPANY_PLATFORM.brandedIdentity): «العساف» + «للطيران».
+  const BRAND=Object.freeze({air:{ar:'للطيران',en:'Aviation',short:'AIR',glyph:GLYPH.air},sea:{ar:'للشحن البحري',en:'Marine',short:'MARINE',glyph:GLYPH.sea},road:{ar:'للنقل',en:'Logistics',short:'LOGISTICS',glyph:GLYPH.road},
+    power:{ar:'للطاقة',en:'Energy',short:'ENERGY',glyph:GLYPH.power},bank:{prefix:'بنك',legalAr:'المصرفية',en:'Bank',short:'BANK',glyph:GLYPH.bank},mobility:{ar:'للتنقل الذكي',en:'Mobility',short:'MOBILITY',glyph:GLYPH.mobility}});
   const subsidiary=(data)=>({
     ...data,identity:{...data.identity,brand:BRAND[data.id]||null},schema:FORMAT,definitionVersion:1,kind:'subsidiary',lifecycle:'active',
     instancePolicy:{mode:'multi',stateScope:'company',...(data.instancePolicy||{})},

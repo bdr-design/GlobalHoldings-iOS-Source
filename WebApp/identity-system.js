@@ -131,13 +131,29 @@ function customLogoVariants(row){
   const variants={};for(const usage of LOGO_USAGES){const value=String(nested[usage]||'');if(validCustomLogo(value))variants[usage]=value;}
   const primary=String(row?.logo||nested.primary||'');if(validCustomLogo(primary))variants.primary=primary;return variants;
 }
+// Build 358: logo family «ج». Each built-in company draws its sector glyph above a band that carries the group's
+// abbreviation (or the group's uploaded logo); the holding draws the abbreviation over «القابضة». A logo the player
+// uploads for a company still wins. Generated once per identity and kept as an SVG data URL.
+const FAMILY_CACHE=new Map(),FAMILY_FONT="-apple-system,'SF Pro Display','Segoe UI',Roboto,Arial,sans-serif";
+function darker(hex,amount=.32){const n=parseInt(String(hex).slice(1),16),f=v=>Math.max(0,Math.round(v*(1-amount))).toString(16).padStart(2,'0');return `#${f(n>>16)}${f((n>>8)&255)}${f(n&255)}`;}
+function familyLogo(state,type){
+  const raw=rawDefinition(state,type),holding=raw?.kind==='holding',glyph=raw?.identity?.brand?.glyph;if(!raw||(!holding&&!glyph))return null;
+  const group=record(state,'group'),short=cleanText(group.shortName,'GH',6).toUpperCase(),groupLogo=customLogoVariants(group).primary||'',def=definition(type,state),groupDef=definition('group',state);
+  const gold=validColor(group?.identity?.accent)?group.identity.accent:'#e3b55b',bg=holding?(validColor(group?.identity?.secondary)?group.identity.secondary:groupDef.identity.secondary):def.identity.secondary;
+  const key=`${type}|${short}|${bg}|${gold}|${groupLogo.length}:${groupLogo.slice(-32)}`;if(FAMILY_CACHE.has(key))return FAMILY_CACHE.get(key);
+  const arabic=/[\u0600-\u06ff]/.test(short),size=short.length<=2?34:short.length===3?30:24;
+  const band=groupLogo&&!holding?`<image href="${esc(groupLogo)}" x="30" y="70" width="36" height="22" preserveAspectRatio="xMidYMid meet"/>`:`<text x="48" y="87" text-anchor="middle" font-family="${FAMILY_FONT}" font-weight="700" font-size="${holding?13:15}" letter-spacing="${holding||arabic?0:2}" fill="${holding?'#ffffff':gold}">${holding?'القابضة':esc(short)}</text>`;
+  const body=holding?`<text x="48" y="${44+size*.36}" text-anchor="middle" font-family="${FAMILY_FONT}" font-weight="700" font-size="${size}" letter-spacing="${arabic?0:1}" fill="${gold}">${esc(short)}</text>`:`<g transform="translate(48 38) scale(.6) translate(-48 -50)">${glyph}</g>`;
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><defs><linearGradient id="t" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${bg}"/><stop offset="1" stop-color="${darker(bg)}"/></linearGradient><clipPath id="c"><rect x="3" y="3" width="90" height="90" rx="24"/></clipPath></defs><g clip-path="url(#c)"><rect width="96" height="96" fill="url(#t)"/>${body}<rect y="67" width="96" height="29" fill="#000" fill-opacity=".3"/>${band}</g></svg>`;
+  const url=`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;if(FAMILY_CACHE.size>64)FAMILY_CACHE.clear();FAMILY_CACHE.set(key,url);return url;
+}
 function resolve(state,type='group',options={}){
   const def=definition(type,state),row=record(state,type),usage=LOGO_USAGES.includes(options.usage)?options.usage:'symbol',custom=customLogoVariants(row),customLogo=custom[usage]||custom.primary||null;
   const accent=validColor(row?.identity?.accent)?String(row.identity.accent).toLowerCase():validColor(row?.accent)?String(row.accent).toLowerCase():def.identity.accent,secondary=validColor(row?.identity?.secondary)?String(row.identity.secondary).toLowerCase():def.identity.secondary,route=validColor(row?.identity?.route)?String(row.identity.route).toLowerCase():def.identity.route;
   return Object.freeze({
     type:String(type||'unknown'),known:def.known,usage,customized:Boolean(customLogo||row?.legalName||row?.shortName||(type==='group'&&(row?.name||row?.shortName))),
     short:shortName(state,type,options),display:displayName(state,type,false,options),legal:legalName(state,type,options),mapLabel:validPlainText(String(row?.mapName||''),{maximum:48})?String(row.mapName).trim():def.labels[preferredLanguage(options)].map,
-    logo:customLogo||def.identity.logos[usage],customLogo:Boolean(customLogo),accent,secondary,route,definition:def
+    logo:customLogo||familyLogo(state,type)||def.identity.logos[usage],customLogo:Boolean(customLogo),accent,secondary,route,definition:def
   });
 }
 function logo(state,type='group',usage='symbol'){const options=typeof usage==='object'?usage:{usage};return resolve(state,type,options).logo;}
@@ -156,7 +172,7 @@ function applyDocument(state){
   if(mark&&mark.dataset.logo!==current.logo){mark.replaceChildren();const img=document.createElement('img');img.src=current.logo;img.alt='';mark.append(img);mark.dataset.logo=current.logo;}return true;
 }
 const COMPANY_API=Object.freeze({VERSION:REGISTRY_VERSION,register,registerBundle,seal,definition,list,has,hasCapability,companyOf,diagnostics});
-const API=Object.freeze({VERSION,REGISTRY_VERSION,LOGO_USAGES,CUSTOM_LOGO_LIMITS,UNKNOWN_LOGO,BRANDS,LEGACY_NAMES,brand,definition,listDefinitions:list,registerDefinition:register,registerDefinitions:registerBundle,sealRegistry:seal,legalName,shortName,displayName,logo,logoMarkup,resolve,cssTokens,applyDocument,isLegacyDefault,inspectPlainText,validPlainText,inspectImageBytes,inspectCustomLogo,inspectLogoFile,validCustomLogo});
+const API=Object.freeze({VERSION,REGISTRY_VERSION,LOGO_USAGES,CUSTOM_LOGO_LIMITS,UNKNOWN_LOGO,BRANDS,LEGACY_NAMES,brand,definition,familyLogo,listDefinitions:list,registerDefinition:register,registerDefinitions:registerBundle,sealRegistry:seal,legalName,shortName,displayName,logo,logoMarkup,resolve,cssTokens,applyDocument,isLegacyDefault,inspectPlainText,validPlainText,inspectImageBytes,inspectCustomLogo,inspectLogoFile,validCustomLogo});
 globalThis.GH_COMPANY_REGISTRY=COMPANY_API;globalThis.GH_IDENTITY=API;
 if(globalThis.window&&window!==globalThis){window.GH_COMPANY_REGISTRY=COMPANY_API;window.GH_IDENTITY=API;}
 installLogoUploadGuard();

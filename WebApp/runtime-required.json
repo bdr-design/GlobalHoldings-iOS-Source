@@ -806,6 +806,7 @@
     "persistence-core.js",
     "policy-core.js",
     "procurement-core.js",
+    "qr-core.js",
     "realism-core.js",
     "road-planner-worker-core.js",
     "road-planner-worker.js",
