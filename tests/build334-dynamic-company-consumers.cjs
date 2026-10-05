@@ -12,7 +12,7 @@ function test(name,run){run();results.push(name);console.log('PASS',name);}
   const {s,storage}=harness([
     'capability-registry-core','company-definitions','company-platform-core','identity-system',
     'route-core','fleet-core','facility-core','hr-core','business-world-core','finance-core',
-    'banking-core','directory-core','realism-core','procurement-core','lifecycle-core',
+    'banking-core','directory-core','simulation-asset-core','realism-core','procurement-core','lifecycle-core',
     'integrity-core','state-codec-core','save-schema','migration-core','advanced-core'
   ]);
   const P=s.GH_COMPANY_PLATFORM,F=s.GH_FINANCE_CORE,Facility=s.GH_FACILITY_CORE,HR=s.GH_HR_CORE,

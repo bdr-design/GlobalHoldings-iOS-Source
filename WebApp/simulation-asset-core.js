@@ -60,6 +60,10 @@
     return asset;
   }
   function clampPercent(value){return Math.max(0,Math.min(100,number(value)));}
+  // A company pays the market price for the fuel it has not hedged and its swap price for the share it has
+  // (GH_MARKET_CORE hedge-fuel). The factor scales the reference-priced fuel cost of a trip.
+  const FUEL_OF_MODE=Object.freeze({air:'jet',sea:'bunker',road:'diesel'}),FUEL_MARKET=Object.freeze({jet:['jetFuel',.86],bunker:['bunker',640],diesel:['diesel',.98]});
+  function fuelPriceFactor(economy,mode,hedge){const [field,reference]=FUEL_MARKET[FUEL_OF_MODE[mode]||'diesel'],market=number(economy?.[field],reference),share=Math.max(0,Math.min(.8,number(hedge?.share)));return (share>0?share*number(hedge.price,market)+(1-share)*market:market)/reference;}
   function computeTripEconomics(asset,route,ctx){
     const distanceKm=route.distanceKm,hours=(asset.tripSeconds||route.tripSeconds)/3600,specs=asset.specs||{};let revenue=0,fuelCost=0;
     if(asset.type==='air'){
@@ -86,7 +90,7 @@
     const demand=mode==='air'?number(economy.airDemand,100):mode==='sea'?number(economy.seaDemand,100):number(economy.roadDemand,100);
     const demandFactor=clamp((demand/100)*(1+(rep-70)*.003)*(1+(share-5)*.006)*(1-(pressure-50)*.0015),.65,1.35);
     revenue*=serviceRevenue*demandFactor;fuelCost*=fuelEfficiency*sustainabilityFuel;crewCost*=crewEfficiency;let maintenance=maintReserve*maintenanceEfficiency;
-    const economyFuel=mode==='air'?number(economy.jetFuel,.86)/.86:mode==='sea'?number(economy.bunker,640)/640:number(economy.diesel,.98)/.98;
+    const economyFuel=fuelPriceFactor(economy,mode,ctx.fuelHedges?.[owner]?.[FUEL_OF_MODE[mode]||'diesel']);
     fuelCost*=economyFuel;
     const researchEfficiency=clamp(number(research.efficiency)/100,0,1),researchAutomation=clamp(number(research.automation)/100,0,1),cleanEnergy=clamp(number(research.cleanEnergy)/100,0,1);
     fuelCost*=1-researchEfficiency*.055-cleanEnergy*.018;maintenance*=1-researchEfficiency*.045;crewCost*=1-researchAutomation*.025;
@@ -173,6 +177,6 @@
   }
   const API=Object.freeze({VERSION,MAX_BATCH_ITEMS,WRITE_FIELDS,makeEffects,validateBatch,validateResults,processRow,processBatch(input){validateBatch(input);return input.rows.map(row=>processRow(row,input));},
     // Fleet Core v4 shares the exact trip economics and labels with the slice engine.
-    computeTripEconomics,loadLabel,normalizeAsset,assetOwner,assetMode,routeMode,routeOwner,fmtMoney,formatDuration});
+    computeTripEconomics,fuelPriceFactor,FUEL_OF_MODE,loadLabel,normalizeAsset,assetOwner,assetMode,routeMode,routeOwner,fmtMoney,formatDuration});
   return API;
 });

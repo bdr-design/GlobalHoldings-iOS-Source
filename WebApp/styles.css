@@ -346,3 +346,11 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .sim-cal-nav strong{font-size: 12px;}
 .sim-cal-quick button:disabled,.sim-cal-nav button:disabled{opacity: 0.4;}
 .sim-cal-head > span{color: var(--muted);}
+/* المال ← الأسواق: one row per price with its daily history */
+.market-rows{display:grid}
+.market-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(48px,84px) auto;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+.market-row:last-child{border-bottom:0}
+.market-row>div{min-width:0}.market-row b{display:block;font-size:12px;font-weight:600}.market-row small{display:block;font-size:10px}
+.market-row strong{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.market-spark{display:block;width:100%;height:24px}
+.market-spark polyline{fill:none;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
