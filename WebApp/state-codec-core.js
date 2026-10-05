@@ -522,7 +522,12 @@
     if(current.keys)for(let i=0;i<current.keys.length;i++)if(entry.keys[i]!==current.keys[i])return false;
     return true;
   }
-  function serialize(state,{rowsText=null,textChunks=null}={}){
+  // Build 358 (lighter commands): serialization as steps. serializeSteps yields after each encoded collection and after
+  // each top-level member of the final text, so an asynchronous caller (a durable command's save) can spread one save
+  // over several frames; serialize() runs the same steps at once. The text is the same either way: the final object is
+  // written member by member exactly as JSON.stringify writes a plain object.
+  function serialize(state,options){const steps=serializeSteps(state,options);let step;while(!(step=steps.next()).done){}return step.value;}
+  function* serializeSteps(state,{rowsText=null,textChunks=null}={}){
     if(!isPlain(state))return JSON.stringify(encodeState(state));
     const binaryPaths=[],fragments=[],live=new Set();let out=state;
     if(isArrayBuffer(state.fleet?.rows)){
@@ -544,14 +549,15 @@
         if(textChunks&&entry.text.length>=TEXT_CHUNK_MIN){const chunk=textChunkOf(entry,partKey);textChunks.push({id:chunk.id,byteLength:chunk.bytes,text:entry.text});texts.push(`{"$ghText":"chunk-v1","id":${JSON.stringify(chunk.id)},"bytes":${chunk.bytes}}`);}
         else texts.push(entry.text);
       }
-      if(!cached){out=writePathCopy(out,path,encodeCollection(value));continue;}
+      if(!cached){out=writePathCopy(out,path,encodeCollection(value));yield;continue;}
       const text=split?`{"$gh":3,"a":${Array.isArray(value)?1:0},"g":[${texts.join(',')}]}`:texts[0];
-      const token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;fragments.push({token:JSON.stringify(token),text});out=writePathCopy(out,path,token);
+      const token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;fragments.push({token:JSON.stringify(token),text});out=writePathCopy(out,path,token);yield;
     }
     for(const key of [...COLLECTION_TEXT.keys()])if(!live.has(key))COLLECTION_TEXT.delete(key);
     for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
     out.stateCodec=codecMeta(paths,binaryPaths,scan.runs,segments,textChunks?textChunks.map(chunk=>chunk.id):[]);
-    const text=JSON.stringify(out);if(!fragments.length)return text;
+    const members=[];for(const key of Object.keys(out)){const json=JSON.stringify(out[key]);if(json!==undefined)members.push(`${JSON.stringify(key)}:${json}`);yield;}
+    const text=`{${members.join(',')}}`;if(!fragments.length)return text;
     for(const fragment of fragments){fragment.at=text.indexOf(fragment.token);if(fragment.at<0||text.indexOf(fragment.token,fragment.at+1)>=0)throw new Error('state-codec-fragment-token');}
     fragments.sort((a,b)=>a.at-b.at);const parts=[];let cursor=0;
     for(const fragment of fragments){parts.push(text.slice(cursor,fragment.at),fragment.text);cursor=fragment.at+fragment.token.length;}
@@ -600,13 +606,14 @@
     return {marker:{$ghBinary:'chunks-v1',byteLength:bytes.length,chunkBytes,chunks:ids},chunks:ids.map((id,index)=>({id,index,byteOffset:index*chunkBytes,byteLength:Math.min(chunkBytes,bytes.length-index*chunkBytes)}))};
   }
   // Text chunks follow the fleet chunks as {id,byteLength,text}; the caller uploads the UTF-8 bytes of text.
-  function serializeChunked(state){
-    if(!isPlain(state)||!isArrayBuffer(state.fleet?.rows))return {text:serialize(state),chunks:[]};
-    const manifest=chunkManifest(state.fleet),textChunks=[],text=serialize(state,{rowsText:JSON.stringify(manifest.marker),textChunks});
+  function serializeChunked(state){const steps=serializeChunkedSteps(state);let step;while(!(step=steps.next()).done){}return step.value;}
+  function* serializeChunkedSteps(state){
+    if(!isPlain(state)||!isArrayBuffer(state.fleet?.rows))return {text:yield* serializeSteps(state),chunks:[]};
+    const manifest=chunkManifest(state.fleet),textChunks=[],text=yield* serializeSteps(state,{rowsText:JSON.stringify(manifest.marker),textChunks});
     return {text,chunks:[...manifest.chunks,...textChunks]};
   }
 
-  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,deserialize,selectPaths,serializeChunked,adoptChunkIds,bytesToBase64:bytes=>base64Encode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)),cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size,rows:{...rowCacheStats},chunks:{...chunkCacheStats},text:{...textChunkStats,adoptable:ADOPTED_TEXT.size}}),textChunkMin:TEXT_CHUNK_MIN,isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
+  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,serializeSteps,deserialize,selectPaths,serializeChunked,serializeChunkedSteps,adoptChunkIds,bytesToBase64:bytes=>base64Encode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)),cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size,rows:{...rowCacheStats},chunks:{...chunkCacheStats},text:{...textChunkStats,adoptable:ADOPTED_TEXT.size}}),textChunkMin:TEXT_CHUNK_MIN,isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
   globalThis.GH_STATE_CODEC=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_STATE_CODEC=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

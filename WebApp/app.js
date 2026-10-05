@@ -890,6 +890,15 @@
     window.__GH_STATE__=state;
   }
   let durableCommandSettlement=Promise.resolve({committed:false,saveRevision:Number(state.saveRevision)||0});
+  // Build 358 (lighter commands): a command's draft is validated section by section (GH_SAVE_SCHEMA.validationSteps) and
+  // saved in slices (commitDurableState yieldToFrame), with a frame painted whenever a slice has run 10 ms. The draft is
+  // private and the lifecycle lock holds the live state still, so the result is the one-shot result.
+  async function validateDraftInSlices(draft){
+    const schema=window.GH_SAVE_SCHEMA;if(typeof schema.validationSteps!=='function')return schema.validate(draft,{trustVerified:true});
+    const steps=schema.validationSteps(draft,{trustVerified:true});let slice=appMetricClock(),step;
+    while(!(step=steps.next()).done)if(appMetricClock()-slice>=10){await yieldForInteractivePaint();slice=appMetricClock();}
+    return step.value;
+  }
   async function runDurableStateCommand(name,apply,{afterCommit=null,silent=false}={}){
     await stagedStateSettled();
     if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){if(!silent)notice('الحفظ مشغول بعملية ذرية أخرى. لم يتغير أي أصل؛ أعد المحاولة بعد لحظات.');return false;}
@@ -913,13 +922,13 @@
       if(shouldYieldForValidation)await yieldForInteractivePaint();
       // The draft inherited the verified-once ledger above: proofs already verified are trusted, new or changed ones are
       // verified now. Persistence repeats a full verification every tenth save, and loads always verify in full.
-      mark=clockNow();const schema=window.GH_SAVE_SCHEMA.validate(draft,{trustVerified:true});lap('validateMs');if(!schema.ok)throw new Error(`invalid-draft:${schema.errors.join(',')}`);
+      mark=clockNow();const schema=await validateDraftInSlices(draft);lap('validateMs');if(!schema.ok)throw new Error(`invalid-draft:${schema.errors.join(',')}`);
       if(shouldYieldForValidation)await yieldForInteractivePaint();
       mark=clockNow();const integrity=window.GH_INTEGRITY_CORE.check(draft),critical=(integrity?.critical||(integrity?.issues||[]).filter(row=>row.severity==='critical'));lap('integrityMs');
       const introduced=critical.filter(row=>!priorCriticalIds.has(String(row.id||row.code||row.title)));
       if(introduced.length)throw new Error(`critical-integrity:${introduced.map(row=>row.code||row.id||row.title).join(',')}`);
       if(shouldYieldForValidation)await yieldForInteractivePaint();
-      mark=clockNow();await window.GH_PERSISTENCE.commitDurableState(draft,{storageKey,appVersion:APP_VERSION,prevalidated:true});lap('persistMs');
+      mark=clockNow();await window.GH_PERSISTENCE.commitDurableState(draft,{storageKey,appVersion:APP_VERSION,prevalidated:true,yieldToFrame:()=>yieldForInteractivePaint()});lap('persistMs');
       // Storage has already committed. A publication failure is a recovery
       // condition, never a successful rollback and never safe to retry blindly.
       committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);lap('publishMs');diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});

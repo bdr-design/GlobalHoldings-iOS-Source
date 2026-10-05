@@ -146,6 +146,27 @@
     for(const chunk of out.chunks)if(!vaultChunks.has(chunk.id))uploads.push({id:chunk.id,bytes:typeof chunk.text==='string'?utf8(chunk.text):new Uint8Array(state.fleet.rows,chunk.byteOffset,chunk.byteLength).slice()});
     return {json:out.text,uploads,chunked:true,chunkIds:out.chunks.map(chunk=>chunk.id)};
   }
+  // Build 358 (lighter commands): a durable command's save spread over frames. Serialization runs as codec steps and the
+  // UTF-8 encoding in pieces; whenever a slice has run SLICE_MS the caller's frame scheduler (yieldToFrame) is awaited.
+  // The command holds the lifecycle lock, so nothing writes the state meanwhile; if the fleet records changed anyway
+  // (their revision moved), the save is taken again in one go, so a save is always one consistent instant. The bytes
+  // are exactly those of serializeNative + utf8.
+  const SLICE_MS=10;
+  async function runSliced(steps,yieldToFrame,timing){let slice=clock(),step;for(;;){step=steps.next();if(step.done){timing.busyMs+=clock()-slice;return step.value;}if(clock()-slice>=SLICE_MS){timing.busyMs+=clock()-slice;timing.slices++;await yieldToFrame();slice=clock();}}}
+  async function serializeNativeSliced(state,yieldToFrame,timing){
+    const codec=stateCodec();if(!chunkedNative(state))return typeof codec?.serializeSteps==='function'?{json:await runSliced(codec.serializeSteps(state),yieldToFrame,timing),uploads:[],chunked:false}:serializeNative(state);
+    if(typeof codec.serializeChunkedSteps!=='function')return serializeNative(state);
+    const revision=state.fleet?.revision,out=await runSliced(codec.serializeChunkedSteps(state),yieldToFrame,timing);
+    if(state.fleet?.revision!==revision){timing.retakes++;return serializeNative(state);}
+    const uploads=[];for(const chunk of out.chunks)if(!vaultChunks.has(chunk.id))uploads.push({id:chunk.id,bytes:typeof chunk.text==='string'?utf8(chunk.text):new Uint8Array(state.fleet.rows,chunk.byteOffset,chunk.byteLength).slice()});
+    return {json:out.text,uploads,chunked:true,chunkIds:out.chunks.map(chunk=>chunk.id)};
+  }
+  // UTF-8 in pieces of up to 1M UTF-16 units, never splitting a surrogate pair: the bytes of TextEncoder.encode(text).
+  function* utf8Steps(text){
+    if(typeof TextEncoder==='undefined')return null;const encoder=new TextEncoder(),out=new Uint8Array(text.length*3),PIECE=1<<20;let read=0,written=0;
+    while(read<text.length){let end=Math.min(text.length,read+PIECE);if(end<text.length){const code=text.charCodeAt(end-1);if(code>=0xD800&&code<=0xDBFF)end--;}const r=encoder.encodeInto(text.slice(read,end),out.subarray(written));if(r.read!==end-read)throw new Error('utf8-encode-incomplete');read=end;written+=r.written;yield;}
+    return out.slice(0,written);
+  }
   function receiveChunkAck(detail={}){
     const row=chunkPending.get(detail.requestId);if(!row)return false;
     clearTimeout(row.timer);chunkPending.delete(detail.requestId);
@@ -270,7 +291,7 @@
     return beginOrdinary(state,snapshotOptions);
   }
   async function drain(options={}){return waitOrdinaryIdle(options);}
-  async function commitDurableState(state,{storageKey='global-holdings-world-v3.0.0',appVersion=VERSION,...options}={}){
+  async function commitDurableState(state,{storageKey='global-holdings-world-v3.0.0',appVersion=VERSION,yieldToFrame=null,...options}={}){
     if(locked||durableLocked)throw new Error('lifecycle-locked');if(recoveryRequired)throw new Error('memory-recovery-required');
     if(options.expectedPreviousRevision!=null){const previous=Number(options.expectedPreviousRevision),next=Number(state?.saveRevision);if(!Number.isSafeInteger(previous)||previous<0||!Number.isSafeInteger(next)||next!==previous+1)throw new Error(`save-revision-conflict:${previous}:${next}`);}
     durableLocked=true;
@@ -278,9 +299,9 @@
     try{
       await waitOrdinaryIdle({supersedeDirty:true});
       const durableTiming={kind:'durable-save',saveRevision:Number(state?.saveRevision)||0,schemaMs:0,stringifyMs:0,measurementMs:0,totalSyncMs:0,utf8Bytes:null,ok:false};let stageStart=clock();const syncStart=stageStart;
-      assertRecurringState(state,{prevalidated:options.prevalidated===true});durableTiming.schemaMs=Math.max(0,clock()-stageStart);stageStart=clock();const nativeBridge=!!bridgeFor('commitSave'),nativeSave=nativeBridge?serializeNative(state):null,json=nativeSave?nativeSave.json:serializeState(state);durableTiming.stringifyMs=Math.max(0,clock()-stageStart);durableTiming.chunkUploads=nativeSave?.uploads.length||0;lastSaveAtMs=clock();
+      assertRecurringState(state,{prevalidated:options.prevalidated===true});durableTiming.schemaMs=Math.max(0,clock()-stageStart);stageStart=clock();const nativeBridge=!!bridgeFor('commitSave'),sliced=nativeBridge&&typeof yieldToFrame==='function'?{busyMs:0,slices:0,retakes:0}:null,nativeSave=nativeBridge?(sliced?await serializeNativeSliced(state,yieldToFrame,sliced):serializeNative(state)):null,json=nativeSave?nativeSave.json:serializeState(state);durableTiming.stringifyMs=sliced?sliced.busyMs:Math.max(0,clock()-stageStart);durableTiming.chunkUploads=nativeSave?.uploads.length||0;lastSaveAtMs=clock();
       if(nativeBridge){
-        stageStart=clock();const encoded=utf8(json),measurement=inspectNativeJSON(json,encoded);durableTiming.measurementMs=Math.max(0,clock()-stageStart);durableTiming.utf8Bytes=measurement.utf8Bytes;durableTiming.totalSyncMs=Math.max(0,clock()-syncStart);durableTiming.ok=true;rememberTiming(durableTiming);let ack;try{await uploadChunks(nativeSave?.uploads);ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),encoded});}catch(error){throw noteNativeRefusal(error);}ordinaryError=null;
+        stageStart=clock();const encodeBusy=sliced?sliced.busyMs:0,encoded=sliced?await runSliced(utf8Steps(json),yieldToFrame,sliced):utf8(json),measurement=inspectNativeJSON(json,encoded);durableTiming.measurementMs=sliced?sliced.busyMs-encodeBusy:Math.max(0,clock()-stageStart);durableTiming.utf8Bytes=measurement.utf8Bytes;durableTiming.totalSyncMs=sliced?durableTiming.schemaMs+sliced.busyMs:Math.max(0,clock()-syncStart);if(sliced){durableTiming.slices=sliced.slices;durableTiming.retakes=sliced.retakes;durableTiming.wallMs=Math.max(0,clock()-syncStart);}durableTiming.ok=true;rememberTiming(durableTiming);let ack;try{await uploadChunks(nativeSave?.uploads);ack=await requestNative('commitSave',json,{appVersion,...options,saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0,saveSchemaVersion:saveSchemaVersion(state),encoded});}catch(error){throw noteNativeRefusal(error);}ordinaryError=null;
         const cache=nativeSave?.chunked?{ok:false,reason:'chunked-native-save',previous:null,bypassed:true}:(measurement.utf8Bytes>PERSISTENCE_LIMITS.hardBytes||measurement.storageBytes>PERSISTENCE_LIMITS.hardBytes)?{ok:false,reason:'browser-cache-size-bypass',previous:null,bypassed:true}:writeJSON(storageKey,json,{...options,mirror:true},encoded);
         if(!cache.ok&&!nativeSave?.chunked)status({ok:true,warning:true,reason:'browser-cache-skipped',cacheReason:cache.reason,durable:true,utf8Bytes:measurement.utf8Bytes,mirror:true});
         telemetry({operation:'durable-commit',ok:true,utf8Bytes:measurement.utf8Bytes,native:true,browserCache:cache.ok,durationMs:0});status({ok:true,validated:true,durable:true,native:true,saveRevision:Number(state.saveRevision)||0});return {ok:true,json,...measurement,ack,durable:true,browserCache:cache.ok,cacheReason:cache.ok?null:cache.reason};
