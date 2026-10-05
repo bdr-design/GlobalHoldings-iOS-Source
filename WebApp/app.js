@@ -1941,7 +1941,7 @@
   }
   // compact: a base drawn as a small dot in its company's colour (operations, far out), not an icon tile.
   function addFacilityMarker(f,parked,{compact=false}={}){
-    const cls=`${f.owned?'owned':f.public?'public':''}${selectedFacilityId===f.id?' selected':''}`,owner=facilityOwnerCompanyId(f),icon=compact&&selectedFacilityId!==f.id?L.divIcon({className:`map-base-dot ${cls}`,html:`<span style="--dot:${identityRouteColor(owner,owner)}"></span>`,iconSize:[14,14],iconAnchor:[7,7]}):L.divIcon({className:`facility-marker ${cls}`,html:facilityMarkerHtml(f),iconSize:[44,44],iconAnchor:[22,22]}),marker=L.marker(f.coords,{icon,zIndexOffset:selectedFacilityId===f.id?650:compact?380:400,keyboard:true,riseOnHover:true}).addTo(map);
+    const cls=`${f.owned?'owned':f.public?'public':''}${selectedFacilityId===f.id?' selected':''}${f.id==='HQ-GROUP'?' hq':''}`,owner=facilityOwnerCompanyId(f),icon=compact&&selectedFacilityId!==f.id?L.divIcon({className:`map-base-dot ${cls}`,html:`<span style="--dot:${identityRouteColor(owner,owner)}"></span>`,iconSize:[14,14],iconAnchor:[7,7]}):L.divIcon({className:`facility-marker ${cls}`,html:facilityMarkerHtml(f),iconSize:[44,44],iconAnchor:[22,22]}),marker=L.marker(f.coords,{icon,zIndexOffset:selectedFacilityId===f.id?650:compact?380:400,keyboard:true,riseOnHover:true}).addTo(map);
     marker.bindTooltip(`${esc(f.name||f.id)}${parked?` · ${MAP_VIEW.countLabel(parked)} أصل رابض`:''}`,{direction:'top',permanent:false,opacity:.9});
     marker.on('click',()=>{selectedFacilityId=f.id;openFacility(f.id);});facilityMarkers.set(f.id,marker);
   }
@@ -1952,7 +1952,8 @@
     // Build 359 (owner screenshot: base tiles all over the map): in operations, bases are small dots below zoom 6, the
     // busiest first, none closer than 24 px and at most the zoom's place budget; tiles from zoom 6. Expansion shows the
     // group's own places as tiles over the world's places.
-    if(mode==='operations'&&zoom<6){for(const point of MAP_VIEW.declutter(points,{radius:24,limit:MAP_VIEW.budget('places',zoom)}))addFacilityMarker(point.facility,parkedByBase?.get(point.id)||0,{compact:true});return;}
+    // The group headquarters stays a tile (the map's anchor).
+    if(mode==='operations'&&zoom<6){for(const point of MAP_VIEW.declutter(points,{radius:24,limit:MAP_VIEW.budget('places',zoom)}))addFacilityMarker(point.facility,parkedByBase?.get(point.id)||0,{compact:point.id!=='HQ-GROUP'});return;}
     if(mode!=='network'){for(const point of MAP_VIEW.declutter(points,{radius:30}))addFacilityMarker(point.facility,parkedByBase?.get(point.id)||0);return;}
     let radius=46,groups=MAP_VIEW.groupPoints(points,{radius});const limit=MAP_VIEW.budget('places',zoom);while(groups.length>limit&&radius<400){radius*=1.5;groups=MAP_VIEW.groupPoints(points,{radius});}
     for(const group of groups){
