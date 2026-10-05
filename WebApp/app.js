@@ -895,8 +895,8 @@
   // private and the lifecycle lock holds the live state still, so the result is the one-shot result.
   async function validateDraftInSlices(draft){
     const schema=window.GH_SAVE_SCHEMA;if(typeof schema.validationSteps!=='function')return schema.validate(draft,{trustVerified:true});
-    const steps=schema.validationSteps(draft,{trustVerified:true});let slice=appMetricClock(),step;
-    while(!(step=steps.next()).done)if(appMetricClock()-slice>=10){await yieldForInteractivePaint();slice=appMetricClock();}
+    const clockNow=()=>globalThis.performance?.now?.()??Date.now(),steps=schema.validationSteps(draft,{trustVerified:true});let slice=clockNow(),step;
+    while(!(step=steps.next()).done)if(clockNow()-slice>=10){await yieldForInteractivePaint();slice=clockNow();}
     return step.value;
   }
   async function runDurableStateCommand(name,apply,{afterCommit=null,silent=false}={}){
