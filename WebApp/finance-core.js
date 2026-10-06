@@ -427,7 +427,8 @@ function refreshIdentity(s,p){const t=requireCompany(s,p.company),name=companyNa
 // costs more the next day. Energy project finance is charged by Energy Core from its own schedule (debtSchedule).
 const RATING_SPREAD=Object.freeze({'A':.009,'A-':.011,'BBB+':.014,'BBB':.017,'BBB-':.021,'BB+':.029,'BB':.036}),PROJECT_FINANCE_ACCOUNT='تمويل مشاريع طاقة';
 function marketBaseRate(s){const rate=Number(s.realism?.economy?.baseRate);return Number.isFinite(rate)&&rate>0?rate:.046;}
-function creditSpread(s){return RATING_SPREAD[String(s.profile?.creditRating||'BBB')]??RATING_SPREAD.BBB;}
+// Build 359: the climate disclosure programme narrows the spread (up to 0.25 points), never below 0.3 points.
+function creditSpread(s){const base=RATING_SPREAD[String(s.profile?.creditRating||'BBB')]??RATING_SPREAD.BBB,programme=Number(globalThis.GH_GOVERNANCE_CORE?.programEffects?.(s)?.creditSpread)||0;return Math.max(.003,base+programme);}
 function floatingDebtRate(s){return marketBaseRate(s)+creditSpread(s);}
 function fixedDebtQuote(s,termDays){return Math.round((floatingDebtRate(s)+Math.min(.005,Math.max(0,num(termDays))/365*.001))*1e5)/1e5;}
 function debtRate(s,row){const fixed=Number(row?.annualRate);return Number.isFinite(fixed)&&fixed>0?fixed:floatingDebtRate(s);}

@@ -489,7 +489,9 @@
       const p0=clamp(before.progress,0,1);if(T<at+(1-p0)*scheduledTrip)return writeBack(env,row,before,asset,null);
       const delta=1-p0;
       asset.progress=1;asset.fuel=clamp(asset.fuel-delta*fuelRate(asset.type),4,100);asset.condition=clamp(asset.condition-delta*conditionRate(asset.type),55,100);
-      asset.phase='turnaround';asset.dwellRemaining=Math.max(0,number(route.dwellHours))*3600+slotDelay(asset.routeSlot,modeOf(asset));asset.departureScheduled=true;asset.departureScheduledAt=Math.max(0,T)+asset.dwellRemaining;
+      // Build 359: an understaffed arrival base turns assets round slower (context.baseDwellFactor, from HR coverage).
+      const dwellFactor=Math.max(1,Math.min(2,number(env.ctx?.baseDwellFactor?.[asset.reverse?route.fromFacility:route.toFacility],1)));
+      asset.phase='turnaround';asset.dwellRemaining=Math.max(0,number(route.dwellHours))*3600*dwellFactor+slotDelay(asset.routeSlot,modeOf(asset));asset.departureScheduled=true;asset.departureScheduledAt=Math.max(0,T)+asset.dwellRemaining;
       asset.baseFacility=asset.reverse?route.fromFacility:route.toFacility;
       let cached;
       if(asset.ownerCompanyId)cached=economicsFor(env,{ownerCompanyId:asset.ownerCompanyId,assetMode:asset.assetMode,type:asset.type,specs:asset.specs,staffing:asset.staffing,tripSeconds:Number(asset.tripSeconds||route.tripSeconds)},route);

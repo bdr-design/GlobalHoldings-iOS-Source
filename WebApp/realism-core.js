@@ -168,7 +168,7 @@
   function opsVisitor(state){
     const fleet=fleetData(),r=migrate(state),write=fleet.columnWriter(state,['flightHours','flightCycles','nextCheckHours']),demand=clamp((r.economy.airDemand||100)/100,.65,1.35),bunker=Math.max(1,r.economy.bunker);
     let ask=0,rpk=0,rev=0,cost=0,fuel=0,movingAir=0,airCondition=0,maintReserve=0,maintExposure=0,airCount=0,maintenanceDue=0,aog=0;
-    let seaDistance=0,seaFuelProxy=0,seaTransport=0,seaCondition=0,movingSea=0,seaCount=0,seaDryDock=0,roadCount=0,roadWeak=0,roadDamaged=0;
+    let seaDistance=0,seaFuelProxy=0,seaTransport=0,seaCo2=0,seaWork=0,seaRefWork=0,seaCondition=0,movingSea=0,seaCount=0,seaDryDock=0,roadCount=0,roadWeak=0,roadDamaged=0;
     const visit=(a,index)=>{
       const mode=assetMode(a);
       if(mode==='air'){
@@ -182,7 +182,7 @@
         write(index,'flightHours',flightHours);write(index,'flightCycles',flightCycles);write(index,'nextCheckHours',nextCheckHours);
         if(flightHours>=nextCheckHours||Number(a.condition)<72)maintenanceDue++;if(Number(a.condition)<60)aog++;
       }else if(mode==='sea'){
-        const d=Math.max(1,Number(a.lastTrip?.distanceKm)||Number(a.lastTrip?.distance)||1),cap=Math.max(1,Number(a.specs?.capacity)||Number(a.specs?.teu)||Number(a.specs?.dwt)||1),cond=clamp(Number(a.condition)||100,0,100);seaDistance+=d;seaTransport+=d*cap;seaFuelProxy+=Math.max(0,Number(a.lastTrip?.fuelCost)||0)/bunker;seaCondition+=cond;if(a.phase==='moving')movingSea++;
+        const d=Math.max(1,Number(a.lastTrip?.distanceKm)||Number(a.lastTrip?.distance)||1),cap=Math.max(1,Number(a.specs?.capacity)||Number(a.specs?.teu)||Number(a.specs?.dwt)||1),cond=clamp(Number(a.condition)||100,0,100);seaDistance+=d;seaTransport+=d*cap;const fuelTonnes=Math.max(0,Number(a.lastTrip?.fuelCost)||0)/bunker;seaFuelProxy+=fuelTonnes;const dwt=ciiDeadweight(a.specs);if(dwt>0&&fuelTonnes>0){const work=dwt*d/1.852;seaCo2+=fuelTonnes*CII_CO2_PER_TONNE*1e6;seaWork+=work;seaRefWork+=ciiReference(dwt)*work;}seaCondition+=cond;if(a.phase==='moving')movingSea++;
         seaCount++;if(Number(a.condition)<70)seaDryDock++;
       }else if(mode==='road'){roadCount++;if(Number(a.condition)<70)roadWeak++;if(Number(a.condition)<75)roadDamaged++;}
     };
@@ -195,9 +195,14 @@
     r.aviation.maintenanceReserveCoverage=maintExposure?clamp(maintReserve/maintExposure*100,0,250):100;r.aviation.healthMonitoringScore=clamp(r.aviation.dispatchReliability*.55+r.aviation.avgCondition*.35+Math.min(100,r.aviation.maintenanceReserveCoverage)*.10,0,100);
 
     const avgSea=seaCount?seaCondition/seaCount:100;r.maritime.utilization=seaCount?movingSea/seaCount*100:0;
-    r.maritime.fuelIntensity=seaTransport?seaFuelProxy/seaTransport*1e6:0;
-    const ageConditionPenalty=clamp((92-avgSea)/100,0,.5),utilPenalty=clamp(Math.abs(r.maritime.utilization-78)/100,0,.35),intensityBase=Math.max(.55,r.maritime.fuelIntensity||.85);
-    const simYear=Math.max(0,Math.floor(day/365));r.maritime.requiredCii=clamp(.90-simYear*.018,.72,.95);r.maritime.attainedCii=clamp(intensityBase*(1+ageConditionPenalty+utilPenalty*.15),.35,2.5);r.maritime.ciiRatio=r.maritime.attainedCii/Math.max(.01,r.maritime.requiredCii);
+    // Build 359: CII in its own units (IMO AER): grams of CO2 per deadweight tonne-mile, from each ship's last voyage
+    // (fuel tonnes = fuel cost / bunker price, 3.114 t CO2 per tonne of fuel; work = deadweight × nautical miles). The
+    // required value is the reference line for each ship's size (1984 × DWT^-0.489), weighted by its work, less the
+    // yearly reduction (5% in 2023, 2 points a year after). The old proxy had no units and sat on its 2.5 cap (ratio 2.78).
+    const simYear=Math.max(0,Math.floor(day/365)),calendarYear=CII_START_YEAR+simYear,reduction=clamp(.05+.02*(calendarYear-2023),0,.30);
+    r.maritime.fuelIntensity=seaWork?seaCo2/seaWork:0;r.maritime.attainedCii=seaWork?Math.round(seaCo2/seaWork*1000)/1000:0;
+    r.maritime.requiredCii=seaWork?Math.round(seaRefWork/seaWork*(1-reduction)*1000)/1000:0;r.maritime.ciiReduction=reduction;
+    r.maritime.ciiRatio=seaWork&&r.maritime.requiredCii>0?r.maritime.attainedCii/r.maritime.requiredCii:1;
     const ratio=r.maritime.ciiRatio;r.maritime.cii=ratio<=.82?'A':ratio<=.93?'B':ratio<=1.08?'C':ratio<=1.20?'D':'E';
     if(r.maritime.lastCiiYear!==simYear){const prev=r.maritime.ciiHistory[0];r.maritime.consecutiveD=r.maritime.cii==='D'?(prev?.rating==='D'?(Number(prev.consecutiveD)||1)+1:1):0;r.maritime.ciiHistory.unshift({year:simYear,rating:r.maritime.cii,ratio:r.maritime.ciiRatio,consecutiveD:r.maritime.consecutiveD});r.maritime.ciiHistory=r.maritime.ciiHistory.slice(0,8);r.maritime.lastCiiYear=simYear;}
     r.maritime.correctiveAction=r.maritime.cii==='E'||r.maritime.consecutiveD>=3;r.maritime.correctivePlanStatus=r.maritime.correctiveAction?'مطلوب':r.maritime.cii==='D'?`مراقبة D (${r.maritime.consecutiveD}/3)`:'غير مطلوب';
@@ -271,7 +276,7 @@
       }
     }
     const openClaims=claims.filter(c=>!['مدفوعة','مغلقة','مرفوضة'].includes(c.status)).length,paid=claims.filter(c=>c.status==='مدفوعة').reduce((n,c)=>n+(Number(c.paid)||0),0),reserve=claims.reduce((n,c)=>n+(Number(c.reserve)||0),0);
-    r.insurance.claimsTrend=clamp((100-condition)*.12+incidents*1.4+openClaims*.8,0,35);r.insurance.renewalIndex=clamp(92+r.insurance.claimsTrend*2+(r.risk.register.length*1.5)+(reserve?paid/Math.max(1,reserve)*12:0),75,190);
+    r.insurance.claimsTrend=clamp((100-condition)*.12+incidents*1.4+openClaims*.8,0,35);r.insurance.renewalIndex=clamp(92+r.insurance.claimsTrend*2+(r.risk.register.length*1.5)+(reserve?paid/Math.max(1,reserve)*12:0)+(Number(globalThis.GH_GOVERNANCE_CORE?.programEffects?.(state)?.insuranceIndex)||0),75,190);
   }
   function supplierScores(state){const r=migrate(state);for(const tx of (state.supplierTransactions||[])){const id=tx.supplierId||tx.supplier||'unknown';const x=r.procurement.supplierScores[id]||(r.procurement.supplierScores[id]={name:tx.supplier||id,spend:0,transactions:0,score:82});x.spend+=Number(tx.amount)||0;x.transactions++;x.score=clamp(88-rand(`${id}:${x.transactions}`,0,10),60,98);}}
   function deliveryAssets(delivery){return fleetData().receiptAssets(delivery);}
@@ -279,7 +284,7 @@
   function syncManualDeliveryPipeline(state,day){const r=migrate(state),deliveries=r.procurement.deliveries||[],existing=new Map((r.procurement.pipeline||[]).map(row=>[row.sourceId,row]));r.procurement.pipeline=deliveries.slice(-400).map(d=>{const prior=existing.get(d.id)||{},first=fleetData().receiptFirstAsset(d),company=assetOwnerCompanyId(state,first)||rowCompanyId(state,d,'');return {...prior,id:`PRC2-${d.id}`,sourceId:d.id,company,ownerCompanyId:company,title:first?.name||d.assetName||d.catalogId||d.id,count:deliveryUnitCount(d),stage:d.status==='delivered'?'Delivered':d.status==='cancelled'?'Cancelled':d.blockedReason?'Destination blocked':'Paid / Delivery',createdDay:Number.isFinite(Number(d.orderedDay))?Number(d.orderedDay):day,leadDays:Math.max(0,Math.ceil((Number(d.dueAtSeconds)-Number(d.orderedAtSeconds))/86400)||0),manual:true};});return r.procurement.pipeline;}
   function updateTaxFxAndDividends(state,day){const r=migrate(state),countries=new Set((state.globalBases||[]).map(x=>x.country||x.countryCode).filter(Boolean)),baseTax=.15+Math.min(.07,countries.size*.005);r.taxFx.taxRate=baseTax;r.taxFx.fxExposure=Math.max(0,(Number(state.debt)||0)*.28);delete r.taxFx.hedgedPct;const floor=r.risk.limits.minLiquidity,excess=Math.max(0,(Number(state.cash)||0)-floor);r.dividends.available=Math.round(excess*.35);}
   function updatePrograms(state,day){
-    const r=migrate(state);globalThis.GH_GOVERNANCE_CORE?.execute?.({state},'tick-sustainability',{day});
+    const r=migrate(state);globalThis.GH_GOVERNANCE_CORE?.execute?.({state},'tick-sustainability',{day});globalThis.GH_GOVERNANCE_CORE?.execute?.({state},'tick-research',{day});globalThis.GH_GOVERNANCE_CORE?.execute?.({state},'tick-cyber',{day});
     const research=state.research||{};r.controls.researchEffects={efficiency:clamp((Number(research.efficiency)||0)/100,0,1),automation:clamp((Number(research.automation)||0)/100,0,1),cleanEnergy:clamp((Number(research.cleanEnergy)||0)/100,0,1)};
   }
   function updateReputation(state){
@@ -435,27 +440,42 @@
   const INCIDENT_RATE=Object.freeze({air:.000044,sea:.000077,road:.00038}),PREMIUM_RATE=Object.freeze({air:.0035,sea:.006,road:.03}),INCIDENT_SEVERITY=.15,INCIDENT_SAMPLE=64,INCIDENT_DAMAGE_LIMIT=50;
   // The regulator: an annual operating licence per asset (AOC, ship registry, transport licence), and a monthly
   // inspection that fines a company whose fleet averages under 75% for each asset under 65%.
+  // Build 359: CII constants. Deadweight from the catalogue capacity: TEU about 13 t each, cubic metres of gas about
+  // 0.5 t, car decks about 2.5 t a car, cruise berths as 50 gross tonnes each (cruise CII uses gross tonnage); tugs are
+  // outside CII.
+  const CII_CO2_PER_TONNE=3.114,CII_START_YEAR=2026,CII_DWT_PER_UNIT=Object.freeze({'TEU':13,'طن':1,'م³':.5,'سيارات':2.5,'سيارة':2.5,'راكب':50});
+  function ciiDeadweight(specs){const per=CII_DWT_PER_UNIT[String(specs?.capacityUnit||'')];return per?Math.max(0,Number(specs?.capacity)||0)*per:0;}
+  function ciiReference(dwt){return 1984*Math.pow(Math.max(1,dwt),-.489);}
   const LICENCE_FEE=Object.freeze({air:25000,sea:15000,road:1200}),INSPECTION_FINE=Object.freeze({air:40000,sea:30000,road:5000}),INSPECTION_LINE=75,UNSAFE_CONDITION=65;
   const INSURANCE_COVERS=Object.freeze({none:{deductible:1,premium:0},standard:{deductible:.10,minimum:250000,premium:1},full:{deductible:.02,minimum:50000,premium:1.35}});
   function insuranceCover(state,companyId){const cover=state.advanced?.companies?.[companyId]?.insuranceCover;return Object.prototype.hasOwnProperty.call(INSURANCE_COVERS,cover)?cover:'standard';}
   function* runIncidents(state,maintenance,day){
     const r=migrate(state),fleet=fleetData(),F=globalThis.GH_FINANCE_CORE,stamp=Number(state.simSeconds)||0;r.incidents=Array.isArray(r.incidents)?r.incidents:[];
     state.advanced=state.advanced||{};const book=state.advanced.insurance=state.advanced.insurance&&typeof state.advanced.insurance==='object'?state.advanced.insurance:{claims:[],annualPremium:0};book.claims=Array.isArray(book.claims)?book.claims:[];
+    // Build 359: an active HSE corrective plan (governance safety-audit) lowers incident risk 15% and halves inspection fines.
+    state.advanced=state.advanced||{};const safety=state.advanced.safety=state.advanced.safety&&typeof state.advanced.safety==='object'?state.advanced.safety:{};const planActive=!!safety.plan&&day<=Number(safety.plan.untilDay),planRisk=planActive?.85:1,planFine=planActive?.5:1;
+    let fleetCount=0,unsafeCount=0;for(const acc of maintenance.companies.values()){fleetCount+=acc.count||0;unsafeCount+=acc.unsafe||0;}
     for(const [companyId,acc] of maintenance.companies){
-      if(!acc.count)continue;const cover=insuranceCover(state,companyId),terms=INSURANCE_COVERS[cover],wear=clamp((100-acc.conditionSum/acc.count)/100,0,.45),expected=acc.risk*(1+wear*6),draw=rand(`incident:${companyId}:${day}`),count=Math.floor(expected)+(draw<expected-Math.floor(expected)?1:0);
+      if(!acc.count)continue;const cover=insuranceCover(state,companyId),terms=INSURANCE_COVERS[cover],wear=clamp((100-acc.conditionSum/acc.count)/100,0,.45),expected=acc.risk*(1+wear*6)*planRisk,draw=rand(`incident:${companyId}:${day}`),count=Math.floor(expected)+(draw<expected-Math.floor(expected)?1:0);
       if(day%30===0&&terms.premium>0&&F?.execute){const premium=Math.round(acc.premium*terms.premium*clamp(r.insurance.renewalIndex||100,75,190)/100/12);if(premium>0)F.execute({state},'accrue-expense',{company:companyId,amount:premium,note:`قسط تأمين الأسطول الشهري · تغطية ${cover==='full'?'شاملة':'قياسية'}`,method:'فاتورة تأمين',taxable:false,dueDay:day+7,number:`PREM-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'شركة التأمين',line:'insurance'});}
       if(day>0&&day%365===0&&acc.licence>0&&F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:Math.round(acc.licence),note:`تجديد رخص التشغيل السنوية لـ ${acc.count} أصل`,method:'رسوم حكومية',taxable:false,dueDay:day+7,number:`LIC-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'هيئة النقل',line:'other'});
-      if(day%30===15&&acc.unsafe>0&&acc.conditionSum/acc.count<INSPECTION_LINE){const fine=Math.round(acc.fine);if(F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:fine,note:`غرامة تفتيش السلامة: ${acc.unsafe} أصل تحت ${UNSAFE_CONDITION}%`,method:'غرامة حكومية',taxable:false,dueDay:day+7,number:`FINE-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'هيئة السلامة',line:'other'});r.inspections=Array.isArray(r.inspections)?r.inspections:[];r.inspections.unshift({day,company:companyId,unsafe:acc.unsafe,fine,avgCondition:acc.conditionSum/acc.count});r.inspections=r.inspections.slice(0,60);}
+      if(day%30===15&&acc.unsafe>0&&acc.conditionSum/acc.count<INSPECTION_LINE){const fine=Math.round(acc.fine*planFine);if(F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:fine,note:`غرامة تفتيش السلامة: ${acc.unsafe} أصل تحت ${UNSAFE_CONDITION}%`,method:'غرامة حكومية',taxable:false,dueDay:day+7,number:`FINE-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'هيئة السلامة',line:'other'});r.inspections=Array.isArray(r.inspections)?r.inspections:[];r.inspections.unshift({day,company:companyId,unsafe:acc.unsafe,fine,avgCondition:acc.conditionSum/acc.count});r.inspections=r.inspections.slice(0,60);}
       if(!count)continue;
       const hit=[];for(let i=0;i<Math.min(count,INCIDENT_DAMAGE_LIMIT,acc.sample.length);i++){const pick=acc.sample[Math.floor(rand(`incident:${companyId}:${day}:${i}`)*acc.sample.length)%acc.sample.length];if(!hit.includes(pick))hit.push(pick);}
-      const average=acc.value/acc.count,loss=Math.round(count*average*INCIDENT_SEVERITY);for(const asset of hit)fleet.update(state,asset.id,{condition:55,lastIncidentAt:stamp});
+      const average=acc.value/acc.count,loss=Math.round(count*average*INCIDENT_SEVERITY*(Number(globalThis.GH_GOVERNANCE_CORE?.programEffects?.(state)?.incidentRepair)||1));for(const asset of hit)fleet.update(state,asset.id,{condition:55,lastIncidentAt:stamp});
       if(loss>0&&F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:loss,note:`إصلاح أضرار ${count===1?'حادث':`${count} حوادث`} · اليوم ${day}`,method:'فاتورة إصلاح',taxable:true,dueDay:day+7,number:`INC-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'ورش الإصلاح المعتمدة',line:'maintenance'});
       const deductible=terms.premium>0?Math.max(terms.minimum||0,loss*terms.deductible):loss,covered=Math.max(0,loss-deductible);let claimId=null;
       if(covered>0){claimId=`CLM-${String(companyId).toUpperCase()}-${day}`;book.claims.unshift({id:claimId,company:companyId,ownerCompanyId:companyId,openedAt:stamp,status:'قيد الفحص',loss,deductible,covered,reserve:covered,incidents:count});book.claims=book.claims.slice(0,200);}
-      state.advanced.safety=state.advanced.safety||{};state.advanced.safety.incidents=(Number(state.advanced.safety.incidents)||0)+count;
+
       r.incidents.unshift({day,company:companyId,count,loss,cover,deductible:Math.min(loss,deductible),covered,claimId,assets:hit.map(asset=>asset.id)});r.incidents=r.incidents.slice(0,120);
       yield 'realism.incidents';
     }
+    // Build 359: the safety score from ratios (share of assets under the unsafe line, incidents of the last 30 days per
+    // 1,000 assets), so a large fleet is not pinned at the floor; open findings are the unsafe assets now and close as
+    // they are maintained. The incident counter keeps only the last 30 days.
+    const recent=(r.incidents||[]).filter(row=>day-Number(row.day)<30).reduce((n,row)=>n+(Number(row.count)||0),0),perThousand=fleetCount?recent/fleetCount*1000:0;
+    safety.incidents=recent;safety.openFindings=unsafeCount;safety.unsafeShare=fleetCount?Math.round(unsafeCount/fleetCount*1000)/10:0;safety.incidentsPerThousand=Math.round(perThousand*100)/100;
+    safety.score=Math.round(clamp(100-safety.unsafeShare*.8-perThousand*4,0,100));safety.planActive=planActive;
   }
   // Crews (Build 358 step 3). Market wages rise about 3% a year (economy.wageIndex). A company's pay against them
   // (GH_HR_CORE.salaryMultiplier / wageIndex) sets how many of its crews quit (8% a year at market pay, more when
@@ -503,11 +523,12 @@
     // Migration/default expansion is a boot/day-boundary concern. Running it
     // once per asset per slice made large fleets repeatedly walk the complete
     // realism tree even though trip pricing only reads an already valid model.
-    const r=state.realism?.schema===SCHEMA?state.realism:migrate(state),e=r.economy,owner=assetOwnerCompanyId(state,asset),mode=assetMode(asset);if(!owner)throw new Error(`asset-company-invalid:${asset?.id||'unknown'}`);const share=r.market.share[owner]??r.market.share[mode]??5,pressure=r.market.competitorPressure[owner]??r.market.competitorPressure[mode]??50,rep=r.reputation[owner]??r.reputation[mode]??70;let demand=mode==='air'?e.airDemand:mode==='sea'?e.seaDemand:e.roadDemand;const demandFactor=clamp((demand/100)*(1+(rep-70)*.003)*(1+(share-5)*.006)*(1-(pressure-50)*.0015),.65,1.35);eco.revenue*=demandFactor;
+    const r=state.realism?.schema===SCHEMA?state.realism:migrate(state),e=r.economy,owner=assetOwnerCompanyId(state,asset),mode=assetMode(asset);if(!owner)throw new Error(`asset-company-invalid:${asset?.id||'unknown'}`);const share=r.market.share[owner]??r.market.share[mode]??5,pressure=r.market.competitorPressure[owner]??r.market.competitorPressure[mode]??50,rep=(r.reputation[owner]??r.reputation[mode]??70)+(Number(globalThis.GH_GOVERNANCE_CORE?.programEffects?.(state)?.reputation)||0);let demand=mode==='air'?e.airDemand:mode==='sea'?e.seaDemand:e.roadDemand;const demandFactor=clamp((demand/100)*(1+(rep-70)*.003)*(1+(share-5)*.006)*(1-(pressure-50)*.0015),.65,1.35);eco.revenue*=demandFactor;
     const S=globalThis.GH_SIMULATION_ASSET_CORE;eco.fuelCost*=S.fuelPriceFactor(e,mode,globalThis.GH_MARKET_CORE?.hedgeFor?.(state,owner,S.FUEL_OF_MODE[mode]||'diesel'));
     const research=state.research||{},eff=clamp((Number(research.efficiency)||0)/100,0,1),auto=clamp((Number(research.automation)||0)/100,0,1),clean=clamp((Number(research.cleanEnergy)||0)/100,0,1),su=state.sustainability||{};
-    eco.fuelCost*=1-eff*.055-clean*.018;eco.maintReserve*=1-eff*.045;eco.crewCost*=1-auto*.025;
-    if(mode==='air'&&(Number(su.safShare)||0)>0)eco.fuelCost*=1-Math.min(.03,(Number(su.safShare)||0)/100*.03);if(mode==='road'&&(Number(su.electricRoadShare)||0)>0)eco.fuelCost*=1-Math.min(.08,(Number(su.electricRoadShare)||0)/100*.08);
+    // Build 359: efficiency/automation research, SAF and electric road apply once, in GH_ADVANCED.adjustTripEconomics
+    // (as the worker's computeTripEconomics); only clean energy research is applied here.
+    eco.fuelCost*=1-clean*.018;
     eco.margin=eco.revenue-eco.fuelCost-eco.crewCost-eco.maintReserve-(Number(eco.fees)||0);eco.cashContribution=eco.revenue-eco.fuelCost-eco.maintReserve-(Number(eco.fees)||0);eco.market={demandFactor,share,pressure};eco.capabilityEffects={efficiencyResearch:eff,automationResearch:auto,cleanEnergyResearch:clean};return eco;
   }
   function metric(label,value,cls=''){return `<div><span>${esc(label)}</span><b class="${cls}">${esc(value)}</b></div>`;}

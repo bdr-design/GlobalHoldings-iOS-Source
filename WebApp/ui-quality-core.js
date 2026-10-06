@@ -18,8 +18,12 @@
     (state?.realism?.procurement?.deliveries||[]).filter(d=>d?.status!=='delivered'&&Number(d?.dueSimSeconds||Infinity)<now).forEach(d=>{const asset=(Array.isArray(d.assets)?d.assets:d.asset?[d.asset]:[])[0];out.push(task(`DEL:${d.id}`,`تسليم متأخر · ${asset?.model||d.catalogId||d.id}${Number(d.count||d.assets?.length)>1?` · ${Number(d.count||d.assets.length)} أصل`:''}`,'التشغيل','critical','procurement',d.destination||''));});
     const activeIssues=diag.activeIssues&&typeof diag.activeIssues==='object'?Object.values(diag.activeIssues):[];
     activeIssues.forEach(i=>out.push(task(`DIAG:${i.id||i.type}`,i.message||i.title||i.id||'مشكلة نظام','النظام',i.severity==='critical'?'critical':'high','diagnostics',i.detail||'')));
-    const safety=state?.advanced?.safety;if(Number(safety?.incidents)>0)out.push(task('SAFETY:INCIDENTS',`${safety.incidents} حوادث سلامة`,'الرقابة','critical','safety',''));
-    const cyber=state?.advanced?.cyber;if(Number(cyber?.incidents)>0)out.push(task('CYBER:INCIDENTS',`${cyber.incidents} حوادث سيبرانية`,'الرقابة','critical','cyber',''));
+    // Build 359: incidents of the last 30 game days, not the count since the game began (a permanent critical alarm).
+    // Safety is critical at 5 incidents per 1,000 assets in 30 days, a follow-up below that; any cyber outage is high.
+    const today=Math.floor(now/86400),recent=rows=>(Array.isArray(rows)?rows:[]).filter(row=>today-Number(row?.day)<30);
+    const safetyRows=recent(state?.realism?.incidents),safetyCount=safetyRows.reduce((n,row)=>n+(Number(row.count)||0),0),fleet=Math.max(1,Number(globalThis.GH_FLEET_DATA?.size?.(state))||0),perThousand=safetyCount/fleet*1000;
+    if(safetyCount>0)out.push(task('SAFETY:INCIDENTS',`${safetyCount} حادث سلامة في آخر 30 يومًا`,'الرقابة',perThousand>=5?'critical':'normal','safety',`${perThousand.toFixed(1)} لكل 1,000 أصل`));
+    const cyberRows=recent(state?.advanced?.cyber?.events);if(cyberRows.length)out.push(task('CYBER:INCIDENTS',`${cyberRows.length} حادث سيبراني في آخر 30 يومًا`,'الرقابة','high','cyber',''));
     const rank={critical:0,high:1,normal:2};return out.sort((a,b)=>(rank[a.priority]??9)-(rank[b.priority]??9)||a.domain.localeCompare(b.domain,'ar'));
   }
   function scan(root,panel,state){

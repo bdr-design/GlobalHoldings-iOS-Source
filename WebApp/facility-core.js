@@ -37,10 +37,12 @@ function ownerCompany(f){const explicit=explicitOwner(f);if(explicit)return expl
 function dailyOperatingCosts(state,{facilities}={}){
  const rows=facilities??[...(state.globalBases||[]),...(state.customHubs||[])];
  if(!Array.isArray(rows))throw new Error('facility-daily-cost-rows-invalid');
+ // Build 359: the renewable energy programme lowers every facility's running cost (up to 15% at full maturity).
+ const factor=Number(globalThis.GH_GOVERNANCE_CORE?.programEffects?.(state)?.facilityCost)||1;
  const byCompany=Object.create(null),byFacility=Object.create(null);let total=0;
  for(const row of rows){
   if(!row||row.owned!==true)continue;
-  const id=String(row.id||''),companyId=ownerCompany(row),amount=Number(row.dailyCost??0);
+  const id=String(row.id||''),companyId=ownerCompany(row),listed=Number(row.dailyCost??0),amount=Number.isFinite(listed)&&listed>=0?Math.round(listed*factor*100)/100:listed;
   if(!id||!Number.isFinite(amount)||amount<0)throw new Error(`facility-daily-cost-invalid:${id||'missing-id'}`);
   const previous=byFacility[id];
   if(previous){if(previous.ownerCompanyId!==companyId||previous.amount!==amount)throw new Error(`facility-daily-cost-conflict:${id}`);continue;}

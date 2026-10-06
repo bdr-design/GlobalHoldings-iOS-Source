@@ -31,7 +31,7 @@ console.log(JSON.stringify({result:'passed',registeredAttributes:allowed.length,
 // Catalogue entries are definitions, not funded operating companies. Rendering
 // them must not enter finance or create a registry/book merely to show a card.
 {
- const start=source.indexOf('  function renderCompanies('),end=source.indexOf('  function renderLeadershipHub(',start);
+ const start=source.indexOf('  function renderCompanies('),end=source.indexOf('  function renderActionCenter(',start);
  assert(start>=0&&end>start);
  let instances=[],calls=[];
  const render=vm.runInNewContext(source.slice(start,end)+'\nrenderCompanies',{

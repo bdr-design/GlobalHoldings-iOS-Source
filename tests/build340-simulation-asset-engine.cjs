@@ -55,7 +55,8 @@ function legacyEconomics(asset,tpl){
   revenue*=serviceRevenue;fuelCost*=fuelEfficiency*sustainabilityFuel;let maintenance=maintReserve*maintenanceEfficiency;const mode=asset.assetMode||asset.type,real=economicsState.realism,share=real.market.share.air??5,pressure=real.market.competitorPressure.air??50,rep=real.reputation.air??70,demand=real.economy.airDemand;
   const demandFactor=legacyClamp((demand/100)*(1+(rep-70)*.003)*(1+(share-5)*.006)*(1-(pressure-50)*.0015),.65,1.35);revenue*=demandFactor;fuelCost*=real.economy.jetFuel/.86;
   const eff=legacyClamp((Number(economicsState.research.efficiency)||0)/100,0,1),auto=legacyClamp((Number(economicsState.research.automation)||0)/100,0,1),clean=legacyClamp((Number(economicsState.research.cleanEnergy)||0)/100,0,1);
-  fuelCost*=1-eff*.055-clean*.018;maintenance*=1-eff*.045;let adjustedCrew=crewCost*(1-auto*.025);if((Number(su.safShare)||0)>0)fuelCost*=1-Math.min(.03,(Number(su.safShare)||0)/100*.03);
+  // Build 359: research and SAF apply once (fuelEfficiency, maintenanceEfficiency, sustainabilityFuel); only clean energy research is applied here.
+  fuelCost*=1-clean*.018;const adjustedCrew=crewCost;
   const margin=revenue-fuelCost-adjustedCrew-maintenance-fees;return {revenue,fuelCost,crewCost:adjustedCrew,fees,payrollAllocation,fixedMonthlyPayroll:monthlyPayroll,maintReserve:maintenance,margin,cashContribution:revenue-fuelCost-maintenance-fees,hours,distanceKm,modifiers:{serviceRevenue,fuelEfficiency,crewEfficiency,maintenanceEfficiency},market:{demandFactor,share,pressure},capabilityEffects:{efficiencyResearch:eff,automationResearch:auto,cleanEnergyResearch:clean}};
 }
 function legacyDepart(asset,tpl){

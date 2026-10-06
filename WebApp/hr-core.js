@@ -49,19 +49,6 @@
   // Build 358 (million-asset): whether any asset belongs to an owner, counted per class of rows (one cached class scan
   // per fleet revision) instead of visiting every asset until one matches.
   const ownsAssets=(s,owner)=>(fleetData().countByFields(s,['ownerCompanyId','companyId','assetMode','type'],assetOwner).get(owner)||0)>0;
-  const EXECUTIVE_RULES=Object.freeze({
-    H3:()=>true,
-    H4:s=>ownsAssets(s,'air')||(s.globalBases||[]).some(f=>facilityOwner(f)==='air'),
-    H2:s=>ownsAssets(s,'sea')||(s.globalBases||[]).some(f=>facilityOwner(f)==='sea'),
-    H1:s=>ownsAssets(s,'road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
-    H6:s=>ownsAssets(s,'road')||(s.customHubs||[]).some(f=>facilityOwner(f)==='road'),
-    H5:s=>(s.acceptedContracts||[]).length>0,
-    H7:s=>Object.values(s.stakes||{}).some(v=>Number(v)>0),
-    H8:s=>(s.openedCompanies||[]).includes('power'),
-    H9:s=>(s.openedCompanies||[]).includes('bank'),
-    H10:s=>(s.openedCompanies||[]).includes('bank'),
-    H11:s=>(s.openedCompanies||[]).includes('power')
-  });
   const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
   const day=s=>Math.floor((Number(s?.simSeconds)||0)/86400);
   function stableHash(value){let hash=2166136261;for(let index=0;index<String(value||'').length;index++){hash^=String(value).charCodeAt(index);hash=Math.imul(hash,16777619);}return hash>>>0;}
@@ -78,14 +65,15 @@
   }
   function nextId(state,prefix){state.sequences=state.sequences&&typeof state.sequences==='object'?state.sequences:{};const k=`hrCore_${prefix}`;state.sequences[k]=(Number(state.sequences[k])||0)+1;return `${prefix}-${String(state.sequences[k]).padStart(6,'0')}`;}
 
-  function retireLegacyBankCEO(state,hr){
-    const manager=hr.officialManagers.bank;
-    if(manager?.status!=='ساري'||!hr.employmentContracts.some(c=>c.id===manager.contractId&&c.status==='ساري'))return;
-    const wasHired=(state.hired||[]).includes('H9');
-    state.hired=(state.hired||[]).filter(id=>id!=='H9');
-    for(const c of hr.employmentContracts)if(c.candidateId==='H9'&&c.status==='ساري'){c.status='منتهي';c.endedDay=day(state);c.endReason='انتقال منصب الرئيس التنفيذي إلى المدير الرسمي';}
-    if(wasHired)hr.managerHistory.unshift({candidateId:'H9',company:'bank',name:'نورة المنصور',status:'منتهي',endedDay:day(state),endReason:'تعيين المدير الرسمي'});
-    hr.managerHistory=hr.managerHistory.slice(0,100);
+  // Build 359: the legacy executive roster (state.hired, catalogue H1-H11) is retired. Each company's official manager
+  // carries the leadership and its effect; the legacy contracts end once, with a dated reason and one notice.
+  function retireLegacyExecutives(state,hr){
+    if(hr.legacyRosterRetired===true&&!(Array.isArray(state.hired)&&state.hired.length))return;hr.legacyRosterRetired=true;
+    const hired=Array.isArray(state.hired)?state.hired.slice():[];state.hired=[];
+    let ended=0;for(const c of hr.employmentContracts)if(c.candidateId&&!c.officialManager&&c.status==='ساري'){c.status='منتهي';c.endedDay=day(state);c.endReason='إلغاء نظام القيادات القديم؛ المدير الرسمي لكل شركة يغطي القيادة';ended++;}
+    if(!hired.length&&!ended)return;
+    hr.managerHistory.unshift({candidateId:'legacy-executives',company:'group',name:`${Math.max(hired.length,ended)} قيادات سابقة`,status:'منتهي',endedDay:day(state),endReason:'إلغاء نظام القيادات القديم'});hr.managerHistory=hr.managerHistory.slice(0,100);
+    hr.legacyExecutivesRetired={day:day(state),count:Math.max(hired.length,ended),notified:false};
   }
   function ensure(state){
     state.advanced=state.advanced||{};
@@ -101,7 +89,7 @@
     hr.salaryPolicy=hr.salaryPolicy&&typeof hr.salaryPolicy==='object'&&!Array.isArray(hr.salaryPolicy)?hr.salaryPolicy:{};
     const companyIds=platform()?.listInstances?.(state).filter(company=>company.known).map(company=>company.id)||['group',...MANAGER_COMPANIES];for(const company of companyIds){const policy=hr.salaryPolicy[company]=hr.salaryPolicy[company]&&typeof hr.salaryPolicy[company]==='object'?hr.salaryPolicy[company]:{};policy.salaryIndex=Math.max(.5,Math.min(3,Number(policy.salaryIndex)||1));policy.lastRaisePct=Number.isFinite(Number(policy.lastRaisePct))?Number(policy.lastRaisePct):0;policy.lastRaiseDay=Math.max(0,Math.floor(Number(policy.lastRaiseDay)||0));policy.history=Array.isArray(policy.history)?policy.history:[];}
     hr.policy=hr.policy&&typeof hr.policy==='object'?hr.policy:{approvalMode:'executive-authorization',contractMonths:24,minimumCoverage:100};
-    retireLegacyBankCEO(state,hr);return hr;
+    retireLegacyExecutives(state,hr);return hr;
   }
   function companyOfFacility(f){const owner=facilityOwner(f);if(owner)return owner;if(f?.kind==='airport-base')return'air';if(f?.kind==='port-base')return'sea';if(['depot','logistics'].includes(f?.kind))return'road';if(f?.kind==='mobility-center')return'mobility';if(f?.kind==='power')return'power';if(f?.kind==='bank')return'bank';return'group';}
   function facilityNeed(f){const base=FACILITY_STANDARDS[f?.kind]||12,cap=Number(f?.bays||f?.capacityMW||0),scale=f?.kind==='power'?Math.ceil(cap/250)*4:['depot','logistics'].includes(f?.kind)?Math.ceil(cap/20)*3:f?.kind==='mobility-center'?Math.ceil(cap/40)*2:0;return Math.max(base,base+scale);}
@@ -110,19 +98,8 @@
     for(const f of facilities){const owner=companyOfFacility(f);if(company!=='all'&&owner!==company)continue;const needed=facilityNeed(f),have=Math.max(0,Number(state.advanced.facilities?.[f.id]?.staff)||0),missing=Math.max(0,needed-have);rows.push({kind:'facility',company:owner,facilityId:f.id,name:f.name||f.id,needed,have,missing});}
     return rows;
   }
-  function executiveOwner(id){if(id==='H4')return'air';if(id==='H2')return'sea';if(['H1','H6'].includes(id))return'road';if(id==='H8'||id==='H11')return'power';if(id==='H9'||id==='H10')return'bank';return'group';}
-  function executiveGaps(state,ctx,company='all'){
-    const catalog=Array.isArray(ctx?.candidates)?ctx.candidates:[],rows=[];
-    for(const [id,rule] of Object.entries(EXECUTIVE_RULES)){
-      if(!rule(state))continue;if(id==='H9'&&officialManager(state,'bank'))continue;
-      const owner=executiveOwner(id);if(company!=='all'&&company!==owner)continue;
-      const candidate=catalog.find(row=>row?.id===id),have=(state.hired||[]).includes(id)?1:0;
-      rows.push({kind:'executive',company:owner,candidateId:id,name:candidate?.name||id,role:candidate?.role||'تعريف المرشح مفقود',needed:1,have,missing:have?0:1,salary:Number(candidate?.salary)||0,catalogMissing:!candidate});
-    }
-    return rows;
-  }
   function snapshot(state,ctx={},company='all'){
-    ensure(state);const crew=[],facilities=facilityGaps(state,ctx,company),executives=executiveGaps(state,ctx,company),all=[...facilities,...executives],gaps=all.filter(x=>x.missing>0);
+    ensure(state);const crew=[],facilities=facilityGaps(state,ctx,company),executives=[],all=[...facilities],gaps=all.filter(x=>x.missing>0);
     const crewMissing=0,facilityMissing=facilities.reduce((n,x)=>n+x.missing,0),executiveMissing=executives.reduce((n,x)=>n+x.missing,0),total=facilityMissing+executiveMissing;
     const filled=all.reduce((n,x)=>n+Math.min(x.have,x.needed),0),required=all.reduce((n,x)=>n+x.needed,0),coverage=required?Math.round(filled/required*100):100;
     return {company,crew,facilities,executives,gaps,crewMissing,facilityMissing,executiveMissing,total,required,filled,coverage};
@@ -140,16 +117,16 @@
   function officialManager(state,company){const hr=ensure(state),key=String(company||'');try{requireManagerCompany(state,key,{operational:false});}catch(_error){return null;}const row=hr.officialManagers[key];if(!row||row.status!=='ساري')return null;const contractRow=(hr.employmentContracts||[]).find(c=>c.id===row.contractId&&c.status==='ساري');if(!contractRow){row.status='منتهي';row.endedDay=day(state);row.endReason='انتهاء/فقد عقد المدير الرسمي';delete hr.officialManagers[key];return null;}return clone(row);}
   function officialManagerCandidates(state,company){ensure(state);const key=String(company||'');try{requireManagerCompany(state,key);}catch(_error){return [];}const current=officialManager(state,key);return managerCandidateRows(state,key).map(c=>({...clone(c),company:key,appointed:current?.candidateId===c.id}));}
   function appointOfficialManager(state,p={}){const hr=ensure(state),company=String(p.company||''),candidateId=String(p.candidateId||'');requireManagerCompany(state,company);const candidate=managerCandidateRows(state,company).find(c=>c.id===candidateId);if(!candidate)throw new Error('official-manager-candidate-invalid');const current=officialManager(state,company);if(current?.candidateId===candidateId)return {appointment:clone(current),candidate:clone(candidate),idempotent:true};if(current){const oldContract=hr.employmentContracts.find(c=>c.id===current.contractId&&c.status==='ساري');if(oldContract){oldContract.status='منتهي';oldContract.endedDay=day(state);oldContract.endReason='استبدال المدير الرسمي';}current.status='منتهي';current.endedDay=day(state);current.endReason='استبدال المدير الرسمي';hr.managerHistory.unshift(clone(current));}
-    const appointmentId=nextId(state,'MGR'),row={id:appointmentId,company,ownerCompanyId:company,definitionId:candidate.definitionId||platform()?.definitionFor?.(state,company)?.definitionId||null,managerRoleProfileId:candidate.managerRoleProfileId||platform()?.definitionFor?.(state,company)?.hr?.managerRoleProfileId||null,candidateId:candidate.id,name:candidate.name,role:candidate.role,city:candidate.city,nationality:candidate.nationality,salary:candidate.salary,skill:candidate.skill,experience:candidate.experience,specialty:candidate.specialty,style:candidate.style,appointedDay:day(state),status:'ساري',source:String(p.source||'تعيين مدير رسمي')};const c=contract(state,{company,candidateId:candidate.id,name:candidate.name,role:`${candidate.role} — ${company}`,count:1,center:String(p.center||'المقر الرئيسي للشركة'),salary:candidate.salary,termMonths:Math.max(12,Math.floor(Number(p.termMonths)||48)),source:row.source,officialManager:true,appointmentId});row.contractId=c.id;hr.officialManagers[company]=row;retireLegacyBankCEO(state,hr);hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company,source:row.source,total:1,action:'official-manager-appointed',candidateId:candidate.id,appointmentId});hr.hiringLog=hr.hiringLog.slice(0,200);hr.managerHistory=hr.managerHistory.slice(0,100);return {appointment:clone(row),candidate:clone(candidate),contract:clone(c),idempotent:false};}
+    const appointmentId=nextId(state,'MGR'),row={id:appointmentId,company,ownerCompanyId:company,definitionId:candidate.definitionId||platform()?.definitionFor?.(state,company)?.definitionId||null,managerRoleProfileId:candidate.managerRoleProfileId||platform()?.definitionFor?.(state,company)?.hr?.managerRoleProfileId||null,candidateId:candidate.id,name:candidate.name,role:candidate.role,city:candidate.city,nationality:candidate.nationality,salary:candidate.salary,skill:candidate.skill,experience:candidate.experience,specialty:candidate.specialty,style:candidate.style,appointedDay:day(state),status:'ساري',source:String(p.source||'تعيين مدير رسمي')};const c=contract(state,{company,candidateId:candidate.id,name:candidate.name,role:`${candidate.role} — ${company}`,count:1,center:String(p.center||'المقر الرئيسي للشركة'),salary:candidate.salary,termMonths:Math.max(12,Math.floor(Number(p.termMonths)||48)),source:row.source,officialManager:true,appointmentId});row.contractId=c.id;hr.officialManagers[company]=row;retireLegacyExecutives(state,hr);hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company,source:row.source,total:1,action:'official-manager-appointed',candidateId:candidate.id,appointmentId});hr.hiringLog=hr.hiringLog.slice(0,200);hr.managerHistory=hr.managerHistory.slice(0,100);return {appointment:clone(row),candidate:clone(candidate),contract:clone(c),idempotent:false};}
   function dismissOfficialManager(state,p={}){const hr=ensure(state),company=String(p.company||'');requireManagerCompany(state,company);const current=officialManager(state,company);if(!current)return {dismissed:false,idempotent:true};const c=hr.employmentContracts.find(x=>x.id===current.contractId&&x.status==='ساري');if(c){c.status='منتهي';c.endedDay=day(state);c.endReason=String(p.reason||'إنهاء تكليف المدير الرسمي');}const ended={...current,status:'منتهي',endedDay:day(state),endReason:String(p.reason||'إنهاء تكليف المدير الرسمي')};hr.managerHistory.unshift(ended);delete hr.officialManagers[company];hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company,source:'إنهاء تكليف مدير رسمي',total:0,action:'official-manager-dismissed',candidateId:current.candidateId,appointmentId:current.id});hr.hiringLog=hr.hiringLog.slice(0,200);hr.managerHistory=hr.managerHistory.slice(0,100);return {dismissed:true,appointment:clone(ended)};}
   function executeHiring(state,ctx={},company='all',source='تفويض HR رسمي',scope='all'){
     const before=snapshot(state,ctx,company),hr=ensure(state),allow=k=>scope==='all'||scope===k;
-    if(!['all','crew','facility','executive'].includes(scope))throw new Error('hr-scope-invalid');
+    // Build 359: the legacy executive roster is retired; hiring by its scope is refused rather than reported complete.
+    if(scope==='executive')throw new Error('legacy-executives-retired');
+    if(!['all','crew','facility'].includes(scope))throw new Error('hr-scope-invalid');
     if(scope==='crew')throw new Error('asset-crew-is-automatic');
-    if(allow('executive')&&before.executives.some(row=>row.catalogMissing))throw new Error('hr-candidate-catalog-incomplete');
     const result={crew:[],facilities:[],executives:[],total:0,coverageBefore:before.coverage,coverageAfter:before.coverage,scope};
     state.advanced.facilities=state.advanced.facilities||{};if(allow('facility'))for(const gap of before.facilities.filter(x=>x.missing>0&&(!ctx.facilityId||x.facilityId===ctx.facilityId))){const m=state.advanced.facilities[gap.facilityId]||(state.advanced.facilities[gap.facilityId]={staff:0,departments:{operations:75,finance:70,hr:70,commercial:70,maintenance:75,security:75}});m.staff=(Number(m.staff)||0)+gap.missing;contract(state,{company:gap.company,name:`${gap.missing} × فريق ${gap.name}`,role:'تشغيل منشأة',count:gap.missing,center:gap.name,salary:5200,source});result.facilities.push({...gap,count:gap.missing});result.total+=gap.missing;}
-    state.hired=Array.isArray(state.hired)?state.hired:[];if(allow('executive'))for(const gap of before.executives.filter(x=>x.missing>0)){const c=(ctx.candidates||[]).find(x=>x.id===gap.candidateId);if(!c||state.hired.includes(c.id))continue;state.hired.push(c.id);contract(state,{company:gap.company,candidateId:c.id,name:c.name,role:c.role,count:1,salary:c.salary,source});result.executives.push(c);result.total++;}
     const after=snapshot(state,ctx,company);result.coverageAfter=after.coverage;result.ok=true;result.status='completed';result.missingAfter=after.gaps.filter(g=>g.kind!=='crew'&&allow(g.kind)&&(!ctx.facilityId||g.kind!=='facility'||g.facilityId===ctx.facilityId)).reduce((n,g)=>n+g.missing,0);if(result.missingAfter)throw new Error('hr-hiring-incomplete');hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company,source,total:result.total,coverageBefore:before.coverage,coverageAfter:after.coverage});hr.hiringLog=hr.hiringLog.slice(0,200);return result;
   }
   function createRequisition(state,ctx={},company='all',source='manual'){
@@ -168,7 +145,7 @@
   // how many crews quit and how fast they are replaced (GH_REALISM updateCrews).
   const SALARY_LEVELS=Object.freeze([.9,.95,1,1.05,1.1,1.15,1.2,1.3]);
   function setSalaryIndex(state,p){const hr=ensure(state),company=salaryCompany(state,p.company),index=Number(p.index);if(!SALARY_LEVELS.includes(index))throw new Error('salary-index-invalid');const policy=hr.salaryPolicy[company],day=Math.floor((Number(state.simSeconds)||0)/86400),before=policy.salaryIndex;policy.lastRaisePct=Math.round((index/before-1)*1e4)/100;policy.lastRaiseDay=day;policy.salaryIndex=index;policy.history.unshift({day,from:before,to:index});policy.history=policy.history.slice(0,24);return {company,index,from:before};}
-  function execute(ctx,cmd,p={}){const state=ctx.state||ctx;if(cmd==='tick-day')return tickDay(state,p.day);if(cmd==='set-salary-index')return setSalaryIndex(state,p);if(cmd==='appoint-official-manager')return appointOfficialManager(state,p);if(cmd==='dismiss-official-manager')return dismissOfficialManager(state,p);if(cmd==='hire')return executeHiring(state,ctx,p.company||'all',p.source||'HR Domain Command',p.scope||'all');if(cmd==='hire-executive'){const hr=ensure(state),id=String(p.candidateId||''),c=(ctx.candidates||p.candidates||[]).find(x=>x.id===id);if(!c)throw new Error('candidate-not-found');if(id==='H9'&&officialManager(state,'bank'))throw new Error('منصب الرئيس التنفيذي مشغول بالمدير الرسمي');state.hired=Array.isArray(state.hired)?state.hired:[];if(state.hired.includes(id))throw new Error('candidate-already-hired');state.hired.push(id);const row=contract(state,{company:p.company||'group',candidateId:id,name:c.name,role:c.role,count:1,center:p.center||'المقر الرئيسي',salary:c.salary,source:p.source||'HR executive recruitment'});hr.hiringLog.unshift({id:nextId(state,'HR-ACT'),at:Number(state.simSeconds)||0,company:p.company||'group',source:p.source||'HR executive recruitment',total:1,candidateId:id});hr.hiringLog=hr.hiringLog.slice(0,200);return {candidate:c,contract:row};}if(cmd==='requisition')return createRequisition(state,ctx,p.company||'all',p.source||'domain');throw new Error(`Unknown HR command: ${cmd}`);}
+  function execute(ctx,cmd,p={}){const state=ctx.state||ctx;if(cmd==='tick-day')return tickDay(state,p.day);if(cmd==='set-salary-index')return setSalaryIndex(state,p);if(cmd==='appoint-official-manager')return appointOfficialManager(state,p);if(cmd==='dismiss-official-manager')return dismissOfficialManager(state,p);if(cmd==='hire')return executeHiring(state,ctx,p.company||'all',p.source||'HR Domain Command',p.scope||'all');if(cmd==='hire-executive')throw new Error('legacy-executives-retired');if(cmd==='requisition')return createRequisition(state,ctx,p.company||'all',p.source||'domain');throw new Error(`Unknown HR command: ${cmd}`);}
   const API={VERSION,SALARY_LEVELS,managerSkill,MANAGER_COMPANIES,OFFICIAL_MANAGER_CANDIDATES,MANAGER_CANDIDATE_POOL,ensure,snapshot,health,createRequisition,executeHiring,officialManager,officialManagerCandidates,appointOfficialManager,dismissOfficialManager,facilityNeed,companyOfFacility,tickDay,salaryMultiplier,salaryHistory,execute};
   globalThis.GH_HR_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('hr',API);if(globalThis.window&&window!==globalThis)window.GH_HR_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

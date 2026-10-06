@@ -42,7 +42,7 @@ fs.mkdirSync(out,{recursive:true});
       assert.equal(await page.locator('#drawerBody [data-companytab="holding"].active').count(),1);
       assert.equal(await page.locator('#drawerBody .company-visual-grid').count(),0);
      }else{
-      const tabs=[['jobs','الوظائف والاحتياج'],['managers','مديرو الشركات'],['recruitment','الاستقطاب'],['contracts','العقود'],['payroll','الرواتب'],['dashboard','لوحة HR']];
+      const tabs=[['jobs','الوظائف والاحتياج'],['managers','مديرو الشركات'],['contracts','العقود'],['payroll','الرواتب'],['dashboard','لوحة HR']];
       for(const [id,label] of tabs){
        await click(page.locator('.side-nav [data-panel=leadershipHub]'));
        await click(page.locator('#drawerBody .command-btn[data-open="peopleHub"]'));

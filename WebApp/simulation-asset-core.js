@@ -154,16 +154,19 @@
     const maintenanceEfficiency=1-Math.min(.08,(automation/100)*.04+(number(research.efficiency)/100)*.025);
     const mode=assetMode(asset),economy=ctx.economy||{},market=ctx.market||{},shareMap=market.share||{},pressureMap=market.competitorPressure||{},reputation=ctx.reputation||{};
     const sustainabilityFuel=mode==='air'?1-Math.min(.06,number(sustainability.safShare)*.0004):mode==='sea'?1-Math.min(.05,number(sustainability.shorePower)*.00025):1-Math.min(.08,number(sustainability.electricRoadShare)*.00045);
-    const share=number(shareMap[owner]??shareMap[mode],5),pressure=number(pressureMap[owner]??pressureMap[mode],50),rep=number(reputation[owner]??reputation[mode],70);
+    // Build 359: the ESG score adds reputation (sustainability.reputationBonus) and the circular economy programme lowers
+    // the maintenance reserve (sustainability.maintenanceFactor); both 0/1 for a context without them.
+    const share=number(shareMap[owner]??shareMap[mode],5),pressure=number(pressureMap[owner]??pressureMap[mode],50),rep=number(reputation[owner]??reputation[mode],70)+number(sustainability.reputationBonus,0),programMaintenance=Number.isFinite(Number(sustainability.maintenanceFactor))?Number(sustainability.maintenanceFactor):1;
     const demand=mode==='air'?number(economy.airDemand,100):mode==='sea'?number(economy.seaDemand,100):number(economy.roadDemand,100);
     const demandFactor=clamp((demand/100)*(1+(rep-70)*.003)*(1+(share-5)*.006)*(1-(pressure-50)*.0015),.65,1.35);
-    revenue*=serviceRevenue*demandFactor*wearRevenue*flown*managed;fuelCost*=fuelEfficiency*sustainabilityFuel*wearFuel*flown;fees*=flown;crewCost*=crewEfficiency;let maintenance=maintReserve*maintenanceEfficiency*flown;
+    revenue*=serviceRevenue*demandFactor*wearRevenue*flown*managed;fuelCost*=fuelEfficiency*sustainabilityFuel*wearFuel*flown;fees*=flown;crewCost*=crewEfficiency;let maintenance=maintReserve*maintenanceEfficiency*programMaintenance*flown;
     const economyFuel=fuelPriceFactor(economy,mode,ctx.fuelHedges?.[owner]?.[FUEL_OF_MODE[mode]||'diesel']);
     fuelCost*=economyFuel;
+    // Build 359: research and sustainability apply once (fuelEfficiency, maintenanceEfficiency, sustainabilityFuel above);
+    // a second layer here applied efficiency research, SAF and electric road again. Clean energy research has no other
+    // place, so it stays here alone.
     const researchEfficiency=clamp(number(research.efficiency)/100,0,1),researchAutomation=clamp(number(research.automation)/100,0,1),cleanEnergy=clamp(number(research.cleanEnergy)/100,0,1);
-    fuelCost*=1-researchEfficiency*.055-cleanEnergy*.018;maintenance*=1-researchEfficiency*.045;crewCost*=1-researchAutomation*.025;
-    if(mode==='air'&&number(sustainability.safShare)>0)fuelCost*=1-Math.min(.03,number(sustainability.safShare)/100*.03);
-    if(mode==='road'&&number(sustainability.electricRoadShare)>0)fuelCost*=1-Math.min(.08,number(sustainability.electricRoadShare)/100*.08);
+    fuelCost*=1-cleanEnergy*.018;
     const margin=revenue-fuelCost-crewCost-maintenance-fees;
     return {revenue,fuelCost,crewCost,fees,payrollAllocation,fixedMonthlyPayroll:monthlyPayroll,maintReserve:maintenance,margin,cashContribution:revenue-fuelCost-maintenance-fees,hours,distanceKm,modifiers:{serviceRevenue,fuelEfficiency,crewEfficiency,maintenanceEfficiency},market:{demandFactor,share,pressure},capabilityEffects:{efficiencyResearch:researchEfficiency,automationResearch:researchAutomation,cleanEnergyResearch:cleanEnergy}};
   }
@@ -203,7 +206,9 @@
       const progress=clamp(number(asset.progress),0,1),timeToArrival=Math.max(0,(1-progress)*duration),travel=Math.min(remaining,timeToArrival),delta=duration>0?travel/duration:0;
       asset.progress=clamp(progress+delta,0,1);asset.fuel=clamp(asset.fuel-delta*(asset.type==='air'?55:asset.type==='sea'?43:49),4,100);asset.condition=clamp(asset.condition-delta*(asset.type==='air'?.08:asset.type==='sea'?.05:.11),55,100);
       remaining=Math.max(0,remaining-travel);if(asset.progress<1-1e-9)break;
-      asset.progress=1;asset.phase='turnaround';asset.dwellRemaining=Math.max(0,number(route.dwellHours))*3600+Math.max(0,number(row.departureDelay));asset.departureScheduled=true;asset.departureScheduledAt=Math.max(0,(number(simMeta.to)||number(ctx.simSeconds))-remaining)+asset.dwellRemaining;
+      // Build 359: an understaffed arrival base turns assets round slower (ctx.baseDwellFactor, from HR coverage).
+      const dwellFactor=Math.max(1,Math.min(2,number(ctx.baseDwellFactor?.[asset.reverse?route.fromFacility:route.toFacility],1)));
+      asset.progress=1;asset.phase='turnaround';asset.dwellRemaining=Math.max(0,number(route.dwellHours))*3600*dwellFactor+Math.max(0,number(row.departureDelay));asset.departureScheduled=true;asset.departureScheduledAt=Math.max(0,(number(simMeta.to)||number(ctx.simSeconds))-remaining)+asset.dwellRemaining;
       asset.baseFacility=asset.reverse?route.fromFacility:route.toFacility;
       const eco=computeTripEconomics(asset,route,ctx);asset.lastTrip=eco;lastEco=eco;completedTrips++;totalTripMargin+=number(eco.margin);
       const ownerCompanyId=assetOwner(asset);if(!ownerCompanyId)throw new Error(`asset-owner-company-missing:${asset.id}`);
