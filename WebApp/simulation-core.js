@@ -59,10 +59,14 @@
       version:VERSION,frames:0,slices:0,chunks:0,hours:0,days:0,conflicts:0,cancels:0,
       maxChunkMs:0,lastChunkMs:0,longTasks:0,hardTasks:0,droppedRealSeconds:0,backlogClamps:0,
       maxCreateMs:0,lastCreateMs:0,maxFinishMs:0,lastFinishMs:0,maxCycleMs:0,lastCycleMs:0,
+      maxMaintenanceMs:0,lastMaintenanceMs:0,maxRenderMs:0,lastRenderMs:0,lastFrame:null,maxFrame:null,
       lastError:'',lastBoundary:'',lastSliceSeconds:0,lastMaintenanceHour:-1,lastCancelReason:'',lastCommitReason:'',lastWorkStage:'',governor:'GREEN',avgChunkMs:0,avgWorkMs:0,
       manualFailures:0,manualThrottleYields:0,lastAdvanceFailure:null,lastProgressSim:Math.max(0,Number(adapter.getSimTime())||0),lastProgressAt:clock()
     };
     let job=null,jobSlice=0,jobStart=0,jobSpeed=0,jobBoundary=null,jobWorkMs=0,jobReadyToFinish=false,manualAdvance=null;
+    // Build 359: where a frame's simulation time goes (create, chunks, finish, the host's maintenance and render callbacks),
+    // so a slow frame names its stage in diagnostics. Measurement only; no decision reads it.
+    let frameStages=null;const addFrameStage=(key,ms)=>{if(frameStages)frameStages[key]+=Math.max(0,Number(ms)||0);};
     let hardTaskStreak=0,conflictStreak=0,lastObservedSpeed=null,throttlePending=null;const durationSamples=[],workSamples=[];let lastGovernor='GREEN';
     let lastHourCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/3600);
     let lastDayCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/86400);
@@ -109,7 +113,7 @@
     // eight full-state transactions per real second as older builds did.
     const quantum=s=>Math.max(1e-6,Math.min(3600,Math.max(1,s)*cfg.quantumRealSeconds));
     function observeWork(stage,took,speed){
-      took=Math.max(0,Number(took)||0);health.lastWorkStage=stage;workSamples.push(took);if(workSamples.length>40)workSamples.shift();health.avgWorkMs=workSamples.reduce((a,b)=>a+b,0)/Math.max(1,workSamples.length);
+      took=Math.max(0,Number(took)||0);health.lastWorkStage=stage;addFrameStage(`${stage}Ms`,took);workSamples.push(took);if(workSamples.length>40)workSamples.shift();health.avgWorkMs=workSamples.reduce((a,b)=>a+b,0)/Math.max(1,workSamples.length);
       if(stage==='create'){health.lastCreateMs=took;health.maxCreateMs=Math.max(health.maxCreateMs,took);}else if(stage==='finish'){health.lastFinishMs=took;health.maxFinishMs=Math.max(health.maxFinishMs,took);}
       if(took>=cfg.longTaskWarnMs){health.longTasks++;hardTaskStreak++;}else hardTaskStreak=0;if(took>=cfg.hardTaskMs)health.hardTasks++;
       const pressure=Math.max(health.avgWorkMs,took),governor=pressure>=cfg.hardTaskMs?'RED':pressure>=cfg.longTaskWarnMs?'ORANGE':pressure>=cfg.frameBudgetMs?'YELLOW':'GREEN';health.governor=governor;
@@ -227,7 +231,9 @@
       if(committedBoundary.hour!==null&&committedBoundary.hour>lastHourCommitted){lastHourCommitted=committedBoundary.hour;health.hours++;health.lastBoundary=`hour:${committedBoundary.hour}`;}
       if(committedBoundary.hour!==null&&committedBoundary.hour-health.lastMaintenanceHour>=cfg.maintenanceEveryHours){
         health.lastMaintenanceHour=committedBoundary.hour;
+        const maintenanceStart=clock();
         try{adapter.onMaintenance?.(committedBoundary.hour,{time:committedTo,speed});}catch(error){report('maintenance',error,false);}
+        finally{const took=Math.max(0,clock()-maintenanceStart);health.lastMaintenanceMs=took;health.maxMaintenanceMs=Math.max(health.maxMaintenanceMs,took);addFrameStage('maintenanceMs',took);}
       }
       return {done:true,breakFrame:false};
     }
@@ -270,7 +276,7 @@
     }
 
     function maybeRender(now,speed){
-      if(pacing.shouldRender(now,speed)){try{adapter.onRender?.({now,speed,backlog:pacing.backlog(),jobActive:!!job});}catch(error){report('render',error,false);}}
+      if(pacing.shouldRender(now,speed)){const renderStart=clock();try{adapter.onRender?.({now,speed,backlog:pacing.backlog(),jobActive:!!job});}catch(error){report('render',error,false);}finally{const took=Math.max(0,clock()-renderStart);health.lastRenderMs=took;health.maxRenderMs=Math.max(health.maxRenderMs,took);addFrameStage('renderMs',took);}}
     }
 
     function advanceTo(target,options={}){
@@ -295,6 +301,14 @@
       return true;
     }
     function frame(now=clock()){
+      frameStages={createMs:0,chunkMs:0,finishMs:0,maintenanceMs:0,renderMs:0};const started=clock();
+      try{frameBody(now);}
+      finally{
+        const stages=frameStages;frameStages=null;stages.totalMs=Math.max(0,clock()-started);health.lastFrame=stages;
+        if(!health.maxFrame||stages.totalMs>health.maxFrame.totalMs)health.maxFrame=stages;
+      }
+    }
+    function frameBody(now){
       health.frames++;completeManualAdvance();
       const advancing=manualAdvance,speed=advancing?advancing.speed:getSpeed();
       if(lastObservedSpeed===null)lastObservedSpeed=speed;

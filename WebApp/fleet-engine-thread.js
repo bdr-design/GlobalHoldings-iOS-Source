@@ -22,7 +22,7 @@
 
   function create({workerFactory,resolveRoute,catalogSpecs,routesRevision=()=>0,clock=()=>performance.now(),timeoutMs=15000}={}){
     let worker=null,disabled=null,nextId=1,needsFull=true,synced=null,routeTable=new Map(),routesAt=null,pending=null,lastBudgetTime=Infinity;
-    const tickets=new Map(),waiters=[],stats={requests:0,applied:0,fallbacks:0,fullSyncs:0,incrementalSyncs:0,rowsSent:0,lastWorkerMs:0,lastApplyMs:0,lastSyncMs:0,lastReason:'',fullSyncReasons:{}};
+    const tickets=new Map(),waiters=[],stats={requests:0,applied:0,fallbacks:0,fullSyncs:0,incrementalSyncs:0,rowsSent:0,lastWorkerMs:0,lastApplyMs:0,lastSyncMs:0,maxWorkerMs:0,maxApplyMs:0,maxSyncMs:0,maxFullSyncMs:0,lastReason:'',fullSyncReasons:{}};
     const settleWaiters=()=>{if(pending)return;while(waiters.length)waiters.shift()();};
     function disable(reason){
       if(disabled)return;disabled=String(reason||'disabled');stats.lastReason=disabled;
@@ -46,7 +46,7 @@
       if(message.type==='error'){disable(`worker:${message.error}`);return;}
       if(message.type!=='result')return;
       const ticket=tickets.get(message.id);if(!ticket)return;
-      clearTimeout(ticket.timer);stats.lastWorkerMs=Number(message.ms)||0;
+      clearTimeout(ticket.timer);stats.lastWorkerMs=Number(message.ms)||0;stats.maxWorkerMs=Math.max(stats.maxWorkerMs,stats.lastWorkerMs);
       if(message.fallback){ticket.status='fallback';ticket.reason=String(message.fallback);ticket.settled=true;tickets.delete(ticket.id);if(pending===ticket)pending=null;needsFull=needsFull||ticket.reason.startsWith('engine-error');settleWaiters();return;}
       if(Number.isFinite(message.nextBudgetTime)||message.nextBudgetTime===Infinity)lastBudgetTime=message.nextBudgetTime;
       ticket.result=message;ticket.status='ready';
@@ -78,7 +78,7 @@
       post({type:'routes',replace:true,plans});
       STORE.drainDirty(store,store.revision);
       synced={store,runtime:STORE.chunkStamp(store).runtime,since:store.revision,values:store.values.slice(),length:store.length};
-      needsFull=false;stats.fullSyncs++;stats.lastSyncMs=clock()-started;
+      needsFull=false;stats.fullSyncs++;stats.lastSyncMs=clock()-started;stats.maxSyncMs=Math.max(stats.maxSyncMs,stats.lastSyncMs);stats.maxFullSyncMs=Math.max(stats.maxFullSyncMs,stats.lastSyncMs);
     }
     function sync(store){
       const reason=needsFull?'stale':!synced?'first':synced.store!==store?'store-replaced':synced.runtime!==STORE.chunkStamp(store).runtime?'store-runtime':store.length<synced.length?'store-shrank':'';
@@ -97,7 +97,7 @@
         stats.rowsSent+=count;
       }
       synced.since=store.revision;synced.values=store.values.slice();synced.length=store.length;
-      stats.incrementalSyncs++;stats.lastSyncMs=clock()-started;
+      stats.incrementalSyncs++;stats.lastSyncMs=clock()-started;stats.maxSyncMs=Math.max(stats.maxSyncMs,stats.lastSyncMs);
     }
     // Posts one step. Returns a ticket ({status:'pending'|'ready'|'fallback'|'failed'}) or null when the thread is not
     // available (the caller runs the step itself).
@@ -143,7 +143,7 @@
       ticket.applied=true;
       tx.registerUndo(()=>settle(ticket,'rollback'),()=>settle(ticket,'commit'));
       if(synced&&synced.store===store){synced.since=store.revision;synced.values=store.values.slice();synced.length=store.length;}
-      stats.applied++;stats.lastApplyMs=clock()-started;
+      stats.applied++;stats.lastApplyMs=clock()-started;stats.maxApplyMs=Math.max(stats.maxApplyMs,stats.lastApplyMs);
       return message.out;
     }
     // Resolves when no step is in flight (commands that write the fleet wait for it).
