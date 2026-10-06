@@ -284,6 +284,8 @@
     return {ok:true,generation};
   }
   function commitState(state,{storageKey='global-holdings-world-v3.0.0',appVersion=VERSION,...options}={}){
+    // A save in slices is running: this one joins it (it runs once more after, with the state then).
+    if(slicedSave){slicedSave.again=true;return {ok:true,deferred:true,coalesced:true,saveRevision:Number(state?.saveRevision)||0,native:slicedSave.done};}
     if(locked||durableLocked)return {ok:false,reason:'lifecycle-locked'};
     if(recoveryRequired)return {ok:false,reason:'memory-recovery-required'};
     const snapshotOptions=ordinarySnapshotOptions(storageKey,appVersion,options),nativeBridge=!!bridgeFor('commitSave');
@@ -292,7 +294,7 @@
   }
   async function drain(options={}){return waitOrdinaryIdle(options);}
   async function commitDurableState(state,{storageKey='global-holdings-world-v3.0.0',appVersion=VERSION,yieldToFrame=null,...options}={}){
-    if(locked||durableLocked)throw new Error('lifecycle-locked');if(recoveryRequired)throw new Error('memory-recovery-required');
+    if(locked||durableLocked||(slicedLocked&&options[SLICED_COMMIT]!==true))throw new Error('lifecycle-locked');if(recoveryRequired)throw new Error('memory-recovery-required');
     if(options.expectedPreviousRevision!=null){const previous=Number(options.expectedPreviousRevision),next=Number(state?.saveRevision);if(!Number.isSafeInteger(previous)||previous<0||!Number.isSafeInteger(next)||next!==previous+1)throw new Error(`save-revision-conflict:${previous}:${next}`);}
     durableLocked=true;
     let written=null;
@@ -314,6 +316,39 @@
       const uncertainNative=error.code==='ACK_TIMEOUT';if(error.rollbackError||uncertainNative){recoveryRequired=true;error.critical=true;}status({ok:false,reason:String(error.message||error),critical:!!error.critical,durable:true,requiresNativeReconciliation:uncertainNative,storageKey});throw error;
     }finally{durableLocked=false;}
   }
+  // Build 359 (the ordinary save was one block of 80-200 ms: schema, serialization and encoding at once): a save of a
+  // copy of the state (cheap: the fleet store and sealed collections are shared), its schema validated in sections and
+  // its text serialized and encoded in slices, with the caller's frame scheduler (yieldToFrame) between them. From the
+  // copy to the commit persistence is locked (isLocked: the simulation and player commands wait, slicedSettled), so the
+  // copy and the fleet records are one instant. A save asked meanwhile (this or commitState) runs once more after it.
+  // `prepare(state)` runs first on the live state and may refuse ({ok:false,reason}).
+  let slicedSave=null,slicedLocked=false;const SLICED_COMMIT=Symbol('sliced-commit');
+  async function sliceOnce(state,{storageKey,appVersion,yieldToFrame,prepare}){
+    if(locked||durableLocked)return {ok:false,reason:'lifecycle-locked'};if(recoveryRequired)return {ok:false,reason:'memory-recovery-required'};
+    const timing={kind:'sliced-save',cloneMs:0,validateMs:0,totalMs:0,ok:false},started=clock();slicedLocked=true;
+    try{
+      const ready=typeof prepare==='function'?prepare(state):null;if(ready&&ready.ok===false)return {ok:false,reason:ready.reason||'prepare-refused'};
+      let stage=clock();const previous=Math.max(0,Math.floor(Number(state.saveRevision)||0)),copy=globalThis.GH_TRANSACTION_CORE.deepClone(state,{shareJournaledRoots:true});copy.saveRevision=previous+1;globalThis.GH_SAVE_SCHEMA?.inheritVerified?.(state,copy);timing.cloneMs=clock()-stage;
+      await yieldToFrame();stage=clock();
+      const schema=globalThis.GH_SAVE_SCHEMA;let check;
+      if(typeof schema?.validationSteps==='function'){const steps=schema.validationSteps(copy,{trustVerified:true});let slice=clock(),step;while(!(step=steps.next()).done)if(clock()-slice>=SLICE_MS){await yieldToFrame();slice=clock();}check=step.value;}
+      else check=schema?.validate?.(copy,{trustVerified:true})||{ok:true};
+      timing.validateMs=clock()-stage;if(check&&check.ok===false)return {ok:false,reason:`invalid-state:${(check.errors||[]).join(',')}`};
+      const out=await commitDurableState(copy,{storageKey,appVersion,prevalidated:true,expectedPreviousRevision:previous,yieldToFrame,[SLICED_COMMIT]:true});
+      if(Number(state.saveRevision)===previous)state.saveRevision=copy.saveRevision;
+      timing.ok=true;return {...out,ok:true,saveRevision:copy.saveRevision,timing};
+    }catch(error){return {ok:false,reason:String(error?.message||error),critical:!!error?.critical,timing};}
+    finally{slicedLocked=false;timing.totalMs=clock()-started;rememberTiming(timing);}
+  }
+  function commitStateSliced(state,{storageKey='global-holdings-world-v3.0.0',appVersion=VERSION,yieldToFrame=()=>new Promise(resolve=>setTimeout(resolve,0)),prepare=null}={}){
+    if(slicedSave){slicedSave.again=true;return slicedSave.done;}
+    if(locked||durableLocked)return Promise.resolve({ok:false,reason:'lifecycle-locked'});if(recoveryRequired)return Promise.resolve({ok:false,reason:'memory-recovery-required'});
+    const run=slicedSave={again:false,done:null};
+    run.done=(async()=>{let out;try{do{run.again=false;out=await sliceOnce(state,{storageKey,appVersion,yieldToFrame,prepare});}while(run.again&&out.ok);}finally{slicedSave=null;}return out;})();
+    return run.done;
+  }
+  // Resolves once no save in slices runs (a command or the background save waits for it instead of being refused).
+  async function slicedSettled(){while(slicedSave)await slicedSave.done;}
   function recoverBrowserState(storageKey='global-holdings-world-v3.0.0'){
     if(bridgeFor('commitSave'))return {ok:false,reason:'native-vault-reconciliation-required'};
     try{const raw=localStorage.getItem(storageKey);if(!raw)return {ok:false,reason:'missing-durable-state'};const state=parseState(raw);assertState(state);return {ok:true,state};}catch(error){return {ok:false,reason:String(error.message||error)};}
@@ -405,7 +440,7 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:SAVE_SCHEMA_VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:stateCodec()?stateCodec().encodeState(state):clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,noteVaultChunks,forgetVaultChunks,vaultChunkCount:()=>vaultChunks.size,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||recoveryRequired,
+  const API=Object.freeze({VERSION,noteVaultChunks,forgetVaultChunks,vaultChunkCount:()=>vaultChunks.size,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||slicedLocked||recoveryRequired,commitStateSliced,slicedSettled,slicedActive:()=>!!slicedSave,
     // Cheap read for the save policy (GH_SAVE_POLICY): when the last save of any kind ran.
     saveCadence:()=>({lastSaveAtMs}),telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;

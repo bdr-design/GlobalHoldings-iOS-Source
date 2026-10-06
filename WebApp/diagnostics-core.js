@@ -88,9 +88,15 @@
     for(const value of Object.values(state.tripRevenueAccrued||{}))total+=Number(value)||0;
     return Math.round(total*100)/100;
   };
+  // Build 359 (a million assets: summing every asset's progress was 40 ms on iPhone at 24,000 assets, once every 3 s): the
+  // moving count comes from the fleet store's class count (1 ms on the desktop at 24,000) and progress is the store's
+  // revision, which every fleet write advances, so an unchanged revision while assets move is the stall the check looks
+  // for. Assets not yet in a store (before migration) are summed as before.
   const recorderAssetSignal=state=>{
+    const fleet=fleetData(),revision=fleet.revision(state);
+    if(revision!==null)return {assets:fleet.size(state),moving:fleet.countByPhase(state).get('moving')||0,progress:revision};
     let assets=0,moving=0,progress=0;
-    fleetData().scan(state,['phase','progress'],a=>{assets++;if(a&&a.phase==='moving'){moving++;progress+=Number(a.progress)||0;}});
+    fleet.scan(state,['phase','progress'],a=>{assets++;if(a&&a.phase==='moving'){moving++;progress+=Number(a.progress)||0;}});
     return {assets,moving,progress:Math.round(progress*1e6)/1e6};
   };
   function recorderEvent(state,type,detail={},severity='warning',meta={}){
@@ -113,9 +119,8 @@
   }
   function recorderSample(state,simulation={},meta={}){
     ensure(state);const r=recorderFor(state);if(!r?.active)return r||null;
-    // Build 359: the asset signal passes over the whole fleet (40 ms at 24,000 assets on iPhone, the recorder's own frame
-    // drops). Only the stall check uses it, once per rate window, so it is taken when that window closes (and on start
-    // and stop); samples in between carry the last one.
+    // Build 359: the asset signal is taken once per rate window (and on start and stop); samples in between carry the
+    // last one.
     const atMs=recorderNow(meta),simSeconds=Number(state.simSeconds)||0,requestedRate=Number(simulation.manualAdvance?.speed??simulation.speed)||0,assetDue=meta.forceSample===true||!r.lastAssetSignal||atMs-Number(r.rateWindow?.atMs??atMs)>=RECORDER_RATE_WINDOW_MS,asset=assetDue?recorderAssetSignal(state):r.lastAssetSignal,revenue=recorderRevenueSignal(state),engine={frames:Number(simulation.frames)||0,slices:Number(simulation.slices)||0,cancels:Number(simulation.cancels)||0,hardTasks:Number(simulation.hardTasks)||0,backlogClamps:Number(simulation.backlogClamps)||0,manualFailures:Number(simulation.manualFailures)||0};
     const prevEngine=r.lastEngine||{};
     if(engine.cancels>Number(prevEngine.cancels||0))recorderEvent(state,'SIM_SLICE_CANCELLED',{delta:engine.cancels-Number(prevEngine.cancels||0),reason:simulation.lastCancelReason||'',jobActive:!!simulation.jobActive,jobReadyToFinish:!!simulation.jobReadyToFinish},'warning',{nowMs:atMs});

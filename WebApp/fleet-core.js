@@ -110,6 +110,7 @@
       if(batch.crewDirty)synchronizeCrew(state);
     }
   }
+  const corridorIndex=routes=>{const owner=globalThis.GH_ROUTE_CORE;if(!owner?.corridorIndex)throw new Error('route-owner-unavailable');return owner.corridorIndex(routes);};
   function routeSignature(route){
     if(!globalThis.GH_ROUTE_CORE?.signature)throw new Error('route-owner-unavailable');
     return globalThis.GH_ROUTE_CORE.signature(route);
@@ -160,13 +161,22 @@
     };
     const firstUserOtherThan=(group,assetId)=>firstUsers(group).find(row=>row.id!==assetId)||null;
     const memberOf=(group,assetId)=>{if(assetId===null||assetId===undefined)return false;const asset=fleet.get(state,assetId);return !!asset&&asset.routeId===group.routeId&&assetMode(asset)===group.mode&&assetOwnerCompanyId(asset)===group.companyId;};
-    return {routeIndex,groups,airRouteOrderByCompany,signature,firstUserOtherThan,memberOf};
+    // Build 359 (a million assets: the route centre checked every route against every other, 0.7 s for 3,000 aircraft):
+    // the company's air routes that may duplicate `route`, in the order above: the registered ones the corridor index
+    // names (an endpoint near its first point) and every unregistered one (compared by its users' signature).
+    const airIndexes=new Map(),airCandidates=(companyId,route)=>{
+      const order=airRouteOrderByCompany.get(companyId)||[];let known=airIndexes.get(companyId);
+      if(!known){const position=new Map(order.map((id,at)=>[id,at])),registered=order.map(id=>routeIndex.get(id)).filter(Boolean);known={position,unregistered:order.filter(id=>!routeIndex.has(id)),corridors:globalThis.GH_ROUTE_CORE.corridorIndex(registered)};airIndexes.set(companyId,known);}
+      const ids=new Set(known.unregistered);for(const other of known.corridors.candidates(route))ids.add(other.id);
+      return [...ids].filter(id=>known.position.has(id)).sort((a,b)=>known.position.get(a)-known.position.get(b));
+    };
+    return {routeIndex,groups,airRouteOrderByCompany,airCandidates,signature,firstUserOtherThan,memberOf};
   }
   function routeConflictWithContext(state,assetId,routeId,route,context){
     const routeOwner=requireFleetRoute(state,route);if(!routeOwner.mode||!routeId)return null;const ctx=context||routeConflictContext(state),key=`${routeOwner.companyId}\u0000${routeOwner.mode}\u0000${routeId}`,same=ctx.groups.get(key);
     // The former loop returned the first other user once the other users reached the route's capacity.
     if(same&&same.count-(ctx.memberOf(same,assetId)?1:0)>=routeCapacity(route))return ctx.firstUserOtherThan(same,assetId);
-    if(routeOwner.mode!=='air')return null;const signature=ctx.signature(route),routeOrder=ctx.airRouteOrderByCompany.get(routeOwner.companyId)||[];
+    if(routeOwner.mode!=='air')return null;const signature=ctx.signature(route),routeOrder=ctx.airCandidates(routeOwner.companyId,route);
     for(const otherRouteId of routeOrder){if(otherRouteId===routeId)continue;const group=ctx.groups.get(`${routeOwner.companyId}\u0000air\u0000${otherRouteId}`);const other=group?ctx.firstUserOtherThan(group,assetId):null;if(!other)continue;const registered=ctx.routeIndex.get(otherRouteId),otherSignature=registered?ctx.signature(registered):other.routeSignature;if(signature&&otherSignature&&signature===otherSignature)return other;if(registered&&globalThis.GH_ROUTE_CORE?.corridorMetrics?.(registered,route)?.duplicate)return other;}
     return null;
   }
@@ -216,9 +226,12 @@
     // which could block WebKit for several seconds with 300 aircraft. Capacity
     // remains enforced by slotUsage below; this index only guards duplicate
     // geometry across different route IDs and preserves the same invariant.
+    // Build 359 (a million assets): an occupied route is compared only with the routes the corridor index names (an
+    // endpoint near its first point), the first in occupation order as before, not with every occupied route.
     const airRouteIndex=new Map((state.customRoutes||[]).filter(route=>routeMode(route)==='air').map(route=>[route.id,route])),
-      airOccupiedByRoute=new Map(),airSignatureCache=new Map(),airValidatedRoutes=new Set();
-    for(const [routeId,assetId] of fixedAirRoutes)if(!airOccupiedByRoute.has(routeId))airOccupiedByRoute.set(routeId,assetId);
+      airOccupiedByRoute=new Map(),airOccupationOrder=new Map(),airSignatureCache=new Map(),airValidatedRoutes=new Set(),airCorridors=corridorIndex();
+    const occupyAir=(routeId,assetId)=>{if(airOccupiedByRoute.has(routeId))return;airOccupiedByRoute.set(routeId,assetId);airOccupationOrder.set(routeId,airOccupationOrder.size);const route=airRouteIndex.get(routeId);if(route)airCorridors.add(route);};
+    for(const [routeId,assetId] of fixedAirRoutes)occupyAir(routeId,assetId);
     const airSignature=route=>{
       if(!route)return '';
       if(airSignatureCache.has(route.id))return airSignatureCache.get(route.id);
@@ -227,13 +240,12 @@
     const validateAirRoute=(route,assetId)=>{
       if(airValidatedRoutes.has(route.id))return;
       airRouteIndex.set(route.id,route);const signature=airSignature(route);
-      for(const [otherRouteId,ownerId] of airOccupiedByRoute){
-        if(otherRouteId===route.id)continue;
-        const otherRoute=airRouteIndex.get(otherRouteId);if(!otherRoute)continue;
+      const others=[...new Set(airCorridors.candidates(route).map(other=>other.id))].filter(id=>id!==route.id&&airOccupiedByRoute.has(id)&&airRouteIndex.has(id)).sort((a,b)=>airOccupationOrder.get(a)-airOccupationOrder.get(b)).map(id=>airRouteIndex.get(id));
+      for(const otherRoute of others){
         const otherSignature=airSignature(otherRoute);
-        if((signature&&otherSignature&&signature===otherSignature)||globalThis.GH_ROUTE_CORE?.corridorMetrics?.(otherRoute,route)?.duplicate)throw new Error(`asset-route-capacity-or-corridor:${ownerId}`);
+        if((signature&&otherSignature&&signature===otherSignature)||globalThis.GH_ROUTE_CORE?.corridorMetrics?.(otherRoute,route)?.duplicate)throw new Error(`asset-route-capacity-or-corridor:${airOccupiedByRoute.get(otherRoute.id)}`);
       }
-      airValidatedRoutes.add(route.id);if(!airOccupiedByRoute.has(route.id))airOccupiedByRoute.set(route.id,assetId);
+      airValidatedRoutes.add(route.id);occupyAir(route.id,assetId);
     };
 
     for(const p of rows){
@@ -421,8 +433,11 @@
 
   function normalizeAsset(asset,context={}){
     const tpl=context.route;
+    // Build 359: a route's speedFactor (the maritime CII plan's slow steaming, GH_GOVERNANCE_CORE.seaSpeedFactor) slows
+    // every voyage on it; 1 on any other route.
+    const speed=tpl&&Number(tpl.speedFactor)>0&&Number(tpl.speedFactor)<=1?Number(tpl.speedFactor):1;
     if(tpl){
-      asset.distanceKm=tpl.distanceKm;asset.tripSeconds=tpl.tripSeconds;asset.effectiveSpeedKmh=tpl.effectiveSpeedKmh;asset.dwellHours=tpl.dwellHours;
+      asset.distanceKm=tpl.distanceKm;asset.tripSeconds=tpl.tripSeconds/speed;asset.effectiveSpeedKmh=tpl.effectiveSpeedKmh*speed;asset.dwellHours=tpl.dwellHours;
       asset.from=asset.reverse?tpl.to:tpl.from;asset.to=asset.reverse?tpl.from:tpl.to;
     }
     if(!asset.phase)asset.phase=asset.routeId?'moving':'idle';
@@ -432,7 +447,7 @@
     if(!asset.specs){const item=context.catalogItem;if(item)asset.specs=clone(item.specs);}
     if(tpl&&asset.specs){
       const mode=assetMode(asset),rated=mode==='air'?(asset.specs.speedKmh||tpl.effectiveSpeedKmh)*.9:mode==='sea'?(asset.specs.speedKn||tpl.effectiveSpeedKmh/1.852)*1.852*.88:(asset.specs.speedKmh||tpl.effectiveSpeedKmh)*.76;
-      asset.effectiveSpeedKmh=Math.max(20,Math.min(rated,tpl.effectiveSpeedKmh*1.08));asset.tripSeconds=asset.distanceKm/asset.effectiveSpeedKmh*3600;
+      asset.effectiveSpeedKmh=Math.max(20,Math.min(rated,tpl.effectiveSpeedKmh*1.08)*speed);asset.tripSeconds=asset.distanceKm/asset.effectiveSpeedKmh*3600;
     }
     return asset;
   }
@@ -463,10 +478,16 @@
     // than rescanning the entire fleet for every departing aircraft.
     const occupiedAirRoutes=[...routeOccupancy.keys()].map(id=>routeIndex.get(id)).filter(route=>routeMode(route)==='air'),signatureCache=new Map();
     const signature=route=>{if(signatureCache.has(route.id))return signatureCache.get(route.id);const value=routeSignature(route);signatureCache.set(route.id,value);return value;};
-    for(let i=0;i<occupiedAirRoutes.length;i++)for(let j=i+1;j<occupiedAirRoutes.length;j++){
-      const a=occupiedAirRoutes[i],b=occupiedAirRoutes[j];if(!affectedRoutes.has(a.id)&&!affectedRoutes.has(b.id))continue;const sa=signature(a),sb=signature(b);
-      if((sa&&sb&&sa===sb)||globalThis.GH_ROUTE_CORE?.corridorMetrics?.(a,b)?.duplicate)throw new Error(`asset-route-capacity:${routeOwner.get(b.id)||b.id}`);
-    }
+    // Build 359 (a million assets): each route is compared only with the routes the corridor index names; the first
+    // duplicate pair in the former pair order (i, then j) is the one reported.
+    {const position=new Map(occupiedAirRoutes.map((route,at)=>[route,at])),corridors=corridorIndex(occupiedAirRoutes);let found=null;
+      for(let i=0;i<occupiedAirRoutes.length;i++){
+        const a=occupiedAirRoutes[i];
+        for(const b of corridors.candidates(a)){const j=position.get(b);if(j===undefined||j<=i||found&&(i>found[0]||i===found[0]&&j>=found[1]))continue;if(!affectedRoutes.has(a.id)&&!affectedRoutes.has(b.id))continue;const sa=signature(a),sb=signature(b);
+          if((sa&&sb&&sa===sb)||globalThis.GH_ROUTE_CORE?.corridorMetrics?.(a,b)?.duplicate)found=[i,j];}
+        if(found&&found[0]===i)break;
+      }
+      if(found){const b=occupiedAirRoutes[found[1]];throw new Error(`asset-route-capacity:${routeOwner.get(b.id)||b.id}`);}}
     for(const p of rows){
       const asset=p?.id?assetById.get(p.id):null,route=batchRoute(p,routeTable);if(!asset||requested.has(asset.id))throw new Error('departure-batch-contract');requested.add(asset.id);
       const assetOwner=requireFleetAsset(state,asset),routeOwner=requireFleetRoute(state,route);

@@ -527,6 +527,23 @@
   // over several frames; serialize() runs the same steps at once. The text is the same either way: the final object is
   // written member by member exactly as JSON.stringify writes a plain object.
   function serialize(state,options){const steps=serializeSteps(state,options);let step;while(!(step=steps.next()).done){}return step.value;}
+  // Build 359 (the ordinary save's largest step was one root serialized at once, 40 ms on the desktop): a plain object or
+  // array is serialized member by member, with a step every STRINGIFY_STEP members and one level deeper for large
+  // members; the text is exactly JSON.stringify(value)'s (members whose value is undefined, a function or a symbol are
+  // left out of objects and written null in arrays; a value with toJSON is serialized whole).
+  const STRINGIFY_STEP=256;
+  function* stringifySteps(value,depth=0){
+    if(!value||typeof value!=='object'||depth>1||typeof value.toJSON==='function')return JSON.stringify(value);
+    if(Array.isArray(value)){
+      const parts=new Array(value.length);
+      for(let index=0;index<value.length;index++){const item=value[index],json=item&&typeof item==='object'?yield* stringifySteps(item,depth+1):JSON.stringify(item);parts[index]=json===undefined?'null':json;if(index%STRINGIFY_STEP===STRINGIFY_STEP-1)yield;}
+      return `[${parts.join(',')}]`;
+    }
+    if(!isPlain(value))return JSON.stringify(value);
+    const parts=[];let count=0;
+    for(const key of Object.keys(value)){const item=value[key],json=item&&typeof item==='object'?yield* stringifySteps(item,depth+1):JSON.stringify(item);if(json!==undefined)parts.push(`${JSON.stringify(key)}:${json}`);if(++count%STRINGIFY_STEP===0)yield;}
+    return `{${parts.join(',')}}`;
+  }
   function* serializeSteps(state,{rowsText=null,textChunks=null}={}){
     if(!isPlain(state))return JSON.stringify(encodeState(state));
     const binaryPaths=[],fragments=[],live=new Set();let out=state;
@@ -556,7 +573,7 @@
     for(const key of [...COLLECTION_TEXT.keys()])if(!live.has(key))COLLECTION_TEXT.delete(key);
     for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
     out.stateCodec=codecMeta(paths,binaryPaths,scan.runs,segments,textChunks?textChunks.map(chunk=>chunk.id):[]);
-    const members=[];for(const key of Object.keys(out)){const json=JSON.stringify(out[key]);if(json!==undefined)members.push(`${JSON.stringify(key)}:${json}`);yield;}
+    const members=[];for(const key of Object.keys(out)){const json=yield* stringifySteps(out[key]);if(json!==undefined)members.push(`${JSON.stringify(key)}:${json}`);yield;}
     const text=`{${members.join(',')}}`;if(!fragments.length)return text;
     for(const fragment of fragments){fragment.at=text.indexOf(fragment.token);if(fragment.at<0||text.indexOf(fragment.token,fragment.at+1)>=0)throw new Error('state-codec-fragment-token');}
     fragments.sort((a,b)=>a.at-b.at);const parts=[];let cursor=0;

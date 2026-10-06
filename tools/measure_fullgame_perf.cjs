@@ -8,7 +8,10 @@
 // thread timings, and the fault recorder's summary and causes.
 //
 //   NODE_PATH=/opt/node22/lib/node_modules node tools/measure_fullgame_perf.cjs --assets 24000 --play 120 --days 60 \
-//     [--batch 3000] [--sites OMDB,EGLL,KJFK,RJTT] [--out report.json]
+//     [--batch 3000] [--sites OMDB,EGLL,KJFK,RJTT] [--out report.json] [--profile dispatch.cpuprofile]
+//
+// --profile writes a CPU profile (Chrome DevTools Profiler, through CDP) of the dispatch: from the click until its command
+// has committed and the 3 s after it, so the blocks of the dispatch can be named.
 //
 // Numbers are for comparing builds on one machine; an iPhone is about 3 to 5 times slower.
 const fs=require('node:fs'),path=require('node:path');
@@ -17,7 +20,7 @@ const {chromium}=require('playwright'),{boot}=require(path.join(root,'tests/help
 const web=path.join(root,'WebApp');
 
 function args(){
-  const out={assets:24000,play:120,days:60,batch:3000,sites:'OMDB,EGLL,KJFK,RJTT,WSSS,YSSY,FAOR,SBGR',out:''};
+  const out={assets:24000,play:120,days:60,batch:3000,sites:'OMDB,EGLL,KJFK,RJTT,WSSS,YSSY,FAOR,SBGR',out:'',profile:''};
   const argv=process.argv.slice(2);for(let i=0;i<argv.length;i++){const key=argv[i].replace(/^--/,'');if(key in out){const v=argv[++i];out[key]=typeof out[key]==='number'?Number(v):String(v);}}
   out.sites=out.sites.split(',').filter(Boolean);return out;
 }
@@ -81,9 +84,11 @@ function installProbe(){
     // Dispatch with the real button; the probe covers the command and the frames after it.
     await page.evaluate(()=>__AUDIT__.openDrawer('routes','air'));
     const button=page.locator('.dispatch-international-network[data-company="air"]').first();await button.waitFor({state:'visible',timeout:60000});
+    const cdp=opt.profile?await page.context().newCDPSession(page):null;if(cdp){await cdp.send('Profiler.enable');await cdp.send('Profiler.setSamplingInterval',{interval:200});await cdp.send('Profiler.start');}
     await page.evaluate(()=>__PROBE__.start('dispatch'));const t1=Date.now();await button.click();
     await page.waitForFunction(()=>/bulk-shared-departure/.test(window.GH_APP_RUNTIME_METRICS?.snapshot?.().durable?.last?.name||''),null,{timeout:0,polling:250});
     await page.waitForTimeout(3000);
+    if(cdp){const {profile}=await cdp.send('Profiler.stop');fs.writeFileSync(opt.profile,JSON.stringify(profile));await cdp.detach();}
     report.phases.dispatch={...await page.evaluate(()=>__PROBE__.stop()),commandMs:Date.now()-t1,durable:await page.evaluate(()=>window.GH_APP_RUNTIME_METRICS.snapshot().durable.last)};
     log('dispatch',JSON.stringify(report.phases.dispatch));
     await page.evaluate(()=>__AUDIT__.closeDrawer());

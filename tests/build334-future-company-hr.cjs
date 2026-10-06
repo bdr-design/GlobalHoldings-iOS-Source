@@ -20,7 +20,7 @@ function hospitalityDefinition(id,definitionId,prefix,order){
   };
 }
 
-const {s,storage}=harness(['capability-registry-core','company-definitions','company-platform-core','company-adapters-core','save-schema','migration-core','hr-core']);
+const {s,storage}=harness(['capability-registry-core','company-definitions','company-platform-core','company-adapters-core','save-schema','state-codec-core','persistence-core','migration-core','hr-core']);
 const P=s.GH_COMPANY_PLATFORM,H=s.GH_HR_CORE,S=s.GH_SAVE_SCHEMA,M=s.GH_MIGRATION_CORE;
 P.installDefinition(hospitalityDefinition('gh-hotels','gh-hotels-v1','HTL',70),{source:'future-hr-fixture'});
 P.installDefinition(hospitalityDefinition('gh-resorts','gh-resorts-v1','RST',71),{source:'future-hr-fixture'});

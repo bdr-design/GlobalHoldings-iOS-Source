@@ -137,9 +137,45 @@
     const forward=score(b),reverse=score([...b].reverse()),best=(forward.mean+forward.endpoint)<=(reverse.mean+reverse.endpoint)?forward:reverse;
     return {comparable:true,lengthA,lengthB,lengthRatio:ratio,...best,duplicate:ratio<=NEAR_DUPLICATE.lengthRatio&&best.endpoint<=NEAR_DUPLICATE.endpointKm&&best.mean<=NEAR_DUPLICATE.meanKm&&best.max<=NEAR_DUPLICATE.maxKm};
   }
+  // Build 359 (a million assets: a 3,000-aircraft dispatch compared each new route with every route, about 8,000 corridor
+  // comparisons in one 2 s block): a near duplicate has both ends within endpointKm of the other route's ends (in the
+  // same or the reverse direction), and an exact duplicate has the same points. corridorIndex keeps each route under the
+  // 0.1-degree cells of its sampled first and last points; candidates(route) reads the cells around route's first point
+  // and keeps the routes whose opposite end is within endpointKm of route's last point, so routes leaving one hub are not
+  // all compared. A route without sampled points is always a candidate; each candidate appears once.
+  const CELL_DEGREES=.1,LON_CELLS=Math.round(360/CELL_DEGREES),KM_PER_DEGREE=111.19;
+  function endpointsOf(route){const points=cachedSample(route?.route);return points.length?[points[0],points[points.length-1]]:null;}
+  function corridorIndex(routes=[]){
+    const cells=new Map(),loose=new Set(),members=new Set(),cellKey=(lat,lon)=>`${lat}:${((lon%LON_CELLS)+LON_CELLS)%LON_CELLS}`;
+    const index={
+      add(route){
+        if(!route||members.has(route))return index;members.add(route);const ends=endpointsOf(route);if(!ends){loose.add(route);return index;}
+        for(const [near,far] of [[ends[0],ends[1]],[ends[1],ends[0]]]){const key=cellKey(Math.floor(near[0]/CELL_DEGREES),Math.floor(near[1]/CELL_DEGREES)),entry={route,far},list=cells.get(key);if(list)list.push(entry);else cells.set(key,[entry]);}
+        return index;
+      },
+      candidates(route){
+        const ends=endpointsOf(route);if(!ends)return [...members];
+        const [lat,lon]=ends[0],row=Math.floor(lat/CELL_DEGREES),column=Math.floor(lon/CELL_DEGREES),edge=Math.min(89.999,(Math.abs(row)+2)*CELL_DEGREES),width=KM_PER_DEGREE*CELL_DEGREES*Math.cos(edge*Math.PI/180);
+        const span=Math.min(Math.ceil(LON_CELLS/2),Math.ceil(NEAR_DUPLICATE.endpointKm/Math.max(1e-6,width))+1),out=new Set(loose);
+        for(let r=row-1;r<=row+1;r++)for(let c=column-span;c<=column+span;c++)for(const entry of cells.get(cellKey(r,c))||[])if(!out.has(entry.route)&&haversine(entry.far,ends[1])<=NEAR_DUPLICATE.endpointKm+1e-9)out.add(entry.route);
+        return [...out];
+      }
+    };
+    for(const route of routes||[])index.add(route);return index;
+  }
+  // The route list's index, kept while the list holds the same routes in the same places with the same geometry (checked
+  // on each use, without any corridor comparison; rebuilt otherwise).
+  const LIST_INDEXES=new WeakMap();
+  function listIndex(routes){
+    let known=LIST_INDEXES.get(routes);if(known&&known.length===routes.length&&routes.every((route,at)=>known.order.get(route)===at&&known.points.get(route)===route?.route))return known;
+    const order=new Map(),points=new Map(),byId=new Map();routes.forEach((route,at)=>{if(!route||order.has(route))return;order.set(route,at);points.set(route,route.route);const list=byId.get(route.id);if(list)list.push(route);else byId.set(route.id,[route]);});
+    known={length:routes.length,order,points,byId,index:corridorIndex(routes.filter(Boolean))};LIST_INDEXES.set(routes,known);return known;
+  }
+  // The first route of the list (in its order) that the candidate duplicates, as a full pass over the list would find.
   function conflict(routes,candidate,{ignoreId=null}={}){
-    const exact=signature(candidate);
-    for(const existing of Array.isArray(routes)?routes:[]){
+    if(!Array.isArray(routes)||!routes.length)return null;
+    const exact=signature(candidate),known=listIndex(routes),pool=new Set(known.index.candidates(candidate));for(const route of known.byId.get(candidate?.id)||[])pool.add(route);
+    for(const existing of [...pool].sort((a,b)=>known.order.get(a)-known.order.get(b))){
       if(!existing||existing.id===ignoreId)continue;
       if(existing.id===candidate.id)return {code:'duplicate-route-id',route:existing};
       if(exact&&signature(existing)===exact)return {code:'duplicate-route',route:existing};
@@ -257,6 +293,6 @@
     if(command==='cache-geometry'){const before=JSON.stringify(state.routeCache[payload.id]||null),entry=cacheGeometry(state,payload);if(before!==JSON.stringify(entry))bumpRoutesRevision(state);return entry;}
     throw new Error(`Unknown route command: ${command}`);
   }
-  const API=Object.freeze({VERSION,ROUTE_TYPES,LIMITS,MODE_ROUTE_QUOTA,modeRouteBudget,allocateRouteSlots,allocateForBudget,NEAR_DUPLICATE,ensure,validPoint,splitAtDateline,routeMode,routeOwnerCompanyId,validateRouteOwnership,validateRoute,canonicalRoute,signature,sample,corridorMetrics,conflict,execute});
+  const API=Object.freeze({VERSION,corridorIndex,bumpRoutesRevision,ROUTE_TYPES,LIMITS,MODE_ROUTE_QUOTA,modeRouteBudget,allocateRouteSlots,allocateForBudget,NEAR_DUPLICATE,ensure,validPoint,splitAtDateline,routeMode,routeOwnerCompanyId,validateRouteOwnership,validateRoute,canonicalRoute,signature,sample,corridorMetrics,conflict,execute});
   globalThis.GH_ROUTE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('routes',API);if(globalThis.window&&window!==globalThis)window.GH_ROUTE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

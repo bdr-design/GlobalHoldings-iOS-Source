@@ -22,7 +22,7 @@ const os=require('node:os');
 const {execFileSync}=require('node:child_process');
 
 const root=process.env.GH_ROOT||path.resolve(__dirname,'..');
-const {chromium,webkit}=require(path.join(root,'node_modules/playwright'));
+const {chromium,webkit}=require('playwright');
 const {serve}=require(path.join(root,'tests/helpers/web-server'));
 const {drawFounderSignature}=require(path.join(root,'tests/helpers/signature-input'));
 const engineName=process.env.GH_PERF_ENGINE||'chromium';
@@ -35,6 +35,8 @@ assert(Number.isSafeInteger(sampleMs)&&sampleMs>=1000&&sampleMs<=120000,'GH_PERF
 const calendarEnabled=process.env.GH_PERF_CALENDAR!=='0';
 const departureEnabled=process.env.GH_PERF_DEPART!=='0';
 const build=Number(fs.readFileSync(path.join(root,'BUILD'),'utf8').trim());
+// The save format of this source (Build 359: read from the schema owner instead of a fixed 2.0.0).
+const SAVE_SCHEMA_VERSION=/SAVE_SCHEMA_VERSION='([^']+)'/.exec(fs.readFileSync(path.join(root,'WebApp/save-schema.js'),'utf8'))[1];
 const version=fs.readFileSync(path.join(root,'VERSION'),'utf8').trim();
 assert(Number.isSafeInteger(build)&&build>=340,'current BUILD must be a supported kernel-owned source');
 const out=path.resolve(process.env.GH_PERF_OUT||path.join(os.tmpdir(),`build${build}-fullapp-browser-perf-${engineName}.json`));
@@ -50,6 +52,9 @@ const report={suite:'fullapp-browser-perf',build,version,sourceTreeSha256:tree,c
 function persist(){fs.mkdirSync(path.dirname(out),{recursive:true});fs.writeFileSync(out,JSON.stringify(report,null,2)+'\n');}
 function stage(name,data){report.stages.push({name,...data});persist();}
 
+// Build 359: the vault chunks (fleet records, large sealed collections) the game uploads before each commit, kept across
+// boots; a reload hands them back as the native shell does (__GH_NATIVE_SAVE_CHUNKS__, id -> ArrayBuffer).
+const vaultChunks=new Map();
 async function boot(browser,url,nativeSave){
   const context=await browser.newContext({viewport:{width:844,height:390},deviceScaleFactor:2,hasTouch:true,locale:'ar-SA'});
   const bridge={json:nativeSave||null,generation:0,ackCount:0,maxBytes:0};
@@ -60,19 +65,20 @@ async function boot(browser,url,nativeSave){
     if(envelope?.action!=='commitSave')throw new Error(`unexpected-save-bridge-action:${envelope?.action}`);
     const json=String(envelope.saveJSON||''),parsed=JSON.parse(json),digest=sha256(json);
     if(envelope.saveHash!=null)assert.equal(envelope.saveHash,digest,'supplied save hash must match the exact committed JSON');
-    assert.equal(envelope.saveSchemaVersion,'2.0.0');
+    assert.equal(envelope.saveSchemaVersion,SAVE_SCHEMA_VERSION);
     assert.equal(Number(envelope.saveRevision),Number(parsed.saveRevision));
     assert.equal(Number(envelope.resetEpoch),Number(parsed.resetEpoch));
-    assert.equal(parsed.saveVersion,'2.0.0');
+    assert.equal(parsed.saveVersion,SAVE_SCHEMA_VERSION);
     bridge.json=json;bridge.generation++;bridge.ackCount++;
     bridge.maxBytes=Math.max(bridge.maxBytes,Buffer.byteLength(json));
     return {requestId:envelope.requestId,action:'commitSave',saveRevision:envelope.saveRevision,
       resetEpoch:envelope.resetEpoch,saveHash:digest,saveSchemaVersion:envelope.saveSchemaVersion,
       success:true,generation:bridge.generation,nativeVaultCommitMs:0};
   });
-  await context.addInitScript(({saved,nativeBuild})=>{
+  await context.exposeBinding('__qaNativeChunk',async(_source,{id,base64})=>{vaultChunks.set(String(id),String(base64));return true;});
+  await context.addInitScript(({saved,nativeBuild,chunks})=>{
     window.GH_NATIVE_BUILD=nativeBuild;
-    if(saved)window.__GH_NATIVE_SAVE_JSON__=saved;
+    if(saved){window.__GH_NATIVE_SAVE_JSON__=saved;const map=new Map();for(const [id,base64] of chunks){const bin=atob(base64),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);map.set(id,bytes.buffer);}window.__GH_NATIVE_SAVE_CHUNKS__=map;}
     window.webkit=window.webkit||{};
     window.webkit.messageHandlers=window.webkit.messageHandlers||{};
     const streams=new Map();
@@ -89,6 +95,8 @@ async function boot(browser,url,nativeSave){
           window.__qaNativeCommit(envelope).then(detail=>window.dispatchEvent(new CustomEvent('gh-native-save-ack',{detail})),error=>nack(envelope,error));
           return;
         }
+        // Build 358+: the fleet records travel as vault chunks before the commit; the double acknowledges each one.
+        if(action==='storeSaveChunk'){window.__qaNativeChunk({id:envelope.id,base64:envelope.base64}).then(()=>window.dispatchEvent(new CustomEvent('gh-native-chunk-ack',{detail:{requestId:envelope.requestId,id:envelope.id,success:true}})));return;}
         if(action==='saveStreamBegin'){
           if(streams.has(envelope.streamId))throw new Error('stream-already-open');
           streams.set(envelope.streamId,{base:{...envelope},chunks:[],bytes:0});
@@ -113,7 +121,7 @@ async function boot(browser,url,nativeSave){
         throw new Error('unexpected-save-bridge-action:'+action);
       }catch(error){if(String(envelope?.action||'')==='saveStreamCommit')nack(envelope,error);else throw error;}
     }};
-  },{saved:nativeSave||null,nativeBuild:build});
+  },{saved:nativeSave||null,nativeBuild:build,chunks:nativeSave?[...vaultChunks]:[]});
   const page=await context.newPage();
   page.setDefaultTimeout(30000);
   page.on('pageerror',error=>report.pageErrors.push({stage:report.stages.at(-1)?.name||'boot',message:String(error.message||error)}));
@@ -144,9 +152,10 @@ async function captureContext(page){
 async function snapshot(page){
   return page.evaluate(()=>{
     const state=__GH_STATE__,sim=GH_SIM_KERNEL.snapshot(),schema=GH_SAVE_SCHEMA.validate(state),integrity=GH_INTEGRITY_CORE.check(state),
-      phases={},assets=state.assets||[];
-    for(const asset of assets)phases[asset.phase]=(phases[asset.phase]||0)+1;
-    return {assets:assets.length,phases,simSeconds:state.simSeconds,lastFinancialDay:state.lastFinancialDay,
+      phases={};
+    // Build 359: the fleet lives in the fleet store (GH_FLEET_DATA), not in state.assets.
+    GH_FLEET_DATA.forEach(state,asset=>{phases[asset.phase]=(phases[asset.phase]||0)+1;});
+    return {assets:GH_FLEET_DATA.size(state),phases,simSeconds:state.simSeconds,lastFinancialDay:state.lastFinancialDay,
       lastMarketHour:state.lastMarketHour,saveRevision:state.saveRevision,saveSchema:state.saveVersion,
       openedCompanies:state.openedCompanies,routeCount:state.customRoutes.length,
       mapPresent:!!document.querySelector('#map')?.getBoundingClientRect().width,
@@ -193,7 +202,7 @@ async function departAir(page){
   const button=page.locator('.dispatch-international-network[data-company="air"]').first();
   await button.waitFor({state:'visible',timeout:30000});
   const t0=Date.now();await button.click();
-  for(let i=0;i<60;i++){const st=await page.evaluate(()=>{const ph={};for(const a of __GH_STATE__.assets)ph[a.phase+(a.routeId?'+r':'')]=(ph[a.phase+(a.routeId?'+r':'')]||0)+1;return {ph,routes:__GH_STATE__.customRoutes.length,alerts:(__GH_STATE__.alerts||[]).slice(0,2).map(r=>(r.text||String(r)).slice(0,220))};});if(i%5===0)console.log(JSON.stringify(st));if(Object.keys(st.ph).some(k=>k.endsWith('+r'))){stage('air-dispatch',{seconds:(Date.now()-t0)/1000,...st});console.log('AIR DISPATCHED',(Date.now()-t0)/1000,JSON.stringify(st));return;}await page.waitForTimeout(1000);}
+  for(let i=0;i<60;i++){const st=await page.evaluate(()=>{const ph={};for(const a of GH_FLEET_DATA.list(__GH_STATE__))ph[a.phase+(a.routeId?'+r':'')]=(ph[a.phase+(a.routeId?'+r':'')]||0)+1;return {ph,routes:__GH_STATE__.customRoutes.length,alerts:(__GH_STATE__.alerts||[]).slice(0,2).map(r=>(r.text||String(r)).slice(0,220))};});if(i%5===0)console.log(JSON.stringify(st));if(Object.keys(st.ph).some(k=>k.endsWith('+r'))){stage('air-dispatch',{seconds:(Date.now()-t0)/1000,...st});console.log('AIR DISPATCHED',(Date.now()-t0)/1000,JSON.stringify(st));return;}await page.waitForTimeout(1000);}
   const notices=await page.evaluate(()=>[...document.querySelectorAll('.toast,.notice,[role=status],[role=alert]')].map(n=>n.textContent.trim()).filter(Boolean).slice(0,6));
   throw new Error('air dispatch did not assign routes: '+JSON.stringify(notices));
 }
@@ -264,12 +273,16 @@ async function depart(page){
   await page.evaluate(()=>{window.__qaPerfDispatchStart=performance.now();});
   await button.click();
   await page.waitForFunction(()=>{
-    if(__GH_STATE__.assets.some(a=>a.phase==='moving'||a.departureScheduled))return true;
+    if(GH_FLEET_DATA.list(__GH_STATE__).some(a=>a.phase==='moving'||a.departureScheduled))return true;
     const control=document.querySelector('.dispatch-existing-network[data-company="road"]');
     return performance.now()-window.__qaPerfDispatchStart>2000&&!!control&&!control.disabled&&
       !document.querySelector('.cancel-road-plan');
   },null,{timeout:220000});
-  for(let i=0;i<40;i++){const st=await page.evaluate(()=>{const ph={};for(const a of __GH_STATE__.assets)ph[a.phase+(a.routeId?'+r':'')+(a.departureScheduled?'+d':'')]=(ph[a.phase+(a.routeId?'+r':'')+(a.departureScheduled?'+d':'')]||0)+1;return {ph,routes:__GH_STATE__.customRoutes.length,speed:__GH_STATE__.speed,alerts:(__GH_STATE__.alerts||[]).slice(0,3).map(r=>(r.text||String(r)).slice(0,160)),plan:!!document.querySelector('.cancel-road-plan')};});console.log(JSON.stringify(st));if(st.ph['moving+r']||st.ph['turnaround+r'])break;if(i===3&&st.speed===0)await page.evaluate(()=>qaPerfContext.setSimulationSpeed(1));await page.waitForTimeout(3000);}
+  for(let i=0;i<40;i++){const st=await page.evaluate(()=>{const ph={};for(const a of GH_FLEET_DATA.list(__GH_STATE__))ph[a.phase+(a.routeId?'+r':'')+(a.departureScheduled?'+d':'')]=(ph[a.phase+(a.routeId?'+r':'')+(a.departureScheduled?'+d':'')]||0)+1;return {ph,routes:__GH_STATE__.customRoutes.length,speed:__GH_STATE__.speed,alerts:(__GH_STATE__.alerts||[]).slice(0,3).map(r=>(r.text||String(r)).slice(0,160)),plan:!!document.querySelector('.cancel-road-plan')};});console.log(JSON.stringify(st));if(st.ph['moving+r']||st.ph['turnaround+r'])break;if(i===3&&st.speed===0)await page.evaluate(()=>qaPerfContext.setSimulationSpeed(1));await page.waitForTimeout(3000);}
+  // The fleet store is shared by the live state and a player command's draft, so assets can move before the command
+  // publishes its routes: the check waits for the command to finish and its save to drain.
+  await page.waitForFunction(()=>!window.__GH_DURABLE_COMMAND_CONTEXT__&&!GH_PERSISTENCE.isLocked(),null,{timeout:220000});
+  await page.evaluate(()=>GH_PERSISTENCE.drain());
   const after=await requireHealthy(page,fleet,'after-departure');
   const active=(after.phases.moving||0)+(after.phases.turnaround||0);
   assert(active>0,'real road planner must assign at least one operational route');
@@ -338,7 +351,8 @@ async function advanceCalendar(page){
   const before=await snapshot(page),target=(Math.floor(before.simSeconds/86400)+1)*86400;
   await page.locator('#simCalendarToggle').click();
   await page.locator('#simNextDay').click();
-  await page.waitForFunction(t=>__GH_STATE__.simSeconds>=t||
+  // The boundaries of the last hour and the day close (staged) finish after the clock reaches the target: wait for both.
+  await page.waitForFunction(t=>(__GH_STATE__.simSeconds>=t&&!GH_SIM_KERNEL.snapshot().manualAdvance&&!GH_TRANSACTION_CORE.isStaged(__GH_STATE__)&&__GH_STATE__.lastMarketHour>=Math.floor(t/3600))||
     (!GH_SIM_KERNEL.snapshot().manualAdvance&&!!GH_SIM_KERNEL.snapshot().lastAdvanceFailure),target,{timeout:240000});
   const after=await requireHealthy(page,fleet,'after-real-calendar-advance');
   stage('calendar-next-day',{before:{simSeconds:before.simSeconds,lastFinancialDay:before.lastFinancialDay,

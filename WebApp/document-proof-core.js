@@ -1,7 +1,7 @@
 (()=>{
   'use strict';
   const VERSION='1.2.0',SCHEMA='gh-document-proofs-v1',CONTENT_SCHEMA='gh-signed-document-content-v3',RECORD_VERSION=3;
-  const LIMITS=Object.freeze({records:5000,archiveBytes:16*1024*1024,materialBytes:512*1024,materialDepth:16,materialArray:8192,materialKeys:2048,chainDepth:64});
+  const LIMITS=Object.freeze({records:5000,materialBytes:512*1024,materialDepth:16,materialArray:8192,materialKeys:2048,chainDepth:64});
   const SECURITY_FIELDS=new Set(['documentSchema','documentVersion','documentProofId','documentId','documentType','issuerSnapshot','counterpartySnapshot','contentDigest','authorizationKind','authorizationProofId','signatureSnapshot','authorization','signatureAssetId','visualSealAssetId']);
   const DOCUMENT_TYPES=Object.freeze({
     'revenue-collection':'transfer-v3','invoice-receivable':'invoice-v3','invoice-payable':'invoice-v3','audit-invoice':'invoice-v3',
@@ -44,12 +44,18 @@
   function recordsSince(state,mark){const out=[],last=sequenceMark(state);for(let sequence=Math.max(0,Math.floor(Number(mark)||0))+1;sequence<=last;sequence++){const row=getRecord(state,`DOCP-${String(sequence).padStart(9,'0')}`);if(row)out.push(row);}return out;}
   // Build 359 (iPhone diagnostic: proof records were 31 MB of a 71.5 MB save): every amendment of a document (issued,
   // cheque issued, cleared, settled) adds a whole new record (~2.6-3.5 KB, its signed content copied in full), and the
-  // earlier versions stay only so the newer one can prove its link to them. An earlier version older than
-  // CHECKPOINT_AGE_SECONDS whose chain verifies is replaced by a checkpoint: the fields that link check reads (id,
-  // document, type, company, depth, content digest) and its own link, ~300 bytes. Checkpoints are grouped by 30-day
-  // period; each period has one digest over its checkpoints (periodDigests), so any edit of a checkpoint is detected.
-  // The current version of every document (what documents, cheques and the documents view verify) stays a whole record.
-  const CHECKPOINT_AGE_SECONDS=30*86400,CHECKPOINT_PERIOD_SECONDS=30*86400,CHECKPOINT_BATCH=400,CHECKPOINT_FIELDS=Object.freeze(['id','documentId','documentType','companyId','chainDepth','contentDigest','previousProofId','previousContentDigest','transition','createdAtSim','period']);
+  // earlier versions stay only so the newer one can prove its link to them. An earlier version whose chain verifies is
+  // replaced by a checkpoint: the fields that link check reads (id, document, type, company, depth, content digest) and
+  // its own link, ~300 bytes. Checkpoints are grouped by 30-day period; each period has one digest over its checkpoints
+  // (periodDigests), so any edit of a checkpoint is detected. The current version of every document (what documents,
+  // cheques and the documents view verify) stays a whole record.
+  // Build 359 (a million assets): a period's digest is the sum (mod 2^256) of its checkpoints' own digests, so adding or
+  // removing checkpoints updates it from those checkpoints alone instead of hashing the whole period again. An earlier
+  // version becomes a checkpoint in the next maintenance pass whatever its age (waiting 30 days kept two whole records
+  // for every cheque issued and cashed in that month), never inside a command: another copy of the document may still
+  // carry the earlier version, and finding one takes every document.
+  const CHECKPOINT_PERIOD_SECONDS=30*86400,CHECKPOINT_BATCH=400,CHECKPOINT_FIELDS=Object.freeze(['id','documentId','documentType','companyId','chainDepth','contentDigest','previousProofId','previousContentDigest','transition','createdAtSim','period']);
+  const PERIOD_FORM='sum-v1',DIGEST_MOD=1n<<256n,isDigest=value=>/^[a-f0-9]{64}$/i.test(String(value||''));
   // Build 358 (save size): the current version of a document kept in the finance audit archive (archived rows are
   // sealed: never edited again) is stored in a compact archived form: the fields the chain, authorization and residency
   // checks read, the chain link and issue time of its signed content, and a digest of its signature snapshot. The signed
@@ -62,49 +68,83 @@
   // stopped the daily close on a 347-day game); while the proof is still held it must verify and match that digest.
   const ARCHIVED_FORM_V2='archived-document-v2',ARCHIVED_FIELDS_V2=Object.freeze([...ARCHIVED_FIELDS,'authorizationDigest']),ARCHIVED_KEYS_V2=[...ARCHIVED_FIELDS_V2].sort().join(',');
   const isArchivedForm=record=>!!record&&typeof record==='object'&&(record.form===ARCHIVED_FORM||record.form===ARCHIVED_FORM_V2);
-  const releasesAuthorization=record=>!!record&&record.form===ARCHIVED_FORM_V2&&!!record.authorizationProofId&&/^[a-f0-9]{64}$/i.test(String(record.authorizationDigest||''));
+  const releasesAuthorization=record=>!!record&&record.form===ARCHIVED_FORM_V2&&!!record.authorizationProofId&&isDigest(record.authorizationDigest);
   const checkpointPeriod=createdAtSim=>`P${String(Math.max(0,Math.floor((Number(createdAtSim)||0)/CHECKPOINT_PERIOD_SECONDS))).padStart(4,'0')}`;
   function getCheckpoint(state,id){const row=state?.documentProofs?.checkpointsById?.[id];return row&&typeof row==='object'&&!Array.isArray(row)?row:null;}
   function checkpointEntry(row){return CHECKPOINT_FIELDS.map(field=>row[field]??null);}
-  function periodDigestOf(rows){return digest(stable(rows.slice().sort((a,b)=>String(a.id).localeCompare(String(b.id))).map(checkpointEntry)));}
-  function checkpointsByPeriod(store){const out=new Map();for(const row of Object.values(store?.checkpointsById||{})){const list=out.get(row?.period)||[];list.push(row);out.set(row?.period,list);}return out;}
-  // A period's digest is recomputed only when its checkpoints change (kept by identity: checkpoints are sealed).
-  // The whole check is kept by the identity of the two maps: every writer replaces them (checkpointAncestors, compact)
-  // and their members are sealed, so an unchanged pair needs no new pass. A full validation passes {fresh:true}.
-  const PERIOD_VERIFIED=new Map(),CHECKPOINTS_VERIFIED=new WeakMap(),CHECKPOINT_KEYS=[...CHECKPOINT_FIELDS].sort().join(',');
+  // A checkpoint's (or a seal row's) own digest. Both are sealed (never edited), so it is computed once per row.
+  const ROW_DIGEST=new WeakMap();
+  function rowDigest(row,entry){let known=ROW_DIGEST.get(row);if(known===undefined){known=digest(stable(entry(row)));ROW_DIGEST.set(row,known);}return known;}
+  const checkpointDigest=row=>rowDigest(row,checkpointEntry);
+  const sumOf=hex=>BigInt(`0x${hex}`),hexOf=value=>value.toString(16).padStart(64,'0');
+  // Period entries and checkpoints verified in this process or written by it from verified records. Rows and entries
+  // are never edited (a writer replaces an entry), so identity stands for content.
+  const VERIFIED_CHECKPOINTS=new WeakSet(),VERIFIED_PERIODS=new WeakSet();
+  // A new period map in which rows were added (sign 1) or removed (sign -1): each touched period gets a new entry, its
+  // count and digest moved by those rows alone; an emptied period is dropped. A new entry is trusted only if the entry
+  // it replaces was (or there was none), so a changed entry from a save is still caught by the next full check.
+  function adjustPeriods(periods,rows,sign,digestOf,trusted=VERIFIED_PERIODS){
+    const next={...(periods||{})},changes=new Map();
+    for(const row of rows){const change=changes.get(row.period)||{count:0,total:0n};change.count+=sign;change.total+=BigInt(sign)*sumOf(digestOf(row));changes.set(row.period,change);}
+    for(const [period,change] of changes){
+      const entry=next[period];if(entry&&entry.form!==PERIOD_FORM)throw new Error('document-proof-period-legacy-form');
+      const count=(Number(entry?.count)||0)+change.count;if(!Number.isSafeInteger(count)||count<0)throw new Error('document-proof-period-count');
+      if(!count){delete next[period];continue;}
+      const fresh={period,form:PERIOD_FORM,count,digest:hexOf((((entry?sumOf(entry.digest):0n)+change.total)%DIGEST_MOD+DIGEST_MOD)%DIGEST_MOD)};
+      if(trusted&&(!entry||trusted.has(entry)))trusted.add(fresh);next[period]=fresh;
+    }
+    return next;
+  }
+  // Build 359: a period entry written before the sum form (one digest over the period's sorted checkpoints) is checked in
+  // that form once, at load, and rewritten as a sum; an entry that does not verify is left as it is and refused.
+  function migratePeriodDigests(state){
+    const store=state?.documentProofs,periods=store?.periodDigests;if(!periods||typeof periods!=='object'||Array.isArray(periods))return {changed:false,count:0};
+    const legacy=Object.entries(periods).filter(([,entry])=>entry&&typeof entry==='object'&&entry.form===undefined);if(!legacy.length)return {changed:false,count:0};
+    const grouped=new Map();for(const row of Object.values(store.checkpointsById||{})){const list=grouped.get(row?.period)||[];list.push(row);grouped.set(row?.period,list);}
+    const next={...periods};let count=0;
+    for(const [period,entry] of legacy){const list=grouped.get(period)||[],sorted=list.slice().sort((a,b)=>String(a.id).localeCompare(String(b.id))).map(checkpointEntry);if(entry.period!==period||entry.count!==list.length||digest(stable(sorted))!==entry.digest)continue;next[period]={period,form:PERIOD_FORM,count:list.length,digest:hexOf(list.reduce((total,row)=>(total+sumOf(checkpointDigest(row)))%DIGEST_MOD,0n))};count++;}
+    if(count)store.periodDigests=next;return {changed:count>0,count};
+  }
+  // The whole check (save schema, or a checkpoint not yet verified). Rows and entries verified before are not hashed again
+  // unless {fresh:true}; the shape, residency and period membership are checked every time.
   function verifyCheckpoints(state,cache=null,{fresh=false}={}){
     if(cache?.checkpoints&&!fresh)return cache.checkpoints;
-    const store=state?.documentProofs||{},rows=store.checkpointsById,periods=store.periodDigests;let out={ok:true};
-    if(rows===undefined&&periods===undefined)return cache?(cache.checkpoints=out):out;
-    const known=!fresh&&rows&&typeof rows==='object'?CHECKPOINTS_VERIFIED.get(rows):null;if(known&&known.periods===periods){if(cache)cache.checkpoints=known.out;return known.out;}
-    const fail=reason=>{out={ok:false,reason};if(cache)cache.checkpoints=out;return out;};
+    const store=state?.documentProofs||{},rows=store.checkpointsById,periods=store.periodDigests;
+    const done=out=>{if(cache)cache.checkpoints=out;return out;},fail=reason=>done({ok:false,reason});
+    if(rows===undefined&&periods===undefined)return done({ok:true});
     if(!rows||typeof rows!=='object'||Array.isArray(rows)||!periods||typeof periods!=='object'||Array.isArray(periods))return fail('document-proof-checkpoint-shape');
+    const known=row=>!fresh&&VERIFIED_CHECKPOINTS.has(row),grouped=new Map();
     for(const [id,row] of Object.entries(rows)){
-      if(!row||typeof row!=='object'||Array.isArray(row)||row.id!==id||Object.keys(row).sort().join(',')!==CHECKPOINT_KEYS||!/^[a-f0-9]{64}$/i.test(String(row.contentDigest||''))||!clean(row.documentId)||!Number.isSafeInteger(row.chainDepth)||row.chainDepth<0||row.chainDepth>LIMITS.chainDepth||row.period!==checkpointPeriod(row.createdAtSim))return fail('document-proof-checkpoint-record');
+      if(!known(row)){
+        if(!row||typeof row!=='object'||Array.isArray(row)||row.id!==id||Object.keys(row).sort().join(',')!==CHECKPOINT_KEYS||!isDigest(row.contentDigest)||!clean(row.documentId)||!Number.isSafeInteger(row.chainDepth)||row.chainDepth<0||row.chainDepth>LIMITS.chainDepth||row.period!==checkpointPeriod(row.createdAtSim))return fail('document-proof-checkpoint-record');
+        if(row.chainDepth>0?!(row.previousProofId&&isDigest(row.previousContentDigest)):row.previousProofId!==null)return fail('document-proof-checkpoint-chain');
+      }
       if(store.recordsById?.[id]||store.archiveById?.[id])return fail('document-proof-checkpoint-residency');
-      if(row.chainDepth>0?!(row.previousProofId&&/^[a-f0-9]{64}$/i.test(String(row.previousContentDigest||''))):row.previousProofId!==null)return fail('document-proof-checkpoint-chain');
+      const list=grouped.get(row.period);if(list)list.push(row);else grouped.set(row.period,[row]);
     }
-    const grouped=checkpointsByPeriod(store);
     for(const key of Object.keys(periods))if(!grouped.has(key))return fail('document-proof-checkpoint-period-unused');
     for(const [period,list] of grouped){
-      const entry=periods[period];if(!entry||entry.period!==period||entry.count!==list.length||!/^[a-f0-9]{64}$/i.test(String(entry.digest||'')))return fail('document-proof-checkpoint-period');
-      const seen=PERIOD_VERIFIED.get(period);
-      if(!fresh&&seen&&seen.digest===entry.digest&&seen.rows.size===list.length&&list.every(row=>seen.rows.has(row)))continue;
-      if(periodDigestOf(list)!==entry.digest)return fail('document-proof-checkpoint-period-tampered');
-      PERIOD_VERIFIED.set(period,{digest:entry.digest,rows:new Set(list)});
+      const entry=periods[period];if(!entry||entry.period!==period||entry.form!==PERIOD_FORM||entry.count!==list.length||!isDigest(entry.digest))return fail('document-proof-checkpoint-period');
+      if(!fresh&&VERIFIED_PERIODS.has(entry)&&list.every(known))continue;
+      if(hexOf(list.reduce((total,row)=>(total+sumOf(checkpointDigest(row)))%DIGEST_MOD,0n))!==entry.digest)return fail('document-proof-checkpoint-period-tampered');
+      VERIFIED_PERIODS.add(entry);for(const row of list)VERIFIED_CHECKPOINTS.add(row);
     }
-    CHECKPOINTS_VERIFIED.set(rows,{periods,out});if(cache)cache.checkpoints=out;return out;
+    return done({ok:true});
   }
+  // A checkpoint predecessor is trusted when it and its period entry were verified (or written) in this process.
+  function checkpointTrusted(state,row){return VERIFIED_CHECKPOINTS.has(row)&&VERIFIED_PERIODS.has(state?.documentProofs?.periodDigests?.[row.period]);}
+  const CHECKPOINT_KEYS=[...CHECKPOINT_FIELDS].sort().join(',');
   // Up to CHECKPOINT_BATCH earlier versions per call, oldest first. A version becomes a checkpoint only when a newer
-  // record links to it, it is older than the age limit, no document or ledger row points at it as its current proof,
-  // and its chain verifies now. Everything is prepared before the store is published, so a failure changes nothing.
-  function checkpointAncestors(state,{now=Number(state?.simSeconds)||0,limit=CHECKPOINT_BATCH}={}){
-    const store=ensure(state),hot=store.recordsById,cold=store.archiveById||{},cutoff=now-CHECKPOINT_AGE_SECONDS,linked=new Set(),pinned=new Set();
-    for(const row of [...Object.values(hot),...Object.values(cold)])if(row?.previousProofId)linked.add(row.previousProofId);
+  // record links to it, no document or ledger row points at it as its current proof, and its chain verifies now.
+  // Everything is prepared before the store is published, so a failure changes nothing.
+  function checkpointAncestors(state,{limit=CHECKPOINT_BATCH}={}){
+    const store=ensure(state),hot=store.recordsById,cold=store.archiveById||{},linked=new Set(),pinned=new Set();
+    for(const row of Object.values(hot))if(row?.previousProofId)linked.add(row.previousProofId);
+    for(const row of Object.values(cold))if(row?.previousProofId)linked.add(row.previousProofId);
     for(const entry of stateDocumentEntries(state))if(entry.document?.documentProofId)pinned.add(entry.document.documentProofId);
     for(const [,book] of Object.entries(state.companyFinance||{}))if(Array.isArray(book?.ledger))for(const row of book.ledger)if(row?.documentProofId)pinned.add(row.documentProofId);
     for(const row of Array.isArray(state.treasury?.ledger)?state.treasury.ledger:[])if(row?.documentProofId)pinned.add(row.documentProofId);
-    const candidates=[...linked].map(id=>getRecord(state,id)).filter(row=>row&&!pinned.has(row.id)&&Number(row.version)===RECORD_VERSION&&(Number(row.createdAtSim)||0)<cutoff).sort((a,b)=>(Number(a.createdAtSim)||0)-(Number(b.createdAtSim)||0)||String(a.id).localeCompare(String(b.id)));
+    const candidates=[...linked].map(id=>getRecord(state,id)).filter(row=>row&&!pinned.has(row.id)&&Number(row.version)===RECORD_VERSION&&!isArchivedForm(row)).sort((a,b)=>(Number(a.createdAtSim)||0)-(Number(b.createdAtSim)||0)||String(a.id).localeCompare(String(b.id)));
     const cache={records:new Map(),signedContentStable:new Map()},made=[];
     for(const row of candidates){
       if(made.length>=limit)break;if(!verifyRecord(state,row.id,new Set(),cache).ok)continue;
@@ -112,11 +152,10 @@
       made.push(checkpoint);
     }
     if(!made.length)return {checkpointed:0,remaining:0};
-    const rows={...(store.checkpointsById||{})},nextHot={...hot},nextCold={...cold},touched=new Set();
-    for(const checkpoint of made){if(rows[checkpoint.id])throw new Error('document-proof-checkpoint-collision');rows[checkpoint.id]=checkpoint;delete nextHot[checkpoint.id];delete nextCold[checkpoint.id];touched.add(checkpoint.period);}
-    const periods={...(store.periodDigests||{})},grouped=checkpointsByPeriod({checkpointsById:rows});
-    for(const period of touched){const list=grouped.get(period);periods[period]={period,count:list.length,digest:periodDigestOf(list)};}
-    store.recordsById=nextHot;store.archiveById=nextCold;store.checkpointsById=rows;store.periodDigests=periods;
+    const rows={...(store.checkpointsById||{})},nextHot={...hot},nextCold={...cold};
+    for(const checkpoint of made){if(rows[checkpoint.id])throw new Error('document-proof-checkpoint-collision');rows[checkpoint.id]=checkpoint;delete nextHot[checkpoint.id];delete nextCold[checkpoint.id];}
+    const periods=adjustPeriods(store.periodDigests,made,1,checkpointDigest);
+    store.recordsById=nextHot;store.archiveById=nextCold;store.checkpointsById=rows;store.periodDigests=periods;for(const checkpoint of made)VERIFIED_CHECKPOINTS.add(checkpoint);
     return {checkpointed:made.length,remaining:Math.max(0,candidates.length-made.length)};
   }
   // Up to ARCHIVED_BATCH records of documents in the finance audit archive are rewritten in the archived form, each only
@@ -145,17 +184,73 @@
     store.recordsById=nextHot;if(store.archiveById||made.some(row=>!row.hot))store.archiveById=nextCold;
     return {compacted:made.length};
   }
+  // Build 359 (a million assets: issuing stopped at about 6,000 documents with document-proof-archive-byte-limit): the
+  // oldest 200 hot records move to the archive and nothing stops an issue. The archive is bounded by the finance audit
+  // archive's retention (sealDocuments) and the live lists' caps, not by a byte limit measured on every admission (that
+  // serialized the whole archive, 16 MB, every 200 documents). Unreferenced records are collected by maintenance (compact).
+  // Build 359: the hot count is read once every ADMISSION_STRIDE issues (Object.keys of 5,000 records on every issue was
+  // the largest part of a document's own cost). A check admits from ADMISSION_STRIDE below the limit, so the hot window
+  // stays under 5,000 between checks. A new map (a writer replaced it) or a lower sequence (a rollback) checks again.
+  const ADMISSION_STRIDE=64,ADMISSION_CHECKED=new WeakMap();
+  function admissionDue(store){
+    const hot=store.recordsById,checked=ADMISSION_CHECKED.get(hot);if(checked!==undefined&&store.sequence>=checked&&store.sequence-checked<ADMISSION_STRIDE)return false;
+    ADMISSION_CHECKED.set(hot,store.sequence);return Object.keys(hot).length>=LIMITS.records-ADMISSION_STRIDE;
+  }
   function archiveForAdmission(state){
     const store=ensure(state),hot=store.recordsById,cold=store.archiveById||{};
-    if(Object.keys(hot).length<LIMITS.records)return;
     const moving=Object.values(hot).sort((a,b)=>(Number(a.createdAtSim)||0)-(Number(b.createdAtSim)||0)||String(a.id).localeCompare(String(b.id))).slice(0,200);
     const next={...cold};
     for(const row of moving){if(Object.prototype.hasOwnProperty.call(next,row.id))throw new Error('document-proof-residency-conflict');next[row.id]=row;}
-    if(new TextEncoder().encode(JSON.stringify(next)).byteLength>LIMITS.archiveBytes)throw new Error('document-proof-archive-byte-limit');
     // All fallible preparation finishes before publishing the move; no copy is
     // discarded until the archive destination has been prepared successfully.
     const nextHot={...hot};for(const row of moving)delete nextHot[row.id];
     store.archiveById=next;store.recordsById=nextHot;
+  }
+  // Build 359 (owner: a million assets with their invoices, cheques and documents; the finance audit archive keeps every
+  // document in full for 12 game months and at most 20,000 documents): a document leaving the audit archive is sealed. Its
+  // proof record and the checkpoints of its earlier versions leave the store; one digest per 30-day period (sealedPeriods,
+  // the sum of the sealed documents' own digests, as periodDigests) keeps each sealed document's proof id, document id,
+  // type, company, depth, content digest and authorization digest. A document is sealed only when it verifies whole now,
+  // when it is the one canonical copy in the audit archive, and when no kept document, ledger row or other record still
+  // carries its proof or an earlier version of it. Everything is prepared before the store is published.
+  const SEAL_FIELDS=Object.freeze(['id','documentId','documentType','companyId','chainDepth','contentDigest','authorizationProofId','authorizationDigest','createdAtSim','period']),SEAL_KEYS=[...SEAL_FIELDS].sort().join(',');
+  const sealEntry=row=>SEAL_FIELDS.map(field=>row[field]??null),sealDigest=row=>rowDigest(row,sealEntry);
+  function heldAuthorizationDigest(state,record){
+    if(record.form===ARCHIVED_FORM_V2)return record.authorizationDigest??null;if(!record.authorizationProofId)return null;
+    const proof=state.authorization?.proofsById?.[record.authorizationProofId]||state.authorization?.proofArchiveById?.[record.authorizationProofId];return proof?.proofDigest||null;
+  }
+  // `deadline` (a performance.now() time) stops the verification once passed, after at least one document; `examined`
+  // says how many documents were considered, so the caller keeps the rest for its next round.
+  function sealDocuments(state,documents,{keep=new Set(),deadline=Infinity}={}){
+    const store=ensure(state),cache={records:new Map(),signedContentStable:new Map()},linkers=new Map(),count=id=>{if(id)linkers.set(id,(linkers.get(id)||0)+1);};
+    for(const row of Object.values(store.recordsById))count(row?.previousProofId);for(const row of Object.values(store.archiveById||{}))count(row?.previousProofId);for(const row of Object.values(store.checkpointsById||{}))count(row?.previousProofId);
+    const sealed=[],entries=[],records=new Set(),checkpoints=[],clock=()=>globalThis.performance?.now?.()??Date.now();let examined=0;
+    for(const document of documents){
+      if(examined&&clock()>deadline)break;examined++;
+      const id=document?.documentProofId,record=id?getRecord(state,id):null;
+      if(!record||keep.has(id)||linkers.has(id)||archivedDocument(state,id)!==document||Number(record.version)!==RECORD_VERSION||!verifyDocument(state,document,cache).ok)continue;
+      const chain=[],chainCheckpoints=[];let prior=record.previousProofId,ok=true;
+      for(let guard=0;prior&&ok;guard++){
+        if(guard>LIMITS.chainDepth||keep.has(prior)||(linkers.get(prior)||0)!==1){ok=false;break;}
+        const row=getRecord(state,prior);if(row){chain.push(prior);prior=row.previousProofId;continue;}
+        const checkpoint=getCheckpoint(state,prior);if(!checkpoint){ok=false;break;}chainCheckpoints.push(checkpoint);prior=checkpoint.previousProofId;
+      }
+      if(!ok)continue;
+      const entry={};for(const field of SEAL_FIELDS)entry[field]=field==='period'?checkpointPeriod(record.createdAtSim):field==='chainDepth'?Number(record.chainDepth)||0:field==='createdAtSim'?Number(record.createdAtSim)||0:field==='authorizationDigest'?heldAuthorizationDigest(state,record):(record[field]??null);
+      sealed.push(document);entries.push(entry);records.add(id);for(const prior of chain)records.add(prior);checkpoints.push(...chainCheckpoints);
+    }
+    if(!sealed.length)return {sealed:[],examined,records:0,checkpoints:0};
+    const nextHot={...store.recordsById},nextCold={...(store.archiveById||{})};for(const id of records){delete nextHot[id];delete nextCold[id];}
+    const nextCheckpoints={...(store.checkpointsById||{})};for(const row of checkpoints)delete nextCheckpoints[row.id];
+    const periods=checkpoints.length?adjustPeriods(store.periodDigests,checkpoints,-1,checkpointDigest):store.periodDigests,seals=adjustPeriods(store.sealedPeriods,entries,1,sealDigest,null);
+    store.recordsById=nextHot;store.archiveById=nextCold;if(store.checkpointsById||checkpoints.length){store.checkpointsById=nextCheckpoints;store.periodDigests=periods;}store.sealedPeriods=seals;
+    return {sealed,examined,records:records.size,checkpoints:checkpoints.length};
+  }
+  // Sealed periods hold no rows to check them against; their shape is checked (one entry per period, a positive count, a digest).
+  function verifySeals(state){
+    const seals=state?.documentProofs?.sealedPeriods;if(seals===undefined)return {ok:true,documents:0};if(!seals||typeof seals!=='object'||Array.isArray(seals))return {ok:false,reason:'document-proof-seal-shape'};
+    let documents=0;for(const [period,entry] of Object.entries(seals)){if(!entry||typeof entry!=='object'||Array.isArray(entry)||entry.period!==period||!/^P\d{4,}$/.test(period)||entry.form!==PERIOD_FORM||!Number.isSafeInteger(entry.count)||entry.count<1||!isDigest(entry.digest)||Object.keys(entry).length!==4)return {ok:false,reason:'document-proof-seal-period'};documents+=entry.count;}
+    return {ok:true,documents};
   }
   function companyProfile(state,companyId){
     const platform=globalThis.GH_COMPANY_PLATFORM,id=clean(companyId||'group',100),registryRecord=state.companyRegistry?.[id]||{},record=id==='group'?{...registryRecord,...(state.profile||{})}:registryRecord,resolved=platform?.resolveDocumentProfile?.(state,id),legalName=clean(resolved?.legalName||record.legalName||record.name||(id==='group'?state.profile?.name:'')||id,240),logo=resolved?.logo||record.logo||record.logoAssetId||null;
@@ -197,11 +292,11 @@
   }
   function compact(state,target=Math.max(0,LIMITS.records-200),pinned=[]){
     const store=ensure(state),referenced=referencedProofs(state,pinned),removable=Object.values(store.recordsById).filter(row=>!referenced.has(row.id)).sort((a,b)=>(Number(a.createdAtSim)||0)-(Number(b.createdAtSim)||0)||String(a.id).localeCompare(String(b.id))),remove=Math.max(0,Object.keys(store.recordsById).length-target);
-    for(const row of removable.slice(0,remove))delete store.recordsById[row.id];
-    let archivedRemoved=0;for(const [id] of Object.entries(store.archiveById||{}))if(!referenced.has(id)){delete store.archiveById[id];archivedRemoved++;}
-    // Checkpoints no proof links to any more go too; their periods' digests are recomputed (an emptied period is dropped).
-    if(store.checkpointsById){const touched=new Set(),rows={...store.checkpointsById};for(const [id,row] of Object.entries(rows))if(!referenced.has(id)){delete rows[id];touched.add(row?.period);archivedRemoved++;}
-      if(touched.size){const grouped=checkpointsByPeriod({checkpointsById:rows}),periods={...(store.periodDigests||{})};for(const period of touched){const list=grouped.get(period);if(list)periods[period]={period,count:list.length,digest:periodDigestOf(list)};else delete periods[period];}store.checkpointsById=rows;store.periodDigests=periods;}}
+    // New maps, never an edit in place: maintenance keeps the members of the old ones as its rollback snapshot.
+    const hot={...store.recordsById};for(const row of removable.slice(0,remove))delete hot[row.id];store.recordsById=hot;
+    let archivedRemoved=0;if(store.archiveById){const cold={...store.archiveById};for(const id of Object.keys(cold))if(!referenced.has(id)){delete cold[id];archivedRemoved++;}store.archiveById=cold;}
+    // Checkpoints no proof links to any more go too; their periods' digests drop them (an emptied period is dropped).
+    if(store.checkpointsById){const gone=Object.values(store.checkpointsById).filter(row=>!referenced.has(row.id));if(gone.length){const rows={...store.checkpointsById};for(const row of gone)delete rows[row.id];store.periodDigests=adjustPeriods(store.periodDigests,gone,-1,checkpointDigest);store.checkpointsById=rows;archivedRemoved+=gone.length;}}
     return {records:Object.keys(store.recordsById).length,archived:Object.keys(store.archiveById||{}).length,removed:Math.min(remove,removable.length)+archivedRemoved};
   }
 
@@ -220,9 +315,9 @@
   function signedContent(document,issuer,counterparty,options={}){const type=documentType(document,options);return {schema:CONTENT_SCHEMA,version:RECORD_VERSION,documentId:documentId(document,options),documentType:type,references:{documentId:clean(document.documentId,180)||null,number:clean(document.number,180)||null,id:clean(document.id,180)||null,reference:clean(document.reference,180)||null,chequeNumber:clean(document.chequeNumber,180)||null,settlementNumber:clean(document.settlementNumber,180)||null,businessType:type},issuer,recipient:counterparty,monetary:{currency:clean(document.currency||'USD',12),amount:number(document.amount??document.value??document.total),subtotal:number(document.subtotal),tax:number(document.tax),total:number(document.total??document.amount??document.value)},terms:{title:clean(document.title||document.name,300)||null,note:clean(document.note||document.purposeDetail,600),method:clean(document.method||document.paymentMethod,100),accountId:clean(document.accountId,120)||null,sourceRef:clean(document.sourceRef||document.reference,180)||null,invoiceNumber:clean(document.invoiceNumber,180)||null,issuePlace:clean(document.issuePlace,240)||null,paymentPlace:clean(document.paymentPlace,240)||null,dueDay:number(document.dueDay),termMonths:number(document.termMonths),sector:clean(document.sector,100)||null},material:materialDetails(document,type),chain:options.chain||null,issuedAtSim:issuedAt(document,options)};}
   function restoreObject(target,snapshot){for(const key of Object.keys(target))delete target[key];Object.assign(target,clone(snapshot));}
   function clearSecurityEnvelope(document){for(const key of SECURITY_FIELDS)delete document[key];}
-  function createRecord(state,document,options={},chain=null){
+  function createRecord(state,document,options={},chain=null,admit=null){
     const store=ensure(state),id=documentId(document,options),type=documentType(document,options);if(!id)throw new Error('document-id-required');profileFor(type);
-    if(Object.keys(store.recordsById).length>=LIMITS.records){compact(state,Math.max(0,LIMITS.records-200),chain?.previousProofId?[chain.previousProofId]:[]);archiveForAdmission(state);if(Object.keys(store.recordsById).length>=LIMITS.records)throw new Error('document-proof-store-full');}
+    if(admit??admissionDue(store))archiveForAdmission(state);
     const companyId=clean(options.companyId||document.company||document.companyId||'group',100),issuer=issuerSnapshot(state,companyId),counterparty=counterpartySnapshot(document);document.documentId=id;document.documentType=type;
     const content=signedContent(document,issuer,counterparty,{issuedAtSim:Number(state.simSeconds)||0,chain}),contentDigest=digest(content);if(!contentDigest)throw new Error('document-digest-owner-unavailable');
     if(!Number.isSafeInteger(store.sequence)||store.sequence>=Number.MAX_SAFE_INTEGER)throw new Error('document-proof-sequence-exhausted');
@@ -240,9 +335,9 @@
     // whole records (records are never edited here), so copying the store and its two record maps is exact. Build 357
     // deep-cloned the whole store (~1.5 MB) on every amendment. Build 359 (a million assets: copying both maps on every
     // amendment made each document cost more as the game grew): the maps are copied only when this record's admission
-    // will compact or archive them; otherwise the amendment adds at most its one new record (DOCP-<sequence>), and the
+    // will archive them; otherwise the amendment adds at most its one new record (DOCP-<sequence>), and the
     // rollback removes it and restores the sequence.
-    const transition=transitionId(options.transition),store=ensure(state),documentSnapshot=clone(document),sequenceBefore=store.sequence,admitting=Object.keys(store.recordsById).length>=LIMITS.records,storeSnapshot=admitting?{...store,recordsById:{...store.recordsById},...(store.archiveById&&typeof store.archiveById==='object'?{archiveById:{...store.archiveById}}:{})}:null;
+    const transition=transitionId(options.transition),store=ensure(state),documentSnapshot=clone(document),sequenceBefore=store.sequence,admitting=admissionDue(store),storeSnapshot=admitting?{...store,recordsById:{...store.recordsById},...(store.archiveById&&typeof store.archiveById==='object'?{archiveById:{...store.archiveById}}:{})}:null;
     const rollbackStore=()=>{if(storeSnapshot){state.documentProofs=storeSnapshot;return;}for(let sequence=sequenceBefore+1;sequence<=store.sequence;sequence++)delete store.recordsById[`DOCP-${String(sequence).padStart(9,'0')}`];store.sequence=sequenceBefore;state.documentProofs=store;};
     try{
       const verification=verifyDocument(state,document);if(!verification.ok){if(verification.legacy&&verification.readOnly)throw new Error('document-proof-legacy-read-only');throw new Error(`document-proof-invalid:${verification.reason}`);}
@@ -252,7 +347,7 @@
       if(result&&typeof result.then==='function')throw new Error('document-amendment-mutator-async');
       const afterId=documentId(document),afterType=documentType(document),afterCompany=clean(document.company||document.companyId||'group',100);if(afterId!==beforeId)throw new Error('document-amendment-id-changed');if(afterType!==beforeType)throw new Error('document-amendment-type-changed');if(afterCompany!==beforeCompany)throw new Error('document-amendment-company-changed');
       const afterMaterial=stable(materialDetails(document,afterType).payload);if(afterMaterial===beforeMaterial)throw new Error('document-amendment-no-material-change');
-      clearSecurityEnvelope(document);const chain={previousProofId:previous.id,previousContentDigest:previous.contentDigest,transition,depth},record=createRecord(state,document,{type:beforeType,documentId:beforeId,companyId:beforeCompany,authorizationKind:clean(options.authorizationKind||'pending-approval',40)},chain);return {record,result};
+      clearSecurityEnvelope(document);const chain={previousProofId:previous.id,previousContentDigest:previous.contentDigest,transition,depth},record=createRecord(state,document,{type:beforeType,documentId:beforeId,companyId:beforeCompany,authorizationKind:clean(options.authorizationKind||'pending-approval',40)},chain,admitting);return {record,result};
     }catch(error){restoreObject(document,documentSnapshot);rollbackStore();throw error;}
   }
   function verifyAuthorizationReference(state,record,cache=null){
@@ -304,7 +399,7 @@
   function archivedContentStable(document,record){
     const sealed=globalThis.GH_TRANSACTION_CORE?.isSealed,known=ARCHIVED_CONTENT.get(record);if(known&&known.document===document)return known;
     const content=archivedSignedContent(document,record),out={stable:stable(content),profile:content.material?.profile,documentId:content.documentId,documentType:content.documentType};
-    if(typeof sealed==='function'&&sealed(record)&&sealed(document))ARCHIVED_CONTENT.set(record,{...out,document});return out;
+    if(typeof sealed==='function'&&sealed(record)&&sealed(document)){const kept={...out,document};ARCHIVED_CONTENT.set(record,kept);return kept;}return out;
   }
   function verifyArchivedRecord(state,proofRecord,seen,cache){
     if(Object.keys(proofRecord).sort().join(',')!==(proofRecord.form===ARCHIVED_FORM_V2?ARCHIVED_KEYS_V2:ARCHIVED_KEYS)||Number(proofRecord.version)!==RECORD_VERSION||!/^[a-f0-9]{64}$/i.test(String(proofRecord.contentDigest||''))||(proofRecord.signatureDigest!==null&&!/^[a-f0-9]{64}$/i.test(String(proofRecord.signatureDigest||''))))return {ok:false,reason:'document-proof-archived-shape'};
@@ -314,7 +409,8 @@
     const envelope=archivedEnvelope(document,proofRecord);if(!envelope.ok)return envelope;
     let content;try{content=archivedContentStable(document,proofRecord);}catch(error){return {ok:false,reason:String(error?.message||error)};}
     if(content.profile!==profile||content.documentId!==proofRecord.documentId||content.documentType!==proofRecord.documentType)return {ok:false,reason:'document-proof-record-envelope-mismatch'};
-    if(digest(content.stable)!==proofRecord.contentDigest)return {ok:false,reason:'document-proof-record-tampered'};cache?.signedContentStable?.set(proofRecord.id,content.stable);
+    // The digest of a sealed pair's rebuilt content is kept with it (computed once, as the content).
+    if((content.digest??=digest(content.stable))!==proofRecord.contentDigest)return {ok:false,reason:'document-proof-record-tampered'};cache?.signedContentStable?.set(proofRecord.id,content.stable);
     const chainError=chainFailure(state,proofRecord,proofRecord.chain,seen,cache);if(chainError)return chainError;
     const verified=withRecordCopy({ok:true,modern:true},proofRecord);cache?.records?.set(proofRecord.id,verified);return verified;
   }
@@ -331,7 +427,7 @@
       const checkpoint=getRecord(state,proofRecord.previousProofId)?null:getCheckpoint(state,proofRecord.previousProofId);
       if(checkpoint){
         if(checkpoint.contentDigest!==proofRecord.previousContentDigest)return {ok:false,reason:'document-proof-chain-predecessor-mismatch'};if(checkpoint.documentId!==proofRecord.documentId||checkpoint.documentType!==proofRecord.documentType||checkpoint.companyId!==proofRecord.companyId)return {ok:false,reason:'document-proof-chain-identity-mismatch'};if(Number(checkpoint.chainDepth)+1!==chainDepth)return {ok:false,reason:'document-proof-chain-depth-mismatch'};
-        const periods=verifyCheckpoints(state,cache);return periods.ok?null:periods;
+        const periods=checkpointTrusted(state,checkpoint)?{ok:true}:verifyCheckpoints(state,cache);return periods.ok?null:periods;
       }
       const previous=getRecord(state,proofRecord.previousProofId);if(!previous||previous.contentDigest!==proofRecord.previousContentDigest)return {ok:false,reason:'document-proof-chain-predecessor-mismatch'};if(previous.documentId!==proofRecord.documentId||previous.documentType!==proofRecord.documentType||previous.companyId!==proofRecord.companyId)return {ok:false,reason:'document-proof-chain-identity-mismatch'};if(Number(previous.chainDepth)+1!==chainDepth)return {ok:false,reason:'document-proof-chain-depth-mismatch'};
       const ancestor=verifyRecord(state,previous.id,seen,cache);if(!ancestor.ok)return ancestor;
@@ -442,6 +538,6 @@
       if(store.recordsById?.[record.id]===record)store.recordsById[record.id]=bound;else if(store.archiveById?.[record.id]===record)store.archiveById[record.id]=bound;else throw new Error('document-proof-residency-conflict');document.authorizationProofId=proof.id;document.authorizationKind=proof.mode;document.signatureSnapshot=clone(bound.signatureSnapshot);}return rows.length;}
   function markLegacy(state,document,options={}){if(document.documentProofId)return verifyDocument(state,document);return sealDocument(state,document,{...options,authorizationKind:'legacy-name-only'});}
   // Proof records are inserted whole and replaced, never edited (bindAuthorization replaces): durable drafts share them sealed.
-  (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('documentProofs',['recordsById','archiveById','checkpointsById']);
-  const API=Object.freeze({VERSION,ARCHIVED_FORM_V2,releasesAuthorization,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,sequenceMark,recordsSince,compact,checkpoint:getCheckpoint,checkpointAncestors,compactArchivedRecords,ARCHIVED_FORM,verifyCheckpoints,CHECKPOINT_AGE_SECONDS,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('documentProofs',['recordsById','archiveById','checkpointsById','periodDigests','sealedPeriods']);
+  const API=Object.freeze({VERSION,ARCHIVED_FORM_V2,releasesAuthorization,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,sequenceMark,recordsSince,compact,checkpoint:getCheckpoint,checkpointAncestors,compactArchivedRecords,ARCHIVED_FORM,verifyCheckpoints,migratePeriodDigests,sealDocuments,verifySeals,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

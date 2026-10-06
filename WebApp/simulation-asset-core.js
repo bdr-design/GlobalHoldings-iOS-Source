@@ -44,8 +44,11 @@
     return `${fmtNumber(used)} / ${fmtNumber(specs.capacity||0)} ${specs.capacityUnit||''}`;
   }
   function normalizeAsset(asset,route,catalogSpecs){
+    // Build 359: a route's speedFactor (the maritime CII plan's slow steaming, GH_GOVERNANCE_CORE.seaSpeedFactor) slows
+    // every voyage on it; 1 on any other route.
+    const speed=route&&Number(route.speedFactor)>0&&Number(route.speedFactor)<=1?Number(route.speedFactor):1;
     if(route){
-      asset.distanceKm=route.distanceKm;asset.tripSeconds=route.tripSeconds;asset.effectiveSpeedKmh=route.effectiveSpeedKmh;asset.dwellHours=route.dwellHours;
+      asset.distanceKm=route.distanceKm;asset.tripSeconds=route.tripSeconds/speed;asset.effectiveSpeedKmh=route.effectiveSpeedKmh*speed;asset.dwellHours=route.dwellHours;
       asset.from=asset.reverse?route.to:route.from;asset.to=asset.reverse?route.from:route.to;
     }
     if(!asset.phase)asset.phase=asset.routeId?'moving':'idle';
@@ -55,7 +58,7 @@
     if(!asset.specs&&catalogSpecs)asset.specs=clone(catalogSpecs);
     if(route&&asset.specs){
       const mode=assetMode(asset),rated=mode==='air'?(asset.specs.speedKmh||route.effectiveSpeedKmh)*.9:mode==='sea'?(asset.specs.speedKn||route.effectiveSpeedKmh/1.852)*1.852*.88:(asset.specs.speedKmh||route.effectiveSpeedKmh)*.76;
-      asset.effectiveSpeedKmh=Math.max(20,Math.min(rated,route.effectiveSpeedKmh*1.08));asset.tripSeconds=asset.distanceKm/asset.effectiveSpeedKmh*3600;
+      asset.effectiveSpeedKmh=Math.max(20,Math.min(rated,route.effectiveSpeedKmh*1.08)*speed);asset.tripSeconds=asset.distanceKm/asset.effectiveSpeedKmh*3600;
     }
     return asset;
   }
@@ -159,7 +162,9 @@
     const share=number(shareMap[owner]??shareMap[mode],5),pressure=number(pressureMap[owner]??pressureMap[mode],50),rep=number(reputation[owner]??reputation[mode],70)+number(sustainability.reputationBonus,0),programMaintenance=Number.isFinite(Number(sustainability.maintenanceFactor))?Number(sustainability.maintenanceFactor):1;
     const demand=mode==='air'?number(economy.airDemand,100):mode==='sea'?number(economy.seaDemand,100):number(economy.roadDemand,100);
     const demandFactor=clamp((demand/100)*(1+(rep-70)*.003)*(1+(share-5)*.006)*(1-(pressure-50)*.0015),.65,1.35);
-    revenue*=serviceRevenue*demandFactor*wearRevenue*flown*managed;fuelCost*=fuelEfficiency*sustainabilityFuel*wearFuel*flown;fees*=flown;crewCost*=crewEfficiency;let maintenance=maintReserve*maintenanceEfficiency*programMaintenance*flown;
+    // Build 359: the maritime CII plan (slow steaming) burns 15% less fuel on every sea voyage (ctx.maritime.fuelFactor).
+    const planFuel=mode==='sea'?Math.max(0,Math.min(1,number(ctx.maritime?.fuelFactor,1))):1;
+    revenue*=serviceRevenue*demandFactor*wearRevenue*flown*managed;fuelCost*=fuelEfficiency*sustainabilityFuel*wearFuel*flown*planFuel;fees*=flown;crewCost*=crewEfficiency;let maintenance=maintReserve*maintenanceEfficiency*programMaintenance*flown;
     const economyFuel=fuelPriceFactor(economy,mode,ctx.fuelHedges?.[owner]?.[FUEL_OF_MODE[mode]||'diesel']);
     fuelCost*=economyFuel;
     // Build 359: research and sustainability apply once (fuelEfficiency, maintenanceEfficiency, sustainabilityFuel above);

@@ -3,7 +3,8 @@
 // piecewise UTF-8 encoding run in steps; commitDurableState awaits the caller's frame scheduler (yieldToFrame) whenever
 // a slice has run 10 ms. Proven here, with a stand-in native vault and a real fleet store:
 // - the sliced save posts exactly the bytes, hash and chunks of the one-shot save (and of GH_STATE_CODEC.serialize);
-// - it really yields to the frame scheduler, and records its busy time and slice count;
+// - it really yields to the frame scheduler after every step that passes the slice budget (a clock the test moves makes
+//   every step pass it: one yield per step), and records its busy time and slice count;
 // - the UTF-8 pieces never split a surrogate pair (one straddles a piece boundary here; the posted hash is the SHA-256
 //   of the text's UTF-8 bytes);
 // - if the fleet records change while the slices run, the save is retaken in one go (one consistent instant);
@@ -37,14 +38,26 @@ for(;pad<2;pad++){state.qaNotes=`${'ع'.repeat(pad)}${'😀'.repeat(1200000)}`;c
 assert.ok(pad<2,'a surrogate pair straddles a piece boundary');
 
 (async()=>{
-  await test('serializeSteps run to the end is serialize()',()=>{const steps=CODEC.serializeChunkedSteps(state);let n=0,step;while(!(step=steps.next()).done)n++;assert.equal(step.value.text,CODEC.serializeChunked(state).text);assert.ok(n>2);return {steps:n};});
+  let codecSteps=0;
+  await test('serializeSteps run to the end is serialize()',()=>{const steps=CODEC.serializeChunkedSteps(state);let n=0,step;while(!(step=steps.next()).done)n++;assert.equal(step.value.text,CODEC.serializeChunked(state).text);assert.ok(n>2);codecSteps=n;return {steps:n};});
+  // Build 359 (the yield check depended on one step passing 10 ms, so a fast machine could see none): with a clock that
+  // moves 11 ms on every read, every step passes the slice budget, so the save must yield after each serialization step
+  // and each UTF-8 piece: exactly that many yields, whatever the machine.
+  await test('the save yields after every step that passes the slice budget',async()=>{
+    const realPerformance=s.performance;let fake=0,yields=0;s.performance={now:()=>(fake+=11)};
+    try{await P.commitDurableState(state,{storageKey:'slices',yieldToFrame:()=>{yields++;return new Promise(resolve=>setTimeout(resolve,0));}});}finally{s.performance=realPerformance;}
+    const saved=vault.saves.at(-1),timing=P.telemetry().timings.samples.filter(row=>row.kind==='durable-save').at(-1),pieces=Math.ceil(saved.json.length/(1<<20));
+    assert.ok(yields>=codecSteps+pieces-1&&yields<=codecSteps+pieces+1,`one yield per step: ${yields} yields for ${codecSteps} codec steps and ${pieces} UTF-8 pieces`);
+    assert.equal(timing.slices,yields,'every yield is a recorded slice');assert.equal(saved.json,CODEC.serializeChunked(state).text,'and the same text');assert.equal(saved.hash,sha(saved.json));
+    return {yields,codecSteps,pieces};
+  });
   await test('the sliced save posts the bytes, hash and chunks of the one-shot save',async()=>{
     let yields=0;const yieldToFrame=()=>{yields++;return new Promise(resolve=>setTimeout(resolve,0));};
     await P.commitDurableState(state,{storageKey:'slices',yieldToFrame});const sliced=vault.saves.at(-1),timing=P.telemetry().timings.samples.filter(row=>row.kind==='durable-save').at(-1);
     await P.commitDurableState(state,{storageKey:'slices'});const once=vault.saves.at(-1);
     assert.equal(sliced.json,once.json,'the same text');assert.equal(sliced.hash,once.hash,'the same hash');assert.equal(sliced.json,CODEC.serializeChunked(state).text,'the codec text');
     assert.equal(sliced.hash,sha(sliced.json),'the hash covers the UTF-8 bytes of the text (no pair split between pieces)');
-    assert.ok(yields>=1&&timing.slices===yields,`the save yielded (${yields} yields, ${timing.slices} slices)`);assert.equal(timing.retakes,0);
+    assert.equal(timing.slices,yields,`the recorded slices are the yields (${yields} yields, ${timing.slices} slices)`);assert.equal(timing.retakes,0);
     assert.ok(timing.wallMs>=timing.totalSyncMs,'busy time is recorded apart from the wall time');
     const root=JSON.parse(sliced.json),listed=[...root.fleet.rows.chunks,...(root.stateCodec?.chunks||[])];assert.ok(listed.every(id=>vault.chunks.has(id)),'every listed chunk was uploaded');
     return {yields,slices:timing.slices,busyMs:Math.round(timing.totalSyncMs),wallMs:Math.round(timing.wallMs),bytes:timing.utf8Bytes};

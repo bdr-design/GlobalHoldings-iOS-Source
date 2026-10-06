@@ -136,33 +136,53 @@ function ensure(s){
 }
 // Historical position is not an idempotency boundary. The same owner searches
 // the live register first, then full archive records without duplicating writes.
-function findFinanceDocument(s,bucket,predicate){
- const live=Array.isArray(s.finance?.[bucket])?s.finance[bucket]:[],found=live.find(predicate);if(found)return found;
- const kind=bucket==='periods'?'taxPeriods':bucket,archived=s.finance?.auditArchive?.records?.[kind];return Array.isArray(archived)?archived.find(predicate):undefined;
+// Build 359 (a million assets): the archive part reads an index of each archived collection by field (built once per
+// collection array: the archive's collections are sealed, replaced whole when rows join or leave), so a lookup no longer
+// walks every archived row. `fields` is one field or several (a row matching any); `accept` narrows the match.
+const ARCHIVE_FIELD_INDEX=new WeakMap();
+function archivedCollection(s,bucket){const list=s.finance?.auditArchive?.records?.[bucket==='periods'?'taxPeriods':bucket];return Array.isArray(list)?list:null;}
+function archivedPositions(list,field,value){
+ let indexes=ARCHIVE_FIELD_INDEX.get(list);if(!indexes||indexes.length!==list.length){indexes={length:list.length,byField:new Map()};ARCHIVE_FIELD_INDEX.set(list,indexes);}
+ let index=indexes.byField.get(field);if(!index){index=new Map();for(let at=0;at<list.length;at++){const key=list[at]?.[field];if(key===undefined||key===null)continue;const rows=index.get(key);if(rows)rows.push(at);else index.set(key,[at]);}indexes.byField.set(field,index);}
+ return index.get(value)||[];
 }
-function hasFinanceDocument(s,bucket,predicate){return !!findFinanceDocument(s,bucket,predicate);}
+function findArchivedDocument(s,bucket,fields,value,accept=null){
+ const list=archivedCollection(s,bucket);if(!list)return undefined;let best=Infinity;
+ for(const field of Array.isArray(fields)?fields:[fields])for(const at of archivedPositions(list,field,value)){if(at>=best)break;if(list[at]?.[field]===value&&(!accept||accept(list[at])))best=at;}
+ return best===Infinity?undefined:list[best];
+}
+function findFinanceDocument(s,bucket,fields,value,accept=null){
+ const live=Array.isArray(s.finance?.[bucket])?s.finance[bucket]:[],keys=Array.isArray(fields)?fields:[fields];
+ for(const row of live)if(row&&keys.some(field=>row[field]===value)&&(!accept||accept(row)))return row;
+ return findArchivedDocument(s,bucket,keys,value,accept);
+}
+function hasFinanceDocument(s,bucket,fields,value,accept=null){return !!findFinanceDocument(s,bucket,fields,value,accept);}
 const TRANSFER_INDEX_MEMO_KEY='finance.transfer-lookup-index/v1';
 const FINANCE_LIST_INDEX_MEMO_PREFIX='finance.list-number-index/v1:';
 function currentTransactionMemo(key){const tx=globalThis.GH_TRANSACTION_CORE;if(!tx?.isActive?.())return undefined;return tx.transactionMemoGet?.(key);}
 function rankLookup(map,key,row,rank){if(key==null)return;const current=map.get(key);if(!current||rank<current.rank)map.set(key,{row,rank});}
 function addTransferIndexRow(index,row,rank){rankLookup(index.byReference,row?.reference,row,rank);rankLookup(index.byId,row?.id,row,rank);if(row?.documentNumber&&['payroll-payable','payroll-transfer'].includes(row.kind))rankLookup(index.byPayrollDocument,row.documentNumber,row,rank);}
+// The live transfers only; a key missing there is looked up in the archive's index (findArchivedDocument), so a command
+// no longer indexes every archived transfer.
 function buildTransferLookupIndex(s){
- const index={byReference:new Map(),byId:new Map(),byPayrollDocument:new Map(),nextRank:-1},live=Array.isArray(s.finance?.transfers)?s.finance.transfers:[],archive=s.finance?.auditArchive?.records?.transfers;
- let rank=0;for(const row of live)addTransferIndexRow(index,row,rank++);for(const row of Array.isArray(archive)?archive:[])addTransferIndexRow(index,row,rank++);return index;
+ const index={byReference:new Map(),byId:new Map(),byPayrollDocument:new Map(),nextRank:-1},live=Array.isArray(s.finance?.transfers)?s.finance.transfers:[];
+ let rank=0;for(const row of live)addTransferIndexRow(index,row,rank++);return index;
 }
+const PAYROLL_TRANSFER=row=>['payroll-payable','payroll-transfer'].includes(row.kind);
 function transferLookupIndex(s){const tx=globalThis.GH_TRANSACTION_CORE;if(!tx?.isActive?.())return null;let index=tx.transactionMemoGet?.(TRANSFER_INDEX_MEMO_KEY);if(!(index instanceof Object)){index=buildTransferLookupIndex(s);tx.transactionMemoSet?.(TRANSFER_INDEX_MEMO_KEY,index);}return index;}
 function bestTransferMatch(index,...matches){let found=null;for(const match of matches)if(match&&(!found||match.rank<found.rank))found=match;return found?.row;}
-function findTransferByReference(s,reference){const index=transferLookupIndex(s);return index?index.byReference.get(reference)?.row:findFinanceDocument(s,'transfers',row=>row.reference===reference);}
-function findTransferById(s,id){const index=transferLookupIndex(s);return index?index.byId.get(id)?.row:findFinanceDocument(s,'transfers',row=>row.id===id);}
-function findTransferByIdOrReference(s,id){const index=transferLookupIndex(s);return index?bestTransferMatch(index,index.byReference.get(id),index.byId.get(id)):findFinanceDocument(s,'transfers',row=>row.reference===id||row.id===id);}
-function findPayrollTransferByDocument(s,number){const index=transferLookupIndex(s);return index?index.byPayrollDocument.get(number)?.row:findFinanceDocument(s,'transfers',row=>row.documentNumber===number&&['payroll-payable','payroll-transfer'].includes(row.kind));}
+function findTransferByReference(s,reference){const index=transferLookupIndex(s);return index?index.byReference.get(reference)?.row??findArchivedDocument(s,'transfers','reference',reference):findFinanceDocument(s,'transfers','reference',reference);}
+function findTransferById(s,id){const index=transferLookupIndex(s);return index?index.byId.get(id)?.row??findArchivedDocument(s,'transfers','id',id):findFinanceDocument(s,'transfers','id',id);}
+function findTransferByIdOrReference(s,id){const index=transferLookupIndex(s);return index?bestTransferMatch(index,index.byReference.get(id),index.byId.get(id))??findArchivedDocument(s,'transfers',['reference','id'],id):findFinanceDocument(s,'transfers',['reference','id'],id);}
+function findPayrollTransferByDocument(s,number){const index=transferLookupIndex(s);return index?index.byPayrollDocument.get(number)?.row??findArchivedDocument(s,'transfers','documentNumber',number,PAYROLL_TRANSFER):findFinanceDocument(s,'transfers','documentNumber',number,PAYROLL_TRANSFER);}
 function buildFinanceListIndex(s,bucket){
  const byNumber=new Map(),allByNumber=bucket==='receivables'?new Map():null,add=(rows)=>{for(const row of Array.isArray(rows)?rows:[]){const number=row?.number;if(!byNumber.has(number))byNumber.set(number,row);if(allByNumber){let matches=allByNumber.get(number);if(!matches){matches=[];allByNumber.set(number,matches);}matches.push(row);}}};
- add(s.finance?.[bucket]);if(bucket==='invoices')add(s.finance?.auditArchive?.records?.invoices);return {byNumber,allByNumber};
+ add(s.finance?.[bucket]);return {byNumber,allByNumber};
 }
 function financeListIndex(s,bucket){const tx=globalThis.GH_TRANSACTION_CORE;if(!tx?.isActive?.())return null;const key=FINANCE_LIST_INDEX_MEMO_PREFIX+bucket;let index=tx.transactionMemoGet?.(key);if(!(index instanceof Object)){index=buildFinanceListIndex(s,bucket);tx.transactionMemoSet?.(key,index);}return index;}
 function invalidateFinanceLookupIndexes(){const tx=globalThis.GH_TRANSACTION_CORE;if(!tx?.isActive?.())return;tx.transactionMemoSet?.(TRANSFER_INDEX_MEMO_KEY,null);for(const bucket of ['invoices','payables','receivables','periods'])tx.transactionMemoSet?.(FINANCE_LIST_INDEX_MEMO_PREFIX+bucket,null);}
-function financeRowByNumber(s,bucket,number){const index=financeListIndex(s,bucket);if(index)return index.byNumber.get(number);const rows=Array.isArray(s.finance?.[bucket])?s.finance[bucket]:[],found=rows.find(row=>row.number===number);if(found||bucket!=='invoices')return found;const archive=s.finance?.auditArchive?.records?.invoices;return Array.isArray(archive)?archive.find(row=>row.number===number):undefined;}
+// Invoices: a number missing from the live list is looked up in the archive's index.
+function financeRowByNumber(s,bucket,number){const index=financeListIndex(s,bucket),found=index?index.byNumber.get(number):(Array.isArray(s.finance?.[bucket])?s.finance[bucket]:[]).find(row=>row.number===number);if(found||bucket!=='invoices')return found;return findArchivedDocument(s,'invoices','number',number);}
 function insertFinanceRow(s,bucket,row){const rows=s.finance[bucket],result=rows.unshift(row),index=currentTransactionMemo(FINANCE_LIST_INDEX_MEMO_PREFIX+bucket);if(index?.byNumber instanceof Map){index.byNumber.set(row?.number,row);if(index.allByNumber){let matches=index.allByNumber.get(row?.number);if(!matches){matches=[];index.allByNumber.set(row?.number,matches);}matches.unshift(row);}}return result;}
 function insertFinanceTransfer(s,row){const result=s.finance.transfers.unshift(row),index=currentTransactionMemo(TRANSFER_INDEX_MEMO_KEY);if(index?.byReference instanceof Map){const rank=index.nextRank--;addTransferIndexRow(index,row,rank);}return result;}
 function withCollectionBatch(s,apply){
@@ -283,7 +303,7 @@ function transferReserve(s,p){const toReserve=p.toReserve!==undefined?!!p.toRese
 function spend(s,p){const t=requireCompany(s,p.company),a=num(p.amount),line=p.line||lineFor(p.note,p.method);if(!canSpend(s,t,a,line))throw new Error('insufficient-funds-or-budget');const b=book(s,t);coverInfiniteFunds(s,t,a,'مصروف');b.accounts[0].balance-=a;consumeBudget(s,t,a,line);const doc=invoice(s,{kind:'مصروف',amount:a,note:p.note,method:p.method||'تحويل بنكي',taxable:p.taxable!==false,status:p.status||'مدفوعة',company:t,counterparty:p.counterparty||''});if((p.status||'مدفوعة')==='مدفوعة'){const e={at:now(s),from:b.accounts[0].id,to:doc.counterparty,toPartyId:doc.counterpartyPartyId||null,amount:a,note:p.note,company:t,kind:'cash-document',documentNumber:doc.number,reference:doc.number,status:'منفذة'};ledger(s,t,e);recordWorldFinance(s,{partyId:doc.counterpartyPartyId,counterparty:doc.counterparty,company:t,direction:'outgoing',amount:a,reference:doc.number,transferRef:doc.number,documentNumber:doc.number,note:p.note,settled:true});}reconcile(s);return doc;}
 function payPayroll(s,p={}){
   const t=requireCompany(s,p.company),a=num(p.amount),b=book(s,t),reportId=String(p.reportId||''),transferId=String(p.reference||`PAYTR-${reportId||Math.floor(now(s)/86400)}-${t}`),prior=findTransferByIdOrReference(s,transferId);
-  if(prior){if(prior.company!==t||Math.abs(num(prior.amount)-a)>.01||String(prior.payrollReportId||'')!==reportId)throw new Error('payroll-reference-conflict');const priorDoc=findFinanceDocument(s,'invoices',row=>row.number===prior.documentNumber);return priorDoc||{number:prior.documentNumber||transferId,company:t,amount:prior.amount,transferReference:transferId,idempotent:true};}
+  if(prior){if(prior.company!==t||Math.abs(num(prior.amount)-a)>.01||String(prior.payrollReportId||'')!==reportId)throw new Error('payroll-reference-conflict');const priorDoc=findFinanceDocument(s,'invoices','number',prior.documentNumber);return priorDoc||{number:prior.documentNumber||transferId,company:t,amount:prior.amount,transferReference:transferId,idempotent:true};}
   if(a<=0)throw new Error('invalid-payroll-amount');if(!hasFunds(s,t,a))throw new Error('insufficient-payroll-cash');
   coverInfiniteFunds(s,t,a,'رواتب');b.accounts[0].balance-=a;consumeBudget(s,t,a,'payroll');
   const doc=invoice(s,{kind:'مصروف',amount:a,note:p.note||`مسير رواتب ${companyName(s,t)}`,method:'تحويل رواتب',taxable:false,status:'مدفوعة',company:t,counterparty:'حسابات الموظفين'});
@@ -292,7 +312,7 @@ function payPayroll(s,p={}){
 }
 function accruePayroll(s,p={}){
   const t=requireCompany(s,p.company),a=num(p.amount),number=String(p.number||`PAY-${t.toUpperCase()}-${Math.floor(now(s)/86400)}`),reportId=p.reportId||null;
-  if(a<=0)throw new Error('invalid-payroll-amount');const existing=findFinanceDocument(s,'invoices',row=>row.number===number);if(existing){if(existing.company!==t||Math.abs(num(existing.total??existing.amount)-a)>.01||String(existing.payrollReportId||'')!==String(reportId||''))throw new Error('payroll-accrual-reference-conflict');return existing;}
+  if(a<=0)throw new Error('invalid-payroll-amount');const existing=findFinanceDocument(s,'invoices','number',number);if(existing){if(existing.company!==t||Math.abs(num(existing.total??existing.amount)-a)>.01||String(existing.payrollReportId||'')!==String(reportId||''))throw new Error('payroll-accrual-reference-conflict');return existing;}
   const doc=invoice(s,{kind:'مصروف',amount:a,note:p.note||`رواتب مستحقة · ${companyName(s,t)}`,method:'تحويل رواتب',taxable:false,status:'مستحقة',company:t,counterparty:'حسابات الموظفين',number,dueDay:p.dueDay??Math.floor(now(s)/86400)});
   amendInvoice(s,doc,'invoice-payroll-classified',row=>{row.budgetLine='payroll';row.payrollShortfall=true;row.payrollReportId=reportId;});
   const payable=s.finance.payables.find(row=>row.number===number);
@@ -310,7 +330,7 @@ function credit(s,p){
  // Build 358: payment terms. With termsDays the customer pays on the due day: the invoice stays a receivable and the
  // daily close collects it then (settle-due-terms) under the same reference; without, it is collected at once.
  const termsDays=Math.max(0,Math.floor(num(p.termsDays)));
- if(termsDays>0){const open=findFinanceDocument(s,'invoices',row=>row.sourceRef===reference&&row.kind==='دخل');if(open){if(open.company!==t||Math.abs(num(open.total)-a)>.01)throw new Error('collection-reference-conflict');return open;}}
+ if(termsDays>0){const open=findFinanceDocument(s,'invoices','sourceRef',reference,row=>row.kind==='دخل');if(open){if(open.company!==t||Math.abs(num(open.total)-a)>.01)throw new Error('collection-reference-conflict');return open;}}
  const doc=invoice(s,{kind:'دخل',amount:a,note:p.note||profile.service,method:profile.channel,taxable:p.taxable!==false,status:'مستحقة',company:t,counterparty:p.counterparty||profile.source,sourceRef:reference,...(termsDays>0?{dueDay:Math.floor(now(s)/86400)+termsDays,paymentTerms:termsDays}:{})});
  if(termsDays<=0)collectReceivable(s,{number:doc.number,company:t,reference,channel:profile.channel,sourceRefs:p.sourceRefs||[]});
  if(hasDay){s.finance.revenueCollectionDays={...cursors,[t]:day};}return doc;
@@ -342,7 +362,7 @@ function settleDueTerms(s,p={}){
 // so one such payable is skipped with its reason instead of rejecting the whole batch.
 function payableChequeBlocker(s,number){
  const n=String(number||''),item=s.finance.payables.find(x=>x.number===n);if(!item)return 'payable-not-found';
- const inv=findFinanceDocument(s,'invoices',x=>x.number===n);if(!inv)return 'cheque-linked-payable-not-found';
+ const inv=findFinanceDocument(s,'invoices','number',n);if(!inv)return 'cheque-linked-payable-not-found';
  if(inv.payrollShortfall===true||item.payrollShortfall===true)return 'payroll-cheque-not-supported';
  if(inv.kind!=='مصروف'||['مدفوعة','مسددة','محصلة'].includes(inv.status))return 'cheque-linked-invoice-not-payable';
  if((s.finance.cheques||[]).some(ch=>ch?.status==='صادر'&&String(ch.invoiceNumber||'')===n))return 'cheque-already-issued';
@@ -352,7 +372,7 @@ function payableChequeBlocker(s,number){
 }
 function settlePayable(s,p){
   const n=String(p.number||''),item=s.finance.payables.find(x=>x.number===n);if(!item)throw new Error('payable-not-found');
-  const t=requireCompany(s,item.company),a=num(item.total??item.amount),inv=findFinanceDocument(s,'invoices',x=>x.number===n),line=inv?.budgetLine||item.budgetLine||lineFor(inv?.note||item.note||'',inv?.method||item.method||''),reserved=num(inv?.budgetReserved),budgetObligation=inv?.budgetObligation===true,payroll=inv?.payrollShortfall===true||item.payrollShortfall===true,linkedReport=s.finance.payrollReports.find(row=>row.id===(inv?.payrollReportId||item.payrollReportId)||row.lines?.some(reportLine=>reportLine.dueRef===n)),reportId=linkedReport?.id||null,b=book(s,t),method=String(p.method||'transfer');
+  const t=requireCompany(s,item.company),a=num(item.total??item.amount),inv=findFinanceDocument(s,'invoices','number',n),line=inv?.budgetLine||item.budgetLine||lineFor(inv?.note||item.note||'',inv?.method||item.method||''),reserved=num(inv?.budgetReserved),budgetObligation=inv?.budgetObligation===true,payroll=inv?.payrollShortfall===true||item.payrollShortfall===true,linkedReport=s.finance.payrollReports.find(row=>row.id===(inv?.payrollReportId||item.payrollReportId)||row.lines?.some(reportLine=>reportLine.dueRef===n)),reportId=linkedReport?.id||null,b=book(s,t),method=String(p.method||'transfer');
   if(method==='cheque'){
     if(payroll)throw new Error('payroll-cheque-not-supported');
     const beneficiary=formalCounterparty(s,t,'مصروف',inv?.counterparty||item.counterparty),cheque=issueCheque(s,{company:t,amount:a,beneficiary,invoiceNumber:n,note:inv?.note||item.note||`سداد ${n}`,dueDay:p.dueDay??item.dueDay,requestRef:p.requestRef||`PAYABLE-CHQ-${n}`,draweeBank:p.draweeBank,issuePlace:p.issuePlace,paymentPlace:p.paymentPlace,authorizedSignatory:p.authorizedSignatory});
@@ -381,9 +401,9 @@ function payTaxes(s,p){
  b.taxPaid+=a;periods.forEach(period=>amendProtectedDocument(s,period,'vat-assessment','vat-assessment-paid',row=>{row.status='مسدد';row.paidAt=now(s);row.settlementId=settlementId;row.paymentReference=paymentReference;row.journalEntryId=entry.id;}));refreshBookTaxPayable(s,t);reconcile(s);return {company:t,amount:a,count:periods.length,settlementId,chequeId:cheque.id,paymentMethod:'cheque',paymentReference,journalEntryId:entry.id,settlement};
 }
 function issueCheque(s,p){
-  const t=requireCompany(s,p.company),a=num(p.amount),invoiceNumber=String(p.invoiceNumber||''),linked=invoiceNumber?findFinanceDocument(s,'invoices',x=>x.number===invoiceNumber):null,payable=invoiceNumber?s.finance.payables.find(x=>x.number===invoiceNumber):null,requestRef=String(p.requestRef||'');
-  if(invoiceNumber){if(!linked||!payable)throw new Error('cheque-linked-payable-not-found');if(requireCompany(s,linked.company)!==t||requireCompany(s,payable.company)!==t)throw new Error('cheque-linked-company-mismatch');if(linked.kind!=='مصروف'||['مدفوعة','مسددة','محصلة'].includes(linked.status))throw new Error('cheque-linked-invoice-not-payable');if(Math.abs(num(linked.total??linked.amount)-a)>.01||Math.abs(num(payable.total??payable.amount)-a)>.01)throw new Error('cheque-linked-amount-mismatch');const beneficiary=String(p.beneficiary||'').trim(),counterparty=String(linked.counterparty||payable.counterparty||'').trim();if(beneficiary&&counterparty&&beneficiary!==counterparty)throw new Error('cheque-linked-beneficiary-mismatch');const existing=findFinanceDocument(s,'cheques',row=>row.invoiceNumber===invoiceNumber&&row.status==='صادر');if(existing)return {...existing,idempotent:true};}
-  if(requestRef){const prior=findFinanceDocument(s,'cheques',row=>row.requestRef===requestRef&&!['مرتجع','ملغى'].includes(row.status));if(prior){if(prior.company!==t||Math.abs(num(prior.amount)-a)>.01||String(prior.invoiceNumber||'')!==invoiceNumber||String(prior.beneficiary)!==String(p.beneficiary||linked?.counterparty||''))throw new Error('cheque-request-conflict');return {...prior,idempotent:true};}}
+  const t=requireCompany(s,p.company),a=num(p.amount),invoiceNumber=String(p.invoiceNumber||''),linked=invoiceNumber?findFinanceDocument(s,'invoices','number',invoiceNumber):null,payable=invoiceNumber?s.finance.payables.find(x=>x.number===invoiceNumber):null,requestRef=String(p.requestRef||'');
+  if(invoiceNumber){if(!linked||!payable)throw new Error('cheque-linked-payable-not-found');if(requireCompany(s,linked.company)!==t||requireCompany(s,payable.company)!==t)throw new Error('cheque-linked-company-mismatch');if(linked.kind!=='مصروف'||['مدفوعة','مسددة','محصلة'].includes(linked.status))throw new Error('cheque-linked-invoice-not-payable');if(Math.abs(num(linked.total??linked.amount)-a)>.01||Math.abs(num(payable.total??payable.amount)-a)>.01)throw new Error('cheque-linked-amount-mismatch');const beneficiary=String(p.beneficiary||'').trim(),counterparty=String(linked.counterparty||payable.counterparty||'').trim();if(beneficiary&&counterparty&&beneficiary!==counterparty)throw new Error('cheque-linked-beneficiary-mismatch');const existing=findFinanceDocument(s,'cheques','invoiceNumber',invoiceNumber,row=>row.status==='صادر');if(existing)return {...existing,idempotent:true};}
+  if(requestRef){const prior=findFinanceDocument(s,'cheques','requestRef',requestRef,row=>!['مرتجع','ملغى'].includes(row.status));if(prior){if(prior.company!==t||Math.abs(num(prior.amount)-a)>.01||String(prior.invoiceNumber||'')!==invoiceNumber||String(prior.beneficiary)!==String(p.beneficiary||linked?.counterparty||''))throw new Error('cheque-request-conflict');return {...prior,idempotent:true};}}
   if(a<=0)throw new Error('invalid-cheque-amount');const beneficiary=formalCounterparty(s,t,'مصروف',String(p.beneficiary||linked?.counterparty||payable?.counterparty||'').trim());if(!beneficiary)throw new Error('cheque-beneficiary-required');
   const payee=partyMeta(s,beneficiary,'supplier'),id=`${String(documentProfile(s,t).documentPrefix||t).toUpperCase()}-CHQ-${String(s.finance.paymentSequence++).padStart(6,'0')}`,issuer=companyName(s,t),dueDay=Math.max(Math.floor(now(s)/86400),Math.floor(Number(p.dueDay) || linked?.dueDay || payable?.dueDay || Math.floor(now(s)/86400))),purpose=String(p.note||linked?.note||payable?.note||'سداد التزام تجاري');
   const r={id,chequeNumber:id,company:t,companyName:issuer,drawer:issuer,draweeBank:String(p.draweeBank||'Global Holdings Treasury Bank'),accountId:book(s,t).accounts[0].id,currency:String(p.currency||'USD'),amount:a,note:purpose,purposeCategory:String(p.purposeCategory||(invoiceNumber?'سداد ذمة بالشيك':'دفعة تجارية بالشيك')),purposeDetail:String(p.purposeDetail||purpose),paymentMethod:'شيك مصرفي',beneficiary:payee.name||beneficiary,beneficiaryPartyId:payee.id,issuePlace:String(p.issuePlace||s.profile?.hq||'الرياض، المملكة العربية السعودية'),paymentPlace:String(p.paymentPlace||'المركز المالي الرئيسي'),authorizedSignatory:String(p.authorizedSignatory||s.profile?.founder||'المفوض بالتوقيع'),dueDay,status:'صادر',issuedAt:now(s),invoiceNumber,requestRef:requestRef||null,type:p.type||'شيك مصرفي'};
@@ -392,8 +412,8 @@ function issueCheque(s,p){
 }
 function chequeResult(c,settled,reason){return {id:c.id,settled,status:settled?'settled':'bounced',reason,company:c.company,amount:c.amount,invoiceNumber:c.invoiceNumber||null,requestRef:c.requestRef||null};}
 function settleCheque(s,p){
- const c=findFinanceDocument(s,'cheques',x=>x.id===p.id);if(!c)throw new Error('cheque-not-found');if(c.status==='ملغى')throw new Error('cheque-cancelled');if(c.status==='مصروف')return chequeResult(c,true,'already-settled');
- const t=requireCompany(s,c.company),a=num(c.amount),inv=c.invoiceNumber?findFinanceDocument(s,'invoices',x=>x.number===c.invoiceNumber):null,payable=c.invoiceNumber?s.finance.payables.find(x=>x.number===c.invoiceNumber):null;
+ const c=findFinanceDocument(s,'cheques','id',p.id);if(!c)throw new Error('cheque-not-found');if(c.status==='ملغى')throw new Error('cheque-cancelled');if(c.status==='مصروف')return chequeResult(c,true,'already-settled');
+ const t=requireCompany(s,c.company),a=num(c.amount),inv=c.invoiceNumber?findFinanceDocument(s,'invoices','number',c.invoiceNumber):null,payable=c.invoiceNumber?s.finance.payables.find(x=>x.number===c.invoiceNumber):null;
  if(c.invoiceNumber){if(!inv||!payable)throw new Error('cheque-linked-payable-not-found');if(requireCompany(s,inv.company)!==t||requireCompany(s,payable.company)!==t)throw new Error('cheque-linked-company-mismatch');if(inv.kind!=='مصروف'||['مدفوعة','مسددة','محصلة'].includes(inv.status))throw new Error('cheque-linked-invoice-not-payable');if(Math.abs(num(inv.total??inv.amount)-a)>.01||Math.abs(num(payable.total??payable.amount)-a)>.01)throw new Error('cheque-linked-amount-mismatch');const counterparty=String(inv.counterparty||payable.counterparty||'').trim();if(counterparty&&String(c.beneficiary||'').trim()!==counterparty)throw new Error('cheque-linked-beneficiary-mismatch');}
  const line=p.line||inv?.budgetLine||lineFor(c.note,'شيك'),reserved=num(inv?.budgetReserved),budgetObligation=inv?.budgetObligation===true,b=book(s,t);
  if(!hasFunds(s,t,a)||(!reserved&&!budgetObligation&&!canSpend(s,t,a,line))){amendProtectedDocument(s,c,'cheque','cheque-returned',row=>{row.status='مرتجع';row.returnedAt=now(s);});if(inv)amendInvoice(s,inv,'invoice-cheque-returned',row=>{row.status='شيك مرتجع';});return chequeResult(c,false,'insufficient-funds-or-budget');}
@@ -406,10 +426,10 @@ function payByCheque(s,p={}){
   if(a<=0)throw new Error('invalid-cheque-amount');if(!beneficiary)throw new Error('cheque-beneficiary-required');
   // Resolve retries before accruing an invoice. A key can never fund a different purchase.
   const requestRef=String(p.requestRef||''),fingerprint=JSON.stringify([t,a,beneficiary,String(p.note||'شراء من مورد'),p.taxable!==false,line,String(p.number||'')]);
-  const prior=requestRef?findFinanceDocument(s,'cheques',row=>row.requestRef===requestRef):null;
+  const prior=requestRef?findFinanceDocument(s,'cheques','requestRef',requestRef):null;
   let doc;
   if(prior){
-    doc=findFinanceDocument(s,'invoices',row=>row.number===prior.invoiceNumber);
+    doc=findFinanceDocument(s,'invoices','number',prior.invoiceNumber);
     if(!doc||prior.company!==t||Math.abs(num(prior.amount)-a)>.01||prior.beneficiary!==beneficiary||prior.paymentFingerprint&&prior.paymentFingerprint!==fingerprint||String(doc.note)!==String(p.note||'شراء من مورد')||p.number&&doc.number!==p.number)throw new Error('cheque-request-conflict');
     if(prior.status==='مصروف'){if(doc.status!=='مسددة')throw new Error('cheque-payment-inconsistent');return {reference:prior.id,invoice:doc,cheque:prior,settlement:chequeResult(prior,true,'already-settled'),idempotent:true};}
   }else doc=accrue(s,{company:t,amount:a,note:p.note||'شراء من مورد',method:'شيك مصرفي',taxable:p.taxable!==false,counterparty:beneficiary,dueDay:p.dueDay??Math.floor(now(s)/86400),number:p.number,line});
@@ -469,7 +489,7 @@ function settleDailyCash(s,p={}){
   ensure(s);const t=requireCompany(s,p.company,{defaultGroup:false}),amount=Number(p.amount),day=Math.max(0,Math.floor(Number(p.day)||Math.floor(now(s)/86400))),reference=String(p.reference||`DAY-CASH-${t||'INVALID'}-${day}`);
   if(t==='group')throw new Error('invalid-daily-settlement-company');if(!Number.isFinite(amount))throw new Error('invalid-daily-settlement-amount');
   const prior=findTransferByIdOrReference(s,reference);if(prior){if(prior.company!==t||Math.abs(Number(prior.requestedAmount)-Math.abs(amount))>.01)throw new Error('daily-settlement-reference-conflict');return {company:t,amount:0,reference,idempotent:true,status:prior.status};}
-  if(p.invoiceNumbers!==undefined&&(!Array.isArray(p.invoiceNumbers)||p.invoiceNumbers.length>20||p.invoiceNumbers.some(number=>!hasFinanceDocument(s,'invoices',row=>row.number===number&&row.company===t))))throw new Error('invalid-settlement-invoices');
+  if(p.invoiceNumbers!==undefined&&(!Array.isArray(p.invoiceNumbers)||p.invoiceNumbers.length>20||p.invoiceNumbers.some(number=>!hasFinanceDocument(s,'invoices','number',number,row=>row.company===t))))throw new Error('invalid-settlement-invoices');
   if([p.grossAmount,p.deductions].some(value=>value!==undefined&&(!Number.isFinite(Number(value))||Number(value)<0)))throw new Error('invalid-settlement-breakdown');
   const settledDays=s.finance.dailySettlementDays||{};if(Number.isFinite(settledDays[t])&&day<=settledDays[t])return {company:t,amount:0,reference,idempotent:true,status:'منفذة سابقًا'};
   if(Math.abs(amount)<.005&&!(Number(p.grossAmount)>0))return {company:t,amount:0,reference,idempotent:false,status:'صفر'};
@@ -478,7 +498,7 @@ function settleDailyCash(s,p={}){
   if(shortfall>0)s.finance.pendingDailyCash[t]=(Number(s.finance.pendingDailyCash[t])||0)-shortfall;
   const transfer={id:reference,reference,at:now(s),day,from:incoming?'مركز التسوية التشغيلية اليومية':b.accounts[0].id,to:incoming?b.accounts[0].id:'مركز التسوية التشغيلية اليومية',amount:settled,requestedAmount:requested,shortfall,carriedAdjustment:p.grossAmount===undefined?0:amount-(num(p.grossAmount)-num(p.deductions)),signedAmount:incoming?settled:-settled,netAmount:incoming?settled:-settled,note:String(p.note||`تسوية صافي رحلات اليوم ${day} · ${companyName(s,t)}`),purposeCategory:incoming?'وصول صافي التشغيل للحساب الجاري':'تسوية عجز تشغيل',purposeDetail:String(p.note||`صافي الحركة النقدية التشغيلية لليوم ${day}`),paymentMethod:'تسوية تشغيل يومية',company:t,kind:'daily-operating-settlement',label:incoming?'وصول صافي التشغيل للحساب الجاري':'تسوية عجز التشغيل',status:shortfall>0?'منفذة جزئيًا':'منفذة',accountBalanceBefore:balanceBefore,accountBalanceAfter:balanceAfter};
   const profile=collectionProfile(t,s);Object.assign(transfer,{collection:true,channel:profile.channel,service:profile.service,invoiceNumbers:(p.invoiceNumbers||[]).slice(0,20),grossAmount:num(p.grossAmount??Math.max(0,amount)),deductions:num(p.deductions),tripCount:Math.max(0,Math.floor(Number(p.tripCount)||0)),sourceRefs:[`TRIPS-${t}-${day}`]});if(incoming)transfer.from=profile.source;
-  for(const number of transfer.invoiceNumbers){const doc=findFinanceDocument(s,'invoices',row=>row.number===number&&row.company===t);if(doc&&doc.transferReference!==reference)amendInvoice(s,doc,'invoice-transfer-linked',row=>{row.transferReference=reference;});}
+  for(const number of transfer.invoiceNumbers){const doc=findFinanceDocument(s,'invoices','number',number,row=>row.company===t);if(doc&&doc.transferReference!==reference)amendInvoice(s,doc,'invoice-transfer-linked',row=>{row.transferReference=reference;});}
   protectDocument(s,transfer,'daily-operating-settlement');s.finance.dailySettlementDays={...settledDays,[t]:day};insertFinanceTransfer(s,{...transfer});if(settled>0){ledger(s,t,transfer);journal(s,t,transfer.note,incoming?[{account:b.accounts[0].id,debit:settled},{account:'مركز التسوية التشغيلية اليومية',credit:settled}]:[{account:'مركز التسوية التشغيلية اليومية',debit:settled},{account:b.accounts[0].id,credit:settled}],reference);}reconcile(s);return {company:t,amount:incoming?settled:-settled,reference,idempotent:false,status:transfer.status,shortfall,balanceBefore,balanceAfter,documentProofId:transfer.documentProofId,contentDigest:transfer.contentDigest};
 }
 
@@ -588,7 +608,7 @@ function initializeCapital(s,p){
 }
 function closeVatPeriod(s,p={}){
  const day=Math.max(0,Math.floor(Number.isFinite(Number(p.day))?Number(p.day):Math.floor(now(s)/86400))),periodKey=calendarMonthForDay(day),rows=[];
- for(const t of companyIds(s)){const b=book(s,t),vat=b.vat||(b.vat={output:0,input:0,creditCarry:0,periodOutputStart:0,periodInputStart:0}),id=`TAX-${t}-${periodKey}`,existing=findFinanceDocument(s,'periods',row=>row.id===id);if(existing){if(Math.abs(num(existing.outputEnd)-num(vat.output))>.01||Math.abs(num(existing.inputEnd)-num(vat.input))>.01)throw new Error(`vat-period-already-closed:${id}`);rows.push(clone(existing));refreshBookTaxPayable(s,t);continue;}const deltaOutput=Math.max(0,num(vat.output)-num(vat.periodOutputStart)),deltaInput=Math.max(0,num(vat.input)-num(vat.periodInputStart)),openingCredit=num(vat.creditCarry),net=deltaOutput-deltaInput-openingCredit,periodTax=Math.max(0,net),closingCredit=Math.max(0,-net),outputEnd=num(vat.output),inputEnd=num(vat.input),fingerprint=JSON.stringify([t,periodKey,deltaOutput,deltaInput,openingCredit,closingCredit,periodTax,outputEnd,inputEnd]);vat.creditCarry=closingCredit;vat.periodOutputStart=outputEnd;vat.periodInputStart=inputEnd;const row={id,company:t,companyName:companyName(s,t),periodKey,period:`الفترة الضريبية ${periodKey}`,outputVAT:deltaOutput,inputVAT:deltaInput,openingCredit,closingCredit,amount:periodTax,outputEnd,inputEnd,dueDay:day+15,status:periodTax>0?'مستحق':'صفر',closeFingerprint:fingerprint,closedAt:now(s)};protectDocument(s,row,'vat-assessment');s.finance.periods.unshift(row);rows.push(row);refreshBookTaxPayable(s,t);}
+ for(const t of companyIds(s)){const b=book(s,t),vat=b.vat||(b.vat={output:0,input:0,creditCarry:0,periodOutputStart:0,periodInputStart:0}),id=`TAX-${t}-${periodKey}`,existing=findFinanceDocument(s,'periods','id',id);if(existing){if(Math.abs(num(existing.outputEnd)-num(vat.output))>.01||Math.abs(num(existing.inputEnd)-num(vat.input))>.01)throw new Error(`vat-period-already-closed:${id}`);rows.push(clone(existing));refreshBookTaxPayable(s,t);continue;}const deltaOutput=Math.max(0,num(vat.output)-num(vat.periodOutputStart)),deltaInput=Math.max(0,num(vat.input)-num(vat.periodInputStart)),openingCredit=num(vat.creditCarry),net=deltaOutput-deltaInput-openingCredit,periodTax=Math.max(0,net),closingCredit=Math.max(0,-net),outputEnd=num(vat.output),inputEnd=num(vat.input),fingerprint=JSON.stringify([t,periodKey,deltaOutput,deltaInput,openingCredit,closingCredit,periodTax,outputEnd,inputEnd]);vat.creditCarry=closingCredit;vat.periodOutputStart=outputEnd;vat.periodInputStart=inputEnd;const row={id,company:t,companyName:companyName(s,t),periodKey,period:`الفترة الضريبية ${periodKey}`,outputVAT:deltaOutput,inputVAT:deltaInput,openingCredit,closingCredit,amount:periodTax,outputEnd,inputEnd,dueDay:day+15,status:periodTax>0?'مستحق':'صفر',closeFingerprint:fingerprint,closedAt:now(s)};protectDocument(s,row,'vat-assessment');s.finance.periods.unshift(row);rows.push(row);refreshBookTaxPayable(s,t);}
  reconcile(s);return rows;
 }
 // Build 358: fleet purchases are zero-rated (procurement-core). Purchases saved before carried 15% input VAT, and the
@@ -676,5 +696,5 @@ function execute(ctx,cmd,p={},meta={}){
 // it). Its collections are sealed: a save reuses the text (and vault chunk) of every unchanged archive part, and durable
 // drafts and rollback snapshots share the rows instead of copying the whole archive.
 (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('finance',['auditArchive.records.*']);
-const API={VERSION,RATING_SPREAD,floatingDebtRate,fixedDebtQuote,debtRate,interestBearing,payableChequeBlocker,zeroRateFleetPurchaseVat,FLEET_PURCHASE_NOTE,COMPANY_METRIC_KEYSPACE:'company-instance-id/v1',annualPerformance,TYPES,companyIds,supportsCompany,requireCompany,companyMetricMap,collectionProfile,ensure,makeBook,book,operating,total,budget,remaining,lineRemaining,lineFor,canSpend,consumeBudget,reserveBudget,consumeReserved,releaseReserved,reconcile,journal,invoice,issueInvoice,payByCheque,performance,monthlyStatement,calendarMonthForDay,centralTreasuryPolicy,intercompanyLoanSnapshot,closeVatPeriod,withCollectionBatch,execute};globalThis.GH_FINANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('finance',API);if(globalThis.window&&window!==globalThis)window.GH_FINANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+const API={VERSION,findArchivedDocument,RATING_SPREAD,floatingDebtRate,fixedDebtQuote,debtRate,interestBearing,payableChequeBlocker,zeroRateFleetPurchaseVat,FLEET_PURCHASE_NOTE,COMPANY_METRIC_KEYSPACE:'company-instance-id/v1',annualPerformance,TYPES,companyIds,supportsCompany,requireCompany,companyMetricMap,collectionProfile,ensure,makeBook,book,operating,total,budget,remaining,lineRemaining,lineFor,canSpend,consumeBudget,reserveBudget,consumeReserved,releaseReserved,reconcile,journal,invoice,issueInvoice,payByCheque,performance,monthlyStatement,calendarMonthForDay,centralTreasuryPolicy,intercompanyLoanSnapshot,closeVatPeriod,withCollectionBatch,execute};globalThis.GH_FINANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('finance',API);if(globalThis.window&&window!==globalThis)window.GH_FINANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

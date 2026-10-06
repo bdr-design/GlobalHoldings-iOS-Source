@@ -254,8 +254,12 @@
     r.distanceKm=routeMode==='road'&&Number(r.roadNetworkDistanceKm)>0?Number(r.roadNetworkDistanceKm):routeDistance(r.route);
     r.maxLegKm=Number(r.maxLegKm)||routeLongestLeg(r.route);
     r.tripSeconds=r.distanceKm/r.effectiveSpeedKmh*3600;
+    // Build 359: a sea route carries the maritime CII plan's slow steaming (normalizeAsset reads it).
+    const speedFactor=routeMode==='sea'&&target?window.GH_GOVERNANCE_CORE?.seaSpeedFactor?.(target)??1:1;if(speedFactor<1)r.speedFactor=speedFactor;else delete r.speedFactor;
     return r;
   }
+  // The runtime routes again (after the maritime CII plan changes the sea routes' speed).
+  function refreshRouteRuntime(){for(const route of Object.values(routeTemplates))prepareRoute(route,state);}
   Object.values(routeTemplates).forEach(prepareRoute);
   const BASE_ROUTE_IDS = new Set(Object.keys(routeTemplates));
 
@@ -824,9 +828,8 @@
   // Save Now (settings): one ordinary save, right away (after the day close in progress, if any).
   function saveNow(){
     if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked()){notice('الحفظ مشغول الآن بعملية أخرى. أعد المحاولة بعد لحظات.');return false;}
-    const staged=stagedStateBusy(),ok=persistStateNow();diag('SAVE_MANUAL',{ok,staged,saveRevision:Number(state.saveRevision)||0});
-    notice(!ok?'تعذر حفظ اللعبة الآن. التفاصيل في صحة النظام.':staged?'سيُحفظ التقدم فور انتهاء إقفال اليوم الجاري.':'تم حفظ اللعبة.');
-    return ok;
+    const staged=stagedStateBusy();
+    return persistStateSliced().then(ok=>{diag('SAVE_MANUAL',{ok,staged,saveRevision:Number(state.saveRevision)||0});notice(!ok?'تعذر حفظ اللعبة الآن. التفاصيل في صحة النظام.':staged?'سيُحفظ التقدم فور انتهاء إقفال اليوم الجاري.':'تم حفظ اللعبة.');return ok;});
   }
   function setSaveCap(minutes){
     const policy=window.GH_SAVE_POLICY,value=Number(minutes);if(!policy?.CAP_CHOICES.includes(value))return false;
@@ -837,6 +840,8 @@
     return {capMinutes:policy?.capMinutes(state)??15,choices:policy?.CAP_CHOICES||[],lastSaveAgoMs:Math.max(0,appMetricClock()-lastSaveAtMs())};
   }
   function persistStateNow(options={}){
+    // A save in slices holds persistence: this save joins it (it runs once more after, with its checks, on the state then).
+    if(window.GH_PERSISTENCE.slicedActive?.())return window.GH_PERSISTENCE.commitState(state,{storageKey,appVersion:APP_VERSION}).ok===true;
     if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
     if(stagedStateBusy()){if(!stagedSaveQueued){stagedSaveQueued=true;afterStagedState(()=>{stagedSaveQueued=false;persistStateNow({...options,throwOnError:false});});}diag('SAVE_DEFERRED_STAGED',{saveRevision:Number(state.saveRevision)||0});return true;}
     const metricClock=()=>globalThis.performance?.now?.()??Date.now(),runtimeMetrics=window.__GH_APP_RUNTIME_INSTRUMENTATION__||null,pending=runtimeMetrics?.pendingCompaction||null;
@@ -853,6 +858,23 @@
       metric.ok=true;metric.deferred=!!out.deferred;metric.saveRevisionAfter=Number(state.saveRevision)||0;metric.totalMs=Math.max(0,metricClock()-totalStart);if(runtimeMetrics)runtimeMetrics.lastSavePreparation={...metric};
       diag(out.deferred?'SAVE_COALESCED':'SAVE_OK',{bytes:out.utf8Bytes??null,saveRevision:state.saveRevision,deferred:!!out.deferred});return true;
     }catch(error){metric.error=String(error.message||error);metric.totalMs=Math.max(0,metricClock()-totalStart);if(runtimeMetrics)runtimeMetrics.lastSavePreparation={...metric};diag('SAVE_FAILED',{message:String(error.message||error)});if(options.throwOnError)throw error;console.warn('تعذر حفظ اللعبة',error);return false;}
+  }
+  // Build 359 (the ordinary save was one block of 80-200 ms: schema, serialization and encoding at once): Save Now and the
+  // checkpoint save a copy of the state in slices across frames (GH_PERSISTENCE.commitStateSliced, which holds the
+  // persistence lock from the copy to the commit). The same checks as an ordinary save run first: no critical integrity
+  // issue may be introduced. A transaction's save and the background save stay whole and synchronous (save()).
+  function prepareSlicedSave(){
+    const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(x=>x.severity==='critical').map(x=>String(x.id||x.code||x.title)));
+    pruneRouteCache();reconcileConsolidatedCash();
+    const integrity=window.GH_INTEGRITY_CORE.check(state),introduced=(integrity?.critical||(integrity?.issues||[]).filter(x=>x.severity==='critical')).filter(x=>!priorCriticalIds.has(String(x.id||x.code||x.title)));
+    return introduced.length?{ok:false,reason:`Critical integrity failed: ${introduced.map(x=>x.code||x.title).join(',')}`}:{ok:true};
+  }
+  async function persistStateSliced(){
+    if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__)return false;
+    if(stagedStateBusy())return persistStateNow();
+    const out=await window.GH_PERSISTENCE.commitStateSliced(state,{storageKey,appVersion:APP_VERSION,prepare:prepareSlicedSave,yieldToFrame:()=>yieldForInteractivePaint()});
+    if(out?.ok)diag('SAVE_OK',{bytes:out.utf8Bytes??null,saveRevision:state.saveRevision,sliced:true});else{diag('SAVE_FAILED',{message:String(out?.reason||'sliced-save-failed'),sliced:true});console.warn('تعذر حفظ اللعبة',out?.reason);}
+    return out?.ok===true;
   }
   function save(){
     const tx=window.GH_TRANSACTION_CORE;
@@ -887,7 +909,7 @@
     return step.value;
   }
   async function runDurableStateCommand(name,apply,{afterCommit=null,silent=false}={}){
-    await stagedStateSettled();
+    await stagedStateSettled();await window.GH_PERSISTENCE.slicedSettled?.();
     if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){if(!silent)notice('الحفظ مشغول بعملية ذرية أخرى. لم يتغير أي أصل؛ أعد المحاولة بعد لحظات.');return false;}
     durableCommandInProgress=true;
     let draft=null,committed=false,settleDurableCommand=null,rootSessions=[];
@@ -989,7 +1011,7 @@
     if(domain&&typeof domain==='object'&&!Array.isArray(domain)){const request=domain;domain=request.domain;name=request.name;payload=request.payload||{};options={...request,...options};}
     domain=String(domain||'').trim();name=String(name||'').trim();if(!domain||!name)throw new Error('authorized-command-invalid');
     const authority=founderAuthorization(state);if(!authority.signature||!authority.mandate){openSignatureDialog?.({required:true});if(!options.silent)notice('اعتمد توقيعك المرئي أولًا. لم تُنفذ المعاملة.');throw new Error('active-visual-seal-required');}
-    await stagedStateSettled();
+    await stagedStateSettled();await window.GH_PERSISTENCE.slicedSettled?.();
     if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked())throw new Error('durable-transaction-in-progress');
     const envelope=window.GH_AUTHORIZATION.buildActiveEnvelope(state,{domain,name,payload,principalId:FOUNDER_PRINCIPAL_ID,actor:{kind:'player',principalId:FOUNDER_PRINCIPAL_ID},idempotencyKey:options.idempotencyKey||authorizationIdempotencyKey(state,domain,name,payload)});
     durableCommandInProgress=true;let committed=false,settle=null;durableCommandSettlement=new Promise(resolve=>{settle=resolve;});
@@ -1572,7 +1594,7 @@
       window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`أُنشئ خط ${asset.type==='air'?'جوي':'بحري'} عام: ${route.name}.`,type:'route'});return {assetId:asset.id,routeId:route.id};
     },{afterCommit:result=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('assetManage',result.assetId);}});
   }
-  const yieldFleetPlanning=()=>new Promise(resolve=>setTimeout(resolve,0));
+  const yieldFleetPlanning=()=>new Promise(resolve=>setTimeout(resolve,0)),DISPATCH_CHUNK=500;
   let airSeaNetworkWorkerRequestId=0;
   function createAirSeaNetworkWorkerClient(){
     if(typeof Worker!=='function')return null;
@@ -1633,7 +1655,6 @@
       const eligible=routePlan.sortedAssetIds.map(id=>eligibleById.get(id));if(eligible.some(asset=>!asset))throw new Error('تعذر ربط مخطط الشبكة بأصوله الحالية');
       const registeredRouteById=new Map(registeredRoutes.map(route=>[route.id,route])),assignments=[],createdRoutes=[],diversity=newRouteDiversityLedger(),diversityRoutes=new Set();
       for(const row of routePlan.assignments){const asset=eligibleById.get(row.assetId),route=registeredRouteById.get(row.routeId),origin=originByAssetId.get(row.assetId);if(!asset||!route||!origin)throw new Error('فقد أصل أو مسار قائم أثناء تخطيط الشبكة');assignments.push({asset,route});if(!diversityRoutes.has(route.id)){const fromOrigin=sameUnderlyingFacilityFor(draft,origin.id,route.fromFacility),point=fromOrigin?route.route.at(-1):route.route[0];recordRouteDiversity(diversity,route.id,point,haversine(origin.coords,point));diversityRoutes.add(route.id);}}
-      let createdCount=0;
       // New routes for the assets still waiting at each origin share the mode's free slots: the target load while the
       // slots allow it, else a higher load per route (a new base never fails for want of registry slots).
       let groupSlots;try{groupSlots=window.GH_ROUTE_CORE.allocateForBudget(window.GH_ROUTE_CORE.modeRouteBudget(draft,type),routePlan.waitingGroups.map(group=>group.assetIds.length),targetLoad,window.GH_ROUTE_CORE.LIMITS.fleetCapacity);}
@@ -1649,7 +1670,7 @@
           if(groupCapacity>baseCapacity)route.fleetCapacity=groupCapacity;
           if(members.some(asset=>!routeFitsAsset(asset,route)))throw new Error(`${seedAsset.name}: المسار المختار لا يناسب كل أصول الدفعة`);
           dispatch('routes','create',{route});routes[route.id]=route;createdRoutes.push(route);recordRouteDiversity(diversity,entity.key,entity.coords,choice.direct);for(const asset of members)assignments.push({asset,route});
-          createdCount++;if(createdCount%3===0)await yieldFleetPlanning();
+          await yieldFleetPlanning();
         }
       }
       if(assignments.length!==eligible.length)throw new Error(`لم يكتمل توزيع جميع ${label} على شبكة التشغيل`);
@@ -1659,15 +1680,26 @@
       // Each distinct (route, base) once per command (rows name it by routeRef): the command is authorized, hashed and
       // copied as a whole, and route geometry repeated on every asset made a 12,000-aircraft payload megabytes long.
       const routeTable={},routeRefOf=(routeId,baseFacility)=>{const ref=`${routeId}@${baseFacility||''}`;if(!Object.prototype.hasOwnProperty.call(routeTable,ref))routeTable[ref]=routeMatchingFacilityFor(draft,routes,routeId,baseFacility);return ref;};
+      // Build 359 (a 3,000-aircraft dispatch ran its last steps in blocks of 2 s): the assignment, the normalization and
+      // the departure run DISPATCH_CHUNK assets at a time, each chunk naming only its own routes, with the frame yielded
+      // between chunks. Each chunk sees the ones before it in the draft (route slots, occupied corridors), so the result
+      // is the batch's; the command stays one, with one approval and one save.
       const batch=assignments.map(({asset,route})=>({id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',routeRef:routeRefOf(route.id,asset.baseFacility)}));
-      const assigned=dispatch('fleet','assign-routes-batch',{assignments:batch,routes:routeTable}).result;
-      if(!Array.isArray(assigned)||assigned.length!==eligible.length)throw new Error(`رفض محرك الأسطول توزيع ${label}`);
-      // The fleet owner returns receipts; normalization is written through drafts.
-      {const fleetRows=assigned.map(asset=>window.GH_FLEET_DATA.draft(draft,asset.id));for(const asset of fleetRows){const route=routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility);window.GH_FLEET_CORE.normalizeAsset(asset,{route,catalogItem:catalogItem(asset.type,asset.catalogId)});}window.GH_FLEET_DATA.commit(draft,fleetRows);}
+      const chunkRoutes=rows=>{const table={};for(const row of rows)table[row.routeRef]=routeTable[row.routeRef];return table;};
+      const assigned=[];for(let from=0;from<batch.length;from+=DISPATCH_CHUNK){
+        await yieldFleetPlanning();const rows=batch.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','assign-routes-batch',{assignments:rows,routes:chunkRoutes(rows)}).result;
+        if(!Array.isArray(out)||out.length!==rows.length)throw new Error(`رفض محرك الأسطول توزيع ${label}`);assigned.push(...out);
+        // The fleet owner returns receipts; normalization is written through drafts.
+        const fleetRows=out.map(asset=>window.GH_FLEET_DATA.draft(draft,asset.id));for(const asset of fleetRows){const route=routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility);window.GH_FLEET_CORE.normalizeAsset(asset,{route,catalogItem:catalogItem(asset.type,asset.catalogId)});}window.GH_FLEET_DATA.commit(draft,fleetRows);
+      }
+      if(assigned.length!==eligible.length)throw new Error(`رفض محرك الأسطول توزيع ${label}`);
       const normalized=assigned.map(asset=>window.GH_FLEET_DATA.get(draft,asset.id));
       const departures=normalized.map(asset=>({id:asset.id,routeRef:routeRefOf(asset.routeId,asset.baseFacility),load:loadLabel(asset),delaySeconds:fleet.departureDelay(asset)}));
-      const departed=dispatch('fleet','depart-batch',{departures,routes:routeTable}).result;
-      if(!Array.isArray(departed)||departed.length!==eligible.length)throw new Error(`رفض محرك الأسطول جدولة مغادرة ${label}`);
+      const departed=[];for(let from=0;from<departures.length;from+=DISPATCH_CHUNK){
+        await yieldFleetPlanning();const rows=departures.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','depart-batch',{departures:rows,routes:chunkRoutes(rows)}).result;
+        if(!Array.isArray(out)||out.length!==rows.length)throw new Error(`رفض محرك الأسطول جدولة مغادرة ${label}`);departed.push(...out);
+      }
+      if(departed.length!==eligible.length)throw new Error(`رفض محرك الأسطول جدولة مغادرة ${label}`);
       if(previousRouteIds.size){const inUse=window.GH_FLEET_DATA.distinctRefs(draft,'routeId');for(const routeId of previousRouteIds)if(!inUse.has(routeId)&&(draft.customRoutes||[]).some(route=>route.id===routeId)){window.GH_ROUTE_CORE.execute({state:draft},'delete',{id:routeId});delete routes[routeId];}}
       const routeIds=[...new Set(normalized.map(asset=>asset.routeId))],moving=normalized.filter(asset=>asset.phase==='moving').length,scheduled=normalized.filter(asset=>asset.departureScheduled).length;
       window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`وُزعت ${eligible.length} ${type==='air'?'طائرة':'سفينة'} ذريًا على ${routeIds.length} مسارًا ${routeLabel} مشتركًا؛ ${moving} غادرت و${scheduled} مجدولة بفتحات زمنية، وأُنشئ ${createdRoutes.length} مسار جديد فقط.`,type:'dispatch'});
@@ -2314,7 +2346,7 @@
       companies,research:{efficiency:research.efficiency,automation:research.automation,cleanEnergy:research.cleanEnergy},
       sustainability:{safShare:sustainability.safShare,shorePower:sustainability.shorePower,electricRoadShare:sustainability.electricRoadShare,...(programEffects=>({maintenanceFactor:programEffects.maintenance,reputationBonus:programEffects.reputation}))(window.GH_GOVERNANCE_CORE?.programEffects?.(state)||{maintenance:1,reputation:0})},
       economy:{jetFuel:economy.jetFuel,bunker:economy.bunker,diesel:economy.diesel,airDemand:economy.airDemand,seaDemand:economy.seaDemand,roadDemand:economy.roadDemand},fuelHedges:window.GH_MARKET_CORE?.hedgeContext?.(state)||{},
-      market:{share:market.share||{},competitorPressure:market.competitorPressure||{}},reputation:realism.reputation||{},ownedFacilities,baseDwellFactor:baseDwellFactors(facilities),simSeconds:Number(state.simSeconds)||0,
+      market:{share:market.share||{},competitorPressure:market.competitorPressure||{}},maritime:{fuelFactor:window.GH_GOVERNANCE_CORE?.seaFuelFactor?.(state)??1},reputation:realism.reputation||{},ownedFacilities,baseDwellFactor:baseDwellFactors(facilities),simSeconds:Number(state.simSeconds)||0,
       workerCompatible:realism.schema===window.GH_REALISM?.SCHEMA&&typeof window.GH_ADVANCED?.adjustTripEconomics==='function'&&typeof window.GH_REALISM?.tripModifier==='function'
     };
   }
@@ -2689,6 +2721,12 @@
     let out=null;const result=(tx.isActive()?tx.join:tx.execute)(state,{label,apply:()=>{out=run();},scope:['documentProofs'],writeRoots:['documentProofs'],rowRoots:PROOF_MAINTENANCE_ROLLBACK,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true});
     if(!result.committed)throw new Error(result.reason||`${label}-rejected`);return out;
   }
+  // Build 359: records no document, replay result or later version needs leave the store here (an issue no longer
+  // collects them: that walked every document, 200 documents at a time).
+  function collectProofRecords(){
+    const proofs=window.GH_DOCUMENT_PROOF;if(typeof proofs?.compact!=='function')return null;
+    return proofMaintenancePass('proof-record-collection',()=>proofs.compact(state));
+  }
   function checkpointProofHistory(){
     const proofs=window.GH_DOCUMENT_PROOF;if(typeof proofs?.checkpointAncestors!=='function')return null;
     return proofMaintenancePass('proof-history-checkpoints',()=>proofs.checkpointAncestors(state));
@@ -2707,13 +2745,60 @@
     if(!result.committed)throw new Error(result.reason||'authorization-archive-compaction-rejected');return out;
   }
 
+  // Build 359 (owner: a million assets with their invoices, cheques and documents; every archived document stays in full
+  // for 12 game months and the finance audit archive holds at most 20,000 rows): rows past that are sealed, oldest first.
+  // A row with a proof is sealed by GH_DOCUMENT_PROOF.sealDocuments (its proof record and earlier versions leave the store,
+  // a per-period digest keeps them); every sealed row's count, total, id range and sequence join its kind's audit digest
+  // (the same digest older ledger rows already join), so sequences and totals stay whole. A row a live document still
+  // names (a cheque's invoice, an open payable or receivable, a transfer's document), or whose proof a live document or
+  // ledger row carries, is kept. The selection is made once per maintenance task; each frame seals one round (up to 200
+  // rows; documents are verified for 6 ms, the rest wait for the next frame) until the selection is done, so the archive
+  // stays within its bound however many documents a day brings.
+  const AUDIT_RETENTION_SECONDS=365*86400,AUDIT_DETAIL_LIMIT=20000,AUDIT_SEAL_ROUND=200,AUDIT_SEAL_VERIFY_MS=6,AUDIT_SEAL_ROLLBACK=Object.freeze({documentProofs:Object.freeze({level:'containers'})});
+  const auditRowAt=row=>Math.max(0,Number(row?.at??row?.issuedAt??row?.closedAt??row?.createdAt)||0);
+  const AUDIT_LIVE_BUCKETS=Object.freeze(['invoices','cheques','transfers','payables','receivables','periods','taxSettlements','debtRecords','debtSettlements','payrollReports']),AUDIT_LINK_FIELDS=Object.freeze(['invoiceNumber','documentNumber','number','reference','sourceRef','chequeNumber','chequeId','replacedBy']);
+  function auditSealSelection(){
+    const records=state.finance?.auditArchive?.records;if(!records||typeof records!=='object')return [];
+    const rows=[];for(const [kind,list] of Object.entries(records))if(Array.isArray(list))for(const row of list)rows.push({kind,row,at:auditRowAt(row)});
+    const cutoff=(Number(state.simSeconds)||0)-AUDIT_RETENTION_SECONDS,excess=Math.max(0,rows.length-AUDIT_DETAIL_LIMIT);
+    if(!excess&&!rows.some(entry=>entry.at<cutoff))return [];
+    const links=new Set();for(const bucket of AUDIT_LIVE_BUCKETS)for(const row of Array.isArray(state.finance?.[bucket])?state.finance[bucket]:[])for(const field of AUDIT_LINK_FIELDS){const value=row?.[field];if(value!=null&&value!=='')links.add(String(value));}
+    const linked=row=>[row?.number,row?.id,row?.reference,row?.chequeNumber].some(value=>value!=null&&value!==''&&links.has(String(value)));
+    rows.sort((a,b)=>a.at-b.at);const out=[];
+    for(let index=0;index<rows.length;index++){const entry=rows[index];if(entry.at>=cutoff&&index>=excess)break;if(!linked(entry.row))out.push(entry);}
+    return out;
+  }
+  function liveProofIds(){
+    const ids=new Set(),add=row=>{if(row?.documentProofId)ids.add(row.documentProofId);};
+    for(const bucket of AUDIT_LIVE_BUCKETS)for(const row of Array.isArray(state.finance?.[bucket])?state.finance[bucket]:[])add(row);
+    for(const row of Object.values(state.contractRegistry||{}))add(row);
+    for(const book of Object.values(state.companyFinance||{}))for(const row of Array.isArray(book?.ledger)?book.ledger:[])add(row);
+    for(const row of Array.isArray(state.treasury?.ledger)?state.treasury.ledger:[])add(row);
+    return ids;
+  }
+  function sealAuditRound(entry){
+    const proofs=window.GH_DOCUMENT_PROOF,tx=window.GH_TRANSACTION_CORE;if(typeof proofs?.sealDocuments!=='function'||!tx?.execute||!tx?.join)return 0;
+    const records=state.finance?.auditArchive?.records||{},present=new Map(),round=[];
+    const holds=item=>{let rows=present.get(item.kind);if(!rows){rows=new Set(Array.isArray(records[item.kind])?records[item.kind]:[]);present.set(item.kind,rows);}return rows.has(item.row);};
+    while(entry.queue.length&&round.length<AUDIT_SEAL_ROUND){const item=entry.queue.shift();if(holds(item))round.push(item);}
+    if(!round.length)return 0;
+    const started=globalThis.performance?.now?.()??Date.now(),deadline=()=>started+AUDIT_SEAL_VERIFY_MS;
+    let sealed=0;const result=(tx.isActive()?tx.join:tx.execute)(state,{label:'audit-archive-seal',scope:['finance','documentProofs'],writeRoots:['finance','documentProofs'],rowRoots:AUDIT_SEAL_ROLLBACK,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,apply:()=>{
+      const withProof=round.filter(item=>item.row?.documentProofId),done=new Set(round.filter(item=>!item.row?.documentProofId).map(item=>item.row));
+      if(withProof.length){const out=proofs.sealDocuments(state,withProof.map(item=>item.row),{keep:entry.keep,deadline:deadline()});for(const document of out.sealed)done.add(document);entry.queue.unshift(...withProof.slice(out.examined));}
+      const archive=financeAuditArchive(),byKind=new Map();for(const item of round)if(done.has(item.row)){const list=byKind.get(item.kind)||[];list.push(item.row);byKind.set(item.kind,list);}
+      for(const [kind,rows] of byKind){const gone=new Set(rows);archive.records[kind]=archive.records[kind].filter(row=>!gone.has(row));if(!archive.records[kind].length)delete archive.records[kind];mergeAuditDigest(buildAuditDigest(kind,rows));sealed+=rows.length;}
+    }});
+    if(!result.committed)throw new Error(result.reason||'audit-archive-seal-rejected');return sealed;
+  }
+
   // Build 359: the maintenance pass every 12 game hours ran its parts in one frame (60 ms on iPhone, twice per advanced
   // day) and asked the next hourly slice for a full schema pass (83 ms in one frame). Its parts now queue here and the
   // simulation engine runs one per frame, between slices (adapter.runDeferredWork): no slice is open while a part runs,
   // and no slice starts until the queue is empty. A schema pass after a compaction that rewrote history runs one section
   // per frame (GH_SAVE_SCHEMA.validationSteps) and starts again if a command changes the state between sections.
   const maintenanceQueue=[];
-  const MAINTENANCE_TASKS=Object.freeze(['compact','proof-checkpoints','proof-archived','fleet','health']);
+  const MAINTENANCE_TASKS=Object.freeze(['compact','proof-checkpoints','proof-archived','archive-seal','fleet','health']);
   function queueMaintenance(){for(const task of MAINTENANCE_TASKS)if(!maintenanceQueue.some(entry=>entry.task===task))maintenanceQueue.push({task});}
   function schemaSectionsTask(){
     const schema=window.GH_SAVE_SCHEMA;if(typeof schema?.validationSteps!=='function')return null;
@@ -2723,7 +2808,10 @@
   function haltOnGlobalFault(health,central){if(requiresGlobalHalt(health,central)){simulationEngine.cancelAdvance?.('global-halt');state.speed=0;pushAlert('أُوقفت المحاكاة لأن خللًا في سلامة الحفظ أو سجل الأوامر قد يهدد الحالة كاملة. مشكلات القطاعات الأخرى تبقى معزولة داخل قطاعها.');}}
   function runMaintenanceTask(entry){
     if(entry.task==='compact'){if(compactSimulationState(false,{schemaDue:false})){const sections=schemaSectionsTask();if(sections)maintenanceQueue.splice(1,0,sections);else globalThis.__GH_HOURLY_SCHEMA_DUE__=true;}return true;}
-    if(entry.task==='proof-checkpoints'){checkpointProofHistory();return true;}
+    if(entry.task==='proof-checkpoints'){collectProofRecords();checkpointProofHistory();return true;}
+    // The selection once, then one round of 200 rows per frame until it is done; then the authorization archive drops the
+    // proofs the sealed documents released.
+    if(entry.task==='archive-seal'){if(!entry.queue){entry.queue=auditSealSelection();entry.keep=liveProofIds();entry.sealed=0;}if(entry.queue.length)entry.sealed+=sealAuditRound(entry);if(entry.queue.length)return false;if(entry.sealed)compactAuthorizationArchive();return true;}
     // Small rounds over consecutive frames (50 documents each, up to 8) while documents remain to convert; then the
     // authorization archive drops the proofs they released.
     if(entry.task==='proof-archived'){const out=compactArchivedProofs();entry.rounds=(entry.rounds||0)+1;if((out?.archived||0)>=ARCHIVED_PROOF_ROUND&&entry.rounds<ARCHIVED_PROOF_ROUNDS)return false;compactAuthorizationArchive();return true;}
@@ -2851,7 +2939,7 @@
     const plan=Object.freeze({id:route.id,type:route.type,routeMode:route.routeMode,ownerCompanyId:routeOwnerCompanyId(route),
       companyId:route.companyId,company:route.company,from:route.from,to:route.to,
       fromFacility:route.fromFacility,toFacility:route.toFacility,distanceKm:route.distanceKm,
-      tripSeconds:route.tripSeconds,effectiveSpeedKmh:route.effectiveSpeedKmh,dwellHours:route.dwellHours});
+      tripSeconds:route.tripSeconds,effectiveSpeedKmh:route.effectiveSpeedKmh,dwellHours:route.dwellHours,...(String(route.routeMode||route.type||'').trim()==='sea'&&window.GH_GOVERNANCE_CORE?.seaSpeedFactor?.(state)<1?{speedFactor:window.GH_GOVERNANCE_CORE.seaSpeedFactor(state)}:{})});
     fleetRouteCache.set(key,plan);return plan;
   }
 
@@ -3346,6 +3434,7 @@
   function drawerUsesBackdrop(){ return false; }
 
   async function hardResetGame(){
+    await window.GH_PERSISTENCE.slicedSettled?.();
     if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked())return false;
     const previousState=clone(state);hardResetInProgress=true;state.speed=0;
     let settleHardReset=null,resetDurabilityEstablished=false;
@@ -3400,14 +3489,15 @@
   }
   function finishSimulationFaultRecorder(){
     const summary=window.GH_DIAGNOSTICS.recorderStop?.(state,simulationEngine.snapshot(),{nowMs:Date.now(),context:{appVersion:APP_VERSION,build:RUNTIME_BUILD,saveSchemaVersion:SAVE_SCHEMA_VERSION}})||null;
-    if(summary){diag('SIM_FAULT_RECORDER_FINISHED',{status:summary.status,events:summary.events,samples:summary.samples,simDelta:summary.simDelta});save();}
+    // The panel action that stops the recorder saves once (its refresh); the stop itself does not save again.
+    if(summary)diag('SIM_FAULT_RECORDER_FINISHED',{status:summary.status,events:summary.events,samples:summary.samples,simDelta:summary.simDelta});
     return summary;
   }
   function simulationFaultRecorder(){return window.GH_DIAGNOSTICS.recorderSnapshot?.(state)||null;}
 
   function advancedContext(){
     return {state,fmtMoney,fmtNumber,formatDuration,esc,typeName,facilityKind,findFacility,competitors,assetCatalog,WORLD,storageKey,
-    getDynamicFacilities,strategicPartners,supplierFor,awardConstruction,payNamedSupplier,canSpend,spend,canCompanySpend,spendCompany,companyOperatingBalance,companyTotalBalance,companyBudget,companyBudgetRemaining,transferBetweenCompanies,bulkTransferFromGroup,transferWithinCompany,creditCompany,companyPerformance:(type,days=30)=>window.GH_FINANCE_CORE.performance(state,type,days),pushAlert,save,savePolicyStatus,runDurableStateCommand,runAuthorizedDomainCommand,dispatchAuthorizedDomain:runAuthorizedDomainCommand,dispatchSystemCommand,authorizationSignatureMarkup,openSignatureDialog,activeAuthorization:()=>clone(founderAuthorization(state)),signatureStatus:()=>{const authority=founderAuthorization(state);return {principalId:FOUNDER_PRINCIPAL_ID,ready:Boolean(authority.signature&&authority.mandate),signatureId:authority.signature?.id||null,signatureVersion:authority.signature?.version||null,mandateId:authority.mandate?.id||null,mandateVersion:authority.mandate?.version||null};},updateKpis,renderMap,panMapTo,openDrawer,openWorldDirectory,buyAsset,routeRuntimeSnapshot:()=>clone(routeTemplates),restoreRouteRuntime:snapshot=>{for(const key of Object.keys(routeTemplates))delete routeTemplates[key];Object.assign(routeTemplates,clone(snapshot||{}));state.routesRevision=(Math.max(0,Math.floor(Number(state.routesRevision)||0))+1);},assignRoute,ensureFacilityWorkforce,ensureBankCorporateClients,bankLiquidityMetrics,bankReviewCorporateLimits,bankDrawCorporateFacility,bankIssueTradeInstrument,bankCashSweep,hardResetGame,worldEntityByKey,appVersion:APP_VERSION,runtimeBuild:RUNTIME_BUILD,saveSchemaVersion:SAVE_SCHEMA_VERSION,runDiagnostics:runFullDiagnostics,exportDiagnostics:exportDiagnosticsFile,startFaultRecorder:startSimulationFaultRecorder,finishFaultRecorder:finishSimulationFaultRecorder,faultRecorder:simulationFaultRecorder,exportControlPlane:exportControlPlaneFile,controlPlane:()=>window.GH_CONTROL_PLANE?.ensure?.(state),controlHealth:()=>window.GH_CONTROL_PLANE?.check?.(state),controlTrace:id=>window.GH_CONTROL_PLANE?.trace?.(state,id),clearDiagnostics:()=>window.GH_DIAGNOSTICS.clear(state),diagnostics:()=>state.diagnostics,businessIntegrity:()=>window.GH_INTEGRITY_CORE.check(state),businessLedger:()=>window.GH_EVENT_LEDGER.summary(state),deliveryClosure:()=>window.GH_DELIVERY_MONITOR.reconcile(state),dependencyGraph:()=>state.dependencyGraph,getSimulationSpeed:()=>state.speed,setSimulationSpeed:value=>setSpeed(value),currentPanel:activeDrawerPanel,currentArg:activeDrawerArg};
+    getDynamicFacilities,strategicPartners,supplierFor,awardConstruction,payNamedSupplier,canSpend,spend,canCompanySpend,spendCompany,companyOperatingBalance,companyTotalBalance,companyBudget,companyBudgetRemaining,transferBetweenCompanies,bulkTransferFromGroup,transferWithinCompany,creditCompany,companyPerformance:(type,days=30)=>window.GH_FINANCE_CORE.performance(state,type,days),pushAlert,save,savePolicyStatus,refreshRouteRuntime,runDurableStateCommand,runAuthorizedDomainCommand,dispatchAuthorizedDomain:runAuthorizedDomainCommand,dispatchSystemCommand,authorizationSignatureMarkup,openSignatureDialog,activeAuthorization:()=>clone(founderAuthorization(state)),signatureStatus:()=>{const authority=founderAuthorization(state);return {principalId:FOUNDER_PRINCIPAL_ID,ready:Boolean(authority.signature&&authority.mandate),signatureId:authority.signature?.id||null,signatureVersion:authority.signature?.version||null,mandateId:authority.mandate?.id||null,mandateVersion:authority.mandate?.version||null};},updateKpis,renderMap,panMapTo,openDrawer,openWorldDirectory,buyAsset,routeRuntimeSnapshot:()=>clone(routeTemplates),restoreRouteRuntime:snapshot=>{for(const key of Object.keys(routeTemplates))delete routeTemplates[key];Object.assign(routeTemplates,clone(snapshot||{}));state.routesRevision=(Math.max(0,Math.floor(Number(state.routesRevision)||0))+1);},assignRoute,ensureFacilityWorkforce,ensureBankCorporateClients,bankLiquidityMetrics,bankReviewCorporateLimits,bankDrawCorporateFacility,bankIssueTradeInstrument,bankCashSweep,hardResetGame,worldEntityByKey,appVersion:APP_VERSION,runtimeBuild:RUNTIME_BUILD,saveSchemaVersion:SAVE_SCHEMA_VERSION,runDiagnostics:runFullDiagnostics,exportDiagnostics:exportDiagnosticsFile,startFaultRecorder:startSimulationFaultRecorder,finishFaultRecorder:finishSimulationFaultRecorder,faultRecorder:simulationFaultRecorder,exportControlPlane:exportControlPlaneFile,controlPlane:()=>window.GH_CONTROL_PLANE?.ensure?.(state),controlHealth:()=>window.GH_CONTROL_PLANE?.check?.(state),controlTrace:id=>window.GH_CONTROL_PLANE?.trace?.(state,id),clearDiagnostics:()=>window.GH_DIAGNOSTICS.clear(state),diagnostics:()=>state.diagnostics,businessIntegrity:()=>window.GH_INTEGRITY_CORE.check(state),businessLedger:()=>window.GH_EVENT_LEDGER.summary(state),deliveryClosure:()=>window.GH_DELIVERY_MONITOR.reconcile(state),dependencyGraph:()=>state.dependencyGraph,getSimulationSpeed:()=>state.speed,setSimulationSpeed:value=>setSpeed(value),currentPanel:activeDrawerPanel,currentArg:activeDrawerArg};
   }
 
   // Native imports arrive after iOS has already validated and atomically
@@ -3417,6 +3507,8 @@
     businessIntegrity:()=>window.GH_INTEGRITY_CORE?.check?.(state),
     exportDiagnostics:()=>window.GH_DIAGNOSTICS.exportBundle(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()}),
     persistForBackground:async()=>{
+      // A save in slices finishes first (it holds persistence until its commit); the background save then takes the latest state.
+      await window.GH_PERSISTENCE.slicedSettled?.();
       const revisionAtRequest=Math.max(0,Math.floor(Number(state.saveRevision)||0)),resetEpochAtRequest=Number(state.resetEpoch)||0;
       let waitedForLifecycle=false,durabilityEstablished=false;
       while(durableCommandInProgress||hardResetInProgress){

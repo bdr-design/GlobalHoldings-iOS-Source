@@ -26,6 +26,16 @@ function cyberState(s){const c=s.advanced.cyber;c.coverage=clamp(Number.isFinite
 // the score; the app's own runtime errors no longer move a game number.
 function refreshCyber(c){const k=num(c.coverage)/100;c.chance=CYBER_BASE_CHANCE-(CYBER_BASE_CHANCE-CYBER_FLOOR_CHANCE)*k;c.rtoHours=Math.round(90-82*k);c.recoveryScore=clamp(100-c.rtoHours,0,100);c.score=Math.round(clamp(num(c.coverage)*.7+c.recoveryScore*.3,0,100));delete c.rtoMinutes;}
 const SAFETY_PLAN_DAYS=180;
+// Build 359 (owner: the maritime CII corrective plan): slow steaming for the group's sea fleet. A one-time cost (per ship,
+// with a floor), then every sea voyage runs 10% slower (GH_FLEET_CORE / GH_SIMULATION_ASSET_CORE normalizeAsset, through
+// the route's speedFactor) and burns 15% less fuel (both trip-economics owners, through seaFuelFactor), so the attained
+// CII falls with it; slower voyages also mean fewer voyages. Cancelling restores the speed and fuel (no refund).
+const SEA_CII_PLAN=Object.freeze({speedFactor:.9,fuelFactor:.85,costPerShip:120000,minimumCost:2000000});
+function seaCorrectivePlan(s){const plan=s?.advanced?.seaCiiPlan;return plan&&typeof plan==='object'&&plan.active===true?plan:null;}
+function seaSpeedFactor(s){return seaCorrectivePlan(s)?SEA_CII_PLAN.speedFactor:1;}
+function seaFuelFactor(s){return seaCorrectivePlan(s)?SEA_CII_PLAN.fuelFactor:1;}
+function seaShips(s){let ships=0;for(const [mode,count] of fleetData().countByFields(s,['assetMode','type'],row=>String(row.assetMode||row.type||'')))if(mode==='sea')ships+=count;return ships;}
+function seaCiiPlanCost(s){return Math.max(SEA_CII_PLAN.minimumCost,seaShips(s)*SEA_CII_PLAN.costPerShip);}
 const UPKEEP_SHARE=.10,UPKEEP_DAYS=365,LAPSE_PER_DAY=2/30;
 function payingCompany(s,company){const opened=new Set(['group',...(s.openedCompanies||[])]);return opened.has(company)?company:'group';}
 function maturityOf(s,id){const program=s.sustainability?.programs?.[id];return program?clamp((Number(program.maturity)||0)/100,0,1):0;}
@@ -77,7 +87,14 @@ function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);
  // Build 359: an HSE audit opens a 180-day corrective plan: incident risk 15% lower and inspection fines halved while it
  // runs (GH_REALISM.runIncidents). The score and open findings are refreshed every day from the fleet (ratios, not counts).
  if(cmd==='safety-audit'){spend(s,p.cost||500000,'تدقيق السلامة HSE');const h=s.advanced.safety,day=Math.floor(now(s)/86400);h.lastAudit=now(s);h.plan={startDay:day,untilDay:day+SAFETY_PLAN_DAYS};return {...h};}
+ if(cmd==='sea-cii-plan'){
+  const action=String(p.action||'');if(!['adopt','cancel'].includes(action))throw new Error('sea-cii-plan-action-invalid');
+  if(action==='adopt'){if(seaCorrectivePlan(s))throw new Error('sea-cii-plan-already-active');const ships=seaShips(s);if(!ships)throw new Error('sea-cii-plan-no-ships');const cost=seaCiiPlanCost(s),company=payingCompany(s,globalThis.GH_COMPANY_PLATFORM?.ownerForLegacyAssetMode?.('sea')||'sea');spend(s,cost,'خطة تصحيح CII البحرية (تخفيض السرعة)',company);s.advanced.seaCiiPlan={active:true,adoptedAtSim:now(s),cost,company,ships};}
+  else{if(!seaCorrectivePlan(s))throw new Error('sea-cii-plan-not-active');s.advanced.seaCiiPlan={...s.advanced.seaCiiPlan,active:false,cancelledAtSim:now(s)};}
+  // Routes carry the speed factor to both fleet engines: their resolved plans are rebuilt on a new revision.
+  globalThis.GH_ROUTE_CORE?.bumpRoutesRevision?.(s);return {...s.advanced.seaCiiPlan};
+ }
  throw new Error(`Unknown governance command: ${cmd}`);
 }
-const API={VERSION,SAFETY_PLAN_DAYS,ESG_PROGRAMS,RESEARCH_PHASE_DAYS,researchPhaseCost,programEffects,pricedAsset,esgScore,ensure,execute};globalThis.GH_GOVERNANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('governance',API);if(globalThis.window&&window!==globalThis)window.GH_GOVERNANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+const API={VERSION,SEA_CII_PLAN,seaCorrectivePlan,seaSpeedFactor,seaFuelFactor,seaCiiPlanCost,SAFETY_PLAN_DAYS,ESG_PROGRAMS,RESEARCH_PHASE_DAYS,researchPhaseCost,programEffects,pricedAsset,esgScore,ensure,execute};globalThis.GH_GOVERNANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('governance',API);if(globalThis.window&&window!==globalThis)window.GH_GOVERNANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

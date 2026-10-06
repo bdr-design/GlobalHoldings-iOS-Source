@@ -1,7 +1,7 @@
 'use strict';
 // Build 359, iPhone diagnostic: proof records were 31 MB of a 71.5 MB save. Each amendment of a document (issued,
 // cheque issued, cleared, settled) adds a whole record, and the earlier versions were kept whole only so the newer one
-// could prove its link to them. An earlier version older than 30 game days whose chain verifies now becomes a
+// could prove its link to them. An earlier version whose chain verifies now becomes a
 // checkpoint (the link fields only); checkpoints carry one digest per 30-day period. Checked here:
 // - the store shrinks, every document still verifies (trusted and full validation), current versions stay whole;
 // - an edited checkpoint or period digest is refused; a checkpoint in two places is refused;
@@ -27,10 +27,8 @@ assert.ok(linked>ORDERS,`documents were amended (${linked} linked versions)`);
 assert.ok(allVerify(),'every document verifies before');
 const before={bytes:bytes(store()),records:Object.keys(store().recordsById).length};
 
-// Nothing is old enough yet.
-assert.equal(Proof.checkpointAncestors(state).checkpointed,0,'versions younger than 30 days stay whole');
-// 40 days later: a batch converts at most 400, the rest in later batches.
-state.simSeconds+=40*86400;
+// Build 359 (a million assets): earlier versions convert in the next pass whatever their age; a batch converts at most
+// 400, the rest in later batches.
 let total=0,batches=0;for(;;){const out=Proof.checkpointAncestors(state);assert.ok(out.checkpointed<=400);if(!out.checkpointed)break;total+=out.checkpointed;batches++;}
 TX.sealCollections(state);
 const after={bytes:bytes(store()),records:Object.keys(store().recordsById).length,checkpoints:Object.keys(store().checkpointsById).length};

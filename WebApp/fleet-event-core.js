@@ -105,8 +105,8 @@
     leg={routeRef,baseRef,routeValue:V[routeRef],baseValue:V[baseRef],call:-1,version:0,route:null,frozen:false,snap:null};
     byBase.set(baseRef,leg);return leg;
   }
-  // Every route field the engine reads; a change rebuilds the leg's pairs.
-  const ROUTE_FIELDS=Object.freeze(['id','type','routeMode','ownerCompanyId','companyId','company','from','to','fromFacility','toFacility','distanceKm','tripSeconds','effectiveSpeedKmh','dwellHours']);
+  // Every route field the engine reads; a change rebuilds the leg's pairs (speedFactor: the maritime CII plan, Build 359).
+  const ROUTE_FIELDS=Object.freeze(['id','type','routeMode','ownerCompanyId','companyId','company','from','to','fromFacility','toFacility','distanceKm','tripSeconds','effectiveSpeedKmh','dwellHours','speedFactor']);
   function sameRoute(snap,route){
     if(snap===null||route===null)return snap===route;
     for(let i=0;i<ROUTE_FIELDS.length;i++)if(!Object.is(snap[i],route[ROUTE_FIELDS[i]]))return false;

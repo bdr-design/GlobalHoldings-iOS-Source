@@ -192,6 +192,7 @@
       state.domainRuntime.commands=(state.domainRuntime.commands||[]).filter(row=>!String(row?.domain||'').toLowerCase().includes(retired)&&!String(row?.actor||'').toLowerCase().includes(retired));if(state.domainRuntime.commands.length!==before)changed=true;
     }
     const proofMigration=globalThis.GH_DOCUMENT_PROOF?.migrateLegacyLedgerProjections?.(state);if(proofMigration?.changed)changed=true;
+    const periodMigration=globalThis.GH_DOCUMENT_PROOF?.migratePeriodDigests?.(state);if(periodMigration?.changed)changed=true;
     const idempotencyMigration=globalThis.GH_DOMAIN_COMMANDS?.migrateIdempotencyState?.(state);if(idempotencyMigration?.changed)changed=true;
     const invalidRouteIds=new Set(),seenRouteIds=new Set();
     state.customRoutes=(Array.isArray(state.customRoutes)?state.customRoutes:[]).filter(route=>{
@@ -329,12 +330,14 @@
   function validateDocumentProofState(s,errors,verificationCache,metric,trust=false){
     const store=s?.documentProofs;if(store===undefined)return;
     if(!object(store)||store.schema!=='gh-document-proofs-v1'||!object(store.recordsById)){errors.push('document-proof-shape');return;}
-    const archived=store.archiveById||{};if(!object(archived)){errors.push('document-proof-archive-shape');return;}if(mapBytes(archived)>16*1024*1024)errors.push('document-proof-archive-byte-limit');for(const id of Object.keys(archived))if(Object.prototype.hasOwnProperty.call(store.recordsById,id))errors.push('document-proof-residency-conflict');const records={...archived,...store.recordsById};if(Object.keys(store.recordsById).length>STATE_LIMITS.documentProofs)errors.push('document-proof-capacity');
+    const archived=store.archiveById||{};if(!object(archived)){errors.push('document-proof-archive-shape');return;}for(const id of Object.keys(archived))if(Object.prototype.hasOwnProperty.call(store.recordsById,id))errors.push('document-proof-residency-conflict');const records={...archived,...store.recordsById};if(Object.keys(store.recordsById).length>STATE_LIMITS.documentProofs)errors.push('document-proof-capacity');
     for(const [id,row] of Object.entries(records))if(!id||!object(row)||row.id!==id||!String(row.documentId||'').trim()||!validDigest(row.contentDigest)||(row.form==='archived-document-v1'||row.form==='archived-document-v2'?Object.prototype.hasOwnProperty.call(row,'signedContent'):!object(row.issuerSnapshot)||!object(row.signedContent))||row.authorizationProofId&&!(s.authorization?.proofsById?.[row.authorizationProofId]||s.authorization?.proofArchiveById?.[row.authorizationProofId]||(row.form==='archived-document-v2'&&/^[a-f0-9]{64}$/i.test(String(row.authorizationDigest||'')))))errors.push('document-proof-record');
     const documentOwner=globalThis.GH_DOCUMENT_PROOF;if(typeof documentOwner?.stateDocuments!=='function'){errors.push('document-proof-owner-unavailable');return;}
     const documentCollectionStart=metric?metricClock():0,documents=documentOwner.stateDocuments(s);if(metric)metric.documentCollectionMs+=Math.max(0,metricClock()-documentCollectionStart);
-    // Build 359: earlier versions kept as checkpoints, sealed by one digest per 30-day period (GH_DOCUMENT_PROOF).
-    if(store.checkpointsById!==undefined&&(!object(store.checkpointsById)||mapBytes(store.checkpointsById)>8*1024*1024))errors.push('document-proof-checkpoint-byte-limit');
+    // Build 359: earlier versions kept as checkpoints, sealed by one digest per 30-day period (GH_DOCUMENT_PROOF). The
+    // store has no byte limit: the finance audit archive's retention seals old documents (sealedPeriods, shape checked).
+    if(store.checkpointsById!==undefined&&!object(store.checkpointsById))errors.push('document-proof-checkpoint-shape');
+    {const seals=globalThis.GH_DOCUMENT_PROOF?.verifySeals?.(s);if(seals&&!seals.ok)errors.push('document-proof-seal');}
     {const checkpoints=globalThis.GH_DOCUMENT_PROOF?.verifyCheckpoints?.(s,verificationCache?.documents,{fresh:!trust});if(checkpoints&&!checkpoints.ok)errors.push('document-proof-checkpoint');}
     const verifier=globalThis.GH_DOCUMENT_PROOF?.verifyDocument,recordVerifier=globalThis.GH_DOCUMENT_PROOF?.verifyRecord,documentCache=verificationCache?.documents;let fullState=null;const fullVerificationState=()=>{if(fullState===null&&typeof verifier==='function')fullState={...s,authorization:s.authorization?verificationView(s.authorization):s.authorization,documentProofs:verificationView(store)};return fullState;};
     // Records already verified are answered from the cache without touching state, so only a read-only view is needed for them.

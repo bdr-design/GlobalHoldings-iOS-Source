@@ -28,6 +28,9 @@ const QTY=90,WESTERN=/^[0-9]+(\.[0-9])?[KM]?$/;
     const dispatch=page.locator('.dispatch-international-network[data-company="air"]').first();
     await dispatch.waitFor({state:'visible'});await dispatch.click();
     await page.waitForFunction(qty=>{const owned=GH_FLEET_DATA.filter(__GH_STATE__,x=>(x.ownerCompanyId||x.companyId)==='air');return owned.length===qty*2&&owned.every(x=>x.routeId);},QTY,{timeout:120000});
+    // Build 359: the dispatch assigns in chunks (the fleet store is shared with the command's draft), so the routes show
+    // before the command ends; it reopens the routes panel when it commits. Close it after that.
+    await page.waitForFunction(()=>!window.__GH_DURABLE_COMMAND_CONTEXT__&&!GH_PERSISTENCE.isLocked(),null,{timeout:120000});await page.evaluate(()=>GH_PERSISTENCE.drain());
     await page.evaluate(()=>__AUDIT__.closeDrawer());
     const advance=minutes=>page.evaluate(async minutes=>{const s=__GH_STATE__,t=s.simSeconds+minutes*60;__AUDIT__.simulationEngine.advanceTo(t,{speed:600,batchSeconds:900,reason:'qa-modes',maxSeconds:7200});for(let i=0;i<1200&&(__AUDIT__.simulationEngine.snapshot().manualAdvance||GH_TRANSACTION_CORE.isStaged(s));i++)await new Promise(r=>setTimeout(r,50));return GH_FLEET_DATA.filter(s,x=>x.phase==='moving').length;},minutes);
     const moving=await advance(90);assert.ok(moving>40,`aircraft are flying: ${moving}`);

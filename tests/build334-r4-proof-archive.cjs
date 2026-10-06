@@ -40,13 +40,15 @@ test('garbage collection retains referenced cold ancestors and removes only unre
  saved.documentProofs.archiveById[id]=saved.documentProofs.recordsById[id];delete saved.documentProofs.recordsById[id];
  P.compact(saved,0);assert.equal(P.record(saved,id),null);assert(P.verifyDocument(saved,first).ok);
 });
-test('finite byte-capacity failure cannot publish half of a financial transaction',()=>{
- const saved=JSON.parse(JSON.stringify(v));saved.documentProofs.archiveById.BYTE_CAP_SENTINEL={id:'BYTE_CAP_SENTINEL',padding:'x'.repeat(P.LIMITS.archiveBytes)};
- // An otherwise referenced archive fixture forces admission capacity; the
- // sentinel is an injected size-boundary fault, NOT a valid historical proof.
+// Build 359 (a million assets): the archive has no byte limit (it stopped every issue at about 6,000 documents); the
+// finance audit archive's retention bounds it. An archive past the old 16 MB still admits, and a failing transaction
+// still publishes nothing.
+test('an archive past the old byte limit admits new work, and a failure publishes nothing',()=>{
+ const saved=JSON.parse(JSON.stringify(v));saved.documentProofs.archiveById.BYTE_CAP_SENTINEL={id:'BYTE_CAP_SENTINEL',padding:'x'.repeat(16*1024*1024)};
  saved.finance.auditArchive.records.invoices.push({documentProofId:'BYTE_CAP_SENTINEL'});
- while(Object.keys(saved.documentProofs.recordsById).length<5000){saved.finance.invoices.push(invoice(saved,`FILL-${saved.documentProofs.sequence}`));}
- const before=JSON.stringify(saved);assert.throws(()=>T.execute(saved,{label:'bounded-capacity',apply:()=>{saved.cash-=77;saved.finance.invoices.push(invoice(saved,'MUST-ROLLBACK'));}}),/archive-byte-limit/);
+ const out=T.execute(saved,{label:'past-old-limit',apply:()=>{for(let i=0;i<300;i++)saved.finance.invoices.push(invoice(saved,`PAST-${i}`));}});assert.equal(out.committed,true,out.reason);
+ assert(Object.keys(saved.documentProofs.recordsById).length<5000);assert(P.verifyDocument(saved,saved.finance.invoices.at(-1)).ok);
+ const before=JSON.stringify(saved);assert.throws(()=>T.execute(saved,{label:'rolled-back',apply:()=>{saved.cash-=77;saved.finance.invoices.push(invoice(saved,'MUST-ROLLBACK'));throw new Error('later-step-failed');}}),/later-step-failed/);
  assert.equal(JSON.stringify(saved),before);
 });
 test('archiveTrim retains full signed documents beyond the old 12000-summary limit',()=>{
@@ -70,8 +72,11 @@ test('authorization duplicate residency and corrupted archived digest fail close
  const copy=JSON.parse(JSON.stringify(av)),id=Object.keys(copy.authorization.proofArchiveById)[0];copy.authorization.proofsById[id]=structuredClone(copy.authorization.proofArchiveById[id]);assert.equal(A.verifyProof(copy,id).ok,false);assert(s.GH_SAVE_SCHEMA.validate(copy).errors.includes('authorization-proof-residency-conflict'));delete copy.authorization.proofsById[id];copy.authorization.proofArchiveById[id].proofDigest='0'.repeat(64);assert.equal(A.verifyProof(copy,id).ok,false);
 });
 test('late failure after an archive transition rolls back maps, counters, cash and documents',()=>{
- const copy=JSON.parse(JSON.stringify(v));while(Object.keys(copy.documentProofs.recordsById).length<5000)copy.finance.invoices.push(invoice(copy,`LATE-${copy.documentProofs.sequence}`));
- const before=JSON.stringify(copy);assert.throws(()=>T.execute(copy,{label:'late-after-spill',apply:()=>{copy.cash-=1;copy.finance.invoices.push(invoice(copy,'ROLLBACK-SPILL'));throw Error('late-fault');}}),/late-fault/);assert.deepEqual(JSON.parse(JSON.stringify(copy)),JSON.parse(before));
+ // Build 359: the hot count is read every 64 issues and admits from 64 below the limit; a reloaded store is checked on its
+ // first issue, so the issue inside the failing transaction spills 200 records to the archive.
+ const filled=JSON.parse(JSON.stringify(v));while(Object.keys(filled.documentProofs.recordsById).length<5000-64)filled.finance.invoices.push(invoice(filled,`LATE-${filled.documentProofs.sequence}`));
+ const copy=JSON.parse(JSON.stringify(filled)),archivedBefore=Object.keys(copy.documentProofs.archiveById).length;
+ const before=JSON.stringify(copy);assert.throws(()=>T.execute(copy,{label:'late-after-spill',apply:()=>{copy.cash-=1;copy.finance.invoices.push(invoice(copy,'ROLLBACK-SPILL'));assert.ok(Object.keys(copy.documentProofs.archiveById).length>archivedBefore,'the issue spilled to the archive');throw Error('late-fault');}}),/late-fault/);assert.deepEqual(JSON.parse(JSON.stringify(copy)),JSON.parse(before));
  const good=invoice(copy,'RETRY-AFTER-ROLLBACK');copy.finance.invoices.push(good);assert(P.verifyDocument(copy,good).ok);
 });
 console.log(JSON.stringify({suite:'R4 archived admission, finite byte limits and rollback',cases:rows,passed:rows.filter(x=>x.ok).length,total:rows.length,deviceTest:false,documentJSONBytes:Buffer.byteLength(JSON.stringify(v))},null,2));if(rows.some(x=>!x.ok))process.exitCode=1;

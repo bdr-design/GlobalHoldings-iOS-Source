@@ -205,7 +205,9 @@
     r.maritime.ciiRatio=seaWork&&r.maritime.requiredCii>0?r.maritime.attainedCii/r.maritime.requiredCii:1;
     const ratio=r.maritime.ciiRatio;r.maritime.cii=ratio<=.82?'A':ratio<=.93?'B':ratio<=1.08?'C':ratio<=1.20?'D':'E';
     if(r.maritime.lastCiiYear!==simYear){const prev=r.maritime.ciiHistory[0];r.maritime.consecutiveD=r.maritime.cii==='D'?(prev?.rating==='D'?(Number(prev.consecutiveD)||1)+1:1):0;r.maritime.ciiHistory.unshift({year:simYear,rating:r.maritime.cii,ratio:r.maritime.ciiRatio,consecutiveD:r.maritime.consecutiveD});r.maritime.ciiHistory=r.maritime.ciiHistory.slice(0,8);r.maritime.lastCiiYear=simYear;}
-    r.maritime.correctiveAction=r.maritime.cii==='E'||r.maritime.consecutiveD>=3;r.maritime.correctivePlanStatus=r.maritime.correctiveAction?'مطلوب':r.maritime.cii==='D'?`مراقبة D (${r.maritime.consecutiveD}/3)`:'غير مطلوب';
+    // Build 359: an adopted corrective plan (GH_GOVERNANCE_CORE.seaCorrectivePlan, slow steaming) answers the requirement.
+    const planActive=!!globalThis.GH_GOVERNANCE_CORE?.seaCorrectivePlan?.(state),planNeeded=r.maritime.cii==='E'||r.maritime.consecutiveD>=3;
+    r.maritime.correctiveAction=planNeeded&&!planActive;r.maritime.correctivePlanStatus=planActive?'مفعلة (تخفيض السرعة)':r.maritime.correctiveAction?'مطلوب':r.maritime.cii==='D'?`مراقبة D (${r.maritime.consecutiveD}/3)`:'غير مطلوب';
     r.maritime.eexiReadiness=clamp(avgSea*.72+(100-Math.max(0,r.economy.bunker-640)/10)*.08+(100-r.maritime.dryDockDue*5)*.20,0,100);r.maritime.eexi=r.maritime.eexiReadiness>=70?'Compliant':'Action required';r.maritime.dryDockDue=seaDryDock;r.maritime.avgBunkerCost=r.economy.bunker;
     r.maritime.waitingHours=clamp((100-r.maritime.utilization)*.18+r.maritime.dryDockDue*6,0,96);r.maritime.demurrage=Math.round(r.maritime.waitingHours*Math.max(0,seaCount)*1200);
 
