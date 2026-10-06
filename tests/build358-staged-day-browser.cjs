@@ -94,12 +94,14 @@ const QTY=120;
         const stagedAfter=TX.isStaged(s()),reason=__AUDIT__.simulationEngine.snapshot().lastCancelReason;
         if(how==='hide'){__AUDIT__.setSpeed(0);setHidden(false);}
         await new Promise(resolve=>setTimeout(resolve,400));
-        const after=encode(),A=JSON.parse(before),B=JSON.parse(after);
+        // Compared decoded (Build 358): a collection that reaches 64 rows (the diagnostics log, written by the hide save) is
+        // shape-encoded and adds the codec's own 'stateCodec' metadata to the save text; neither is game state.
+        const after=encode(),decode=text=>{const tree=GH_STATE_CODEC.decodeState(JSON.parse(text));delete tree.stateCodec;return tree;},A=decode(before),B=decode(after);
         // The diagnostics log records the pause/hide (and, timing-dependent, governor samples) outside any transaction.
         // Hiding the app also saves (setHidden -> onPersist) after the abort, which moves saveRevision.
         const volatile=how==='hide'?['saveRevision','diagnostics']:['diagnostics'];
         // Collections of 64+ rows (the diagnostics events) are shape-encoded in the save text; read them decoded.
-        const types=tree=>{const events=GH_STATE_CODEC.decodeState(tree)?.diagnostics?.events;return Array.isArray(events)?events.map(e=>e.type):[];},appended=types(B).slice(types(A).length);
+        const types=tree=>{const events=tree?.diagnostics?.events;return Array.isArray(events)?events.map(e=>e.type):[];},appended=types(B).slice(types(A).length);
         const without=(tree,keys)=>JSON.stringify(Object.fromEntries(Object.entries(tree).filter(([k])=>!keys.includes(k))));
         return {seen,stagedAfter,reason,identical:without(A,volatile)===without(B,volatile),appended,changed:Object.keys({...A,...B}).filter(k=>JSON.stringify(A[k])!==JSON.stringify(B[k])&&!volatile.includes(k)),
           revisionStep:s().saveRevision-revision,day:s().lastFinancialDay,day0:day,sim:s().simSeconds,sim0:sim};
