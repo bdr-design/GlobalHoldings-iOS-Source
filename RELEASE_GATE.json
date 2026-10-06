@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "source_tree_sha256": "7fe8444b6778281a7080657a12baaf6d304ab747cad51bf45a24e9fd941238fd",
+  "source_tree_sha256": "173a0f2209932675cbca87f44803b1024dbb3e63fa4ecce232fb937ee4821d6a",
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
@@ -76,7 +76,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "claude/vibrant-planck-irbtw6",
     "based_on": "build357-wip@38b21bc",
-    "source_tree_sha256": "7fe8444b6778281a7080657a12baaf6d304ab747cad51bf45a24e9fd941238fd",
+    "source_tree_sha256": "173a0f2209932675cbca87f44803b1024dbb3e63fa4ecce232fb937ee4821d6a",
     "working_tree_clean": null
   },
   "point": "Build 358: air/sea dispatch fix, row-level simulation snapshots (no per-slice full-state copy), 3,000-aircraft airports with compact delivery receipts; RELEASE_GATE remains closed pending CI, physical iPhone profiling and owner approval."

@@ -27,7 +27,10 @@
     longTaskWarnMs:28,
     hardTaskMs:120,
     hardTaskLimit:3,
-    conflictLimit:3
+    conflictLimit:3,
+    // Build 359: after a frame whose simulation work (render callback aside) reached this, the next frame runs no
+    // simulation work, so two heavy frames never follow each other; live time accrues as backlog meanwhile. 0 disables.
+    cooldownAfterMs:24
   });
 
   const systemNowMs=()=>globalThis.performance?.now?.() ?? Date.now();
@@ -43,6 +46,7 @@
     cfg.manualChunkItems=Math.max(1,Math.floor(cfg.manualChunkItems));
     cfg.hardTaskLimit=Math.max(1,Math.floor(cfg.hardTaskLimit));
     cfg.conflictLimit=Math.max(1,Math.floor(cfg.conflictLimit));
+    const cooldown=Number(cfg.cooldownAfterMs);cfg.cooldownAfterMs=Number.isFinite(cooldown)&&cooldown>0?cooldown:0;
     cfg.manualBatchSeconds=Math.max(1,Math.min(3600,Number(cfg.manualBatchSeconds)||DEFAULTS.manualBatchSeconds));
     cfg.manualMinBatchSeconds=Math.max(1,Math.min(cfg.manualBatchSeconds,Number(cfg.manualMinBatchSeconds)||DEFAULTS.manualMinBatchSeconds));
     cfg.manualRetryLimit=Math.max(1,Math.floor(Number(cfg.manualRetryLimit)||DEFAULTS.manualRetryLimit));
@@ -59,14 +63,14 @@
       version:VERSION,frames:0,slices:0,chunks:0,hours:0,days:0,conflicts:0,cancels:0,
       maxChunkMs:0,lastChunkMs:0,longTasks:0,hardTasks:0,droppedRealSeconds:0,backlogClamps:0,
       maxCreateMs:0,lastCreateMs:0,maxFinishMs:0,lastFinishMs:0,maxCycleMs:0,lastCycleMs:0,
-      maxMaintenanceMs:0,lastMaintenanceMs:0,maxRenderMs:0,lastRenderMs:0,lastFrame:null,maxFrame:null,
+      maxMaintenanceMs:0,lastMaintenanceMs:0,maxRenderMs:0,lastRenderMs:0,lastFrame:null,maxFrame:null,cooldownFrames:0,deferredRuns:0,
       lastError:'',lastBoundary:'',lastSliceSeconds:0,lastMaintenanceHour:-1,lastCancelReason:'',lastCommitReason:'',lastWorkStage:'',governor:'GREEN',avgChunkMs:0,avgWorkMs:0,
       manualFailures:0,manualThrottleYields:0,lastAdvanceFailure:null,lastProgressSim:Math.max(0,Number(adapter.getSimTime())||0),lastProgressAt:clock()
     };
     let job=null,jobSlice=0,jobStart=0,jobSpeed=0,jobBoundary=null,jobWorkMs=0,jobReadyToFinish=false,manualAdvance=null;
     // Build 359: where a frame's simulation time goes (create, chunks, finish, the host's maintenance and render callbacks),
     // so a slow frame names its stage in diagnostics. Measurement only; no decision reads it.
-    let frameStages=null;const addFrameStage=(key,ms)=>{if(frameStages)frameStages[key]+=Math.max(0,Number(ms)||0);};
+    let frameStages=null,cooldownNext=false;const addFrameStage=(key,ms)=>{if(frameStages)frameStages[key]+=Math.max(0,Number(ms)||0);};
     let hardTaskStreak=0,conflictStreak=0,lastObservedSpeed=null,throttlePending=null;const durationSamples=[],workSamples=[];let lastGovernor='GREEN';
     let lastHourCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/3600);
     let lastDayCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/86400);
@@ -238,12 +242,20 @@
       return {done:true,breakFrame:false};
     }
 
+    function runDeferredWork(){
+      if(typeof adapter.runDeferredWork!=='function')return false;
+      const started=clock();let did=false;
+      try{did=adapter.runDeferredWork()===true;}catch(error){report('deferred-work',error,false);}
+      if(did){const took=Math.max(0,clock()-started);health.deferredRuns=(health.deferredRuns||0)+1;health.lastMaintenanceMs=took;health.maxMaintenanceMs=Math.max(health.maxMaintenanceMs,took);addFrameStage('maintenanceMs',took);}
+      return did;
+    }
     function work(now,speed){
       // Calendar advance gets a slightly larger cooperative budget so long jumps
       // finish promptly, but every frame still yields back to WebKit. Live play
       // keeps the tighter budget to protect interaction and map presentation.
       const deadline=pacing.executionDeadline(!!manualAdvance);
       while(clock()<deadline){
+        if(!job&&adapter.hasDeferredWork?.()===true)break;
         if(!job&&!startJob(speed))break;
         if(throttlePending){consumeThrottlePending();break;}
         if(jobReadyToFinish){
@@ -305,6 +317,7 @@
       try{frameBody(now);}
       finally{
         const stages=frameStages;frameStages=null;stages.totalMs=Math.max(0,clock()-started);health.lastFrame=stages;
+        if(cfg.cooldownAfterMs>0&&stages.totalMs-stages.renderMs>=cfg.cooldownAfterMs)cooldownNext=true;
         if(!health.maxFrame||stages.totalMs>health.maxFrame.totalMs)health.maxFrame=stages;
       }
     }
@@ -328,6 +341,12 @@
         if(observed.clamped)health.backlogClamps++;
       }
       const hidden=pacing.snapshot().hidden;
+      if(!hidden&&!suspended&&!job){
+        // Build 359: a cooldown frame after a heavy one, then the host's deferred work (the maintenance parts), one part
+        // per frame and before any new slice (also while paused, so a part never waits for play to resume).
+        if(cooldownNext){cooldownNext=false;health.cooldownFrames=(health.cooldownFrames||0)+1;maybeRender(now,speed);return;}
+        if(runDeferredWork()){maybeRender(now,speed);return;}
+      }else if(job&&cooldownNext&&!hidden&&!suspended){cooldownNext=false;health.cooldownFrames=(health.cooldownFrames||0)+1;maybeRender(now,speed);return;}
       if(hidden||suspended||(speed<=0&&!advancing)){pacing.clearBacklog();cancelJob(hidden?'hidden':speed<=0?'paused':'suspended');maybeRender(now,speed);return;}
       work(now,speed);completeManualAdvance();maybeRender(now,speed);
     }

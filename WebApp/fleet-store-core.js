@@ -884,6 +884,27 @@
     const at=r.free.lastIndexOf(ref);if(at<0)return false;
     r.free.splice(at,1);store.values[ref]=stored;if(r.journal&&r.journal.active)r.journal.reused.push(ref);r.index.set(key,ref);r.valuesGeneration=++epochCounter;return true;
   }
+  // Build 359: whole columns (a field of every row) for the other side, when the main thread rewrote them wholesale (the
+  // daily fleet pass writes flight hours, cycles and the next check of every asset). Before, any column write sent the
+  // whole store again (67 ms at 24,000 assets on iPhone); a column is one number per row.
+  function readColumns(store,names){
+    const columns=[];for(const name of names){if(!own(SLOTS,name))throw new RangeError(`fleet-store-column:${name}`);columns.push([name,gatherField(store,name).buffer]);}
+    return {length:store.length,columns};
+  }
+  // Replica side, outside any journal: writes those columns and reports them as the main side's rememberColumn did
+  // (`reported`: the names its dirty log carried; a quiet presence write stays quiet here too).
+  function writeColumns(store,{length,columns},{reported=[]}={}){
+    if(length!==store.length)throw new Error('fleet-replica-columns-length');
+    const v=views(store);
+    for(const [name,buffer] of columns){
+      if(!own(SLOTS,name))throw new RangeError(`fleet-store-column:${name}`);
+      const [view,k]=SLOTS[name],per=PER_ROW[view],target=v[view],source=new target.constructor(buffer);
+      if(source.length!==length)throw new Error('fleet-replica-columns-invalid');
+      for(let index=0;index<length;index++)target[index*per+k]=source[index];
+    }
+    const r=rt(store);r.allDirty=true;r.massVersion++;store.revision++;invalidateProfiles(store);
+    const loud=new Set(reported);for(const [name] of columns)if(loud.has(name)&&!r.suppressDirtyLog){if(!r.dirtyColumns)r.dirtyColumns=new Set();r.dirtyColumns.add(name);}
+  }
   // Copies of whole records and their extras, for the rows listed (to send to the other side).
   function readRows(store,indices){
     const bytes=new ArrayBuffer(indices.length*STRIDE),dst=new Uint32Array(bytes),src=views(store).u32,extras=new Array(indices.length);
@@ -909,7 +930,7 @@
   }
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,I32_NULL,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
-    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
+    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,readColumns,writeColumns,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
     views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,distinctRefs,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,exportReplica,importReplica,valueChanges,applyValueChanges,internAt,readRows,writeRows,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;

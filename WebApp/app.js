@@ -763,13 +763,13 @@
   }
   cleanupObsoleteStorage();
   let simulationPersistenceTask=null;
-  const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,durable:{last:null,samples:[]},render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]},simRender:{last:null,max:{},count:0}};
+  const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,durable:{last:null,samples:[]},render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]},simRender:{last:null,max:{},count:0},maintenance:{last:{},max:{},runs:0,lastTask:'',pending:[]}};
   const appMetricClock=()=>globalThis.performance?.now?.()??Date.now();
   function recordRenderMetric(kind,durationMs,detail={}){const render=runtimeInstrumentation.render,row={kind,durationMs:Math.max(0,Number(durationMs)||0),recordedAtMs:Date.now(),...detail};if(kind==='frame'){render.lastFrame=row;render.maxFrameMs=Math.max(render.maxFrameMs,row.durationMs);}else if(kind==='target-update'){render.lastTargetUpdate=row;render.maxTargetUpdateMs=Math.max(render.maxTargetUpdateMs,row.durationMs);}else if(kind==='marker-animation'){render.lastMarkerAnimation=row;render.maxMarkerAnimationMs=Math.max(render.maxMarkerAnimationMs,row.durationMs);}else if(kind==='structural-render'){render.lastStructuralRender=row;render.maxStructuralRenderMs=Math.max(render.maxStructuralRenderMs,row.durationMs);}render.samples.push(row);if(render.samples.length>120)render.samples.shift();return row;}
   window.__GH_APP_RUNTIME_INSTRUMENTATION__=runtimeInstrumentation;
   // The fleet engine thread's client (created with the first simulation slice, see fleetEngineThread()).
   let fleetEngineThreadClient=null;
-  window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,durable:runtimeInstrumentation.durable,render:runtimeInstrumentation.render,simRender:runtimeInstrumentation.simRender,
+  window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,durable:runtimeInstrumentation.durable,render:runtimeInstrumentation.render,simRender:runtimeInstrumentation.simRender,maintenance:runtimeInstrumentation.maintenance,
     // Build 358: whether the fleet engine thread runs the steps (stats: steps replayed, fallbacks and why, syncs, last timings).
     fleetEngineThread:fleetEngineThreadClient?fleetEngineThreadClient.stats():{created:false,worker:typeof Worker==='function',disabledByFlag:globalThis.__GH_FLEET_ENGINE_THREAD__===false}}))});
   function cancelSimulationPersistence(){
@@ -2667,17 +2667,20 @@
     const proofCopies=proofRows.map(row=>clone(row)),digest=buildAuditDigest(kind,aggregateRows);arr.length=0;for(const row of retained)arr.push(row);if(proofCopies.length)archiveFull(kind,proofCopies);if(digest)mergeAuditDigest(digest);return true;
   }
   const HISTORY_COMPACTION_SCOPE=Object.freeze(['finance','companyFinance','supplierTransactions','treasury','alerts','eventLog','operations','bank','simulationKernel']);
-  function compactSimulationState(force=false){
-    const day=Math.floor((state.simSeconds||0)/86400);if(!force&&state.simulationKernel?.lastCompactDay===day)return;
-    globalThis.__GH_HOURLY_SCHEMA_DUE__=true;
+  // Build 359: returns true when it rewrote history. `schemaDue:false` (the maintenance queue): the caller validates the
+  // schema itself, in sections across frames, instead of the next hourly slice validating it in one block (83 ms on iPhone).
+  function compactSimulationState(force=false,{schemaDue=true}={}){
+    const day=Math.floor((state.simSeconds||0)/86400);if(!force&&state.simulationKernel?.lastCompactDay===day)return false;
+    if(schemaDue)globalThis.__GH_HOURLY_SCHEMA_DUE__=true;
     const detailCutoff=Math.max(0,(day-2)*86400),targets=[[state.finance?.invoices,2500,'invoices'],[state.finance?.cheques,1200,'cheques'],[state.finance?.transfers,1200,'transfers'],[state.finance?.periods,240,'taxPeriods'],[state.supplierTransactions,3000,'supplierTransactions']],tails=[[state.alerts,32],[state.eventLog,280],[state.operations?.dailyBriefs,24],[state.bank?.cashSweeps,48]];
     const ledgerHistory=(Array.isArray(state.finance?.journalEntries)&&state.finance.journalEntries.some(row=>(Number(row?.at)||0)<detailCutoff))||Object.entries(state.companyFinance||{}).some(([,book])=>Array.isArray(book?.ledger)&&book.ledger.some(row=>(Number(row?.at)||0)<detailCutoff));
-    const hasHistory=ledgerHistory||targets.some(([rows,max,kind])=>{if(!Array.isArray(rows)||rows.length<=max)return false;const keep=archiveRetention(kind);for(let i=max;i<rows.length;i++)if(!keep(rows[i]))return true;return false;});if(!hasHistory&&!tails.some(([rows,max])=>Array.isArray(rows)&&rows.length>max))return;
+    const hasHistory=ledgerHistory||targets.some(([rows,max,kind])=>{if(!Array.isArray(rows)||rows.length<=max)return false;const keep=archiveRetention(kind);for(let i=max;i<rows.length;i++)if(!keep(rows[i]))return true;return false;});if(!hasHistory&&!tails.some(([rows,max])=>Array.isArray(rows)&&rows.length>max))return false;
     const tx=window.GH_TRANSACTION_CORE;if(!tx?.execute||!tx?.join)throw new Error('compaction-transaction-owner-unavailable');
     const apply=()=>{const trim=(arr,max)=>{if(Array.isArray(arr)&&arr.length>max)arr.length=max;};compactAggregatableHistory(state.finance?.journalEntries,'journalEntries',detailCutoff);for(const type of companyFinanceTypes())compactAggregatableHistory(companyBook(type)?.ledger,`companyLedger-${type}`,detailCutoff);for(const [rows,max,kind] of targets)archiveTrim(rows,max,kind);trim(state.treasury?.ledger,1200);trim(state.alerts,32);trim(state.eventLog,280);trim(state.operations?.dailyBriefs,24);trim(state.bank?.cashSweeps,48);state.simulationKernel=state.simulationKernel&&typeof state.simulationKernel==='object'?state.simulationKernel:{};state.simulationKernel.lastCompactDay=day;};
     // Build 353: compaction only rewrites finance/ledger/log roots (archives live in finance.auditArchive).
     // A scoped rollback snapshot avoids deep-cloning the whole fleet and every other store once per game day.
     const result=(tx.isActive()?tx.join:tx.execute)(state,{label:'simulation-history-compaction',apply,scope:HISTORY_COMPACTION_SCOPE,writeRoots:HISTORY_COMPACTION_SCOPE,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true});if(!result.committed)throw new Error(result.reason||'compaction-rejected');
+    return true;
   }
 
   // Build 359: earlier versions of documents older than 30 game days become checkpoints (GH_DOCUMENT_PROOF.checkpointAncestors),
@@ -2685,10 +2688,66 @@
   // Build 358 (save size): the records of documents in the finance audit archive take the compact archived form
   // (GH_DOCUMENT_PROOF.compactArchivedRecords), at most 200 per pass. Only the proof store is written, in its own
   // transaction (joined when one is active).
+  // Build 359: each pass is its own maintenance step (one frame each). Both passes only replace the proof store's maps
+  // (records, archive, checkpoints, period digests) with new ones, never a record in place, so the rollback snapshot keeps
+  // those maps' members (Transaction Core rowRoots, level 'containers') instead of deep-copying the whole store (25 MB in
+  // memory at day 300, 60 ms on iPhone every 12 game hours). tests/build359-sim-smoothness.cjs fails a pass mid-way and
+  // requires the store back exactly.
+  const PROOF_MAINTENANCE_ROLLBACK=Object.freeze({documentProofs:Object.freeze({level:'containers'})});
+  function proofMaintenancePass(label,run){
+    const tx=window.GH_TRANSACTION_CORE;if(!tx?.execute||!tx?.join)return null;
+    let out=null;const result=(tx.isActive()?tx.join:tx.execute)(state,{label,apply:()=>{out=run();},scope:['documentProofs'],writeRoots:['documentProofs'],rowRoots:PROOF_MAINTENANCE_ROLLBACK,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true});
+    if(!result.committed)throw new Error(result.reason||`${label}-rejected`);return out;
+  }
   function checkpointProofHistory(){
-    const proofs=window.GH_DOCUMENT_PROOF,tx=window.GH_TRANSACTION_CORE;if(typeof proofs?.checkpointAncestors!=='function'||!tx?.execute||!tx?.join)return null;
-    let out=null;const result=(tx.isActive()?tx.join:tx.execute)(state,{label:'proof-history-checkpoints',apply:()=>{out=proofs.checkpointAncestors(state);out.archived=proofs.compactArchivedRecords?.(state)?.compacted||0;},scope:['documentProofs'],writeRoots:['documentProofs'],auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true});
-    if(!result.committed)throw new Error(result.reason||'proof-checkpoints-rejected');return out;
+    const proofs=window.GH_DOCUMENT_PROOF;if(typeof proofs?.checkpointAncestors!=='function')return null;
+    return proofMaintenancePass('proof-history-checkpoints',()=>proofs.checkpointAncestors(state));
+  }
+  function compactArchivedProofs(){
+    const proofs=window.GH_DOCUMENT_PROOF;if(typeof proofs?.compactArchivedRecords!=='function')return null;
+    return proofMaintenancePass('proof-archived-records',()=>({archived:proofs.compactArchivedRecords(state)?.compacted||0}));
+  }
+
+  // Build 359: the maintenance pass every 12 game hours ran its parts in one frame (60 ms on iPhone, twice per advanced
+  // day) and asked the next hourly slice for a full schema pass (83 ms in one frame). Its parts now queue here and the
+  // simulation engine runs one per frame, between slices (adapter.runDeferredWork): no slice is open while a part runs,
+  // and no slice starts until the queue is empty. A schema pass after a compaction that rewrote history runs one section
+  // per frame (GH_SAVE_SCHEMA.validationSteps) and starts again if a command changes the state between sections.
+  const maintenanceQueue=[];
+  const MAINTENANCE_TASKS=Object.freeze(['compact','proof-checkpoints','proof-archived','fleet','health']);
+  function queueMaintenance(){for(const task of MAINTENANCE_TASKS)if(!maintenanceQueue.some(entry=>entry.task===task))maintenanceQueue.push({task});}
+  function schemaSectionsTask(){
+    const schema=window.GH_SAVE_SCHEMA;if(typeof schema?.validationSteps!=='function')return null;
+    const mark=()=>`${state.saveRevision}|${state.controlPlane?.revision}|${state.simSeconds}`;
+    return {task:'schema',steps:schema.validationSteps(state,{trustVerified:true}),mark:mark(),markOf:mark};
+  }
+  function haltOnGlobalFault(health,central){if(requiresGlobalHalt(health,central)){simulationEngine.cancelAdvance?.('global-halt');state.speed=0;pushAlert('أُوقفت المحاكاة لأن خللًا في سلامة الحفظ أو سجل الأوامر قد يهدد الحالة كاملة. مشكلات القطاعات الأخرى تبقى معزولة داخل قطاعها.');}}
+  function runMaintenanceTask(entry){
+    if(entry.task==='compact'){if(compactSimulationState(false,{schemaDue:false})){const sections=schemaSectionsTask();if(sections)maintenanceQueue.splice(1,0,sections);else globalThis.__GH_HOURLY_SCHEMA_DUE__=true;}return true;}
+    if(entry.task==='proof-checkpoints'){checkpointProofHistory();return true;}
+    if(entry.task==='proof-archived'){compactArchivedProofs();return true;}
+    if(entry.task==='fleet'){window.GH_FLEET_DATA.maintain(state);return true;}
+    if(entry.task==='schema'){
+      if(entry.markOf()!==entry.mark){entry.steps=window.GH_SAVE_SCHEMA.validationSteps(state,{trustVerified:true});entry.mark=entry.markOf();entry.restarts=(entry.restarts||0)+1;}
+      const step=entry.steps.next();if(!step.done)return false;
+      const check=step.value;if(check&&check.ok===false){const reason=check.reason||check.errors?.join(',')||'invalid state';diag('SAVE_SCHEMA_INTEGRITY',{reason:String(reason).slice(0,240),source:'maintenance-compaction'},'critical');haltOnGlobalFault({issues:[{id:'SAVE_SCHEMA_INTEGRITY',severity:'critical'}]});}
+      return true;
+    }
+    if(entry.task==='health'){const health=window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()});const central=window.GH_CONTROL_PLANE?.check?.(state);haltOnGlobalFault(health,central);return true;}
+    return true;
+  }
+  // One part (or one schema section) per call. True when a part ran, so the engine yields the frame.
+  function runDeferredMaintenance(){
+    const entry=maintenanceQueue[0];if(!entry)return false;
+    if(hardResetInProgress||durableCommandInProgress||stagedStateBusy())return false;
+    const metric=runtimeInstrumentation.maintenance,started=appMetricClock();let finished=true;
+    try{finished=runMaintenanceTask(entry)!==false;}
+    catch(error){finished=true;diag('SIM_MAINTENANCE_FAILED',{task:entry.task,error:String(error?.message||error).slice(0,240)},'warning');console.warn('تعذر تنفيذ جزء من الصيانة الدورية',entry.task,error);}
+    finally{
+      const ms=Math.max(0,appMetricClock()-started),key=`${entry.task}Ms`;metric.last[key]=(entry.task==='schema'&&metric.lastTask==='schema'?(Number(metric.last[key])||0):0)+ms;metric.lastTask=entry.task;metric.max[key]=Math.max(Number(metric.max[key])||0,ms);metric.runs++;
+      if(finished)maintenanceQueue.shift();metric.pending=maintenanceQueue.map(row=>row.task);
+    }
+    return true;
   }
 
   function normalizeSimulationClocks(){
@@ -2954,7 +3013,9 @@
       const limits=[eventWindow,window.GH_REALISM?.simulationSliceLimit?.(state),window.GH_MOBILITY_CORE?.simulationSliceLimit?.(state)].map(Number).filter(value=>Number.isFinite(value)&&value>0);
       return Math.max(60,Math.min(3600,...(limits.length?limits:[3600])));
     },
-    onMaintenance:hour=>{diag('SIM_MAINTENANCE',{hour});window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'SIMULATION_MAINTENANCE',domain:'simulation',actor:'simulation-core',correlationId:`SIM-HOUR-${hour}`,detail:{hour}});compactSimulationState(false);checkpointProofHistory();window.GH_FLEET_DATA.maintain(state);const health=window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()});const central=window.GH_CONTROL_PLANE?.check?.(state);if(requiresGlobalHalt(health,central)){simulationEngine.cancelAdvance?.('global-halt');state.speed=0;pushAlert('أُوقفت المحاكاة لأن خللًا في سلامة الحفظ أو سجل الأوامر قد يهدد الحالة كاملة. مشكلات القطاعات الأخرى تبقى معزولة داخل قطاعها.');}},
+    onMaintenance:hour=>{diag('SIM_MAINTENANCE',{hour});window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'SIMULATION_MAINTENANCE',domain:'simulation',actor:'simulation-core',correlationId:`SIM-HOUR-${hour}`,detail:{hour}});queueMaintenance();},
+    runDeferredWork:()=>runDeferredMaintenance(),
+    hasDeferredWork:()=>maintenanceQueue.length>0&&!hardResetInProgress&&!durableCommandInProgress,
     onRender:({now,speed,jobActive})=>{
       // Build 359: each part of this callback is timed (runtimeInstrumentation.simRender), so a slow simulation frame
       // names what it spent its time on. Measurement only.

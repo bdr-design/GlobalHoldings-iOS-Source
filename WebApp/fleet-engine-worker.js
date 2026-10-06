@@ -3,7 +3,8 @@
 // table, extras) and runs GH_FLEET_EVENTS.advance on it with the same code as the main thread; the main thread replays
 // the result (rows written, values interned) inside the simulation slice's transaction. Each step stays open here until
 // the main thread settles it: 'commit' keeps it, 'rollback' restores the replica exactly (its own store journal).
-// Messages in:  replica (whole store), sync (rows and values changed on the main thread), routes, specs, advance, settle.
+// Messages in:  replica (whole store), sync (rows and values changed on the main thread), columns (fields rewritten
+//               wholesale), routes, specs, advance, settle.
 // Messages out: ready, result (or fallback with a reason: the main thread then runs that step itself), error.
 importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js');
 
@@ -63,6 +64,12 @@ self.addEventListener('message',event=>{
         if(message.values)STORE.applyValueChanges(store,message.values);
         if(message.rows&&message.rows.indices.length)STORE.writeRows(store,message.rows.indices,message.rows.bytes,message.rows.extras,{staticRows:true});
         store.live=message.live;store.structure=message.structure;
+        return;
+      }
+      // Build 359: columns the main thread rewrote wholesale (after the rows of the same exchange).
+      case 'columns':{
+        if(!store||open){self.postMessage({type:'error',version:VERSION,id:message.id,error:open?'columns-while-step-open':'replica-missing'});return;}
+        STORE.writeColumns(store,message.payload,{reported:message.reported||[]});
         return;
       }
       case 'routes':

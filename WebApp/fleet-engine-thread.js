@@ -22,7 +22,7 @@
 
   function create({workerFactory,resolveRoute,catalogSpecs,routesRevision=()=>0,clock=()=>performance.now(),timeoutMs=15000}={}){
     let worker=null,disabled=null,nextId=1,needsFull=true,synced=null,routeTable=new Map(),routesAt=null,pending=null,lastBudgetTime=Infinity;
-    const tickets=new Map(),waiters=[],stats={requests:0,applied:0,fallbacks:0,fullSyncs:0,incrementalSyncs:0,rowsSent:0,lastWorkerMs:0,lastApplyMs:0,lastSyncMs:0,maxWorkerMs:0,maxApplyMs:0,maxSyncMs:0,maxFullSyncMs:0,lastReason:'',fullSyncReasons:{}};
+    const tickets=new Map(),waiters=[],stats={requests:0,applied:0,fallbacks:0,fullSyncs:0,incrementalSyncs:0,columnSyncs:0,rowsSent:0,lastWorkerMs:0,lastApplyMs:0,lastSyncMs:0,maxWorkerMs:0,maxApplyMs:0,maxSyncMs:0,maxFullSyncMs:0,lastReason:'',fullSyncReasons:{}};
     const settleWaiters=()=>{if(pending)return;while(waiters.length)waiters.shift()();};
     function disable(reason){
       if(disabled)return;disabled=String(reason||'disabled');stats.lastReason=disabled;
@@ -84,7 +84,11 @@
       const reason=needsFull?'stale':!synced?'first':synced.store!==store?'store-replaced':synced.runtime!==STORE.chunkStamp(store).runtime?'store-runtime':store.length<synced.length?'store-shrank':'';
       if(reason){fullSync(store,reason);return;}
       const started=clock(),dirty=STORE.drainDirty(store,synced.since);
-      if(!dirty.complete||dirty.columns.length){fullSync(store,dirty.complete?'column-writes':'dirty-log-incomplete');return;}
+      if(!dirty.complete){fullSync(store,'dirty-log-incomplete');return;}
+      // Build 359: columns rewritten wholesale (the daily fleet pass) travel as columns, with the presence column (a
+      // column writer sets presence bits quietly), instead of the whole store.
+      const columnNames=dirty.columns.length?[...new Set([...dirty.columns,'present'])]:null;
+      if(columnNames&&!columnNames.every(name=>Object.prototype.hasOwnProperty.call(STORE.SLOTS,name))){fullSync(store,'column-writes');return;}
       const indices=Int32Array.from(new Set(dirty.indices.filter(index=>index>=0&&index<store.length))).sort();
       const values=STORE.valueChanges(store,synced.values);
       if(routesRevision()!==routesAt){
@@ -96,6 +100,7 @@
         post({type:'sync',length:store.length,live:store.live,structure:store.structure,values,rows:{indices,bytes:rows.bytes,extras:rows.extras}},[rows.bytes,indices.buffer]);
         stats.rowsSent+=count;
       }
+      if(columnNames){const payload=STORE.readColumns(store,columnNames);post({type:'columns',reported:dirty.columns,payload},payload.columns.map(([,buffer])=>buffer));stats.columnSyncs++;}
       synced.since=store.revision;synced.values=store.values.slice();synced.length=store.length;
       stats.incrementalSyncs++;stats.lastSyncMs=clock()-started;stats.maxSyncMs=Math.max(stats.maxSyncMs,stats.lastSyncMs);
     }
