@@ -2693,9 +2693,18 @@
     const proofs=window.GH_DOCUMENT_PROOF;if(typeof proofs?.checkpointAncestors!=='function')return null;
     return proofMaintenancePass('proof-history-checkpoints',()=>proofs.checkpointAncestors(state));
   }
-  function compactArchivedProofs(){
+  function compactArchivedProofs(limit=ARCHIVED_PROOF_ROUND){
     const proofs=window.GH_DOCUMENT_PROOF;if(typeof proofs?.compactArchivedRecords!=='function')return null;
-    return proofMaintenancePass('proof-archived-records',()=>({archived:proofs.compactArchivedRecords(state)?.compacted||0}));
+    return proofMaintenancePass('proof-archived-records',()=>({archived:proofs.compactArchivedRecords(state,{limit})?.compacted||0}));
+  }
+  // Build 359: archived documents take the v2 form (their authorization proof's digest), so archived authorization
+  // proofs nothing else needs leave the authorization archive (GH_AUTHORIZATION.compact). Rows only shrink here, so
+  // the rollback snapshot keeps the members of its maps (containers), not a deep copy of the 13 MB store.
+  const ARCHIVED_PROOF_ROUND=50,ARCHIVED_PROOF_ROUNDS=8,AUTHORIZATION_MAINTENANCE_ROLLBACK=Object.freeze({authorization:Object.freeze({level:'containers'})});
+  function compactAuthorizationArchive(){
+    const A=window.GH_AUTHORIZATION,tx=window.GH_TRANSACTION_CORE;if(typeof A?.compact!=='function'||!tx?.execute||!tx?.join)return null;
+    let out=null;const result=(tx.isActive()?tx.join:tx.execute)(state,{label:'authorization-archive-compaction',apply:()=>{out=A.compact(state);},scope:['authorization'],writeRoots:['authorization'],rowRoots:AUTHORIZATION_MAINTENANCE_ROLLBACK,auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true});
+    if(!result.committed)throw new Error(result.reason||'authorization-archive-compaction-rejected');return out;
   }
 
   // Build 359: the maintenance pass every 12 game hours ran its parts in one frame (60 ms on iPhone, twice per advanced
@@ -2715,7 +2724,9 @@
   function runMaintenanceTask(entry){
     if(entry.task==='compact'){if(compactSimulationState(false,{schemaDue:false})){const sections=schemaSectionsTask();if(sections)maintenanceQueue.splice(1,0,sections);else globalThis.__GH_HOURLY_SCHEMA_DUE__=true;}return true;}
     if(entry.task==='proof-checkpoints'){checkpointProofHistory();return true;}
-    if(entry.task==='proof-archived'){compactArchivedProofs();return true;}
+    // Small rounds over consecutive frames (50 documents each, up to 8) while documents remain to convert; then the
+    // authorization archive drops the proofs they released.
+    if(entry.task==='proof-archived'){const out=compactArchivedProofs();entry.rounds=(entry.rounds||0)+1;if((out?.archived||0)>=ARCHIVED_PROOF_ROUND&&entry.rounds<ARCHIVED_PROOF_ROUNDS)return false;compactAuthorizationArchive();return true;}
     if(entry.task==='fleet'){window.GH_FLEET_DATA.maintain(state);return true;}
     if(entry.task==='schema'){
       if(entry.markOf()!==entry.mark){entry.steps=window.GH_SAVE_SCHEMA.validationSteps(state,{trustVerified:true});entry.mark=entry.markOf();entry.restarts=(entry.restarts||0)+1;}
@@ -4396,8 +4407,8 @@
     document.querySelectorAll('.collect-receivable').forEach(b=>b.addEventListener('click',()=>collectReceivable(b.dataset.number)));
     document.querySelectorAll('.settle-payable-transfer').forEach(b=>b.addEventListener('click',()=>settlePayable(b.dataset.number,'transfer')));
     document.querySelectorAll('.issue-payable-cheque').forEach(b=>b.addEventListener('click',()=>settlePayable(b.dataset.number,'cheque')));
-    document.querySelectorAll('.settle-all-payables').forEach(b=>b.addEventListener('click',async()=>{const release=beginButtonOperation(b,b.dataset.method==='cheque'?'جارٍ إصدار الشيكات…':'جارٍ سداد الذمم…');if(!release)return;try{await settleAllPayables(b.dataset.method==='cheque'?'cheque':'transfer',b.dataset.company||'all');}finally{release();}}));
-    document.querySelectorAll('.settle-all-cheques').forEach(b=>b.addEventListener('click',async()=>{const release=beginButtonOperation(b,'جارٍ صرف الشيكات…');if(!release)return;try{await settleAllIssuedCheques(b.dataset.company||'all');}finally{release();}}));
+    document.querySelectorAll('.settle-all-payables').forEach(b=>b.addEventListener('click',async()=>{const label=b.dataset.method==='cheque'?'جارٍ إصدار الشيكات…':'جارٍ سداد الذمم…',release=beginButtonOperation(b,label);if(!release)return;try{await settleAllPayables(b.dataset.method==='cheque'?'cheque':'transfer',b.dataset.company||'all',{progress:(done,total)=>{if(b.isConnected)b.textContent=`${label} ${fmtNumber(done)} / ${fmtNumber(total)}`;}});}finally{release();}}));
+    document.querySelectorAll('.settle-all-cheques').forEach(b=>b.addEventListener('click',async()=>{const release=beginButtonOperation(b,'جارٍ صرف الشيكات…');if(!release)return;try{await settleAllIssuedCheques(b.dataset.company||'all',{progress:(done,total)=>{if(b.isConnected)b.textContent=`جارٍ صرف الشيكات… ${fmtNumber(done)} / ${fmtNumber(total)}`;}});}finally{release();}}));
     document.querySelectorAll('.settle-cheque-now').forEach(b=>b.addEventListener('click',()=>settleIssuedCheque(b.dataset.id)));
     document.querySelectorAll('.pay-taxes').forEach(b=>b.addEventListener('click',()=>payTaxes(b.dataset.company||'group')));
     document.querySelectorAll('.pay-all-taxes').forEach(b=>b.addEventListener('click',async()=>{const release=beginButtonOperation(b,'جارٍ سداد الضرائب…');if(!release)return;try{await payAllTaxes();}finally{release();}}));
@@ -4537,13 +4548,18 @@
   function openPayablesFor(filter){const company=bulkPayableCompany(filter),issued=new Set((state.finance.cheques||[]).filter(ch=>ch.status==='صادر'&&ch.invoiceNumber).map(ch=>ch.invoiceNumber));return (state.finance.payables||[]).filter(d=>(company==='all'||(d.company||'group')===company)&&!issued.has(d.number));}
   function issuedChequesFor(filter){const company=bulkPayableCompany(filter);return (state.finance.cheques||[]).filter(ch=>ch.status==='صادر'&&(company==='all'||(ch.company||'group')===company));}
   function payableSkipText(reasons={}){const labels={'payroll-cheque-not-supported':'رواتب تُصرف بتحويل فقط','cheque-already-issued':'لها شيك صادر','insufficient-cash':'الرصيد لا يكفي','cheque-linked-invoice-not-payable':'فاتورتها مسددة','cheque-linked-amount-mismatch':'مبلغها لا يطابق فاتورتها','cheque-linked-company-mismatch':'شركتها لا تطابق فاتورتها','cheque-linked-payable-not-found':'بلا فاتورة'};return Object.entries(reasons).map(([key,count])=>`${fmtNumber(count)} ${labels[key]||key}`).join('، ')||'—';}
-  async function settleAllPayables(method,filter){
+  // Build 359 (iPhone: settling or cashing every document was one 3.6 s block): the bulk loop yields to the frame once a
+  // slice (BULK_SLICE_MS) is spent. The durable command suspends the simulation, so only painting runs in between, and the
+  // button shows how far the batch has come. Still one command, one approval and one save.
+  const BULK_SLICE_MS=12;
+  function bulkSlicer(total,progress){const clock=()=>globalThis.performance?.now?.()??Date.now();let start=clock();return async done=>{if(clock()-start<BULK_SLICE_MS)return;progress?.(done,total);await yieldForInteractivePaint();start=clock();};}
+  async function settleAllPayables(method,filter,{progress=null}={}){
     const numbers=openPayablesFor(filter).map(row=>row.number);if(!numbers.length){notice('لا توجد ذمم مفتوحة لهذا الإجراء.');return null;}
     const stayPanel=activeDrawerPanel,stayArg=activeDrawerArg,stayScroll=$('drawerBody')?.scrollTop||0;
-    const result=await runAuthorizedCompositeCommand(`settle-all-payables:${method}`,({state:draft,dispatch})=>{
-      const F=window.GH_FINANCE_CORE,free=draft.godMoney&&draft.infiniteMoney;let count=0,amount=0,skipped=0;
+    const result=await runAuthorizedCompositeCommand(`settle-all-payables:${method}`,async({state:draft,dispatch})=>{
+      const F=window.GH_FINANCE_CORE,free=draft.godMoney&&draft.infiniteMoney,slice=bulkSlicer(numbers.length,progress);let count=0,amount=0,skipped=0,done=0;
       const reasons={};
-      for(const number of numbers){const item=(draft.finance.payables||[]).find(row=>row.number===number);if(!item)continue;const due=Number(item.total??item.amount)||0;
+      for(const number of numbers){await slice(done++);const item=(draft.finance.payables||[]).find(row=>row.number===number);if(!item)continue;const due=Number(item.total??item.amount)||0;
         if(method==='transfer'&&!free&&F.operating(draft,F.requireCompany(draft,item.company||'group'))<due){skipped++;reasons['insufficient-cash']=(reasons['insufficient-cash']||0)+1;continue;}
         // Build 358: a payable that cannot take a cheque (payroll is paid by transfer only, a cheque already issued...)
         // is skipped with its reason; it never rejects the whole batch.
@@ -4555,12 +4571,12 @@
     if(result)pushAlert(method==='cheque'?`صدرت ${fmtNumber(result.count)} شيكات بقيمة ${fmtMoney(result.amount)} لسداد الذمم المفتوحة؛ تبقى كل ذمة مفتوحة حتى صرف شيكها.${result.skipped?` لم يصدر شيك لـ ${fmtNumber(result.skipped)} ذمة: ${payableSkipText(result.reasons)}.`:''}`:`سُددت ${fmtNumber(result.count)} ذمة بتحويلات بنكية بقيمة ${fmtMoney(result.amount)}${result.skipped?`؛ بقيت ${fmtNumber(result.skipped)} ذمة لعدم كفاية الرصيد`:''}.`);
     return result;
   }
-  async function settleAllIssuedCheques(filter){
+  async function settleAllIssuedCheques(filter,{progress=null}={}){
     const ids=issuedChequesFor(filter).sort((a,b)=>(Number(a.dueDay)||0)-(Number(b.dueDay)||0)||String(a.id).localeCompare(String(b.id))).map(row=>row.id);if(!ids.length){notice('لا توجد شيكات صادرة بانتظار الصرف.');return null;}
     const stayPanel=activeDrawerPanel,stayArg=activeDrawerArg,stayScroll=$('drawerBody')?.scrollTop||0;
-    const result=await runAuthorizedCompositeCommand('settle-all-cheques',({state:draft,dispatch})=>{
-      const F=window.GH_FINANCE_CORE,free=draft.godMoney&&draft.infiniteMoney;let count=0,amount=0,skipped=0;
-      for(const id of ids){const cheque=(draft.finance.cheques||[]).find(row=>row.id===id);if(!cheque||cheque.status!=='صادر')continue;const due=Number(cheque.amount)||0;
+    const result=await runAuthorizedCompositeCommand('settle-all-cheques',async({state:draft,dispatch})=>{
+      const F=window.GH_FINANCE_CORE,free=draft.godMoney&&draft.infiniteMoney,slice=bulkSlicer(ids.length,progress);let count=0,amount=0,skipped=0,done=0;
+      for(const id of ids){await slice(done++);const cheque=(draft.finance.cheques||[]).find(row=>row.id===id);if(!cheque||cheque.status!=='صادر')continue;const due=Number(cheque.amount)||0;
         if(!free&&F.operating(draft,F.requireCompany(draft,cheque.company||'group'))<due){skipped++;continue;}
         const out=dispatch('finance','settle-cheque',{id}).result;if(out?.settled!==true)throw new Error(`تعذر صرف الشيك ${id}: ${out?.reason||'رفض الصرف'}`);count++;amount+=due;}
       if(!count)throw new Error('لا يكفي رصيد الحساب الجاري لصرف أي شيك الآن');

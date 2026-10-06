@@ -2,7 +2,8 @@
 // Build 358: payables are settled one document per command (a full durable save and redraw each), which lagged on
 // device. The payables view now offers bulk actions, each ONE durable command: pay every open payable by transfer, issue
 // a cheque for every open payable, and cash every issued cheque (also offered in the cheques view). Checked through the
-// real buttons: counts, balances, journal effects, and that one save covers each bulk action.
+// real buttons: counts, balances, journal effects, and that one save covers each bulk action. Build 359: the batch
+// yields to the frame between slices and shows its progress on the button.
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright'),{boot}=require('./helpers/local-dom-app');
 const COUNT=30;
@@ -20,7 +21,11 @@ const COUNT=30;
     const issued=await snapshot('QA-CHQ');
     assert.equal(issued.issued,COUNT,'one cheque per open payable');assert.equal(issued.payables,COUNT,'payables stay open until their cheques clear');
     assert.equal(issued.saveRevision,start.saveRevision+1,'one save for the whole batch');assert.equal(issued.balance,start.balance,'issuing a cheque moves no cash');
+    // Build 359: the bulk loop yields to the frame between slices; the button shows how far the batch has come.
+    await page.evaluate(()=>{window.__BULK_LABELS__=[];new MutationObserver(()=>{for(const b of document.querySelectorAll('.settle-all-cheques'))window.__BULK_LABELS__.push(b.textContent);}).observe(document.body,{subtree:true,childList:true,characterData:true});});
     const cashMs=await click('.settle-all-cheques');
+    const labels=await page.evaluate(()=>window.__BULK_LABELS__);
+    assert.ok(labels.some(text=>/جارٍ صرف الشيكات… \S+ \/ \S+/.test(text)),`the batch yielded and showed its progress (${[...new Set(labels)].slice(0,4).join(' | ')})`);
     const cashed=await snapshot('QA-CHQ');
     assert.equal(cashed.cleared,COUNT,'every issued cheque is cashed');assert.equal(cashed.payables,0,'cashed cheques close their payables');assert.equal(cashed.returned,0,'no cheque bounces');
     const total=Array.from({length:COUNT},(_,i)=>1000+i).reduce((a,b)=>a+b,0);
@@ -43,7 +48,7 @@ const COUNT=30;
     assert.equal(mixed.payrollOpen,true,'the payroll payable stays open for a transfer');
     assert.match(mixed.alert,/رواتب تُصرف بتحويل فقط/,'the skipped payable and its reason are reported');
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({suite:'build358-bulk-payables-browser',documents:COUNT,issueMs,cashMs,transferMs}));
+    console.log(JSON.stringify({suite:'build358-bulk-payables-browser',documents:COUNT,issueMs,cashMs,transferMs,progressLabels:new Set(labels).size}));
     console.log('BUILD358_BULK_PAYABLES_PASS');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

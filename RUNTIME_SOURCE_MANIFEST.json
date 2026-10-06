@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "a5f3a988d4e432092643a756e00f4eb15b80aef020a9182767054fbf9649337d",
-  "webapp_tree_sha256": "e490f8891ead9f499ad742f47c930a6531ccfd36d0881801ea1a0c38450f048e",
+  "source_tree_sha256": "d7771c05822a4da2ac781a994330cd7cee4f54d43527ac152d90821cde459e52",
+  "webapp_tree_sha256": "b603fa091942d6cd121e01f6e0d1f1dc1d5d4cf4ed81d70fc9f8f2d6cb1e923f",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 188035,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 740842,
-      "sha256": "6d6e82129fac0496b0e572a1c88b1337b89c44f706261765634e1517b0fb2ae5"
+      "bytes": 743374,
+      "sha256": "41a0b8c0967a26eea90b4bdf64a295261c65a239060164bc5d27d99b0d57f7b3"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -2947,8 +2947,8 @@
       "sha256": "3cf8de3f5d25c1c633bd03d6a003f2111700a5293b049f841b83632b7fa10f3c"
     },
     "WebApp/authorization-core.js": {
-      "bytes": 39211,
-      "sha256": "9d56668bfa0fa6f4028332f52384cfba4a985f874542edbf5118b1dd3b4df80d"
+      "bytes": 40269,
+      "sha256": "3b6ac0de11a8a177f64496ebe954cca2807924c0fb8debda4a2cc82c6fc3c149"
     },
     "WebApp/authorization-ui.css": {
       "bytes": 2714,
@@ -3039,12 +3039,12 @@
       "sha256": "f8926d81ac8566b32031700f35422641c0891d2fabc3334125d7b634b7f154c3"
     },
     "WebApp/document-proof-core.js": {
-      "bytes": 65230,
-      "sha256": "043e691e882038990a75c735ed591bded7f184ea5ca7dafa3388c5dd737578bc"
+      "bytes": 69657,
+      "sha256": "315b2eee93c2743eed924aa40b980e2ae204abbe3eb923e09038a18661a0ffce"
     },
     "WebApp/domain-command-core.js": {
-      "bytes": 26416,
-      "sha256": "f455bb2e6ce7657a22335e400034ca697a9ad697b7258b86cdb69843592f09eb"
+      "bytes": 26347,
+      "sha256": "a958d953f9c4c70573f6e6344c6f51fac7c40af4ea47228d46d6d42fe44dcc74"
     },
     "WebApp/economics-core.js": {
       "bytes": 8403,
@@ -3259,8 +3259,8 @@
       "sha256": "e2b6a8811273984167e035dbe9a9ddce9cef58970bb565c56a8370314df64a07"
     },
     "WebApp/save-schema.js": {
-      "bytes": 75085,
-      "sha256": "6027aea9125dfbdeb1fed4faea1afdf88c48589d24c67638c6d32f5b91912c75"
+      "bytes": 75218,
+      "sha256": "68ef697ff050e699f6120078c3c008f461da94c500cff19ee7e8597b4eaecb07"
     },
     "WebApp/section-identities.css": {
       "bytes": 1900,
@@ -3388,7 +3388,7 @@
     },
     "project.yml": {
       "bytes": 2423,
-      "sha256": "210c12f37b2d4380321d988ba9eca71a7c00a0096b7d35644cb4efcc2d5c8327"
+      "sha256": "bf9cde3d657500131b8e9ec59abfca4ac9845dc2bfa3b33a0c3228233f162d7a"
     },
     "BUILD": {
       "bytes": 4,

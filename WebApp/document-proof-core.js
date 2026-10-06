@@ -37,6 +37,11 @@
     return hot&&cold?null:(hot||cold||null);
   }
   function records(state){const store=state?.documentProofs||{};return [...Object.values(store.recordsById||{}),...Object.values(store.archiveById||{})];}
+  // Build 359 (bulk commands: one approval for hundreds of documents took 3.6 s on iPhone): a command's new records are
+  // the ones its sequence range issued (createRecord is the only creator, DOCP-<sequence>), not a scan of every record
+  // before and after it.
+  function sequenceMark(state){const value=Number(state?.documentProofs?.sequence);return Number.isSafeInteger(value)&&value>=0?value:0;}
+  function recordsSince(state,mark){const out=[],last=sequenceMark(state);for(let sequence=Math.max(0,Math.floor(Number(mark)||0))+1;sequence<=last;sequence++){const row=getRecord(state,`DOCP-${String(sequence).padStart(9,'0')}`);if(row)out.push(row);}return out;}
   // Build 359 (iPhone diagnostic: proof records were 31 MB of a 71.5 MB save): every amendment of a document (issued,
   // cheque issued, cleared, settled) adds a whole new record (~2.6-3.5 KB, its signed content copied in full), and the
   // earlier versions stay only so the newer one can prove its link to them. An earlier version older than
@@ -52,7 +57,12 @@
   // rebuilds the signed content from the archived document and compares its digest with contentDigest (the digest the
   // authorization proof signed), so a change to the document or to the record is detected as with a whole record.
   const ARCHIVED_FORM='archived-document-v1',ARCHIVED_BATCH=200,ARCHIVED_FIELDS=Object.freeze(['id','version','form','documentId','documentType','companyId','materialProfile','contentDigest','previousProofId','previousContentDigest','transition','chainDepth','authorizationKind','authorizationProofId','createdAtSim','issuedAtSim','chain','signatureDigest']),ARCHIVED_KEYS=[...ARCHIVED_FIELDS].sort().join(',');
-  const isArchivedForm=record=>!!record&&typeof record==='object'&&record.form===ARCHIVED_FORM;
+  // Build 359: archived-document-v2 also carries the digest of its authorization proof, recorded when that proof verified
+  // whole. The document then no longer needs the proof itself (it may leave the authorization archive, whose 8 MB limit
+  // stopped the daily close on a 347-day game); while the proof is still held it must verify and match that digest.
+  const ARCHIVED_FORM_V2='archived-document-v2',ARCHIVED_FIELDS_V2=Object.freeze([...ARCHIVED_FIELDS,'authorizationDigest']),ARCHIVED_KEYS_V2=[...ARCHIVED_FIELDS_V2].sort().join(',');
+  const isArchivedForm=record=>!!record&&typeof record==='object'&&(record.form===ARCHIVED_FORM||record.form===ARCHIVED_FORM_V2);
+  const releasesAuthorization=record=>!!record&&record.form===ARCHIVED_FORM_V2&&!!record.authorizationProofId&&/^[a-f0-9]{64}$/i.test(String(record.authorizationDigest||''));
   const checkpointPeriod=createdAtSim=>`P${String(Math.max(0,Math.floor((Number(createdAtSim)||0)/CHECKPOINT_PERIOD_SECONDS))).padStart(4,'0')}`;
   function getCheckpoint(state,id){const row=state?.documentProofs?.checkpointsById?.[id];return row&&typeof row==='object'&&!Array.isArray(row)?row:null;}
   function checkpointEntry(row){return CHECKPOINT_FIELDS.map(field=>row[field]??null);}
@@ -117,9 +127,15 @@
     for(const entry of stateDocumentEntries(state)){
       if(made.length>=limit)break;if(entry.role!=='canonical-archive')continue;
       const document=entry.document,record=getRecord(state,document?.documentProofId);
-      if(!record||isArchivedForm(record)||Number(record.version)!==RECORD_VERSION||record.signedContent?.schema!==CONTENT_SCHEMA||archivedDocument(state,record.id)!==document)continue;
+      if(!record||record.form===ARCHIVED_FORM_V2||Number(record.version)!==RECORD_VERSION||archivedDocument(state,record.id)!==document)continue;
+      if(!isArchivedForm(record)&&record.signedContent?.schema!==CONTENT_SCHEMA)continue;
       if(!verifyDocument(state,document,cache).ok)continue;
-      const compact={};for(const field of ARCHIVED_FIELDS)compact[field]=field==='form'?ARCHIVED_FORM:field==='issuedAtSim'?Number(record.signedContent.issuedAtSim)||0:field==='chain'?clone(record.signedContent.chain??null):field==='signatureDigest'?signatureDigestOf(record.signatureSnapshot):(record[field]??null);
+      // Build 359: the digest of the authorization proof that verified just now (verifyDocument checked it).
+      const proof=record.authorizationProofId?(state.authorization?.proofsById?.[record.authorizationProofId]||state.authorization?.proofArchiveById?.[record.authorizationProofId]):null;if(record.authorizationProofId&&!proof)continue;
+      const compact={};
+      if(record.form===ARCHIVED_FORM){for(const field of ARCHIVED_FIELDS)compact[field]=field==='form'?ARCHIVED_FORM_V2:field==='chain'?clone(record.chain??null):(record[field]??null);}
+      else for(const field of ARCHIVED_FIELDS)compact[field]=field==='form'?ARCHIVED_FORM_V2:field==='issuedAtSim'?Number(record.signedContent.issuedAtSim)||0:field==='chain'?clone(record.signedContent.chain??null):field==='signatureDigest'?signatureDigestOf(record.signatureSnapshot):(record[field]??null);
+      compact.authorizationDigest=proof?proof.proofDigest:null;
       made.push({compact,hot:store.recordsById[record.id]===record});
     }
     if(!made.length)return {compacted:0};
@@ -222,8 +238,12 @@
     if(globalThis.GH_TRANSACTION_CORE?.isSealed?.(document)||isArchivedForm(getRecord(state,document.documentProofId)))throw new Error('document-proof-archived-read-only');
     // Rollback snapshot of the proof store: an amendment only advances the sequence and adds, removes or archives
     // whole records (records are never edited here), so copying the store and its two record maps is exact. Build 357
-    // deep-cloned the whole store (~1.5 MB) on every amendment.
-    const transition=transitionId(options.transition),store=ensure(state),documentSnapshot=clone(document),storeSnapshot={...store,recordsById:{...store.recordsById},...(store.archiveById&&typeof store.archiveById==='object'?{archiveById:{...store.archiveById}}:{})};
+    // deep-cloned the whole store (~1.5 MB) on every amendment. Build 359 (a million assets: copying both maps on every
+    // amendment made each document cost more as the game grew): the maps are copied only when this record's admission
+    // will compact or archive them; otherwise the amendment adds at most its one new record (DOCP-<sequence>), and the
+    // rollback removes it and restores the sequence.
+    const transition=transitionId(options.transition),store=ensure(state),documentSnapshot=clone(document),sequenceBefore=store.sequence,admitting=Object.keys(store.recordsById).length>=LIMITS.records,storeSnapshot=admitting?{...store,recordsById:{...store.recordsById},...(store.archiveById&&typeof store.archiveById==='object'?{archiveById:{...store.archiveById}}:{})}:null;
+    const rollbackStore=()=>{if(storeSnapshot){state.documentProofs=storeSnapshot;return;}for(let sequence=sequenceBefore+1;sequence<=store.sequence;sequence++)delete store.recordsById[`DOCP-${String(sequence).padStart(9,'0')}`];store.sequence=sequenceBefore;state.documentProofs=store;};
     try{
       const verification=verifyDocument(state,document);if(!verification.ok){if(verification.legacy&&verification.readOnly)throw new Error('document-proof-legacy-read-only');throw new Error(`document-proof-invalid:${verification.reason}`);}
       const previous=getRecord(state,document.documentProofId);if(!previous||Number(previous.version)!==RECORD_VERSION)throw new Error('document-proof-legacy-read-only');
@@ -233,9 +253,17 @@
       const afterId=documentId(document),afterType=documentType(document),afterCompany=clean(document.company||document.companyId||'group',100);if(afterId!==beforeId)throw new Error('document-amendment-id-changed');if(afterType!==beforeType)throw new Error('document-amendment-type-changed');if(afterCompany!==beforeCompany)throw new Error('document-amendment-company-changed');
       const afterMaterial=stable(materialDetails(document,afterType).payload);if(afterMaterial===beforeMaterial)throw new Error('document-amendment-no-material-change');
       clearSecurityEnvelope(document);const chain={previousProofId:previous.id,previousContentDigest:previous.contentDigest,transition,depth},record=createRecord(state,document,{type:beforeType,documentId:beforeId,companyId:beforeCompany,authorizationKind:clean(options.authorizationKind||'pending-approval',40)},chain);return {record,result};
-    }catch(error){restoreObject(document,documentSnapshot);state.documentProofs=storeSnapshot;throw error;}
+    }catch(error){restoreObject(document,documentSnapshot);rollbackStore();throw error;}
   }
-  function verifyAuthorizationReference(state,record,cache=null){if(!record.authorizationProofId)return {ok:true};const authorization=globalThis.GH_AUTHORIZATION?.verifyProof?.(state,record.authorizationProofId,cache?.authorization);if(!authorization?.ok)return {ok:false,reason:`authorization-${authorization?.reason||'unavailable'}`};if(!authorization.proof.documentDigests.includes(record.contentDigest)||!authorization.proof.documentIds.includes(record.documentId))return {ok:false,reason:'authorization-document-reference-missing'};return {ok:true};}
+  function verifyAuthorizationReference(state,record,cache=null){
+    if(record.form===ARCHIVED_FORM_V2){
+      if(!record.authorizationProofId)return record.authorizationDigest===null?{ok:true}:{ok:false,reason:'document-proof-archived-authorization-digest'};
+      if(!releasesAuthorization(record))return {ok:false,reason:'document-proof-archived-authorization-digest'};
+      const held=state?.authorization?.proofsById?.[record.authorizationProofId]||state?.authorization?.proofArchiveById?.[record.authorizationProofId];
+      if(!held)return {ok:true,released:true};
+      if(held.proofDigest!==record.authorizationDigest)return {ok:false,reason:'authorization-digest-mismatch'};
+    }
+    if(!record.authorizationProofId)return {ok:true};const authorization=globalThis.GH_AUTHORIZATION?.verifyProof?.(state,record.authorizationProofId,cache?.authorization);if(!authorization?.ok)return {ok:false,reason:`authorization-${authorization?.reason||'unavailable'}`};if(!authorization.proof.documentDigests.includes(record.contentDigest)||!authorization.proof.documentIds.includes(record.documentId))return {ok:false,reason:'authorization-document-reference-missing'};return {ok:true};}
   const SEALED_RECORD_CONTENT=new WeakMap();
   // A verification result carries a private copy of the record. For a sealed record (it cannot change) the copy is made
   // on first read instead of on every verification; it is the same copy on every read, as before.
@@ -279,7 +307,7 @@
     if(typeof sealed==='function'&&sealed(record)&&sealed(document))ARCHIVED_CONTENT.set(record,{...out,document});return out;
   }
   function verifyArchivedRecord(state,proofRecord,seen,cache){
-    if(Object.keys(proofRecord).sort().join(',')!==ARCHIVED_KEYS||Number(proofRecord.version)!==RECORD_VERSION||!/^[a-f0-9]{64}$/i.test(String(proofRecord.contentDigest||''))||(proofRecord.signatureDigest!==null&&!/^[a-f0-9]{64}$/i.test(String(proofRecord.signatureDigest||''))))return {ok:false,reason:'document-proof-archived-shape'};
+    if(Object.keys(proofRecord).sort().join(',')!==(proofRecord.form===ARCHIVED_FORM_V2?ARCHIVED_KEYS_V2:ARCHIVED_KEYS)||Number(proofRecord.version)!==RECORD_VERSION||!/^[a-f0-9]{64}$/i.test(String(proofRecord.contentDigest||''))||(proofRecord.signatureDigest!==null&&!/^[a-f0-9]{64}$/i.test(String(proofRecord.signatureDigest||''))))return {ok:false,reason:'document-proof-archived-shape'};
     const authorization=verifyAuthorizationReference(state,proofRecord,cache);if(!authorization.ok)return authorization;
     let profile;try{profile=profileFor(proofRecord.documentType);}catch(error){return {ok:false,reason:String(error?.message||error)};}if(proofRecord.materialProfile!==profile)return {ok:false,reason:'document-material-profile-mismatch'};
     const document=archivedDocument(state,proofRecord.id);if(!document)return {ok:false,reason:'document-proof-archived-document-missing'};
@@ -398,7 +426,16 @@
     for(const replacement of replacements)replacement.container[replacement.index]=replacement.value;
     return {changed:replacements.length>0,count:replacements.length,paths:replacements.map(row=>row.path)};
   }
-  function locateDocument(state,proofId){return stateDocuments(state).find(document=>document?.documentProofId===proofId)||null;}
+  // The first document carrying this record, in stateDocumentEntries order (live finance documents, contracts, then the
+  // audit archive). Build 359 (a million assets): it stops at the first match instead of listing every document first,
+  // so a document issued or amended now is found among the live ones without walking the archive.
+  function locateDocument(state,proofId){
+    const match=document=>document&&typeof document==='object'&&document.documentProofId===proofId;
+    for(const bucket of financeBuckets){const list=Array.isArray(state.finance?.[bucket])?state.finance[bucket]:[];for(let index=0;index<list.length;index++)if(match(list[index]))return list[index];}
+    for(const document of Object.values(state.contractRegistry||{}))if(match(document))return document;
+    for(const list of Object.values(state.finance?.auditArchive?.records||{}))if(Array.isArray(list))for(let index=0;index<list.length;index++)if(match(list[index]))return list[index];
+    return null;
+  }
   function collectResultDocuments(state,result){const found=new Map(),seen=new Set();function visit(value,depth){if(!value||typeof value!=='object'||depth>7||seen.has(value))return;seen.add(value);if(value.documentProofId&&value.contentDigest){const actual=locateDocument(state,value.documentProofId)||value;found.set(value.documentProofId,{proofId:value.documentProofId,documentId:documentId(actual),digest:actual.contentDigest,document:actual});}if(Array.isArray(value)){for(const item of value)visit(item,depth+1);return;}for(const nested of Object.values(value))visit(nested,depth+1);}visit(result,0);return [...found.values()];}
   function bindAuthorization(state,documents,proof){if(!proof?.id)throw new Error('authorization-proof-required');ensure(state);const rows=Array.isArray(documents)?documents:[];for(const item of rows){const document=item.document||locateDocument(state,item.proofId),record=getRecord(state,item.proofId||document?.documentProofId);if(!document||!record)throw new Error('document-proof-not-found');if(Number(record.version)!==RECORD_VERSION)throw new Error('document-proof-legacy-read-only');if(isArchivedForm(record))throw new Error('document-proof-archived-read-only');const verification=verifyDocument(state,document);if(!verification.ok)throw new Error(`document-proof-invalid:${verification.reason}`);if(record.authorizationProofId&&record.authorizationProofId!==proof.id)throw new Error('document-already-authorized');if(!Array.isArray(proof.documentDigests)||!proof.documentDigests.includes(record.contentDigest))throw new Error('proof-document-digest-mismatch');if(!Array.isArray(proof.documentIds)||!proof.documentIds.includes(record.documentId))throw new Error('proof-document-id-mismatch');const store=state.documentProofs,bound={...record,authorizationProofId:proof.id,authorizationKind:proof.mode,signatureSnapshot:{kind:'visual-authorization-seal',visualSealAssetId:proof.visualSealAssetId||proof.signatureAssetId,visualSealVersion:proof.visualSealVersion??proof.signatureVersion,visualSealDigest:proof.visualSealDigest||proof.signatureDigest,signatureAssetId:proof.signatureAssetId,signatureVersion:proof.signatureVersion,signatureDigest:proof.signatureDigest,signerPersonId:proof.signerPersonId,signerNameSnapshot:proof.signerNameSnapshot,mandateId:proof.mandateId,mandateVersion:proof.mandateVersion,mandateDigest:proof.mandateDigest,signedAtSim:proof.signedAtSim}};
       // Proof records are sealed (shared with durable drafts, never edited): binding replaces the record where it lives.
@@ -406,5 +443,5 @@
   function markLegacy(state,document,options={}){if(document.documentProofId)return verifyDocument(state,document);return sealDocument(state,document,{...options,authorizationKind:'legacy-name-only'});}
   // Proof records are inserted whole and replaced, never edited (bindAuthorization replaces): durable drafts share them sealed.
   (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('documentProofs',['recordsById','archiveById','checkpointsById']);
-  const API=Object.freeze({VERSION,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,compact,checkpoint:getCheckpoint,checkpointAncestors,compactArchivedRecords,ARCHIVED_FORM,verifyCheckpoints,CHECKPOINT_AGE_SECONDS,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,ARCHIVED_FORM_V2,releasesAuthorization,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,sequenceMark,recordsSince,compact,checkpoint:getCheckpoint,checkpointAncestors,compactArchivedRecords,ARCHIVED_FORM,verifyCheckpoints,CHECKPOINT_AGE_SECONDS,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

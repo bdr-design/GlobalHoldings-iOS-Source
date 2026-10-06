@@ -43,7 +43,8 @@ const recordBytes=docs=>docs.reduce((n,d)=>n+Buffer.byteLength(JSON.stringify(Pr
 const before={archived:recordBytes(archived()),store:Buffer.byteLength(JSON.stringify(state.documentProofs))};
 let converted=0;for(;;){const out=Proof.compactArchivedRecords(state);assert.ok(out.compacted<=200);if(!out.compacted)break;converted+=out.compacted;}
 assert.equal(converted,archived().length,'every archived document took the archived form');
-for(const d of archived())assert.equal(Proof.record(state,d.documentProofId).form,Proof.ARCHIVED_FORM);
+// Build 359: archived records now take the v2 form (it also records the authorization proof's digest).
+for(const d of archived())assert.equal(Proof.record(state,d.documentProofId).form,Proof.ARCHIVED_FORM_V2);
 for(const d of documents().filter(d=>!archived().includes(d)))assert.ok(Proof.record(state,d.documentProofId).signedContent,'a live document keeps its whole record');
 const after={archived:recordBytes(archived()),store:Buffer.byteLength(JSON.stringify(state.documentProofs))};
 assert.ok(after.archived<before.archived*.3,`archived documents' records shrink (${before.archived} -> ${after.archived} bytes)`);
