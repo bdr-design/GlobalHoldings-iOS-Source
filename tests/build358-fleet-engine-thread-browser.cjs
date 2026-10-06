@@ -61,8 +61,10 @@ const workerSource=['fleet-store-core.js','simulation-asset-core.js','fleet-even
       await a.buyAsset('sea','used',cheapest('sea').id,'lease',80,'QA-sea-PORT',true,`QA-T-${order++}`,'sea');
       return {size:GH_FLEET_DATA.size(s())};
     });
+// Build 359: the dispatch assigns in chunks, so the routes show before the command ends; it reopens the routes panel
+    // when it commits. Wait for that before the next panel.
     const dispatch=async company=>{await page.evaluate(c=>__AUDIT__.openDrawer('routes',c),company);const b=page.locator(`.dispatch-international-network[data-company="${company}"]`).first();await b.waitFor({state:'visible'});await b.click();
-      await page.waitForFunction(c=>GH_FLEET_DATA.filter(__GH_STATE__,x=>(x.ownerCompanyId||x.companyId)===c).every(x=>x.routeId),company,{timeout:180000});await page.evaluate(()=>__AUDIT__.closeDrawer());};
+      await page.waitForFunction(c=>GH_FLEET_DATA.filter(__GH_STATE__,x=>(x.ownerCompanyId||x.companyId)===c).every(x=>x.routeId),company,{timeout:180000});await page.waitForFunction(()=>!window.__GH_DURABLE_COMMAND_CONTEXT__&&!GH_PERSISTENCE.isLocked(),null,{timeout:180000});await page.evaluate(()=>GH_PERSISTENCE.drain());await page.evaluate(()=>__AUDIT__.closeDrawer());};
     await dispatch('air');await dispatch('sea');
     // Time moves through the real simulation engine (calendar advance, then live speed). Single slice jobs, away from a
     // day boundary (a daily close is staged and only lives inside the engine's own job), test rollback and cancel.

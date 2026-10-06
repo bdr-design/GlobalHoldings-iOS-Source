@@ -28,6 +28,9 @@ const QTY=120;
     const dispatch=page.locator('.dispatch-international-network[data-company="air"]').first();
     await dispatch.waitFor({state:'visible',timeout:30000});await dispatch.click();
     await page.waitForFunction(qty=>{const owned=GH_FLEET_DATA.filter(__GH_STATE__,x=>(x.ownerCompanyId||x.companyId)==='air');return owned.length===qty&&owned.every(x=>x.routeId);},QTY,{timeout:120000});
+    // Build 359: the dispatch assigns in chunks, so the routes show before the command ends; it reopens the routes panel
+    // when it commits. Wait for that before the next panel.
+    await page.waitForFunction(()=>!window.__GH_DURABLE_COMMAND_CONTEXT__&&!GH_PERSISTENCE.isLocked(),null,{timeout:180000});await page.evaluate(()=>GH_PERSISTENCE.drain());
     await page.evaluate(()=>__AUDIT__.closeDrawer());
 
     // Paused one game second before the next midnight (calendar advance: the one-call path). The next live slice is

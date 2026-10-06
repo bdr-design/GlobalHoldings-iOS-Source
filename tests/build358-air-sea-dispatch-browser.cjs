@@ -48,6 +48,9 @@ const PLAN=[
         if(status.routed===status.owned)break;
         await page.waitForTimeout(250);
       }
+      // Build 359: the dispatch assigns in chunks, so the routes show before the command ends; it reopens the routes panel
+      // when it commits. Wait for that before the next panel.
+      await page.waitForFunction(()=>!window.__GH_DURABLE_COMMAND_CONTEXT__&&!GH_PERSISTENCE.isLocked(),null,{timeout:180000});await page.evaluate(()=>GH_PERSISTENCE.drain());
       assert(!status.alerts.some(text=>/fleet-view-read-only|أُلغي الأمر بالكامل/.test(text)),`${row.type}: dispatch rolled back: ${JSON.stringify(status.alerts)}`);
       assert.equal(status.routed,row.qty,`${row.type}: every asset must receive a route: ${JSON.stringify(status)}`);
       assert.equal(status.underway,row.qty,`${row.type}: every asset must depart or hold a departure slot: ${JSON.stringify(status)}`);
