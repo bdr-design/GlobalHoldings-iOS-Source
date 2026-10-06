@@ -25,6 +25,8 @@ const {chromium}=require('playwright'),{boot}=require('./helpers/local-dom-app')
       await a.buyAsset('air','used',model.id,'lease',40,facility.id,true,'RB-AIR-40','air');
       await a.openDrawer('routes','air');document.querySelector('.dispatch-international-network[data-company="air"]')?.click();
       for(let i=0;i<200&&GH_FLEET_DATA.count(s(),x=>!!x.routeId)<40;i++)await new Promise(r=>setTimeout(r,100));
+      // Build 359: the dispatch assigns in chunks, so the routes show before the command ends. The next command waits for it.
+      for(let i=0;i<1800&&(window.__GH_DURABLE_COMMAND_CONTEXT__||GH_PERSISTENCE.isLocked());i++)await new Promise(r=>setTimeout(r,100));await GH_PERSISTENCE.drain();
       await open('mobility',150000000);
       const M=GH_MOBILITY_CORE,st=s();
       st.customHubs.push({id:'MOB-CENTER-RUH',name:'Riyadh',kind:'mobility-center',company:'mobility',ownerCompanyId:'mobility',owned:true,capitalId:'RUH',city:'Riyadh',country:'Saudi Arabia',coords:[24.7,46.7],bays:120});
