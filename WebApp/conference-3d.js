@@ -44,6 +44,8 @@ class ConferenceSession{
  updateChapter(persist=true){
   const row=this.scenes[this.index];this.board.update(this.snapshot,row);this.world?.paint(this.board);
   this.world?.applyCue?.(row.cues,{phase:this.phase,index:this.index});
+  // The speaker view follows the presenter to where this chapter's cue places them (it framed an empty stage-right spot).
+  if(this.cameraView==='host')this.setCamera('host',true);
   this.root.querySelector('.ghc3-current-title').textContent=row.title;this.root.querySelector('.ghc3-count').textContent=`${String(this.index+1).padStart(2,'0')} / ${String(this.scenes.length).padStart(2,'0')}`;
   const speaker=this.root.querySelector('.ghc3-speaker');speaker.querySelector('span').textContent=row.type==='group'?'قيادة المجموعة':row.title.split(' · ')[0];speaker.querySelector('b').textContent=row.presenter;speaker.querySelector('small').textContent=row.role;
   this.root.querySelector('[data-c3="prev"]').disabled=this.index===0;this.root.querySelector('[data-c3="next"]').disabled=this.index===this.scenes.length-1;this.root.querySelector('[data-c3="finish"]').hidden=!this.config.live||this.index!==this.scenes.length-1;

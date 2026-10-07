@@ -79,7 +79,7 @@ class Auditorium{
  update(time){const motion=this.presenterMotion;if(!motion||!this.host)return false;const p=Math.min(1,Math.max(0,(time-motion.start)/motion.duration)),e=p*p*(3-2*p);this.host.position.set(motion.from[0]+(motion.to[0]-motion.from[0])*e,motion.from[1]+(motion.to[1]-motion.from[1])*e,motion.from[2]+(motion.to[2]-motion.from[2])*e);this.host.rotation.y=motion.rotationFrom+(motion.rotationTo-motion.rotationFrom)*e;if(p>=1)this.presenterMotion=null;return p<1;}
  target(view,aspect){const T=this.T;let pos,look;
   if(view==='screen'){look=[0,6.12,-11.4];const dist=Math.max(15,14.2/Math.max(.4,aspect)/Math.tan(38*Math.PI/360));pos=[0,6.12,-11.4+dist];}
-  else if(view==='host'){look=[7.12,1.62,-4.1];pos=[8.1,2.02,1.45];}
+  else if(view==='host'){const at=this.presenterMotion?.to||(this.host?[this.host.position.x,this.host.position.y,this.host.position.z]:[7.15,.39,-4.1]);look=[at[0]-.03,1.62,at[2]];pos=[at[0]+.95,2.02,at[2]+5.55];}
   else if(view==='podium'){look=[0,5.1,-8];pos=aspect<1?[3.2,7.2,37]:[6.2,5.1,14];}
   else{look=[0,4,-3];pos=aspect<1?[0,10.5,49]:[-10.5,9.4,21.5];}
   return{pos:new T.Vector3(...pos),look:new T.Vector3(...look)};
