@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// A native owner for the WebApp lifecycle. It remains available when the web
 /// interface cannot load, so update, recovery and diagnostics never depend on
 /// the game page being healthy.
-final class GameViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler, UIDocumentPickerDelegate {
+final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UIDocumentPickerDelegate {
     private var webView: WKWebView!
     private let schemeHandler = GlobalGameSchemeHandler()
     private var launchOverlay: UIView?
@@ -42,6 +42,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKScript
 
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.bounces = false
         webView.scrollView.alwaysBounceVertical = false
@@ -1067,5 +1068,28 @@ private final class GlobalGameSchemeHandler: NSObject, WKURLSchemeHandler {
             let type = UTType(filenameExtension: (path as NSString).pathExtension)
             return type?.preferredMIMEType ?? "application/octet-stream"
         }
+    }
+}
+
+// Without a UI delegate WKWebView answers window.confirm with "cancel" and drops window.alert, so every confirmed
+// action in the game (conference cheques, facility closure, sales) returned without doing anything on iPhone.
+extension GameViewController {
+    private func presentJavaScriptDialog(_ alert: UIAlertController) -> Bool {
+        guard view.window != nil, presentedViewController == nil else { return false }
+        present(alert, animated: true)
+        return true
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "حسنًا", style: .default) { _ in completionHandler() })
+        if !presentJavaScriptDialog(alert) { completionHandler() }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "إلغاء", style: .cancel) { _ in completionHandler(false) })
+        alert.addAction(UIAlertAction(title: "تأكيد", style: .default) { _ in completionHandler(true) })
+        if !presentJavaScriptDialog(alert) { completionHandler(false) }
     }
 }
