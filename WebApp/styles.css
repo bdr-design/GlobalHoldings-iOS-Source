@@ -435,3 +435,14 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .asset-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .asset-chips span{padding:5px 9px;border-radius:99px;background:var(--surface-3);border:1px solid var(--line-soft);font-size:10.5px;color:var(--muted)}
 .asset-chips b{color:var(--text);font-weight:600}
+
+/* Build 358 bank desk: branch market fill and collapsible services. */
+.bank-market-fill{margin-top:10px;display:grid;gap:5px}
+.bank-market-fill-head{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.bank-market-fill-head b{color:var(--text);font-variant-numeric:tabular-nums}
+.bank-market-fill-bar{height:6px;border-radius:99px;background:color-mix(in srgb,var(--muted) 22%,transparent);overflow:hidden}
+.bank-market-fill-bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+.bank-market-fill small{font-size:11px;color:var(--muted)}
+.bank-branch-services{margin-top:10px}
+.bank-branch-services summary{cursor:pointer;font-size:13px;color:var(--accent);padding:6px 0}
+.bank-request-card .action-row{align-items:center}
