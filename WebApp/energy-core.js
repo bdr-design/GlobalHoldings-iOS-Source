@@ -133,24 +133,34 @@
   }
   // Build 358 (owner review): the group buys its electricity from its own power company. About 30% of a facility's
   // daily running cost is its electricity bill, paid at the retail price (35% over the wholesale spot price). The power
-  // company sells the uncontracted part of today's export to the other group companies at 10% over spot, so a buyer
-  // pays about 19% less for what it takes and the power company earns more than the market would pay. Each buyer settles
-  // once a day through Finance Core (documents on both sides and the cash transfer); a buyer without the cash simply
-  // keeps its outside supplier for the day. The power company's revenue swaps the displaced spot sale for the internal one.
-  const ELECTRICITY_SHARE=.3,RETAIL_MARKUP=1.35,INTERNAL_MARKUP=1.10;
+  // company sells the uncontracted part of today's export to the operating subsidiaries at 10% over spot, so a buyer pays
+  // about 19% less for what it takes and the power company earns more than the market would pay.
+  // Load: a day only adds numbers to each buyer's running account (energy.internalSupplyAccounts); the documents are
+  // written once a month per buyer (SETTLE_EVERY_DAYS): one Finance Core settlement with the buyer's expense document,
+  // the power company's income document and the cash transfer. A buyer short of cash on its settlement day carries the
+  // balance to the next one. The daily close books the day's internal price in both companies' results and leaves the
+  // cash to the settlement, so nothing is posted twice.
+  const ELECTRICITY_SHARE=.3,RETAIL_MARKUP=1.35,INTERNAL_MARKUP=1.10,SETTLE_EVERY_DAYS=30;
+  function supplyAccounts(energy){energy.internalSupplyAccounts=energy.internalSupplyAccounts&&typeof energy.internalSupplyAccounts==='object'&&!Array.isArray(energy.internalSupplyAccounts)?energy.internalSupplyAccounts:{};return energy.internalSupplyAccounts;}
   function internalSupply(state,energy,summary,day,seller){
-    const F=globalThis.GH_FINANCE_CORE,market=state.advanced?.economy||{},spot=num(market.electricityPriceMWh||90),out={rows:[],mwh:0,revenue:0,displacedSpotRevenue:0,cashPostedRevenue:0,spot,tariff:Math.round(spot*INTERNAL_MARKUP*100)/100};
-    let available=num(summary.spotMWh);if(!F?.execute||spot<=0||available<=0)return out;
+    const F=globalThis.GH_FINANCE_CORE,market=state.advanced?.economy||{},spot=num(market.electricityPriceMWh||90),out={rows:[],mwh:0,revenue:0,displacedSpotRevenue:0,cashPostedRevenue:0,settlements:[],spot,tariff:Math.round(spot*INTERNAL_MARKUP*100)/100},accounts=supplyAccounts(energy);
+    let available=num(summary.spotMWh);
     // Buyers are the operating subsidiaries whose facility costs the daily close posts (the holding's own premises are
     // not part of it, so the group never buys here).
     const byCompany=facilityCostSnapshot(state).byCompany||{},operating=new Set((globalThis.GH_COMPANY_PLATFORM?.listInstances?.(state,{includeGroup:false,openedOnly:true})||[]).filter(row=>row?.operational).map(row=>String(row.id)));
-    for(const buyer of Object.keys(byCompany).filter(id=>operating.has(id)).sort()){
-      if(buyer===seller||available<=0)continue;const bill=num(byCompany[buyer])*ELECTRICITY_SHARE;if(bill<=0)continue;
+    if(spot>0&&available>0)for(const buyer of Object.keys(byCompany).filter(id=>operating.has(id)&&id!==seller).sort()){
+      if(available<=0)break;const bill=num(byCompany[buyer])*ELECTRICITY_SHARE;if(bill<=0)continue;
       const demand=bill/(spot*RETAIL_MARKUP),mwh=Math.min(demand,available),amount=Math.round(mwh*out.tariff*100)/100,avoided=Math.round(bill*(mwh/demand)*100)/100;if(amount<=0)continue;
-      let cash=0;try{cash=num(F.operating(state,buyer));}catch{continue;}if(cash+1e-8<amount)continue;
-      const result=F.execute({state},'settle-intercompany-supply',{from:buyer,to:seller,amount,mwh,note:`توريد كهرباء داخلي · ${Math.round(mwh)} ميغاواط ساعة · يوم ${day}`,ref:`ENERGY-SUPPLY-${buyer}-${day}`});
-      available-=mwh;out.mwh+=mwh;out.revenue+=amount;out.displacedSpotRevenue+=mwh*spot;out.cashPostedRevenue+=num(result?.cashPostedRevenue);
-      out.rows.push({buyer,mwh,amount,avoidedExternalCost:avoided,reference:result?.reference||`ENERGY-SUPPLY-${buyer}-${day}`});
+      available-=mwh;out.mwh+=mwh;out.revenue+=amount;out.displacedSpotRevenue+=mwh*spot;out.rows.push({buyer,mwh,amount,avoidedExternalCost:avoided});
+      const account=accounts[buyer]=accounts[buyer]||{buyer,openedDay:day,mwh:0,amount:0,avoided:0,days:0};account.mwh+=mwh;account.amount=Math.round((num(account.amount)+amount)*100)/100;account.avoided=Math.round((num(account.avoided)+avoided)*100)/100;account.days++;
+    }
+    // The day's internal revenue is booked in the results, its cash arrives with the monthly settlement.
+    out.cashPostedRevenue=out.revenue;
+    if(F?.execute)for(const buyer of Object.keys(accounts).sort()){
+      const account=accounts[buyer];if(!account||num(account.amount)<=0){delete accounts[buyer];continue;}if(day-Math.floor(Number(account.openedDay)||day)<SETTLE_EVERY_DAYS)continue;
+      let cash=0;try{cash=num(F.operating(state,buyer));}catch{continue;}if(cash+1e-8<num(account.amount)){account.carriedOver=(Number(account.carriedOver)||0)+1;continue;}
+      const result=F.execute({state},'settle-intercompany-supply',{from:buyer,to:seller,amount:account.amount,mwh:account.mwh,note:`توريد كهرباء داخلي · ${Math.round(account.mwh)} ميغاواط ساعة · ${account.days} يوم حتى يوم ${day}`,ref:`ENERGY-SUPPLY-${buyer}-${day}`});
+      out.settlements.push({buyer,amount:account.amount,mwh:account.mwh,days:account.days,reference:result?.reference||`ENERGY-SUPPLY-${buyer}-${day}`});delete accounts[buyer];
     }
     return out;
   }
