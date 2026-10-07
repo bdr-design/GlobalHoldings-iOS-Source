@@ -2031,12 +2031,14 @@
   }
   // Route lines: the busiest routes that cross the view (padded), thin and in the owner's colour, on the map's canvas
   // renderer and drawn only by renderMap (zoom end, structure change), never per frame. Network mode draws them fainter.
-  function renderRouteLines(routes,zoom,{faint=false}={}){
+  // Operations draws half the budget and fainter: the vehicles carry that view, while the network mode is where the
+  // whole route network is read (a hub's spokes otherwise crossed the whole screen when zoomed in).
+  function renderRouteLines(routes,zoom,{faint=false,sparse=false}={}){
     const bounds=map.getBounds().pad(.25),inView=[];
     for(const row of routes){const route=currentAssetRoute({routeId:row.routeId,type:row.type,reverse:false});if(!Array.isArray(route)||route.length<2)continue;const step=Math.max(1,Math.floor(route.length/12));let crosses=false;for(let i=0;i<route.length&&!crosses;i+=step)crosses=bounds.contains(route[i]);if(!crosses)crosses=bounds.contains(route[route.length-1]);if(crosses)inView.push({...row,route});}
-    const drawn=MAP_VIEW.busiestRoutes(inView,MAP_VIEW.budget('routes',zoom)),max=drawn[0]?.count||1;
+    const limit=MAP_VIEW.budget('routes',zoom),drawn=MAP_VIEW.busiestRoutes(inView,sparse?Math.ceil(limit/2):limit),max=drawn[0]?.count||1;
     for(const row of drawn){
-      const style=MAP_VIEW.routeStyle(row.count,max),line=L.polyline(window.GH_ROUTE_CORE.splitAtDateline(row.route),{color:identityRouteColor(row.owner,row.mode),weight:style.weight,opacity:faint?style.opacity*.6:style.opacity,lineCap:'round',smoothFactor:2,interactive:false,className:'map-route-line'}).addTo(map);
+      const style=MAP_VIEW.routeStyle(row.count,max),line=L.polyline(window.GH_ROUTE_CORE.splitAtDateline(row.route),{color:identityRouteColor(row.owner,row.mode),weight:style.weight,opacity:faint?style.opacity*.6:sparse?style.opacity*.75:style.opacity,lineCap:'round',smoothFactor:2,interactive:false,className:'map-route-line'}).addTo(map);
       routeLayers.push(line);
     }
     return drawn.length;
@@ -2075,8 +2077,11 @@
     marker.bindTooltip(`${esc(f.name||f.id)}${parked?` · ${MAP_VIEW.countLabel(parked)} أصل رابض`:''}`,{direction:'top',permanent:false,opacity:.9});
     marker.on('click',()=>{selectedFacilityId=f.id;openFacility(f.id);});facilityMarkers.set(f.id,marker);
   }
-  function addFacilityGroupMarker(group,level,zoom){
-    const anchor=group.members.slice().sort((a,b)=>(b.weight-a.weight)||String(a.facility.id).localeCompare(String(b.facility.id)))[0],coords=anchor.facility.coords,count=group.members.length,attribute=level==='country'?`data-country-id="${esc(group.key)}"`:`data-city-id="${esc(group.key)}"`,icon=L.divIcon({className:`map-place-marker owned-${level}`,html:`<div class="map-place-bubble owned ${level}" ${attribute}><b dir="ltr">${MAP_VIEW.countLabel(count)}</b></div>`,iconSize:[38,38],iconAnchor:[19,19]});
+  // compact (operations): the group is a quiet dot in its company's colour, sized by how many places it holds, with the
+  // count in its tooltip. Number bubbles belong to the network and expansion modes; in operations they covered the
+  // map under the vehicles (owner screenshot, Build 358).
+  function addFacilityGroupMarker(group,level,zoom,{compact=false}={}){
+    const anchor=group.members.slice().sort((a,b)=>(b.weight-a.weight)||String(a.facility.id).localeCompare(String(b.facility.id)))[0],coords=anchor.facility.coords,count=group.members.length,attribute=level==='country'?`data-country-id="${esc(group.key)}"`:`data-city-id="${esc(group.key)}"`,tier=count>=20?'l':count>=5?'m':'s',dotSize=tier==='l'?22:tier==='m'?18:14,icon=compact?L.divIcon({className:`map-hub-dot owned-${level} tier-${tier}`,html:`<span ${attribute} style="--dot:${identityRouteColor(facilityOwnerCompanyId(anchor.facility),facilityOwnerCompanyId(anchor.facility))}"></span>`,iconSize:[dotSize,dotSize],iconAnchor:[dotSize/2,dotSize/2]}):L.divIcon({className:`map-place-marker owned-${level}`,html:`<div class="map-place-bubble owned ${level}" ${attribute}><b dir="ltr">${MAP_VIEW.countLabel(count)}</b></div>`,iconSize:[38,38],iconAnchor:[19,19]});
     const marker=L.marker(coords,{icon,zIndexOffset:430,keyboard:true,riseOnHover:true}).addTo(map),label=anchor[level==='country'?'countryLabel':'cityLabel']||group.key;
     marker.bindTooltip(`${esc(label)} · ${MAP_VIEW.countLabel(count)} منشأة · كبّر للتفاصيل`,{direction:'top',permanent:false,opacity:.9});
     marker.on('click',()=>{const target=level==='country'?6:8,points=group.members.map(member=>member.facility.coords);if(points.length>1)map.fitBounds(L.latLngBounds(points),{padding:[28,28],maxZoom:target});else map.setView(coords,Math.max(target,zoom+2));});facilityMarkers.set(`${level}:${group.key}`,marker);
@@ -2090,7 +2095,7 @@
     if(zoom>=8){const room=Math.max(0,MAP_VIEW.budget('places',zoom)-pinned.length);for(const point of MAP_VIEW.declutter(members,{radius:30,limit:room}))addFacilityMarker(point.facility,parkedByBase?.get(point.id)||0);return;}
     const level=zoom<5?'country':'city',groupsByKey=new Map();for(const member of members){const key=level==='country'?member.countryId:member.cityId,list=groupsByKey.get(key)||[];list.push(member);groupsByKey.set(key,list);}
     const groupPoints=[...groupsByKey].map(([key,rows])=>{const anchor=rows.slice().sort((a,b)=>(b.weight-a.weight)||String(a.id).localeCompare(String(b.id)))[0];return {x:anchor.x,y:anchor.y,id:key,weight:rows.reduce((sum,row)=>sum+row.weight,0),key,members:rows};}),room=Math.max(0,MAP_VIEW.budget('places',zoom)-pinned.length);
-    for(const point of MAP_VIEW.declutter(groupPoints,{radius:level==='country'?38:32,limit:room}))addFacilityGroupMarker(point,level,zoom);
+    const compact=mode==='operations';for(const point of MAP_VIEW.declutter(groupPoints,{radius:compact?24:level==='country'?38:32,limit:room}))addFacilityGroupMarker(point,level,zoom,{compact});
   }
   function removePresentationMarker(marker){
     try{if(marker?.getSnapshot)marker.remove?.();else map.removeLayer(marker);}catch(error){nonCritical('map-layer-remove',error);}
@@ -2106,7 +2111,7 @@
     competitorMarkers.forEach(removePresentationMarker); competitorMarkers.clear();
     renderedAssetIds=new Set();renderedMobilityIds=new Set();
     const presentation=showFleet?collectFleetPresentation(filterState,visibleAssets):null,geography=mapFacilityPresentationContext();
-    if(presentation&&mapCategoryVisible('routes'))renderRouteLines(presentation.routes,zoom,{faint:mode==='network'});
+    if(presentation&&mapCategoryVisible('routes'))renderRouteLines(presentation.routes,zoom,{faint:mode==='network',sparse:mode==='operations'});
     if(mode==='operations'){
       const vehicleCandidates=[];
       // The selected asset's route is drawn on top, thicker.

@@ -87,7 +87,10 @@
     canvas.setAttribute?.('aria-hidden','true');
     canvas.setAttribute?.('role','presentation');
     if(canvas.style){
-      canvas.style.position='absolute';canvas.style.inset='0';canvas.style.width='100%';canvas.style.height='100%';
+      // Anchored by left/top only. With inset:0 and a pixel width inside Leaflet's zero-size pane, an RTL page (the game is
+      // Arabic) resolves the over-constrained box from the right edge and the canvas lay one map width off screen: every
+      // vehicle was drawn and none was visible (owner screenshot, Build 358).
+      canvas.style.position='absolute';canvas.style.left='0';canvas.style.top='0';canvas.style.right='auto';canvas.style.bottom='auto';canvas.style.width='100%';canvas.style.height='100%';
       canvas.style.pointerEvents='none';canvas.style.zIndex=String(Math.floor(finite(options.zIndex,450)));canvas.style.transformOrigin='0 0';
     }
     container.appendChild(canvas);

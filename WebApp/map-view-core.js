@@ -14,7 +14,7 @@
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.GH_MAP_VIEW_CORE=api;
 })(typeof globalThis!=='undefined'?globalThis:this,()=>{
-  const VERSION='GH-MAP-VIEW-359.2.0';
+  const VERSION='GH-MAP-VIEW-359.3.0';
   const MODES=Object.freeze([
     Object.freeze({id:'operations',label:'العمليات',hint:'الأصول المتحركة ومساراتها'}),
     Object.freeze({id:'network',label:'الشبكة',hint:'القواعد والمحاور والمقار'}),
@@ -60,10 +60,11 @@
     return kept;
   }
   // Route lines: the busiest routes in view, weight and opacity by traffic on a log scale (a route with one asset is a
-  // hairline, the busiest route about 3 px).
+  // faint hairline, the busiest route about 2.4 px). Lines sit behind the vehicles: they show where traffic goes, the
+  // vehicles carry the picture (owner screenshot, Build 358: a hub's spokes covered the region in solid blue).
   function routeStyle(count,maxCount){
     const c=Math.max(1,Number(count)||1),m=Math.max(c,Number(maxCount)||1),t=m>1?Math.log(c)/Math.log(m):1;
-    return {weight:Math.round((1.1+2.1*t)*10)/10,opacity:Math.round((.32+.43*t)*100)/100};
+    return {weight:Math.round((.9+1.5*t)*10)/10,opacity:Math.round((.2+.38*t)*100)/100};
   }
   function busiestRoutes(routes,limit){
     return (Array.isArray(routes)?routes:[]).filter(route=>(Number(route?.count)||0)>0).slice().sort((a,b)=>b.count-a.count||String(a.key).localeCompare(String(b.key))).slice(0,Math.max(0,limit));
@@ -73,7 +74,7 @@
   // budget because facilities remain interactive Leaflet markers and are presented through country/city hierarchy.
   function budget(kind,zoom){
     const z=Number(zoom)||0;
-    if(kind==='routes')return z<4?40:z<6?70:z<9?110:160;
+    if(kind==='routes')return z<4?16:z<6?24:z<9?40:64;
     if(kind==='vehicles')return z<4?72:z<6?120:z<9?200:300;
     if(kind==='places')return z<4?28:z<6?48:z<9?80:120;
     return 0;
