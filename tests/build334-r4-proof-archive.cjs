@@ -25,8 +25,13 @@ test('active and cold residency cannot duplicate or hide a modified proof',()=>{
  assert.equal(P.verifyRecord(saved,id).ok,false);const out=s.GH_SAVE_SCHEMA.validate(saved);assert.equal(out.ok,false);assert(out.errors.includes('document-proof-residency-conflict'));
 });
 test('cold record tampering is rejected rather than treated as an opaque summary',()=>{
- const saved=JSON.parse(JSON.stringify(v)),id=Object.keys(saved.documentProofs.archiveById)[0];saved.documentProofs.archiveById[id].signedContent.amount=987;
- assert.equal(P.verifyRecord(saved,id).ok,false);assert.equal(s.GH_SAVE_SCHEMA.validate(saved).ok,false);
+ // Build 359: records are issued compact: the signed content is rebuilt from the document with the record's issue time,
+ // so a changed issue time fails the document; a record alone refuses a changed link.
+ const saved=JSON.parse(JSON.stringify(v)),id=Object.keys(saved.documentProofs.archiveById)[0],document=saved.finance.auditArchive.records.invoices.find(row=>row.documentProofId===id);
+ assert.equal(saved.documentProofs.archiveById[id].form,P.COMPACT_FORM);saved.documentProofs.archiveById[id].issuedAtSim+=987;
+ assert.equal(P.verifyDocument(saved,document).ok,false);assert.equal(s.GH_SAVE_SCHEMA.validate(saved).ok,false);
+ const linked=JSON.parse(JSON.stringify(v));linked.documentProofs.archiveById[id].chainDepth=1;
+ assert.equal(P.verifyRecord(linked,id).ok,false);assert.equal(s.GH_SAVE_SCHEMA.validate(linked).ok,false);
 });
 test('amendment of a cold predecessor retains and verifies its full chain',()=>{
  // Build 358: the finance audit archive is sealed (its rows are never edited), so the document being amended is taken

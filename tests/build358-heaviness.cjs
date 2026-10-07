@@ -82,13 +82,15 @@ assert.equal(Schema.validate(state).ok,true,'seeded state validates in full');
   const pending=invoice('HEAVY-PENDING',77);AP.sealDocument(st,pending,{type:'audit-invoice',companyId:'group'});st.finance.invoices.unshift(pending);
   assert.equal(AV.validate(st).ok,true,'authorized state validates');
   const sealedNow=AT.sealCollections(st),pendingRecord=AP.record(st,pending.documentProofId);
-  assert.ok(sealedNow>0&&AT.isSealed(pendingRecord)&&Object.isFrozen(pendingRecord.signedContent),'records are sealed deep');
+  // Build 359: records are issued compact, flat rows with no nested content of their own.
+  assert.ok(sealedNow>0&&AT.isSealed(pendingRecord)&&Object.isFrozen(pendingRecord)&&pendingRecord.form===AP.COMPACT_FORM,'records are sealed');
   assert.ok(Object.values(st.authorization.proofsById).every(row=>AT.isSealed(row)),'authorization proofs are sealed');
   assert.ok(Object.values(st.domainRuntime.idempotency).every(row=>AT.isSealed(row)),'idempotency rows are sealed');
   const approved=commands.dispatchEnvelope({state:st},envelope('approve',{id:'HEAVY-PENDING'},'HEAVY-APPROVE'));
   const rebound=AP.record(st,pending.documentProofId);
   assert.equal(approved.ok,true);assert.notEqual(rebound,pendingRecord,'the sealed record was replaced');assert.equal(rebound.authorizationProofId,approved.authorizationProofId);
-  assert.ok(!pendingRecord.authorizationProofId,'the sealed original is unchanged');assert.equal(rebound.signedContent,pendingRecord.signedContent,'its sealed content is shared');
+  assert.ok(!pendingRecord.authorizationProofId,'the sealed original is unchanged');assert.equal(rebound.contentDigest,pendingRecord.contentDigest,'it signs the same content');
+  assert.ok(/^[a-f0-9]{64}$/.test(rebound.signatureDigest)&&pendingRecord.signatureDigest===null,'the bound record keeps the digest of the signature snapshot');
   assert.equal(AP.verifyDocument(st,pending).ok,true);assert.equal(AV.validate(st).ok,true,'bound state validates');
   AT.sealCollections(st);
   const records=st.documentProofs.recordsById,record=Object.values(records).find(row=>row.authorizationProofId),proof=st.authorization.proofsById[record.authorizationProofId];
@@ -118,7 +120,7 @@ assert.equal(Schema.validate(state).ok,true,'seeded state validates in full');
   let full=AV.validate(st);assert.equal(full.ok,false,'a missing proof fails the full pass');assert.ok(full.errors.includes('document-proof-record'),String(full.errors));
   st.authorization.proofsById[proof.id]=proof;assert.equal(AV.validate(st).ok,true,'and the full pass is clean again');
   // (a full-snapshot rollback restores values, not the identity of a replaced container: read the store again)
-  const liveRecords=st.documentProofs.recordsById,edited=structuredClone(record);edited.signedContent.issuedAtSim=Number(edited.signedContent.issuedAtSim||0)+1;liveRecords[record.id]=edited;
+  const liveRecords=st.documentProofs.recordsById,edited=structuredClone(record);edited.issuedAtSim=Number(edited.issuedAtSim||0)+1;liveRecords[record.id]=edited;
   full=AV.validate(st);assert.equal(full.ok,false,'an edited copy fails the full pass');assert.equal(AV.validate(st,{trustVerified:true}).ok,false,'and the trusted pass');
   liveRecords[record.id]=record;assert.equal(AV.validate(st).ok,true);
   // 5. The codec reuses the encoded text of an unchanged sealed collection; the save text is byte-for-byte the same.

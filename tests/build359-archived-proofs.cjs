@@ -2,14 +2,18 @@
 // Build 358 (save size): the finance audit archive is sealed, and the current record of every document kept there takes
 // the compact archived form (GH_DOCUMENT_PROOF.compactArchivedRecords): no copy of the signed content or of the issuer,
 // counterparty and signature snapshots; verification rebuilds the signed content from the archived document. Checked:
-// - archived rows are sealed and shared (not copied) by durable drafts; a write to one throws;
-// - the records of archived documents shrink, live documents keep whole records, a batch converts at most 200;
+// - archived rows are sealed and shared (not copied) by durable drafts; a write to one throws; Build 359: the archive
+//   collection itself is sealed whole (a container) and shared by the draft;
+// - the records of archived documents shrink, live documents keep whole records, a batch converts at most 200; Build 359:
+//   records are issued compact (the archived form's fields but the chain object), so live documents keep the compact
+//   form; the archived form is the compact record with its chain link and the authorization proof's digest; both stay
+//   under 30% of the whole record of earlier builds;
 // - every document verifies (direct, trusted and full validation) and the state survives the save codec;
 // - tampering is refused: the archived document's content, the record's digest or chain link, its signature digest,
 //   its shape, a missing archived document;
 // - an archived-form document cannot be amended or authorized again.
 const assert=require('node:assert/strict'),path=require('node:path'),ROOT=process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..');
-const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario'));
+const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario')),{wholeRecord}=require(path.join(ROOT,'tests/helpers/legacy-proof-records'));
 const e=scenario(),s=e.s,state=e.state,TX=s.GH_TRANSACTION_CORE,Proof=s.GH_DOCUMENT_PROOF,Schema=s.GH_SAVE_SCHEMA,Codec=s.GH_STATE_CODEC||require(path.join(ROOT,'WebApp/state-codec-core.js'));
 state.godMoney=true;state.infiniteMoney=true;state.advanced.facilities.B1.capacity=1e9;
 const base=state.globalBases.find(row=>row.id==='B1');base.deliveryCapacity=1e9;const item=e.item;
@@ -35,19 +39,25 @@ TX.sealCollections(state);
 const row0=state.finance.auditArchive.records.invoices[0];assert.equal(TX.isSealed(row0),true,'archived rows are sealed');
 assert.throws(()=>{row0.status='x';},TypeError,'an archived row cannot be edited');
 const draft=TX.deepClone(state,{shareJournaledRoots:true});assert.equal(draft.finance.auditArchive.records.invoices[0],row0,'a durable draft shares the archived rows');
-assert.notEqual(draft.finance.auditArchive.records.invoices,state.finance.auditArchive.records.invoices,'in a new collection');
+// Build 359: the archive collection is replaced by its writers, never edited (a sealed container): the draft shares it
+// whole, and an in-place write to it throws.
+assert.equal(draft.finance.auditArchive.records.invoices,state.finance.auditArchive.records.invoices,'and the collection itself');
+assert.ok(TX.isSealed(state.finance.auditArchive.records.invoices)&&Object.isFrozen(state.finance.auditArchive.records.invoices));assert.throws(()=>state.finance.auditArchive.records.invoices.push({}),TypeError,'an archive collection cannot be edited in place');
 assert.deepEqual(Object.keys(draft.finance),Object.keys(state.finance),'key order is kept');
 
 // Conversion: batches of at most 200, only archived documents, every document still verifies.
 const recordBytes=docs=>docs.reduce((n,d)=>n+Buffer.byteLength(JSON.stringify(Proof.record(state,d.documentProofId))),0);
-const before={archived:recordBytes(archived()),store:Buffer.byteLength(JSON.stringify(state.documentProofs))};
+const compactBefore=new Map(archived().map(d=>[d.documentProofId,Proof.record(state,d.documentProofId)]));
+const before={archived:recordBytes(archived()),store:Buffer.byteLength(JSON.stringify(state.documentProofs))},wholeBytes=archived().reduce((n,d)=>n+Buffer.byteLength(JSON.stringify(wholeRecord(Proof,d,Proof.record(state,d.documentProofId)))),0);
 let converted=0;for(;;){const out=Proof.compactArchivedRecords(state);assert.ok(out.compacted<=200);if(!out.compacted)break;converted+=out.compacted;}
 assert.equal(converted,archived().length,'every archived document took the archived form');
 // Build 359: archived records now take the v2 form (it also records the authorization proof's digest).
 for(const d of archived())assert.equal(Proof.record(state,d.documentProofId).form,Proof.ARCHIVED_FORM_V2);
-for(const d of documents().filter(d=>!archived().includes(d)))assert.ok(Proof.record(state,d.documentProofId).signedContent,'a live document keeps its whole record');
+for(const d of documents().filter(d=>!archived().includes(d)))assert.equal(Proof.record(state,d.documentProofId).form,Proof.COMPACT_FORM,'a live document keeps its compact record');
 const after={archived:recordBytes(archived()),store:Buffer.byteLength(JSON.stringify(state.documentProofs))};
-assert.ok(after.archived<before.archived*.3,`archived documents' records shrink (${before.archived} -> ${after.archived} bytes)`);
+for(const d of archived()){const was=compactBefore.get(d.documentProofId),now=Proof.record(state,d.documentProofId),chain=was.chainDepth>0?{previousProofId:was.previousProofId,previousContentDigest:was.previousContentDigest,transition:was.transition,depth:was.chainDepth}:null;
+ assert.equal(was.form,Proof.COMPACT_FORM);assert.deepEqual({...now,form:was.form},{...was,chain,authorizationDigest:now.authorizationDigest},'the archived form is the compact record, its chain link and the authorization digest');}
+assert.ok(after.archived<wholeBytes*.3,`archived documents' records are under 30% of whole records (${wholeBytes} -> ${after.archived} bytes)`);
 assert.ok(allVerify(state),'every document verifies after');
 TX.sealCollections(state);
 assert.equal(Schema.validate(state).ok,true,`full validation ${JSON.stringify(Schema.validate(state).errors)}`);assert.equal(Schema.validate(state,{trustVerified:true}).ok,true,'trusted validation');
@@ -73,10 +83,10 @@ refused('a missing archived document',t=>{t.finance.auditArchive.records.invoice
 {const d=archived()[0];assert.throws(()=>TX.execute(state,{label:'amend-archived',apply:()=>Proof.amendDocument(state,d,{transition:'debt-balance-adjusted',mutate:row=>{row.note='x';}})}),/document-proof-archived-read-only/);
  assert.equal(allVerify(state),true,'nothing changed');}
 // Authorization proofs nothing references any more are collected after 30 game days, not only past the admission limit.
-{const t=copy(),A=s.GH_AUTHORIZATION,auth=A.ensure(t),record=Object.values(t.documentProofs.recordsById).find(row=>row.signedContent);
+{const t=copy(),A=s.GH_AUTHORIZATION,auth=A.ensure(t),record=Object.values(t.documentProofs.recordsById).find(row=>row.form===Proof.COMPACT_FORM);
  const proof=(id,signedAtSim)=>({id,version:1,signedAtSim,signerPersonId:'P',mandateId:'M',documentIds:[],documentDigests:[]});
  record.authorizationProofId='AUTHP-QA-REF';for(const [id,at] of [['AUTHP-QA-REF',0],['AUTHP-QA-OLD',0],['AUTHP-QA-NEW',t.simSeconds+31*86400]])auth.proofsById[id]=proof(id,at);
  t.simSeconds+=31*86400;A.compact(t);
  assert.equal(auth.proofsById['AUTHP-QA-OLD'],undefined,'an unreferenced proof older than 30 days is collected');assert.ok(auth.proofsById['AUTHP-QA-NEW'],'a recent unreferenced proof stays');assert.ok(auth.proofsById['AUTHP-QA-REF'],'a referenced proof stays');}
-console.log(JSON.stringify({suite:'build359-archived-proofs',archived:archived().length,recordBytes:{before:before.archived,after:after.archived},store:{before:before.store,after:after.store}},null,1));
+console.log(JSON.stringify({suite:'build359-archived-proofs',archived:archived().length,recordBytes:{whole:wholeBytes,before:before.archived,after:after.archived},store:{before:before.store,after:after.store}},null,1));
 console.log('BUILD359_ARCHIVED_PROOFS_PASS');

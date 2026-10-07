@@ -293,6 +293,9 @@
     if(command==='cache-geometry'){const before=JSON.stringify(state.routeCache[payload.id]||null),entry=cacheGeometry(state,payload);if(before!==JSON.stringify(entry))bumpRoutesRevision(state);return entry;}
     throw new Error(`Unknown route command: ${command}`);
   }
+  // Build 359 (every command deep-copied the fleet routes, 2.4 MB): a route is added, replaced (capacity, geometry) or
+  // removed here, never edited in place, so drafts and snapshots share the routes sealed (GH_TRANSACTION_CORE).
+  (globalThis.GH_TRANSACTION_CORE?.registerSealedRoot||(name=>(globalThis.__GH_PENDING_SEALED_ROOTS__=globalThis.__GH_PENDING_SEALED_ROOTS__||[]).push(name)))('customRoutes');
   const API=Object.freeze({VERSION,corridorIndex,bumpRoutesRevision,ROUTE_TYPES,LIMITS,MODE_ROUTE_QUOTA,modeRouteBudget,allocateRouteSlots,allocateForBudget,NEAR_DUPLICATE,ensure,validPoint,splitAtDateline,routeMode,routeOwnerCompanyId,validateRouteOwnership,validateRoute,canonicalRoute,signature,sample,corridorMetrics,conflict,execute});
   globalThis.GH_ROUTE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('routes',API);if(globalThis.window&&window!==globalThis)window.GH_ROUTE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

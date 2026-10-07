@@ -2,7 +2,8 @@
 // Build 359 (owner: a million assets with their invoices, cheques and documents; no work in a command may pass over every
 // document or record). Issuing stopped at about 6,000 documents: the proof archive had a 16 MB limit, measured by
 // serializing the whole archive every 200 documents, and the finance audit archive grew without end. Checked here:
-// - issuing goes on past the old limit, and the save schema accepts the store (no byte limit);
+// - issuing goes on past the old limit, and the save schema accepts the store (no byte limit); Build 359: records are
+//   issued compact, so the same records in the whole form of earlier builds are what pass 16 MB;
 // - earlier versions become checkpoints in the next pass whatever their age; a period's digest is the sum of its
 //   checkpoints' digests, moved by the rows a pass adds or removes; tampering with a checkpoint or a period is refused;
 // - a period digest of the earlier form is checked once and rewritten; a tampered one is left and refused;
@@ -11,7 +12,7 @@
 //   a row a live document names is kept; every document left verifies and the schema accepts the state;
 // - an archived cheque is still found by its request reference through the archive's index.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
-const {harness,minimal,ROOT}=require('./helpers/core-harness');
+const {harness,minimal,ROOT}=require('./helpers/core-harness'),{wholeRecord}=require('./helpers/legacy-proof-records');
 const {s}=harness(['save-schema','authorization-core','document-proof-core','transaction-core','domain-command-core','finance-core']);
 const P=s.GH_DOCUMENT_PROOF,T=s.GH_TRANSACTION_CORE,Schema=s.GH_SAVE_SCHEMA,results=[];
 const test=(name,fn)=>{try{results.push({name,ok:true,detail:fn()});}catch(error){results.push({name,ok:false,error:String(error?.stack||error).slice(0,2500)});}};
@@ -25,10 +26,12 @@ const v=state();
 test('issuing goes on past the old 16 MB archive limit',()=>{
   const out=T.execute(v,{label:'fill',apply:()=>{const lines='سطر فاتورة '.repeat(220);for(let i=0;i<9000;i++)v.finance.auditArchive.records.invoices.push(invoice(v,`FILL-${i}`,0,lines));}});
   assert.equal(out.committed,true,out.reason);
-  const archive=bytes(v.documentProofs.archiveById);assert.ok(archive>16*1024*1024,`the archive passed 16 MB (${archive})`);
+  const archive=bytes(v.documentProofs.archiveById),documents=new Map(v.finance.auditArchive.records.invoices.map(d=>[d.documentProofId,d]));
+  const whole=Object.values(v.documentProofs.archiveById).reduce((n,row)=>n+bytes(wholeRecord(P,documents.get(row.id),row)),0);
+  assert.ok(whole>16*1024*1024,`the same records in the whole form pass 16 MB (${whole}; compact ${archive})`);
   assert.ok(Object.keys(v.documentProofs.recordsById).length<5000,'the hot window stays under 5,000');
   const check=Schema.validate(JSON.parse(JSON.stringify(v)));assert.ok(check.ok,JSON.stringify(check.errors));
-  return {records:P.records(v).length,archiveMB:+(archive/1e6).toFixed(1)};
+  return {records:P.records(v).length,archiveMB:+(archive/1e6).toFixed(1),wholeMB:+(whole/1e6).toFixed(1)};
 });
 
 test('earlier versions become checkpoints whatever their age; period sums follow the rows',()=>{

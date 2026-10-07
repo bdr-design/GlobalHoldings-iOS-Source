@@ -699,7 +699,9 @@ function execute(ctx,cmd,p={},meta={}){
 // copies made when rows leave the live lists; they are never edited afterwards (a migration replaces a row, never edits
 // it). Its collections are sealed: a save reuses the text (and vault chunk) of every unchanged archive part, and durable
 // drafts and rollback snapshots share the rows instead of copying the whole archive.
-(globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('finance',['auditArchive.records.*']);
+// Build 359: its writers replace a collection (the daily compaction appends into a new array, a seal round filters into
+// one): each is sealed whole once its rows are (a container), so commands share it without walking it.
+(globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys,options)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys,options])))('finance',['auditArchive.records.*'],{container:true});
 // Build 359 (iPhone: each player command copied the live documents, 9 MB of 30k-asset finance, and the save re-encoded
 // them): a live document seals once it is final, the state no business rule edits again (the daily compaction's
 // archive rule): a settled invoice, a cashed or cancelled cheque, an executed transfer, a paid or zero VAT period, a

@@ -24,11 +24,13 @@ assert.equal(P.commitState(state,{storageKey:'main'}).ok,true,'a recurring save 
 // in-place edit of an already verified record is impossible: it throws and leaves the record intact.
 const TX=s.GH_TRANSACTION_CORE,original=state.documentProofs.recordsById[recordIds[0]];
 assert.equal(TX.isSealed(original),true,'the save sealed the proof record');
-assert.throws(()=>{original.signedContent.material.payload.__probe='edited-in-place';},TypeError,'an in-place edit throws');
+// Build 359: records are issued compact; their issue time feeds the signed content rebuilt from the document.
+assert.equal(original.form,s.GH_DOCUMENT_PROOF.COMPACT_FORM,'records are issued compact');
+assert.throws(()=>{original.issuedAtSim+=1;},TypeError,'an in-place edit throws');
 assert.equal(V.validate(state).ok,true,'the record is intact');
 // What remains is a replaced record (an edited save file, or a writer bypassing its owner): a new object is not in the
 // ledger, so the very next trusted save verifies and rejects it; a full pass and a manual slot do too.
-const edited=structuredClone(original);edited.signedContent.material.payload.__probe='edited-copy';state.documentProofs.recordsById[recordIds[0]]=edited;
+const edited=structuredClone(original);edited.issuedAtSim+=1;state.documentProofs.recordsById[recordIds[0]]=edited;
 assert.equal(V.validate(state).ok,false,'plain validation sees the replaced record');
 assert.equal(V.validate(state,{trustVerified:true}).ok,false,'trusted validation sees it too (not in the ledger)');
 const results=[];for(let i=2;i<=12;i++)results.push([i,P.commitState(state,{storageKey:'main'}).ok]);

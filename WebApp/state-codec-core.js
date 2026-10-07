@@ -376,7 +376,14 @@
     return {$gh:3,a:Array.isArray(value)?1:0,g:segmentSlices(value).map(encodeRows)};
   }
 
+  // Build 359: a sealed container (frozen whole, GH_TRANSACTION_CORE {container:true}) cannot change, so whether it is a
+  // collection is answered once per container instead of inspecting every member on every save.
+  const sealedContainer=value=>Object.isFrozen(value)&&globalThis.GH_TRANSACTION_CORE?.isSealed?.(value)===true,CANDIDATES=new WeakMap();
   function collectionCandidate(value){
+    if(!sealedContainer(value))return memberCandidate(value);
+    let known=CANDIDATES.get(value);if(known===undefined){known=memberCandidate(value);CANDIDATES.set(value,known);}return known;
+  }
+  function memberCandidate(value){
     if(Array.isArray(value)){
       if(value.length<MIN_ROWS)return false;
       for(let i=0;i<value.length;i++){const item=value[i];if(!isPlain(item)||typeof item.toJSON==='function')return false;}
@@ -525,9 +532,10 @@
     return true;
   }
   function collectionLayout(key,value){
-    const cached=PATH_LAYOUT.get(key);if(cached&&sameSequence(cached,value)){layoutCacheStats.hits++;return cached;}
+    // The same sealed container as at the last save has the same members: no member is compared.
+    const cached=PATH_LAYOUT.get(key);if(cached&&(cached.value===value&&sealedContainer(value)||sameSequence(cached,value))){cached.value=value;layoutCacheStats.hits++;return cached;}
     const split=segmented(value),layout=split?segmentBounds(value):null,parts=split?segmentSlices(value,layout):[Array.isArray(value)?value.slice():{...value}],keys=Array.isArray(value)?null:Object.keys(value);
-    const entry={keys,members:keys?keys.map(name=>value[name]):value.slice(),split,layout,parts,sealed:new Array(parts.length).fill(null)};
+    const entry={value,keys,members:keys?keys.map(name=>value[name]):value.slice(),split,layout,parts,sealed:new Array(parts.length).fill(null)};
     PATH_LAYOUT.set(key,entry);layoutCacheStats.misses++;return entry;
   }
   function sealedMembers(value){

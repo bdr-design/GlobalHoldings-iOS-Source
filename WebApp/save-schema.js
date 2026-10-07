@@ -299,9 +299,10 @@
   function inheritVerified(source,target){
     let authorization=0,records=0;
     try{
-      const pairs=[[source?.authorization?.proofsById,target?.authorization?.proofsById,'proofDigest',true],[source?.authorization?.proofArchiveById,target?.authorization?.proofArchiveById,'proofDigest',true],[source?.documentProofs?.recordsById,target?.documentProofs?.recordsById,'contentDigest',false],[source?.documentProofs?.archiveById,target?.documentProofs?.archiveById,'contentDigest',false]];
+      const pairs=[[source?.authorization?.proofsById,target?.authorization?.proofsById,'proofDigest',true],[source?.authorization?.proofArchiveById,target?.authorization?.proofArchiveById,'proofDigest',true],[source?.documentProofs?.recordsById,target?.documentProofs?.recordsById,'contentDigest',false],[source?.documentProofs?.archiveById,target?.documentProofs?.archiveById,'contentDigest',false],[source?.documentProofs?.supersededById,target?.documentProofs?.supersededById,'contentDigest',false]];
       for(const [from,to,field,isAuthorization] of pairs){
-        if(!object(from)||!object(to))continue;
+        // Build 359: a draft shares a sealed container with its source (the same members): nothing to inherit.
+        if(!object(from)||!object(to)||from===to)continue;
         for(const id of Object.keys(from)){
           const a=from[id],b=to[id];if(!object(a)||!object(b)||a[field]!==b[field])continue;
           if(isAuthorization){if(VERIFIED_AUTH_PROOFS.has(a)&&!VERIFIED_AUTH_PROOFS.has(b)){VERIFIED_AUTH_PROOFS.add(b);authorization++;}}
@@ -316,12 +317,22 @@
   // (~2 MB) whenever a single record or document needed verification. tests/build358-heaviness.cjs runs a full
   // validation with every nested proof object frozen.
   function verificationView(root){return root&&typeof root==='object'&&!Array.isArray(root)?{...root}:root;}
+  let AUTHORIZATION_ARCHIVE_MEMO=null;
   function validateAuthorizationState(s,errors,verificationCache,metric,trust=false){
     const auth=s?.authorization;if(auth===undefined)return;
     if(!object(auth)||auth.schema!=='gh-authorization-v1'){errors.push('authorization-shape');return;}
     const people=auth.peopleById,seals=object(auth.visualSealAssetsById)?auth.visualSealAssetsById:auth.signatureAssetsById,active=object(auth.activeVisualSealByPerson)?auth.activeVisualSealByPerson:auth.activeSignatureByPerson,mandates=auth.mandatesById,proofs=auth.proofsById;
-    const archived=auth.proofArchiveById||{};if(!object(archived)){errors.push('authorization-proof-archive-shape');return;}if(mapBytes(archived)>8*1024*1024)errors.push('authorization-proof-archive-byte-limit');for(const id of Object.keys(archived))if(Object.prototype.hasOwnProperty.call(proofs||{},id))errors.push('authorization-proof-residency-conflict');const allProofs={...archived,...proofs};
+    const archived=auth.proofArchiveById||{};if(!object(archived)){errors.push('authorization-proof-archive-shape');return;}
     if(!object(people)||!object(seals)||!object(active)||!object(mandates)||!object(proofs)){errors.push('authorization-shape');return;}
+    // Build 359: the proof archive is a sealed container (frozen whole, replaced by every writer). A trusted pass answers a
+    // version of it that a pass verified without a fault, after checking the people, seals and mandates its proofs rely
+    // on (by content: a draft copies those small maps); it then walks the hot proofs only (and checks them against the
+    // archive for residency).
+    const errorsBefore=errors.length,answered=trust&&AUTHORIZATION_ARCHIVE_MEMO?.archive===archived&&sealedObject(archived)&&AUTHORIZATION_ARCHIVE_MEMO.relied.every(([map,id,text])=>JSON.stringify(auth[map]?.[id])===text);
+    if(!answered&&mapBytes(archived)>8*1024*1024)errors.push('authorization-proof-archive-byte-limit');
+    if(answered){for(const id of Object.keys(proofs))if(Object.prototype.hasOwnProperty.call(archived,id))errors.push('authorization-proof-residency-conflict');}
+    else for(const id of Object.keys(archived))if(Object.prototype.hasOwnProperty.call(proofs,id))errors.push('authorization-proof-residency-conflict');
+    const allProofs=answered?proofs:{...archived,...proofs},relied=new Map(),sealMap=object(auth.visualSealAssetsById)?'visualSealAssetsById':'signatureAssetsById';
     if(Object.keys(people).length>STATE_LIMITS.authorizationPeople)errors.push('authorization-people-capacity');if(Object.keys(seals).length>STATE_LIMITS.authorizationSeals)errors.push('authorization-seal-capacity');if(Object.keys(mandates).length>STATE_LIMITS.authorizationMandates)errors.push('authorization-mandate-capacity');if(Object.keys(proofs).length>STATE_LIMITS.authorizationProofs)errors.push('authorization-proof-capacity');
     for(const [id,row] of Object.entries(people))if(!id||!object(row)||row.id!==id||!String(row.legalName||'').trim())errors.push('authorization-person');
     for(const [id,row] of Object.entries(seals)){
@@ -332,30 +343,62 @@
     for(const [personId,sealId] of Object.entries(active))if(!people[personId]||!seals[sealId]||seals[sealId].ownerPersonId!==personId||seals[sealId].status!=='active')errors.push('authorization-active-seal');
     for(const [id,row] of Object.entries(mandates))if(!id||!object(row)||row.id!==id||!people[row.principalId]||!Array.isArray(row.companyIds)||!row.companyIds.length||row.companyIds.length>120||!Array.isArray(row.scopes)||!row.scopes.length||row.scopes.length>120||!Number.isSafeInteger(Number(row.version))||Number(row.version)<1)errors.push('authorization-mandate');
     const verifier=globalThis.GH_AUTHORIZATION?.verifyProof;let verificationState=null,verificationStateBuilt=false;const stateForVerification=()=>{if(!verificationStateBuilt){verificationStateBuilt=true;verificationState=typeof verifier==='function'?{...s,authorization:verificationView(auth)}:null;}return verificationState;};
-    const proofVerificationStart=metric?metricClock():0;for(const [id,row] of Object.entries(allProofs)){if(!id||!object(row)||row.id!==id||!people[row.signerPersonId]||!seals[row.signatureAssetId||row.visualSealAssetId]||!mandates[row.mandateId]||!validDigest(row.signatureDigest||row.visualSealDigest)||!validDigest(row.payloadDigest)||!validDigest(row.proofDigest)||!Array.isArray(row.documentDigests)||row.documentDigests.some(value=>!validDigest(value)))errors.push('authorization-proof');else if(trust&&VERIFIED_AUTH_PROOFS.has(row)){/* verified earlier in this process */}else if(typeof verifier!=='function')errors.push('authorization-proof-integrity');else if(!verifier(stateForVerification(),id,verificationCache?.authorization).ok)errors.push('authorization-proof-integrity');else VERIFIED_AUTH_PROOFS.add(row);}if(metric)metric.authorizationProofVerifyMs+=Math.max(0,metricClock()-proofVerificationStart);
+    const proofVerificationStart=metric?metricClock():0;for(const [id,row] of Object.entries(allProofs)){if(!id||!object(row)||row.id!==id||!people[row.signerPersonId]||!seals[row.signatureAssetId||row.visualSealAssetId]||!mandates[row.mandateId]||!validDigest(row.signatureDigest||row.visualSealDigest)||!validDigest(row.payloadDigest)||!validDigest(row.proofDigest)||!Array.isArray(row.documentDigests)||row.documentDigests.some(value=>!validDigest(value)))errors.push('authorization-proof');else if(trust&&VERIFIED_AUTH_PROOFS.has(row)){/* verified earlier in this process */}else if(typeof verifier!=='function')errors.push('authorization-proof-integrity');else if(!verifier(stateForVerification(),id,verificationCache?.authorization).ok)errors.push('authorization-proof-integrity');else VERIFIED_AUTH_PROOFS.add(row);
+      if(!answered&&archived[id]===row)for(const [map,key] of [['peopleById',row.signerPersonId],[sealMap,row.signatureAssetId||row.visualSealAssetId],['mandatesById',row.mandateId]]){const ref=`${map}\u0000${key}`;if(!relied.has(ref))relied.set(ref,[map,key,JSON.stringify(auth[map]?.[key])]);}}
+    if(!answered)AUTHORIZATION_ARCHIVE_MEMO=errors.length===errorsBefore&&sealedObject(archived)?{archive:archived,relied:[...relied.values()]}:null;if(metric)metric.authorizationProofVerifyMs+=Math.max(0,metricClock()-proofVerificationStart);
+  }
+  // Build 359 (a million assets: the archive part of the proof store grows with the game, and every command walked it):
+  // a trusted pass answers the archive part by the identity of its sealed containers (frozen whole and replaced by every
+  // writer, GH_TRANSACTION_CORE {container:true}): the archived records, the checkpoints, the period sums and seals, and
+  // the finance audit archive's collections. A pass that verified them all without a fault remembers that version
+  // (ARCHIVE_MEMO) with what it relied on outside it (the authorization proof each archived record of the first form
+  // references, a predecessor or record still in the hot window) and an index of it (which archived records and
+  // checkpoints are predecessors, which audit archive documents carry which record). A later trusted pass:
+  // - on the same version, checks only those dependencies (by identity), the hot window against the archive and the
+  //   checkpoints (residency), the hot records and the live documents;
+  // - on a version derived from it (each writer declares what it changed, GH_TRANSACTION_CORE.deriveContainer), checks
+  //   only the changes: records written or removed, checkpoints and period sums written by a trusted writer, documents
+  //   added to or removed from the audit archive, and the documents whose record changed;
+  // - otherwise, or when a change does not add up (an unverified checkpoint or period sum, a removed record a document or
+  //   a newer record still needs), verifies the archive part in full, as before.
+  // A full validation (load, import, a confirmed audit fault) never uses it.
+  let ARCHIVE_MEMO=null;
+  const isEmptyContainer=value=>Array.isArray(value)?value.length===0:object(value)&&Object.keys(value).length===0;
+  function archiveVersion(s,store){
+    const values=[store.archiveById,store.checkpointsById,store.periodDigests,store.sealedPeriods],records=s?.finance?.auditArchive?.records;
+    if(object(records))for(const kind of Object.keys(records))values.push(kind,records[kind]);else values.push(records);
+    return values.map(value=>({value,empty:!!value&&typeof value==='object'&&!sealedObject(value)&&isEmptyContainer(value)}));
+  }
+  // Only a version whose containers are all sealed (or empty, or absent) can be remembered: nothing in it can change.
+  const rememberable=version=>version.every(entry=>!entry.value||typeof entry.value!=='object'||entry.empty||sealedObject(entry.value));
+  function sameVersion(memo,version){if(!memo||memo.length!==version.length)return false;for(let i=0;i<memo.length;i++)if(memo[i].value!==version[i].value||memo[i].empty!==version[i].empty)return false;return true;}
+  const archiveLists=s=>{const records=s?.finance?.auditArchive?.records,lists=new Map();if(object(records))for(const kind of Object.keys(records))if(Array.isArray(records[kind]))lists.set(kind,records[kind]);return lists;};
+  // What a version relies on outside its containers, by owner ('r'+record id, 'd'+document proof id): [map, id, object].
+  function reliedHolds(s,store,relied){
+    const auth=s?.authorization,hot=store.recordsById;
+    for(const rows of relied.values())for(const [map,id,value] of rows)if((map==='hot'?hot[id]:map==='superseded'?store.supersededById?.[id]:auth?.proofsById?.[id]||auth?.proofArchiveById?.[id])!==value)return false;
+    return true;
+  }
+  // The changes from the remembered container to the current one: the lineage a writer declared, or every key/member when
+  // the remembered one was empty or absent; null when they are not related.
+  function changesOf(current,known){
+    if(current===known)return {changed:new Set(),removed:new Set()};
+    const empty=!known||typeof known!=='object'||isEmptyContainer(known);
+    if(empty){if(!current||typeof current!=='object')return {changed:new Set(),removed:new Set()};return {changed:new Set(Array.isArray(current)?current:Object.keys(current)),removed:new Set()};}
+    if(!current||typeof current!=='object')return {changed:new Set(),removed:new Set(Array.isArray(known)?known:Object.keys(known))};
+    return globalThis.GH_TRANSACTION_CORE?.containerChanges?.(current,known)||null;
   }
   function validateDocumentProofState(s,errors,verificationCache,metric,trust=false){
     const store=s?.documentProofs;if(store===undefined)return;
     if(!object(store)||store.schema!=='gh-document-proofs-v1'||!object(store.recordsById)){errors.push('document-proof-shape');return;}
-    const archived=store.archiveById||{};if(!object(archived)){errors.push('document-proof-archive-shape');return;}const archivedIds=Object.keys(archived),conflicts=new Set();for(const id of archivedIds)if(Object.prototype.hasOwnProperty.call(store.recordsById,id)){conflicts.add(id);errors.push('document-proof-residency-conflict');}if(Object.keys(store.recordsById).length>STATE_LIMITS.documentProofs)errors.push('document-proof-capacity');
-    // Build 359: the records are read in place (the archive's, then the hot window's; a record in both is the hot one, as
-    // the merged copy {...archive,...hot} that every validation built had it), and a sealed record whose shape passed is
-    // not inspected again (the reference to its authorization proof is, every time).
-    const hot=store.recordsById,own=(map,id)=>Object.prototype.hasOwnProperty.call(map,id),recordOf=id=>own(hot,id)?hot[id]:own(archived,id)?archived[id]:undefined;
-    const forEachRecord=fn=>{for(const id of archivedIds)fn(id,conflicts.has(id)?hot[id]:archived[id]);for(const id of Object.keys(hot))if(!conflicts.has(id))fn(id,hot[id]);};
-    forEachRecord((id,row)=>{
-      if(!id||!object(row)||row.id!==id){errors.push('document-proof-record');return;}
-      if(!VERIFIED_RECORD_SHAPES.has(row)){if(!String(row.documentId||'').trim()||!validDigest(row.contentDigest)||(row.form==='archived-document-v1'||row.form==='archived-document-v2'?Object.prototype.hasOwnProperty.call(row,'signedContent'):!object(row.issuerSnapshot)||!object(row.signedContent))){errors.push('document-proof-record');return;}if(sealedObject(row))VERIFIED_RECORD_SHAPES.add(row);}
-      if(row.authorizationProofId&&!(s.authorization?.proofsById?.[row.authorizationProofId]||s.authorization?.proofArchiveById?.[row.authorizationProofId]||(row.form==='archived-document-v2'&&/^[a-f0-9]{64}$/i.test(String(row.authorizationDigest||'')))))errors.push('document-proof-record');
-    });
+    const archived=store.archiveById||{};if(!object(archived)){errors.push('document-proof-archive-shape');return;}
+    // Build 359: supersededById (whole earlier versions standing for the archive's compact copies until maintenance) is
+    // read before the archive, walked as the hot window is, and its ids are skipped in the archive; each of its ids must
+    // be in the archive and not in the hot window.
+    const superseded=object(store.supersededById)?store.supersededById:{};if(store.supersededById!==undefined&&!object(store.supersededById)){errors.push('document-proof-shape');return;}
+    const hot=store.recordsById,own=(map,id)=>Object.prototype.hasOwnProperty.call(map,id),recordOf=id=>own(hot,id)?hot[id]:own(superseded,id)?superseded[id]:own(archived,id)?archived[id]:undefined,hotIds=Object.keys(hot),supersededIds=Object.keys(superseded);
     const documentOwner=globalThis.GH_DOCUMENT_PROOF;if(typeof documentOwner?.stateDocuments!=='function'){errors.push('document-proof-owner-unavailable');return;}
-    const documentCollectionStart=metric?metricClock():0,documents=documentOwner.stateDocuments(s);if(metric)metric.documentCollectionMs+=Math.max(0,metricClock()-documentCollectionStart);
-    // Build 359: earlier versions kept as checkpoints, sealed by one digest per 30-day period (GH_DOCUMENT_PROOF). The
-    // store has no byte limit: the finance audit archive's retention seals old documents (sealedPeriods, shape checked).
-    if(store.checkpointsById!==undefined&&!object(store.checkpointsById))errors.push('document-proof-checkpoint-shape');
-    {const seals=globalThis.GH_DOCUMENT_PROOF?.verifySeals?.(s);if(seals&&!seals.ok)errors.push('document-proof-seal');}
-    {const checkpoints=globalThis.GH_DOCUMENT_PROOF?.verifyCheckpoints?.(s,verificationCache?.documents,{fresh:!trust});if(checkpoints&&!checkpoints.ok)errors.push('document-proof-checkpoint');}
-    const verifier=globalThis.GH_DOCUMENT_PROOF?.verifyDocument,recordVerifier=globalThis.GH_DOCUMENT_PROOF?.verifyRecord,documentCache=verificationCache?.documents;let fullState=null;const fullVerificationState=()=>{if(fullState===null&&typeof verifier==='function')fullState={...s,authorization:s.authorization?verificationView(s.authorization):s.authorization,documentProofs:verificationView(store)};return fullState;};
+    const verifier=documentOwner.verifyDocument,recordVerifier=documentOwner.verifyRecord,documentCache=verificationCache?.documents;let fullState=null;const fullVerificationState=()=>{if(fullState===null&&typeof verifier==='function')fullState={...s,authorization:s.authorization?verificationView(s.authorization):s.authorization,documentProofs:verificationView(store)};return fullState;};
     // Records already verified are answered from the cache without touching state, so only a read-only view is needed for them.
     const lightState={...s,documentProofs:{...store}};
     // Build 359: a trusted pass answers a record of the verified-once ledger from the ledger when asked (the cache reads
@@ -365,29 +408,115 @@
       documentCache.records={get:id=>results.has(id)?results.get(id):known(id)?.result,has:id=>results.has(id)||known(id)!==undefined,set(id,value){results.set(id,value);return this;}};
       documentCache.signedContentStable={get:id=>texts.has(id)?texts.get(id):known(id)?.stable,has:id=>texts.has(id)||known(id)!==undefined,set(id,value){texts.set(id,value);return this;}};
     }
-    // A record answered from the cache gets that answer without a call (verifyRecord returns it first thing).
-    const recordVerificationStart=metric?metricClock():0;if(typeof verifier==='function'&&typeof recordVerifier==='function')forEachRecord((id,row)=>{const answer=documentCache?.records?.get(id),cached=answer!==undefined,check=cached?answer:recordVerifier(fullVerificationState(),id,new Set(),documentCache),acceptedLegacy=check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true;if(!check?.ok&&!acceptedLegacy)errors.push('document-proof-record-integrity');else if(check?.ok===true&&check.modern===true&&!cached){const stableText=documentCache?.signedContentStable?.get(id);if(stableText!==undefined&&row&&!VERIFIED_DOC_RECORDS.has(row))VERIFIED_DOC_RECORDS.set(row,{stable:stableText,result:{ok:true,modern:true}});}});if(metric)metric.documentRecordVerifyMs+=Math.max(0,metricClock()-recordVerificationStart);
-    const documentVerificationStart=metric?metricClock():0,seenDocuments=new Set();
-    for(const document of documents)if(document?.documentProofId){
+    const accepted=check=>check?.ok===true||check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true;
+    // One record: shape (once for a sealed one), authorization reference, integrity. Returns its dependencies, or null on a fault.
+    function checkRecord(id,row,inArchive){
+      if(!id||!object(row)||row.id!==id){errors.push('document-proof-record');return null;}
+      if(!VERIFIED_RECORD_SHAPES.has(row)){if(!String(row.documentId||'').trim()||!validDigest(row.contentDigest)||(row.form==='archived-document-v1'||row.form==='archived-document-v2'||row.form==='compact-document-v1'?Object.prototype.hasOwnProperty.call(row,'signedContent'):!object(row.issuerSnapshot)||!object(row.signedContent))){errors.push('document-proof-record');return null;}if(sealedObject(row))VERIFIED_RECORD_SHAPES.add(row);}
+      const released=row.form==='archived-document-v2'&&/^[a-f0-9]{64}$/i.test(String(row.authorizationDigest||'')),relied=[];
+      if(row.authorizationProofId){const proof=s.authorization?.proofsById?.[row.authorizationProofId]||s.authorization?.proofArchiveById?.[row.authorizationProofId];if(!proof&&!released){errors.push('document-proof-record');return null;}if(inArchive&&proof&&!released)relied.push(['authorization',row.authorizationProofId,proof]);}
+      if(inArchive&&row.previousProofId){if(own(hot,row.previousProofId))relied.push(['hot',row.previousProofId,hot[row.previousProofId]]);else if(own(superseded,row.previousProofId))relied.push(['superseded',row.previousProofId,superseded[row.previousProofId]]);}
+      if(typeof verifier==='function'&&typeof recordVerifier==='function'){const answer=documentCache?.records?.get(id),cached=answer!==undefined,check=cached?answer:recordVerifier(fullVerificationState(),id,new Set(),documentCache);if(!accepted(check)){errors.push('document-proof-record-integrity');return null;}if(check?.ok===true&&check.modern===true&&!cached){const stableText=documentCache?.signedContentStable?.get(id);if((stableText!==undefined||check.compact===true)&&!VERIFIED_DOC_RECORDS.has(row))VERIFIED_DOC_RECORDS.set(row,{stable:stableText,result:{ok:true,modern:true}});}}
+      return relied;
+    }
+    // One document against its record. Returns its dependencies, or null on a fault.
+    const seenDocuments=new Set();
+    function checkDocument(document,inArchive){
       const proofId=document.documentProofId,record=recordOf(proofId);
-      if(!record||document.contentDigest!==record.contentDigest){errors.push('document-proof-reference');continue;}
-      if(typeof verifier!=='function'){errors.push('document-proof-integrity');continue;}
-      if(VERIFIED_SEALED_DOCUMENTS.get(document)===record&&sealedObject(document)&&(trust||documentCache?.records?.get(proofId)?.ok===true&&sealedObject(record))){seenDocuments.add(proofId);continue;}
+      if(!record||document.contentDigest!==record.contentDigest){errors.push('document-proof-reference');return null;}
+      const relied=inArchive&&own(hot,proofId)?[['hot',proofId,record]]:inArchive&&own(superseded,proofId)?[['superseded',proofId,record]]:[];
+      if(typeof verifier!=='function'){errors.push('document-proof-integrity');return null;}
+      if(VERIFIED_SEALED_DOCUMENTS.get(document)===record&&sealedObject(document)&&(trust||documentCache?.records?.get(proofId)?.ok===true&&sealedObject(record))){seenDocuments.add(proofId);return relied;}
       // Verification is a pure function of the document and its (separately verified) record, so a trusted pass skips
       // a document whose exact JSON and record digest were already verified; any edit, even of an unsigned field,
       // verifies it again. Full validations (load, import, a confirmed audit fault) always verify every document.
+      // Build 359: a record without its signed content (compact or archived form: its issue time and chain link are read
+      // only when the document is verified) must also be the very record verified then.
       let text=null;try{text=JSON.stringify(document);}catch(_error){text=null;}
       seenDocuments.add(proofId);const known=VERIFIED_DOCUMENTS.get(proofId);
-      if(trust&&text!==null&&known&&known.digest===record.contentDigest&&known.text===text){if(known.record===record&&sealedObject(document))VERIFIED_SEALED_DOCUMENTS.set(document,record);continue;}
+      if(trust&&text!==null&&known&&known.digest===record.contentDigest&&known.text===text&&(known.record===record||object(record.signedContent))){if(known.record===record&&sealedObject(document))VERIFIED_SEALED_DOCUMENTS.set(document,record);return relied;}
       // A full pass may skip it too when the record is the same sealed object (it cannot have changed) and that record
       // verified in this pass: verification is then a pure function of the unchanged document JSON.
-      if(!trust&&text!==null&&known&&known.record===record&&known.text===text&&documentCache?.records?.get(proofId)?.ok===true&&sealedObject(record)){if(sealedObject(document))VERIFIED_SEALED_DOCUMENTS.set(document,record);continue;}
-      const verification=verifier(documentCache?.records?.has(proofId)?lightState:fullVerificationState(),document,documentCache),acceptedLegacy=verification?.legacy===true&&verification?.readOnly===true&&verification?.recordIntegrity===true;
-      if(!verification?.ok&&!acceptedLegacy){errors.push('document-proof-integrity');VERIFIED_DOCUMENTS.delete(proofId);}
-      else{if(text!==null)VERIFIED_DOCUMENTS.set(proofId,{digest:record.contentDigest,text,record});if(verification?.ok===true&&sealedObject(document))VERIFIED_SEALED_DOCUMENTS.set(document,record);}
+      if(!trust&&text!==null&&known&&known.record===record&&known.text===text&&documentCache?.records?.get(proofId)?.ok===true&&sealedObject(record)){if(sealedObject(document))VERIFIED_SEALED_DOCUMENTS.set(document,record);return relied;}
+      const verification=verifier(documentCache?.records?.has(proofId)?lightState:fullVerificationState(),document,documentCache);
+      if(!accepted(verification)){errors.push('document-proof-integrity');VERIFIED_DOCUMENTS.delete(proofId);return null;}
+      if(text!==null)VERIFIED_DOCUMENTS.set(proofId,{digest:record.contentDigest,text,record});if(verification?.ok===true&&sealedObject(document))VERIFIED_SEALED_DOCUMENTS.set(document,record);
+      return relied;
     }
-    if(!trust||VERIFIED_DOCUMENTS.size>seenDocuments.size*2+64)for(const proofId of [...VERIFIED_DOCUMENTS.keys()])if(!seenDocuments.has(proofId))VERIFIED_DOCUMENTS.delete(proofId);
+    // The changes since the remembered version, checked alone. False when they do not add up (the caller verifies the
+    // archive part in full); errors found are reported and also send the caller to the full pass (its report is exact).
+    function checkArchiveChanges(version){
+      const memo=ARCHIVE_MEMO;if(!memo||!rememberable(version))return false;
+      const archiveChanges=changesOf(store.archiveById,memo.archive),checkpointChanges=changesOf(store.checkpointsById,memo.checkpoints),periodChanges=changesOf(store.periodDigests,memo.periods);
+      if(!archiveChanges||!checkpointChanges||!periodChanges)return false;
+      const lists=archiveLists(s),listChanges=new Map();
+      for(const kind of new Set([...lists.keys(),...memo.lists.keys()])){const changes=changesOf(lists.get(kind),memo.lists.get(kind));if(!changes)return false;listChanges.set(kind,changes);}
+      if(!reliedHolds(s,store,memo.relied))return false;
+      const checkpoints=store.checkpointsById||{},resolves=id=>own(hot,id)||own(archived,id)||own(checkpoints,id);
+      // Documents leaving or entering the audit archive.
+      const removedDocuments=new Set();for(const changes of listChanges.values())for(const document of changes.removed)removedDocuments.add(document);
+      for(const document of removedDocuments){const proofId=document?.documentProofId;if(!proofId)continue;const holders=memo.documents.get(proofId);if(holders){holders.delete(document);if(!holders.size)memo.documents.delete(proofId);}memo.relied.delete(`d${proofId}`);}
+      // Records that left the archive: no audit archive document and no newer record may still need them.
+      for(const id of archiveChanges.removed){if(own(archived,id))continue;if(memo.documents.has(id))return false;if((memo.predecessors.get(id)||0)>0&&!resolves(id))return false;const prior=memo.recordPrevious.get(id);if(prior){const n=(memo.predecessors.get(prior)||1)-1;if(n)memo.predecessors.set(prior,n);else memo.predecessors.delete(prior);}memo.recordPrevious.delete(id);memo.relied.delete(`r${id}`);}
+      for(const id of checkpointChanges.removed)if(!own(checkpoints,id)&&(memo.predecessors.get(id)||0)>0&&!resolves(id))return false;
+      // New checkpoints and period sums: written by a trusted writer (or the archive part is verified in full).
+      for(const id of checkpointChanges.changed){const row=checkpoints[id];if(!row)continue;if(!documentOwner.checkpointVerified?.(row)||own(hot,id)||own(archived,id))return false;}
+      const periods=store.periodDigests||{};for(const period of periodChanges.changed){const entry=periods[period];if(entry&&!documentOwner.periodVerified?.(entry))return false;}
+      {const seals=documentOwner.verifySeals?.(s);if(seals&&!seals.ok)return false;}
+      // Records written to the archive: checked, indexed; the archive documents carrying them are checked again.
+      const recheck=new Set();
+      for(const id of archiveChanges.changed){
+        const row=archived[id];if(!row||own(superseded,id))continue;if(own(hot,id))return false;
+        const relied=checkRecord(id,row,true);if(!relied)return false;
+        const before=memo.recordPrevious.get(id);if(before){const n=(memo.predecessors.get(before)||1)-1;if(n)memo.predecessors.set(before,n);else memo.predecessors.delete(before);}
+        if(row.previousProofId){memo.recordPrevious.set(id,row.previousProofId);memo.predecessors.set(row.previousProofId,(memo.predecessors.get(row.previousProofId)||0)+1);}else memo.recordPrevious.delete(id);
+        if(relied.length)memo.relied.set(`r${id}`,relied);else memo.relied.delete(`r${id}`);
+        for(const document of memo.documents.get(id)||[])recheck.add(document);
+      }
+      // Documents added to the audit archive, and those whose record changed.
+      for(const changes of listChanges.values())for(const document of changes.changed)if(document&&typeof document==='object'&&document.documentProofId)recheck.add(document);
+      for(const document of recheck){if(removedDocuments.has(document))continue;const relied=checkDocument(document,true);if(!relied)return false;const proofId=document.documentProofId;let holders=memo.documents.get(proofId);if(!holders){holders=new Set();memo.documents.set(proofId,holders);}holders.add(document);if(relied.length)memo.relied.set(`d${proofId}`,relied);else memo.relied.delete(`d${proofId}`);}
+      memo.version=version;memo.archive=store.archiveById;memo.checkpoints=store.checkpointsById;memo.periods=store.periodDigests;memo.lists=lists;
+      return true;
+    }
+    const errorsBefore=errors.length,version=trust?archiveVersion(s,store):null;
+    let mode='full';if(trust&&ARCHIVE_MEMO){if(sameVersion(ARCHIVE_MEMO.version,version)&&reliedHolds(s,store,ARCHIVE_MEMO.relied))mode='same';else{const before=errors.length;if(checkArchiveChanges(version))mode='changes';else{errors.length=before;ARCHIVE_MEMO=null;}}}
+    const answered=mode!=='full';if(metric)metric.documentArchiveAnswered=answered?1:0;
+    const conflicts=new Set();
+    if(answered){for(const id of hotIds)if(own(archived,id)){conflicts.add(id);errors.push('document-proof-residency-conflict');}}
+    else for(const id of Object.keys(archived))if(own(hot,id)){conflicts.add(id);errors.push('document-proof-residency-conflict');}
+    for(const id of supersededIds)if(own(hot,id)||!own(archived,id))errors.push('document-proof-residency-conflict');
+    if(hotIds.length>STATE_LIMITS.documentProofs)errors.push('document-proof-capacity');
+    // The index a full pass builds for the memo.
+    const index=answered?null:{relied:new Map(),predecessors:new Map(),recordPrevious:new Map(),documents:new Map()};
+    // Build 359: the records are read in place (the archive's, then the hot window's; a record in both is the hot one, as
+    // the merged copy {...archive,...hot} that every validation built had it), and a sealed record whose shape passed is
+    // not inspected again (the reference to its authorization proof is, every time). An answered archive is not walked.
+    const recordVerificationStart=metric?metricClock():0;
+    if(!answered)for(const id of Object.keys(archived))if(!conflicts.has(id)&&!own(superseded,id)){const row=archived[id],relied=checkRecord(id,row,true);if(relied?.length)index.relied.set(`r${id}`,relied);if(object(row)&&row.previousProofId){index.recordPrevious.set(id,row.previousProofId);index.predecessors.set(row.previousProofId,(index.predecessors.get(row.previousProofId)||0)+1);}}
+    for(const id of hotIds)checkRecord(id,hot[id],false);
+    for(const id of supersededIds)checkRecord(id,superseded[id],false);
+    if(metric)metric.documentRecordVerifyMs+=Math.max(0,metricClock()-recordVerificationStart);
+    const documentCollectionStart=metric?metricClock():0,documents=documentOwner.stateDocuments(s,{archive:false}),live=new Set(documents),archiveDocuments=[];
+    if(!answered)for(const list of archiveLists(s).values())for(const document of list)if(document&&typeof document==='object'&&!live.has(document))archiveDocuments.push(document);
+    if(metric)metric.documentCollectionMs+=Math.max(0,metricClock()-documentCollectionStart);
+    // Build 359: earlier versions kept as checkpoints, sealed by one digest per 30-day period (GH_DOCUMENT_PROOF). The
+    // store has no byte limit: the finance audit archive's retention seals old documents (sealedPeriods, shape checked).
+    // An answered archive part keeps its checkpoints and seals: only the hot window's residency is checked against them.
+    if(store.checkpointsById!==undefined&&!object(store.checkpointsById))errors.push('document-proof-checkpoint-shape');
+    if(answered){const checkpoints=store.checkpointsById||{};if(hotIds.some(id=>own(checkpoints,id))||supersededIds.some(id=>own(checkpoints,id)))errors.push('document-proof-checkpoint');}
+    else{
+      {const seals=documentOwner.verifySeals?.(s);if(seals&&!seals.ok)errors.push('document-proof-seal');}
+      {const checkpoints=documentOwner.verifyCheckpoints?.(s,verificationCache?.documents,{fresh:!trust});if(checkpoints&&!checkpoints.ok)errors.push('document-proof-checkpoint');}
+    }
+    const documentVerificationStart=metric?metricClock():0;
+    for(const document of documents)if(document?.documentProofId)checkDocument(document,false);
+    for(const document of archiveDocuments)if(document.documentProofId){const relied=checkDocument(document,true);const proofId=document.documentProofId;let holders=index.documents.get(proofId);if(!holders){holders=new Set();index.documents.set(proofId,holders);}holders.add(document);if(relied?.length)index.relied.set(`d${proofId}`,relied);}
+    // An answered pass did not see the archive's documents: it leaves their ledger entries alone.
+    if(!answered&&(!trust||VERIFIED_DOCUMENTS.size>seenDocuments.size*2+64))for(const proofId of [...VERIFIED_DOCUMENTS.keys()])if(!seenDocuments.has(proofId))VERIFIED_DOCUMENTS.delete(proofId);
     if(metric)metric.documentVerifyMs+=Math.max(0,metricClock()-documentVerificationStart);
+    // A pass that verified the archive part without a fault remembers its version, if nothing in it can change.
+    if(!answered){const current=version||archiveVersion(s,store);ARCHIVE_MEMO=errors.length===errorsBefore&&rememberable(current)?{version:current,archive:store.archiveById,checkpoints:store.checkpointsById,periods:store.periodDigests,lists:archiveLists(s),...index}:null;}
   }
   // Build 359 (owner: no command or save may walk every document): persistence ran a full validation (every proof and
   // document verified afresh, 77 ms on iPhone at 13,291 documents) on every tenth save. That verification is now an
@@ -396,39 +525,45 @@
   // seals. Each step verifies afresh (its own caches), skips what left the store since the cycle began, and stops at its
   // item or time budget. A step that finds a fault returns it; the caller confirms it with a full validate() before
   // acting, so a document changed between steps is never reported.
+  // The walk reads the maps and lists in place, one item per pull (a for-in over each map, GH_DOCUMENT_PROOF.walkDocuments
+  // and checkpointAuditSteps): no step copies a map ({...archive,...hot} and its keys, 8 ms at 13,291 documents) or lists
+  // every document. A for-in still builds a map's key list on its first pull (the engine's enumeration); the proof maps
+  // are bounded (hot window, 12-month audit archive). Items added while a cycle runs may be left to the next one; each
+  // is verified when it is admitted.
   function createProofAudit(){
-    // A record verified in this cycle answers for its documents while it is the same object (a record is replaced, never
-    // edited), so a document does not verify its record a second time.
-    let phase=0,list=null,at=0,cycles=0,checked=0,cycleRecords=new Map();const PHASES=['authorization','records','documents','checkpoints'];
-    const restart=()=>{phase=0;list=null;at=0;cycleRecords=new Map();};
-    function items(s){
-      const name=PHASES[phase];
-      if(name==='authorization'){const auth=s?.authorization;return object(auth)?Object.keys({...(object(auth.proofArchiveById)?auth.proofArchiveById:{}),...(object(auth.proofsById)?auth.proofsById:{})}):[];}
-      if(name==='records'){const store=s?.documentProofs;return object(store)?Object.keys({...(object(store.archiveById)?store.archiveById:{}),...(object(store.recordsById)?store.recordsById:{})}):[];}
-      if(name==='documents'){const owner=globalThis.GH_DOCUMENT_PROOF;return typeof owner?.stateDocuments==='function'?owner.stateDocuments(s).filter(row=>row?.documentProofId):[];}
-      const owner=globalThis.GH_DOCUMENT_PROOF,plan=typeof owner?.checkpointAuditPlan==='function'?owner.checkpointAuditPlan(s):{ok:true,periods:[]};
-      return [{seals:true},...(plan.ok?plan.periods:[{fault:plan.reason}])];
+    const PHASES=['authorization','records','documents','checkpoints'],own=Object.prototype.hasOwnProperty;
+    let walker=null,source=null,phase=PHASES[0],position=0,cycles=0,checked=0;
+    function* keysOf(map){if(object(map))for(const id in map)if(own.call(map,id))yield id;}
+    function* walk(s){
+      const auth=s?.authorization,store=s?.documentProofs,owner=globalThis.GH_DOCUMENT_PROOF;
+      phase='authorization';position=0;if(object(auth))for(const map of [auth.proofArchiveById,auth.proofsById])for(const id of keysOf(map)){position++;yield {kind:'authorization',id};}
+      phase='records';position=0;if(object(store))for(const map of [store.archiveById,store.supersededById,store.recordsById])for(const id of keysOf(map)){position++;yield {kind:'record',id};}
+      phase='documents';position=0;if(typeof owner?.walkDocuments==='function')for(const document of owner.walkDocuments(s))if(document.documentProofId){position++;yield {kind:'document',document};}
+      phase='checkpoints';position=0;yield {kind:'seals'};
+      if(typeof owner?.checkpointAuditSteps==='function'){const steps=owner.checkpointAuditSteps(s);let next;while(!(next=steps.next()).done){position++;yield {kind:'checkpoint'};}if(!next.value?.ok)yield {kind:'fault',reason:'document-proof-checkpoint',detail:next.value?.reason||null};}
     }
+    const restart=()=>{walker=null;source=null;phase=PHASES[0];position=0;};
     function step(s,{maxItems=200,budgetMs=Infinity}={}){
       const started=metricClock(),errors=[];let done=0,cycleDone=false,fault=null;
+      if(source!==s){walker=walk(s);source=s;}
       const cache={authorization:{proofs:new Map(),sealDigests:new Map(),mandateDigests:new Map()},documents:{records:new Map(),signedContentStable:new Map()}};cache.documents.authorization=cache.authorization;
       const auth=s?.authorization,store=s?.documentProofs,view={...s,authorization:object(auth)?{...auth}:auth,documentProofs:object(store)?{...store}:store};
-      const proofOf=id=>auth?.proofsById?.[id]||auth?.proofArchiveById?.[id],recordOf=id=>store?.recordsById?.[id]||store?.archiveById?.[id];
+      const proofOf=id=>auth?.proofsById?.[id]||auth?.proofArchiveById?.[id],recordOf=id=>store?.recordsById?.[id]||store?.supersededById?.[id]||store?.archiveById?.[id];
+      const accepted=check=>check?.ok===true||check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true;
       while(done<maxItems&&metricClock()-started<budgetMs){
-        if(!list){list=items(s);at=0;}
-        if(at>=list.length){phase++;list=null;if(phase>=PHASES.length){restart();cycles++;cycleDone=true;break;}continue;}
-        const item=list[at++],name=PHASES[phase];done++;
-        if(name==='authorization'){if(!proofOf(item))continue;const verifier=globalThis.GH_AUTHORIZATION?.verifyProof;if(typeof verifier!=='function'||!verifier(view,item,cache.authorization).ok)errors.push('authorization-proof-integrity');}
-        else if(name==='records'){if(!recordOf(item))continue;const check=globalThis.GH_DOCUMENT_PROOF?.verifyRecord?.(view,item,new Set(),cache.documents),acceptedLegacy=check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true;if(!check?.ok&&!acceptedLegacy)errors.push('document-proof-record-integrity');else cycleRecords.set(item,{record:recordOf(item),result:check,stable:cache.documents.signedContentStable.get(item)});}
-        else if(name==='documents'){const record=recordOf(item.documentProofId);if(!record)continue;if(item.contentDigest!==record.contentDigest){errors.push('document-proof-reference');continue;}const known=cycleRecords.get(item.documentProofId);if(known?.record===record&&!cache.documents.records.has(item.documentProofId)){cache.documents.records.set(item.documentProofId,known.result);if(known.stable!==undefined)cache.documents.signedContentStable.set(item.documentProofId,known.stable);}const check=globalThis.GH_DOCUMENT_PROOF?.verifyDocument?.(view,item,cache.documents),acceptedLegacy=check?.legacy===true&&check?.readOnly===true&&check?.recordIntegrity===true;if(!check?.ok&&!acceptedLegacy)errors.push('document-proof-integrity');}
-        else if(item.seals){const seals=globalThis.GH_DOCUMENT_PROOF?.verifySeals?.(s);if(seals&&!seals.ok)errors.push('document-proof-seal');}
-        else if(item.fault||!globalThis.GH_DOCUMENT_PROOF?.verifyCheckpointPeriod?.(s,item)?.ok)errors.push('document-proof-checkpoint');
-        if(errors.length){fault={phase:name,item:typeof item==='string'?item:item?.documentProofId||item?.period||null};break;}
+        const next=walker.next();if(next.done){cycles++;cycleDone=true;restart();break;}
+        const item=next.value;done++;
+        if(item.kind==='authorization'){if(!proofOf(item.id))continue;const verifier=globalThis.GH_AUTHORIZATION?.verifyProof;if(typeof verifier!=='function'||!verifier(view,item.id,cache.authorization).ok)errors.push('authorization-proof-integrity');}
+        else if(item.kind==='record'){if(!recordOf(item.id))continue;if(!accepted(globalThis.GH_DOCUMENT_PROOF?.verifyRecord?.(view,item.id,new Set(),cache.documents)))errors.push('document-proof-record-integrity');}
+        else if(item.kind==='document'){const record=recordOf(item.document.documentProofId);if(!record)continue;if(item.document.contentDigest!==record.contentDigest){errors.push('document-proof-reference');}else if(!accepted(globalThis.GH_DOCUMENT_PROOF?.verifyDocument?.(view,item.document,cache.documents)))errors.push('document-proof-integrity');}
+        else if(item.kind==='seals'){const seals=globalThis.GH_DOCUMENT_PROOF?.verifySeals?.(s);if(seals&&!seals.ok)errors.push('document-proof-seal');}
+        else if(item.kind==='fault')errors.push(item.reason);
+        if(errors.length){fault={phase:item.kind,item:item.id||item.document?.documentProofId||item.detail||null};break;}
       }
       checked+=done;
-      return {ok:errors.length===0,errors:[...new Set(errors)],fault,checked:done,phase:PHASES[phase],cycleDone,cycles,totalChecked:checked};
+      return {ok:errors.length===0,errors:[...new Set(errors)],fault,checked:done,phase,cycleDone,cycles,totalChecked:checked};
     }
-    return {step,restart,status:()=>({phase:PHASES[phase],position:at,length:list?list.length:0,cycles,checked})};
+    return {step,restart,status:()=>({phase,position,cycles,checked})};
   }
   // Build 358 (iPhone diagnostic: the post-commit schema check of each daily close was one 27-37 ms step): the same
   // validation as a sequence of sections. validationSteps() yields between them (fleet and routes, the rest of the

@@ -134,7 +134,10 @@ async function testAuthorizationAndIdempotency() {
   document.documentType = originalDocumentType;
   const originalIssuerSnapshot = structuredClone(document.issuerSnapshot);
   document.issuerSnapshot.legalName = 'Attacker Issuer';
-  assert.equal(s.GH_DOCUMENT_PROOF.verifyDocument(state, document).reason, 'document-issuer-snapshot-mismatch');
+  // Build 359: the record is compact (it keeps no issuer snapshot of its own): the document's issuer snapshot is part of
+  // the signed content rebuilt from it, so the edit fails the record's content digest.
+  assert.equal(state.documentProofs.recordsById[document.documentProofId].form, s.GH_DOCUMENT_PROOF.COMPACT_FORM);
+  assert.equal(s.GH_DOCUMENT_PROOF.verifyDocument(state, document).reason, 'document-content-tampered');
   document.issuerSnapshot = originalIssuerSnapshot;
   assert.equal(s.GH_DOCUMENT_PROOF.verifyDocument(state, document).ok, true);
 

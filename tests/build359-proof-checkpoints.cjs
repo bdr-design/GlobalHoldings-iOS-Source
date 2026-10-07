@@ -3,7 +3,8 @@
 // cheque issued, cleared, settled) adds a whole record, and the earlier versions were kept whole only so the newer one
 // could prove its link to them. An earlier version whose chain verifies now becomes a
 // checkpoint (the link fields only); checkpoints carry one digest per 30-day period. Checked here:
-// - the store shrinks, every document still verifies (trusted and full validation), current versions stay whole;
+// - the store shrinks, every document still verifies (trusted and full validation), current versions stay in the
+//   compact form they are issued in (Build 359: the earlier version an amendment links to is rebuilt whole);
 // - an edited checkpoint or period digest is refused; a checkpoint in two places is refused;
 // - a document amended again after its history became checkpoints still verifies;
 // - garbage collection drops checkpoints nothing links to and keeps the period digests exact;
@@ -34,7 +35,7 @@ TX.sealCollections(state);
 const after={bytes:bytes(store()),records:Object.keys(store().recordsById).length,checkpoints:Object.keys(store().checkpointsById).length};
 assert.ok(total>=linked*.9&&after.checkpoints===total,`earlier versions became checkpoints (${total} of ${linked})`);
 assert.ok(after.bytes<before.bytes*.55,`the proof store shrinks (${before.bytes} -> ${after.bytes} bytes)`);
-for(const document of documents()){const record=Proof.record(state,document.documentProofId);assert.ok(record&&record.signedContent,'a current version stays a whole record');}
+for(const document of documents()){const record=Proof.record(state,document.documentProofId);assert.ok(record&&record.form===Proof.COMPACT_FORM&&!record.signedContent,'a current version stays compact');}
 assert.ok(allVerify(),'every document verifies after');
 assert.deepEqual([...new Set(Object.values(store().periodDigests).map(row=>row.count))].reduce((n,c)=>n+c,0)>0,true);
 assert.equal(Schema.validate(state).ok,true,'full validation');assert.equal(Schema.validate(state,{trustVerified:true}).ok,true,'trusted validation');
@@ -60,7 +61,7 @@ const copy=()=>JSON.parse(JSON.stringify(state));
  const invoice=()=>state.finance.invoices.find(row=>row.number===open.number),before=Proof.record(state,invoice().documentProofId);
  assert.ok(before?.previousProofId&&Proof.checkpoint(state,before.previousProofId),'a document whose history is checkpointed');assert.equal(TX.isSealed(invoice()),false,'an open document is not sealed');
  const out=TX.execute(state,{label:'amend-after-checkpoint',apply:()=>e.command('finance','settle-cheque',{id:cheque.id})});
- assert.equal(out.committed,true);const record=Proof.record(state,invoice().documentProofId);assert.ok(record.previousProofId===before.id&&Proof.record(state,record.previousProofId),'the new version links to the whole one before it');
+ assert.equal(out.committed,true);const record=Proof.record(state,invoice().documentProofId);assert.ok(record.previousProofId===before.id&&Proof.record(state,record.previousProofId)?.signedContent,'the new version links to the one before it, rebuilt whole');assert.equal(record.form,Proof.COMPACT_FORM,'the new version is compact');
  assert.equal(Proof.verifyDocument(state,invoice()).ok,true,'the amended document verifies');assert.equal(Schema.validate(state).ok,true);}
 
 // The save codec keeps it exact.

@@ -733,7 +733,7 @@
   let movingRouteIds=null;
   const routeHasMovingAsset=routeId=>{if(!movingRouteIds){const fleet=window.GH_FLEET_DATA;movingRouteIds=new Set();fleet.forEachFieldClasses(state,['phase','routeId','simulationFault'],(row,count)=>{if(count&&row.routeId&&fleet.presentedPhase(state,row)==='moving')movingRouteIds.add(row.routeId);});}return movingRouteIds.has(routeId);};
   Object.values(routeTemplates).filter(route=>route.type==='sea'&&route.maritimeGeometryVersion!==310&&!routeHasMovingAsset(route.id)).forEach(route=>{
-    if(rebuildMaritimeRoute(route)){maritimeMigrationChanged=true;const saved=state.customRoutes.find(r=>r.id===route.id);if(saved)Object.assign(saved,clone(route));}
+    if(rebuildMaritimeRoute(route)){maritimeMigrationChanged=true;const index=state.customRoutes.findIndex(r=>r.id===route.id);if(index>=0)state.customRoutes[index]={...state.customRoutes[index],...clone(route)};}
   });
   if(maritimeMigrationChanged){state.routesRevision=(Math.max(0,Math.floor(Number(state.routesRevision)||0))+1);save();}
 
@@ -861,10 +861,12 @@
       diag(out.deferred?'SAVE_COALESCED':'SAVE_OK',{bytes:out.utf8Bytes??null,saveRevision:state.saveRevision,deferred:!!out.deferred});return true;
     }catch(error){metric.error=String(error.message||error);metric.totalMs=Math.max(0,metricClock()-totalStart);if(runtimeMetrics)runtimeMetrics.lastSavePreparation={...metric};diag('SAVE_FAILED',{message:String(error.message||error)});if(options.throwOnError)throw error;console.warn('تعذر حفظ اللعبة',error);return false;}
   }
-  // Build 359 (the ordinary save was one block of 80-200 ms: schema, serialization and encoding at once): Save Now and the
-  // checkpoint save a copy of the state in slices across frames (GH_PERSISTENCE.commitStateSliced, which holds the
-  // persistence lock from the copy to the commit). The same checks as an ordinary save run first: no critical integrity
-  // issue may be introduced. A transaction's save and the background save stay whole and synchronous (save()).
+  // Build 359 (the ordinary save was one block of 80-200 ms: schema, serialization and encoding at once): Save Now saves
+  // a copy of the state in slices across frames (GH_PERSISTENCE.commitStateSliced, which holds the persistence lock from
+  // the copy to the commit). The same checks as an ordinary save run first: no critical integrity issue may be
+  // introduced. A transaction's save, the background save and the real-time cap checkpoint stay whole and synchronous
+  // (save()): a checkpoint in slices raced the background save when the app was hidden mid-way (an extra control plane
+  // event on the restored state). The sealed containers keep their cost flat as the documents grow.
   function prepareSlicedSave(){
     const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(x=>x.severity==='critical').map(x=>String(x.id||x.code||x.title)));
     pruneRouteCache();reconcileConsolidatedCash();
@@ -886,10 +888,20 @@
   if(startupLoadMeta?.source==='native'&&startupLoadMeta.needsCanonicalPersist){
     setTimeout(()=>{try{persistStateNow({throwOnError:true});}catch(error){console.warn('تعذر تثبيت Migration الحفظ Native بعد الإقلاع',error);}},0);
   }
+  // Build 359 (every published command cloned and measured every fleet route, 2.4 MB): a sealed route (frozen, shared by
+  // drafts, GH_ROUTE_CORE) is prepared once per inputs (its owner known, its operation profile, the sea speed factor);
+  // the runtime gets a shallow copy of that (its geometry, never edited, shared).
+  const PREPARED_ROUTES=new WeakMap();
+  function preparedRoute(route,target){
+    if(!Object.isFrozen(route))return prepareRoute(clone(route),target);
+    const mode=routeModeOf(route),owner=routeOwnerCompanyId(route),key=`${isKnownCompanyId(owner,target)}|${String(route.operationProfileId||(target?COMPANY_PLATFORM.getOperationProfile?.(target,owner):COMPANY_PLATFORM.getOperationProfile?.(owner))||'')}|${mode==='sea'&&target?window.GH_GOVERNANCE_CORE?.seaSpeedFactor?.(target)??1:1}`;
+    let cached=PREPARED_ROUTES.get(route);if(!cached||cached.key!==key){cached={key,route:prepareRoute(clone(route),target)};PREPARED_ROUTES.set(route,cached);}
+    return {...cached.route};
+  }
   function routeRuntimeForState(target){
     const runtime={};
     for(const id of BASE_ROUTE_IDS)runtime[id]=prepareRoute(clone(routeTemplates[id]),target);
-    for(const route of target.customRoutes||[])if(route?.id&&Array.isArray(route.route))runtime[route.id]=prepareRoute(clone(route),target);
+    for(const route of target.customRoutes||[])if(route?.id&&Array.isArray(route.route))runtime[route.id]=preparedRoute(route,target);
     return runtime;
   }
   function replaceLiveState(snapshot){
@@ -2702,7 +2714,7 @@
     const merged={schema:'gh-finance-audit-digest-v2',id:existing.id||digest.id,kind:digest.kind,count:(Number(existing.count)||0)+(Number(digest.count)||0),total:(Number(existing.total)||0)+(Number(digest.total)||0),firstAt:Math.min(...[Number(existing.firstAt)||0,Number(digest.firstAt)||0].filter(Boolean)),lastAt:Math.max(Number(existing.lastAt)||0,Number(digest.lastAt)||0),idRange:[String(existing.idRange?.[0]||digest.idRange?.[0]||''),String(digest.idRange?.[1]||existing.idRange?.[1]||'')],checksum:auditChecksum([existing.checksum,digest.checksum,existing.count,digest.count,existing.total,digest.total]),maxSequence:Math.max(Number(existing.maxSequence)||0,Number(digest.maxSequence)||0),intercompanyTotal:(Number(existing.intercompanyTotal)||0)+(Number(digest.intercompanyTotal)||0),recentDaily:[...daily.values()].sort((a,b)=>a.day-b.day).slice(-30),at:Number(state.simSeconds)||0};
     archive.digests=archive.digests.filter(row=>row!==existing&&row?.kind!==digest.kind);archive.digests.push(merged);
   }
-  function archiveFull(kind,rows){if(!rows.length)return;const copies=rows.map(row=>clone(row)),archive=financeAuditArchive(),bucket=Array.isArray(archive.records[kind])?archive.records[kind]:[];archive.records[kind]=[...bucket,...copies];}
+  function archiveFull(kind,rows){if(!rows.length)return;const copies=rows.map(row=>clone(row)),archive=financeAuditArchive(),bucket=Array.isArray(archive.records[kind])?archive.records[kind]:[];const next=[...bucket,...copies];if(bucket.length)window.GH_TRANSACTION_CORE.deriveContainer(next,bucket,{changed:copies});archive.records[kind]=next;}
   function archiveRetention(kind){
     const openNumbers=kind==='invoices'?new Set([...(state.finance?.payables||[]),...(state.finance?.receivables||[])].map(row=>String(row?.number||''))):null;
     return row=>{if(kind==='invoices')return openNumbers.has(String(row?.number||''))||!['مدفوعة','مسددة','محصلة'].includes(row?.status);if(kind==='cheques')return !['مصروف','ملغى'].includes(row?.status);if(kind==='taxPeriods')return !['مسددة','صفر'].includes(row?.status);if(kind==='transfers')return !['منفذة','مسددة','ملغى','ملغاة'].includes(row?.status);return false;};
@@ -2750,6 +2762,7 @@
   }
   // Build 359: records no document, replay result or later version needs leave the store here (an issue no longer
   // collects them: that walked every document, 200 documents at a time).
+  const PROOF_COLLECTION_HOT=4500;let lastProofCollectionDay=-1;
   function collectProofRecords(){
     const proofs=window.GH_DOCUMENT_PROOF;if(typeof proofs?.compact!=='function')return null;
     return proofMaintenancePass('proof-record-collection',()=>proofs.compact(state));
@@ -2761,6 +2774,14 @@
   function compactArchivedProofs(limit=ARCHIVED_PROOF_ROUND){
     const proofs=window.GH_DOCUMENT_PROOF;if(typeof proofs?.compactArchivedRecords!=='function')return null;
     return proofMaintenancePass('proof-archived-records',()=>({archived:proofs.compactArchivedRecords(state,{limit})?.compacted||0}));
+  }
+  // Build 359 (owner: the live records 80% smaller): records issued before the compact form take it
+  // (GH_DOCUMENT_PROOF.compactLiveRecords), LIVE_PROOF_ROUND per frame and up to LIVE_PROOF_ROUNDS frames per maintenance
+  // pass; a round reads at most 2,000 live documents, from where the previous one stopped.
+  const LIVE_PROOF_ROUND=50,LIVE_PROOF_ROUNDS=8;
+  function compactLiveProofs(){
+    const proofs=window.GH_DOCUMENT_PROOF;if(typeof proofs?.compactLiveRecords!=='function')return null;
+    return proofMaintenancePass('proof-live-records',()=>({compacted:proofs.compactLiveRecords(state,{limit:LIVE_PROOF_ROUND})?.compacted||0}));
   }
   // Build 359: archived documents take the v2 form (their authorization proof's digest), so archived authorization
   // proofs nothing else needs leave the authorization archive (GH_AUTHORIZATION.compact). Rows only shrink here, so
@@ -2787,8 +2808,13 @@
   const AUDIT_RETENTION_SECONDS=365*86400,AUDIT_DETAIL_LIMIT=20000,AUDIT_SEAL_ROUND=200,AUDIT_SEAL_VERIFY_MS=6,AUDIT_SEAL_ROLLBACK=Object.freeze({documentProofs:Object.freeze({level:'containers'}),finance:Object.freeze({level:'containers'})});
   const auditRowAt=row=>Math.max(0,Number(row?.at??row?.issuedAt??row?.closedAt??row?.createdAt)||0);
   const AUDIT_LIVE_BUCKETS=Object.freeze(['invoices','cheques','transfers','payables','receivables','periods','taxSettlements','debtRecords','debtSettlements','payrollReports']),AUDIT_LINK_FIELDS=Object.freeze(['invoiceNumber','documentNumber','number','reference','sourceRef','chequeNumber','chequeId','replacedBy']);
+  // Build 359: whether anything is due is answered from each sealed collection's size and oldest row, kept per version of
+  // it (a collection is replaced by its writers), before any row is listed.
+  const AUDIT_OLDEST=new WeakMap();
+  function auditOldest(list){let at=AUDIT_OLDEST.get(list);if(at===undefined){at=Infinity;for(const row of list)at=Math.min(at,auditRowAt(row));if(Object.isFrozen(list))AUDIT_OLDEST.set(list,at);}return at;}
   function auditSealSelection(){
     const records=state.finance?.auditArchive?.records;if(!records||typeof records!=='object')return [];
+    {let total=0,oldest=Infinity;for(const list of Object.values(records))if(Array.isArray(list)){total+=list.length;oldest=Math.min(oldest,auditOldest(list));}if(total<=AUDIT_DETAIL_LIMIT&&oldest>=(Number(state.simSeconds)||0)-AUDIT_RETENTION_SECONDS)return [];}
     const rows=[];for(const [kind,list] of Object.entries(records))if(Array.isArray(list))for(const row of list)rows.push({kind,row,at:auditRowAt(row)});
     const cutoff=(Number(state.simSeconds)||0)-AUDIT_RETENTION_SECONDS,excess=Math.max(0,rows.length-AUDIT_DETAIL_LIMIT);
     if(!excess&&!rows.some(entry=>entry.at<cutoff))return [];
@@ -2817,7 +2843,7 @@
       const withProof=round.filter(item=>item.row?.documentProofId),done=new Set(round.filter(item=>!item.row?.documentProofId).map(item=>item.row));
       if(withProof.length){const out=proofs.sealDocuments(state,withProof.map(item=>item.row),{keep:entry.keep,deadline:deadline()});for(const document of out.sealed)done.add(document);entry.queue.unshift(...withProof.slice(out.examined));}
       const archive=financeAuditArchive(),byKind=new Map();for(const item of round)if(done.has(item.row)){const list=byKind.get(item.kind)||[];list.push(item.row);byKind.set(item.kind,list);}
-      if(byKind.size){const next={...archive.records};for(const [kind,rows] of byKind){const gone=new Set(rows);next[kind]=next[kind].filter(row=>!gone.has(row));if(!next[kind].length)delete next[kind];}archive.records=next;}
+      if(byKind.size){const next={...archive.records};for(const [kind,rows] of byKind){const gone=new Set(rows),base=next[kind];next[kind]=base.filter(row=>!gone.has(row));if(!next[kind].length)delete next[kind];else window.GH_TRANSACTION_CORE.deriveContainer(next[kind],base,{removed:rows});}archive.records=next;}
       for(const [kind,rows] of byKind){mergeAuditDigest(buildAuditDigest(kind,rows));sealed+=rows.length;}
     }});
     if(!result.committed)throw new Error(result.reason||'audit-archive-seal-rejected');return sealed;
@@ -2829,7 +2855,7 @@
   // and no slice starts until the queue is empty. A schema pass after a compaction that rewrote history runs one section
   // per frame (GH_SAVE_SCHEMA.validationSteps) and starts again if a command changes the state between sections.
   const maintenanceQueue=[];
-  const MAINTENANCE_TASKS=Object.freeze(['compact','proof-checkpoints','proof-archived','archive-seal','proof-audit','fleet','health']);
+  const MAINTENANCE_TASKS=Object.freeze(['compact','proof-checkpoints','proof-live','proof-archived','archive-seal','proof-audit','fleet','health']);
   // Build 359 (owner: no save walks every document): the fresh verification of every proof that persistence ran on every
   // tenth save (77 ms on iPhone at 13,291 documents) is the proof audit (GH_SAVE_SCHEMA.createProofAudit): one step per
   // maintenance pass (PROOF_AUDIT_ITEMS proofs or PROOF_AUDIT_MS, whichever ends first) and a shorter one on idle render
@@ -2857,10 +2883,13 @@
   function haltOnGlobalFault(health,central){if(requiresGlobalHalt(health,central)){simulationEngine.cancelAdvance?.('global-halt');state.speed=0;pushAlert('أُوقفت المحاكاة لأن خللًا في سلامة الحفظ أو سجل الأوامر قد يهدد الحالة كاملة. مشكلات القطاعات الأخرى تبقى معزولة داخل قطاعها.');}}
   function runMaintenanceTask(entry){
     if(entry.task==='compact'){if(compactSimulationState(false,{schemaDue:false})){const sections=schemaSectionsTask();if(sections)maintenanceQueue.splice(1,0,sections);else globalThis.__GH_HOURLY_SCHEMA_DUE__=true;}return true;}
-    if(entry.task==='proof-checkpoints'){collectProofRecords();checkpointProofHistory();return true;}
+    // Build 359: collecting unreferenced records lists every document and record, so it runs once per game day (and when
+    // the hot window nears its admission limit); converting earlier versions takes only what changed (each hour).
+    if(entry.task==='proof-checkpoints'){const day=Math.floor((Number(state.simSeconds)||0)/86400),hot=state.documentProofs?.recordsById;if(day!==lastProofCollectionDay||(hot&&Object.keys(hot).length>=PROOF_COLLECTION_HOT)){collectProofRecords();lastProofCollectionDay=day;}checkpointProofHistory();return true;}
     // The selection once, then one round of 200 rows per frame until it is done; then the authorization archive drops the
     // proofs the sealed documents released.
     if(entry.task==='archive-seal'){if(!entry.queue){entry.queue=auditSealSelection();entry.keep=liveProofIds();entry.sealed=0;}if(entry.queue.length)entry.sealed+=sealAuditRound(entry);if(entry.queue.length)return false;if(entry.sealed)compactAuthorizationArchive();return true;}
+    if(entry.task==='proof-live'){const out=compactLiveProofs();entry.rounds=(entry.rounds||0)+1;return !((out?.compacted||0)>=LIVE_PROOF_ROUND&&entry.rounds<LIVE_PROOF_ROUNDS);}
     // Small rounds over consecutive frames (50 documents each, up to 8) while documents remain to convert; then the
     // authorization archive drops the proofs they released.
     if(entry.task==='proof-archived'){const out=compactArchivedProofs();entry.rounds=(entry.rounds||0)+1;if((out?.archived||0)>=ARCHIVED_PROOF_ROUND&&entry.rounds<ARCHIVED_PROOF_ROUNDS)return false;compactAuthorizationArchive();return true;}

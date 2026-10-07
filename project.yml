@@ -23,11 +23,11 @@ targets:
     info:
       path: iOS/GlobalHoldings/Info.plist
       properties:
-        CFBundleDisplayName: "Global Holdings"
+        CFBundleDisplayName: "MADAR"
         CFBundleIconName: "AppIcon"
         CFBundleShortVersionString: "3.0.0"
         CFBundleVersion: "358"
-        GHSourceSnapshotSHA256: "800768d7c598ba235ab49718e0b96f46d26fddeaa7ea898924db000d308157d4"
+        GHSourceSnapshotSHA256: "f6de5a632cd5f58cdd44b628349d3afcdaecf43e94c6dcaec664f98ed2cc5999"
         LSRequiresIPhoneOS: true
         UIRequiresFullScreen: true
         UILaunchStoryboardName: LaunchScreen

@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "ee84580635576ec3ecf1751af7bb203ddfba8e32488c1ebbe49b34af2d12c8fc",
-  "webapp_tree_sha256": "800768d7c598ba235ab49718e0b96f46d26fddeaa7ea898924db000d308157d4",
+  "source_tree_sha256": "f8c1ccb2f0f11af09ec86c90555cd77f9fc3c14a5c734dce83a5d9117d067b22",
+  "webapp_tree_sha256": "f6de5a632cd5f58cdd44b628349d3afcdaecf43e94c6dcaec664f98ed2cc5999",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 190568,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 760058,
-      "sha256": "e25fba64f191657781ee1c91f4ddb597ff33d6361868f2e8f12462531635be1d"
+      "bytes": 763592,
+      "sha256": "f14a6ded9e429ea70cd686287bd5fcb2876f6e749bbef54cafc612e2d52c7ca9"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -2947,8 +2947,8 @@
       "sha256": "3cf8de3f5d25c1c633bd03d6a003f2111700a5293b049f841b83632b7fa10f3c"
     },
     "WebApp/authorization-core.js": {
-      "bytes": 40269,
-      "sha256": "3b6ac0de11a8a177f64496ebe954cca2807924c0fb8debda4a2cc82c6fc3c149"
+      "bytes": 41902,
+      "sha256": "7bc900bbd7d1c86865a57f78c451299ab9f6ad6700dd51cdc52759f100617068"
     },
     "WebApp/authorization-ui.css": {
       "bytes": 2714,
@@ -3039,8 +3039,8 @@
       "sha256": "f8926d81ac8566b32031700f35422641c0891d2fabc3334125d7b634b7f154c3"
     },
     "WebApp/document-proof-core.js": {
-      "bytes": 83181,
-      "sha256": "46d4c981193a8078fc3e0a154d008fb05627f2374d8fa456390cd785cb1ee7a8"
+      "bytes": 104739,
+      "sha256": "e6a75baa306b8ece21510bc3397273c98d4f42fccc07ecfcc04c64e534d8ac9a"
     },
     "WebApp/domain-command-core.js": {
       "bytes": 27001,
@@ -3063,8 +3063,8 @@
       "sha256": "4a49b5950c78916517ae77eac118df854be8e1df4823907373d4be4c0f2c4c7a"
     },
     "WebApp/finance-core.js": {
-      "bytes": 135263,
-      "sha256": "fd1a46cebce422e81bc930d7b367a5413dd4f8854d7a7209ec3527d313546c37"
+      "bytes": 135521,
+      "sha256": "1f15a873af08eca4a8668a3726d5ca2d39b6efb692e8ccb2aec4b5a45869783f"
     },
     "WebApp/finance-presentation.css": {
       "bytes": 35092,
@@ -3135,8 +3135,8 @@
       "sha256": "fbe3f3b41815cd066318736504bbdea88a625f04812dbada6951e0eaf19682ff"
     },
     "WebApp/index.html": {
-      "bytes": 23403,
-      "sha256": "de3b3cb77bef16d763d6c7fba1915156c9d527927a9980b961282ca9bf88e2a8"
+      "bytes": 23376,
+      "sha256": "39b2b12c197d467e3b5dc0d012c926a1ea6416d8a6bd460ce6cb0d4e0ab461d2"
     },
     "WebApp/integrity-core.js": {
       "bytes": 24489,
@@ -3247,8 +3247,8 @@
       "sha256": "fdff61dde387c1bd93513e813f95aa76518ad24b20d11041678dbcadfe220bda"
     },
     "WebApp/route-core.js": {
-      "bytes": 26006,
-      "sha256": "bad054b515a08d3d3d2c8c57c3201c186865f901a2ebdaa9e82d69a02713a3ac"
+      "bytes": 26415,
+      "sha256": "2e0f80bbd5e6883cef68d0de95c090bb9ebd16fe7db25c750f48f914243a1dea"
     },
     "WebApp/runtime-required.json": {
       "bytes": 30357,
@@ -3259,8 +3259,8 @@
       "sha256": "e2b6a8811273984167e035dbe9a9ddce9cef58970bb565c56a8370314df64a07"
     },
     "WebApp/save-schema.js": {
-      "bytes": 83345,
-      "sha256": "8616971bdff4ebfdebb60b2661e0912dc2d1de5b295d88f205cfae392a4bbb3d"
+      "bytes": 97818,
+      "sha256": "a86481019c93eeadb78137533e14d35139660438938c3cb20b697f1bb69957c1"
     },
     "WebApp/section-identities.css": {
       "bytes": 1900,
@@ -3291,8 +3291,8 @@
       "sha256": "7fba65430a479155bf423b5adca04c620bff3948b3da2c1bdab09927aecf6c15"
     },
     "WebApp/state-codec-core.js": {
-      "bytes": 49874,
-      "sha256": "eae08eff7593c3c7f8d0ca9aaacae2e9512887d8ac910ee95b9be8ca796838ec"
+      "bytes": 50633,
+      "sha256": "0bc47fa0fadcaa2c82b532b76dd413c06084a596c135549fe1ad92f565b2ba15"
     },
     "WebApp/strategy-core.js": {
       "bytes": 4799,
@@ -3303,8 +3303,8 @@
       "sha256": "386987f14a46ae08491677ebe40f38dda1d305c10a8ebf53d2fb283a531af6ba"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 65332,
-      "sha256": "86b00b8356cb7869f0f3c018c8f07e81300d23b32526e7209ccac26f50036c45"
+      "bytes": 70882,
+      "sha256": "7a3db860e2e33c8bdf58b631c2849a3e080528ff10c28499f693e140ad5629a8"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 5890,
@@ -3359,8 +3359,8 @@
       "sha256": "ac85c6e05e16ee9e7ac927d2e46bd83c577c7d208bff503709decd1f3dd2421b"
     },
     "iOS/GlobalHoldings/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png": {
-      "bytes": 119091,
-      "sha256": "244d85af57978e32e98498da36a99ad8224e713bcceb5e9a3e0b82b935126e8c"
+      "bytes": 320845,
+      "sha256": "0cd0d2b7b7928718cde72c2c9d64aa46f01cdc36ecb09cb9186d065b489cfe88"
     },
     "iOS/GlobalHoldings/Assets.xcassets/AppIcon.appiconset/Contents.json": {
       "bytes": 216,
@@ -3369,6 +3369,14 @@
     "iOS/GlobalHoldings/Assets.xcassets/Contents.json": {
       "bytes": 63,
       "sha256": "0fd49ba3c3585c709678e0046a821c3c60685ec7063720d30d3a3448be3a208b"
+    },
+    "iOS/GlobalHoldings/Assets.xcassets/MadarLogo.imageset/Contents.json": {
+      "bytes": 159,
+      "sha256": "6c0d2cdd58f5ab4c6ce7b737bd07c868bf30186812d236d4a2b4aaff721081e7"
+    },
+    "iOS/GlobalHoldings/Assets.xcassets/MadarLogo.imageset/MadarLogo.png": {
+      "bytes": 841452,
+      "sha256": "8d1ccfd7205fc6de34b3bc40c3d8a0157c8492be9637255d829fcfe60fbcbe38"
     },
     "iOS/GlobalHoldings/GameViewController.swift": {
       "bytes": 59822,
@@ -3383,12 +3391,12 @@
       "sha256": "31044608a7775a23200f3b0957daad37f86b1c1e3b6ad22307d5f8ec3edb8a69"
     },
     "iOS/GlobalHoldings/LaunchScreen.storyboard": {
-      "bytes": 1728,
-      "sha256": "fed5a53d38ed2667c3f609bd317c9f4fc30bf42feac87cfab56bd702b8879947"
+      "bytes": 3135,
+      "sha256": "35d134160f529d08e96a2473b77f0f4497bd6b5df05cdfe4a4b3b90b7db5bbda"
     },
     "project.yml": {
-      "bytes": 2423,
-      "sha256": "ff068056530f92fe0b1629be8776c9aaa443c140a01d0574c64b208aadab5145"
+      "bytes": 2413,
+      "sha256": "bc35bad1750b4fdd960f4b8a3433a95cc2427f819a85d18ddfc04219442f07f0"
     },
     "BUILD": {
       "bytes": 4,

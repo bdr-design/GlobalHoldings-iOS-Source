@@ -49,8 +49,12 @@ if(s.GH_FLEET_DATA.mode(state)!=='store')s.GH_MIGRATION_CORE.migrateFleet(state)
     assert(referenced(json).every(id=>vault.chunks.has(id)),'every listed chunk is in the vault before the commit');
     assert.equal((json.match(/"\$ghText":"chunk-v1"/g)||[]).length,root.stateCodec.chunks.length,'one marker per listed chunk');
     assert(!full.includes('$ghText'),'serialize (exports, WebStorage) stays self-contained');
-    assert(json.length<full.length*.5,`the native save is a fraction of the full text (${json.length} of ${full.length})`);
-    return {nativeBytes:json.length,fullBytes:full.length,textChunks:root.stateCodec.chunks.length,uploaded:textUploads().length};
+    // Build 359: records are issued compact (about a fifth of a whole record), so they are no longer most of the save
+    // text: what leaves it is the sealed proof records themselves, every one of their segments a vault chunk.
+    const fullRecords=JSON.stringify(JSON.parse(full).documentProofs.recordsById),nativeRecords=JSON.stringify(root.documentProofs.recordsById),inline=nativeRecords.replace(/\{"\$ghText":"chunk-v1","id":"[^"]+","bytes":\d+\}/g,'');
+    assert(!/DOCP-|compact-document/.test(inline)&&inline.length<200,`the sealed proof records are all in vault chunks (${inline})`);
+    assert(full.length-json.length>=fullRecords.length*.9,`the native save leaves their text out (${json.length} of ${full.length}; records ${fullRecords.length})`);
+    return {nativeBytes:json.length,fullBytes:full.length,recordText:fullRecords.length,textChunks:root.stateCodec.chunks.length,uploaded:textUploads().length};
   });
   await test('the chunked save decodes to exactly the state',async()=>{
     const json=vault.saves.at(-1),decoded=CODEC.deserialize(json,{resolveChunk:resolver});

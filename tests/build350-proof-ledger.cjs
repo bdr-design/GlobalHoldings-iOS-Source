@@ -54,17 +54,20 @@ assert.equal(trusted(x,state).ok,true,'trusted validation of an honest state');
   assert.equal(trusted(x,state).ok,false,'trusted: an invoice edited after signing is STILL rejected');
   invoice.total=original;assert.equal(trusted(x,state).ok,true);
 }
-// (2b) editing a field that also feeds the live-document comparison (issuedAtSim) is caught even in trusted mode
+// (2b) editing a field that also feeds the live-document comparison (issuedAtSim) is caught even in trusted mode.
+// Build 359: records are issued in the compact form (no copy of the signed content): the issue time and chain link the
+// content is rebuilt with are the record's own fields, read when the document is verified.
 {
   assert.equal(full(x,state).ok,true);
-  const restore=replaceEdited(state.documentProofs.recordsById,ids(state)[1],record=>{record.signedContent.issuedAtSim+=7;});
+  assert.equal(state.documentProofs.recordsById[ids(state)[1]].form,x.s.GH_DOCUMENT_PROOF.COMPACT_FORM,'records are issued compact');
+  const restore=replaceEdited(state.documentProofs.recordsById,ids(state)[1],record=>{record.issuedAtSim+=7;});
   assert.equal(full(x,state).ok,false);assert.equal(trusted(x,state).ok,false,'trusted mode still catches edits that break the signed-document comparison');
   restore();assert.equal(trusted(x,state).ok,true);
 }
 // (2) a NEW record that was tampered before it was ever verified is rejected by trusted validation
 {
   x.issue(1);
-  const restore=replaceEdited(state.documentProofs.recordsById,ids(state).at(-1),record=>{record.signedContent.issuedAtSim+=999;});
+  const restore=replaceEdited(state.documentProofs.recordsById,ids(state).at(-1),record=>{record.issuedAtSim+=999;});
   assert.equal(trusted(x,state).ok,false,'trusted validation verifies unverified records in full');
   restore();
   assert.equal(trusted(x,state).ok,true);
@@ -74,8 +77,8 @@ assert.equal(trusted(x,state).ok,true,'trusted validation of an honest state');
   const sealed=x.s.GH_TRANSACTION_CORE.sealCollections(state),record=state.documentProofs.recordsById[ids(state)[3]];void sealed;
   assert.equal(full(x,state).ok,true);                       // marks everything as verified
   assert.equal(x.s.GH_TRANSACTION_CORE.isSealed(record),true,'verified proof records are sealed');
-  assert.throws(()=>{record.signedContent.material.payload.note='edited in place';},TypeError,'an in-place edit of a sealed record throws');
-  const restore=replaceEdited(state.documentProofs.recordsById,ids(state)[3],copy=>{copy.signedContent.material.payload.note=`${copy.signedContent.material.payload.note} (edited)`;});
+  assert.throws(()=>{record.issuedAtSim+=1;},TypeError,'an in-place edit of a sealed record throws');
+  const restore=replaceEdited(state.documentProofs.recordsById,ids(state)[3],copy=>{copy.issuedAtSim+=1;});
   assert.equal(full(x,state).ok,false,'plain validation catches a replaced (edited) record');
   assert.equal(trusted(x,state).ok,false,'trusted validation catches it too: the copy is not in the ledger');
   // (4) a clone is a fresh object graph: it inherits nothing unless inheritVerified() is called
