@@ -17,7 +17,8 @@ const P=s.GH_DOCUMENT_PROOF,T=s.GH_TRANSACTION_CORE,Schema=s.GH_SAVE_SCHEMA,resu
 const test=(name,fn)=>{try{results.push({name,ok:true,detail:fn()});}catch(error){results.push({name,ok:false,error:String(error?.stack||error).slice(0,2500)});}};
 const bytes=value=>Buffer.byteLength(JSON.stringify(value||{}));
 function state(){const v=minimal();v.profile={name:'Archive seal',founder:'Founder'};s.GH_FINANCE_CORE.ensure(v);v.finance.auditArchive={records:{invoices:[]},digests:[]};return v;}
-function invoice(v,id,at=0,detail=''){const d={id,number:id,company:'group',counterparty:'Customer / عميل',amount:10,total:10,status:'محصلة',at,...(detail?{lineDetail:detail}:{})};P.sealDocument(v,d,{type:'audit-invoice',companyId:'group'});return d;}
+// Build 359: a final document (a collected invoice) is sealed and never amended; a document amended here starts open.
+function invoice(v,id,at=0,detail='',status='محصلة'){const d={id,number:id,company:'group',counterparty:'Customer / عميل',amount:10,total:10,status,at,...(detail?{lineDetail:detail}:{})};P.sealDocument(v,d,{type:'audit-invoice',companyId:'group'});return d;}
 const amend=(v,d,transition,mutate)=>{const out=T.execute(v,{label:`amend-${d.id}`,apply:()=>P.amendDocument(v,d,{transition,mutate})});assert.equal(out.committed,true,out.reason);};
 
 const v=state();
@@ -31,7 +32,7 @@ test('issuing goes on past the old 16 MB archive limit',()=>{
 });
 
 test('earlier versions become checkpoints whatever their age; period sums follow the rows',()=>{
-  const live=[];for(let i=0;i<30;i++){const d=invoice(v,`LIVE-${i}`);v.finance.invoices.push(d);live.push(d);}
+  const live=[];for(let i=0;i<30;i++){const d=invoice(v,`LIVE-${i}`,0,'','مستحقة');v.finance.invoices.push(d);live.push(d);}
   for(const d of live)amend(v,d,'invoice-collected',x=>{x.collectedAt=1;});
   for(const d of live.slice(0,10))amend(v,d,'invoice-transfer-linked',x=>{x.transferRef='TR-1';});
   const first=P.checkpointAncestors(v);assert.equal(first.checkpointed,40,'every earlier version, of this very second');
@@ -65,9 +66,9 @@ test('the audit archive keeps 12 months and at most 20,000 rows; older rows are 
   vm.runInContext(app.slice(start,end)+'\nglobalThis.sealApi={auditSealSelection,liveProofIds,sealAuditRound,AUDIT_DETAIL_LIMIT,AUDIT_RETENTION_SECONDS};',s);
   const api=s.sealApi;assert.equal(api.AUDIT_DETAIL_LIMIT,20000);assert.equal(api.AUDIT_RETENTION_SECONDS,365*86400);
   const day=86400,old=[];
-  T.execute(w,{label:'old',apply:()=>{for(let i=0;i<600;i++){const d=invoice(w,`INV-${String(i).padStart(5,'0')}`,i*600);old.push(d);}}});
+  T.execute(w,{label:'old',apply:()=>{for(let i=0;i<600;i++){const d=invoice(w,`INV-${String(i).padStart(5,'0')}`,i*600,'',i<300?'مستحقة':'محصلة');old.push(d);}}});
   // Earlier versions too: half the old invoices were amended before they were archived.
-  for(const d of old.slice(0,300)){w.finance.invoices.push(d);amend(w,d,'invoice-collected',x=>{x.collectedAt=2;});}w.finance.invoices=[];
+  for(const d of old.slice(0,300)){w.finance.invoices.push(d);amend(w,d,'invoice-collected',x=>{x.collectedAt=2;x.status='محصلة';});}w.finance.invoices=[];
   P.checkpointAncestors(w);w.finance.auditArchive.records.invoices=old.map(d=>JSON.parse(JSON.stringify(d)));
   w.simSeconds=400*day;
   const recent=invoice(w,'INV-RECENT',w.simSeconds-10*day);w.finance.auditArchive.records.invoices=[...w.finance.auditArchive.records.invoices,JSON.parse(JSON.stringify(recent))];

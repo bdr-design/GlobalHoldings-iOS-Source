@@ -509,7 +509,27 @@
   // sequence (and, for a map, its keys) is unchanged since the last save, the previous JSON text of the encoded
   // collection is reused. The output is byte-for-byte what JSON.stringify(encodeState(state)) produces.
   const COLLECTION_TEXT=new Map(),NONCE=`${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-  let collectionCacheStats={hits:0,misses:0};
+  let collectionCacheStats={hits:0,misses:0,open:0},layoutCacheStats={hits:0,misses:0};
+  // The JSON text of a fragment token (JSON.stringify of `\u0000gh-codec:${NONCE}:${index}\u0000`).
+  const FRAGMENT_TOKEN=new RegExp(`"\\\\u0000gh-codec:${NONCE}:(\\d+)\\\\u0000"`,'g');
+  // Build 359 (a save hashed the identity of every member of every encoded collection to find its segments, sliced it
+  // and asked each member whether it is sealed, unchanged or not): the layout of each collection (member sequence, keys,
+  // segment bounds and slices, and which segments are wholly sealed) is kept by path. A collection whose member sequence
+  // and keys are the same objects as at the last save reuses it after one identity comparison per member. Sealing is
+  // permanent, so a segment found sealed stays sealed; one that was not is asked again.
+  const PATH_LAYOUT=new Map();
+  function sameSequence(cached,value){
+    if(Array.isArray(value)){if(cached.keys||cached.members.length!==value.length)return false;for(let i=0;i<value.length;i++)if(cached.members[i]!==value[i])return false;return true;}
+    const keys=Object.keys(value);if(!cached.keys||cached.keys.length!==keys.length)return false;
+    for(let i=0;i<keys.length;i++)if(cached.keys[i]!==keys[i]||cached.members[i]!==value[keys[i]])return false;
+    return true;
+  }
+  function collectionLayout(key,value){
+    const cached=PATH_LAYOUT.get(key);if(cached&&sameSequence(cached,value)){layoutCacheStats.hits++;return cached;}
+    const split=segmented(value),layout=split?segmentBounds(value):null,parts=split?segmentSlices(value,layout):[Array.isArray(value)?value.slice():{...value}],keys=Array.isArray(value)?null:Object.keys(value);
+    const entry={keys,members:keys?keys.map(name=>value[name]):value.slice(),split,layout,parts,sealed:new Array(parts.length).fill(null)};
+    PATH_LAYOUT.set(key,entry);layoutCacheStats.misses++;return entry;
+  }
   function sealedMembers(value){
     const sealed=globalThis.GH_TRANSACTION_CORE?.isSealed;if(typeof sealed!=='function')return null;
     const keys=Array.isArray(value)?null:Object.keys(value),members=keys?keys.map(key=>value[key]):value.slice();
@@ -553,15 +573,18 @@
     }
     const scan=scanPaths(out),paths=scan.paths;
     if(!paths.length&&!binaryPaths.length&&!scan.runs.length)return JSON.stringify(state);
-    let segments=false;
+    let segments=false;const livePaths=new Set();
     for(const path of paths){
-      const value=readPath(out,path),key=JSON.stringify(path),split=segmented(value);if(split)segments=true;
-      const layout=split?segmentBounds(value):null,parts=split?segmentSlices(value,layout):[value],texts=[];let cached=true;
+      const value=readPath(out,path),key=JSON.stringify(path),shape=collectionLayout(key,value),split=shape.split;if(split)segments=true;livePaths.add(key);
+      const layout=shape.layout,parts=shape.parts,texts=[];let cached=true;
       for(let index=0;index<parts.length;index++){
-        const partKey=split?`${key}${layout.bounds[index].key.startsWith('#')?'':'@'}${layout.bounds[index].key}`:key,current=sealedMembers(parts[index]);
-        if(!current){cached=false;break;}
+        const partKey=split?`${key}${layout.bounds[index].key.startsWith('#')?'':'@'}${layout.bounds[index].key}`:key;
+        let current=shape.sealed[index];if(!current){current=sealedMembers(parts[index]);if(current)shape.sealed[index]=current;}
+        // Build 359: a segment with a member that is not sealed (an open finance document) is encoded afresh, inline;
+        // the sealed segments beside it keep their cached text (the text is the same as encodeCollection's).
+        if(!current){if(!split){cached=false;break;}texts.push(JSON.stringify(encodeRows(parts[index])));collectionCacheStats.open++;continue;}
         live.add(partKey);let entry=COLLECTION_TEXT.get(partKey);
-        if(entry&&sameMembers(entry,current))collectionCacheStats.hits++;
+        if(entry&&(entry.members===current.members&&entry.keys===current.keys||sameMembers(entry,current)))collectionCacheStats.hits++;
         else{entry={keys:current.keys,members:current.members,text:JSON.stringify(encodeRows(parts[index]))};COLLECTION_TEXT.set(partKey,entry);collectionCacheStats.misses++;}
         if(textChunks&&entry.text.length>=TEXT_CHUNK_MIN){const chunk=textChunkOf(entry,partKey);textChunks.push({id:chunk.id,byteLength:chunk.bytes,text:entry.text});texts.push(`{"$ghText":"chunk-v1","id":${JSON.stringify(chunk.id)},"bytes":${chunk.bytes}}`);}
         else texts.push(entry.text);
@@ -571,14 +594,17 @@
       const token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;fragments.push({token:JSON.stringify(token),text});out=writePathCopy(out,path,token);yield;
     }
     for(const key of [...COLLECTION_TEXT.keys()])if(!live.has(key))COLLECTION_TEXT.delete(key);
+    for(const key of [...PATH_LAYOUT.keys()])if(!livePaths.has(key))PATH_LAYOUT.delete(key);
     for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
     out.stateCodec=codecMeta(paths,binaryPaths,scan.runs,segments,textChunks?textChunks.map(chunk=>chunk.id):[]);
     const members=[];for(const key of Object.keys(out)){const json=yield* stringifySteps(out[key]);if(json!==undefined)members.push(`${JSON.stringify(key)}:${json}`);yield;}
     const text=`{${members.join(',')}}`;if(!fragments.length)return text;
-    for(const fragment of fragments){fragment.at=text.indexOf(fragment.token);if(fragment.at<0||text.indexOf(fragment.token,fragment.at+1)>=0)throw new Error('state-codec-fragment-token');}
-    fragments.sort((a,b)=>a.at-b.at);const parts=[];let cursor=0;
-    for(const fragment of fragments){parts.push(text.slice(cursor,fragment.at),fragment.text);cursor=fragment.at+fragment.token.length;}
-    parts.push(text.slice(cursor));return parts.join('');
+    // Build 359 (each fragment searched the whole text twice, O(fragments x text)): one pass replaces every token; each
+    // must appear exactly once, as before.
+    const found=new Array(fragments.length).fill(0);
+    const result=text.replace(FRAGMENT_TOKEN,(match,index)=>{const at=Number(index),fragment=fragments[at];if(!fragment||fragment.token!==match)throw new Error('state-codec-fragment-token');found[at]++;return fragment.text;});
+    if(found.some(count=>count!==1))throw new Error('state-codec-fragment-token');
+    return result;
   }
   function deserialize(json,options={}){return decodeState(JSON.parse(json),options);}
   // Build 358 (million-asset save): the save text with the record buffer as a 'chunks-v1' manifest. A chunk keeps its
@@ -630,7 +656,7 @@
     return {text,chunks:[...manifest.chunks,...textChunks]};
   }
 
-  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,serializeSteps,deserialize,selectPaths,serializeChunked,serializeChunkedSteps,adoptChunkIds,bytesToBase64:bytes=>base64Encode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)),cacheStats:()=>({...collectionCacheStats,entries:COLLECTION_TEXT.size,rows:{...rowCacheStats},chunks:{...chunkCacheStats},text:{...textChunkStats,adoptable:ADOPTED_TEXT.size}}),textChunkMin:TEXT_CHUNK_MIN,isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
+  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,serializeSteps,deserialize,selectPaths,serializeChunked,serializeChunkedSteps,adoptChunkIds,bytesToBase64:bytes=>base64Encode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)),cacheStats:()=>({...collectionCacheStats,layout:{...layoutCacheStats,entries:PATH_LAYOUT.size},entries:COLLECTION_TEXT.size,rows:{...rowCacheStats},chunks:{...chunkCacheStats},text:{...textChunkStats,adoptable:ADOPTED_TEXT.size}}),textChunkMin:TEXT_CHUNK_MIN,isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
   globalThis.GH_STATE_CODEC=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_STATE_CODEC=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

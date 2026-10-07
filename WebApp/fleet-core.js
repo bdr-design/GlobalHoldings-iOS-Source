@@ -180,7 +180,9 @@
     for(const otherRouteId of routeOrder){if(otherRouteId===routeId)continue;const group=ctx.groups.get(`${routeOwner.companyId}\u0000air\u0000${otherRouteId}`);const other=group?ctx.firstUserOtherThan(group,assetId):null;if(!other)continue;const registered=ctx.routeIndex.get(otherRouteId),otherSignature=registered?ctx.signature(registered):other.routeSignature;if(signature&&otherSignature&&signature===otherSignature)return other;if(registered&&globalThis.GH_ROUTE_CORE?.corridorMetrics?.(registered,route)?.duplicate)return other;}
     return null;
   }
-  function routeConflict(state,assetId,routeId,route){return routeConflictWithContext(state,assetId,routeId,route,routeConflictContext(state));}
+  // Build 359 (the road dispatch checked every truck with a context built from the whole fleet: 14 s for one command):
+  // a caller checking many assets against one unchanged state passes one context (routeConflictContext) to every check.
+  function routeConflict(state,assetId,routeId,route,context=null){return routeConflictWithContext(state,assetId,routeId,route,context||routeConflictContext(state));}
   function routeConflicts(state,routes){const ctx=routeConflictContext(state),out=new Map();for(const route of routes||[]){if(!route?.id)continue;out.set(route.id,routeConflictWithContext(state,null,route.id,route,ctx));}return out;}
   function applyRouteAssignment(asset,p,slot,signature=routeSignature(p.route)){
     asset.routeId=p.routeId||null;asset.routeSignature=signature;asset.releaseExclusiveRouteOnArrival=false;asset.baseFacility=p.baseFacility??asset.baseFacility;asset.phase=p.phase||'turnaround';asset.progress=0;asset.dwellRemaining=0;asset.crewBlocked=false;asset.routeSlot=slot;asset.departureScheduled=false;delete asset.departureScheduledAt;delete asset.simulationFault;
@@ -551,6 +553,6 @@
     if(cmd==='reconcile-staffing')return reconcileStaffing(state,p.facilityResolver);
     throw new Error(`Unknown fleet command: ${cmd}`);
   }
-  const API={VERSION,purchaseCatalogs,ROLE_DEFAULTS,ROUTE_FLEET_CAPACITY,ROUTE_MAX_FLEET_CAPACITY,requiredRouteCapacity,ROUTE_DEPARTURE_INTERVAL_SECONDS,AUTOMATIC_ROUTE_DENSITY,assetMode,assetOwnerCompanyId,routeMode,routeOwnerCompanyId,requireFleetAsset,requireFleetRoute,normalizeAsset,departDraft,departureDelay,routeCapacity,automaticRouteTargetLoad,routeSignature,routeConflict,routeConflicts,assignRoutesBatch,departBatch,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,payrollSummary,monthlyPayroll,headcount,recordDeliveryBatch,withDisposalBatch};
+  const API={VERSION,purchaseCatalogs,ROLE_DEFAULTS,ROUTE_FLEET_CAPACITY,ROUTE_MAX_FLEET_CAPACITY,requiredRouteCapacity,ROUTE_DEPARTURE_INTERVAL_SECONDS,AUTOMATIC_ROUTE_DENSITY,assetMode,assetOwnerCompanyId,routeMode,routeOwnerCompanyId,requireFleetAsset,requireFleetRoute,normalizeAsset,departDraft,departureDelay,routeCapacity,automaticRouteTargetLoad,routeSignature,routeConflict,routeConflictContext,routeConflicts,assignRoutesBatch,departBatch,ensure,find,validate,execute,staffingPlan,provisionStaffing,reconcileStaffing,synchronizeCrew,payrollSummary,monthlyPayroll,headcount,recordDeliveryBatch,withDisposalBatch};
   globalThis.GH_FLEET_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('fleet',API);if(globalThis.window&&window!==globalThis)window.GH_FLEET_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

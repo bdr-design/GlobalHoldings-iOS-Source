@@ -30,18 +30,24 @@
   function status(detail){if(globalThis.dispatchEvent&&globalThis.CustomEvent)globalThis.dispatchEvent(new CustomEvent('gh-persistence-status',{detail}));}
   function validateState(state){return globalThis.GH_SAVE_SCHEMA?.validate?.(state)||{ok:false,errors:['save-schema-unavailable']};}
   function assertState(state){const v=validateState(state);if(!v.ok)throw new Error(`invalid-save:${(v.errors||[]).join(',')}`);}
-  // Build 350: recurring saves of the live game use the verified-once ledger (see save-schema.js) and run a FULL validation
-  // every FULL_VALIDATION_EVERY-th save, so an in-place edit of an already verified proof is still found within minutes.
-  // Loads, imports, manual slots, exports and recovery keep using assertState() (always full).
-  const FULL_VALIDATION_EVERY=10;let recurringValidations=0;
-  // prevalidated: the caller validated this exact state (trusted) just before; only the scheduled full pass remains.
+  // Build 350: recurring saves of the live game use the verified-once ledger (see save-schema.js). Loads, imports, manual
+  // slots, exports and recovery keep using assertState() (always full).
+  // Build 359 (owner: no save walks every document; the full validation of every tenth save took 77 ms on iPhone at
+  // 13,291 documents): the fresh verification of every proof is the proof audit of maintenance (GH_SAVE_SCHEMA.
+  // createProofAudit, a few proofs per pass). When the audit finds a fault that a full validation confirms, it asks for
+  // full validations here (requireFullValidation): every recurring save then validates in full, and is refused while the
+  // state is invalid, as a scheduled full pass refused it before; the first one that passes clears the request.
+  let fullValidationReason=null;
+  function requireFullValidation(reason='proof-audit'){fullValidationReason=String(reason||'proof-audit');return true;}
+  // prevalidated: the caller validated this exact state (trusted) just before.
   function assertRecurringState(state,{prevalidated=false}={}){
     // Build 358: the rows a save writes are sealed first (immutable by contract), so later full passes and durable drafts
     // can rely on them not changing (see GH_TRANSACTION_CORE.registerSealedCollections).
     try{globalThis.GH_TRANSACTION_CORE?.sealCollections?.(state);}catch(_error){/* sealing is an optimisation */}
-    const full=(++recurringValidations%FULL_VALIDATION_EVERY)===0,schema=globalThis.GH_SAVE_SCHEMA;if(prevalidated&&!full)return;
+    const full=fullValidationReason!==null,schema=globalThis.GH_SAVE_SCHEMA;if(prevalidated&&!full)return;
     const v=(full?schema?.validate?.(state):schema?.validate?.(state,{trustVerified:true}))||{ok:false,errors:['save-schema-unavailable']};
     if(!v.ok)throw new Error(`invalid-save:${(v.errors||[]).join(',')}`);
+    if(full)fullValidationReason=null;
   }
   // Build 353: one save used to UTF-8 encode the same multi-megabyte JSON up to three times (native size check,
   // browser cache size check, SHA-256). The encoded bytes are now produced once per save and shared; values are
@@ -440,7 +446,7 @@
     try{assertState(state);const day=Math.floor((Number(state.simSeconds)||0)/86400)+1,pack={format:EXPORT_FORMAT,version:appVersion,saveSchemaVersion:SAVE_SCHEMA_VERSION,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,day,state:stateCodec()?stateCodec().encodeState(state):clone(state)};const blob=new Blob([JSON.stringify(pack,null,2)],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`GlobalHoldings_Save_v${appVersion}_D${day}.ghsave`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return {ok:true,filename:a.download};}catch(e){return {ok:false,reason:'export-failed',error:String(e.message||e)};}
   }
   function migrateMetadata(state){state.advanced=state.advanced||{};state.advanced.saveSlots=Array.isArray(state.advanced.saveSlots)?state.advanced.saveSlots:[null,null,null];for(let i=0;i<3;i++){const s=slotStatus(i);state.advanced.saveSlots[i]=s.exists?{date:s.meta?.label||`اليوم ${s.meta?.day||'—'}`,version:s.meta?.appVersion||'legacy',simSeconds:Number(s.meta?.simSeconds)||0}:null;}return state.advanced.saveSlots;}
-  const API=Object.freeze({VERSION,noteVaultChunks,forgetVaultChunks,vaultChunkCount:()=>vaultChunks.size,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||slicedLocked||recoveryRequired,commitStateSliced,slicedSettled,slicedActive:()=>!!slicedSave,
+  const API=Object.freeze({VERSION,requireFullValidation,fullValidationRequired:()=>fullValidationReason,noteVaultChunks,forgetVaultChunks,vaultChunkCount:()=>vaultChunks.size,SLOT_FORMAT,LIMITS:PERSISTENCE_LIMITS,fleetRecordLimit,slotStatus,saveSlot,loadSlot,clearSlot,exportSave,migrateMetadata,parseSlot,inspectJSON,inspectNativeJSON,writeJSON,writeState,commitState,commitDurableState,recoverBrowserState,acknowledgeRecovery,markRecoveryRequired,requestNative,receiveAck,receiveSlotAck,drain,replaceState,isLocked:()=>locked||durableLocked||slicedLocked||recoveryRequired,commitStateSliced,slicedSettled,slicedActive:()=>!!slicedSave,
     // Cheap read for the save policy (GH_SAVE_POLICY): when the last save of any kind ran.
     saveCadence:()=>({lastSaveAtMs}),telemetry:()=>({generation,pending:pending.size,slotPending:slotPending.size,ordinaryInFlight:!!ordinaryInFlight,ordinaryDirty,recoveryRequired,samples:clone(samples),timings:{lastSaveBreakdown:clone(lastSaveBreakdown),lastNativeAck:clone(lastNativeAck),samples:clone(timingSamples)}})});
   globalThis.GH_PERSISTENCE=API;if(globalThis.window&&window!==globalThis)window.GH_PERSISTENCE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;

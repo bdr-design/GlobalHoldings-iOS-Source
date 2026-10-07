@@ -51,12 +51,17 @@ const copy=()=>JSON.parse(JSON.stringify(state));
  assert.equal(Proof.verifyCheckpoints(t,null,{fresh:true}).ok,false,'a missing checkpoint breaks its period digest');}
 
 // A document whose earlier versions are checkpoints is amended again and still verifies (inside a transaction, as the
-// game does it; the new version links to a whole record whose predecessor is a checkpoint).
-{const document=documents().find(row=>{const record=Proof.record(state,row.documentProofId);return record?.previousProofId&&Proof.checkpoint(state,record.previousProofId);});
- assert.ok(document,'a document whose history is checkpointed');
- const out=TX.execute(state,{label:'amend-after-checkpoint',apply:()=>Proof.amendDocument(state,document,{transition:'debt-balance-adjusted',mutate:row=>{row.note=`${row.note||''} QA`;}})});
- assert.equal(out.committed,true);const record=Proof.record(state,document.documentProofId);assert.ok(record.previousProofId&&Proof.record(state,record.previousProofId),'the new version links to the whole one before it');
- assert.equal(Proof.verifyDocument(state,document).ok,true,'the amended document verifies');assert.equal(Schema.validate(state).ok,true);}
+// game does it; the new version links to a whole record whose predecessor is a checkpoint). Build 359: a final document
+// is sealed and never amended, so the document is an open payable: its cheque is issued (a second version), its first
+// version becomes a checkpoint, then the cheque clears (a third version).
+{state.simSeconds+=3600;const open=e.command('finance','issue-invoice',{kind:'مصروف',amount:1000,company:'air',counterparty:'Supplier LLC',note:'QA open payable'});
+ const cheque=e.command('finance','issue-cheque',{company:'air',amount:1000,invoiceNumber:open.number,requestRef:'QA-CHECKPOINT-OPEN'});
+ while(Proof.checkpointAncestors(state).checkpointed){}
+ const invoice=()=>state.finance.invoices.find(row=>row.number===open.number),before=Proof.record(state,invoice().documentProofId);
+ assert.ok(before?.previousProofId&&Proof.checkpoint(state,before.previousProofId),'a document whose history is checkpointed');assert.equal(TX.isSealed(invoice()),false,'an open document is not sealed');
+ const out=TX.execute(state,{label:'amend-after-checkpoint',apply:()=>e.command('finance','settle-cheque',{id:cheque.id})});
+ assert.equal(out.committed,true);const record=Proof.record(state,invoice().documentProofId);assert.ok(record.previousProofId===before.id&&Proof.record(state,record.previousProofId),'the new version links to the whole one before it');
+ assert.equal(Proof.verifyDocument(state,invoice()).ok,true,'the amended document verifies');assert.equal(Schema.validate(state).ok,true);}
 
 // The save codec keeps it exact.
 {if(!s.GH_STATE_CODEC)e.load('state-codec-core');const C=s.GH_STATE_CODEC,back=C.deserialize(C.serialize(state));assert.equal(JSON.stringify(back.documentProofs.periodDigests),JSON.stringify(store().periodDigests));assert.equal(Proof.verifyCheckpoints(back,null,{fresh:true}).ok,true);assert.equal(Schema.validate(back).ok,true,'a reloaded save validates');}

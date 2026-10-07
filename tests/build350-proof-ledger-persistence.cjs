@@ -1,6 +1,7 @@
 'use strict';
-// Build 350: recurring saves use the verified-once ledger, and every 10th one is a FULL validation, so an in-place edit of an
-// already verified proof record is found within ten saves. Loads/imports/slots always validate fully.
+// Build 350: recurring saves use the verified-once ledger. Loads/imports/slots always validate fully. Build 359: the full
+// validation of every tenth save became the maintenance proof audit (GH_SAVE_SCHEMA.createProofAudit); a confirmed audit
+// fault asks persistence for full validations (requireFullValidation), checked at the end.
 const assert=require('node:assert/strict');
 const path=require('node:path');
 const ROOT=process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..');
@@ -37,4 +38,8 @@ assert.equal(P.saveSlot(1,state,{label:'t'}).ok,false,'a manual slot save valida
 state.documentProofs.recordsById[recordIds[0]]=original;
 assert.equal(V.validate(state).ok,true);
 assert.equal(P.commitState(state,{storageKey:'main'}).ok,true,'the restored record saves again');
-console.log(JSON.stringify({suite:'build350-proof-ledger-persistence',recurringSavesChecked:12,fullValidationEvery:10,sealed:true,rejectedAt:failures}));
+// Build 359: after a confirmed audit fault, a recurring save validates in full even when its caller validated (trusted)
+// just before, and the request clears once a full validation passes.
+P.requireFullValidation('qa');assert.equal(P.fullValidationRequired(),'qa');
+assert.equal(P.commitState(state,{storageKey:'main'}).ok,true,'the honest state passes the full validation');assert.equal(P.fullValidationRequired(),null,'and the request clears');
+console.log(JSON.stringify({suite:'build350-proof-ledger-persistence',recurringSavesChecked:12,fullValidationOnRequest:true,sealed:true,rejectedAt:failures}));

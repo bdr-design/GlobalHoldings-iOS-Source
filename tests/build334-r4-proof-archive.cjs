@@ -5,10 +5,11 @@ const {s}=harness(['save-schema','authorization-core','document-proof-core','tra
 const P=s.GH_DOCUMENT_PROOF,A=s.GH_AUTHORIZATION,T=s.GH_TRANSACTION_CORE,rows=[];
 function test(name,fn){try{fn();rows.push({name,ok:true});}catch(e){rows.push({name,ok:false,error:String(e.stack||e).slice(0,5000)});}}
 function state(){const v=minimal();v.profile={name:'Retained history',founder:'Founder'};s.GH_FINANCE_CORE.ensure(v);v.finance.auditArchive={records:{invoices:[]},digests:[]};return v;}
-function invoice(v,id){const d={id,number:id,company:'group',counterparty:'Customer / عميل',amount:1,status:'محصلة'};P.sealDocument(v,d,{type:'audit-invoice',companyId:'group'});return d;}
+// Build 359: a final document (a collected invoice) is sealed and never amended; REAL-0, amended below, starts open.
+function invoice(v,id,status='محصلة'){const d={id,number:id,company:'group',counterparty:'Customer / عميل',amount:1,status};P.sealDocument(v,d,{type:'audit-invoice',companyId:'group'});return d;}
 const v=state();
 test('6001 genuine retained documents admit new work without increasing active count',()=>{
- for(let i=0;i<6001;i++){const d=invoice(v,`REAL-${i}`);v.finance.auditArchive.records.invoices.push(d);}
+ for(let i=0;i<6001;i++){const d=invoice(v,`REAL-${i}`,i===0?'مستحقة':'محصلة');v.finance.auditArchive.records.invoices.push(d);}
  assert.equal(P.records(v).length,6001);assert(Object.keys(v.documentProofs.recordsById).length<=5000);
  assert(Object.keys(v.documentProofs.archiveById).length>=1000);
  assert(P.verifyDocument(v,v.finance.auditArchive.records.invoices[0]).ok);

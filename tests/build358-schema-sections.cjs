@@ -21,7 +21,10 @@ for(let order=0;order<3;order++){
   assert.equal(out.committed,true);
 }
 const drain=(target,options)=>{const steps=Schema.validationSteps(target,options),sections=[];let step;while(!(step=steps.next()).done)sections.push(step.value);return {result:step.value,sections};};
-const signed=()=>Proof.stateDocuments(state).find(row=>row?.documentProofId&&Number(row.amount??row.total)>0);
+// Build 359: a final document (the seed's paid purchases) is sealed, frozen and never edited; the tampered document is an
+// open payable, which the business rules may still amend.
+e.command('finance','issue-invoice',{kind:'مصروف',amount:1000,company:'air',counterparty:'Supplier LLC',note:'QA open payable'});
+const signed=()=>Proof.stateDocuments(state).find(row=>row?.documentProofId&&!TX.isSealed(row)&&Number(row.amount??row.total)>0);
 
 // 1. Same result as validate(), section by section, valid and broken.
 {

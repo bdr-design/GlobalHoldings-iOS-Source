@@ -6,5 +6,9 @@ function execute(ctx,cmd,p={}){const s=ctx.state||ctx,o=ensure(s);
  if(cmd==='record-alert'){s.alerts=Array.isArray(s.alerts)?s.alerts:[];s.eventLog=Array.isArray(s.eventLog)?s.eventLog:[];const text=String(p.text||'').trim();if(!text)return false;s.alerts.unshift(text);s.alerts=s.alerts.slice(0,40);s.eventLog.unshift({id:p.id||`OP-${Math.floor(now(s))}-${s.eventLog.length+1}`,at:now(s),type:p.type||'operation',text});s.eventLog=s.eventLog.slice(0,400);return true;}
  throw new Error(`Unknown operations command: ${cmd}`);
 }
-const API={VERSION,ensure,execute};globalThis.GH_OPERATIONS_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('operations',API);if(globalThis.window&&window!==globalThis)window.GH_OPERATIONS_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+// Build 359 (iPhone: a system alert took a full copy of the game state, 79 ms, as its rollback snapshot): the roots each
+// command writes, so a system dispatch snapshots only those (and its command records, GH_DOMAIN_COMMANDS).
+const WRITE_SCOPES=Object.freeze({'record-alert':Object.freeze(['operations','alerts','eventLog']),'daily-brief':Object.freeze(['operations'])});
+function transactionScope(name){const scope=WRITE_SCOPES[name];return scope?{scope:[...scope]}:null;}
+const API={VERSION,ensure,execute,transactionScope};globalThis.GH_OPERATIONS_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('operations',API);if(globalThis.window&&window!==globalThis)window.GH_OPERATIONS_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

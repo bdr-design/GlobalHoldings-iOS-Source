@@ -105,6 +105,31 @@
     for(const [period,entry] of legacy){const list=grouped.get(period)||[],sorted=list.slice().sort((a,b)=>String(a.id).localeCompare(String(b.id))).map(checkpointEntry);if(entry.period!==period||entry.count!==list.length||digest(stable(sorted))!==entry.digest)continue;next[period]={period,form:PERIOD_FORM,count:list.length,digest:hexOf(list.reduce((total,row)=>(total+sumOf(checkpointDigest(row)))%DIGEST_MOD,0n))};count++;}
     if(count)store.periodDigests=next;return {changed:count>0,count};
   }
+  function checkpointRowFault(row,id){
+    if(!row||typeof row!=='object'||Array.isArray(row)||row.id!==id||Object.keys(row).sort().join(',')!==CHECKPOINT_KEYS||!isDigest(row.contentDigest)||!clean(row.documentId)||!Number.isSafeInteger(row.chainDepth)||row.chainDepth<0||row.chainDepth>LIMITS.chainDepth||row.period!==checkpointPeriod(row.createdAtSim))return 'document-proof-checkpoint-record';
+    if(row.chainDepth>0?!(row.previousProofId&&isDigest(row.previousContentDigest)):row.previousProofId!==null)return 'document-proof-checkpoint-chain';
+    return null;
+  }
+  // Build 359: the fresh check of verifyCheckpoints in parts, for the proof audit (GH_SAVE_SCHEMA.createProofAudit). The
+  // plan checks the shapes, residency and period membership once (no hashing) and lists each period with its entry and
+  // rows; verifyCheckpointPeriod then hashes one period afresh. A period whose entry or rows were replaced since the
+  // plan is skipped (the next cycle checks it).
+  function checkpointAuditPlan(state){
+    const store=state?.documentProofs||{},rows=store.checkpointsById,periods=store.periodDigests;
+    if(rows===undefined&&periods===undefined)return {ok:true,periods:[]};
+    if(!rows||typeof rows!=='object'||Array.isArray(rows)||!periods||typeof periods!=='object'||Array.isArray(periods))return {ok:false,reason:'document-proof-checkpoint-shape'};
+    const grouped=new Map();
+    for(const [id,row] of Object.entries(rows)){if(!row||typeof row!=='object')return {ok:false,reason:'document-proof-checkpoint-record'};if(store.recordsById?.[id]||store.archiveById?.[id])return {ok:false,reason:'document-proof-checkpoint-residency'};const list=grouped.get(row.period);if(list)list.push(row);else grouped.set(row.period,[row]);}
+    for(const key of Object.keys(periods))if(!grouped.has(key))return {ok:false,reason:'document-proof-checkpoint-period-unused'};
+    return {ok:true,periods:[...grouped].map(([period,list])=>({period,entry:periods[period],rows:list}))};
+  }
+  function verifyCheckpointPeriod(state,item){
+    const store=state?.documentProofs||{},entry=item?.entry;if(store.periodDigests?.[item?.period]!==entry||item.rows.some(row=>store.checkpointsById?.[row?.id]!==row))return {ok:true,skipped:true};
+    if(!entry||entry.period!==item.period||entry.form!==PERIOD_FORM||entry.count!==item.rows.length||!isDigest(entry.digest))return {ok:false,reason:'document-proof-checkpoint-period'};
+    for(const row of item.rows){const fault=checkpointRowFault(row,row.id);if(fault)return {ok:false,reason:fault};}
+    if(hexOf(item.rows.reduce((total,row)=>(total+sumOf(checkpointDigest(row)))%DIGEST_MOD,0n))!==entry.digest)return {ok:false,reason:'document-proof-checkpoint-period-tampered'};
+    return {ok:true};
+  }
   // The whole check (save schema, or a checkpoint not yet verified). Rows and entries verified before are not hashed again
   // unless {fresh:true}; the shape, residency and period membership are checked every time.
   function verifyCheckpoints(state,cache=null,{fresh=false}={}){
@@ -115,10 +140,7 @@
     if(!rows||typeof rows!=='object'||Array.isArray(rows)||!periods||typeof periods!=='object'||Array.isArray(periods))return fail('document-proof-checkpoint-shape');
     const known=row=>!fresh&&VERIFIED_CHECKPOINTS.has(row),grouped=new Map();
     for(const [id,row] of Object.entries(rows)){
-      if(!known(row)){
-        if(!row||typeof row!=='object'||Array.isArray(row)||row.id!==id||Object.keys(row).sort().join(',')!==CHECKPOINT_KEYS||!isDigest(row.contentDigest)||!clean(row.documentId)||!Number.isSafeInteger(row.chainDepth)||row.chainDepth<0||row.chainDepth>LIMITS.chainDepth||row.period!==checkpointPeriod(row.createdAtSim))return fail('document-proof-checkpoint-record');
-        if(row.chainDepth>0?!(row.previousProofId&&isDigest(row.previousContentDigest)):row.previousProofId!==null)return fail('document-proof-checkpoint-chain');
-      }
+      if(!known(row)){const fault=checkpointRowFault(row,id);if(fault)return fail(fault);}
       if(store.recordsById?.[id]||store.archiveById?.[id])return fail('document-proof-checkpoint-residency');
       const list=grouped.get(row.period);if(list)list.push(row);else grouped.set(row.period,[row]);
     }
@@ -275,7 +297,14 @@
     for(const [bucket,list] of Object.entries(state.finance?.auditArchive?.records||{}))if(Array.isArray(list))for(let index=0;index<list.length;index++)append(list[index],`finance.auditArchive.records.${bucket}[${index}]`,String(bucket).startsWith('companyLedger-')?'legacy-ledger':'canonical-archive');
     return rows;
   }
-  function stateDocuments(state){return stateDocumentEntries(state).map(row=>row.document);}
+  // Build 359: the documents alone, without the path text of each (every validation collected them).
+  function stateDocuments(state){
+    const rows=[],seen=new Set(),append=document=>{if(document&&typeof document==='object'&&!seen.has(document)){seen.add(document);rows.push(document);}};
+    for(const bucket of financeBuckets){const list=Array.isArray(state.finance?.[bucket])?state.finance[bucket]:[];for(let index=0;index<list.length;index++)append(list[index]);}
+    for(const document of Object.values(state.contractRegistry||{}))append(document);
+    for(const list of Object.values(state.finance?.auditArchive?.records||{}))if(Array.isArray(list))for(let index=0;index<list.length;index++)append(list[index]);
+    return rows;
+  }
   function canonicalDocumentEntry(state,proofId){return stateDocumentEntries(state).find(row=>row.document?.documentProofId===proofId&&row.role!=='legacy-ledger')||null;}
   function resultProofIds(value,ids,seen=new Set()){
     if(!value||typeof value!=='object'||seen.has(value))return;seen.add(value);
@@ -533,11 +562,21 @@
     return null;
   }
   function collectResultDocuments(state,result){const found=new Map(),seen=new Set();function visit(value,depth){if(!value||typeof value!=='object'||depth>7||seen.has(value))return;seen.add(value);if(value.documentProofId&&value.contentDigest){const actual=locateDocument(state,value.documentProofId)||value;found.set(value.documentProofId,{proofId:value.documentProofId,documentId:documentId(actual),digest:actual.contentDigest,document:actual});}if(Array.isArray(value)){for(const item of value)visit(item,depth+1);return;}for(const nested of Object.values(value))visit(nested,depth+1);}visit(result,0);return [...found.values()];}
+  // Build 359: a final finance document is sealed (frozen, see GH_FINANCE_CORE); binding one replaces it where it lives by
+  // a bound copy (a document a command returned may be one an earlier transaction finalized).
+  function writableDocument(state,document){
+    if(!Object.isFrozen(document))return document;const copy=clone(document),replace=list=>{if(!Array.isArray(list))return false;const at=list.indexOf(document);if(at<0)return false;list[at]=copy;return true;};
+    let placed=financeBuckets.some(bucket=>replace(state.finance?.[bucket]));
+    if(!placed)for(const [id,row] of Object.entries(state.contractRegistry||{}))if(row===document){state.contractRegistry[id]=copy;placed=true;break;}
+    if(!placed)placed=Object.values(state.finance?.auditArchive?.records||{}).some(replace);
+    if(!placed)throw new Error('document-proof-document-not-found');
+    globalThis.GH_FINANCE_CORE?.invalidateLookupIndexes?.();return copy;
+  }
   function bindAuthorization(state,documents,proof){if(!proof?.id)throw new Error('authorization-proof-required');ensure(state);const rows=Array.isArray(documents)?documents:[];for(const item of rows){const document=item.document||locateDocument(state,item.proofId),record=getRecord(state,item.proofId||document?.documentProofId);if(!document||!record)throw new Error('document-proof-not-found');if(Number(record.version)!==RECORD_VERSION)throw new Error('document-proof-legacy-read-only');if(isArchivedForm(record))throw new Error('document-proof-archived-read-only');const verification=verifyDocument(state,document);if(!verification.ok)throw new Error(`document-proof-invalid:${verification.reason}`);if(record.authorizationProofId&&record.authorizationProofId!==proof.id)throw new Error('document-already-authorized');if(!Array.isArray(proof.documentDigests)||!proof.documentDigests.includes(record.contentDigest))throw new Error('proof-document-digest-mismatch');if(!Array.isArray(proof.documentIds)||!proof.documentIds.includes(record.documentId))throw new Error('proof-document-id-mismatch');const store=state.documentProofs,bound={...record,authorizationProofId:proof.id,authorizationKind:proof.mode,signatureSnapshot:{kind:'visual-authorization-seal',visualSealAssetId:proof.visualSealAssetId||proof.signatureAssetId,visualSealVersion:proof.visualSealVersion??proof.signatureVersion,visualSealDigest:proof.visualSealDigest||proof.signatureDigest,signatureAssetId:proof.signatureAssetId,signatureVersion:proof.signatureVersion,signatureDigest:proof.signatureDigest,signerPersonId:proof.signerPersonId,signerNameSnapshot:proof.signerNameSnapshot,mandateId:proof.mandateId,mandateVersion:proof.mandateVersion,mandateDigest:proof.mandateDigest,signedAtSim:proof.signedAtSim}};
       // Proof records are sealed (shared with durable drafts, never edited): binding replaces the record where it lives.
-      if(store.recordsById?.[record.id]===record)store.recordsById[record.id]=bound;else if(store.archiveById?.[record.id]===record)store.archiveById[record.id]=bound;else throw new Error('document-proof-residency-conflict');document.authorizationProofId=proof.id;document.authorizationKind=proof.mode;document.signatureSnapshot=clone(bound.signatureSnapshot);}return rows.length;}
+      if(store.recordsById?.[record.id]===record)store.recordsById[record.id]=bound;else if(store.archiveById?.[record.id]===record)store.archiveById[record.id]=bound;else throw new Error('document-proof-residency-conflict');const target=writableDocument(state,document);target.authorizationProofId=proof.id;target.authorizationKind=proof.mode;target.signatureSnapshot=clone(bound.signatureSnapshot);}return rows.length;}
   function markLegacy(state,document,options={}){if(document.documentProofId)return verifyDocument(state,document);return sealDocument(state,document,{...options,authorizationKind:'legacy-name-only'});}
   // Proof records are inserted whole and replaced, never edited (bindAuthorization replaces): durable drafts share them sealed.
   (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys])))('documentProofs',['recordsById','archiveById','checkpointsById','periodDigests','sealedPeriods']);
-  const API=Object.freeze({VERSION,ARCHIVED_FORM_V2,releasesAuthorization,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,sequenceMark,recordsSince,compact,checkpoint:getCheckpoint,checkpointAncestors,compactArchivedRecords,ARCHIVED_FORM,verifyCheckpoints,migratePeriodDigests,sealDocuments,verifySeals,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,ARCHIVED_FORM_V2,checkpointAuditPlan,verifyCheckpointPeriod,releasesAuthorization,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,sequenceMark,recordsSince,compact,checkpoint:getCheckpoint,checkpointAncestors,compactArchivedRecords,ARCHIVED_FORM,verifyCheckpoints,migratePeriodDigests,sealDocuments,verifySeals,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

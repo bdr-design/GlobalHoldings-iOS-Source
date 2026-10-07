@@ -37,12 +37,20 @@
   // (registerSealedCollections). A durable draft copies those collections' membership only and shares the members,
   // deep-frozen, with the live state: a write to one throws (strict mode), so the draft can never reach live data.
   // restoreValue adopts a sealed value instead of writing into it, so publishing the draft is a membership walk.
-  const SEALED_COLLECTIONS=new Map(),SEALED=new WeakSet();
-  function registerSealedCollections(root,keys){
+  // Build 359 (iPhone: every player command copied the live finance documents, 9 MB, and the save re-encoded them): an
+  // owner may seal only the members a predicate accepts (options.member(row) -> true). The finance documents seal once
+  // they are final (a settled invoice, a cashed cheque, an executed transfer...), the state the business rules never edit
+  // again; an open document stays an ordinary row, copied by drafts and snapshots as before. The predicate is asked
+  // only when a member is not sealed yet: a sealed member stays sealed.
+  const SEALED_COLLECTIONS=new Map(),SEALED_MEMBER_FILTERS=new Map(),SEALED=new WeakSet();
+  function registerSealedCollections(root,keys,options={}){
     root=String(root||'').trim();if(!/^[A-Za-z_$][\w$]*$/.test(root))throw new TypeError('transaction-sealed-root-name-invalid');
     const list=[...new Set((Array.isArray(keys)?keys:[]).map(String).filter(Boolean))];if(!list.length)throw new TypeError('transaction-sealed-collections-required');
+    const member=options?.member;if(member!==undefined&&typeof member!=='function')throw new TypeError('transaction-sealed-member-filter-invalid');
+    for(const name of list){const key=`${root}\u0000${name}`;if(member)SEALED_MEMBER_FILTERS.set(key,member);else SEALED_MEMBER_FILTERS.delete(key);}
     SEALED_COLLECTIONS.set(root,Object.freeze([...new Set([...(SEALED_COLLECTIONS.get(root)||[]),...list])]));return true;
   }
+  const memberFilter=(root,name)=>SEALED_MEMBER_FILTERS.get(`${root}\u0000${name}`)||null;
   const plainData=value=>{if(!value||typeof value!=='object')return true;if(Array.isArray(value))return true;const proto=Object.getPrototypeOf(value);return proto===Object.prototype||proto===null||(Object.getPrototypeOf(proto)===null&&typeof proto.constructor==='function'&&proto.constructor.name==='Object');};
   function sealable(value,depth){
     if(!value||typeof value!=='object'||SEALED.has(value))return true;
@@ -53,9 +61,11 @@
   function freezeSealed(value){if(!value||typeof value!=='object'||SEALED.has(value))return;for(const key of Object.keys(value))freezeSealed(value[key]);Object.freeze(value);SEALED.add(value);}
   // Checked before anything is frozen: a member that is not plain JSON-like data is copied instead, untouched.
   function sealValue(value){if(SEALED.has(value))return true;if(!sealable(value,0))return false;freezeSealed(value);return true;}
-  function sealedCopy(collection){
-    if(Array.isArray(collection)){const out=collection.slice();for(let i=0;i<out.length;i++){const member=out[i];if(member&&typeof member==='object'&&!sealValue(member))out[i]=deepClone(member);}return out;}
-    const out={...collection};for(const key of Object.keys(out)){const member=out[key];if(member&&typeof member==='object'&&!sealValue(member))out[key]=deepClone(member);}return out;
+  // A member the owner's filter does not accept (yet) is copied, as a member that is not plain data is.
+  function sealMember(member,filter){return SEALED.has(member)||(!filter||filter(member)===true)&&sealValue(member);}
+  function sealedCopy(collection,filter=null){
+    if(Array.isArray(collection)){const out=collection.slice();for(let i=0;i<out.length;i++){const member=out[i];if(member&&typeof member==='object'&&!sealMember(member,filter))out[i]=deepClone(member);}return out;}
+    const out={...collection};for(const key of Object.keys(out)){const member=out[key];if(member&&typeof member==='object'&&!sealMember(member,filter))out[key]=deepClone(member);}return out;
   }
   const isSealed=value=>!!value&&typeof value==='object'&&SEALED.has(value);
   // A registered name is a key of the root, or a path inside it whose steps may be '*' (every key of that object):
@@ -78,11 +88,11 @@
     return top;
   }
   // Owners loaded before this module queue their registration.
-  for(const [root,keys] of Array.isArray(globalThis.__GH_PENDING_SEALED_COLLECTIONS__)?globalThis.__GH_PENDING_SEALED_COLLECTIONS__:[])registerSealedCollections(root,keys);delete globalThis.__GH_PENDING_SEALED_COLLECTIONS__;
+  for(const [root,keys,options] of Array.isArray(globalThis.__GH_PENDING_SEALED_COLLECTIONS__)?globalThis.__GH_PENDING_SEALED_COLLECTIONS__:[])registerSealedCollections(root,keys,options);delete globalThis.__GH_PENDING_SEALED_COLLECTIONS__;
   // Seals the members of every registered collection in place (a quiescent live state, e.g. before a save).
   function sealCollections(state){
     let sealed=0;if(!state||typeof state!=='object')return sealed;
-    for(const [root,names] of SEALED_COLLECTIONS){const value=state[root];if(!value||typeof value!=='object'||Array.isArray(value)||JOURNALED_ROOTS.has(root))continue;for(const name of names)for(const {collection} of sealedTargets(value,name)){const members=Array.isArray(collection)?collection:Object.values(collection);for(const member of members)if(member&&typeof member==='object'&&!SEALED.has(member)&&sealValue(member))sealed++;}}
+    for(const [root,names] of SEALED_COLLECTIONS){const value=state[root];if(!value||typeof value!=='object'||Array.isArray(value)||JOURNALED_ROOTS.has(root))continue;for(const name of names){const filter=memberFilter(root,name);for(const {collection} of sealedTargets(value,name)){const members=Array.isArray(collection)?collection:Object.values(collection);for(const member of members)if(member&&typeof member==='object'&&!SEALED.has(member)&&sealMember(member,filter))sealed++;}}}
     return sealed;
   }
   function cloneWithoutJournaledRoots(value,{shareJournaledRoots=false,shareSealed=shareJournaledRoots}={}){
@@ -94,13 +104,13 @@
     for(const key of keys){
       if(JOURNALED_ROOTS.has(key))continue;const root=value[key],collections=sealed&&SEALED_COLLECTIONS.get(key);
       if(collections&&root&&typeof root==='object'&&!Array.isArray(root)&&plainData(root)){
-        const targets=collections.flatMap(name=>sealedTargets(root,name));
+        const targets=collections.flatMap(name=>{const filter=memberFilter(key,name);return sealedTargets(root,name).map(target=>({...target,filter}));});
         if(targets.length){sealed.set(key,targets);source[key]=withoutTargets(root,targets);continue;}
       }
       source[key]=root;
     }
     let cloned;if(typeof globalThis.structuredClone==='function'){try{cloned=globalThis.structuredClone(source);}catch(_error){cloned=jsonClone(source);}}else cloned=jsonClone(source);
-    if(sealed)for(const [key,targets] of sealed)for(const {path,collection} of targets){let node=cloned[key];for(let i=0;i<path.length-1;i++)node=node[path[i]];node[path[path.length-1]]=sealedCopy(collection);}
+    if(sealed)for(const [key,targets] of sealed)for(const {path,collection,filter} of targets){let node=cloned[key];for(let i=0;i<path.length-1;i++)node=node[path[i]];node[path[path.length-1]]=sealedCopy(collection,filter);}
     const out={};for(const key of keys){if(JOURNALED_ROOTS.has(key)){if(shareJournaledRoots)out[key]=value[key];}else out[key]=cloned[key];}return out;
   }
   // State roots registered as self-journaled are excluded from transaction

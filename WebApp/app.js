@@ -738,7 +738,9 @@
   if(maritimeMigrationChanged){state.routesRevision=(Math.max(0,Math.floor(Number(state.routesRevision)||0))+1);save();}
 
   // Normalize legacy documents to the parent company so every document has an accountable legal entity.
-  state.finance.invoices.forEach(d=>{if(!d.company)d.company='group';d.companyName=companyFinanceName(d.company);d.accountId=d.accountId||companyBook(d.company).accounts[0].id;});state.finance.cheques.forEach(d=>{if(!d.company)d.company='group';d.companyName=companyFinanceName(d.company);d.accountId=d.accountId||companyBook(d.company).accounts[0].id;if(!d.beneficiary)d.beneficiary=`حساب الموردين المعتمدين — ${companyFinanceName(d.company)}`;});state.finance.payables.forEach(d=>{if(!d.company)d.company='group';});state.finance.receivables.forEach(d=>{if(!d.company)d.company='group';});
+  // Build 359: a final document is sealed (frozen, GH_FINANCE_CORE): one that needs a change is replaced by a copy.
+  const normalizeDocuments=(list,patchFor)=>{for(let index=0;index<list.length;index++){const row=list[index],patch=patchFor(row);if(!Object.keys(patch).some(key=>row[key]!==patch[key]))continue;list[index]=Object.assign(Object.isFrozen(row)?clone(row):row,patch);}};
+  normalizeDocuments(state.finance.invoices,d=>{const company=d.company||'group';return {company,companyName:companyFinanceName(company),accountId:d.accountId||companyBook(company).accounts[0].id};});normalizeDocuments(state.finance.cheques,d=>{const company=d.company||'group';return {company,companyName:companyFinanceName(company),accountId:d.accountId||companyBook(company).accounts[0].id,beneficiary:d.beneficiary||`حساب الموردين المعتمدين — ${companyFinanceName(company)}`};});state.finance.payables.forEach(d=>{if(!d.company)d.company='group';});state.finance.receivables.forEach(d=>{if(!d.company)d.company='group';});
   state.finance.periods=Array.isArray(state.finance.periods)?state.finance.periods:[];state.finance.journalEntries=Array.isArray(state.finance.journalEntries)?state.finance.journalEntries:[];state.finance.payrollReports=Array.isArray(state.finance.payrollReports)?state.finance.payrollReports:[];state.finance.taxSettlements=Array.isArray(state.finance.taxSettlements)?state.finance.taxSettlements:[];state.finance.debtRecords=Array.isArray(state.finance.debtRecords)?state.finance.debtRecords:[];state.finance.debtSettlements=Array.isArray(state.finance.debtSettlements)?state.finance.debtSettlements:[];
   // Current-period accrual is not a closed tax obligation. Only migrate the
   // balance not represented by the open VAT period; never crystallize it on reload.
@@ -754,7 +756,7 @@
   }
   cleanupObsoleteStorage();
   let simulationPersistenceTask=null;
-  const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,durable:{last:null,samples:[]},render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]},simRender:{last:null,max:{},count:0},maintenance:{last:{},max:{},runs:0,lastTask:'',pending:[]}};
+  const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,proofAudit:null,durable:{last:null,samples:[]},render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]},simRender:{last:null,max:{},count:0},maintenance:{last:{},max:{},runs:0,lastTask:'',pending:[]}};
   const appMetricClock=()=>globalThis.performance?.now?.()??Date.now();
   function recordRenderMetric(kind,durationMs,detail={}){const render=runtimeInstrumentation.render,row={kind,durationMs:Math.max(0,Number(durationMs)||0),recordedAtMs:Date.now(),...detail};if(kind==='frame'){render.lastFrame=row;render.maxFrameMs=Math.max(render.maxFrameMs,row.durationMs);}else if(kind==='target-update'){render.lastTargetUpdate=row;render.maxTargetUpdateMs=Math.max(render.maxTargetUpdateMs,row.durationMs);}else if(kind==='marker-animation'){render.lastMarkerAnimation=row;render.maxMarkerAnimationMs=Math.max(render.maxMarkerAnimationMs,row.durationMs);}else if(kind==='structural-render'){render.lastStructuralRender=row;render.maxStructuralRenderMs=Math.max(render.maxStructuralRenderMs,row.durationMs);}render.samples.push(row);if(render.samples.length>120)render.samples.shift();return row;}
   window.__GH_APP_RUNTIME_INSTRUMENTATION__=runtimeInstrumentation;
@@ -930,7 +932,7 @@
       const shouldYieldForValidation=(window.GH_FLEET_DATA.size(draft)+(draft.mobility?.vehicles?.length||0))>=500;
       if(shouldYieldForValidation)await yieldForInteractivePaint();
       // The draft inherited the verified-once ledger above: proofs already verified are trusted, new or changed ones are
-      // verified now. Persistence repeats a full verification every tenth save, and loads always verify in full.
+      // verified now. The proof audit of maintenance verifies every proof afresh over time, and loads always verify in full.
       mark=clockNow();const schema=await validateDraftInSlices(draft);lap('validateMs');if(!schema.ok)throw new Error(`invalid-draft:${schema.errors.join(',')}`);
       if(shouldYieldForValidation)await yieldForInteractivePaint();
       mark=clockNow();const integrity=window.GH_INTEGRITY_CORE.check(draft),critical=(integrity?.critical||(integrity?.issues||[]).filter(row=>row.severity==='critical'));lap('integrityMs');
@@ -1761,12 +1763,18 @@
         usable:(asset,route)=>routeModeOf(route)==='road'&&routeOwnerCompanyId(route)===assetOwnerCompanyId(asset)&&routeFitsAsset(asset,route)&&Boolean(asset.baseFacility)&&(sameUnderlyingFacilityFor(state,asset.baseFacility,route.fromFacility)||sameUnderlyingFacilityFor(state,asset.baseFacility,route.toFacility))});
       if(controller.signal.aborted)throw new Error('أُلغي حساب المسارات');
       clearTimeout(timer);document.querySelectorAll('.cancel-road-plan').forEach(button=>{button.disabled=true;});
-      return await runAuthorizedCompositeCommand(`bulk-shared-departure:${companyId}`,({state:draft,routes,dispatch})=>{
+      // Build 359 (iPhone: one road dispatch blocked the screen 14 s): the command runs as the air and sea dispatch does,
+      // DISPATCH_CHUNK trucks at a time with the frame yielded between chunks, one approval and one save. Every truck is
+      // checked against one route conflict context (the state does not change while they are checked), each existing
+      // route is compared with its planned copy once, and the rows name their route by routeRef (each distinct route
+      // and base once per chunk) instead of carrying its geometry.
+      return await runAuthorizedCompositeCommand(`bulk-shared-departure:${companyId}`,async({state:draft,routes,dispatch})=>{
         const current=window.GH_FLEET_DATA.filter(draft,asset=>assetOwnerCompanyId(asset)===companyId&&assetModeOf(asset)==='road'&&(!assetId||asset.id===assetId)&&asset.deliveryStatus!=='pending'&&asset.phase!=='moving'&&!asset.departureScheduled&&!asset.salePending);
         if(draft.resetEpoch!==snapshot.resetEpoch||current.length!==preview.length||current.some(asset=>fingerprints.get(asset.id)!==roadAssetFingerprint(asset)))throw new Error('تغيرت الشاحنات أثناء حساب الطرق؛ أعد المحاولة');
-        const createdRoutes=new Map(),assignments=[],previousRouteIds=new Set(current.map(asset=>asset.routeId).filter(Boolean));
-        for(const row of plan){
-          const asset=window.GH_FLEET_DATA.get(draft,row.assetId),origin=routeOriginForAsset(asset,draft,routes);
+        const createdRoutes=new Map(),assignments=[],previousRouteIds=new Set(current.map(asset=>asset.routeId).filter(Boolean)),unchangedRoute=new Map();
+        for(let index=0;index<plan.length;index++){
+          if(index&&index%DISPATCH_CHUNK===0)await yieldFleetPlanning();
+          const row=plan[index],asset=window.GH_FLEET_DATA.get(draft,row.assetId),origin=routeOriginForAsset(asset,draft,routes);
           if(!origin||origin.id!==row.origin.id||facilityOwnerCompanyId(origin)!==companyId||origin.owned!==row.origin.owned||JSON.stringify(origin.coords)!==JSON.stringify(row.origin.coords))throw new Error('تغيرت نقطة انطلاق إحدى الشاحنات أثناء الحساب');
           let route;
           if(row.created){
@@ -1775,18 +1783,37 @@
             route=prepareRoute({...row.route,ownerCompanyId:companyId,routeMode:'road',id:window.GH_DETERMINISM.nextId(draft,'ROAD-AUTO')},draft);
             dispatch('routes','create',{route});routes[route.id]=route;createdRoutes.set(row.route.id,route);
           }else if(row.plannedShared){route=createdRoutes.get(row.route.id);if(!route)throw new Error('فقد مسار مشترك أثناء التحقق من الدفعة');}
-          else{route=routes[row.route.id];if(!route||JSON.stringify(route)!==JSON.stringify(runtime[row.route.id]))throw new Error('تغير أحد المسارات الموجودة أثناء الحساب');}
+          else{
+            route=routes[row.route.id];
+            if(route&&!unchangedRoute.has(row.route.id))unchangedRoute.set(row.route.id,JSON.stringify(route)===JSON.stringify(runtime[row.route.id]));
+            if(!route||!unchangedRoute.get(row.route.id))throw new Error('تغير أحد المسارات الموجودة أثناء الحساب');
+          }
           if(!routeFitsAsset(asset,route))throw new Error(`${asset.name}: الطريق يتجاوز مدى الشاحنة`);
-          const matched=routeMatchingFacilityFor(draft,routes,route.id,asset.baseFacility);
-          assignments.push({id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',route:matched});
+          assignments.push({id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround'});
         }
-        dispatch('fleet','assign-routes-batch',{assignments});
-        {const fleetRows=assignments.map(assignment=>window.GH_FLEET_DATA.draft(draft,assignment.id));fleetRows.forEach((asset,index)=>window.GH_FLEET_CORE.normalizeAsset(asset,{route:assignments[index].route,catalogItem:catalogItem(asset.type,asset.catalogId)}));window.GH_FLEET_DATA.commit(draft,fleetRows);}
-        const departures=current.map(asset=>{const block=departureBlockReasonFor(asset,draft,routes);if(block)throw new Error(`${asset.name}: ${block.text}`);return {id:asset.id,route:routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility),load:loadLabel(asset),delaySeconds:window.GH_FLEET_CORE.departureDelay(asset)};});
-        dispatch('fleet','depart-batch',{departures});
-        {const fleetRows=current.map(asset=>window.GH_FLEET_DATA.draft(draft,asset));for(const asset of fleetRows){const route=routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility);window.GH_FLEET_CORE.normalizeAsset(asset,{route,catalogItem:catalogItem(asset.type,asset.catalogId)});}window.GH_FLEET_DATA.commit(draft,fleetRows);}
-        const roadRoutesInUse=previousRouteIds.size?window.GH_FLEET_DATA.distinctRefs(draft,'routeId'):null;
-        for(const routeId of previousRouteIds){const retired=(draft.customRoutes||[]).find(route=>route.id===routeId);if(retired?.automaticRoad===true&&!roadRoutesInUse.has(routeId)){window.GH_ROUTE_CORE.execute({state:draft},'delete',{id:routeId});delete routes[routeId];}}
+        const routeTable={},routeRefOf=(routeId,baseFacility)=>{const ref=`${routeId}@${baseFacility||''}`;if(!Object.prototype.hasOwnProperty.call(routeTable,ref))routeTable[ref]=routeMatchingFacilityFor(draft,routes,routeId,baseFacility);return ref;};
+        const chunkRoutes=rows=>{const table={};for(const row of rows)table[row.routeRef]=routeTable[row.routeRef];return table;};
+        for(const row of assignments)row.routeRef=routeRefOf(row.routeId,row.baseFacility);
+        for(let from=0;from<assignments.length;from+=DISPATCH_CHUNK){
+          await yieldFleetPlanning();const rows=assignments.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','assign-routes-batch',{assignments:rows,routes:chunkRoutes(rows)}).result;
+          if(!Array.isArray(out)||out.length!==rows.length)throw new Error('رفض محرك الأسطول توزيع الشاحنات');
+          const fleetRows=rows.map(row=>window.GH_FLEET_DATA.draft(draft,row.id));fleetRows.forEach((asset,index)=>window.GH_FLEET_CORE.normalizeAsset(asset,{route:routeTable[rows[index].routeRef],catalogItem:catalogItem(asset.type,asset.catalogId)}));window.GH_FLEET_DATA.commit(draft,fleetRows);
+        }
+        await yieldFleetPlanning();
+        const conflictContext=window.GH_FLEET_CORE.routeConflictContext(draft),departures=[];
+        for(let index=0;index<current.length;index++){
+          const asset=window.GH_FLEET_DATA.get(draft,current[index].id),block=departureBlockReasonFor(asset,draft,routes,conflictContext);if(block)throw new Error(`${asset.name}: ${block.text}`);
+          departures.push({id:asset.id,routeRef:routeRefOf(asset.routeId,asset.baseFacility),load:loadLabel(asset),delaySeconds:window.GH_FLEET_CORE.departureDelay(asset)});
+        }
+        for(let from=0;from<departures.length;from+=DISPATCH_CHUNK){
+          await yieldFleetPlanning();const rows=departures.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','depart-batch',{departures:rows,routes:chunkRoutes(rows)}).result;
+          if(!Array.isArray(out)||out.length!==rows.length)throw new Error('رفض محرك الأسطول جدولة مغادرة الشاحنات');
+          const fleetRows=rows.map(row=>window.GH_FLEET_DATA.draft(draft,row.id));for(const asset of fleetRows)window.GH_FLEET_CORE.normalizeAsset(asset,{route:routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility),catalogItem:catalogItem(asset.type,asset.catalogId)});window.GH_FLEET_DATA.commit(draft,fleetRows);
+        }
+        if(previousRouteIds.size){
+          const roadRoutesInUse=window.GH_FLEET_DATA.distinctRefs(draft,'routeId'),registered=new Map((draft.customRoutes||[]).map(route=>[route.id,route]));
+          for(const routeId of previousRouteIds){const retired=registered.get(routeId);if(retired?.automaticRoad===true&&!roadRoutesInUse.has(routeId)){window.GH_ROUTE_CORE.execute({state:draft},'delete',{id:routeId});delete routes[routeId];}}
+        }
         const routeCount=new Set(assignments.map(row=>row.routeId)).size;
         window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`جُدولت ${current.length} شاحنة ذريًا على ${routeCount} مسار أسطول لشركة ${companyFinanceName(companyId)}؛ أُنشئ ${createdRoutes.size} مسارًا تلقائيًا.`,type:'dispatch'});return {departed:current.length,type,companyId,routeCount,createdRoutes:createdRoutes.size};
       },{afterCommit:()=>{lastDepartureBlocked=[];renderMap();updateKpis();}});
@@ -2754,7 +2781,10 @@
   // ledger row carries, is kept. The selection is made once per maintenance task; each frame seals one round (up to 200
   // rows; documents are verified for 6 ms, the rest wait for the next frame) until the selection is done, so the archive
   // stays within its bound however many documents a day brings.
-  const AUDIT_RETENTION_SECONDS=365*86400,AUDIT_DETAIL_LIMIT=20000,AUDIT_SEAL_ROUND=200,AUDIT_SEAL_VERIFY_MS=6,AUDIT_SEAL_ROLLBACK=Object.freeze({documentProofs:Object.freeze({level:'containers'})});
+  // Build 359 (iPhone: each round's rollback snapshot deep-copied the finance root, 25-31 ms a round): a round replaces the
+  // archive's record map and digest list instead of editing them, so the snapshot keeps the members of the finance root
+  // and of its direct containers (Transaction Core rowRoots, level 'containers'), as it does for the proof store.
+  const AUDIT_RETENTION_SECONDS=365*86400,AUDIT_DETAIL_LIMIT=20000,AUDIT_SEAL_ROUND=200,AUDIT_SEAL_VERIFY_MS=6,AUDIT_SEAL_ROLLBACK=Object.freeze({documentProofs:Object.freeze({level:'containers'}),finance:Object.freeze({level:'containers'})});
   const auditRowAt=row=>Math.max(0,Number(row?.at??row?.issuedAt??row?.closedAt??row?.createdAt)||0);
   const AUDIT_LIVE_BUCKETS=Object.freeze(['invoices','cheques','transfers','payables','receivables','periods','taxSettlements','debtRecords','debtSettlements','payrollReports']),AUDIT_LINK_FIELDS=Object.freeze(['invoiceNumber','documentNumber','number','reference','sourceRef','chequeNumber','chequeId','replacedBy']);
   function auditSealSelection(){
@@ -2787,7 +2817,8 @@
       const withProof=round.filter(item=>item.row?.documentProofId),done=new Set(round.filter(item=>!item.row?.documentProofId).map(item=>item.row));
       if(withProof.length){const out=proofs.sealDocuments(state,withProof.map(item=>item.row),{keep:entry.keep,deadline:deadline()});for(const document of out.sealed)done.add(document);entry.queue.unshift(...withProof.slice(out.examined));}
       const archive=financeAuditArchive(),byKind=new Map();for(const item of round)if(done.has(item.row)){const list=byKind.get(item.kind)||[];list.push(item.row);byKind.set(item.kind,list);}
-      for(const [kind,rows] of byKind){const gone=new Set(rows);archive.records[kind]=archive.records[kind].filter(row=>!gone.has(row));if(!archive.records[kind].length)delete archive.records[kind];mergeAuditDigest(buildAuditDigest(kind,rows));sealed+=rows.length;}
+      if(byKind.size){const next={...archive.records};for(const [kind,rows] of byKind){const gone=new Set(rows);next[kind]=next[kind].filter(row=>!gone.has(row));if(!next[kind].length)delete next[kind];}archive.records=next;}
+      for(const [kind,rows] of byKind){mergeAuditDigest(buildAuditDigest(kind,rows));sealed+=rows.length;}
     }});
     if(!result.committed)throw new Error(result.reason||'audit-archive-seal-rejected');return sealed;
   }
@@ -2798,7 +2829,25 @@
   // and no slice starts until the queue is empty. A schema pass after a compaction that rewrote history runs one section
   // per frame (GH_SAVE_SCHEMA.validationSteps) and starts again if a command changes the state between sections.
   const maintenanceQueue=[];
-  const MAINTENANCE_TASKS=Object.freeze(['compact','proof-checkpoints','proof-archived','archive-seal','fleet','health']);
+  const MAINTENANCE_TASKS=Object.freeze(['compact','proof-checkpoints','proof-archived','archive-seal','proof-audit','fleet','health']);
+  // Build 359 (owner: no save walks every document): the fresh verification of every proof that persistence ran on every
+  // tenth save (77 ms on iPhone at 13,291 documents) is the proof audit (GH_SAVE_SCHEMA.createProofAudit): one step per
+  // maintenance pass (PROOF_AUDIT_ITEMS proofs or PROOF_AUDIT_MS, whichever ends first) and a shorter one on idle render
+  // callbacks (PROOF_AUDIT_RENDER_MS, simRender), its cursor kept between steps,
+  // cycling over every authorization proof, proof record, document, checkpoint period and seal. A fault it finds is
+  // confirmed by a full validation (only then, in that frame); a confirmed fault is reported, stops the simulation and
+  // makes every recurring save validate in full (GH_PERSISTENCE.requireFullValidation), as a failed full pass did.
+  const PROOF_AUDIT_ITEMS=1000,PROOF_AUDIT_MS=8,PROOF_AUDIT_RENDER_MS=4;let proofAudit=null;
+  function proofAuditStep(budgetMs=PROOF_AUDIT_MS){
+    const schema=window.GH_SAVE_SCHEMA;if(typeof schema?.createProofAudit!=='function')return null;
+    if(!proofAudit||proofAudit.state!==state)proofAudit={state,audit:schema.createProofAudit()};
+    const out=proofAudit.audit.step(state,{maxItems:PROOF_AUDIT_ITEMS,budgetMs});runtimeInstrumentation.proofAudit={...out,...proofAudit.audit.status()};
+    if(out.ok)return out;
+    const full=schema.validate(state);
+    if(full.ok){diag('PROOF_AUDIT_UNCONFIRMED',{errors:out.errors.join(',').slice(0,240)},'info');return out;}
+    const reason=full.errors?.join(',')||out.errors.join(',');diag('SAVE_SCHEMA_INTEGRITY',{reason:String(reason).slice(0,240),source:'proof-audit'},'critical');
+    window.GH_PERSISTENCE.requireFullValidation?.('proof-audit');haltOnGlobalFault({issues:[{id:'SAVE_SCHEMA_INTEGRITY',severity:'critical'}]});return out;
+  }
   function queueMaintenance(){for(const task of MAINTENANCE_TASKS)if(!maintenanceQueue.some(entry=>entry.task===task))maintenanceQueue.push({task});}
   function schemaSectionsTask(){
     const schema=window.GH_SAVE_SCHEMA;if(typeof schema?.validationSteps!=='function')return null;
@@ -2815,6 +2864,7 @@
     // Small rounds over consecutive frames (50 documents each, up to 8) while documents remain to convert; then the
     // authorization archive drops the proofs they released.
     if(entry.task==='proof-archived'){const out=compactArchivedProofs();entry.rounds=(entry.rounds||0)+1;if((out?.archived||0)>=ARCHIVED_PROOF_ROUND&&entry.rounds<ARCHIVED_PROOF_ROUNDS)return false;compactAuthorizationArchive();return true;}
+    if(entry.task==='proof-audit'){proofAuditStep();return true;}
     if(entry.task==='fleet'){window.GH_FLEET_DATA.maintain(state);return true;}
     if(entry.task==='schema'){
       if(entry.markOf()!==entry.mark){entry.steps=window.GH_SAVE_SCHEMA.validationSteps(state,{trustVerified:true});entry.mark=entry.markOf();entry.restarts=(entry.restarts||0)+1;}
@@ -3111,6 +3161,9 @@
       const parts={},timed=(key,fn)=>{const started=appMetricClock();try{return fn();}finally{parts[key]=(parts[key]||0)+Math.max(0,appMetricClock()-started);}};
       if(now-lastUiRefreshMs>=500){lastUiRefreshMs=now;timed('kpisMs',()=>updateKpis());timed('mapStatusMs',()=>updateMapStatus());if(selectedAssetId&&!$('assetCard').classList.contains('hidden'))timed('assetCardMs',()=>refreshAssetCard(selectedAssetId));}
       timed('recorderMs',()=>{try{window.GH_DIAGNOSTICS.recorderSample?.(state,simulationEngine.snapshot(),{nowMs:Date.now(),context:{governor:runtimeGovernor}});}catch(error){console.warn('تعذر أخذ عينة مسجل عطل المحاكاة',error);}});
+      // Build 359: the proof audit also takes a short step (PROOF_AUDIT_RENDER_MS) on a render callback while no slice job,
+      // maintenance part, player command or save is in flight, so a cycle over every proof completes in minutes of play.
+      if(!jobActive&&!maintenanceQueue.length&&!document.hidden&&!hardResetInProgress&&!durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!window.GH_PERSISTENCE.isLocked()&&!stagedStateBusy())timed('proofAuditMs',()=>proofAuditStep(PROOF_AUDIT_RENDER_MS));
       // Diagnostics may use wall-clock cadence for UI health only. No business decision
       // is executed from this render callback.
       if(!jobActive&&!document.hidden&&!hardResetInProgress){
@@ -4338,7 +4391,15 @@
   // signed; the signature lives on the transfer record in state.finance.transfers. Without this lookup every new
   // transfer read «حوالة تاريخية سابقة لنظام التوقيع المرئي».
   const transferRecordIndex=new WeakMap();
-  function transferRecordFor(x){const rows=state.finance?.transfers;if(!Array.isArray(rows))return null;let index=transferRecordIndex.get(rows);if(!index||index.size!==rows.length){index=new Map();for(const row of rows){if(row?.id)index.set(row.id,row);if(row?.reference&&!index.has(row.reference))index.set(row.reference,row);}transferRecordIndex.set(rows,index);}return index.get(x.id)||index.get(x.reference)||null;}
+  // Build 359: each entry keeps its row's position; an entry whose position no longer holds that row (rows inserted, or a
+  // sealed transfer replaced by a copy, GH_FINANCE_CORE) rebuilds the index.
+  function transferRecordFor(x){
+    const rows=state.finance?.transfers;if(!Array.isArray(rows))return null;
+    const build=()=>{const index=new Map();rows.forEach((row,at)=>{if(row?.id)index.set(row.id,{row,at});if(row?.reference&&!index.has(row.reference))index.set(row.reference,{row,at});});index.length=rows.length;transferRecordIndex.set(rows,index);return index;};
+    const find=index=>index.get(x.id)||index.get(x.reference)||null;let index=transferRecordIndex.get(rows);if(!index||index.length!==rows.length)index=build();let hit=find(index);
+    if(hit&&rows[hit.at]!==hit.row){index=build();hit=find(index);}
+    return hit?hit.row:null;
+  }
   function transferArt(x){
     const company=documentCompanyKey(x),i=financeDocumentIdentity(company),bank=treasuryBank(),ref=x.reference||x.id||`TR-${Math.floor(x.at||0)}-${String(Math.round(x.amount||0)).slice(-7)}`,
       founderFunding=x.kind==='sandbox-capital-cover'||x.fundingSource==='sandbox-unlimited-money'||x.fundingSource==='god-mode-founder',
@@ -4813,7 +4874,8 @@
     const a=window.GH_FLEET_DATA.get(state,id);if(!a){notice('الأصل غير موجود');return false;}if(a.phase==='moving'){notice('لا يمكن صيانة الأصل أثناء الحركة');return false;}const cost=a.type==='air'?78000:a.type==='sea'?145000:2800,supplier=a.type==='air'?'Global MRO Aviation':a.type==='sea'?'Oceanic Technical Services':'RoadFleet Maintenance';try{const result=(await runAuthorizedDomainCommand('fleet','service',{id,cost,supplier,note:`صيانة وتعبئة كاملة ${a.name} · ${supplier}`,method:'تحويل صيانة',taxable:true})).result;if(!result)throw new Error('لم يرجع محرك الأسطول إثبات الصيانة');pushAlert(`اكتملت صيانة وتعبئة ${a.name} لدى ${supplier} بقيمة ${fmtMoney(cost)} وأصبحت الحالة 100%.`);updateKpis();openDrawer('assetManage',id);return true;}catch(error){notice(`تعذر صيانة الأصل: ${error.message}`);return false;}
   }
   // مصدر واحد لسبب تعطل أصل بعينه. الطاقم جزء ثابت من سجل الأصل ولا ينتظر قسم HR.
-  function departureBlockReasonFor(asset,target=state,runtime=routeTemplates){
+  // conflictContext: one GH_FLEET_CORE.routeConflictContext for every asset checked against the same unchanged state.
+  function departureBlockReasonFor(asset,target=state,runtime=routeTemplates,conflictContext=null){
     const tpl=runtime[asset.routeId];
     if(!tpl)return {code:'no-route-data',text:'لا يوجد مسار تشغيلي صالح مرتبط بهذا الأصل.'};
     if(routeModeOf(tpl)!==assetModeOf(asset)||!assetOwnerCompanyId(asset)||routeOwnerCompanyId(tpl)!==assetOwnerCompanyId(asset))return {code:'route-company-mismatch',text:'المسار لا يتبع الشركة المالكة لهذا الأصل.'};
@@ -4821,21 +4883,21 @@
     if(!routeFitsAsset(asset,tpl))return {code:'route-range-invalid',text:'المسار يتجاوز مدى الأصل أو قيود التشغيل.'};
     if(!asset.baseFacility||(!sameUnderlyingFacilityFor(target,asset.baseFacility,tpl.fromFacility)&&!sameUnderlyingFacilityFor(target,asset.baseFacility,tpl.toFacility)))return {code:'asset-location-mismatch',text:'موقع الأصل لا يطابق إحدى نقطتي المسار.'};
     if(asset.staffing?.mode!=='automatic-fixed'||asset.staffing.ready!==true)return {code:'asset-staffing-invalid',text:'سجل الطاقم الثابت لهذا الأصل غير مكتمل. أعد فحص الأصل؛ لا توجد موافقة HR مطلوبة.'};
-    const conflict=window.GH_FLEET_CORE.routeConflict(target,asset.id,tpl.id,tpl);if(conflict)return asset.type==='air'?{code:'route-not-exclusive',text:`المسار أو ممر مماثل مستخدم بواسطة ${conflict.name}.`}:{code:'route-capacity-full',text:`مسار الأسطول تجاوز سعته التشغيلية (${window.GH_FLEET_CORE.routeCapacity(tpl)} أصل).`};
+    const conflict=window.GH_FLEET_CORE.routeConflict(target,asset.id,tpl.id,tpl,conflictContext);if(conflict)return asset.type==='air'?{code:'route-not-exclusive',text:`المسار أو ممر مماثل مستخدم بواسطة ${conflict.name}.`}:{code:'route-capacity-full',text:`مسار الأسطول تجاوز سعته التشغيلية (${window.GH_FLEET_CORE.routeCapacity(tpl)} أصل).`};
     return null;
   }
-  function departureBlockReason(asset){return departureBlockReasonFor(asset,state,routeTemplates);}
   async function departRouteAssets(routeId,companyInput='road',assetId=null){
     const route=routeId?routeTemplates[routeId]:null,companyId=routeOwnerCompanyId(route)||routeCompanyFromInput(companyInput),type=routeModeOf(route)||companyRouteModes(companyId).find(mode=>['air','sea','road'].includes(mode));
     if(!companyId||!['air','sea','road'].includes(type)){notice('اختر شركة تشغيل واحدة للمغادرة؛ لا يُسمح بأمر مختلط.');return false;}
     const preview=window.GH_FLEET_DATA.filter(state,asset=>assetOwnerCompanyId(asset)===companyId&&assetModeOf(asset)===type&&asset.routeId&&(!routeId||asset.routeId===routeId)&&(!assetId||asset.id===assetId)&&asset.phase==='turnaround'&&!asset.departureScheduled);
     if(!preview.length){notice('لا توجد أصول جاهزة للمغادرة ضمن هذا النطاق.');return false;}
-    const previewBlocked=preview.map(asset=>{const block=departureBlockReason(asset);return block?{id:asset.id,name:asset.name,type:assetModeOf(asset),companyId:assetOwnerCompanyId(asset),...block}:null;}).filter(Boolean);
+    const previewContext=window.GH_FLEET_CORE.routeConflictContext(state),previewBlocked=preview.map(asset=>{const block=departureBlockReasonFor(asset,state,routeTemplates,previewContext);return block?{id:asset.id,name:asset.name,type:assetModeOf(asset),companyId:assetOwnerCompanyId(asset),...block}:null;}).filter(Boolean);
     if(previewBlocked.length){lastDepartureBlocked=previewBlocked;notice(`أُلغي الأمر بالكامل قبل تحريك أي أصل: ${previewBlocked.slice(0,3).map(row=>`${row.name} — ${row.text}`).join(' · ')}${previewBlocked.length>3?' …':''}`);return false;}
     return runAuthorizedCompositeCommand(`atomic-departure:${companyId}`,({state:draft,routes,dispatch})=>{
       const candidates=window.GH_FLEET_DATA.filter(draft,asset=>assetOwnerCompanyId(asset)===companyId&&assetModeOf(asset)===type&&asset.routeId&&(!routeId||asset.routeId===routeId)&&(!assetId||asset.id===assetId)&&asset.phase==='turnaround'&&!asset.departureScheduled);if(candidates.length!==preview.length)throw new Error('تغيرت قائمة الأصول أثناء تجهيز الأمر');
+      const conflictContext=window.GH_FLEET_CORE.routeConflictContext(draft);
       for(const asset of candidates){
-        const block=departureBlockReasonFor(asset,draft,routes);if(block)throw new Error(`${asset.name}: ${block.text}`);
+        const block=departureBlockReasonFor(asset,draft,routes,conflictContext);if(block)throw new Error(`${asset.name}: ${block.text}`);
       }
       const departures=candidates.map(asset=>({id:asset.id,route:routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility),load:loadLabel(asset),delaySeconds:window.GH_FLEET_CORE.departureDelay(asset)}));
       dispatch('fleet','depart-batch',{departures});
