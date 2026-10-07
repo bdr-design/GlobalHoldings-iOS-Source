@@ -14,7 +14,7 @@
   if(typeof module==='object'&&module.exports)module.exports=api;
   if(root)root.GH_MAP_VIEW_CORE=api;
 })(typeof globalThis!=='undefined'?globalThis:this,()=>{
-  const VERSION='GH-MAP-VIEW-359.1.0';
+  const VERSION='GH-MAP-VIEW-359.2.0';
   const MODES=Object.freeze([
     Object.freeze({id:'operations',label:'العمليات',hint:'الأصول المتحركة ومساراتها'}),
     Object.freeze({id:'network',label:'الشبكة',hint:'القواعد والمحاور والمقار'}),
@@ -68,11 +68,13 @@
   function busiestRoutes(routes,limit){
     return (Array.isArray(routes)?routes:[]).filter(route=>(Number(route?.count)||0)>0).slice().sort((a,b)=>b.count-a.count||String(a.key).localeCompare(String(b.key))).slice(0,Math.max(0,limit));
   }
-  // Budgets per zoom: route lines and vehicles in operations, places in network and expansion.
+  // Vehicles share one adaptive presentation budget across the owned fleet, Mobility and competitors.  The cap is a
+  // rendering concern only: it never changes the logical fleet, accounting or simulation.  Places use a separate DOM
+  // budget because facilities remain interactive Leaflet markers and are presented through country/city hierarchy.
   function budget(kind,zoom){
     const z=Number(zoom)||0;
     if(kind==='routes')return z<4?40:z<6?70:z<9?110:160;
-    if(kind==='vehicles')return z<4?24:z<6?36:z<9?54:72;
+    if(kind==='vehicles')return z<4?72:z<6?120:z<9?200:300;
     if(kind==='places')return z<4?28:z<6?48:z<9?80:120;
     return 0;
   }

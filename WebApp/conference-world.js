@@ -13,7 +13,7 @@ class ResourcePool{
  dispose(){this.closed=true;for(const resource of this.items){if(resource.isTexture)resource.source?.data?.close?.();resource.dispose?.();}this.items.clear();}
 }
 class Auditorium{
- constructor(renderer,redraw){this.T=globalThis.GH_THREE;this.renderer=renderer;this.redraw=redraw;this.pool=new ResourcePool();this.disposed=false;this.crowdCount=0;this.scene=new this.T.Scene();this.presenterCue='stage-right';this.build();}
+ constructor(renderer,redraw,options={}){this.T=globalThis.GH_THREE;this.renderer=renderer;this.redraw=redraw;this.mobile=!!options.mobile;this.pool=new ResourcePool();this.disposed=false;this.crowdCount=0;this.scene=new this.T.Scene();this.presenterCue='stage-right';this.build();}
  own(x){return this.pool.own(x);}
  material(color,roughness=.8,metalness=0){return this.own(new this.T.MeshStandardMaterial({color,roughness,metalness}));}
  mesh(geo,mat,position=[0,0,0],scale=[1,1,1]){const o=new this.T.Mesh(geo,mat);o.position.set(...position);o.scale.set(...scale);o.receiveShadow=true;this.scene.add(o);return o;}
@@ -27,8 +27,8 @@ class Auditorium{
   box([0,.04,-6.5],[29,.3,12],m.white,true);box([0,.28,-6.9],[28,.2,11.2],m.white,true);
   box([0,.16,-.51],[27.5,.035,.035],m.teal);box([0,.39,-1.3],[26.5,.035,.035],m.gold);
   box([0,6.12,-11.55],[24.3,10.86,.22],m.white,true);
-  this.screenCanvas=document.createElement('canvas');const limit=this.renderer.capabilities.maxTextureSize;this.screenCanvas.width=Math.min(3840,limit);this.screenCanvas.height=Math.min(2160,limit);
-  this.screenTexture=this.own(new T.CanvasTexture(this.screenCanvas));this.screenTexture.colorSpace=T.SRGBColorSpace;this.screenTexture.anisotropy=Math.min(this.renderer.capabilities.getMaxAnisotropy(),16);
+  this.screenCanvas=document.createElement('canvas');const limit=this.renderer.capabilities.maxTextureSize,target=this.mobile?[1920,1080]:[3840,2160],scale=Math.min(1,limit/target[0],limit/target[1]);this.screenCanvas.width=Math.max(1,Math.floor(target[0]*scale));this.screenCanvas.height=Math.max(1,Math.floor(target[1]*scale));
+  this.screenTexture=this.own(new T.CanvasTexture(this.screenCanvas));this.screenTexture.colorSpace=T.SRGBColorSpace;this.screenTexture.anisotropy=Math.min(this.renderer.capabilities.getMaxAnisotropy(),this.mobile?8:16);
   const screenMat=this.own(new T.MeshBasicMaterial({map:this.screenTexture,toneMapped:false}));
   this.screen=this.mesh(this.own(new T.PlaneGeometry(24,10.8)),screenMat,[0,6.12,-11.4]);
   // Sculpted wings instead of vertical wooden fins. Curved surfaces carry soft cool lighting.
@@ -47,7 +47,7 @@ class Auditorium{
   for(let i=0;i<5;i++)box([0,12.3,-5+i*7],[31,.16,.8],m.white,true);
   // An open stage keeps the full presenter visible; no lectern obstructs the body.
   this.createSeats(round,cube,m);this.batch(cube);this.batch(round);
-  s.add(new T.HemisphereLight('#fffdf7','#7891a4',1.45));const key=new T.DirectionalLight('#fff4d9',2.85);key.position.set(-7,14,10);key.castShadow=true;key.shadow.mapSize.set(1536,1536);Object.assign(key.shadow.camera,{left:-19,right:19,top:30,bottom:-20,near:1,far:80});key.shadow.bias=-.0007;key.shadow.normalBias=.045;this.own(key.shadow);s.add(key);
+  s.add(new T.HemisphereLight('#fffdf7','#7891a4',1.45));const key=new T.DirectionalLight('#fff4d9',2.85);key.position.set(-7,14,10);key.castShadow=true;const shadowSize=this.mobile?1024:1536;key.shadow.mapSize.set(shadowSize,shadowSize);Object.assign(key.shadow.camera,{left:-19,right:19,top:30,bottom:-20,near:1,far:80});key.shadow.bias=-.0007;key.shadow.normalBias=.045;this.own(key.shadow);s.add(key);
   const fill=new T.DirectionalLight('#d7ebff',.95);fill.position.set(15,7,-5);s.add(fill);const stageGlow=new T.PointLight('#cceeff',.65,35);stageGlow.position.set(0,8,-2);s.add(stageGlow);
  }
  createSeats(round,cube,m){
@@ -57,7 +57,7 @@ class Auditorium{
    this.seats.push({x,y,z,angle:-x*.012,occupied:(r*13+c*7)%9!==0,seed:r*14+c});
   }
   const parts=[{geo:round,mat:m.fabric,s:[.66,.14,.64],p:[0,.47,0]},{geo:round,mat:m.fabric,s:[.68,.61,.11],p:[0,.81,.28],rot:-.12},{geo:cube,mat:m.metal,s:[.035,.4,.045],p:[-.24,.22,0]},{geo:cube,mat:m.metal,s:[.035,.4,.045],p:[.24,.22,0]},{geo:round,mat:m.metal,s:[.045,.065,.55],p:[-.37,.7,0]},{geo:round,mat:m.metal,s:[.045,.065,.55],p:[.37,.7,0]}];
-  for(const part of parts){const batch=this.own(new T.InstancedMesh(part.geo,part.mat,this.seats.length));this.seats.forEach((seat,i)=>{matrix.position.set(seat.x+part.p[0],seat.y+part.p[1],seat.z+part.p[2]);matrix.scale.set(...part.s);matrix.rotation.set(part.rot||0,seat.angle,0);matrix.updateMatrix();batch.setMatrixAt(i,matrix.matrix);});batch.receiveShadow=true;batch.castShadow=part.mat===m.fabric;this.scene.add(batch);}
+  for(const part of parts){const batch=this.own(new T.InstancedMesh(part.geo,part.mat,this.seats.length));this.seats.forEach((seat,i)=>{matrix.position.set(seat.x+part.p[0],seat.y+part.p[1],seat.z+part.p[2]);matrix.scale.set(...part.s);matrix.rotation.set(part.rot||0,seat.angle,0);matrix.updateMatrix();batch.setMatrixAt(i,matrix.matrix);});batch.receiveShadow=true;batch.castShadow=!this.mobile&&part.mat===m.fabric;this.scene.add(batch);}
   for(let r=0;r<7;r++){this.mesh(cube,m.floor,[0,r*.06-.02,3.6+r*1.6],[20,.12+r*.12,1.6]);for(const x of [-9,0,9])this.mesh(cube,m.light,[x,r*.12+.045,3.6+r*1.6],[.05,.014,1.15]);}
  }
  batch(geometry){const T=this.T,groups=new Map();for(const mesh of [...this.scene.children])if(mesh.isMesh&&!mesh.isInstancedMesh&&mesh.geometry===geometry){const rows=groups.get(mesh.material)||[];rows.push(mesh);groups.set(mesh.material,rows);}for(const [mat,rows] of groups){const batch=this.own(new T.InstancedMesh(geometry,mat,rows.length));rows.forEach((mesh,i)=>{mesh.updateMatrix();batch.setMatrixAt(i,mesh.matrix);this.scene.remove(mesh);});batch.receiveShadow=true;this.scene.add(batch);}}
@@ -70,7 +70,7 @@ class Auditorium{
   const host=gltf.scene.getObjectByName('host_standing');if(!host)throw new Error('conference-cast-invalid');this.host=host;host.position.set(7.15,.39,-4.1);host.rotation.y=-.12;host.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});this.scene.add(host);this.applyCue({presenter:this.presenterCue},{phase:'opening',immediate:true});
   const matrix=new T.Object3D();const models=['host_seated','guest_seated','guest2_seated'];
   models.forEach((name,k)=>{const seats=this.seats.filter(p=>p.occupied&&p.seed%3===k),model=gltf.scene.getObjectByName(name);if(!model)throw new Error('conference-cast-invalid');model.updateMatrixWorld(true);
-   model.traverse(o=>{if(!o.isMesh)return;const batch=this.own(new T.InstancedMesh(o.geometry,o.material,seats.length));seats.forEach((p,i)=>{const size=.97+(p.seed%5)*.012;matrix.position.set(p.x,p.y+.055,p.z+.04);matrix.rotation.set(0,Math.PI+p.angle+(p.seed%3-1)*.035,0);matrix.scale.set(size,size,size);matrix.updateMatrix();batch.setMatrixAt(i,matrix.matrix);});batch.receiveShadow=true;batch.castShadow=true;this.scene.add(batch);});this.crowdCount+=seats.length;
+   model.traverse(o=>{if(!o.isMesh)return;const batch=this.own(new T.InstancedMesh(o.geometry,o.material,seats.length));seats.forEach((p,i)=>{const size=.97+(p.seed%5)*.012;matrix.position.set(p.x,p.y+.055,p.z+.04);matrix.rotation.set(0,Math.PI+p.angle+(p.seed%3-1)*.035,0);matrix.scale.set(size,size,size);matrix.updateMatrix();batch.setMatrixAt(i,matrix.matrix);});batch.receiveShadow=true;batch.castShadow=!this.mobile;this.scene.add(batch);});this.crowdCount+=seats.length;
   });
   this.renderer.shadowMap.needsUpdate=true;this.redraw();
  }

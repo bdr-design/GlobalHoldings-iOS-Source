@@ -18,5 +18,6 @@ assert.equal(V.declutter(points,{radius:1,limit:5}).length,5);
 // Route lines: hairline for one asset, about 3 px for the busiest; busiest first within the budget.
 assert.deepEqual(V.routeStyle(1,500),{weight:1.1,opacity:.32});assert.deepEqual(V.routeStyle(500,500),{weight:3.2,opacity:.75});
 assert.deepEqual(V.busiestRoutes([{key:'a',count:2},{key:'b',count:9},{key:'c',count:0},{key:'d',count:9}],2).map(r=>r.key),['b','d']);
-assert.ok(V.budget('routes',2)<V.budget('routes',10)&&V.budget('vehicles',2)===24&&V.budget('places',3)<=V.budget('places',8));
+assert.ok(V.budget('routes',2)<V.budget('routes',10)&&V.budget('places',3)<=V.budget('places',8));
+assert.deepEqual([2,4,6,9].map(zoom=>V.budget('vehicles',zoom)),[72,120,200,300],'the shared vehicle budget grows to the one-canvas hard cap');
 console.log('build359 map view core: Western counts, real-place groups, no stacking, route weights, budgets');

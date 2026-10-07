@@ -79,10 +79,11 @@ async function testFallbackAndWorkerContract(){
   context.receive({data:{type:'positions',requestId:2,generation:1,progress:input.progress}});assert.equal(sent[1].message.type,'positions-result');assert.equal(sent[1].message.groups.length,sent[0].message.groups.length);
   context.receive({data:{type:'positions',requestId:3,generation:0,progress:input.progress}});assert.equal(sent[2].message.type,'error','stale generation cannot be read as current map state');
   const root=path.join(__dirname,'..'),html=fs.readFileSync(path.join(root,'WebApp/index.html'),'utf8'),app=fs.readFileSync(path.join(root,'WebApp/app.js'),'utf8'),runtime=JSON.parse(fs.readFileSync(path.join(root,'WebApp/runtime-required.json'),'utf8'));
-  assert.match(html,/map-presentation-core\.js/);assert.ok(html.indexOf('map-presentation-core.js')<html.indexOf('app.js'));assert.match(app,/new Worker\('map-presentation-worker\.js'\)/);assert.match(app,/mapPresentationEngine\.requestPlan\(/);
-  // Build 359 (map modes): the map draws vehicles only, each on its own route (no moving clusters, no centroids): it reads
-  // the plan's heroes and never asks the worker for centroids (the worker keeps the positions message, checked above).
-  assert.match(app,/presentationPlan\.heroIndices/);assert.doesNotMatch(app,/presentationPlan\.groups/);assert.doesNotMatch(app,/mapPresentationEngine\.requestPositions\(/);assert.ok(runtime.files.includes('map-presentation-worker.js'));
+  assert.match(html,/map-presentation-core\.js/);assert.ok(html.indexOf('map-presentation-core.js')<html.indexOf('app.js'));assert.doesNotMatch(app,/new Worker\('map-presentation-worker\.js'\)/,'the retired live hero-planning path must not create an unused worker');
+  // The worker/core remains a supported, independently tested presentation component. The live vehicle renderer now
+  // sends all sources through the country/facility-aware shared allocator rather than depending on requestPlan heroes.
+  assert.match(app,/allocator=window\.GH_MAP_PROXY_CORE/);assert.match(app,/allocator\.allocate\(unique,/);assert.match(app,/renderAllocatedVehicles\(vehicleCandidates,zoom\)/);
+  assert.doesNotMatch(app,/mapPresentationEngine\.requestPositions\(/);assert.ok(runtime.files.includes('map-presentation-worker.js'));
 }
 
 (async()=>{await testLoadAndParity();await testAsyncLifecycle();await testFallbackAndWorkerContract();console.log('Build 340 map presentation engine: 4.3k/20k parity, fair hero selection, route interpolation, centroid updates, bounded async lifecycle and fallback PASS');})().catch(error=>{console.error(error);process.exitCode=1;});

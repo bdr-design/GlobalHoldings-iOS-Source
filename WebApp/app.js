@@ -156,7 +156,7 @@
   const regionNames = typeof Intl.DisplayNames==='function' ? new Intl.DisplayNames(['ar'],{type:'region'}) : null;
   const logisticsCenterName = place => place?.area ? `مركز ${place.city} — ${place.area}` : `مركز ${place?.label||'موقع مخصص'}`;
   const esc = value => String(value??'').replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
-  const normalizeSearch = value => String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  const normalizeSearch = value => String(value||'').normalize('NFKD').replace(/[\u0300-\u036f\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]/g,'').toLocaleLowerCase('ar').replace(/\s+/g,' ').trim();
   const countryLabel = code => {
     if(!code)return 'غير محدد';
     if(code.length===2){try{return regionNames?.of(code)||code;}catch{return code;}}
@@ -1113,7 +1113,7 @@
   function hrContext(){return {getDynamicFacilities};}
   function ensureFacilityWorkforceDraft(target,dispatch,company='all',source='HR authorized facility staffing'){const result=dispatch('hr','hire',{company,source,scope:'facility'},{context:hrContext()}).result;if(!result)throw new Error('HR Core unavailable');return result.facilities||[];}
   async function ensureFacilityWorkforce(company='all',source='HR authorized facility staffing'){const out=await runAuthorizedDomainCommand('hr','hire',{company,source,scope:'facility'},{context:hrContext()});if(!out.result)throw new Error('HR Core unavailable');return out.result.facilities||[];}
-  let map, currentTile, layers = {}, terrainLayer=null, routeLayers = [], ownMarkers = new Map(), facilityMarkers = new Map(), competitorMarkers = new Map(), worldMarkers = new Map(), renderedAssetIds = new Set(), renderedMobilityIds = new Set(), presentationAssetIndex = new Map(), presentationAssetIndexRevision = -1, presentationAssetIndexLength = -1, presentationAssetIndexSource = null, worldSpatialIndexCache = null, mapAssetQueryRequest = null, mapPresentationPlanRequest = null, mapPresentationPlanGeneration = 0;
+  let map, currentTile, layers = {}, terrainLayer=null, routeLayers = [], ownMarkers = new Map(), facilityMarkers = new Map(), competitorMarkers = new Map(), worldMarkers = new Map(), renderedAssetIds = new Set(), renderedMobilityIds = new Set(), presentationAssetIndex = new Map(), presentationAssetIndexRevision = -1, presentationAssetIndexLength = -1, presentationAssetIndexSource = null, worldSpatialIndexCache = null, mapAssetQueryRequest = null, mapVehicleCanvas = null, mapVehicleHitTargets = new Map(), mapRenderTimer = null;
   let mapFleetRowsSource=null,mapFleetRowsMembership='',mapFleetRows=[];
   function fleetPresentationRows(){
     const fleet=window.GH_FLEET_DATA,source=fleet.source(state),membership=fleet.membershipRevision(state);
@@ -1131,18 +1131,49 @@
       renderMap();
     }
   })||null;
-  const mapPresentationEngine=window.GH_MAP_PRESENTATION_CORE?.create?.({
-    workerFactory:()=>typeof Worker==='function'?new Worker('map-presentation-worker.js'):null,
-    timeoutMs:2500,
-    onFailure:error=>nonCritical('map-presentation-worker-disabled',error),
-    onPlan:result=>{
-      const current=mapPresentationPlanRequest;
-      if(!map||!current||mapAggregateMode()||current.key!==result.key||current.assets!==fleetPresentationRows()||current.revision!==(Number(state.saveRevision)||0)||!mapPresentationEngine)return;
-      renderMap();
-    },
-    // Cluster markers follow a member asset on its route (updateMarkerPositions); group centres are not requested.
-    onPositions:()=>{}
+  let fleetListSearchFacilityNames=new Map();
+  const fleetListQueryEngine=window.GH_FLEET_LIST_QUERY?.create?.({
+    fleetData:window.GH_FLEET_DATA,
+    normalizeSearch,
+    maxCacheEntries:16,
+    maxCacheRows:1_000_000,
+    searchText:row=>`${row.id||''} ${row.name||''} ${row.model||''} ${row.baseFacility||''} ${fleetListSearchFacilityNames.get(row.baseFacility)||''}`
   })||null;
+  let fleetListQueryWarm=null,fleetListQueryWarmState=null,fleetListQueryWarmSource=null,fleetListQueryWarmMembership='',fleetListQueryFreshAt=0,fleetListQueryFreshBuilds=0;
+  let fleetListSearchRequest=null;
+  function clearFleetListSearchRequest(){fleetListSearchRequest?.controller?.abort?.();fleetListSearchRequest=null;}
+  function noteFleetListQueryFreshness(){
+    if(!fleetListQueryEngine)return;const stats=fleetListQueryEngine.stats(state);if(stats.ready&&stats.builds!==fleetListQueryFreshBuilds){fleetListQueryFreshBuilds=stats.builds;fleetListQueryFreshAt=Date.now();}
+  }
+  function refreshFleetListSnapshotIfStale(){
+    if(!fleetListQueryEngine)return false;noteFleetListQueryFreshness();const stats=fleetListQueryEngine.stats(state);if(!stats.ready||Date.now()-fleetListQueryFreshAt<30_000)return false;
+    fleetListQueryEngine.invalidate(state);fleetListQueryWarm=null;clearFleetListSearchRequest();return true;
+  }
+  function requestFleetListSearchRows(owner,status,search){
+    if(!fleetListQueryEngine)return null;const target=state,membership=String(window.GH_FLEET_DATA.membershipRevision(target)),normalized=normalizeSearch(search),key=`${owner}\u0000${status}\u0000${normalized}`,current=fleetListSearchRequest;
+    if(current&&current.state===target&&current.membership===membership&&current.key===key)return current;
+    current?.controller?.abort?.();const controller=typeof AbortController==='function'?new AbortController():null,request={state:target,membership,key,owner,status,search,controller,rows:null,pending:null,error:null};fleetListSearchRequest=request;
+    const pending=fleetListQueryEngine.queryAsync(target,{owner,status,search},{batchRows:2_048,signal:controller?.signal});request.pending=pending;
+    pending.then(rows=>{
+      if(fleetListSearchRequest!==request)return;request.rows=rows;request.pending=null;
+      if(state===target&&activeDrawerPanel==='assets'&&ownedFilterType===owner&&ownedFilterStatus===status&&normalizeSearch(ownedQuery)===normalized)requestAnimationFrame(()=>renderOwnedAssetsInto(false));
+    }).catch(error=>{
+      if(fleetListSearchRequest!==request)return;request.pending=null;const code=String(error?.code||''),message=String(error?.message||error),stale=controller?.signal?.aborted||message.includes('aborted');
+      if(stale)return;
+      if(message.includes('membership-changed')||message.includes('superseded')){fleetListSearchRequest=null;warmFleetListQueryIndex();return;}
+      if(code==='FLEET_LIST_QUERY_PENDING_LIMIT'){fleetListSearchRequest=null;setTimeout(()=>{if(state===target&&activeDrawerPanel==='assets')renderOwnedAssetsInto(false);},40);return;}
+      request.error=message;nonCritical('fleet-list-query-search',error);if(activeDrawerPanel==='assets')requestAnimationFrame(()=>renderOwnedAssetsInto(false));
+    });
+    return request;
+  }
+  function warmFleetListQueryIndex(){
+    if(!fleetListQueryEngine)return null;const target=state,source=window.GH_FLEET_DATA.source(target),membership=window.GH_FLEET_DATA.membershipRevision(target),stats=fleetListQueryEngine.stats(target);if(stats.ready)return null;
+    if(fleetListQueryWarm&&fleetListQueryWarmState===target&&fleetListQueryWarmSource===source&&fleetListQueryWarmMembership===String(membership))return fleetListQueryWarm;
+    fleetListSearchFacilityNames=new Map(getDynamicFacilities().map(base=>[base.id,base.name||base.city||base.id]));fleetListQueryWarmState=target;fleetListQueryWarmSource=source;fleetListQueryWarmMembership=String(membership);
+    const pending=fleetListQueryEngine.ensureAsync(target);fleetListQueryWarm=pending;
+    pending.then(()=>{if(fleetListQueryWarm===pending)fleetListQueryWarm=null;if(state===target){noteFleetListQueryFreshness();if(activeDrawerPanel==='assets')requestAnimationFrame(()=>renderOwnedAssetsInto(false));}}).catch(error=>{if(fleetListQueryWarm===pending)fleetListQueryWarm=null;const message=String(error?.message||error),stale=message.includes('membership-changed')||message.includes('superseded');if(!stale)nonCritical('fleet-list-query-index',error);else if(state===target&&activeDrawerPanel==='assets'&&$('drawer')?.classList.contains('open'))setTimeout(()=>{warmFleetListQueryIndex();renderOwnedAssetsInto(false);},40);});
+    return pending;
+  }
   let financeReportWorkerResult=null,financeReportSnapshotCache=null,financeReportFallbackCache=null;
   const financeReportEngine=window.GH_FINANCE_REPORT_CORE?.create?.({
     workerFactory:()=>typeof Worker==='function'?new Worker('finance-report-worker.js'):null,
@@ -1151,22 +1182,6 @@
     onResult:result=>{financeReportWorkerResult=result;const body=$('drawerBody');if(activeDrawerPanel==='monthlyFinance'&&body?.querySelector?.('.monthly-finance-report')){body.innerHTML=renderMonthlyFinance();window.GH_INTERFACE?.prepare?.(body,activeDrawerPanel,activeDrawerArg,advancedContext());}}
   })||null;
   const mediaAssetEngine=window.GH_MEDIA_ASSET_CORE?.create?.({imageFactory:()=>new Image(),maxConcurrent:3,maxQueued:32,maxCached:24,onFailure:detail=>nonCritical('media-asset-decode',new Error(`${detail.src}:${detail.error||'decode-failed'}`))})||null;
-  function mapMovingPlanInput(rows,zoom,limit){
-    const routeIndexes=new Int32Array(rows.length),progress=new Float32Array(rows.length),baseCoordinates=new Float32Array(rows.length*2),assetIds=[],owners=[],modes=[],routeKeys=[],routes=[],routeLookup=new Map(),facilities=new Map();let structuralHash=2166136261;
-    const hashValue=value=>{const text=String(value??'');for(let char=0;char<text.length;char++){structuralHash^=text.charCodeAt(char);structuralHash=Math.imul(structuralHash,16777619)>>>0;}structuralHash^=255;structuralHash=Math.imul(structuralHash,16777619)>>>0;};
-    for(const facility of getDynamicFacilities()){if(Array.isArray(facility?.coords)&&facility.coords.length===2)facilities.set(facility.id,facility.coords);}
-    for(let index=0;index<rows.length;index++){
-      const asset=rows[index],routeKey=asset.routeId?String(asset.routeId):'',reverse=asset.reverse===true,routeVariant=routeKey?`${routeKey}:${reverse?1:0}`:'';
-      let routeIndex=-1;if(routeKey){routeIndex=routeLookup.get(routeVariant);if(routeIndex===undefined){const route=currentAssetRoute(asset);routeIndex=Array.isArray(route)&&route.length?routes.length:-2;routeLookup.set(routeVariant,routeIndex);if(routeIndex>=0)routes.push(route.map(point=>[Number(point[0]),Number(point[1])]));}}
-      const base=facilities.get(asset.baseFacility),offset=index*2;
-      routeIndexes[index]=routeIndex;progress[index]=asset.phase==='turnaround'?1:Math.max(0,Math.min(1,Number(asset.progress)||0));
-      baseCoordinates[offset]=routeIndex===-1&&Array.isArray(base)?Number(base[0]):NaN;baseCoordinates[offset+1]=routeIndex===-1&&Array.isArray(base)?Number(base[1]):NaN;
-      const id=String(asset.id||''),owner=assetOwnerCompanyId(asset)||'',mode=assetModeOf(asset)||'asset';assetIds.push(id);owners.push(owner);modes.push(mode);routeKeys.push(routeKey);hashValue(id);hashValue(owner);hashValue(mode);hashValue(routeKey);hashValue(asset.baseFacility||'');hashValue(reverse?1:0);
-    }
-    const core=window.GH_MAP_ASSET_QUERY_CORE,filterKey=core?.filterKey?.(currentMapFilter().companies)||'all';
-    const key=`${Number(state.saveRevision)||0}:${rows.length}:${structuralHash.toString(36)}:${zoom}:${limit}:${selectedAssetId||''}:${filterKey}`;
-    return {key,assetIds,owners,modes,routeKeys,routeIndexes,progress,baseCoordinates,routes,zoom,limit,groupLimit:limit,selectedId:selectedAssetId||''};
-  }
   function monthlyFinanceReportInput(months=12){
     const reports=Array.isArray(state.finance?.dailyCompanyReports)?state.finance.dailyCompanyReports:[],companyTypes=window.GH_FINANCE_CORE.companyIds(state,{includeGroup:false}),currentMonthKey=window.GH_FINANCE_CORE.calendarMonthForDay(Math.floor((Number(state.simSeconds)||0)/86400)),firstDay=Number(reports[0]?.day)||0,lastDay=Number(reports[reports.length-1]?.day)||0;
     const key=`${Number(state.saveRevision)||0}:${reports.length}:${firstDay}:${lastDay}:${currentMonthKey}:${companyTypes.join(',')}:${months}`;
@@ -1199,7 +1214,7 @@
   const worldInfrastructureIconCache = new Map();
   let mapTilesOffline=false,mapTileFailures=0,mapTileSuccesses=0;
   function panMapTo(coords, zoom=6){if(map&&Array.isArray(coords)&&coords.length===2&&Number.isFinite(coords[0])&&Number.isFinite(coords[1])){const level=Math.max(map.getZoom()||0,zoom),visible=window.GH_INTERFACE.mapViewport(),rect=map.getContainer().getBoundingClientRect(),center=map.project(coords,level);center.x+=rect.width/2-(visible.left-rect.left+visible.width/2);center.y+=rect.height/2-(visible.top-rect.top+visible.height/2);map.setView(map.unproject(center,level),level);}}
-  let selectedAssetId = null, selectedMobilityId = null, selectedFacilityId = null, selectedWorldKey = null, worldRenderTimer = null, activeDrawerPanel = null, activeDrawerArg = null;
+  let selectedAssetId = null, selectedMobilityId = null, selectedFacilityId = null, selectedWorldKey = null, activeDrawerPanel = null, activeDrawerArg = null;
 
   function normalizeAsset(asset){return window.GH_FLEET_CORE.normalizeAsset(asset,{route:routeTemplates[asset.routeId],catalogItem:catalogItem(asset.type,asset.catalogId)});}
   function normalizedAssetView(asset){return normalizeAsset(window.GH_FLEET_DATA.plain(asset));}
@@ -1300,6 +1315,7 @@
   function vehicleMarkerHtml(asset){return vehicleVisualHtml(asset.type,assetBearing(asset),assetMarkerPhoto(asset),asset.phase==='moving');}
   function competitorMarkerHtml(asset){return vehicleVisualHtml(asset.type,routeBearing(asset.route,asset.progress),VEHICLE_MARKER_PHOTOS[markerKind(asset.type)],true,true);}
   function refreshVehicleMarker(marker,type,bearing,moving){
+    if(marker?.getSnapshot&&marker?.update){marker.update({type:markerKind(type),bearing:markerHeading(markerKind(type),bearing),opacity:moving?1:.9});return;}
     const element=marker?.getElement?.();if(!element)return;
     const kind=markerKind(type),pin=element.querySelector('.vehicle-pin'),heading=element.querySelector('.vehicle-heading');
     if(pin)pin.classList.toggle('is-live',!!moving);
@@ -1447,6 +1463,21 @@
     layer.on('tileload',()=>{if(layer!==currentTile)return;mapTileSuccesses++;if(mapTileSuccesses>=2){mapTileFailures=0;setMapTilesOffline(false);}});
     return layer;
   }
+  function scheduleViewportMapRender(delay=90){
+    clearTimeout(mapRenderTimer);mapRenderTimer=setTimeout(()=>{mapRenderTimer=null;renderMap();},Math.max(0,Number(delay)||0));
+  }
+  function selectCanvasVehicle(hit,_adapter,event){
+    if(event?.target?.closest?.('.leaflet-control,.leaflet-marker-icon,.leaflet-popup'))return;
+    const target=mapVehicleHitTargets.get(hit?.id);if(!target)return;
+    if(target.source==='fleet'){showAsset(target.asset.id);return;}
+    if(target.source==='mobility'){
+      selectedAssetId=null;selectedMobilityId=target.vehicle.id;renderMap();openDrawer('mobilityAsset',target.vehicle.id);return;
+    }
+    if(target.source==='competitor'){
+      const asset=target.asset,position=target.position||interpolatePresentationRoute(asset.route,asset.progress);
+      L.popup().setLatLng(position).setContent(`<b>${esc(asset.name)}</b><br>${esc(asset.company)}<br><span style="color:#9fb0b5">منافس — حركة سوقية</span>`).openOn(map);
+    }
+  }
 
   function initMap(){
     if(!window.L){
@@ -1454,6 +1485,8 @@
       return;
     }
     map = L.map('map',{zoomControl:false,attributionControl:false,minZoom:2,maxZoom:19,worldCopyJump:true,preferCanvas:true}).setView([22,28],3);
+    try{const vehiclePane=map.createPane('vehicleCanvas');vehiclePane.style.zIndex='450';vehiclePane.style.pointerEvents='none';vehiclePane.style.width='100%';vehiclePane.style.height='100%';mapVehicleCanvas=window.GH_MAP_VEHICLE_CANVAS?.create?.({map,container:vehiclePane,hardLimit:300,dprCap:2,size:26,hitPadding:5,zIndex:0,onSelect:selectCanvasVehicle})||null;}
+    catch(error){mapVehicleCanvas=null;nonCritical('map-vehicle-canvas-disabled',error);}
     const terrainPane=map.createPane('localTerrain');terrainPane.style.zIndex='160';terrainPane.style.pointerEvents='none';
     terrainLayer=L.tileLayer(terrainTileUrl(state.mapLayer),{pane:'localTerrain',className:'gh-terrain-layer',tileSize:L.Browser.retina?128:256,zoomOffset:L.Browser.retina?1:0,maxNativeZoom:L.Browser.retina?3:4,maxZoom:19,minZoom:2,attribution:'Natural Earth'}).addTo(map);
     if(typeof ResizeObserver==='function')new ResizeObserver(()=>map?.invalidateSize({animate:false})).observe($('map'));
@@ -1468,9 +1501,10 @@
     map.on('zoomend moveend resize baselayerchange',updateCountryLabels);updateCountryLabels();
     const setInteractionState=active=>{mapInteractionActive=!!active;if(!active){requestVisualResync();updateMarkerPositions(true);}};
     map.on('movestart zoomstart dragstart',()=>setInteractionState(true));
-    map.on('moveend dragend',()=>{setInteractionState(false);clearTimeout(worldRenderTimer);worldRenderTimer=setTimeout(renderWorldInfrastructureMarkers,140);});
-    // إعادة رسم الطبقات الثقيلة فقط عند توقف التكبير، وليس أثناء الحركة.
-    map.on('zoomend',()=>{setInteractionState(false);clearTimeout(worldRenderTimer);worldRenderTimer=setTimeout(renderMap,120);});
+    map.on('moveend dragend',()=>{setInteractionState(false);scheduleViewportMapRender(90);});
+    // يعاد اختيار الوكلاء من نطاق العرض بعد توقف السحب/التكبير فقط؛ لا نعيد أي عمل ثقيل أثناء الحركة.
+    map.on('zoomend',()=>{setInteractionState(false);scheduleViewportMapRender(90);});
+    map.on('resize',()=>scheduleViewportMapRender(110));
     renderMap();
     hydrateRoadRoutes();
   }
@@ -1913,30 +1947,52 @@
     const next=MAP_VIEW.normalizeMode(mode);if(state.mapMode===next){syncMapModeButtons();return;}
     state.mapMode=next;syncMapModeButtons();renderMap();
   }
-  function movingHeroSelection(rows,zoom,limit){
-    const representatives=new Map();for(const asset of rows){const owner=assetOwnerCompanyId(asset),key=asset.routeId?`${owner}:${asset.routeId}`:`${owner}:${asset.id}`;if(asset.id===selectedAssetId||!representatives.has(key))representatives.set(key,asset);}
-    return fairAssetSelection([...representatives.values()],limit,selectedAssetId);
-  }
   const identityRouteColor=(companyId,mode='')=>companyDefinition(companyId)?.identity?.palette?.route||window.GH_IDENTITY?.brand?.(companyId)?.route||({air:'#2d72df',sea:'#119c94',road:'#df8a3d',mobility:'#1a9a6b'}[mode||companyId]||'#14a89a');
-  function fairAssetSelection(rows,limit,pinnedId=null){
-    const pinned=pinnedId?rows.find(row=>row.id===pinnedId):null,groups=new Map();for(const row of rows){if(row.id===pinnedId)continue;const key=assetOwnerCompanyId(row)||`unknown:${assetModeOf(row)}`,queue=groups.get(key)||[];queue.push(row);groups.set(key,queue);}const queues=[...groups].sort((a,b)=>a[0].localeCompare(b[0])).map(([,queue])=>queue.sort((a,b)=>String(a.id).localeCompare(String(b.id)))),picked=pinned?[pinned]:[];
-    let cursor=0;while(picked.length<limit&&queues.some(queue=>queue.length)){const queue=queues[cursor%queues.length];if(queue.length)picked.push(queue.shift());cursor++;}
-    return picked;
-  }
-  // Vehicles never stack: a vehicle closer than 18 px to one already placed is left out (the selected asset first).
-  function declutterVehicles(rows){
-    if(!map)return rows;const points=[];
-    for(const asset of rows){const position=assetPosition(asset);if(!position)continue;const point=map.latLngToContainerPoint(position);points.push({x:point.x,y:point.y,id:asset.id,weight:asset.id===selectedAssetId?Infinity:1,asset});}
-    return MAP_VIEW.declutter(points,{radius:18}).map(point=>point.asset);
-  }
-  function addIndividualAssetMarkers(individual){
-    const uniqueIndividuals=[...new Map(individual.map(asset=>[asset.id,asset])).values()];
-    for(const asset of uniqueIndividuals){
-      const position=assetPosition(asset);if(!position){nonCritical('asset-position-missing',new Error(`Missing position for ${asset.id}`));continue;}
-      const moving=asset.phase==='moving',icon=L.divIcon({className:`asset-marker map-vehicle ${asset.type}${moving?' is-moving':''}${selectedAssetId===asset.id?' is-selected':''}`,html:vehicleMarkerHtml(asset),iconSize:[30,30],iconAnchor:[15,15]});
-      const marker=L.marker(markerDisplayStart(`own:${asset.id}`,position),{icon,zIndexOffset:selectedAssetId===asset.id?760:700}).addTo(map);
-      marker.on('click',()=>showAsset(asset.id));ownMarkers.set(asset.id,marker);renderedAssetIds.add(asset.id);
+  function mapFacilityPresentationContext(){
+    const byId=new Map(),directory=facilityDirectoryIndex();
+    for(const facility of getDynamicFacilities()){
+      let countryId=String(facility.countryId||facility.countryCode||'').trim(),countryLabel=String(facility.country||'').trim();
+      if(!countryId&&countryLabel)try{const meta=directory.countryMetadata(countryLabel);countryId=meta.id;countryLabel=meta.label||countryLabel;}catch(_error){countryId=normalizeSearch(countryLabel)||'unknown';}
+      if(!countryId)countryId='unknown';
+      const cityId=String(facility.cityId||`${countryId}:${window.GH_DIRECTORY_CORE?.normalize?.(facility.city||facility.name||facility.id)||normalizeSearch(facility.city||facility.name||facility.id)}`).trim();
+      byId.set(facility.id,{facility,countryId,countryLabel:countryLabel||countryId,cityId,cityLabel:facility.city||facility.name||facility.id});
     }
+    return {byId};
+  }
+  function fleetMapCandidate(asset,geography){
+    if(!asset?.id)return null;const position=assetPosition(asset);if(!position)return null;const base=geography.byId.get(asset.baseFacility);
+    return {id:`fleet:${asset.id}`,source:'fleet',asset,position,countryId:base?.countryId||'',facilityId:asset.baseFacility||'',ownerCompanyId:assetOwnerCompanyId(asset)||'',mode:assetModeOf(asset)||asset.type||'asset',routeId:asset.routeId||'',selected:asset.id===selectedAssetId};
+  }
+  function mobilityMapCandidate(vehicle){
+    if(!vehicle?.id)return null;const center=window.GH_MOBILITY_CORE?.centerMeta?.(state,vehicle.centerId),position=vehicle.coords||interpolatePresentationRoute(vehicle.route,vehicle.progress);
+    if(!position)return null;let countryId=String(center?.countryId||center?.countryCode||'').trim();if(!countryId&&center?.country)try{countryId=facilityDirectoryIndex().countryMetadata(center.country).id;}catch(_error){countryId=normalizeSearch(center.country);}
+    return {id:`mobility:${vehicle.id}`,source:'mobility',vehicle,position,countryId,facilityId:center?.facilityId||`MOB-CENTER-${vehicle.centerId||'unknown'}`,ownerCompanyId:vehicle.ownerCompanyId||'mobility',mode:'mobility',routeId:vehicle.routeKey||vehicle.tripId||'',selected:vehicle.id===selectedMobilityId};
+  }
+  function competitorMapCandidate(asset){
+    const position=interpolatePresentationRoute(asset.route,asset.progress);return position?{id:`competitor:${asset.id}`,source:'competitor',asset,position,countryId:'',facilityId:'',ownerCompanyId:asset.company||'competitor',mode:asset.type||'asset',routeId:asset.id,selected:false}:null;
+  }
+  function addVehicleCandidateMarker(candidate){
+    const selected=candidate.selected===true,source=candidate.source,type=source==='mobility'?'mobility':candidate.asset?.type||candidate.mode||'asset',moving=source==='mobility'?candidate.vehicle.phase==='moving':source==='competitor'||candidate.asset?.phase==='moving',motionKey=source==='fleet'?`own:${candidate.asset.id}`:source==='mobility'?`own:mobility:${candidate.vehicle.id}`:`competitor:${candidate.asset.id}`,start=markerDisplayStart(motionKey,candidate.position),bearing=source==='fleet'?assetBearing(candidate.asset):source==='mobility'?routeBearing(candidate.vehicle.route,candidate.vehicle.progress):routeBearing(candidate.asset.route,candidate.asset.progress);
+    let marker=null;
+    if(mapVehicleCanvas){
+      marker=mapVehicleCanvas.add(candidate.id,{position:start,type:markerKind(type),bearing,selected,opacity:moving?1:.9,size:selected?30:26,zIndex:selected?100:source==='competitor'?10:50,color:source==='competitor'?'#e76d72':identityRouteColor(candidate.ownerCompanyId,candidate.mode),spriteUrl:VEHICLE_MARKER_PHOTOS[markerKind(type)]});
+      if(marker)mapVehicleHitTargets.set(candidate.id,candidate);
+    }else if(source==='fleet'){
+      const asset=candidate.asset,icon=L.divIcon({className:`asset-marker map-vehicle ${asset.type}${moving?' is-moving':''}${selected?' is-selected':''}`,html:vehicleMarkerHtml(asset),iconSize:[30,30],iconAnchor:[15,15]});marker=L.marker(start,{icon,zIndexOffset:selected?760:700}).addTo(map);marker.on('click',()=>showAsset(asset.id));
+    }else if(source==='mobility'){
+      const vehicle=candidate.vehicle,icon=L.divIcon({className:`asset-marker map-vehicle mobility mobility-car-marker${moving?' is-moving':''}${selected?' is-selected':''}`,html:vehicleVisualHtml('mobility',bearing,null,moving),iconSize:[30,30],iconAnchor:[15,15]});marker=L.marker(start,{icon,zIndexOffset:selected?750:680,keyboard:true,riseOnHover:true}).addTo(map);marker.on('click',()=>{selectedAssetId=null;selectedMobilityId=vehicle.id;renderMap();openDrawer('mobilityAsset',vehicle.id);});
+    }else{
+      const asset=candidate.asset,icon=L.divIcon({className:'competitor-marker map-vehicle',html:competitorMarkerHtml(asset),iconSize:[30,30],iconAnchor:[15,15]});marker=L.marker(start,{icon,zIndexOffset:300}).addTo(map).bindPopup(`<b>${esc(asset.name)}</b><br>${esc(asset.company)}<br><span style="color:#9fb0b5">منافس — حركة سوقية</span>`);
+    }
+    if(!marker)return;
+    if(source==='fleet'){ownMarkers.set(candidate.asset.id,marker);renderedAssetIds.add(candidate.asset.id);}
+    else if(source==='mobility'){ownMarkers.set(`mobility:${candidate.vehicle.id}`,marker);renderedMobilityIds.add(candidate.vehicle.id);}
+    else competitorMarkers.set(candidate.asset.id,marker);
+  }
+  function renderAllocatedVehicles(candidates,zoom){
+    const limit=Math.min(300,MAP_VIEW.budget('vehicles',zoom)),selectedId=selectedAssetId?`fleet:${selectedAssetId}`:selectedMobilityId?`mobility:${selectedMobilityId}`:'',bounds=map.getBounds().pad(.16),allocator=window.GH_MAP_PROXY_CORE;
+    const unique=[...new Map(candidates.filter(Boolean).map(candidate=>[candidate.id,candidate])).values()],selected=allocator?.allocate?allocator.allocate(unique,{limit,selectedId,paddedBounds:bounds,zoom,world:zoom<5,declutterRadius:18,project:candidate=>map.latLngToContainerPoint(candidate.position)}):unique.slice(0,limit);
+    for(const candidate of selected)addVehicleCandidateMarker(candidate);mapVehicleCanvas?.draw?.();return selected.length;
   }
   // Build 358 (million-asset): above MAP_AGGREGATE_ASSETS the map reads the fleet from classes of rows (exact counts,
   // one cached class scan per fleet revision) instead of one view per asset. Only the vehicles drawn (one per owner and
@@ -1969,7 +2025,7 @@
       if(!count)return;const owner=assetOwnerCompanyId(row);if(!visible(owner))return;
       if(fleet.presentedPhase(state,row)!=='moving'){addParked(row.baseFacility,count);return;}
       const mode=assetModeOf(row)||'asset';addRoute(owner,mode,row.type,row.routeId,count);
-      const repKey=row.routeId?`${owner}:${row.routeId}`:null;if(repKey){const rep=representatives.get(repKey);if(!rep||info.index<rep.index)representatives.set(repKey,{index:info.index,owner,mode});}
+      const repKey=row.routeId?`${owner}:${row.baseFacility||'no-base'}:${row.routeId}`:null;if(repKey){const rep=representatives.get(repKey);if(!rep||info.index<rep.index)representatives.set(repKey,{index:info.index,owner,mode,facilityId:row.baseFacility||''});}
     });
     return {routes:[...routes.values()],parkedByBase,representatives};
   }
@@ -1985,33 +2041,22 @@
     }
     return drawn.length;
   }
-  // Operations: one vehicle per owner and route (fair across owners), decluttered, plus the selected asset.
-  function renderOperationVehicles(filterState,zoom,presentation,visibleAssets){
-    const budget=MAP_VIEW.budget('vehicles',zoom);let heroes;
+  // Candidate collection is deliberately separate from drawing.  A single geographic allocator then shares one budget
+  // across the owned fleet, Mobility and competitors, so no source can silently allocate another 300 markers.
+  function operationVehicleCandidates(filterState,presentation,visibleAssets,geography){
+    const assets=[];
     if(presentation.representatives){
-      const fleet=window.GH_FLEET_DATA,selected=mapAggregateSelectedAsset(filterState),candidates=[...presentation.representatives.values()].map(rep=>({id:fleet.idAtRow(state,rep.index),ownerCompanyId:rep.owner,assetMode:rep.mode})).filter(row=>row.id!==undefined);
-      if(selected&&!candidates.some(row=>row.id===selected.id))candidates.push({id:selected.id,ownerCompanyId:assetOwnerCompanyId(selected),assetMode:assetModeOf(selected)});
-      heroes=fairAssetSelection(candidates,budget,selected?selectedAssetId:null).map(row=>row.id===selected?.id?selected:fleet.get(state,row.id)).filter(Boolean);
+      const fleet=window.GH_FLEET_DATA;for(const rep of presentation.representatives.values()){const id=fleet.idAtRow(state,rep.index),asset=id===undefined?null:fleet.get(state,id);if(asset)assets.push(asset);}
+      const selected=mapAggregateSelectedAsset(filterState);if(selected&&!assets.some(asset=>asset.id===selected.id))assets.push(selected);
     }else{
-      const movingAssets=visibleAssets.filter(asset=>asset.phase==='moving'),presentationInput=movingAssets.length&&mapPresentationEngine&&!mapPresentationEngine.isDisabled()?mapMovingPlanInput(movingAssets,zoom,budget):null,presentationRequest=presentationInput?mapPresentationEngine.requestPlan(presentationInput):{ready:false,worker:false},presentationPlan=presentationRequest.ready?presentationRequest.plan:null;
-      mapPresentationPlanRequest=presentationInput?{key:presentationInput.key,assets:fleetPresentationRows(),revision:Number(state.saveRevision)||0}:null;
-      mapPresentationPlanGeneration=presentationPlan?.generation||0;
-      heroes=presentationPlan?[...presentationPlan.heroIndices].map(index=>movingAssets[index]).filter(Boolean):movingHeroSelection(movingAssets,zoom,budget);
-      const selected=selectedAssetId?visibleAssets.find(asset=>asset.id===selectedAssetId):null;if(selected&&!heroes.includes(selected))heroes.push(selected);
+      for(const asset of visibleAssets)if(asset.phase==='moving'||asset.id===selectedAssetId)assets.push(asset);
     }
-    addIndividualAssetMarkers(declutterVehicles(heroes));
+    return assets.map(asset=>fleetMapCandidate(asset,geography)).filter(Boolean);
   }
-  // Car-sharing: moving cars as small vehicles (no clusters); parked cars are counted in the status strip.
-  function renderMobilityVehicles(zoom){
-    const limit=MAP_VIEW.budget('vehicles',zoom),includeIds=selectedMobilityId?[selectedMobilityId]:[],rows=window.GH_MOBILITY_CORE?.liveVehicles?.(state,limit,{movingOnly:true,includeIds})||[];
-    for(const vehicle of rows){
-      const pos=interpolatePresentationRoute(vehicle.route,vehicle.progress),moving=vehicle.phase==='moving',heading=routeBearing(vehicle.route,vehicle.progress);
-      if(selectedMobilityId===vehicle.id&&moving&&mapCategoryVisible('routes')){const selectedLine=L.polyline(vehicle.route,{color:identityRouteColor('mobility','mobility'),weight:3.2,opacity:.92,lineCap:'round',smoothFactor:1.2,interactive:false}).addTo(map);routeLayers.push(selectedLine);}
-      const icon=L.divIcon({className:`asset-marker map-vehicle mobility mobility-car-marker${moving?' is-moving':''}${selectedMobilityId===vehicle.id?' is-selected':''}`,html:vehicleVisualHtml('mobility',heading,null,moving),iconSize:[30,30],iconAnchor:[15,15]});
-      const marker=L.marker(markerDisplayStart(`own:mobility:${vehicle.id}`,pos),{icon,zIndexOffset:selectedMobilityId===vehicle.id?750:680,title:`${vehicle.name} · ${moving?'متحركة':'متاحة'}`,keyboard:true,riseOnHover:true}).addTo(map);
-      marker.bindTooltip(`${esc(vehicle.name)} · ${moving?(vehicle.routeVerified?'على شبكة الشوارع':'بانتظار تثبيت مسار الشارع'):'متاحة في المركز'}`,{direction:'top',permanent:false,opacity:.88});
-      marker.on('click',()=>{selectedAssetId=null;selectedMobilityId=vehicle.id;renderMap();openDrawer('mobilityAsset',vehicle.id);});ownMarkers.set(`mobility:${vehicle.id}`,marker);renderedMobilityIds.add(vehicle.id);
-    }
+  function mobilityVehicleCandidates(){
+    const includeIds=selectedMobilityId?[selectedMobilityId]:[],rows=window.GH_MOBILITY_CORE?.liveVehicles?.(state,500,{movingOnly:true,includeIds})||[];
+    for(const vehicle of rows)if(selectedMobilityId===vehicle.id&&vehicle.phase==='moving'&&mapCategoryVisible('routes')){const selectedLine=L.polyline(vehicle.route,{color:identityRouteColor('mobility','mobility'),weight:3.2,opacity:.92,lineCap:'round',smoothFactor:1.2,interactive:false}).addTo(map);routeLayers.push(selectedLine);}
+    return rows.map(mobilityMapCandidate).filter(Boolean);
   }
   function placeBubbleHtml(count,kind=''){return `<div class="map-place-bubble${kind?` ${kind}`:''}"><b dir="ltr">${MAP_VIEW.countLabel(count)}</b></div>`;}
   function mapOwnedFacilities(filter){
@@ -2030,56 +2075,57 @@
     marker.bindTooltip(`${esc(f.name||f.id)}${parked?` · ${MAP_VIEW.countLabel(parked)} أصل رابض`:''}`,{direction:'top',permanent:false,opacity:.9});
     marker.on('click',()=>{selectedFacilityId=f.id;openFacility(f.id);});facilityMarkers.set(f.id,marker);
   }
-  // The group's places. Network groups them in one bubble style (tap: zoom in); operations and expansion show each
-  // place on its own and leave out one that would overlap another (the busier base stays).
-  function renderPlaces(mode,zoom,parkedByBase,filter){
-    const facilities=mapOwnedFacilities(filter),points=facilities.map(f=>{const point=map.latLngToContainerPoint(f.coords);return {x:point.x,y:point.y,id:f.id,weight:f.id===selectedFacilityId?Infinity:1+(parkedByBase?.get(f.id)||0),facility:f};});
-    // Build 359 (owner screenshot: base tiles all over the map): in operations, bases are small dots below zoom 6, the
-    // busiest first, none closer than 24 px and at most the zoom's place budget; tiles from zoom 6. Expansion shows the
-    // group's own places as tiles over the world's places.
-    // The group headquarters stays a tile (the map's anchor).
-    if(mode==='operations'&&zoom<6){for(const point of MAP_VIEW.declutter(points,{radius:24,limit:MAP_VIEW.budget('places',zoom)}))addFacilityMarker(point.facility,parkedByBase?.get(point.id)||0,{compact:point.id!=='HQ-GROUP'});return;}
-    if(mode!=='network'){for(const point of MAP_VIEW.declutter(points,{radius:30}))addFacilityMarker(point.facility,parkedByBase?.get(point.id)||0);return;}
-    let radius=46,groups=MAP_VIEW.groupPoints(points,{radius});const limit=MAP_VIEW.budget('places',zoom);while(groups.length>limit&&radius<400){radius*=1.5;groups=MAP_VIEW.groupPoints(points,{radius});}
-    for(const group of groups){
-      if(group.members.length===1){addFacilityMarker(group.anchor.facility,parkedByBase?.get(group.anchor.id)||0);continue;}
-      const ids=group.members.map(member=>member.id),coords=group.anchor.facility.coords,icon=L.divIcon({className:'map-place-marker',html:placeBubbleHtml(group.members.length,'owned'),iconSize:[38,38],iconAnchor:[19,19]});
-      const marker=L.marker(coords,{icon,zIndexOffset:430,keyboard:true,riseOnHover:true}).addTo(map).bindTooltip(`${MAP_VIEW.countLabel(group.members.length)} منشأة · كبّر للتفاصيل`,{direction:'top',permanent:false,opacity:.9});
-      marker.on('click',()=>{if(zoom<11)map.setView(coords,Math.min(11,zoom+2));else openDrawer('expansion',{focusIds:ids});});facilityMarkers.set(`place-group:${group.id}`,marker);
-    }
+  function addFacilityGroupMarker(group,level,zoom){
+    const anchor=group.members.slice().sort((a,b)=>(b.weight-a.weight)||String(a.facility.id).localeCompare(String(b.facility.id)))[0],coords=anchor.facility.coords,count=group.members.length,attribute=level==='country'?`data-country-id="${esc(group.key)}"`:`data-city-id="${esc(group.key)}"`,icon=L.divIcon({className:`map-place-marker owned-${level}`,html:`<div class="map-place-bubble owned ${level}" ${attribute}><b dir="ltr">${MAP_VIEW.countLabel(count)}</b></div>`,iconSize:[38,38],iconAnchor:[19,19]});
+    const marker=L.marker(coords,{icon,zIndexOffset:430,keyboard:true,riseOnHover:true}).addTo(map),label=anchor[level==='country'?'countryLabel':'cityLabel']||group.key;
+    marker.bindTooltip(`${esc(label)} · ${MAP_VIEW.countLabel(count)} منشأة · كبّر للتفاصيل`,{direction:'top',permanent:false,opacity:.9});
+    marker.on('click',()=>{const target=level==='country'?6:8,points=group.members.map(member=>member.facility.coords);if(points.length>1)map.fitBounds(L.latLngBounds(points),{padding:[28,28],maxZoom:target});else map.setView(coords,Math.max(target,zoom+2));});facilityMarkers.set(`${level}:${group.key}`,marker);
+  }
+  // Facilities have their own hierarchy and never consume the shared vehicle cap: country at world scale, city at
+  // regional scale, then individual facilities.  HQ and the selected facility stay individually pinned.
+  function renderPlaces(mode,zoom,parkedByBase,filter,geography=mapFacilityPresentationContext()){
+    const facilities=mapOwnedFacilities(filter),pinned=facilities.filter(f=>f.id==='HQ-GROUP'||f.id===selectedFacilityId),pinnedIds=new Set(pinned.map(f=>f.id)),bounds=map.getBounds().pad(.12);
+    for(const facility of pinned)addFacilityMarker(facility,parkedByBase?.get(facility.id)||0);
+    const members=facilities.filter(f=>!pinnedIds.has(f.id)&&bounds.contains(f.coords)).map(f=>{const geo=geography.byId.get(f.id)||{},point=map.latLngToContainerPoint(f.coords);return {x:point.x,y:point.y,id:f.id,weight:1+(parkedByBase?.get(f.id)||0),facility:f,countryId:geo.countryId||'unknown',countryLabel:geo.countryLabel||f.country||'دولي',cityId:geo.cityId||`${geo.countryId||'unknown'}:${normalizeSearch(f.city||f.id)}`,cityLabel:geo.cityLabel||f.city||f.name};});
+    if(zoom>=8){const room=Math.max(0,MAP_VIEW.budget('places',zoom)-pinned.length);for(const point of MAP_VIEW.declutter(members,{radius:30,limit:room}))addFacilityMarker(point.facility,parkedByBase?.get(point.id)||0);return;}
+    const level=zoom<5?'country':'city',groupsByKey=new Map();for(const member of members){const key=level==='country'?member.countryId:member.cityId,list=groupsByKey.get(key)||[];list.push(member);groupsByKey.set(key,list);}
+    const groupPoints=[...groupsByKey].map(([key,rows])=>{const anchor=rows.slice().sort((a,b)=>(b.weight-a.weight)||String(a.id).localeCompare(String(b.id)))[0];return {x:anchor.x,y:anchor.y,id:key,weight:rows.reduce((sum,row)=>sum+row.weight,0),key,members:rows};}),room=Math.max(0,MAP_VIEW.budget('places',zoom)-pinned.length);
+    for(const point of MAP_VIEW.declutter(groupPoints,{radius:level==='country'?38:32,limit:room}))addFacilityGroupMarker(point,level,zoom);
+  }
+  function removePresentationMarker(marker){
+    try{if(marker?.getSnapshot)marker.remove?.();else map.removeLayer(marker);}catch(error){nonCritical('map-layer-remove',error);}
   }
   function renderMap(){
     if(!map)return;
     const mode=mapMode(),filter=state.activeFilter||'all',filterState=currentMapFilter(),zoom=map.getZoom(),aggregate=mapAggregateMode(),showFleet=mode!=='expansion'&&(mapCategoryVisible('assets')||mapCategoryVisible('routes')),visibleAssets=showFleet&&!aggregate?mapVisibleAssetRows(filterState):[];
     captureMarkerVisualPositions();markerMotionStates.clear();syncMapModeButtons();
     routeLayers.forEach(layer=>{try{map.removeLayer(layer)}catch(error){nonCritical('map-route-remove',error);}}); routeLayers=[];
-    ownMarkers.forEach(marker=>{try{map.removeLayer(marker)}catch(error){nonCritical('map-layer-remove',error);}}); ownMarkers.clear();
+    mapVehicleCanvas?.clear?.();mapVehicleHitTargets.clear();
+    ownMarkers.forEach(removePresentationMarker); ownMarkers.clear();
     facilityMarkers.forEach(marker=>{try{map.removeLayer(marker)}catch(error){nonCritical('map-layer-remove',error);}}); facilityMarkers.clear();
-    competitorMarkers.forEach(marker=>{try{map.removeLayer(marker)}catch(error){nonCritical('map-layer-remove',error);}}); competitorMarkers.clear();
-    renderedAssetIds=new Set();renderedMobilityIds=new Set();mapPresentationPlanRequest=null;mapPresentationPlanGeneration=0;
-    const presentation=showFleet?collectFleetPresentation(filterState,visibleAssets):null;
+    competitorMarkers.forEach(removePresentationMarker); competitorMarkers.clear();
+    renderedAssetIds=new Set();renderedMobilityIds=new Set();
+    const presentation=showFleet?collectFleetPresentation(filterState,visibleAssets):null,geography=mapFacilityPresentationContext();
     if(presentation&&mapCategoryVisible('routes'))renderRouteLines(presentation.routes,zoom,{faint:mode==='network'});
     if(mode==='operations'){
+      const vehicleCandidates=[];
       // The selected asset's route is drawn on top, thicker.
       const selectedRouteAsset=mapCategoryVisible('routes')&&selectedAssetId?(aggregate?mapAggregateSelectedAsset(filterState,asset=>Boolean(asset.routeId)):visibleAssets.find(asset=>asset.id===selectedAssetId&&asset.routeId)):null;
       if(selectedRouteAsset){
         const route=currentAssetRoute(selectedRouteAsset),color=identityRouteColor(assetOwnerCompanyId(selectedRouteAsset),assetModeOf(selectedRouteAsset));
         const line=L.polyline(window.GH_ROUTE_CORE.splitAtDateline(route),{color,weight:3.4,opacity:.96,dashArray:selectedRouteAsset.type==='air'?'7 9':null,lineCap:'round',smoothFactor:1.8,interactive:false}).addTo(map);routeLayers.push(line);
       }
-      if(presentation&&mapCategoryVisible('assets'))renderOperationVehicles(filterState,zoom,presentation,visibleAssets);
-      if(mapLayerVisible('assets','mobility','mobility-fleet'))renderMobilityVehicles(zoom);
+      if(presentation&&mapCategoryVisible('assets'))vehicleCandidates.push(...operationVehicleCandidates(filterState,presentation,visibleAssets,geography));
+      if(mapLayerVisible('assets','mobility','mobility-fleet'))vehicleCandidates.push(...mobilityVehicleCandidates());
       if(filterState.market.competitors&&mapCategoryVisible('assets')){
-        const bounds=map.getBounds(),competitorLimit=zoom<4?8:zoom<6?16:32;let shownAssets=0;
         competitorAssets.forEach(a=>{
           if(filterState.companies.mode==='include'&&!filterState.companies.included.some(companyId=>COMPANY_PLATFORM.getRouteModes(companyId).includes(a.type)))return;
-          const pos=interpolatePresentationRoute(a.route,a.progress);if(!bounds.contains(pos)||shownAssets>=competitorLimit)return;
-          const icon=L.divIcon({className:'competitor-marker map-vehicle',html:competitorMarkerHtml(a),iconSize:[30,30],iconAnchor:[15,15]});
-          const marker=L.marker(markerDisplayStart(`competitor:${a.id}`,pos),{icon,zIndexOffset:300}).addTo(map).bindPopup(`<b>${a.name}</b><br>${a.company}<br><span style="color:#9fb0b5">منافس — حركة سوقية</span>`);
-          competitorMarkers.set(a.id,marker);shownAssets++;
+          vehicleCandidates.push(competitorMapCandidate(a));
         });
       }
+      renderAllocatedVehicles(vehicleCandidates,zoom);
     }
-    if(mode==='expansion'||mapCategoryVisible('facilities'))renderPlaces(mode,zoom,presentation?.parkedByBase||window.GH_FLEET_DATA.countByFields(state,['baseFacility','phase','routeId','simulationFault'],row=>window.GH_FLEET_DATA.presentedPhase(state,row)==='moving'?null:row.baseFacility),filter);
+    if(mode==='expansion'||mapCategoryVisible('facilities'))renderPlaces(mode,zoom,presentation?.parkedByBase||window.GH_FLEET_DATA.countByFields(state,['baseFacility','phase','routeId','simulationFault'],row=>window.GH_FLEET_DATA.presentedPhase(state,row)==='moving'?null:row.baseFacility),filter,geography);
     if(mode==='network'&&filterState.market.competitors){
       const bounds=map.getBounds();let shownHq=0;
       competitors.forEach(c=>{
@@ -2089,7 +2135,7 @@
         competitorMarkers.set(`HQ-${c.id}`,marker);shownHq++;
       });
     }
-    updateMapStatus();renderWorldInfrastructureMarkers();lastMapStructureSignature=mapStructureSignature();updateMarkerPositions(true);
+    updateMapStatus();renderWorldInfrastructureMarkers();lastMapStructureSignature=mapStructureSignature();updateMarkerPositions(true);mapVehicleCanvas?.draw?.();
   }
 
   let mapStatusCache={assetKey:'',ownerKey:'',mobilityKey:'',moving:0,idle:0,turn:0,routed:0,ownedFacilities:0,mobilityMoving:0,mobilityVehicles:0,countedAt:0,countedRevision:null,countedAssets:null,pendingRecount:false};
@@ -2186,7 +2232,7 @@
     if(!markerMotionStates.size||mapInteractionActive||document.hidden)return;
     const profile=markerMotionProfile(effectiveSimulationRate(state.speed));
     for(const [key,row] of markerMotionStates){try{
-      if(!row.marker?._map){markerMotionStates.delete(key);continue;}
+      const attached=row.marker?.getSnapshot?Boolean(row.marker.getSnapshot()):Boolean(row.marker?._map);if(!attached){markerMotionStates.delete(key);continue;}
       const elapsed=Math.max(0,Number(now)-Number(row.lastAt||now));row.lastAt=now;if(row.needsResync){fadeResyncMarker(row,now);continue;}
       // Respect intentional presentation sampling without treating each sample
       // as a 50ms frame. Stalls still have bounded, non-authoritative catch-up.
@@ -2197,10 +2243,10 @@
       else{const distance=markerScreenDistance(row.current,row.target),ratio=boundedStepRatio(distance,maxPixels);next=interpolateMarkerPoint(row.current,row.target,ratio);}
       if(next){const moved=next[0]!==row.current[0]||next[1]!==row.current[1];if(routeStep&&moved&&((routeStep.bridge&&row.markerType)||key.startsWith('own:mobility:')))refreshVehicleMarker(row.marker,row.markerType||'mobility',bearingBetween(row.current,next),row.markerMoving!==false);if(moved)row.marker.setLatLng(next);row.current=next;}
     }catch(error){markerMotionStates.delete(key);nonCritical('map-marker-motion',error);}}
-    visualResyncRequested=false;
+    visualResyncRequested=false;mapVehicleCanvas?.draw?.();
   }
   window.GH_VISUAL_MOTION=Object.freeze({MIN_FRAME_MS:50,MAX_FRAME_MS:300,profile:markerMotionProfile,boundedStepRatio,interpolateRoute:interpolatePresentationRoute});
-  function mapStructureSignature(){if(!map)return'';const zoom=Math.floor(Number(map.getZoom?.())||0),fleetMembership=window.GH_FLEET_DATA?.membershipRevision?.(state)||'none',fleetSize=window.GH_FLEET_DATA?.size?.(state)||0,assetRevision=`${Number(state.saveRevision)||0}:${Number(window.GH_MAP_STRUCTURE_REVISION)||0}:${fleetMembership}:${fleetSize}`,mobilityRevision=`${state.mobility?.vehicles?.length||0}:${window.GH_MOBILITY_CORE?.mapStructureRevision?.()||0}`;return `${JSON.stringify(currentMapFilter())};${zoom};${selectedAssetId||''};${selectedMobilityId||''};${selectedFacilityId||''};${assetRevision};${mobilityRevision}`;}
+  function mapStructureSignature(){if(!map)return'';const zoom=Math.floor(Number(map.getZoom?.())||0),center=map.getCenter?.(),viewport=`${Number(center?.lat||0).toFixed(3)}:${Number(center?.lng||0).toFixed(3)}`,fleetMembership=window.GH_FLEET_DATA?.membershipRevision?.(state)||'none',fleetSize=window.GH_FLEET_DATA?.size?.(state)||0,assetRevision=`${Number(state.saveRevision)||0}:${Number(window.GH_MAP_STRUCTURE_REVISION)||0}:${fleetMembership}:${fleetSize}`,mobilityRevision=`${state.mobility?.vehicles?.length||0}:${window.GH_MOBILITY_CORE?.mapStructureRevision?.()||0}`;return `${JSON.stringify(currentMapFilter())};${zoom};${viewport};${selectedAssetId||''};${selectedMobilityId||''};${selectedFacilityId||''};${assetRevision};${mobilityRevision}`;}
 
   function presentationAssetLookup(){
     const revision=Math.max(0,Math.floor(Number(state.saveRevision)||0)),assets=fleetPresentationRows(),length=assets.length;
@@ -3619,8 +3665,9 @@
 
   const drawerScrollMemory={};
   function openDrawer(panel, arg){
-    cancelDrawerSearch();window.GH_INTERFACE.navigate(panel,arg);
+    const drawerWasOpen=$('drawer').classList.contains('open');cancelDrawerSearch();window.GH_INTERFACE.navigate(panel,arg);
     const previousPanel=activeDrawerPanel,previousScroll=$('drawerBody').scrollTop,previousArg=activeDrawerArg;
+    if(panel!=='assets')clearFleetListSearchRequest();else if(previousPanel!=='assets'||!drawerWasOpen)refreshFleetListSnapshotIfStale();
     if(previousPanel)drawerScrollMemory[previousPanel]=previousScroll;
     activeDrawerPanel=panel;activeDrawerArg=arg;
     $('drawer').dataset.panel=String(panel||'');
@@ -3635,7 +3682,7 @@
     requestAnimationFrame(()=>map?.invalidateSize({animate:false}));
   }
   function openDrawerContent(eyebrow,title,html){
-    cancelDrawerSearch();
+    cancelDrawerSearch();clearFleetListSearchRequest();
     if(activeDrawerPanel)drawerScrollMemory[activeDrawerPanel]=$('drawerBody').scrollTop;
     activeDrawerPanel='content';activeDrawerArg=null;
     $('drawer').dataset.panel='content';
@@ -3645,7 +3692,7 @@
     $('drawer').classList.add('open'); $('drawer').setAttribute('aria-hidden','false'); closeMapPopovers(); setActiveNav('map');
     requestAnimationFrame(()=>map?.invalidateSize({animate:false}));
   }
-  function closeDrawer(){ window.GH_INTERFACE.resetHistory(); cancelDrawerSearch(); delete $('drawer').dataset.panel; $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); $('backdrop').classList.add('hidden'); setActiveNav('map'); state.lastPanel=null;state.lastPanelArg=null; requestAnimationFrame(()=>map?.invalidateSize({animate:false})); }
+  function closeDrawer(){ window.GH_INTERFACE.resetHistory(); cancelDrawerSearch(); clearFleetListSearchRequest(); delete $('drawer').dataset.panel; $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); $('backdrop').classList.add('hidden'); setActiveNav('map'); state.lastPanel=null;state.lastPanelArg=null; requestAnimationFrame(()=>map?.invalidateSize({animate:false})); }
   $('workspaceBack').addEventListener('click',()=>window.GH_INTERFACE.back(openDrawer));
   const ADVANCED_OWNED_PANELS=new Set(['realism','companies','leadershipHub','peopleHub','actionCenter','governanceHub','compliance','systemHub','executionLog','facilityManage','companyManage','groupManagement','treasury','procurement','cyber','safety','energy','bank','research','esg','news','businessWorld','labor','settings','updates','diagnostics','controlPlane','conference']);
   function renderPanel(panel,arg){
@@ -4013,20 +4060,22 @@
       else{const compatible=assetCompanies.filter(company=>(company.definition?.classification?.routeModes||[]).includes(arg)||(arg==='mobility'&&company.definition?.capabilities?.includes('operations.mobility')));ownedFilterType=compatible.length===1?compatible[0].id:'all';}
     }
     if(ownedFilterType!=='all'&&!assetCompanyIds.has(ownedFilterType))ownedFilterType='all';
+    if(ownedFilterType!=='all')refreshFleetListSnapshotIfStale();
     const mobilityCompany=uniqueOperationalCompanyForCapability(state,'operations.mobility'),companyStats=new Map(assetCompanies.map(company=>[company.id,{count:0,moving:0,service:0}])),allMobility=mobilityCompany?(state.mobility?.vehicles||[]):[];let total=0,moving=0;
     // Build 358 (million-asset): counts per company from classes of rows (exact; one cached class scan per fleet
     // revision). "Needs service" reads each row's condition (derived from the simulated time), so it is one pass over
     // the rows, and only on the summary tab that shows it. A company tab keeps the matching row numbers, not one id
     // string per asset (ownedRowIds).
     const fleet=window.GH_FLEET_DATA;
+    if(ownedFilterType==='all')warmFleetListQueryIndex();
     fleet.forEachFieldClasses(state,['ownerCompanyId','companyId','assetMode','type','phase','routeId','simulationFault'],(row,count)=>{if(!count)return;const stats=companyStats.get(assetOwnerCompanyId(row));if(!stats)return;stats.count+=count;total+=count;if(fleet.presentedPhase(state,row)==='moving'){stats.moving+=count;moving+=count;}});
-    if(ownedFilterType==='all')fleet.scan(state,['ownerCompanyId','companyId','assetMode','type','condition'],row=>{const stats=companyStats.get(assetOwnerCompanyId(row));if(stats&&Number(row.condition)<85)stats.service++;});
+    if(ownedFilterType==='all')fleet.forEachFieldClasses(state,['ownerCompanyId','companyId','assetMode','type','condition'],(row,count)=>{const stats=companyStats.get(assetOwnerCompanyId(row));if(stats&&Number(row.condition)<85)stats.service+=count;});
     for(const vehicle of allMobility){total++;if(vehicle.status==='moving')moving++;}
     const tabs=[['all','الكل'],...assetCompanies.map(company=>[company.id,COMPANY_PLATFORM.resolveIdentity(state,company.id)?.shortName||companyFinanceName(company.id)])].map(([id,label])=>`<button class="tab-btn ${ownedFilterType===id?'active':''}" data-ownedtype="${esc(id)}">${esc(label)}</button>`).join('');
     const summary=assetCompanies.map(company=>{const stats=company.id===mobilityCompany?{count:allMobility.length,moving:allMobility.filter(row=>row.status==='moving').length,service:allMobility.filter(row=>Number(row.condition)<85).length}:companyStats.get(company.id)||{count:0,moving:0,service:0},short=COMPANY_PLATFORM.resolveIdentity(state,company.id)?.shortName||company.id;return `<button class="command-btn owned-sector-summary" data-ownedtype="${esc(company.id)}"><span>${esc(short)}</span><div><b>${esc(companyFinanceName(company.id))}</b><small>${fmtNumber(stats.count)} أصل · ${fmtNumber(stats.moving)} متحرك · ${fmtNumber(stats.service)} يحتاج صيانة</small></div></button>`;}).join('');
     let matchingCount=0;
     const filters=ownedFilterType==='all'?'':`<article class="list-item"><div class="asset-filters"><input id="ownedAssetSearch" value="${esc(ownedQuery)}" placeholder="بحث بالاسم أو الطراز أو المركز"><select id="ownedAssetStatus"><option value="all" ${ownedFilterStatus==='all'?'selected':''}>كل الحالات</option><option value="moving" ${ownedFilterStatus==='moving'?'selected':''}>متحركة</option><option value="ready" ${ownedFilterStatus==='ready'?'selected':''}>جاهزة/متاحة</option><option value="idle" ${ownedFilterStatus==='idle'?'selected':''}>متوقفة</option><option value="service" ${ownedFilterStatus==='service'?'selected':''}>تحتاج صيانة</option></select></div></article>`;
-    let virtualRows='';
+    let virtualRows='',fleetIndexPending=false,fleetIndexMessage='جارٍ تجهيز فهرس الأسطول في الخلفية… يمكنك متابعة استخدام اللعبة.';
     if(ownedFilterType!=='all'){
       const q=normalizeSearch(ownedQuery),kind=ownedFilterType===mobilityCompany?'mobility':'fleet',ids=[],matchesStatus=row=>ownedFilterStatus==='all'||(ownedFilterStatus==='moving'?(row.phase==='moving'||row.status==='moving'):ownedFilterStatus==='ready'?(row.phase==='turnaround'||row.status==='available'):ownedFilterStatus==='service'?Number(row.condition)<85:(!['moving','turnaround'].includes(row.phase)&&row.status!=='moving'));
       if(kind==='mobility'){
@@ -4034,18 +4083,28 @@
         ownedVirtualModel={kind,ids,vehicleById:new Map(vehicles.map(vehicle=>[vehicle.id,vehicle])),measured:new Map(),index:window.GH_FLEET_LIST_VIRTUALIZER.create(ids.length,{estimate:310,overscan:6}),listElement:null,baseIndex:0};
         ownedVirtualModel.segmentEnd=Math.min(ids.length,ownedVirtualModel.index.indexAt(4_000_000));
       }else{
-        const bases=new Map(getDynamicFacilities().map(base=>[base.id,base])),fields=['ownerCompanyId','companyId','assetMode','type','phase','status','id'];
-        if(ownedFilterStatus==='service')fields.push('condition');if(q)fields.push('name','model','baseFacility');
-        let rows=new Int32Array(1024),count=0;
-        fleet.scan(state,fields,(asset,index)=>{if(assetOwnerCompanyId(asset)!==ownedFilterType||!matchesStatus(asset))return;if(q&&!normalizeSearch(`${asset.name} ${asset.model} ${asset.id} ${bases.get(asset.baseFacility)?.name||''}`).includes(q))return;if(asset.id===undefined)return;if(count===rows.length){const grown=new Int32Array(rows.length*2);grown.set(rows);rows=grown;}rows[count++]=index;});
-        const fleetIds=ownedRowIds(rows.subarray(0,count));
-        ownedVirtualModel={kind,ids:fleetIds,measured:new Map(),index:window.GH_FLEET_LIST_VIRTUALIZER.create(count,{estimate:330,overscan:6}),listElement:null,baseIndex:0};
-        ownedVirtualModel.segmentEnd=Math.min(count,ownedVirtualModel.index.indexAt(4_000_000));
+        const ready=fleetListQueryEngine?.stats?.(state)?.ready===true;
+        if(!ready){fleetIndexPending=true;ownedVirtualModel=null;warmFleetListQueryIndex();}
+        else{
+          fleetListSearchFacilityNames=new Map(getDynamicFacilities().map(base=>[base.id,base.name||base.city||base.id]));
+          const installRows=rows=>{const fleetIds=ownedRowIds(rows),count=rows.length;ownedVirtualModel={kind,ids:fleetIds,measured:new Map(),index:window.GH_FLEET_LIST_VIRTUALIZER.create(count,{estimate:330,overscan:6}),listElement:null,baseIndex:0};ownedVirtualModel.segmentEnd=Math.min(count,ownedVirtualModel.index.indexAt(4_000_000));};
+          try{
+            installRows(fleetListQueryEngine.query(state,{owner:ownedFilterType,status:ownedFilterStatus,search:ownedQuery}));noteFleetListQueryFreshness();clearFleetListSearchRequest();
+          }catch(error){
+            const code=String(error?.code||''),message=String(error?.message||error);
+            if(code==='FLEET_LIST_QUERY_ASYNC_QUERY_REQUIRED'){
+              const request=requestFleetListSearchRows(ownedFilterType,ownedFilterStatus,ownedQuery);if(request?.rows)installRows(request.rows);else{fleetIndexPending=true;ownedVirtualModel=null;fleetIndexMessage=request?.error?'تعذر إكمال البحث الآن. غيّر عبارة البحث للمحاولة مجددًا.':'جارٍ تطبيق البحث على فهرس الأسطول دون إيقاف الواجهة…';}
+            }else{
+              if(code!=='FLEET_LIST_QUERY_ASYNC_BUILD_REQUIRED'&&!message.includes('membership-changed')&&!message.includes('superseded'))throw error;
+              fleetIndexPending=true;ownedVirtualModel=null;warmFleetListQueryIndex();
+            }
+          }
+        }
       }
-      matchingCount=ownedVirtualModel.ids.length;virtualRows=`<div id="ownedVirtualList" class="owned-virtual-list" role="list" aria-label="سجل الأصول" aria-setsize="${matchingCount}"></div>`;
+      matchingCount=ownedVirtualModel?.ids?.length||0;virtualRows=fleetIndexPending?`<div class="empty">${esc(fleetIndexMessage)}</div>`:`<div id="ownedVirtualList" class="owned-virtual-list" role="list" aria-label="سجل الأصول" aria-setsize="${matchingCount}"></div>`;
     }else ownedVirtualModel=null;
     const resultLabel=ownedFilterType==='all'?'':`<p class="section-mini">${fmtNumber(matchingCount)} أصل — تظهر البطاقات المرئية فقط مع بقاء السجل كاملًا للتمرير والبحث.</p>`;
-    const content=ownedFilterType==='all'?`<div class="command-grid grouped workspace-card-grid">${summary}</div>`:`${filters}${resultLabel}${matchingCount?virtualRows:'<div class="empty">لا توجد أصول مملوكة تطابق هذا القسم والفلتر.</div>'}`;
+    const content=ownedFilterType==='all'?`<div class="command-grid grouped workspace-card-grid">${summary}</div>`:`${filters}${resultLabel}${fleetIndexPending?virtualRows:matchingCount?virtualRows:'<div class="empty">لا توجد أصول مملوكة تطابق هذا القسم والفلتر.</div>'}`;
     const selectedDefinition=ownedFilterType==='all'?null:companyDefinition(ownedFilterType),marketMode=selectedDefinition?.capabilities?.includes('operations.mobility')?'mobility':(selectedDefinition?.classification?.routeModes||[]).find(mode=>assetCatalog[mode])||'air';
     return `<div class="list"><article class="list-item registry-hero"><div class="list-item-head"><div><h3>سجل الأصول المملوكة</h3><p>كل شركة مستقلة حتى عند مشاركة شركة أخرى نوع الأصل أو نمط المسار نفسه.</p></div><span class="tag positive">OWNED ONLY</span></div><div class="metric-row"><div><span>إجمالي الأصول</span><b>${fmtNumber(total)}</b></div><div><span>متحركة الآن</span><b>${fmtNumber(moving)}</b></div><div><span>رواتب أصول شهرية</span><b>${fmtMoney((window.GH_FLEET_CORE?.monthlyPayroll?.(state)||0)+(window.GH_MOBILITY_CORE?.snapshot?.(state)?.monthlyPayroll||0))}</b></div></div><div class="tabs small">${tabs}</div><div class="action-row"><button class="secondary-btn" data-open="assetMarket" data-arg="${esc(marketMode)}">شراء أصل جديد</button><button class="secondary-btn" data-open="routes" data-arg="${esc(ownedFilterType)}">مركز المسارات</button></div></article>${content}</div>`;
   }
@@ -4567,7 +4626,7 @@
     document.querySelectorAll('.manual-buy-mobility').forEach(b=>b.addEventListener('click',()=>manualMobilityPurchaseFromCard(b)));
     document.querySelectorAll('[data-ownedtype]').forEach(b=>b.addEventListener('click',()=>{ownedFilterStatus='all';ownedQuery='';openDrawer('assets',b.dataset.ownedtype);}));
     const ownedSearch=document.getElementById('ownedAssetSearch');if(ownedSearch)ownedSearch.addEventListener('input',e=>{ownedQuery=e.target.value;scheduleDrawerSearch('assets',()=>renderOwnedAssetsInto(true),160);});
-    const ownedStatus=document.getElementById('ownedAssetStatus');if(ownedStatus)ownedStatus.addEventListener('change',e=>{ownedFilterStatus=e.target.value;renderOwnedAssetsInto();});
+    const ownedStatus=document.getElementById('ownedAssetStatus');if(ownedStatus)ownedStatus.addEventListener('change',e=>{ownedFilterStatus=e.target.value;refreshFleetListSnapshotIfStale();clearFleetListSearchRequest();renderOwnedAssetsInto();});
     document.querySelectorAll('.focus-owned-asset').forEach(b=>{if(!b.closest('#ownedVirtualList'))b.addEventListener('click',()=>focusOwnedAsset(b.dataset.id));});
     document.querySelectorAll('.focus-mobility-asset').forEach(b=>{if(!b.closest('#ownedVirtualList'))b.addEventListener('click',()=>focusMobilityAsset(b.dataset.id));});
     document.querySelectorAll('.service-mobility-asset').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.busy)return;b.dataset.busy='1';b.disabled=true;if(!serviceMobilityAsset(b.dataset.id)){delete b.dataset.busy;b.disabled=false;}}));
