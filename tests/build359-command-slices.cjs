@@ -63,9 +63,9 @@ assert.ok(pad<2,'a surrogate pair straddles a piece boundary');
     return {yields,slices:timing.slices,busyMs:Math.round(timing.totalSyncMs),wallMs:Math.round(timing.wallMs),bytes:timing.utf8Bytes};
   });
   await test('a fleet write during the slices retakes the save in one go',async()=>{
-    const id=FLEET.list(state)[0].id;let wrote=false;
+    const id=FLEET.list(state)[0].id,realPerformance=s.performance;let fake=0,wrote=false;s.performance={now:()=>(fake+=11)};
     const yieldToFrame=()=>{if(!wrote){wrote=true;TX.execute(state,{label:'slices-write',scope:['fleet'],apply:()=>FLEET.update(state,id,{condition:77.5})});}return new Promise(resolve=>setTimeout(resolve,0));};
-    await P.commitDurableState(state,{storageKey:'slices',yieldToFrame});const saved=vault.saves.at(-1),timing=P.telemetry().timings.samples.filter(row=>row.kind==='durable-save').at(-1);
+    try{await P.commitDurableState(state,{storageKey:'slices',yieldToFrame});}finally{s.performance=realPerformance;}const saved=vault.saves.at(-1),timing=P.telemetry().timings.samples.filter(row=>row.kind==='durable-save').at(-1);
     assert.equal(wrote,true);assert.equal(timing.retakes,1,'the save was retaken');assert.equal(saved.json,CODEC.serializeChunked(state).text,'and holds the state after the write');assert.equal(saved.hash,sha(saved.json));
     const rows=JSON.parse(saved.json).fleet.rows.chunks;assert.ok(rows.every(id=>vault.chunks.has(id)),'with its chunks');
     return {retakes:timing.retakes};
