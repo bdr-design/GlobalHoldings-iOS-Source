@@ -57,7 +57,7 @@ const QTY=90,WESTERN=/^[0-9]+(\.[0-9])?[KM]?$/;
       assert.equal(row.canvasNodes,1,'one vehicle Canvas is retained');assert.equal(row.canvas?.canvasCount,1,'the pool owns one Canvas');assert.equal(row.canvas?.active,row.vehicleCount,'the Canvas pool reports every active proxy');assert.equal(row.domVehicles,0,'vehicles do not create DOM markers');
       assert.deepEqual(row.offRoute,[],`every vehicle stands on its own asset position: ${JSON.stringify({zoom:row.zoom,vehicles:row.vehicles,off:row.offRoute.length,sample:row.sample})}`);
       assert.ok(row.closest>=18,`no two vehicles overlap (${row.closest}px)`);
-      assert.ok(row.routeLines>0,`route lines are drawn: ${JSON.stringify(row)}`);
+      assert.equal(row.routeLines,0,`no route network is drawn: ${JSON.stringify(row)}`);
       assert.equal(row.badges,0,'no vehicle count badge');
       if(row.zoom<5){assert.ok(row.countryGroups>0,`world zoom groups facilities by country: ${JSON.stringify(row)}`);assert.equal(row.cityGroups,0);assert.equal(row.facilityTiles,0,'only the pinned headquarters remains individual');}
     }
@@ -69,7 +69,7 @@ const QTY=90,WESTERN=/^[0-9]+(\.[0-9])?[KM]?$/;
     // Network: places only; Dubai and Abu Dhabi share one bubble far out; each stands alone closer in.
     await page.click('[data-map-mode="network"]');await setView(25,45,3);await page.waitForTimeout(200);
     const network=await look();
-    assert.equal(network.mode,'network');assert.equal(network.vehicles,0,'no vehicles in network');assert.ok(network.routeLines>0,'the network keeps its route lines');
+    assert.equal(network.mode,'network');assert.equal(network.vehicles,0,'no vehicles in network');assert.equal(network.routeLines,0,'the network draws places, not route lines');
     assert.equal(network.vehicleCount,0);assert.equal(network.canvasNodes,1);assert.equal(network.domVehicles,0);assert.ok(network.countryGroups>=2,`world network groups owned facilities by country: ${JSON.stringify(network)}`);assert.equal(network.cityGroups,0);assert.equal(network.facilityTiles,0);
     assert.ok(network.bubbles.includes('2'),`Dubai and Abu Dhabi are grouped: ${JSON.stringify(network)}`);
     await setView(25,45,6);await page.waitForTimeout(200);

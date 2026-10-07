@@ -2029,20 +2029,8 @@
     });
     return {routes:[...routes.values()],parkedByBase,representatives};
   }
-  // Route lines: the busiest routes that cross the view (padded), thin and in the owner's colour, on the map's canvas
-  // renderer and drawn only by renderMap (zoom end, structure change), never per frame. Network mode draws them fainter.
-  // Operations draws half the budget and fainter: the vehicles carry that view, while the network mode is where the
-  // whole route network is read (a hub's spokes otherwise crossed the whole screen when zoomed in).
-  function renderRouteLines(routes,zoom,{faint=false,sparse=false}={}){
-    const bounds=map.getBounds().pad(.25),inView=[];
-    for(const row of routes){const route=currentAssetRoute({routeId:row.routeId,type:row.type,reverse:false});if(!Array.isArray(route)||route.length<2)continue;const step=Math.max(1,Math.floor(route.length/12));let crosses=false;for(let i=0;i<route.length&&!crosses;i+=step)crosses=bounds.contains(route[i]);if(!crosses)crosses=bounds.contains(route[route.length-1]);if(crosses)inView.push({...row,route});}
-    const limit=MAP_VIEW.budget('routes',zoom),drawn=MAP_VIEW.busiestRoutes(inView,sparse?Math.ceil(limit/2):limit),max=drawn[0]?.count||1;
-    for(const row of drawn){
-      const style=MAP_VIEW.routeStyle(row.count,max),line=L.polyline(window.GH_ROUTE_CORE.splitAtDateline(row.route),{color:identityRouteColor(row.owner,row.mode),weight:style.weight,opacity:faint?style.opacity*.6:sparse?style.opacity*.75:style.opacity,lineCap:'round',smoothFactor:2,interactive:false,className:'map-route-line'}).addTo(map);
-      routeLayers.push(line);
-    }
-    return drawn.length;
-  }
+  // Owner review (Build 358): "no blue lines, a clean screen". The map draws no route network in any mode; a route line
+  // appears only for the vehicle the player taps (drawn in renderMap and mobilityVehicleCandidates).
   // Candidate collection is deliberately separate from drawing.  A single geographic allocator then shares one budget
   // across the owned fleet, Mobility and competitors, so no source can silently allocate another 300 markers.
   function operationVehicleCandidates(filterState,presentation,visibleAssets,geography){
@@ -2111,7 +2099,6 @@
     competitorMarkers.forEach(removePresentationMarker); competitorMarkers.clear();
     renderedAssetIds=new Set();renderedMobilityIds=new Set();
     const presentation=showFleet?collectFleetPresentation(filterState,visibleAssets):null,geography=mapFacilityPresentationContext();
-    if(presentation&&mapCategoryVisible('routes'))renderRouteLines(presentation.routes,zoom,{faint:mode==='network',sparse:mode==='operations'});
     if(mode==='operations'){
       const vehicleCandidates=[];
       // The selected asset's route is drawn on top, thicker.
