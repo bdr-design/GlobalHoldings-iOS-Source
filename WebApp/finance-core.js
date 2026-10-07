@@ -281,6 +281,25 @@ function settleIntercompanyInterest(s,p={}){
  Object.assign(event,{id:reference,status:'منفذة',collection:true,channel:collectionProfile(to,s).channel,service:'تحصيل فائدة تسهيل ائتماني',grossAmount:amount,deductions:0,invoiceNumbers:[income.number],sourceRefs:[reference],fromCompany:from,toCompany:to,requestFingerprint});protectDocument(s,event,'intercompany-interest');amendInvoice(s,expense,'invoice-transfer-linked',doc=>{doc.transferReference=reference;});amendInvoice(s,income,'invoice-transfer-linked',doc=>{doc.transferReference=reference;});insertFinanceTransfer(s,{...event});ledger(s,from,event);companyLedger(s,to,event);reconcile(s);
  return {settled:true,from,to,amount,reference,expenseInvoiceNumber:expense.number,incomeInvoiceNumber:income.number,idempotent:false,cashPostedRevenue:amount};
 }
+// Build 358 (owner review): the group's power company sells electricity to the other group companies. One settlement a
+// buyer a day: an expense document for the buyer, an income document for the power company and the cash transfer
+// between their current accounts, linked like an intercompany interest settlement. Untaxed inside the group, as
+// intercompany interest is.
+function settleIntercompanySupply(s,p={}){
+ ensure(s);const from=requireCompany(s,p.from||p.company),to=requireCompany(s,p.to,{defaultGroup:false}),amount=num(p.amount),reference=String(p.ref||p.reference||'').trim(),mwh=num(p.mwh);
+ if(from===to||amount<=0)throw new Error('invalid-intercompany-supply');
+ if(!reference)throw new Error('intercompany-supply-reference-required');
+ const note=String(p.note||`توريد كهرباء داخلي · ${reference}`),requestFingerprint=JSON.stringify([from,to,amount,note]),prior=findTransferByIdOrReference(s,reference);
+ if(prior){if(prior.kind!=='intercompany-energy'||prior.fromCompany!==from||prior.toCompany!==to||Math.abs(num(prior.amount)-amount)>.01||prior.requestFingerprint&&prior.requestFingerprint!==requestFingerprint)throw new Error('intercompany-supply-reference-conflict');return {settled:true,from,to,amount:0,reference,idempotent:true,cashPostedRevenue:0};}
+ if(!hasFunds(s,from,amount))throw new Error('insufficient-supply-cash');
+ const payer=book(s,from),receiver=book(s,to),payerName=companyName(s,from),sellerName=companyName(s,to);
+ coverInfiniteFunds(s,from,amount,'توريد كهرباء داخلي');payer.accounts[0].balance-=amount;receiver.accounts[0].balance+=amount;
+ const expense=invoice(s,{kind:'مصروف',amount,note,method:'توريد داخلي بين شركات المجموعة',taxable:false,status:'مدفوعة',company:from,counterparty:sellerName,sourceRef:reference});
+ const income=invoice(s,{kind:'دخل',amount,note:`دخل ${note}`,method:'توريد داخلي بين شركات المجموعة',taxable:false,status:'محصلة',company:to,counterparty:payerName,sourceRef:reference});
+ const event={at:now(s),from:payer.accounts[0].id,to:receiver.accounts[0].id,amount,note,kind:'intercompany-energy',company:from,beneficiaryCompany:to,reference,expenseDocumentNumber:expense.number,incomeDocumentNumber:income.number,mwh};
+ Object.assign(event,{id:reference,status:'منفذة',collection:true,channel:collectionProfile(to,s).channel,service:'تحصيل توريد كهرباء داخلي',grossAmount:amount,deductions:0,invoiceNumbers:[income.number],sourceRefs:[reference],fromCompany:from,toCompany:to,requestFingerprint});protectDocument(s,event,'intercompany-energy');amendInvoice(s,expense,'invoice-transfer-linked',doc=>{doc.transferReference=reference;});amendInvoice(s,income,'invoice-transfer-linked',doc=>{doc.transferReference=reference;});insertFinanceTransfer(s,{...event});ledger(s,from,event);companyLedger(s,to,event);reconcile(s);
+ return {settled:true,from,to,amount,mwh,reference,expenseInvoiceNumber:expense.number,incomeInvoiceNumber:income.number,idempotent:false,cashPostedRevenue:amount};
+}
 function bulkTransfer(s,p){const rows=Array.isArray(p.rows)?p.rows:[],seen=new Set(),clean=[];for(const x of rows){const t=requireCompany(s,x.company,{defaultGroup:false}),a=num(x.amount);if(t==='group'||a<=0)continue;if(seen.has(t))throw new Error('duplicate-beneficiary');seen.add(t);clean.push({company:t,amount:a});}if(!clean.length)throw new Error('empty-bulk-transfer');const total=clean.reduce((n,x)=>n+x.amount,0);if(!hasFunds(s,'group',total))throw new Error('insufficient-cash');const batch=p.batchId||`BULK-${Math.floor(now(s))}-${s.finance.transfers.length+1}`;for(const x of clean)transfer(s,{from:'group',to:x.company,amount:x.amount,note:`${p.note||'توزيع رأسمالي'} · ${batch}`,ref:`${batch}-${x.company}`});return {total,count:clean.length,batchId:batch};}
 function centralTreasuryPolicy(s){ensure(s);return clone(s.finance.centralTreasury);}
 function setCentralTreasuryPolicy(s,p={}){ensure(s);const ct=s.finance.centralTreasury,rows=p.minOperatingCash&&typeof p.minOperatingCash==='object'?p.minOperatingCash:{};for(const key of Object.keys(rows))requireCompany(s,key,{defaultGroup:false});for(const t of companyIds(s,{includeGroup:false}))if(Object.prototype.hasOwnProperty.call(rows,t))ct.minOperatingCash[t]=num(rows[t]);ct.lastPolicyAt=now(s);return clone(ct);}
@@ -663,6 +682,7 @@ function execute(ctx,cmd,p={},meta={}){
    case'credit':return credit(s,p);
    case'transfer':return transfer(s,p);
    case'settle-intercompany-interest':return settleIntercompanyInterest(s,p);
+   case'settle-intercompany-supply':return settleIntercompanySupply(s,p);
    case'bulk-transfer':return bulkTransfer(s,p);
    case'set-central-treasury-policy':return setCentralTreasuryPolicy(s,p);
    case'cash-pool-sweep':return cashPoolSweep(s,p);

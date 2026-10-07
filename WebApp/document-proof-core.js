@@ -5,7 +5,7 @@
   const SECURITY_FIELDS=new Set(['documentSchema','documentVersion','documentProofId','documentId','documentType','issuerSnapshot','counterpartySnapshot','contentDigest','authorizationKind','authorizationProofId','signatureSnapshot','authorization','signatureAssetId','visualSealAssetId']);
   const DOCUMENT_TYPES=Object.freeze({
     'revenue-collection':'transfer-v3','invoice-receivable':'invoice-v3','invoice-payable':'invoice-v3','audit-invoice':'invoice-v3',
-    'intercompany-transfer':'transfer-v3','intercompany-interest':'transfer-v3','intercompany-loan-principal':'transfer-v3','intercompany-loan-settlement':'transfer-v3',
+    'intercompany-transfer':'transfer-v3','intercompany-interest':'transfer-v3','intercompany-energy':'transfer-v3','intercompany-loan-principal':'transfer-v3','intercompany-loan-settlement':'transfer-v3',
     'payroll-transfer':'transfer-v3','payroll-payable':'transfer-v3','payroll-report':'payroll-v3','payable-settlement':'transfer-v3',
     'tax-payment-transfer':'transfer-v3','tax-settlement':'tax-v3','cheque':'cheque-v3','founder-investment':'transfer-v3','founder-withdrawal':'transfer-v3',
     'debt-financing':'debt-v3','debt-repayment':'debt-v3','debt-payment-transfer':'transfer-v3','daily-operating-settlement':'transfer-v3',
