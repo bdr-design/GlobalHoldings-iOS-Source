@@ -15,7 +15,10 @@
   const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
   const text=value=>value==null?'':String(value).trim();
   const compareText=(a,b)=>a<b?-1:a>b?1:0;
-  const finite=value=>Number.isFinite(Number(value));
+  // Missing fields must stay missing so coordinate fallbacks such as `position`
+  // are consulted. Number(null) and Number('') are both zero, which previously
+  // made every position-only app candidate look as though it were at [0, 0].
+  const finite=value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value));
   const number=value=>finite(value)?Number(value):null;
   const pick=(value,keys)=>{for(const key of keys)if(value&&own(value,key)&&value[key]!=null&&value[key]!=='')return value[key];return null;};
   const canonicalLongitude=value=>{

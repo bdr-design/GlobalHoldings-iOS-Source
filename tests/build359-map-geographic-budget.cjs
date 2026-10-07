@@ -21,6 +21,9 @@ const viewportRows=[
 ];
 const viewport=P.allocate(viewportRows,{limit:10,selectedId:'selected',viewport:{south:10,north:30,west:30,east:50},viewportPadding:2,declutterRadius:0});
 assert.deepEqual(new Set(ids(viewport)),new Set(['selected','inside','padded']));assert.equal(viewport[0].id,'selected');
+// App candidates expose geographic coordinates through `position`; absent direct lat/lng fields must not become 0,0.
+const positionOnly=P.allocate([{id:'position-only',position:[20,40],countryId:'SA'}],{limit:1,viewport:{south:10,north:30,west:30,east:50},declutterRadius:0});
+assert.deepEqual(ids(positionOnly),['position-only']);
 
 // Dateline-crossing bounds include both +175 and -175, not Greenwich.
 const dateline=[{id:'east',countryId:'KI',lat:0,lng:175},{id:'west',countryId:'FJ',lat:0,lng:-175},{id:'middle',countryId:'GH',lat:0,lng:0}];

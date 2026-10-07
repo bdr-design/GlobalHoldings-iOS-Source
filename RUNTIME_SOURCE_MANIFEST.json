@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "7de65048e012819a9247d281f34359505a59784e5d1a621f408dc384765060a5",
-  "webapp_tree_sha256": "59a3f4e440268bb5134404fc8a4ada0cbe9b2eb6d2bf0cdd81f9c90c7c6ac938",
+  "source_tree_sha256": "df1f76e04f9d23c7ec923513c5e33c054c49e96bfd4604e5bf93a28545802085",
+  "webapp_tree_sha256": "f7a9b4739b9df76a54811972ad27b7719aa81485a3303ef23dd718062355a251",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 190568,
@@ -19,8 +19,8 @@
       "sha256": "9f961173482bd208da84bcb30f0ddd650c25b4fc8b5f24b9ce326c5ebfc89b34"
     },
     "WebApp/app.js": {
-      "bytes": 770598,
-      "sha256": "69e7534a68a1d892ca7e9d8f5c981e2cb5e9aee0d94dec992da57f535c9c6c55"
+      "bytes": 770746,
+      "sha256": "d945453b9aff7f89552c2809549820cfcc60afa269bd032aa494fab92012f3a6"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -3195,8 +3195,8 @@
       "sha256": "290d8b5d2621ba725a848e9fff9970c22a83f59912468d556f5d94c832e4cfe3"
     },
     "WebApp/map-proxy-core.js": {
-      "bytes": 15077,
-      "sha256": "320ed1c1d964067594404f87a2809ea4a80c1b998df6b742f48ef3e3fda34137"
+      "bytes": 15361,
+      "sha256": "f25c98a00425f2ce0af91780ceda08eaf606095276753f54675228a4998294a8"
     },
     "WebApp/map-vehicle-canvas-core.js": {
       "bytes": 23298,
@@ -3408,7 +3408,7 @@
     },
     "project.yml": {
       "bytes": 2413,
-      "sha256": "791ba17a8fec494be408f0feedde1953f59ac1eca470aeba7b08c53b0db0d76b"
+      "sha256": "d7f63e0980e4c0629f608683e801ad6981e34ab290fc0961779e01f3c51a161d"
     },
     "BUILD": {
       "bytes": 4,
