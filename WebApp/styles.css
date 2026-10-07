@@ -446,3 +446,11 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .bank-branch-services{margin-top:10px}
 .bank-branch-services summary{cursor:pointer;font-size:13px;color:var(--accent);padding:6px 0}
 .bank-request-card .action-row{align-items:center}
+
+/* Build 358 energy desk: three bids side by side. */
+.energy-bid-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.energy-bid{display:grid;gap:3px;align-content:start;padding:10px;border:1px solid var(--line,rgba(255,255,255,.12));border-radius:12px;background:color-mix(in srgb,var(--surface) 80%,transparent)}
+.energy-bid b{font-size:18px;font-variant-numeric:tabular-nums}
+.energy-bid span{font-size:12px;color:var(--text)}
+.energy-bid small{font-size:11px;color:var(--muted)}
+.energy-bid button{margin-top:6px;width:100%}
