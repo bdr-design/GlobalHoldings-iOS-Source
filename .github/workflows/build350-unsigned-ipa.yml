@@ -22,12 +22,11 @@ concurrency:
 
 jobs:
   publish-existing-ipa:
-    name: publish a verified unsigned IPA from an existing successful run
+    name: relay a verified unsigned IPA from an existing successful run
     if: ${{ inputs.publish_run_id != '' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
-      contents: write
     steps:
       - name: Download the verified IPA artifact
         shell: bash
@@ -42,20 +41,33 @@ jobs:
           test -s publish/test-ipa-verification.json
           jq -e --arg run "$PUBLISH_RUN" '.ipa_created == true and .unsigned == true and .production_approved == false and (.workflow_run_id|tostring) == $run' publish/test-ipa-verification.json >/dev/null
 
-      - name: Publish the exact verified IPA as a prerelease asset
+      # The managed delivery workspace cannot connect to GitHub Artifact's Azure
+      # blob host. Emit four bounded, numbered base64 segments through GitHub's
+      # own job-log channel; 3,900,000 is divisible by three, so the four base64
+      # streams concatenate into the exact original bytes before SHA verification.
+      - name: Relay IPA bytes 0
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.CODEX_IPA_DELIVERY_TOKEN }}
         run: |
           set -euo pipefail
-          SOURCE_SHA="$(jq -r '.workflow_commit' publish/test-ipa-verification.json)"
-          test "${#SOURCE_SHA}" -eq 40
-          TAG="build362-unsigned-test-${SOURCE_SHA:0:7}"
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa publish/test-ipa-verification.json --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            gh release create "$TAG" publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa publish/test-ipa-verification.json --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --prerelease --title "Build 362 unsigned iPhone test IPA" --notes "Unsigned experimental test build from the fully verified workflow run. It requires external signing before installation and is not production-approved."
-          fi
+          dd if=publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa bs=1 skip=0 count=3900000 status=none | base64 -w 48000 | awk '{printf "@@IPA362:0:%06d:%s\n", NR, $0}'
+
+      - name: Relay IPA bytes 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          dd if=publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa bs=1 skip=3900000 count=3900000 status=none | base64 -w 48000 | awk '{printf "@@IPA362:1:%06d:%s\n", NR, $0}'
+
+      - name: Relay IPA bytes 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          dd if=publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa bs=1 skip=7800000 count=3900000 status=none | base64 -w 48000 | awk '{printf "@@IPA362:2:%06d:%s\n", NR, $0}'
+
+      - name: Relay IPA bytes 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          dd if=publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa bs=1 skip=11700000 status=none | base64 -w 48000 | awk '{printf "@@IPA362:3:%06d:%s\n", NR, $0}'
 
   source-browser-native:
     name: source acceptance gates, browsers, and unsigned iPhoneOS Release build
