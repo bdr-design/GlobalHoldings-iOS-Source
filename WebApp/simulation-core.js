@@ -114,7 +114,10 @@
     function completeManualAdvance(){
       // A staged slice (the day close) has already moved the clock to its end while it still runs across frames; the
       // advance is complete only when no slice is in flight, or pausing would abort that last close and roll it back.
-      if(!manualAdvance||job||simNow()+1e-6<manualAdvance.target)return false;
+      // Maintenance scheduled by a committed boundary belongs to the same calendar request. Keep the request active
+      // until those bounded tasks drain; otherwise the UI can observe "complete" and immediately start another staged
+      // close while an old fleet-maintenance task is still able to rewrite the store underneath its rollback baseline.
+      if(!manualAdvance||job||simNow()+1e-6<manualAdvance.target||adapter.hasDeferredWork?.()===true)return false;
       const completed={...manualAdvance};manualAdvance=null;pacing.clearBacklog();
       try{adapter.onAdvance?.({active:false,completed:true,target:completed.target,reason:completed.reason});}catch(error){report('advance-complete',error,false);}
       return true;
@@ -356,7 +359,13 @@
       const suspended=!!adapter.isSuspended?.();
       if(advancing){
         const remaining=Math.max(0,advancing.target-simNow());
-        if(remaining<=1e-6&&!job){completeManualAdvance();pacing.reset(now);maybeRender(now,speed);return;}
+        if(remaining<=1e-6&&!job){
+          // Drain one boundary-owned maintenance part per cycle before publishing completion. This preserves the
+          // cooperative frame budget and guarantees that a completed calendar request has no delayed state writer.
+          const hidden=pacing.snapshot().hidden;
+          if(!hidden&&!suspended&&runDeferredWork()){completeManualAdvance();maybeRender(now,speed);return;}
+          completeManualAdvance();pacing.reset(now);maybeRender(now,speed);return;
+        }
         // Manual calendar navigation is target-driven. It never accrues wall-clock
         // backlog, but it refreshes the wall-clock anchor every frame so its own
         // duration can never be replayed as live catch-up after completion.

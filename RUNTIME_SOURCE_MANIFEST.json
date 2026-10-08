@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "44006463ae6f3a146fc0e9a95e7b9c6e837db623180c800e17ecb44ff5b56a51",
-  "webapp_tree_sha256": "e250f77950954571ce126e902889b6fbc170e33751824a2f68551b8781975c25",
+  "source_tree_sha256": "3c66ac37e20f0451c8bff027e9849a8dc274e40d82d1b1e2581da64b61c8cef1",
+  "webapp_tree_sha256": "dfa21e04afe48458861a017474d51d4cb960e075aa029b2da8809cfc5deeec91",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 264223,
@@ -3307,8 +3307,8 @@
       "sha256": "0e3f6cece32b6c12432a0d4ec77926f812b0417e5c3a7c357604b659a2ff7ed8"
     },
     "WebApp/simulation-core.js": {
-      "bytes": 31638,
-      "sha256": "9ee6cd59a420279c231f5c51fb7e0a0beacd7c4dc564da28363a755a88ba62b4"
+      "bytes": 32438,
+      "sha256": "6052dbcb2d27596cf9b4f7c234e62948bbe24030f50eb31fe0dc3773f36933e6"
     },
     "WebApp/simulation-pacing-core.js": {
       "bytes": 4117,
@@ -3428,7 +3428,7 @@
     },
     "project.yml": {
       "bytes": 2413,
-      "sha256": "695baca26e7cbdd065c87fa8ca2a08051b83d1a4a603ef1d3e20e8509c2f4581"
+      "sha256": "fe7a4a3ec50e4a12224748bb2701bd684f41df6f7d741baeab9a5c353318d47b"
     },
     "BUILD": {
       "bytes": 4,
