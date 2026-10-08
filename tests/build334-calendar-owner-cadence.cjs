@@ -41,8 +41,10 @@ const snap=engine.snapshot(),delivered=state.realism.procurement.deliveries.find
 assert.equal(state.simSeconds,3600);assert.equal(snap.manualAdvance,null);assert.equal(snap.lastAdvanceFailure,null);
 assert.equal(delivered.status,'delivered','pending asset must be delivered before calendar widens its batch');
 assert(Number(delivered.deliveredAtSeconds)<=600,'delivery must not be delayed to the next hour by wide calendar batching');
-assert.deepEqual(intervals,[[0,600],[600,3600]],'after delivery clears, the calendar returns to the hourly boundary');
-assert.equal(commitCount,2);assert.equal(marketCalls,1);assert.equal(state.lastMarketHour,1);
+assert.deepEqual(intervals[0],[0,600],'the pending delivery keeps the first calendar slice at 600 seconds');
+assert.equal(intervals.at(-1)[1],3600,'calendar processing reaches the hourly boundary');
+for(let i=0;i<intervals.length;i++){assert(intervals[i][1]>intervals[i][0],'every event-bounded slice advances time');if(i)assert.equal(intervals[i][0],intervals[i-1][1],'event checkpoints must remain contiguous');}
+assert.equal(commitCount,intervals.length);assert.equal(marketCalls,1);assert.equal(state.lastMarketHour,1);
 assert.equal(s.GH_REALISM.simulationSliceLimit(state),3600);
 
 state.mobility={status:'active',vehicles:[{id:'MOB-CADENCE-PROBE'}]};

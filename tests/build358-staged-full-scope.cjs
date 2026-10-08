@@ -76,6 +76,17 @@ function run(target,{fail,full=true}){
   console.log('PASS the declared scope is captured one root per step; an abort while capturing restores and deletes nothing');
 }
 {
+  // A live steady/hour slice needs the same bounded capture, but only for its
+  // proven write scope. It must not copy unrelated roots or promote when a
+  // joined owner is covered by that scope.
+  const target=fixture(),before=JSON.stringify(target),profile=target.profile;
+  const handle=TX.beginStaged(target,{label:'qa-staged-declared-scope',scope:['simSeconds','finance','world'],writeRoots:['simSeconds','finance','world'],stagedScope:true,scopedJoin:true,rowRoots:{world:{level:'rows'}},apply:function*(){target.simSeconds=44;target.finance.cash=0;yield 'live-a';TX.join(target,{apply:()=>{target.world.rows[3].v=-3;}});yield 'live-b';throw new Error('qa-live-rollback');}});
+  let guard=0;while(!handle.done&&guard++<100)handle.step(-Infinity);
+  assert.ok(handle.error&&/qa-live-rollback/.test(handle.error.message));assert.equal(JSON.stringify(target),before,'declared staged scope restores every admitted write');assert.equal(target.profile,profile,'an unrelated root is never copied or replaced');
+  const telemetry=TX.telemetry().last;assert.equal(telemetry.rollbackStorage,'legacy-scoped');assert.equal(telemetry.fullSnapshot,false);assert.equal(telemetry.fallbackReason||null,null);assert.equal(telemetry.stagedScope,true);assert.equal(telemetry.stagedFullScope,undefined);assert.equal(telemetry.scopeSize,3);assert.deepEqual(telemetry.rowRoots,['world']);
+  console.log('PASS stagedScope captures only the declared roots and keeps joined rollback exact');
+}
+{
   // Without the option the join still promotes to a full snapshot (unchanged behaviour for other transactions).
   const target=fixture(),before=JSON.stringify(target);
   const {telemetry}=run(target,{fail:true,full:false});

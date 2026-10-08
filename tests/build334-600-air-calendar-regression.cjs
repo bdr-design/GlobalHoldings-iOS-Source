@@ -54,9 +54,14 @@ function runRate(rate){
     longTaskWarnMs:10000,hardTaskMs:10000
   });
   const started=performance.now();let frames=0;
-  for(;frames<4000&&state.simSeconds<TARGET;frames++){
+  // Staged transactions intentionally advance one bounded stage per synthetic frame. Keep the
+  // ceiling high enough to exercise that cooperative path instead of assuming the old synchronous job.
+  for(;frames<100000&&engine.snapshot().days<1;frames++){
     frameTime+=1000;engine.frame(frameTime);
   }
+  // A live frame may already have opened the next staged slice after committing midnight.
+  // Reset aborts that uncommitted slice and restores the exact day-boundary state.
+  engine.reset(frameTime,'test-day-boundary-reached');
   const elapsedMs=performance.now()-started,kernel=engine.snapshot();
   assert.equal(state.simSeconds,TARGET,`×${rate}: simulated day did not finish; ${kernel.lastError}`);
   assert.equal(kernel.lastError,'',`×${rate}: ${kernel.lastError}`);
@@ -86,7 +91,7 @@ function run600AssetCalendar(){
     createSliceJob:(slice,meta)=>{const job=measured(()=>s.__makeFleetSliceJob(slice,meta)),finish=job.finish,runChunk=job.runChunk;job.runChunk=(...args)=>measured(()=>runChunk.apply(job,args));job.finish=info=>measured(()=>{const out=finish.call(job,info);if(out?.committed){commits++;events+=Number(out.events)||0;}return out;});return job;}
   },{nowMs:()=>workTime,allowedSpeeds:[0,...RATES],fallbackSpeed:30,frameBudgetMs:8,manualFrameBudgetMs:20,manualBatchSeconds:3600,manualMinBatchSeconds:300,manualChunkItems:64});
   const started=performance.now();assert.equal(engine.advanceTo(TARGET,{speed:600,batchSeconds:3600}).accepted,true);
-  let frames=0;for(;frames<1000&&engine.snapshot().manualAdvance;frames++){frameTime+=16;engine.frame(frameTime);}
+  let frames=0;for(;frames<10000&&engine.snapshot().manualAdvance;frames++){frameTime+=16;engine.frame(frameTime);}
   const elapsedMs=performance.now()-started,kernel=engine.snapshot();
   assert.equal(state.simSeconds,TARGET);assert.equal(kernel.manualAdvance,null);assert.equal(kernel.lastAdvanceFailure,null);
   assert.equal(commits,24);assert.equal(marketCalls,24);assert.equal(dayCalls,1);assert(frames>1,'calendar work must yield across frames when the configured work budget expires');

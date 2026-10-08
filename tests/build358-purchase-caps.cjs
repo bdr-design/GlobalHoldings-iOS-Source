@@ -7,6 +7,7 @@ const ROOT=process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..');process.
 const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario'));
 const env=scenario(),{state,s,command}=env,M=s.GH_MOBILITY_CORE,F=s.GH_FACILITY_CORE;
 assert.equal(s.GH_PROCUREMENT_CORE.MAX_ASSET_PURCHASE_QUANTITY,3000,'fleet purchases');
+assert.equal(s.GH_PROCUREMENT_CORE.MAX_ASSET_PURCHASE_REQUEST,1000000,'one guarded UI request may reach one million');
 assert.equal(M.MAX_FLEET_PURCHASE_QUANTITY,3000,'mobility purchases');
 for(const kind of ['airport-base','port-base','logistics','depot','mobility-center'])assert.equal(F.DEFAULT_ASSET_CAPACITY[kind],3000,`${kind} takes 3,000`);
 command('corporate','open-company',{type:'mobility',capital:500000000,legalName:'Test Mobility'});state.godMoney=true;state.infiniteMoney=true;

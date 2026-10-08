@@ -13,7 +13,7 @@
       schedule=typeof options.setTimer==='function'?options.setTimer:(fn,delay)=>setTimeout(fn,delay),
       unschedule=typeof options.clearTimer==='function'?options.clearTimer:id=>clearTimeout(id),
       intervals={manual:Math.max(4,Number(options.manualIntervalMs)||8),live:Math.max(8,Number(options.liveIntervalMs)||16),deferred:Math.max(16,Number(options.deferredIntervalMs)||50),paused:Math.max(100,Number(options.pausedIntervalMs)||250),hidden:Math.max(500,Number(options.hiddenIntervalMs)||1000)};
-    let running=false,timer=null,generation=0,inTick=false,workSinceDrain=0;
+    let running=false,timer=null,generation=0,inTick=false,workSinceDrain=0,maxWorkSinceDrain=0,ticksSinceDrain=0,firstWorkStartedAtMs=null,lastWorkEndedAtMs=null;
     const health={version:VERSION,ticks:0,wakes:0,cancelledWakes:0,errors:0,longTicks:0,maxTickMs:0,lastTickMs:0,lastDelayMs:0,pending:false,running:false,inTick:false};
 
     function delay(){
@@ -40,7 +40,9 @@
       try{engine.frame(started);health.ticks++;}
       catch(error){health.errors++;try{onError(error);}catch(_error){}}
       finally{
-        const took=Math.max(0,clock()-started);health.lastTickMs=took;health.maxTickMs=Math.max(health.maxTickMs,took);if(took>=50)health.longTicks++;workSinceDrain+=took;inTick=false;health.inTick=false;arm();
+        const ended=clock(),took=Math.max(0,ended-started);health.lastTickMs=took;health.maxTickMs=Math.max(health.maxTickMs,took);if(took>=50)health.longTicks++;
+        workSinceDrain+=took;maxWorkSinceDrain=Math.max(maxWorkSinceDrain,took);ticksSinceDrain++;if(firstWorkStartedAtMs===null)firstWorkStartedAtMs=started;lastWorkEndedAtMs=ended;
+        inTick=false;health.inTick=false;arm();
       }
       return true;
     }
@@ -50,10 +52,16 @@
     // the scheduler implicitly.
     function wake(){if(!running)return false;generation++;clearPending();health.wakes++;return arm(0);}
     function stop(){if(!running&&!timer)return false;running=false;generation++;health.running=false;clearPending();return true;}
-    function dispose(){stop();workSinceDrain=0;}
-    function drainWorkMs(){const value=workSinceDrain;workSinceDrain=0;return value;}
+    function resetDrain(){workSinceDrain=0;maxWorkSinceDrain=0;ticksSinceDrain=0;firstWorkStartedAtMs=null;lastWorkEndedAtMs=null;}
+    function dispose(){stop();resetDrain();}
+    // A RAF callback drains the timer work that ran since the preceding paint.
+    // Keep the exact task interval and largest task, not only an accumulated
+    // number: diagnostics can then attribute a delayed frame to measured
+    // simulation work instead of guessing from the last transaction timestamp.
+    function drainWork(){const value={totalMs:workSinceDrain,maxTaskMs:maxWorkSinceDrain,taskCount:ticksSinceDrain,firstTaskStartedAtMs:firstWorkStartedAtMs,lastTaskEndedAtMs:lastWorkEndedAtMs};resetDrain();return value;}
+    function drainWorkMs(){return drainWork().totalMs;}
     function snapshot(){return {...health,running,pending:timer!==null,inTick,intervals:{...intervals}};}
-    return Object.freeze({VERSION,start,wake,stop,dispose,drainWorkMs,snapshot});
+    return Object.freeze({VERSION,start,wake,stop,dispose,drainWork,drainWorkMs,snapshot});
   }
 
   const API=Object.freeze({VERSION,create});

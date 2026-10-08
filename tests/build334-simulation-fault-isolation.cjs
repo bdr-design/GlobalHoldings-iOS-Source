@@ -24,7 +24,7 @@ function run({faultAt=1,lateFailure=false}={}){
     s.GH_REALISM.hasPendingDeliveries=()=>true;s.GH_REALISM.deliveryDueBy=()=>true;
     s.GH_REALISM.onSimulationTime=()=>{throw new Error('injected-delivery-failure');};
   }
-  const to=faultAt===1?60:4560,job=s.__makeFleetSliceJob(to,{from:0,to,speed:30,manualAdvance:false,boundary:{day:null,hour:null}});
+  const to=faultAt===1?60:4560,job=s.__makeFleetSliceJob(to,{from:0,to,speed:30,manualAdvance:false,staged:false,boundary:{day:null,hour:null}});
   assert.equal(job.runChunk(64),true);
   if(lateFailure){
     const before=stateSnapshot(s,state);

@@ -267,6 +267,8 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .company-transfer-form,.route-builder{display: grid; grid-template-columns: minmax(0px, 1fr); gap: 10px; margin-top: 10px;}
 .company-transfer-form > label,.route-builder > label{display: grid; gap: 3px;}
 .company-transfer-form .wide,.route-builder .wide{grid-column: 1 / -1;}
+.manual-asset-purchase{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+.manual-asset-purchase>label:first-child{grid-column:1/-1}.manual-asset-purchase label>small{font-size:9px;line-height:1.55;color:var(--muted)}
 .bank-client-row{display: grid; gap: 9px; align-items: start; padding: 12px 0px; border-bottom: 1px solid var(--line);}
 .bank-client-row:last-child{border-bottom: 0px;}
 .bank-client-row > div{display: grid; gap: 5px; min-width: 0px;}

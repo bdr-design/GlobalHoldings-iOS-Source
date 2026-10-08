@@ -18,6 +18,7 @@ assert.equal(s.GH_PERSISTENCE.fleetRecordLimit(),1000000,'native fleet ceiling: 
 s.webkit=previousWebkit;
 assert.equal(s.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['airport-base'],3000,'an airport base takes 3,000 aircraft');
 assert.equal(s.GH_PROCUREMENT_CORE.MAX_ASSET_PURCHASE_QUANTITY,3000,'one purchase may fill an airport');
+assert.equal(s.GH_PROCUREMENT_CORE.MAX_ASSET_PURCHASE_REQUEST,1000000,'the public guarded request ceiling is one million');
 state.godMoney=true;state.infiniteMoney=true;state.advanced.facilities.B1.capacity=1e7;
 const base=state.globalBases.find(row=>row.id==='B1');base.deliveryCapacity=1e7;
 const item=e.item;

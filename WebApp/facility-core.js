@@ -1,10 +1,19 @@
 (()=>{'use strict';
-const VERSION='3.0.0',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
+const VERSION='3.0.1',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
 // Build 358: every asset base takes 3,000 new assets, so one purchase (3,000 in every company) fits one base. Was:
 // airports 300, ports 120, logistics hubs 140, depots 80, mobility centers 120. Saved bases keep the capacity they
 // bought above their old default: migrateAssetCapacity() lifts them to 3,000 plus their upgrades on load.
 const DEFAULT_ASSET_CAPACITY=Object.freeze({'airport-base':3000,'port-base':3000,logistics:3000,depot:3000,'mobility-center':3000});
 const LEGACY_ASSET_CAPACITY=Object.freeze({'airport-base':300,'port-base':120,logistics:140,depot:80,'mobility-center':120});
+// Build 363: the former values treated a sizeable part of construction cost as a daily expense. Existing saves are
+// repriced only when they still carry the exact legacy tariff; deliberate player/provider overrides remain untouched.
+const OPERATING_COST_VERSION=2;
+const OPERATING_COSTS=Object.freeze({
+ power:Object.freeze({legacy:38000,current:12000}),
+ bank:Object.freeze({legacy:18500,current:5500}),
+ 'mobility-center':Object.freeze({legacy:9800,current:2200}),
+ realestate:Object.freeze({legacy:8000,current:1800})
+});
 const CAPACITY_UNIT=/^(\D*?)\d[\d,]*(?=\s*(?:طائرة|سفينة|شاحنة|سيارة))/;
 const ASSET_FACILITY_KINDS=Object.freeze({air:Object.freeze(['airport-base']),sea:Object.freeze(['port-base']),road:Object.freeze(['depot','logistics'])});
 const platform=()=>globalThis.GH_COMPANY_PLATFORM||null;
@@ -29,6 +38,16 @@ function migrateAssetCapacity(s){
   changed++;
  }
  return changed;
+}
+function migrateOperatingCosts(s){
+ ensure(s);const advanced=s.advanced;if(Number(advanced.facilityOperatingCostVersion)>=OPERATING_COST_VERSION)return 0;let changed=0;
+ const same=(value,expected)=>Number.isFinite(Number(value))&&Math.abs(Number(value)-expected)<.01;
+ for(const f of all(s)){
+  const profile=OPERATING_COSTS[f?.kind];if(!profile)continue;
+  if(same(f.dailyCost,profile.legacy)){f.dailyCost=profile.current;changed++;}
+  if(f.kind==='power'&&same(f.plannedDailyCost,profile.legacy)){f.plannedDailyCost=profile.current;changed++;}
+ }
+ advanced.facilityOperatingCostVersion=OPERATING_COST_VERSION;return changed;
 }
 function log(s,m,text){m.lastAction=now(s);m.history.unshift({at:m.lastAction,text});m.history=m.history.slice(0,40);return text;}
 function ownerCompany(f){const explicit=explicitOwner(f);if(explicit)return explicit;return ['airport','airport-base'].includes(f?.kind)?'air':['port','port-base'].includes(f?.kind)?'sea':['logistics','depot'].includes(f?.kind)?'road':f?.kind==='power'?'power':f?.kind==='bank'?'bank':f?.kind==='mobility-center'?'mobility':'group';}
@@ -157,5 +176,5 @@ function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);const f=p.id?fin
     if(cmd==='commission-energy'){const k=String(p.key||'capacityMW');s.energy[k]=num(s.energy[k])+num(p.amount);return {key:k,value:s.energy[k]};}
   throw new Error(`Unknown facility command: ${cmd}`);
 }
-const API={VERSION,dailyOperatingCosts,DEFAULT_ASSET_CAPACITY,ASSET_FACILITY_KINDS,migrateAssetCapacity,ensure,all,find,model,ownerCompany,assetCapacity,isAssetFacilityCompatible,assetOccupancy,availableAssetCapacity,verifyDirectorySite,verifyGlobalSite,validate,execute};globalThis.GH_FACILITY_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('facilities',API);if(globalThis.window&&window!==globalThis)window.GH_FACILITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+const API={VERSION,dailyOperatingCosts,DEFAULT_ASSET_CAPACITY,ASSET_FACILITY_KINDS,migrateAssetCapacity,migrateOperatingCosts,ensure,all,find,model,ownerCompany,assetCapacity,isAssetFacilityCompatible,assetOccupancy,availableAssetCapacity,verifyDirectorySite,verifyGlobalSite,validate,execute};globalThis.GH_FACILITY_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('facilities',API);if(globalThis.window&&window!==globalThis)window.GH_FACILITY_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

@@ -579,9 +579,11 @@
     // snapshot of that draft therefore protects nothing. This is honored ONLY when the target is
     // exactly the active durable draft; any failure poisons the command so the draft cannot publish.
     const discardableDraft=options.discardableDraft===true&&!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__&&globalThis.__GH_DURABLE_COMMAND_CONTEXT__.draft===target&&!requestedJournal&&!scope;
-    // Build 358: a staged transaction that captures the whole state (stagedFullScope) also captures its declared scope
-    // one root per step, before it writes, instead of all at once in its first frame (the daily close: 36-45 ms on iPhone).
-    const deferredScope=stageToken&&options.stagedFullScope===true&&scope&&!requestedJournal&&!discardableDraft?scope:null;
+    // A staged transaction may defer its declared rollback scope and capture one
+    // root per cooperative step before the first write. stagedFullScope keeps the
+    // daily-close guarantee by continuing through every remaining state root;
+    // stagedScope stops after the proven write scope used by steady/hour slices.
+    const stagedFullScope=stageToken&&options.stagedFullScope===true,stagedDeclaredScope=stageToken&&(options.stagedScope===true||stagedFullScope),deferredScope=stagedDeclaredScope&&scope&&!requestedJournal&&!discardableDraft?scope:null;
     const snapshotStart=runtimeClock();
     if(discardableDraft){rollbackStorage='discardable-draft';}
     else if(requestedJournal&&!fallbackReason){
@@ -624,21 +626,21 @@
       if(validation===false||validation?.ok===false){const rollbackStart=runtimeClock();rollback();timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);timing.totalMs=Math.max(0,runtimeClock()-totalStart);timing.stage='validation-rejected';publishRuntimeMetric(timing);return {committed:false,reason:validation?.reason||'validation-rejected',label};}
       // Staged: the snapshot frame ends here, before any write.
       if(stageToken){activeContext=null;yield 'snapshot';if(activeContext)throw new Error('staged-transaction-resumed-inside-transaction');activeContext=context;}
-      // Build 358: a staged scoped transaction may capture every other root before it writes (stagedFullScope), one root
-      // per step across frames. Its scope then covers the whole state, so a joined writer needs no full-state copy in the
-      // middle of the work (the daily close joins system commands; that copy was 17-21 ms on iPhone with a 25 MB state).
-      // The declared scope (deferred above) comes first, with its row-level policies; a root joins the scope only once
-      // captured, so a rollback in the middle of capturing restores exactly the roots captured so far.
-      if(stageToken&&options.stagedFullScope===true&&context.rollbackStorage==='legacy-scoped'&&context.scope){
+      // The declared scope (deferred above) comes first, with its row-level
+      // policies. A root joins the rollback scope only after capture, so aborting
+      // in the middle restores exactly the roots already admitted.
+      if(stageToken&&deferredScope&&context.rollbackStorage==='legacy-scoped'&&context.scope){
         const known=new Set(context.scope),declared=new Set(deferredScope||[]);
-        for(const key of deferredScope?[...deferredScope,...context.rootOrder]:context.rootOrder){
+        const captureOrder=stagedFullScope?[...deferredScope,...context.rootOrder]:deferredScope;
+        for(const key of captureOrder){
           if(known.has(key)||JOURNALED_ROOTS.has(key))continue;
           const start=runtimeClock();context.snapshot[key]=captureEntry(target,key,declared.has(key)?rowPolicies?.[key]||null:null);context.scope.push(key);known.add(key);if(context.declaredWriteRoots&&!context.declaredWriteRoots.includes(key))context.declaredWriteRoots.push(key);
           timing.snapshotMs+=Math.max(0,runtimeClock()-start);timing.scopeSize=context.scope.length;
           activeContext=null;yield 'snapshot';if(activeContext)throw new Error('staged-transaction-resumed-inside-transaction');activeContext=context;
         }
         if(rowPolicies)timing.rowRoots=Object.keys(rowPolicies).filter(key=>context.snapshot?.[key]?.rows);
-        context.fullCoverage=true;context.scopedJoin=true;timing.stagedFullScope=true;
+        timing.stagedScope=true;
+        if(stagedFullScope){context.fullCoverage=true;context.scopedJoin=true;timing.stagedFullScope=true;}
       }
       phase='commit';const applyStart=runtimeClock();let value;
       try{value=options.apply(measure);}

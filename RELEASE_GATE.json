@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "source_tree_sha256": "3c66ac37e20f0451c8bff027e9849a8dc274e40d82d1b1e2581da64b61c8cef1",
+  "source_tree_sha256": "1305035aaa3f3bf628c497343fd3dfe7c16e50e43d271cdabd47e7d2fd8d5552",
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
@@ -74,10 +74,10 @@
   },
   "source_tracking": {
     "mode": "direct_git_tracked_branch",
-    "branch": "claude/vibrant-planck-irbtw6",
-    "based_on": "build357-wip@38b21bc",
-    "source_tree_sha256": "3c66ac37e20f0451c8bff027e9849a8dc274e40d82d1b1e2581da64b61c8cef1",
+    "branch": "codex/build361-device-archive-1gb",
+    "based_on": "claude/madar-map-conference-cleanup@4f3fea7",
+    "source_tree_sha256": "1305035aaa3f3bf628c497343fd3dfe7c16e50e43d271cdabd47e7d2fd8d5552",
     "working_tree_clean": null
   },
-  "point": "Build 358: air/sea dispatch fix, row-level simulation snapshots (no per-slice full-state copy), 3,000-aircraft airports with compact delivery receipts; RELEASE_GATE remains closed pending CI, physical iPhone profiling and owner approval."
+  "point": "Build 362 test candidate: staged simulation cleanup, bulk company/facility and asset workflows, financial document presentation, corrected bank/mobility/energy/real-estate operating economics, and safe legacy migrations. RELEASE_GATE remains closed pending CI and physical iPhone validation."
 }

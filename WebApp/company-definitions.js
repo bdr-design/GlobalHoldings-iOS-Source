@@ -106,7 +106,7 @@
       founding:{defaultCapital:55000000,minimumCapital:55000000,documentPrefix:'NRG'},
       finance:{accountPrefix:'POWER',documentPrefix:'NRG',collectionProfileId:'energy-revenue-v1'},
       hr:{managerRoleProfileId:'ceo-energy-v1',staffingProfileId:'energy-project-v1'},
-      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['power'],primaryKind:'power',siteTemplate:{label:'محطة طاقة',facilityKind:'power',cost:82000000,dailyCost:38000,capacity:'مشروع شمسي 100MW كبداية',deliveryCapacity:0,photo:'assets/images/company-energy-v2.webp',iconKey:'power',groupValueFactor:.38}},
+      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['power'],primaryKind:'power',siteTemplate:{label:'محطة طاقة',facilityKind:'power',cost:82000000,dailyCost:12000,capacity:'مشروع شمسي 100MW كبداية',deliveryCapacity:0,photo:'assets/images/company-energy-v2.webp',iconKey:'power',groupValueFactor:.38}},
       ui:{extensions:['energy-company']},map:{layerProviderIds:['energy-projects','company-facilities'],filterGroup:'infrastructure',markerProfileId:'power'},
       conference:{providerId:'energy-company-v1'},adapters:{operations:'energy-project-v1',facilities:'energy-sites-v1',map:'company-map-v1',conference:'energy-company-v1'},
       legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:[],routeOwnerModes:[],assetClassByMode:{}}
@@ -120,7 +120,7 @@
       founding:{defaultCapital:75000000,minimumCapital:75000000,documentPrefix:'BNK'},
       finance:{accountPrefix:'BANK',documentPrefix:'BNK',collectionProfileId:'banking-revenue-v1',internalBankEligible:false,cashPoolEligible:false},
       hr:{managerRoleProfileId:'ceo-bank-v1',staffingProfileId:'bank-branch-v1'},
-      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['bank'],primaryKind:'bank',siteTemplate:{label:'فرع مصرفي',facilityKind:'bank',cost:15000000,dailyCost:18500,capacity:'حسابات وودائع وبطاقات وتمويل أفراد وشركات',deliveryCapacity:0,photo:'assets/images/company-bank-v2.webp',iconKey:'bank',groupValueFactor:.72}},
+      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['bank'],primaryKind:'bank',siteTemplate:{label:'فرع مصرفي',facilityKind:'bank',cost:15000000,dailyCost:5500,capacity:'حسابات وودائع وبطاقات وتمويل أفراد وشركات',deliveryCapacity:0,photo:'assets/images/company-bank-v2.webp',iconKey:'bank',groupValueFactor:.72}},
       ui:{extensions:['bank-company']},map:{layerProviderIds:['bank-branches','company-facilities'],filterGroup:'services',markerProfileId:'bank'},
       conference:{providerId:'bank-company-v1'},adapters:{operations:'banking-services-v1',facilities:'bank-network-v1',map:'company-map-v1',conference:'bank-company-v1'},
       legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:[],routeOwnerModes:[],assetClassByMode:{}}
@@ -134,7 +134,7 @@
       founding:{defaultCapital:120000000,minimumCapital:120000000,documentPrefix:'MOVE'},
       finance:{accountPrefix:'MOBILITY',documentPrefix:'MOVE',collectionProfileId:'mobility-revenue-v1'},
       hr:{managerRoleProfileId:'ceo-mobility-v1',staffingProfileId:'mobility-center-v1'},
-      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['mobility-center'],primaryKind:'mobility-center',siteTemplate:{label:'مركز تنقل حضري',facilityKind:'mobility-center',cost:4500000,dailyCost:9800,capacity:'120 سيارة · عاصمة فقط',deliveryCapacity:120,photo:'assets/images/facility-logistics-v2.webp',iconKey:'mobility',groupValueFactor:.72}},
+      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['mobility-center'],primaryKind:'mobility-center',siteTemplate:{label:'مركز تنقل حضري',facilityKind:'mobility-center',cost:4500000,dailyCost:2200,capacity:'3,000 سيارة · عاصمة فقط',deliveryCapacity:3000,photo:'assets/images/facility-logistics-v2.webp',iconKey:'mobility',groupValueFactor:.72}},
       ui:{extensions:['mobility-company']},map:{layerProviderIds:['mobility-fleet','company-facilities'],filterGroup:'transport',markerProfileId:'mobility'},
       conference:{providerId:'mobility-company-v1'},adapters:{operations:'mobility-fleet-v1',facilities:'mobility-network-v1',map:'mobility-map-v1',conference:'mobility-company-v1'},
       legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:['mobility'],routeOwnerModes:[],assetClassByMode:{mobility:'mobility-vehicle'}}
@@ -165,7 +165,7 @@
       founding:{defaultCapital:150000000,minimumCapital:150000000,documentPrefix:'RLE'},
       finance:{accountPrefix:'REALESTATE',documentPrefix:'RLE',collectionProfileId:'realestate-revenue-v1'},
       hr:{managerRoleProfileId:'ceo-realestate-v1',staffingProfileId:'realestate-office-v1'},
-      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['realestate'],primaryKind:'realestate',siteTemplate:{label:'مكتب تطوير وتأجير عقاري',facilityKind:'realestate',cost:5000000,dailyCost:8000,capacity:'مبيعات وتأجير ومشاريع في المدينة',deliveryCapacity:0,photo:'assets/images/company-hq-v2.webp',iconKey:'realestate',groupValueFactor:.72}},
+      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['realestate'],primaryKind:'realestate',siteTemplate:{label:'مكتب تطوير وتأجير عقاري',facilityKind:'realestate',cost:5000000,dailyCost:1800,capacity:'مبيعات وتأجير ومشاريع في المدينة',deliveryCapacity:0,photo:'assets/images/company-hq-v2.webp',iconKey:'realestate',groupValueFactor:.72}},
       ui:{extensions:['realestate-company']},map:{layerProviderIds:['company-facilities'],filterGroup:'services',markerProfileId:'realestate'},
       conference:{providerId:'generic-company-v1'},adapters:{operations:'real-estate-v1',facilities:'realestate-network-v1',map:'company-map-v1',conference:'generic-company-v1'},
       legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:[],routeOwnerModes:[],assetClassByMode:{}}

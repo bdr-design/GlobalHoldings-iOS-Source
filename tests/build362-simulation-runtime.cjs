@@ -21,7 +21,8 @@ assert.equal(runtime.start(),true);assert.equal(timers.size,1);assert.equal(fire
 assert.equal([...timers.values()][0].delay,250,'paused runtime must not poll at display cadence');
 speed=30;runtime.wake();assert.equal(timers.size,1,'wake replaces, rather than stacks, a timer');assert(cleared.length>=1);fire();assert.equal([...timers.values()][0].delay,16);
 manual=true;runtime.wake();fire();assert.equal([...timers.values()][0].delay,8);
-assert.equal(runtime.drainWorkMs(),6);assert.equal(runtime.drainWorkMs(),0,'drained task metrics cannot accumulate forever');
+const drained=runtime.drainWork();assert.deepEqual(drained,{totalMs:6,maxTaskMs:2,taskCount:3,firstTaskStartedAtMs:0,lastTaskEndedAtMs:6});
+assert.equal(runtime.drainWorkMs(),0,'drained task metrics cannot accumulate forever');
 runtime.stop();assert.equal(timers.size,0,'stop releases the last scheduled task');assert.equal(runtime.snapshot().pending,false);assert.equal(runtime.snapshot().inTick,false);
 assert.equal(runtime.wake(),false,'a signal after pagehide cannot resurrect the stopped scheduler');assert.equal(timers.size,0);
 assert.equal(runtime.start(),true,'pageshow can explicitly restart the same owner');assert.equal(timers.size,1);runtime.stop();

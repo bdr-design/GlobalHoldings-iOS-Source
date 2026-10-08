@@ -51,7 +51,10 @@ function createSimulationAdapter({from=7200,assets=null,routeOverrides={},financ
   vm.runInContext(`${EFFECTS}\n${JOB}\nthis.__makeFleetSliceJob=(sliceSeconds,meta)=>createSimulationSliceJob(sliceSeconds,meta);this.__resolveFleetRoute=fleetResolveRoute;`,s,{filename:'fleet-simulation-adapter-test.js'});
   return {
     e,s,state,templates,assets:rows,
-    makeJob({from:jobFrom=from,to=jobFrom+30,...meta}={}){return s.__makeFleetSliceJob(to-jobFrom,{from:jobFrom,to,speed:30,...meta});}
+    // These unit suites exercise the explicit synchronous fallback contract.
+    // Production jobs omit staged:false and are covered by the full-app staged
+    // browser gates.
+    makeJob({from:jobFrom=from,to=jobFrom+30,...meta}={}){return s.__makeFleetSliceJob(to-jobFrom,{from:jobFrom,to,speed:30,staged:false,...meta});}
   };
 }
 

@@ -13,7 +13,7 @@ assert.equal(diag.recorderIsActive(state),true);
 let raf=perf0;
 function frame(at,work={}){
   const callbackStartMs=at+.25,callbackEndMs=callbackStartMs+(work.callbackMs??2);
-  return diag.recorderFrame(state,{rafTimestampMs:at,callbackStartMs,callbackEndMs,simSeconds:state.simSeconds,visible:true,hidden:false,panel:'map',mapActive:true,fleetSize:1420,ownMarkers:1085,mobilityMarkers:0,simulationMs:work.simulationMs??1,targetUpdateMs:work.targetUpdateMs??1,markerAnimationMs:work.markerAnimationMs??0,structuralRenderMs:0,targetUpdated:true,simulationStage:work.stage||'chunk',guardReason:work.guardReason||'',simulationGovernor:work.governor||'GREEN',simulationBacklog:0,simulationJobActive:false},{transactionProvider:()=>work.transaction||({label:'simulation:949800->950400',correlationId:'SIM-JOB-42',stage:'rollback',committed:false,totalMs:245,snapshotMs:72,validateMs:8,applyMs:80,rollbackMs:85,recordedAtMs:wall0})});
+  return diag.recorderFrame(state,{rafTimestampMs:at,callbackStartMs,callbackEndMs,simSeconds:state.simSeconds,visible:true,hidden:false,panel:'map',mapActive:true,fleetSize:1420,ownMarkers:1085,mobilityMarkers:0,simulationMs:work.simulationMs??1,simulationTaskMs:work.simulationTaskMs??0,simulationTaskMaxMs:work.simulationTaskMaxMs??0,simulationTaskCount:work.simulationTaskCount??0,simulationTaskFirstStartedAtMs:work.simulationTaskFirstStartedAtMs??null,simulationTaskLastEndedAtMs:work.simulationTaskLastEndedAtMs??null,targetUpdateMs:work.targetUpdateMs??1,markerAnimationMs:work.markerAnimationMs??0,structuralRenderMs:0,targetUpdated:true,simulationStage:work.stage||'chunk',guardReason:work.guardReason||'',simulationGovernor:work.governor||'GREEN',simulationBacklog:0,simulationJobActive:false},{transactionProvider:()=>work.transaction||({label:'simulation:949800->950400',correlationId:'SIM-JOB-42',stage:'rollback',committed:false,totalMs:245,snapshotMs:72,validateMs:8,applyMs:80,rollbackMs:85,recordedAtMs:wall0})});
 }
 for(let i=0;i<40;i++){frame(raf);raf+=step;}
 frame(raf,{callbackMs:58,simulationMs:42,targetUpdateMs:9,stage:'finish',governor:'RED'});raf+=step;
@@ -41,6 +41,12 @@ const transactionDrop=diag.recorderSnapshot(state).events.find(row=>row.type==='
 assert.equal(transactionDrop?.detail?.cause?.kind,'transaction-correlated','a transaction is correlated only when its completion timestamp falls inside the delayed-frame window');
 raf+=step;
 for(let i=0;i<20;i++){frame(raf);raf+=step;}
+const taskStartedAt=raf+2;
+frame(raf+step*3,{callbackMs:2,stage:'finish',simulationTaskMs:17,simulationTaskMaxMs:17,simulationTaskCount:1,simulationTaskFirstStartedAtMs:taskStartedAt,simulationTaskLastEndedAtMs:taskStartedAt+17});raf+=step*3;
+const simulationTaskDrop=diag.recorderSnapshot(state).events.find(row=>row.type==='FRAME_DROP'&&row.detail?.cause?.kind==='measured-simulation-task');
+assert.equal(simulationTaskDrop?.detail?.cause?.maxTaskMs,17,'timer-owned simulation work must be attributed to the delayed frame that drained it');
+raf+=step;
+for(let i=0;i<20;i++){frame(raf);raf+=step;}
 frame(raf,{callbackMs:35,guardReason:'boundary-recovery'});raf+=step;
 frame(raf+step*3,{callbackMs:2});raf+=step*3;
 const guardedDrop=diag.recorderSnapshot(state).events.find(row=>row.type==='FRAME_DROP'&&row.detail?.cause?.kind==='measured-lifecycle-guard');
@@ -50,13 +56,13 @@ for(let i=0;i<70;i++)diag.recorderSample(state,{speed:600,frames:i,slices:i,asse
 const stateBefore=JSON.stringify(state);
 const status=diag.recorderSnapshot(state);
 assert.ok(status.frameSummary.frameCallbacks>300);
-assert.equal(status.frameSummary.jankyFrames,4);
+assert.equal(status.frameSummary.jankyFrames,5);
 assert.equal(status.frameSummary.longTasks,1);
 assert.equal(status.sampleCount,71,'the live panel must expose the true sample total despite its compact view');
 assert.equal(JSON.stringify(state),stateBefore,'frame diagnostics must remain outside the saved simulation state');
 assert.equal(JSON.stringify(status.frameTrace).includes('longTasksRecent'),false,'internal ring buffers must not leak into the report');
 const summary=diag.recorderStop(state,{speed:600,frames:400,slices:400},{nowMs:wall0+400000});
-assert.equal(summary.frameSummary.jankyFrames,4);
+assert.equal(summary.frameSummary.jankyFrames,5);
 assert.ok(summary.findings.some(row=>row.type==='FRAME_DROP'));
 const exported=diag.exportBundle(state,{appVersion:'3.0.0',saveSchemaVersion:'2.0.0',simulation:{}});
 assert.ok(exported.faultRecorder.events.length>30,'diagnostic export must preserve more than 30 recorder events');
@@ -90,4 +96,4 @@ const genuineStall=conferenceSnapshot.events.find(row=>row.type==='SIM_PROGRESS_
 assert.ok(genuineStall,'stall detection must resume after the conference guard ends');
 assert.ok(genuineStall.detail.stalledMs>=6000,'the resumed detector must still enforce the full stall threshold');
 diag.clear(conferenceState);
-console.log(JSON.stringify({suite:'build339-diagnostic-frame-trace',passed:32,total:32,jankyFrames:summary.frameSummary.jankyFrames,frameCallbacks:summary.frameSummary.frameCallbacks,frameTrace:exported.faultRecorder.frameTrace.length,eventsExported:exported.faultRecorder.events.length,samplesExported:exported.faultRecorder.samples.length}));
+console.log(JSON.stringify({suite:'build339-diagnostic-frame-trace',passed:33,total:33,jankyFrames:summary.frameSummary.jankyFrames,frameCallbacks:summary.frameSummary.frameCallbacks,frameTrace:exported.faultRecorder.frameTrace.length,eventsExported:exported.faultRecorder.events.length,samplesExported:exported.faultRecorder.samples.length}));
