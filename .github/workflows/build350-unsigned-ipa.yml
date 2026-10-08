@@ -7,6 +7,11 @@ on:
       - claude/vibrant-planck-irbtw6
       - build357-wip
   workflow_dispatch:
+    inputs:
+      publish_run_id:
+        description: Successful Build 362 run whose verified IPA should be published as an unsigned prerelease
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -16,8 +21,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  publish-existing-ipa:
+    name: publish a verified unsigned IPA from an existing successful run
+    if: ${{ inputs.publish_run_id != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download the verified IPA artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_RUN: ${{ inputs.publish_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p publish
+          gh run download "$PUBLISH_RUN" --repo "$GITHUB_REPOSITORY" --name GlobalHoldings_BUILD362_unsigned_TEST_ipa --dir publish
+          test -s publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa
+          test -s publish/test-ipa-verification.json
+          jq -e --arg run "$PUBLISH_RUN" '.ipa_created == true and .unsigned == true and .production_approved == false and (.workflow_run_id|tostring) == $run' publish/test-ipa-verification.json >/dev/null
+
+      - name: Publish the exact verified IPA as a prerelease asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SOURCE_SHA="$(jq -r '.workflow_commit' publish/test-ipa-verification.json)"
+          test "${#SOURCE_SHA}" -eq 40
+          TAG="build362-unsigned-test-${SOURCE_SHA:0:7}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa publish/test-ipa-verification.json --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa publish/test-ipa-verification.json --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --prerelease --title "Build 362 unsigned iPhone test IPA" --notes "Unsigned experimental test build from the fully verified workflow run. It requires external signing before installation and is not production-approved."
+          fi
+
   source-browser-native:
     name: source acceptance gates, browsers, and unsigned iPhoneOS Release build
+    if: ${{ inputs.publish_run_id == '' }}
     runs-on: macos-15
     timeout-minutes: 180
     steps:
