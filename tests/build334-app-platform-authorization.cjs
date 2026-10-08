@@ -35,7 +35,9 @@ assert.doesNotMatch(filterToggleHandler,/setView|fitBounds|panTo/,'opening the f
 
 assert.match(app,/assetOwnerCompanyId\(asset\)===company\.id/,'owned asset UI must isolate company instances');
 assert.match(app,/routeOwnerCompanyId\(route\)===companyId/,'route UI must isolate same-mode company instances');
-assert.match(app,/contractDailyRows\.filter\(row=>row\.companyId===companyId\)/,'daily contract close must use explicit company ownership');
+assert.match(app,/const contractRowsByCompany=new Map\(\)/,'daily contract close must index contracts once by explicit company ownership');
+assert.match(app,/contractRows=contractRowsByCompany\.get\(companyId\)\|\|\[\]/,'daily contract close must read only the selected company contract rows');
+assert.match(app,/yield 'finance-day\.operating-revenue-contract'/,'each contract posting must yield to the frame scheduler');
 assert.match(app,/const closedSectorProfit=Object\.fromEntries\(companyIds\.map/,'daily close must be company-instance keyed');
 assert.match(app,/for\(const company of companyIds\.filter\(companyId=>companyHasCapability\(state,companyId,'operations\.fleet'\)\)\)/,'payroll must enumerate fleet capabilities dynamically');
 assert.doesNotMatch(app,/for\(const type of \['air','sea','road','mobility'\]\)/);

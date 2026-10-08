@@ -15,6 +15,7 @@
     maxBacklogFast:96,
     frameBudgetMs:5.5,
     manualFrameBudgetMs:10,
+    adaptiveFrameBudgetMinMs:1.5,
     chunkItems:64,
     manualChunkItems:64,
     renderEveryNormalMs:180,
@@ -43,7 +44,7 @@
     const cfg={...DEFAULTS,...options};
     cfg.allowedSpeeds=Array.from(options.allowedSpeeds||DEFAULTS.allowedSpeeds).map(Number).filter(Number.isFinite);
     if(!cfg.allowedSpeeds.length)cfg.allowedSpeeds=Array.from(DEFAULTS.allowedSpeeds);
-    const positive=['quantumRealSeconds','maxRealDelta','maxBacklogNormal','maxBacklogFast','frameBudgetMs','manualFrameBudgetMs','chunkItems','manualChunkItems','renderEveryNormalMs','renderEveryFastMs','maintenanceEveryHours','manualBatchSeconds','manualMinBatchSeconds','manualRetryLimit','longTaskWarnMs','hardTaskMs','hardTaskLimit','conflictLimit'];
+    const positive=['quantumRealSeconds','maxRealDelta','maxBacklogNormal','maxBacklogFast','frameBudgetMs','manualFrameBudgetMs','adaptiveFrameBudgetMinMs','chunkItems','manualChunkItems','renderEveryNormalMs','renderEveryFastMs','maintenanceEveryHours','manualBatchSeconds','manualMinBatchSeconds','manualRetryLimit','longTaskWarnMs','hardTaskMs','hardTaskLimit','conflictLimit'];
     for(const key of positive){const n=Number(cfg[key]);cfg[key]=Number.isFinite(n)&&n>0?n:DEFAULTS[key];}
     const minRealSliceSeconds=Number(cfg.minRealSliceSeconds);cfg.minRealSliceSeconds=Number.isFinite(minRealSliceSeconds)?Math.max(0,Math.min(1,minRealSliceSeconds)):0;
     cfg.chunkItems=Math.max(1,Math.floor(cfg.chunkItems));
@@ -69,7 +70,7 @@
       maxCreateMs:0,lastCreateMs:0,maxFinishMs:0,lastFinishMs:0,maxCycleMs:0,lastCycleMs:0,
       maxMaintenanceMs:0,lastMaintenanceMs:0,maxRenderMs:0,lastRenderMs:0,lastFrame:null,maxFrame:null,cooldownFrames:0,deferredRuns:0,
       lastError:'',fatalError:null,lastBoundary:'',lastSliceSeconds:0,lastMaintenanceHour:-1,lastCancelReason:'',lastCommitReason:'',lastWorkStage:'',governor:'GREEN',avgChunkMs:0,avgWorkMs:0,
-      manualFailures:0,manualThrottleYields:0,lastAdvanceFailure:null,lastProgressSim:Math.max(0,Number(adapter.getSimTime())||0),lastProgressAt:clock()
+      manualFailures:0,manualThrottleYields:0,lastAdvanceFailure:null,lastProgressSim:Math.max(0,Number(adapter.getSimTime())||0),lastProgressAt:clock(),activeFrameBudgetMs:cfg.frameBudgetMs
     };
     let job=null,jobSlice=0,jobStart=0,jobSpeed=0,jobBoundary=null,jobWorkMs=0,jobReadyToFinish=false,manualAdvance=null;
     // Build 359: where a frame's simulation time goes (create, chunks, finish, the host's maintenance and render callbacks),
@@ -257,7 +258,8 @@
       // Calendar advance gets a slightly larger cooperative budget so long jumps
       // finish promptly, but every frame still yields back to WebKit. Live play
       // keeps the tighter budget to protect interaction and map presentation.
-      const deadline=pacing.executionDeadline(!!manualAdvance);
+      const adaptiveBudget=manualAdvance?cfg.manualFrameBudgetMs:Math.max(cfg.adaptiveFrameBudgetMinMs,Math.min(cfg.frameBudgetMs,health.governor==='RED'?cfg.frameBudgetMs*.35:health.governor==='ORANGE'?cfg.frameBudgetMs*.5:health.governor==='YELLOW'?cfg.frameBudgetMs*.75:cfg.frameBudgetMs));health.activeFrameBudgetMs=adaptiveBudget;
+      const deadline=pacing.executionDeadline(!!manualAdvance,adaptiveBudget);
       while(clock()<deadline){
         if(!job&&adapter.hasDeferredWork?.()===true)break;
         if(!job&&!startJob(speed))break;

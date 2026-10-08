@@ -365,7 +365,7 @@
     if(bridgeFor('commitSave'))return {ok:false,reason:'native-vault-reconciliation-required'};
     try{const raw=localStorage.getItem(storageKey);if(!raw)return {ok:false,reason:'missing-durable-state'};const state=parseState(raw);assertState(state);return {ok:true,state};}catch(error){return {ok:false,reason:String(error.message||error)};}
   }
-  function markRecoveryRequired(reason='manual-recovery-required'){recoveryRequired=true;ordinaryError=ordinaryError||new Error(String(reason));status({ok:false,critical:true,reason:String(reason),requiresNativeReconciliation:!!bridgeFor('commitSave')});return true;}
+  function markRecoveryRequired(reason='manual-recovery-required',evidence={}){recoveryRequired=true;ordinaryError=ordinaryError||new Error(String(reason));status({ok:false,critical:true,reason:String(reason),requiresNativeReconciliation:!!bridgeFor('commitSave'),...evidence});return true;}
   function acknowledgeRecovery(){if(bridgeFor('commitSave')&&recoveryRequired)return false;recoveryRequired=false;ordinaryError=null;return true;}
   async function replaceState(next,previous,{storageKey='global-holdings-world-v3.0.0',resetMarkerKey,appVersion=VERSION,timeoutMs,apply,cleanupKeys=[],clearManualSlots=false}={}){
     if(locked)throw new Error('lifecycle-locked');locked=true;

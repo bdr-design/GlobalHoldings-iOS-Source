@@ -51,7 +51,7 @@
     function limitBacklog(maximum){const n=Number(maximum);if(Number.isFinite(n)&&n>=0)backlog=Math.min(backlog,n);return backlog;}
     function consume(seconds){const n=Number(seconds);if(Number.isFinite(n)&&n>0)backlog=Math.max(0,backlog-n);return backlog;}
     function clearBacklog(){backlog=0;return 0;}
-    function executionDeadline(manual=false){return clock()+(manual?cfg.manualFrameBudgetMs:cfg.frameBudgetMs);}
+    function executionDeadline(manual=false,budgetOverride=null){const fallback=manual?cfg.manualFrameBudgetMs:cfg.frameBudgetMs,value=Number(budgetOverride),budget=Number.isFinite(value)&&value>0?Math.min(fallback,value):fallback;return clock()+budget;}
     function shouldRender(now,speed){const every=fast(speed)?cfg.renderEveryFastMs:cfg.renderEveryNormalMs;if(Number(now)-lastRender<every)return false;lastRender=Number(now);return true;}
     function snapshot(){return {version:VERSION,lastReal,backlog,hidden,lastRender,droppedRealSeconds,backlogClamps,stallGaps,config:{...cfg}};}
 

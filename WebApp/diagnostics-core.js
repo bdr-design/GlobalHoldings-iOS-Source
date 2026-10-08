@@ -135,7 +135,10 @@
     r.lastAdvanceFailure=cleanDetail(simulation.lastAdvanceFailure||null);
     const progressed=simSeconds>Number(r.lastProgressSim||0)+1e-6;
     if(progressed){r.lastProgressAtMs=atMs;r.lastProgressSim=simSeconds;r.flags.simStall=false;}
-    const engineAlive=engine.frames>Number(prevEngine.frames||0),expectedProgress=requestedRate>0&&!simulation.hidden;
+    // A presentation/lifecycle guard explicitly anchors lastExpectedPause from recorderFrame. Keep a short resume grace
+    // window too: the first live engine frame may legitimately spend its time rebuilding a slice before simSeconds moves.
+    const expectedPauseAge=atMs-Number(r.lastExpectedPause?.atMs||0),hostPauseRecent=Number.isFinite(expectedPauseAge)&&expectedPauseAge>=0&&expectedPauseAge<2000;
+    const engineAlive=engine.frames>Number(prevEngine.frames||0),expectedProgress=requestedRate>0&&!simulation.hidden&&!hostPauseRecent;
     if(expectedProgress&&engineAlive&&!progressed&&atMs-Number(r.lastProgressAtMs||atMs)>=RECORDER_STALL_MS&&!r.flags.simStall){
       r.flags.simStall=true;recorderEvent(state,'SIM_PROGRESS_STALLED',{stalledMs:atMs-Number(r.lastProgressAtMs||atMs),simSeconds,requestedRate,jobActive:!!simulation.jobActive,jobReadyToFinish:!!simulation.jobReadyToFinish,stage:simulation.lastWorkStage||'',governor:simulation.governor||'',backlog:Number(simulation.backlog)||0},'warning',{nowMs:atMs});
     }

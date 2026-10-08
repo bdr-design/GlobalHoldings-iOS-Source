@@ -128,7 +128,7 @@
     office.campaignUntil=day+CAMPAIGN_DAYS;office.campaigns++;office.campaignSpend+=cost;return {officeId:office.id,city:office.city,cost,until:office.campaignUntil};
   }
   function setOfficeActive(state,p){const ins=ensure(state),office=ins.offices.find(row=>row.id===p.officeId||row.facilityId===p.officeId);if(!office)throw new Error('insurance-office-not-found');office.active=p.active!==false;return clone(office);}
-  function tickDay(state,p={}){
+  function* tickDayStages(state,p={}){
     const ins=ensure(state),day=Math.max(0,Math.floor(Number(p.day)||Math.floor(now(state)/86400)));if(ins.lastProcessedDay===day)return ins.dailyHistory.find(row=>row.day===day)||{day,idempotent:true};
     let premium=0,claims=0,claimsCount=0,newPolicies=0,lapsed=0;const byLine={};for(const id of LINE_IDS)byLine[id]={premium:0,claims:0,policies:0};
     const catastrophe=deterministic(`${day}:ins-cat`,0,1)<.004?ins.offices.filter(row=>row.active).map(row=>row.country)[Math.floor(deterministic(`${day}:ins-cat-country`,0,Math.max(1,ins.offices.length)))]||null:null;
@@ -145,16 +145,19 @@
         today.newPolicies+=newToday;today.lapsed+=lapsedToday;today.claims+=amount;today.premium+=dailyPremium;
       }
       office.today=today;
+      yield `office:${office.id}`;
     }
     let largePremium=0,largeClaims=0;
-    for(const risk of ins.largeRisks){if(day<risk.startDay||day>=risk.endDay)continue;largePremium+=risk.dailyPremium;if(risk.claimDay===day&&!risk.claimed){risk.claimed=true;largeClaims+=risk.claimAmount;}}
+    for(let index=0;index<ins.largeRisks.length;index++){const risk=ins.largeRisks[index];if(day>=risk.startDay&&day<risk.endDay){largePremium+=risk.dailyPremium;if(risk.claimDay===day&&!risk.claimed){risk.claimed=true;largeClaims+=risk.claimAmount;}}if(index>0&&index%64===0)yield 'large-risks';}
     ins.largeRisks=ins.largeRisks.filter(row=>day<row.endDay);
+    yield 'large-risks';
     premium+=largePremium;claims+=largeClaims;
     const share=num(ins.reinsurance),ceded=premium*share,cededClaims=claims*share,netClaims=claims-cededClaims,cedingCommission=ceded*CEDING_COMMISSION,commission=(premium-largePremium)*COMMISSION;
     // Claims are paid 30 days after they occur: the reserve holds the group's share (net of reinsurance) until then.
     if(netClaims>0)ins.claimsReserve.push({id:`INS-RES-${day}`,day,amount:netClaims,payDay:day+CLAIMS_LAG_DAYS});
     const dueRows=ins.claimsReserve.filter(row=>Number(row.payDay)<=day),claimsDue=dueRows.reduce((sum,row)=>sum+num(row.amount),0),F=globalThis.GH_FINANCE_CORE,available=state.godMoney&&state.infiniteMoney?claimsDue:num(F?.operating?.(state,'insurance')),paid=Math.min(claimsDue,available);let claimSettlementReference=null;
-    if(paid>.01){if(!F?.execute)throw new Error('insurance-claim-finance-core-missing');const settlement=F.execute({state},'settle-insurance-claims',{company:'insurance',amount:paid,day,reference:`INS-CLAIM-PAY-${day}`,sourceRefs:dueRows.map(row=>row.id||`INS-RES-${row.day}`)});claimSettlementReference=settlement.reference;let remaining=paid;for(const row of ins.claimsReserve){if(Number(row.payDay)>day||remaining<=.01)continue;const applied=Math.min(num(row.amount),remaining);row.amount=Math.max(0,num(row.amount)-applied);remaining-=applied;}ins.claimsReserve=ins.claimsReserve.filter(row=>num(row.amount)>.01);}
+    if(paid>.01){if(!F?.execute)throw new Error('insurance-claim-finance-core-missing');const settlement=F.execute({state},'settle-insurance-claims',{company:'insurance',amount:paid,day,reference:`INS-CLAIM-PAY-${day}`,sourceRefs:dueRows.map(row=>row.id||`INS-RES-${row.day}`)});claimSettlementReference=settlement.reference;let remaining=paid;for(let index=0;index<ins.claimsReserve.length;index++){const row=ins.claimsReserve[index];if(Number(row.payDay)<=day&&remaining>.01){const applied=Math.min(num(row.amount),remaining);row.amount=Math.max(0,num(row.amount)-applied);remaining-=applied;}if(index>0&&index%128===0)yield 'claim-reserve';}ins.claimsReserve=ins.claimsReserve.filter(row=>num(row.amount)>.01);}
+    yield 'claim-settlement';
     const revenue=premium+cedingCommission,expense=netClaims+commission+ceded,net=revenue-expense,cashExpense=commission+ceded;
     const report={day,premium,largePremium,claims,cededClaims,claimsCount,claimsDue,claimsPaid:paid,claimsUnpaid:Math.max(0,claimsDue-paid),claimSettlementReference,reserve:ins.claimsReserve.reduce((sum,row)=>sum+num(row.amount),0),commission,ceded,cedingCommission,revenue,expense,cashExpense,net,newPolicies,lapsed,catastrophe,byLine,newRisk:generateRisk(state,ins,day)?.id||null};
     for(const request of [...ins.riskRequests])if(day>=Number(request.expiresDay))closeRisk(ins,request,'منتهي',{decidedDay:day});
@@ -163,6 +166,7 @@
     if(ins.dailyHistory[0]?.byLine){const {byLine:_detail,...totals}=ins.dailyHistory[0];ins.dailyHistory[0]=totals;}
     ins.dailyHistory.unshift(report);ins.dailyHistory=ins.dailyHistory.slice(0,DAILY_HISTORY);ins.lastProcessedDay=day;return clone(report);
   }
+  function tickDay(state,p={}){const stages=tickDayStages(state,p);let step;while(!(step=stages.next()).done){}return step.value;}
   // Claim cash is transferred inside tickDay on its exact due date. cashExpense therefore carries only commission and
   // ceded premium for the generic daily close, so claim payments cannot be billed again on seven-day supplier terms.
   function dailyResult(state,day){const ins=state.insurance;const row=(ins?.dailyHistory||[]).find(item=>Number(item.day)===Number(day));return row?{revenue:num(row.revenue),expense:num(row.expense),cashExpense:num(row.cashExpense??row.expense)}:{revenue:0,expense:0,cashExpense:0};}
@@ -177,12 +181,17 @@
     const company=platform.requireCompany(ctx.state,ctx.companyId,{registered:true,operational:true,capability:'operations.insurance'});
     return commands.dispatchSystem({state:ctx.state},'insurance','tick-day',{...p,ownerCompanyId:company.id},{actor:'simulation-scheduler'}).result;
   }
+  function* onFinancialDayStages(ctx,p={}){
+    const platform=globalThis.GH_COMPANY_PLATFORM;if(!platform?.requireCompany)throw new Error('company-daily-owner-unavailable');
+    platform.requireCompany(ctx.state,ctx.companyId,{registered:true,operational:true,capability:'operations.insurance'});
+    return yield* tickDayStages(ctx.state,p);
+  }
   function execute(ctx,cmd,p={}){
     const state=ctx.state||ctx;
     if(cmd==='ensure')return ensure(state);if(cmd==='tick-day')return tickDay(state,p);if(cmd==='set-pricing')return setPricing(state,p);if(cmd==='set-reinsurance')return setReinsurance(state,p);
     if(cmd==='decide-risk')return decideRisk(state,p);if(cmd==='office-campaign')return officeCampaign(state,p);if(cmd==='set-office-active')return setOfficeActive(state,p);
     throw new Error(`Unknown insurance command: ${cmd}`);
   }
-  const API={VERSION,DAILY_FINANCIAL_ORDER:300,LINES,LINE_IDS,PRICE_LEVELS,REINSURANCE_LEVELS,MAX_OPEN_RISKS,CAMPAIGN_DAYS,ensure,officeMarket,countryPopulation,quote,linePrice,campaignCost,tickDay,dailyResult,summary,onFinancialDay,execute};
+  const API={VERSION,DAILY_FINANCIAL_ORDER:300,LINES,LINE_IDS,PRICE_LEVELS,REINSURANCE_LEVELS,MAX_OPEN_RISKS,CAMPAIGN_DAYS,ensure,officeMarket,countryPopulation,quote,linePrice,campaignCost,tickDay,tickDayStages,dailyResult,summary,onFinancialDay,onFinancialDayStages,execute};
   globalThis.GH_INSURANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('insurance',API);if(globalThis.window&&window!==globalThis)window.GH_INSURANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

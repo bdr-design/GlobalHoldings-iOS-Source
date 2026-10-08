@@ -908,7 +908,7 @@
   function replaceLiveState(snapshot){
     window.GH_TRANSACTION_CORE?.abortStaged?.(state,'live-state-replaced');
     cancelSimulationPersistence();
-    window.GH_TRANSACTION_CORE.restoreObject(state,snapshot);
+    (window.GH_TRANSACTION_CORE.publishObject||window.GH_TRANSACTION_CORE.restoreObject)(state,snapshot);
     window.GH_REALISM?.reconcilePendingDeliveryCount?.(state,true);
     const runtime=routeRuntimeForState(state);for(const id of Object.keys(routeTemplates))delete routeTemplates[id];Object.assign(routeTemplates,runtime);
     window.__GH_STATE__=state;
@@ -958,7 +958,7 @@
       committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);lap('publishMs');diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
       if(afterCommit){try{await afterCommit(value);}catch(error){diag('DURABLE_COMMAND_PRESENTATION_FAILED',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'warning');console.warn(`Durable command committed but presentation refresh failed [${name}]`,error);if(!silent)notice('تم حفظ العملية بنجاح، لكن تعذر تحديث العرض. أعد فتح القسم لرؤية الحالة المحفوظة.','warning');}}
       return value;
-    }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-publication-failed');state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed');diag('DURABLE_COMMAND_POST_COMMIT_FAILURE',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'critical');console.error(`Durable command failed after durable commit [${name}]`,error);if(!silent)notice('تم حفظ العملية، لكن حدث خطأ بعد الاعتماد. أوقف التشغيل وأعد فتح اللعبة للتحقق من الحالة المحفوظة.','warning');return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
+    }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-publish-failed-after-ack',{durableCommitted:true,saveRevision:Number(draft?.saveRevision)||0});state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed-after-ack');diag('DURABLE_PUBLISH_FAILED_AFTER_ACK',{name,saveRevision:Number(draft?.saveRevision)||0,reason:String(error.message||error)},'critical');console.error(`Durable command publication failed after device acknowledgement [${name}]`,error);if(!silent)notice('تم تأكيد حفظ العملية على الجهاز، لكن تعذر تحديث الذاكرة. لا تعِد تنفيذها؛ أعد فتح اللعبة لاستعادة النسخة المحفوظة.','warning');return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
     finally{
       lap('afterMs');timing.committed=committed;timing.totalMs=Math.max(0,clockNow()-durableStart);for(const key of Object.keys(timing))if(typeof timing[key]==='number')timing[key]=Math.round(timing[key]*10)/10;const durableSink=window.__GH_APP_RUNTIME_INSTRUMENTATION__?.durable;if(durableSink){durableSink.last=timing;durableSink.samples.push(timing);if(durableSink.samples.length>16)durableSink.samples.shift();}
       if(!committed&&rootSessions.length)try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');console.error('Durable command fleet rollback failed',rollbackError);}
@@ -1033,7 +1033,14 @@
     try{
       await fleetStepSettled();
       const result=await window.GH_DOMAIN_COMMANDS.dispatchDurable({...(options.context||{}),state},envelope,{transactionId:options.transactionId,persistence:{storageKey,appVersion:APP_VERSION},publish:(_live,draft)=>replaceLiveState(draft),afterCommit:options.afterCommit});committed=true;diag('AUTHORIZED_COMMAND_COMMITTED',{domain,name,transactionId:result.transactionId,authorizationProofId:result.value?.authorizationProofId});return result.value;
-    }catch(error){diag('AUTHORIZED_COMMAND_ROLLED_BACK',{domain,name,reason:String(error?.message||error)},'warning');if(!options.silent)notice(`أُلغيت المعاملة بالكامل: ${String(error?.message||error)}`);throw error;}
+    }catch(error){
+      if(error?.durableCommitted===true){
+        committed=true;state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed-after-ack');
+        diag('DURABLE_PUBLISH_FAILED_AFTER_ACK',{domain,name,transactionId:error.transactionId||null,saveRevision:Number(state.saveRevision)||0,reason:String(error?.message||error)},'critical');
+        if(!options.silent)notice('تم تأكيد حفظ المعاملة على الجهاز، لكن تعذر تحديث الذاكرة. أوقفت المحاكاة للحماية؛ لا تعِد تنفيذ العملية، وأعد فتح اللعبة لاستعادة النسخة المحفوظة.','warning');
+      }else{diag('AUTHORIZED_COMMAND_ROLLED_BACK',{domain,name,reason:String(error?.message||error)},'warning');if(!options.silent)notice(`أُلغيت المعاملة بالكامل: ${String(error?.message||error)}`);}
+      throw error;
+    }
     finally{durableCommandInProgress=false;settle?.({committed,saveRevision:Number(state.saveRevision)||0});}
   }
   async function runAuthorizedCompositeCommand(name,apply,options={}){
@@ -2350,16 +2357,18 @@
     const button=$('topNewsTicker');if(!button)return;const signature=`${state.eventLog?.length||0}|${state.businessWorld?.events?.length||0}|${state.finance?.invoices?.length||0}|${state.openedCompanies?.length||0}`,stamp=Date.now();if(signature===lastTopNewsSignature&&stamp-lastTopNewsAt<5000)return;lastTopNewsAt=stamp;lastTopNewsSignature=signature;
     const summary=window.GH_ADVANCED?.newsSummary?.(state),headline=summary?.latest?.text||'لا توجد أحداث جديدة',rating=summary?.ratings?.group?.rating;$('topNewsHeadline').textContent=headline;$('topNewsRating').textContent=rating==null?'— / 5':`${Number(rating).toFixed(1)} / 5`;button.title=headline;
   }
+  let lastKpiIdentitySignature='',lastKpiProfitSign=null;
+  const setNodeText=(id,value)=>{const node=$(id),text=String(value);if(node&&node.textContent!==text)node.textContent=text;return node;};
   function updateKpis(){
-    if(window.GH_IDENTITY)window.GH_IDENTITY.applyDocument(state);else{$('groupName').textContent=state.profile.name;$('brandMark').textContent=(state.profile.shortName||'GH').slice(0,4).toUpperCase();}
-    $('cashKpi').textContent=state.godMoney&&state.infiniteMoney?'∞':fmtMoney(state.cash);
-    $('profitKpi').textContent=`${state.todayProfit>=0?'+':''}${fmtMoney(state.todayProfit)}`;
-    $('profitKpi').classList.toggle('positive',state.todayProfit>=0);
-    $('profitKpi').classList.toggle('negative',state.todayProfit<0);
-    $('alertCount').textContent=Math.min(99,state.alerts.length);
-    if($('executionLogCount'))$('executionLogCount').textContent='✓';
-    $('simDate').textContent=formatSimDateCompact();
-    if($('simDay'))$('simDay').textContent=`اليوم ${Math.floor(Math.max(0,Number(state.simSeconds)||0)/86400)+1}`;
+    const identitySignature=[state.profile?.name,state.profile?.shortName,state.profile?.logo,state.companyRegistry?.group?.legalName,state.companyRegistry?.group?.logo].map(value=>String(value||'')).join('|');
+    if(identitySignature!==lastKpiIdentitySignature){lastKpiIdentitySignature=identitySignature;if(window.GH_IDENTITY)window.GH_IDENTITY.applyDocument(state);else{setNodeText('groupName',state.profile.name);setNodeText('brandMark',(state.profile.shortName||'GH').slice(0,4).toUpperCase());}}
+    setNodeText('cashKpi',state.godMoney&&state.infiniteMoney?'∞':fmtMoney(state.cash));
+    setNodeText('profitKpi',`${state.todayProfit>=0?'+':''}${fmtMoney(state.todayProfit)}`);
+    const profitPositive=state.todayProfit>=0;if(profitPositive!==lastKpiProfitSign){lastKpiProfitSign=profitPositive;$('profitKpi').classList.toggle('positive',profitPositive);$('profitKpi').classList.toggle('negative',!profitPositive);}
+    setNodeText('alertCount',Math.min(99,state.alerts.length));
+    setNodeText('executionLogCount','✓');
+    setNodeText('simDate',formatSimDateCompact());
+    setNodeText('simDay',`اليوم ${Math.floor(Math.max(0,Number(state.simSeconds)||0)/86400)+1}`);
     syncTopNews();
     updateDayStepControl();
   }
@@ -2612,12 +2621,10 @@
     globalThis.__GH_HOURLY_SCHEMA_DUE__=true;
     while(state.lastFinancialDay<day&&financialDaysProcessed<1){
       state.lastFinancialDay++;financialDaysProcessed++;
-      phase('simulation.finance-day.cheque-settlement',()=>{for(const c of state.finance.cheques.filter(c=>c.status==='صادر'&&c.dueDay<=state.lastFinancialDay)){
-        const result=settleCheque(c);
-        if(result.settled===true)pushAlert(`تم صرف الشيك ${result.id} من حساب ${companyFinanceName(result.company)} وتسجيله في الدفتر المالي.`);
-        else pushAlert(`ارتجع الشيك ${result.id} لعدم كفاية رصيد أو ميزانية ${companyFinanceName(result.company)}.`);
-      }});
-      yield 'finance-day.cheque-settlement';
+      for(const c of state.finance.cheques.filter(c=>c.status==='صادر'&&c.dueDay<=state.lastFinancialDay)){
+        phase('simulation.finance-day.cheque-settlement',()=>{const result=settleCheque(c);if(result.settled===true)pushAlert(`تم صرف الشيك ${result.id} من حساب ${companyFinanceName(result.company)} وتسجيله في الدفتر المالي.`);else pushAlert(`ارتجع الشيك ${result.id} لعدم كفاية رصيد أو ميزانية ${companyFinanceName(result.company)}.`);});
+        yield 'finance-day.cheque-settlement';
+      }
 
       const tripAccruals=phase('simulation.finance-day.trip-accruals',()=>dispatchSystemCommand({state},'finance','consume-trip-accruals',{}, {actor:'financial-close'}).result);
       const tripProfit=tripAccruals.profit,tripRevenue=tripAccruals.revenue,tripFuel=tripAccruals.fuel,tripMaintenance=tripAccruals.maintenance,tripCount=tripAccruals.count,tripCash=tripAccruals.cash||{};
@@ -2640,8 +2647,11 @@
       const contractTerms={};for(const id of (state.acceptedContracts||[])){const c=contracts.find(x=>x.id===id);if(!c)continue;const companyId=contractOwnerCompanyId(c,state);if(!companyId)throw new Error(`contract-owner-unresolved-or-ambiguous:${id}`);const termDays=Math.max(1,Number(c.termMonths)||1)*30,dailyRevenue=c.value/termDays,dailyCost=c.cost/termDays;contractTerms[id]=termDays;companyContractRevenue[companyId]=(companyContractRevenue[companyId]||0)+dailyRevenue;companyContractCost[companyId]=(companyContractCost[companyId]||0)+dailyCost;contractDailyRows.push({id,companyId,sector:c.sector,client:c.client,name:c.name,revenue:dailyRevenue,cost:dailyCost});}const expiredContracts=dispatchSystemCommand({state},'contracts','tick-day',{day:state.lastFinancialDay,terms:contractTerms},{actor:'simulation'}).result?.expired||[];for(const id of expiredContracts){const c=contracts.find(x=>x.id===id);if(c)pushAlert(`اكتمل عقد ${c.name} وانتهت مدته التشغيلية بعد ${c.termMonths} شهرًا.`);}
       // Bank and energy daily owners must close first. The accounting read model
       // below then consumes the report for this same day, never yesterday's values.
-      const advancedCost=phase('simulation.finance-day.advanced-owner',()=>{const cost=window.GH_ADVANCED?window.GH_ADVANCED.onFinancialDay(state,state.lastFinancialDay,phase):0;issueContractExpiryNotices(state.lastFinancialDay);return cost;});
-      yield 'finance-day.advanced-owner';
+      let advancedCost=0;
+      if(window.GH_ADVANCED&&typeof window.GH_ADVANCED.onFinancialDayStages==='function'){
+        const advancedDay=window.GH_ADVANCED.onFinancialDayStages(state,state.lastFinancialDay,phase);for(;;){const step=phase('simulation.finance-day.advanced-owner-staged-step',()=>advancedDay.next());if(step.done){advancedCost=step.value;break;}yield 'finance-day.advanced-owner';}
+      }else advancedCost=phase('simulation.finance-day.advanced-owner',()=>window.GH_ADVANCED?window.GH_ADVANCED.onFinancialDay(state,state.lastFinancialDay,phase):0);
+      issueContractExpiryNotices(state.lastFinancialDay);yield 'finance-day.advanced-owner';
       const payrollMeta=payrollCalendarMeta(state.lastFinancialDay),payrollPlan=phase('simulation.finance-day.payroll-plan',()=>monthlyPayrollSnapshot()),payrollDueToday=payrollMeta.dayOfMonth>=27&&!payrollReportForMonth(payrollMeta.monthKey);
       const leaseByCompany=window.GH_FLEET_DATA.dailyLeaseCosts(state,companyIdSet);
       const baseByCompany=zeroCompanyMap(state);
@@ -2675,14 +2685,19 @@
       // each sign several documents per company, so each company is its own step.
       for(const company of [...new Set([...companyIds,'group'])]){phase('simulation.finance-day.debt-interest',()=>dispatchSystemCommand({state},'finance','accrue-debt-interest',{day:state.lastFinancialDay,company},{actor:'financial-close'}));yield 'finance-day.debt-interest';}
       phase('simulation.finance-day.holdings',()=>dispatchSystemCommand({state},'market','settle-holdings',{day:state.lastFinancialDay},{actor:'financial-close'}));yield 'finance-day.holdings';
-      for(const company of [...new Set([...companyIds,'group'])]){phase('simulation.finance-day.settle-due-terms',()=>dispatchSystemCommand({state},'finance','settle-due-terms',{day:state.lastFinancialDay,company},{actor:'financial-close'}));yield 'finance-day.settle-due-terms';}
-      for(const companyId of companyIds){phase('simulation.finance-day.operating-revenue-payments',()=>{
-        const terms=companyId!==bankCompany?{termsDays:PAYMENT_TERMS_DAYS}:{},taxable=companyTaxable(state,companyId),revenue=Math.max(0,Number(cashOperatingRevenue[companyId])||0),expense=Math.max(0,Number(cashOperatingExpense[companyId])||0),contractRows=contractDailyRows.filter(row=>row.companyId===companyId),contractRevenue=contractRows.reduce((sum,row)=>sum+Math.max(0,Number(row.revenue)||0),0);
-        for(const row of contractRows)if(row.revenue>0)dispatchSystemCommand({state},'finance','credit',{company:companyId,amount:row.revenue,note:`إيراد عقد يومي · ${row.name}`,taxable,...terms,reference:`CONTRACT-COLLECT-${row.id}-${state.lastFinancialDay}`,counterparty:row.client,sourceRefs:[row.id,`CONTRACT-DAY-${row.id}-${state.lastFinancialDay}`]},{actor:'financial-close'});
+      for(const company of [...new Set([...companyIds,'group'])]){let remaining=0;do{const settled=phase('simulation.finance-day.settle-due-terms',()=>dispatchSystemCommand({state},'finance','settle-due-terms',{day:state.lastFinancialDay,company,maxRows:8},{actor:'financial-close'}).result);remaining=Math.max(0,Number(settled?.remaining)||0);yield 'finance-day.settle-due-terms';}while(remaining>0);}
+      const contractRowsByCompany=new Map();for(const row of contractDailyRows){const list=contractRowsByCompany.get(row.companyId)||[];list.push(row);contractRowsByCompany.set(row.companyId,list);}
+      for(const companyId of companyIds){
+        const terms=companyId!==bankCompany?{termsDays:PAYMENT_TERMS_DAYS}:{},taxable=companyTaxable(state,companyId),revenue=Math.max(0,Number(cashOperatingRevenue[companyId])||0),expense=Math.max(0,Number(cashOperatingExpense[companyId])||0),contractRows=contractRowsByCompany.get(companyId)||[];let contractRevenue=0;
+        // Each signed contract invoice is its own cooperative step. Large contract portfolios no longer form one
+        // 100+ ms frame, while the surrounding staged transaction still commits the whole financial day atomically.
+        for(const row of contractRows)if(row.revenue>0){phase('simulation.finance-day.operating-revenue-contract',()=>dispatchSystemCommand({state},'finance','credit',{company:companyId,amount:row.revenue,note:`إيراد عقد يومي · ${row.name}`,taxable,...terms,reference:`CONTRACT-COLLECT-${row.id}-${state.lastFinancialDay}`,counterparty:row.client,sourceRefs:[row.id,`CONTRACT-DAY-${row.id}-${state.lastFinancialDay}`]},{actor:'financial-close'}));contractRevenue+=Math.max(0,Number(row.revenue)||0);yield 'finance-day.operating-revenue-contract';}
+        phase('simulation.finance-day.operating-revenue-payments',()=>{
         const residualRevenue=Math.max(0,revenue-contractRevenue);if(residualRevenue>0)dispatchSystemCommand({state},'finance','credit',{company:companyId,amount:residualRevenue,note:`إيراد يومي ${typeName(companyId)} · منشآت/تشغيل غير تعاقدي`,taxable,...terms,reference:`OPER-COLLECT-${companyId}-${state.lastFinancialDay}`,periodDay:state.lastFinancialDay,sourceRefs:[`OPER-${companyId}-${state.lastFinancialDay}`]},{actor:'financial-close'});
         const billed=expense>0&&companyId!==bankCompany&&postAccruedExpense(companyId,expense,`مصروف يومي ${typeName(companyId)} · فاتورة مورد آجلة (عقود/منشآت/إيجارات)`,'فاتورة مورد آجلة',state.lastFinancialDay+PAYMENT_TERMS_DAYS,`${companyId.toUpperCase()}-AP-${state.lastFinancialDay}`,'مصروف تشغيلي',{taxable,paymentTerms:PAYMENT_TERMS_DAYS,counterparty:`موردو ${typeName(companyId)} المعتمدون`});
         if(expense>0&&!billed){const available=companyOperatingBalance(companyId),paid=Math.min(available,expense);if(paid>0)spendCompanySystem(companyId,paid,`مصروف يومي ${typeName(companyId)} · عقود/منشآت/إيجارات`,'قيد تشغيلي يومي',taxable);if(paid<expense){const due=expense-paid,number=`${companyId.toUpperCase()}-ACC-${state.lastFinancialDay}`;postAccruedExpense(companyId,due,'مصروف تشغيلي مستحق مرحّل من الإقفال اليومي','قيد مستحق',state.lastFinancialDay+7,number,'مصروف تشغيلي');}}
-      });yield 'finance-day.operating-revenue-payments';}
+        });yield 'finance-day.operating-revenue-payments';
+      }
       const closedSectorProfit=Object.fromEntries(companyIds.map(companyId=>[companyId,(Number(tripProfit[companyId])||0)+(Number(daily[companyId])||0)]));
       if(payrollDueToday)for(const companyId of companyIds)closedSectorProfit[companyId]-=Number(payrollPlan[companyId]?.amount)||0;
       const companyDaily={};for(const companyId of companyIds){const tripGross=Math.max(0,Number(tripRevenue[companyId])||0),operatingGross=Math.max(0,Number(operatingRevenue[companyId])||0),companyNet=Number(closedSectorProfit[companyId])||0;companyDaily[companyId]={tripRevenue:tripGross,operatingRevenue:operatingGross,grossRevenue:tripGross+operatingGross,expenses:Math.max(0,tripGross+operatingGross-companyNet),net:companyNet,tripCount:Math.max(0,Number(tripCount[companyId])||0)};}
@@ -2768,14 +2783,15 @@
     const income=from.includes('عميل')||note.includes('إيراد')||note.includes('فاتورة رحلة')?amount:0;return {income,expense:income?0:amount,intercompany};
   }
   function buildAuditDigest(kind,rows){
-    if(!rows.length)return null;const ordered=[...rows].sort((a,b)=>(Number(a?.at)||0)-(Number(b?.at)||0)),currentDay=Math.floor((Number(state.simSeconds)||0)/86400),daily=new Map();let total=0,maxSequence=0,intercompanyTotal=0;
-    for(const row of ordered){const amount=Math.max(0,Number(row?.total??row?.amount)||0),at=Math.max(0,Number(row?.at)||0),day=Math.floor(at/86400),metrics=kind.startsWith('companyLedger-')?ledgerAggregate(row):{income:0,expense:0,intercompany:0};total+=amount;maxSequence=Math.max(maxSequence,auditSequence(row));intercompanyTotal+=metrics.intercompany;if(kind.startsWith('companyLedger-')&&day>=currentDay-29){const d=daily.get(day)||{day,income:0,expense:0,intercompany:0,count:0,total:0};d.income+=metrics.income;d.expense+=metrics.expense;d.intercompany+=metrics.intercompany;d.count++;d.total+=amount;daily.set(day,d);}}
-    return {schema:'gh-finance-audit-digest-v2',id:`AUD-${kind}-${currentDay}`,kind,count:ordered.length,total,firstAt:Math.max(0,Number(ordered[0]?.at)||0),lastAt:Math.max(0,Number(ordered.at(-1)?.at)||0),idRange:[auditRowId(ordered[0]),auditRowId(ordered.at(-1))],checksum:auditChecksum(ordered),maxSequence,intercompanyTotal,recentDaily:[...daily.values()].sort((a,b)=>a.day-b.day).slice(-30),at:Number(state.simSeconds)||0};
+    if(!rows.length)return null;const ordered=[...rows].sort((a,b)=>(Number(a?.at)||0)-(Number(b?.at)||0)),currentDay=Math.floor((Number(state.simSeconds)||0)/86400),daily=new Map(),quarterly=new Map();let total=0,maxSequence=0,intercompanyTotal=0;
+    for(const row of ordered){const amount=Math.max(0,Number(row?.total??row?.amount)||0),at=Math.max(0,Number(row?.at)||0),day=Math.floor(at/86400),metrics=kind.startsWith('companyLedger-')?ledgerAggregate(row):{income:0,expense:0,intercompany:0},date=new Date(Date.UTC(2026,0,1)+Math.max(0,day)*86400000),quarter=`${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth()/3)+1}`,q=quarterly.get(quarter)||{quarter,count:0,total:0,income:0,expense:0,intercompany:0};total+=amount;maxSequence=Math.max(maxSequence,auditSequence(row));intercompanyTotal+=metrics.intercompany;q.count++;q.total+=amount;q.income+=metrics.income;q.expense+=metrics.expense;q.intercompany+=metrics.intercompany;quarterly.set(quarter,q);if(kind.startsWith('companyLedger-')&&day>=currentDay-29){const d=daily.get(day)||{day,income:0,expense:0,intercompany:0,count:0,total:0};d.income+=metrics.income;d.expense+=metrics.expense;d.intercompany+=metrics.intercompany;d.count++;d.total+=amount;daily.set(day,d);}}
+    return {schema:'gh-finance-audit-digest-v2',id:`AUD-${kind}-${currentDay}`,kind,count:ordered.length,total,firstAt:Math.max(0,Number(ordered[0]?.at)||0),lastAt:Math.max(0,Number(ordered.at(-1)?.at)||0),idRange:[auditRowId(ordered[0]),auditRowId(ordered.at(-1))],checksum:auditChecksum(ordered),maxSequence,intercompanyTotal,recentDaily:[...daily.values()].sort((a,b)=>a.day-b.day).slice(-30),quarterly:[...quarterly.values()].sort((a,b)=>a.quarter.localeCompare(b.quarter)).slice(-400),at:Number(state.simSeconds)||0};
   }
   function mergeAuditDigest(digest){
     if(!digest)return;const archive=financeAuditArchive(),existing=archive.digests.find(row=>row?.kind===digest.kind&&row?.schema==='gh-finance-audit-digest-v2');if(!existing){archive.digests=archive.digests.filter(row=>row?.kind!==digest.kind);archive.digests.push(digest);return;}
     const currentDay=Math.floor((Number(state.simSeconds)||0)/86400),daily=new Map();for(const row of [...(existing.recentDaily||[]),...(digest.recentDaily||[])]){const day=Math.max(0,Math.floor(Number(row?.day)||0));if(day<currentDay-29)continue;const d=daily.get(day)||{day,income:0,expense:0,intercompany:0,count:0,total:0};d.income+=Math.max(0,Number(row?.income)||0);d.expense+=Math.max(0,Number(row?.expense)||0);d.intercompany+=Math.max(0,Number(row?.intercompany)||0);d.count+=Math.max(0,Math.floor(Number(row?.count)||0));d.total+=Math.max(0,Number(row?.total)||0);daily.set(day,d);}
-    const merged={schema:'gh-finance-audit-digest-v2',id:existing.id||digest.id,kind:digest.kind,count:(Number(existing.count)||0)+(Number(digest.count)||0),total:(Number(existing.total)||0)+(Number(digest.total)||0),firstAt:Math.min(...[Number(existing.firstAt)||0,Number(digest.firstAt)||0].filter(Boolean)),lastAt:Math.max(Number(existing.lastAt)||0,Number(digest.lastAt)||0),idRange:[String(existing.idRange?.[0]||digest.idRange?.[0]||''),String(digest.idRange?.[1]||existing.idRange?.[1]||'')],checksum:auditChecksum([existing.checksum,digest.checksum,existing.count,digest.count,existing.total,digest.total]),maxSequence:Math.max(Number(existing.maxSequence)||0,Number(digest.maxSequence)||0),intercompanyTotal:(Number(existing.intercompanyTotal)||0)+(Number(digest.intercompanyTotal)||0),recentDaily:[...daily.values()].sort((a,b)=>a.day-b.day).slice(-30),at:Number(state.simSeconds)||0};
+    const quarters=new Map();for(const row of [...(existing.quarterly||[]),...(digest.quarterly||[])]){const key=String(row?.quarter||'');if(!/^\d{4}-Q[1-4]$/.test(key))continue;const q=quarters.get(key)||{quarter:key,count:0,total:0,income:0,expense:0,intercompany:0};q.count+=Math.max(0,Math.floor(Number(row?.count)||0));q.total+=Math.max(0,Number(row?.total)||0);q.income+=Math.max(0,Number(row?.income)||0);q.expense+=Math.max(0,Number(row?.expense)||0);q.intercompany+=Math.max(0,Number(row?.intercompany)||0);quarters.set(key,q);}
+    const merged={schema:'gh-finance-audit-digest-v2',id:existing.id||digest.id,kind:digest.kind,count:(Number(existing.count)||0)+(Number(digest.count)||0),total:(Number(existing.total)||0)+(Number(digest.total)||0),firstAt:Math.min(...[Number(existing.firstAt)||0,Number(digest.firstAt)||0].filter(Boolean)),lastAt:Math.max(Number(existing.lastAt)||0,Number(digest.lastAt)||0),idRange:[String(existing.idRange?.[0]||digest.idRange?.[0]||''),String(digest.idRange?.[1]||existing.idRange?.[1]||'')],checksum:auditChecksum([existing.checksum,digest.checksum,existing.count,digest.count,existing.total,digest.total]),maxSequence:Math.max(Number(existing.maxSequence)||0,Number(digest.maxSequence)||0),intercompanyTotal:(Number(existing.intercompanyTotal)||0)+(Number(digest.intercompanyTotal)||0),recentDaily:[...daily.values()].sort((a,b)=>a.day-b.day).slice(-30),quarterly:[...quarters.values()].sort((a,b)=>a.quarter.localeCompare(b.quarter)).slice(-400),at:Number(state.simSeconds)||0};
     archive.digests=archive.digests.filter(row=>row!==existing&&row?.kind!==digest.kind);archive.digests.push(merged);
   }
   function archiveFull(kind,rows){if(!rows.length)return;const copies=rows.map(row=>clone(row)),archive=financeAuditArchive(),bucket=Array.isArray(archive.records[kind])?archive.records[kind]:[];const next=[...bucket,...copies];if(bucket.length)window.GH_TRANSACTION_CORE.deriveContainer(next,bucket,{changed:copies});archive.records[kind]=next;}
@@ -3317,13 +3333,14 @@
     const detail=event.detail||{};
     if(detail.validated)window.GH_CONTROL_PLANE.recordBridge(state,detail.ok?'SAVE_ACK':'SAVE_NACK',detail,detail.ok?'info':'critical');
     if(detail.ok===false&&detail.requiresNativeReconciliation){
-      state.speed=0;window.GH_CONTROL_PLANE.incident(state,{fingerprint:'NATIVE_SAVE_ACK_UNCERTAIN',severity:'critical',domain:'save',code:'NATIVE_SAVE_ACK_UNCERTAIN',title:'يلزم توفيق نسخة الحفظ الأصلية',detail:'تعذر تأكيد الحفظ؛ توقفت المحاكاة وتتاح إعادة فتح آخر جيل مكتمل وتصدير سبب العطل.',evidence:detail});
+      const postAck=detail.durableCommitted===true||String(detail.reason||'').includes('publish-failed-after-ack'),incidentCode=postAck?'DURABLE_PUBLISH_FAILED_AFTER_ACK':'NATIVE_SAVE_ACK_UNCERTAIN';
+      state.speed=0;window.GH_CONTROL_PLANE.incident(state,{fingerprint:incidentCode,severity:'critical',domain:'save',code:incidentCode,title:postAck?'حُفظت العملية وتعذر تحديث الذاكرة':'يلزم توفيق نسخة الحفظ الأصلية',detail:postAck?'وصل تأكيد الحفظ من الجهاز، لكن فشل نشر الحالة في الذاكرة. توقفت المحاكاة لمنع تكرار العملية.':'تعذر تأكيد الحفظ؛ توقفت المحاكاة وتتاح إعادة فتح آخر جيل مكتمل وتصدير سبب العطل.',evidence:detail});
       cancelSimulationPersistence();
       if(!$('nativeSaveReconcile')){
         const box=document.createElement('div');box.id='nativeSaveReconcile';box.setAttribute('role','alertdialog');box.setAttribute('aria-modal','true');
         box.style.cssText='position:fixed;inset:0;z-index:2147483647;background:#f1f4f9;color:#17283f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;overflow:auto';
-        const title=document.createElement('h2');title.textContent='توقف الحفظ مؤقتًا لحماية بياناتك';
-        const text=document.createElement('p');text.textContent='لم يصل تأكيد حفظ موثوق. أُوقفت المحاكاة، ولن تُحذف بياناتك أو تبدأ مجموعة جديدة. أعد فتح آخر حفظ مكتمل من المخزن الأصلي.';
+        const title=document.createElement('h2');title.textContent=postAck?'تم الحفظ وتوقف تحديث الذاكرة':'توقف الحفظ مؤقتًا لحماية بياناتك';
+        const text=document.createElement('p');text.textContent=postAck?'الحفظ مؤكد على الجهاز. لا تعِد العملية؛ أعد فتح اللعبة لتحميل الجيل المحفوظ ومتابعة اللعب بأمان.':'لم يصل تأكيد حفظ موثوق. أُوقفت المحاكاة، ولن تُحذف بياناتك أو تبدأ مجموعة جديدة. أعد فتح آخر حفظ مكتمل من المخزن الأصلي.';
         const reason=document.createElement('code');reason.id='nativeSaveReconcileReason';reason.textContent=String(detail.reason||detail.message||'native-save-ack-uncertain').slice(0,300);reason.style.cssText='max-width:100%;overflow-wrap:anywhere;user-select:text;font-size:12px';
         const retry=document.createElement('button');retry.id='nativeSaveReconcileRetry';retry.className='primary-btn';retry.textContent='إعادة فتح آخر حفظ مكتمل';retry.addEventListener('click',()=>{retry.disabled=true;retry.textContent='جارٍ إعادة فتح الحفظ…';try{window.location.reload();}catch(error){retry.disabled=false;retry.textContent='إعادة المحاولة';reason.textContent=String(error.message||error).slice(0,300);}});
         const exportButton=document.createElement('button');exportButton.id='nativeSaveReconcileExport';exportButton.className='secondary-btn';exportButton.textContent='تصدير تقرير العطل';exportButton.addEventListener('click',()=>{try{exportDiagnosticsFile();}catch(error){reason.textContent=String(error.message||error).slice(0,300);}});

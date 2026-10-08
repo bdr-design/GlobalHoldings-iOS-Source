@@ -818,14 +818,16 @@
     });
   }
 
-  function onFinancialDay(state,processedDay=null,measure=null){
+  function* onFinancialDayStages(state,processedDay=null,measure=null){
     if(!state.advanced)return 0;
     const day=Number.isFinite(Number(processedDay))?Math.floor(Number(processedDay)):Math.floor((state.simSeconds||0)/86400);
     const phase=typeof measure==='function'?measure:(_name,work)=>work();
     const ownerStep=(name,owner,work)=>{try{return phase(name,work);}catch(cause){const error=new Error(`financial-day-owner-failed:${owner}:${String(cause?.message||cause)}`);error.code='FINANCIAL_DAY_OWNER_FAILED';error.owner=owner;error.cause=cause;throw error;}};
     // All scheduled business maturities are advanced by their owning domain through the command plane.
     ownerStep('simulation.finance-day.owner.strategy','strategy',()=>globalThis.GH_DOMAIN_COMMANDS?.dispatchSystem?.({state},'strategy','tick-day',{day},{actor:'simulation-scheduler'}));
+    yield 'strategy';
     ownerStep('simulation.finance-day.owner.hr','hr',()=>globalThis.GH_DOMAIN_COMMANDS?.dispatchSystem?.({state},'hr','tick-day',{day},{actor:'simulation-scheduler'}));
+    yield 'hr';
     // Only instantiated, operational companies receive a daily operations tick.
     // The registered operations provider owns the hook and its command domain;
     // catalog definitions must never create a financial book just to close a day.
@@ -835,25 +837,33 @@
     for(const company of platform.listInstances(state,{openedOnly:true,includeGroup:false})){
       if(!company.operational)continue;
       const binding=adapters.resolveAdapter(state,company.id,'operations',{operational:true});
-      const owner=Object.values(binding.engines).find(engine=>typeof engine.onFinancialDay==='function');
+      const owner=Object.values(binding.engines).find(engine=>typeof engine.onFinancialDayStages==='function'||typeof engine.onFinancialDay==='function');
       if(!owner)continue;
       const order=owner.DAILY_FINANCIAL_ORDER??1000;
       if(!Number.isSafeInteger(order)||order<0)throw new Error('company-daily-order-invalid');
-      dailyOwners.push({companyId:company.id,adapterId:binding.id,order,index:dailyOwners.length});
+      dailyOwners.push({companyId:company.id,adapterId:binding.id,order,index:dailyOwners.length,staged:typeof owner.onFinancialDayStages==='function'});
     }
     // Ordering belongs to the providers, not company IDs or presentation order.
     // Preserve existing cross-domain cash/debt precedence within the same close.
     dailyOwners.sort((a,b)=>a.order-b.order||a.index-b.index);
     for(const owner of dailyOwners){
-      const result=ownerStep(`simulation.finance-day.owner.${owner.companyId}`,`${owner.companyId}:${owner.adapterId}`,()=>adapters.invokeAdapter(state,owner.companyId,'operations','onFinancialDay',[{day}],{operational:true}));
-      if(result&&typeof result.then==='function')throw new Error('asynchronous-company-day-forbidden');
+      if(owner.staged){
+        const stages=adapters.invokeAdapter(state,owner.companyId,'operations','onFinancialDayStages',[{day}],{operational:true});let step,stage='start';
+        do{step=ownerStep(`simulation.finance-day.owner.${owner.companyId}.${stage}`,`${owner.companyId}:${owner.adapterId}`,()=>stages.next());if(step&&typeof step.then==='function')throw new Error('asynchronous-company-day-forbidden');stage=String(step.value||'stage');if(!step.done)yield `${owner.companyId}.${stage}`;}while(!step.done);
+      }else{
+        const result=ownerStep(`simulation.finance-day.owner.${owner.companyId}`,`${owner.companyId}:${owner.adapterId}`,()=>adapters.invokeAdapter(state,owner.companyId,'operations','onFinancialDay',[{day}],{operational:true}));
+        if(result&&typeof result.then==='function')throw new Error('asynchronous-company-day-forbidden');yield owner.companyId;
+      }
     }
     ownerStep('simulation.finance-day.owner.business-world','business-world',()=>globalThis.GH_DOMAIN_COMMANDS?.dispatchSystem?.({state},'business-world','tick-day',{day},{actor:'simulation-scheduler'}));
+    yield 'business-world';
     const conferenceTick=ownerStep('simulation.finance-day.owner.conference','conference',()=>globalThis.GH_DOMAIN_COMMANDS?.dispatchSystem?.({state},'conference','tick-day',{day},{actor:'simulation-scheduler'})?.result);
+    yield 'conference';
     if(conferenceTick?.prepared)ownerStep('simulation.finance-day.owner.conference-alert','conference-alert',()=>globalThis.GH_DOMAIN_COMMANDS?.dispatchSystem?.({state},'operations','record-alert',{id:`CONF-READY-${conferenceTick.pendingYear}`,type:'annual-conference',text:`التقرير السنوي ${conferenceTick.pendingYear} جاهز. افتح المؤتمر التنفيذي من مركز إدارة المجموعة لتجهيز الحدث.`},{actor:'simulation-scheduler'}));
     // Facility P&L is booked by the owning subsidiary in app.js. This hook returns the parent-only compliance overhead.
     return (state.advanced.cyber.coverage+state.advanced.safety.score<150)?12000:4500;
   }
+  function onFinancialDay(state,processedDay=null,measure=null){const stages=onFinancialDayStages(state,processedDay,measure);let step;while(!(step=stages.next()).done){}return step.value;}
 
   function adjustTripEconomics(state,asset,eco){
     const owner=assetOwnerCompanyId(asset),mode=assetMode(asset),company=companyModel(state,owner),research=state.research||{};if(!owner||!company)throw new Error('asset-company-model-unavailable');
@@ -878,5 +888,5 @@
     const hour=Number.isFinite(Number(processedHour))?Math.floor(Number(processedHour)):Math.floor((state.simSeconds||0)/3600);if(hour&&hour%12===0&&state.advanced.economy.lastNewsHour!==hour){const headline=marketResult.freightIndex>125?'ارتفاع مؤشر الشحن رفع تسعير العقود البحرية والجوية.':marketResult.gasCostMWh>75?'ارتفاع الطاقة والوقود يستدعي مراجعة هوامش المسارات.':marketResult.electricityPriceMWh>105?'ارتفاع أسعار الكهرباء يعزز ربحية أصول الطاقة.':'استقرار نسبي في الشحن والطاقة مع مراقبة أسعار الفائدة.';globalThis.GH_DOMAIN_COMMANDS?.dispatchSystem?.({state},'strategy','economy-news',{hour,text:headline},{actor:'simulation-market'});}
   }
 
-  window.GH_ADVANCED={VERSION,LABOR_TABS,SAVE_SCHEMA_VERSION,UPDATE_LIMITS,photos,migrate,meta,root,render,bind,actionAttributes,sanitizeMarkup,signedDomainCommand,newsSummary,onFinancialDay,adjustTripEconomics,onMarketHour,photoFor,inspectUpdateFile,validateUpdatePack,applyNativeUpdate:async(pack,ctx)=>{await validateUpdatePack(pack,{currentBuild:ctx.runtimeBuild,postInstall:true});return applyUpdateOperations(pack,ctx,'التحديث الأصلي');}};
+  window.GH_ADVANCED={VERSION,LABOR_TABS,SAVE_SCHEMA_VERSION,UPDATE_LIMITS,photos,migrate,meta,root,render,bind,actionAttributes,sanitizeMarkup,signedDomainCommand,newsSummary,onFinancialDay,onFinancialDayStages,adjustTripEconomics,onMarketHour,photoFor,inspectUpdateFile,validateUpdatePack,applyNativeUpdate:async(pack,ctx)=>{await validateUpdatePack(pack,{currentBuild:ctx.runtimeBuild,postInstall:true});return applyUpdateOperations(pack,ctx,'التحديث الأصلي');}};
 })();

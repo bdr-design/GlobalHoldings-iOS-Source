@@ -1,8 +1,10 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {harness}=require('./helpers/core-harness');
+const {scenario}=require('./helpers/business-scenario');
 
 // The daily close now names the exact owner that failed instead of collapsing every domain into advanced-owner.
+let postAckProof=Promise.resolve();
 {
   const {s}=harness(['capability-registry-core','company-definitions','company-platform-core','company-adapters-core','transaction-core','banking-core','advanced-core']);
   s.GH_CORPORATE_CORE={};s.GH_FLEET_CORE={};s.GH_ROUTE_CORE={};s.GH_MOBILITY_CORE={};
@@ -10,6 +12,26 @@ const {harness}=require('./helpers/core-harness');
   s.GH_DOMAIN_COMMANDS={dispatchSystem(_ctx,domain){if(domain==='banking')throw Object.assign(new Error('bank-day-injected'),{code:'BANK_DAY'});return {result:{}};}};
   let caught=null;try{s.GH_ADVANCED.onFinancialDay(state,1,(name,work)=>{phases.push(name);return work();});}catch(error){caught=error;}
   assert(caught);assert.equal(caught.code,'FINANCIAL_DAY_OWNER_FAILED');assert.match(caught.owner,/bank:banking-services-v1/);assert.equal(caught.cause.code,'BANK_DAY');assert(phases.includes('simulation.finance-day.owner.bank'));
+}
+
+// A staged company owner returns control to the frame scheduler between its internal units of work.
+{
+  const {s}=harness(['capability-registry-core','company-definitions','company-platform-core','company-adapters-core','transaction-core','advanced-core']);
+  s.GH_CORPORATE_CORE={};s.GH_FLEET_CORE={};s.GH_ROUTE_CORE={};s.GH_MOBILITY_CORE={};
+  s.GH_INSURANCE_CORE={DAILY_FINANCIAL_ORDER:300,onFinancialDay(){throw new Error('staged-hook-not-used');},* onFinancialDayStages(){yield 'office:a';yield 'claim-settlement';return {day:1};}};
+  const migrated=s.GH_COMPANY_PLATFORM.migrateState({simSeconds:86400,onboardingComplete:true,openedCompanies:['insurance'],companyRegistry:{},companyFinance:{},advanced:{cyber:{coverage:90},safety:{score:90},procurement:{savings:0}}}),state=migrated.state;
+  s.GH_DOMAIN_COMMANDS={dispatchSystem(){return {result:{}};}};
+  const stages=s.GH_ADVANCED.onFinancialDayStages(state,1),seen=[];let step;while(!(step=stages.next()).done)seen.push(step.value);
+  assert(seen.includes('insurance.office:a'));assert(seen.includes('insurance.claim-settlement'));assert.equal(step.value,4500);
+}
+
+// Due terms build one transaction index and expose bounded batches, so a large due-day cannot monopolize one frame.
+{
+  const {s,state,command}=scenario();state.simSeconds=20*86400;
+  for(let index=0;index<19;index++)command('finance','credit',{company:'air',amount:1000+index,note:'bounded due-term proof',taxable:false,reference:`DUE-BATCH-${index}`,counterparty:'عميل اختبار',termsDays:1});
+  state.simSeconds=21*86400;const batches=[];
+  const transaction=s.GH_TRANSACTION_CORE.execute(state,{label:'bounded-due-terms-proof',apply(){let remaining;do{const out=s.GH_FINANCE_CORE.execute({state},'settle-due-terms',{day:21,company:'air',maxRows:8});batches.push(out.collected);remaining=out.remaining;}while(remaining>0);}});
+  assert.equal(transaction.committed,true);assert.deepEqual(batches,[8,8,3]);assert.equal(state.finance.receivables.length,0);
 }
 
 // A restore failure must never stop later owner undos, and its exported timing must retain both causes.
@@ -48,6 +70,16 @@ const {harness}=require('./helpers/core-harness');
   assert.throws(()=>s.GH_TRANSACTION_CORE.restoreObject({o:Object.freeze({a:1})},{o:{a:2}}),/Cannot delete property|read only|frozen/i,'public restore remains strict');
 }
 
+// Publication happens only after the device has acknowledged the durable generation. Frozen external leaves must be
+// adopted atomically, and a successful publication must never request native reconciliation or invite a duplicate retry.
+{
+  const {s}=harness(['transaction-core']);const frozen=Object.freeze({id:'external-constant',value:1}),live={saveRevision:7,root:{frozen,value:1}},recovery=[];
+  s.GH_PERSISTENCE={markRecoveryRequired:(reason,evidence)=>recovery.push({reason,evidence})};
+  postAckProof=s.GH_TRANSACTION_CORE.executeDurable(live,{label:'post-ack-frozen-publication',integrity:false,persist:async draft=>({ok:true,saveRevision:draft.saveRevision}),apply(draft){draft.root.frozen={id:'external-constant',value:2,added:true};draft.root.value=2;return 'committed';}}).then(result=>{
+    assert.equal(result.committed,true);assert.equal(result.value,'committed');assert.equal(live.saveRevision,8);assert.equal(live.root.value,2);assert.equal(live.root.frozen.value,2);assert.equal(live.root.frozen.added,true);assert.notEqual(live.root.frozen,frozen);assert.deepEqual(recovery,[]);
+  });
+}
+
 // Health cannot report a failed calendar rollback as healthy.
 {
   const {s}=harness(['diagnostics-core']);
@@ -58,4 +90,4 @@ const {harness}=require('./helpers/core-harness');
   assert.equal(report.status,'critical');assert(report.issues.some(row=>row.id==='TRANSACTION_ROLLBACK_FAILED'));
 }
 
-console.log('BUILD360_IPHONE_FAILURE_RECOVERY_PASS');
+postAckProof.then(()=>console.log('BUILD360_IPHONE_FAILURE_RECOVERY_PASS'));

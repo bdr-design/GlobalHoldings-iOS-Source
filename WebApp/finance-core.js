@@ -185,6 +185,7 @@ function findFinanceDocument(s,bucket,fields,value,accept=null){
 function hasFinanceDocument(s,bucket,fields,value,accept=null){return !!findFinanceDocument(s,bucket,fields,value,accept);}
 const TRANSFER_INDEX_MEMO_KEY='finance.transfer-lookup-index/v1';
 const FINANCE_LIST_INDEX_MEMO_PREFIX='finance.list-number-index/v1:';
+const DUE_TERMS_INDEX_MEMO_PREFIX='finance.due-terms-index/v1:';
 function currentTransactionMemo(key){const tx=globalThis.GH_TRANSACTION_CORE;if(!tx?.isActive?.())return undefined;return tx.transactionMemoGet?.(key);}
 function rankLookup(map,key,row,rank){if(key==null)return;const current=map.get(key);if(!current||rank<current.rank)map.set(key,{row,rank});}
 function addTransferIndexRow(index,row,rank){rankLookup(index.byReference,row?.reference,row,rank);rankLookup(index.byId,row?.id,row,rank);if(row?.documentNumber&&['payroll-payable','payroll-transfer'].includes(row.kind))rankLookup(index.byPayrollDocument,row.documentNumber,row,rank);}
@@ -220,6 +221,14 @@ function removeReceivableByNumber(s,number){
  const index=financeListIndex(s,'receivables'),matches=index?.allByNumber.get(number),batch=collectionBatches.get(s);
  if(batch){for(const row of matches||[])batch.removedReceivables.add(row);if(index){index.byNumber.delete(number);index.allByNumber.delete(number);}return;}
  s.finance.receivables=s.finance.receivables.filter(row=>row.number!==number);if(index){index.byNumber.delete(number);index.allByNumber.delete(number);}
+}
+function dueTermsIndex(s,day){
+ const key=`${DUE_TERMS_INDEX_MEMO_PREFIX}${day}`,tx=globalThis.GH_TRANSACTION_CORE,cached=tx?.isActive?.()?tx.transactionMemoGet?.(key):null;if(cached)return cached;
+ const index={receivables:new Map(),payables:new Map(),chequed:new Set(),processedReceivables:new Set(),processedPayables:new Set()};
+ const add=(bucket,rows)=>{for(const row of rows||[]){if(row?.autoSettle!==true||!Number.isFinite(Number(row.dueDay))||Number(row.dueDay)>day)continue;const company=requireCompany(s,row.company),list=bucket.get(company)||[];list.push(row);bucket.set(company,list);}};
+ add(index.receivables,s.finance.receivables);add(index.payables,s.finance.payables);
+ for(const cheque of s.finance.cheques||[])if(cheque?.status==='صادر'&&cheque.invoiceNumber)index.chequed.add(String(cheque.invoiceNumber));
+ if(tx?.isActive?.())tx.transactionMemoSet?.(key,index);return index;
 }
 function nextFinanceTransferReference(s,prefix){
  // Array length is not a sequence: archive trimming must not turn a new payment
@@ -456,11 +465,13 @@ function collectReceivablesByCheque(s,p={}){
 // stays open for the player (no overdraft). Rows without terms are never touched here.
 function settleDueTerms(s,p={}){
  const day=Math.floor(num(p.day??Math.floor(now(s)/86400))),out={day,...(p.company?{company:requireCompany(s,p.company)}:{}),collected:0,collectedAmount:0,paid:0,paidAmount:0,unpaid:0};
- const company=p.company?requireCompany(s,p.company):null,due=rows=>rows.filter(row=>row?.autoSettle===true&&Number.isFinite(Number(row.dueDay))&&Number(row.dueDay)<=day&&(!company||requireCompany(s,row.company)===company));
- withCollectionBatch(s,()=>{for(const row of due(s.finance.receivables)){const inv=financeRowByNumber(s,'invoices',row.number),reference=inv?.sourceRef&&!findTransferByReference(s,inv.sourceRef)?inv.sourceRef:undefined;const r=collectReceivable(s,{number:row.number,company:row.company,reference});out.collected++;out.collectedAmount+=num(r.amount);}});
- const chequed=new Set((s.finance.cheques||[]).filter(ch=>ch?.status==='صادر'&&ch.invoiceNumber).map(ch=>String(ch.invoiceNumber)));
+ const company=p.company?requireCompany(s,p.company):null,index=dueTermsIndex(s,day),bounded=Number.isSafeInteger(Number(p.maxRows))&&Number(p.maxRows)>0,maxRows=bounded?Number(p.maxRows):Infinity,rowsFor=(bucket,processed)=>{const rows=company?(bucket.get(company)||[]):[...bucket.values()].flat();return rows.filter(row=>!processed.has(row));};
+ const receivables=rowsFor(index.receivables,index.processedReceivables).slice(0,maxRows);for(const row of receivables)index.processedReceivables.add(row);
+ withCollectionBatch(s,()=>{for(const row of receivables){const inv=financeRowByNumber(s,'invoices',row.number),reference=inv?.sourceRef&&!findTransferByReference(s,inv.sourceRef)?inv.sourceRef:undefined;const r=collectReceivable(s,{number:row.number,company:row.company,reference});out.collected++;out.collectedAmount+=num(r.amount);}});
  // A payable with an outstanding cheque is settled when that cheque is cashed, never also by transfer.
- for(const row of due(s.finance.payables)){if(chequed.has(String(row.number))){out.chequePending=(out.chequePending||0)+1;continue;}const t=requireCompany(s,row.company),a=num(row.total??row.amount);if(!hasFunds(s,t,a)){out.unpaid++;continue;}const r=settlePayable(s,{number:row.number,method:'transfer'});out.paid++;out.paidAmount+=num(r.amount);}
+ const payables=rowsFor(index.payables,index.processedPayables).slice(0,Math.max(0,maxRows-receivables.length));for(const row of payables)index.processedPayables.add(row);
+ for(const row of payables){if(index.chequed.has(String(row.number))){out.chequePending=(out.chequePending||0)+1;continue;}const t=requireCompany(s,row.company),a=num(row.total??row.amount);if(!hasFunds(s,t,a)){out.unpaid++;continue;}const r=settlePayable(s,{number:row.number,method:'transfer'});out.paid++;out.paidAmount+=num(r.amount);}
+ if(bounded)out.remaining=rowsFor(index.receivables,index.processedReceivables).length+rowsFor(index.payables,index.processedPayables).length;
  return out;
 }
 // Build 358: why a cheque cannot be issued for a payable (null when it can), checked before a bulk command dispatches,
