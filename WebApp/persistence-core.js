@@ -11,7 +11,7 @@
   const PERSISTENCE_LIMITS=Object.freeze({softBytes:2*1024*1024,hardBytes:4*1024*1024,storageBytes:4.5*1024*1024,nativeSoftBytes:22.5*1024*1024,nativeHardBytes:30*1024*1024,browserFleetRecordLimit:6000,nativeFleetRecordLimit:1000000,ackTimeoutMs:10000,pending:16});
   const saveSchemaVersion=state=>['2.0.0','3.0.0'].includes(String(state?.saveVersion||''))?String(state.saveVersion):SAVE_SCHEMA_VERSION;
   const slotKey=index=>{if(!Number.isInteger(Number(index))||index<0||index>2)throw new Error('invalid-save-slot');return `global-holdings-save-slot-${Number(index)+1}`;};
-  const clone=v=>globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));
+  const clone=v=>{const copy=globalThis.structuredClone?structuredClone(v):JSON.parse(JSON.stringify(v));return globalThis.GH_STATE_CODEC?.inheritColdArchive?.(v,copy)||copy;};
   // Storage encoding (Build 350). Large homogeneous collections are persisted as shape + positional-cell rows with an
   // interned pool, so a 20,000-asset fleet no longer repeats every property name and crew table 20,000 times. This is a
   // TRANSPORT encoding only: the live state and Save Schema are unchanged, parseState(serializeState(x)) is exactly
@@ -94,8 +94,9 @@
     if(detail.action!==row.envelope.action||detail.saveRevision!==row.envelope.saveRevision||detail.resetEpoch!==row.envelope.resetEpoch||detail.saveHash!==row.envelope.saveHash||detail.saveSchemaVersion!==row.envelope.saveSchemaVersion||typeof detail.success!=='boolean')return false;
     if(detail.success&&(!Number.isSafeInteger(detail.generation)||detail.generation<=generation))return false;
     const ackAt=clock(),nativeVaultCommitMs=Number(detail.nativeVaultCommitMs);
-    // Build 358: the native commit's stage timings (GlobalSaveVault: parse, current slot, encode, write, verify, chunk collection).
-    const nativeVaultStages=detail.nativeVaultStages&&typeof detail.nativeVaultStages==='object'?Object.fromEntries(Object.entries(detail.nativeVaultStages).filter(([key,value])=>/^[A-Za-z]{1,32}$/.test(key)&&Number.isFinite(Number(value))).slice(0,16).map(([key,value])=>[key,Math.round(Number(value)*10)/10])):null;
+    // Native commit and deferred-cleanup timings. The bounded key/count gate keeps the bridge diagnostic-only while
+    // retaining the background GC path alongside the foreground parse/write/verify stages.
+    const nativeVaultStages=detail.nativeVaultStages&&typeof detail.nativeVaultStages==='object'?Object.fromEntries(Object.entries(detail.nativeVaultStages).filter(([key,value])=>/^[A-Za-z]{1,48}$/.test(key)&&Number.isFinite(Number(value))).slice(0,32).map(([key,value])=>[key,Math.round(Number(value)*10)/10])):null;
     lastNativeAck=rememberTiming({kind:'native-ack',requestId:detail.requestId,action:detail.action,saveRevision:Number(detail.saveRevision)||0,generation:Number(detail.generation)||0,success:detail.success===true,bridgeDispatchMs:Number.isFinite(row.bridgeDispatchMs)?row.bridgeDispatchMs:null,nativeAckLatencyMs:Number.isFinite(row.dispatchedAt)?Math.max(0,ackAt-row.dispatchedAt):null,nativeVaultCommitMs:Number.isFinite(nativeVaultCommitMs)?Math.max(0,nativeVaultCommitMs):null,nativeVaultStages});
     clearTimeout(row.timer);pending.delete(detail.requestId);
     if(detail.success){generation=detail.generation;row.resolve({ok:true,native:true,...detail});}
@@ -145,11 +146,16 @@
   function noteVaultChunks(ids){for(const id of Array.isArray(ids)?ids:[])if(typeof id==='string'&&id)vaultChunks.add(id);}
   function forgetVaultChunks(){vaultChunks.clear();}
   function chunkedNative(state){return !!bridgeFor('commitSave')&&typeof stateCodec()?.serializeChunked==='function'&&Object.prototype.toString.call(state?.fleet?.rows)==='[object ArrayBuffer]';}
+  function copyChunkBytes(state,chunk){
+    if(typeof chunk.text==='string')return utf8(chunk.text);
+    if(ArrayBuffer.isView(chunk.data))return new Uint8Array(chunk.data.buffer,chunk.data.byteOffset,chunk.data.byteLength).slice();
+    return new Uint8Array(state.fleet.rows,chunk.byteOffset,chunk.byteLength).slice();
+  }
   function serializeNative(state){
     if(!chunkedNative(state))return {json:serializeState(state),uploads:[],chunked:false};
     const out=stateCodec().serializeChunked(state),uploads=[];
     // Fleet chunks copy their bytes now (rows keep changing); a text chunk (a sealed collection's JSON) is immutable.
-    for(const chunk of out.chunks)if(!vaultChunks.has(chunk.id))uploads.push({id:chunk.id,bytes:typeof chunk.text==='string'?utf8(chunk.text):new Uint8Array(state.fleet.rows,chunk.byteOffset,chunk.byteLength).slice()});
+    for(const chunk of out.chunks)if(!vaultChunks.has(chunk.id))uploads.push({id:chunk.id,bytes:copyChunkBytes(state,chunk)});
     return {json:out.text,uploads,chunked:true,chunkIds:out.chunks.map(chunk=>chunk.id)};
   }
   // Build 358 (lighter commands): a durable command's save spread over frames. Serialization runs as codec steps and the
@@ -164,7 +170,7 @@
     if(typeof codec.serializeChunkedSteps!=='function')return serializeNative(state);
     const revision=state.fleet?.revision,out=await runSliced(codec.serializeChunkedSteps(state),yieldToFrame,timing);
     if(state.fleet?.revision!==revision){timing.retakes++;return serializeNative(state);}
-    const uploads=[];for(const chunk of out.chunks)if(!vaultChunks.has(chunk.id))uploads.push({id:chunk.id,bytes:typeof chunk.text==='string'?utf8(chunk.text):new Uint8Array(state.fleet.rows,chunk.byteOffset,chunk.byteLength).slice()});
+    const uploads=[];for(const chunk of out.chunks)if(!vaultChunks.has(chunk.id))uploads.push({id:chunk.id,bytes:copyChunkBytes(state,chunk)});
     return {json:out.text,uploads,chunked:true,chunkIds:out.chunks.map(chunk=>chunk.id)};
   }
   // UTF-8 in pieces of up to 1M UTF-16 units, never splitting a surrogate pair: the bytes of TextEncoder.encode(text).

@@ -7,14 +7,14 @@
 // - earlier versions become checkpoints in the next pass whatever their age; a period's digest is the sum of its
 //   checkpoints' digests, moved by the rows a pass adds or removes; tampering with a checkpoint or a period is refused;
 // - a period digest of the earlier form is checked once and rewritten; a tampered one is left and refused;
-// - the audit archive keeps 12 game months and at most 20,000 rows: older rows are sealed (proof record and earlier
-//   versions leave, one digest per period keeps them, the kind's audit digest takes their count, total and sequence);
-//   a row a live document names is kept; every document left verifies and the schema accepts the state;
+// - the hot audit archive keeps 90 game days and at most 5,000 rows: older rows move losslessly to cold vault pages
+//   after their proof record and earlier versions are sealed; a row a live document names stays hot; every document
+//   left verifies, historical lookup reaches cold pages, and the schema accepts the persisted state;
 // - an archived cheque is still found by its request reference through the archive's index.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const {harness,minimal,ROOT}=require('./helpers/core-harness'),{wholeRecord}=require('./helpers/legacy-proof-records');
-const {s}=harness(['save-schema','authorization-core','document-proof-core','transaction-core','domain-command-core','finance-core']);
-const P=s.GH_DOCUMENT_PROOF,T=s.GH_TRANSACTION_CORE,Schema=s.GH_SAVE_SCHEMA,results=[];
+const {s}=harness(['state-codec-core','save-schema','authorization-core','document-proof-core','transaction-core','domain-command-core','finance-core']);
+const P=s.GH_DOCUMENT_PROOF,T=s.GH_TRANSACTION_CORE,Schema=s.GH_SAVE_SCHEMA,Codec=s.GH_STATE_CODEC,results=[];
 const test=(name,fn)=>{try{results.push({name,ok:true,detail:fn()});}catch(error){results.push({name,ok:false,error:String(error?.stack||error).slice(0,2500)});}};
 const bytes=value=>Buffer.byteLength(JSON.stringify(value||{}));
 function state(){const v=minimal();v.profile={name:'Archive seal',founder:'Founder'};s.GH_FINANCE_CORE.ensure(v);v.finance.auditArchive={records:{invoices:[]},digests:[]};return v;}
@@ -64,10 +64,10 @@ test('a period digest of the earlier form is checked once and rewritten',()=>{
 
 // The audit archive maintenance, as app.js runs it.
 const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8'),start=app.indexOf('  function financeAuditArchive()'),end=app.indexOf('  function normalizeSimulationClocks()',start);
-test('the audit archive keeps 12 months and at most 20,000 rows; older rows are sealed',()=>{
+test('the hot audit archive keeps 90 days and 5,000 rows; cold pages preserve every sealed row',()=>{
   const w=state();Object.assign(s,{state:w,clone:x=>x===undefined?undefined:JSON.parse(JSON.stringify(x)),companyFinanceTypes:()=>[],companyBook:()=>null});
   vm.runInContext(app.slice(start,end)+'\nglobalThis.sealApi={auditSealSelection,liveProofIds,sealAuditRound,AUDIT_DETAIL_LIMIT,AUDIT_RETENTION_SECONDS};',s);
-  const api=s.sealApi;assert.equal(api.AUDIT_DETAIL_LIMIT,20000);assert.equal(api.AUDIT_RETENTION_SECONDS,365*86400);
+  const api=s.sealApi;assert.equal(api.AUDIT_DETAIL_LIMIT,5000);assert.equal(api.AUDIT_RETENTION_SECONDS,90*86400);
   const day=86400,old=[];
   T.execute(w,{label:'old',apply:()=>{for(let i=0;i<600;i++){const d=invoice(w,`INV-${String(i).padStart(5,'0')}`,i*600,'',i<300?'مستحقة':'محصلة');old.push(d);}}});
   // Earlier versions too: half the old invoices were amended before they were archived.
@@ -81,29 +81,35 @@ test('the audit archive keeps 12 months and at most 20,000 rows; older rows are 
   let sealed=0,rounds=0;while(entry.queue.length){sealed+=api.sealAuditRound(entry);rounds++;}
   const left=w.finance.auditArchive.records.invoices.map(row=>row.number).sort();
   assert.deepEqual(left,['INV-00007','INV-RECENT'],'the named and the recent invoice are kept');
-  assert.equal(sealed,599);assert.ok(rounds>=3,'in rounds of 200');
+  assert.equal(sealed,599);assert.ok(rounds>=6,'in rounds of 100');
   const seals=Object.values(w.documentProofs.sealedPeriods);assert.equal(seals.reduce((n,row)=>n+row.count,0),599,'one digest per period counts every sealed document');
   assert.ok(seals.every(row=>row.form==='sum-v1'&&/^[a-f0-9]{64}$/.test(row.digest)));
   assert.equal(P.records(w).length,2,'the sealed documents\' records left the store');
   assert.deepEqual(Object.values(w.documentProofs.checkpointsById||{}).map(row=>row.documentId),['INV-00007'],'and the checkpoints of their earlier versions (the kept invoice keeps its own)');
   const digest=w.finance.auditArchive.digests.find(row=>row.kind==='invoices');assert.equal(digest.count,599);assert.equal(digest.total,5990);
+  const coldInvoices=w.coldArchive.pages.filter(page=>page.kind==='invoices').flatMap(page=>Codec.coldArchiveRows(page));
+  assert.equal(coldInvoices.length,599);assert.equal(JSON.stringify(Array.from(coldInvoices,row=>row.number).sort()),JSON.stringify(old.filter(row=>row.number!=='INV-00007').map(row=>row.number).sort()),'all removed invoice detail remains byte-for-byte recoverable');
+  assert.equal(s.GH_FINANCE_CORE.findArchivedDocument(w,'invoices','number','INV-00000').number,'INV-00000','historical lookup reaches cold pages');
   for(const row of w.finance.auditArchive.records.invoices)assert.equal(P.verifyDocument(w,row).ok,true);
-  const check=Schema.validate(JSON.parse(JSON.stringify(w)));assert.ok(check.ok,JSON.stringify(check.errors));
-  {const t=JSON.parse(JSON.stringify(w)),period=Object.keys(t.documentProofs.sealedPeriods)[0];t.documentProofs.sealedPeriods[period].count=0;assert.equal(Schema.validate(t).errors.includes('document-proof-seal'),true,'a broken seal is refused');}
-  // Past 20,000 rows, the oldest are sealed even inside the 12 months.
-  const filler=Array.from({length:20500},(_,i)=>({id:`J-${i}`,at:w.simSeconds-day+i,amount:1}));w.finance.auditArchive.records.journalEntries=filler;
-  const over={queue:api.auditSealSelection(),keep:api.liveProofIds()};assert.equal(over.queue.length,501,'the 502 oldest of 20,502 rows are due but the named invoice (the recent invoice is among them)');
+  const persisted=Codec.deserialize(Codec.serialize(w)),check=Schema.validate(persisted);assert.ok(check.ok,JSON.stringify(check.errors));
+  {const t=Codec.deserialize(Codec.serialize(w)),period=Object.keys(t.documentProofs.sealedPeriods)[0];t.documentProofs.sealedPeriods[period].count=0;assert.equal(Schema.validate(t).errors.includes('document-proof-seal'),true,'a broken seal is refused');}
+  // Past 5,000 hot rows, the oldest are sealed even inside the 90-day window.
+  const filler=Array.from({length:5500},(_,i)=>({id:`J-${i}`,at:w.simSeconds-day+i,amount:1}));w.finance.auditArchive.records.journalEntries=filler;
+  const over={queue:api.auditSealSelection(),keep:api.liveProofIds()};assert.equal(over.queue.length,501,'the 502 oldest of 5,502 rows are due but the named invoice stays hot');
   while(over.queue.length)api.sealAuditRound(over);
-  const total=Object.values(w.finance.auditArchive.records).reduce((n,rows)=>n+rows.length,0);assert.equal(total,20001,'20,000 rows and the named invoice');
+  const total=Object.values(w.finance.auditArchive.records).reduce((n,rows)=>n+rows.length,0);assert.equal(total,5001,'5,000 rows and the named invoice');
   assert.equal(w.finance.auditArchive.digests.find(row=>row.kind==='journalEntries').count,500);
-  return {sealed,rounds,periods:seals.length};
+  const cold=Codec.validateColdArchive(w);assert.equal(cold.ok,true);assert.equal(cold.pages,w.coldArchive.pages.length);assert.equal(cold.rows,1100);
+  return {sealed,rounds,periods:seals.length,coldPages:cold.pages,coldRows:cold.rows};
 });
 
-test('an archived cheque is found by its request reference through the archive index',()=>{
+test('a cold archived cheque is found by its request reference without restoring the hot archive',()=>{
   const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario'));const e=scenario(),st=e.state;st.godMoney=true;st.infiniteMoney=true;
   const issued=e.command('finance','issue-cheque',{company:'air',amount:500,beneficiary:'Supplier LLC',note:'x',requestRef:'ARC-REF-1'});e.command('finance','settle-cheque',{id:issued.id});
   const archive=st.finance.auditArchive=st.finance.auditArchive||{records:{},digests:[]};archive.records=archive.records||{};
-  const moving=st.finance.cheques.find(row=>row.id===issued.id);archive.records.cheques=[...(archive.records.cheques||[]),JSON.parse(JSON.stringify(moving))];st.finance.cheques=st.finance.cheques.filter(row=>row!==moving);
+  const moving=st.finance.cheques.find(row=>row.id===issued.id);st.finance.cheques=st.finance.cheques.filter(row=>row!==moving);e.load('state-codec-core');
+  st.coldArchive={schema:'gh-cold-archive-v1',pages:[e.s.GH_STATE_CODEC.createColdArchivePage('cheques',[JSON.parse(JSON.stringify(moving))],{firstAt:0,lastAt:0,createdAtSim:st.simSeconds})]};
+  assert.equal(archive.records.cheques,undefined,'the cheque is absent from the hot archive');
   const again=e.command('finance','issue-cheque',{company:'air',amount:500,beneficiary:'Supplier LLC',note:'x',requestRef:'ARC-REF-1'});
   assert.equal(again.idempotent,true);assert.equal(again.id,issued.id,'the archived cheque answers the retry');
   return {id:again.id};

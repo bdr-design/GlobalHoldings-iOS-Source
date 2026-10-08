@@ -1,6 +1,6 @@
 {
   "scope": "isolated original tab renderer + original click bindings; no full app, storage, upgrade or iPhone execution",
-  "browser": "144.0.7559.96",
+  "browser": "140.0.7339.186",
   "rows": [
     {
       "panel": "companies",
@@ -48,8 +48,8 @@
         "height": 390
       },
       "input": "mouse",
-      "buttonCount": 6,
-      "routeCalls": 6,
+      "buttonCount": 5,
+      "routeCalls": 5,
       "ok": true,
       "items": [
         {
@@ -71,14 +71,6 @@
         {
           "label": "مديرو الشركات",
           "id": "managers",
-          "attributes": [
-            "class",
-            "data-labortab"
-          ]
-        },
-        {
-          "label": "الاستقطاب",
-          "id": "recruitment",
           "attributes": [
             "class",
             "data-labortab"
@@ -113,10 +105,6 @@
         {
           "panel": "labor",
           "arg": "managers"
-        },
-        {
-          "panel": "labor",
-          "arg": "recruitment"
         },
         {
           "panel": "labor",
@@ -174,8 +162,8 @@
         "height": 844
       },
       "input": "touch",
-      "buttonCount": 6,
-      "routeCalls": 6,
+      "buttonCount": 5,
+      "routeCalls": 5,
       "ok": true,
       "items": [
         {
@@ -197,14 +185,6 @@
         {
           "label": "مديرو الشركات",
           "id": "managers",
-          "attributes": [
-            "class",
-            "data-labortab"
-          ]
-        },
-        {
-          "label": "الاستقطاب",
-          "id": "recruitment",
           "attributes": [
             "class",
             "data-labortab"
@@ -239,10 +219,6 @@
         {
           "panel": "labor",
           "arg": "managers"
-        },
-        {
-          "panel": "labor",
-          "arg": "recruitment"
         },
         {
           "panel": "labor",

@@ -831,6 +831,33 @@
     if(freed&&r.ids)for(const ref of freedRefs){const map=r.ids.patterns.get(ref);if(!map)continue;if(map.size){r.ids=null;break;}r.ids.patterns.delete(ref);}
     return {freed,values:store.values.length,free:r.free.length};
   }
+  // The mark phase is read-only and may span frames. A fleet/value-table write while it is paused invalidates the mark;
+  // the caller retries instead of sweeping from a mixed snapshot. Sweeping is intentionally one bounded value-table
+  // pass: it mutates the free list and therefore must not yield halfway through.
+  function* collectValuesStages(store,{rowSlice=4096}={}){
+    const r=rt(store);if(r.journal&&r.journal.active)throw new Error('fleet-store-gc-inside-transaction');
+    rowSlice=Math.max(256,Math.floor(Number(rowSlice)||4096));
+    const revision=store.revision,length=store.length,valuesLength=store.values.length,generation=r.valuesGeneration;
+    const v=r.views,u32=v.u32,u8=v.u8,used=new Uint8Array(valuesLength);used[0]=1;const B=HOT_BIT;
+    for(let from=0;from<length;from+=rowSlice){
+      const to=Math.min(length,from+rowSlice);
+      for(let index=from;index<to;index++){
+        if(!(u8[index*STRIDE+O.flags]&ALIVE))continue;const w=index*WORDS_PER_ROW,present=u32[w+O.present];
+        used[u32[w+O.profile]]=1;used[u32[w+O.binding]]=1;
+        if(present&B.id)used[u32[w+O.idPattern]]=1;if(present&B.name)used[u32[w+O.namePattern]]=1;
+        if(present&B.routeId)used[u32[w+O.routeId]]=1;if(present&B.baseFacility)used[u32[w+O.baseFacility]]=1;if(present&B.phase)used[u32[w+O.phase]]=1;if(present&B.lastTrip)used[u32[w+O.lastTrip]]=1;
+      }
+      if(to<length)yield {stage:'mark',rows:to,total:length};
+    }
+    if(store.revision!==revision||store.length!==length||store.values.length!==valuesLength||r.valuesGeneration!==generation)return {stale:true,freed:0,values:store.values.length,free:r.free.length};
+    let freed=0;const freedRefs=[];
+    for(let ref=1;ref<valuesLength;ref++){
+      const stored=store.values[ref];if(used[ref]||stored===null||stored===undefined)continue;
+      const key=valueKey(stored);if(r.index.get(key)===ref)r.index.delete(key);store.values[ref]=null;r.free.push(ref);freedRefs.push(ref);freed++;
+    }
+    if(freed&&r.ids)for(const ref of freedRefs){const map=r.ids.patterns.get(ref);if(!map)continue;if(map.size){r.ids=null;break;}r.ids.patterns.delete(ref);}
+    return {stale:false,freed,values:store.values.length,free:r.free.length};
+  }
   function stats(store){
     const r=rt(store),bytes=STRIDE*store.length;
     return {length:store.length,live:store.live,capacity:store.capacity,values:store.values.length,freeValues:r.free.length,extras:Object.keys(store.extras).length,columnBytes:bytes,bytesPerAsset:store.length?STRIDE:0};
@@ -931,7 +958,7 @@
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,I32_NULL,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
     create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,readColumns,writeColumns,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
-    views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,distinctRefs,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,exportReplica,importReplica,valueChanges,applyValueChanges,internAt,readRows,writeRows,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
+    views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,collectValuesStages,distinctRefs,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,exportReplica,importReplica,valueChanges,applyValueChanges,internAt,readRows,writeRows,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

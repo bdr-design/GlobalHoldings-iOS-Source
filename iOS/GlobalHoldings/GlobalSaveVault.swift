@@ -119,6 +119,43 @@ final class GlobalSaveVault {
     private let timingLock = NSLock()
     private var commitTimings: [Int: [String: Double]] = [:]
 
+    /// Chunk cleanup never runs in the save commit path. The commit queue only captures a small immutable snapshot and
+    /// removes a bounded number of files after the background scanner proves that no durable vault file references
+    /// them. Every delete batch rechecks the identity of every protecting file, so a save/manual-slot/reset written
+    /// while a scan is running invalidates the plan instead of risking collection of a newly referenced chunk.
+    private struct ChunkReferences {
+        let file: FileIdentity
+        let ids: Set<String>
+    }
+    private struct ChunkGarbageSnapshot {
+        let generation: Int
+        let startedAt: UInt64
+        let recent: Set<String>
+        let headers: [String: ChunkReferences]
+        let presence: [String: ChunkReferences]
+    }
+    private struct ChunkGarbagePlan {
+        let generation: Int
+        let startedAt: UInt64
+        let candidates: Set<String>
+        let vaultFiles: [String: FileIdentity]
+        let filesToScan: [URL]
+    }
+    private struct ChunkGarbageReport {
+        let generation: Int
+        let durationMs: Double
+        let scannedBytes: Int
+        let candidates: Int
+        let protected: Int
+        let deleted: Int
+        let aborted: Bool
+    }
+    private let garbageQueue = DispatchQueue(label: "com.globalholdings.save-vault-gc", qos: .background)
+    private var chunkGarbageScheduled = false
+    private var chunkGarbageWaiters: [() -> Void] = []
+    private var lastChunkGarbageReport: ChunkGarbageReport?
+    private static let chunkGarbageDeleteBatch = 8
+
     private let fm = FileManager.default
     private let queue = DispatchQueue(label: "com.globalholdings.save-vault", qos: .utility)
     private let schemaVersion = "2.0.0"
@@ -312,8 +349,21 @@ final class GlobalSaveVault {
         }
         slotHeaders[slot] = SlotHeader(generation: generation, slot: slot, saveRevision: validation.saveRevision, resetEpoch: validation.resetEpoch, chunkIds: chunkIds, file: file)
         lap("verifyMs")
-        collectChunkGarbageLocked()
-        lap("chunkGcMs")
+        scheduleChunkGarbageLocked(generation: generation)
+        lap("chunkGcScheduleMs")
+        // Kept for diagnostics compatibility: foreground GC is deliberately zero. The completed background pass is
+        // attached to a later commit through the backgroundChunkGc* fields below.
+        stages["chunkGcMs"] = 0
+        stages["chunkGcDeferred"] = 1
+        if let report = lastChunkGarbageReport {
+            stages["backgroundChunkGcGeneration"] = Double(report.generation)
+            stages["backgroundChunkGcMs"] = report.durationMs
+            stages["backgroundChunkGcScannedBytes"] = Double(report.scannedBytes)
+            stages["backgroundChunkGcCandidates"] = Double(report.candidates)
+            stages["backgroundChunkGcProtected"] = Double(report.protected)
+            stages["backgroundChunkGcDeleted"] = Double(report.deleted)
+            stages["backgroundChunkGcAborted"] = report.aborted ? 1 : 0
+        }
         stages["payloadBytes"] = Double(payload.data.count)
         stages["envelopeBytes"] = Double(data.count)
         timingLock.lock()
@@ -636,7 +686,7 @@ final class GlobalSaveVault {
           // are the text chunks of sealed collections (stateCodec.chunks). app.js defers itself to __GH_BOOT_GATE__
           // until every chunk has arrived (or one failed: the load then reports a corrupt save and the recovery path
           // takes over).
-          try{if(raw.includes('"$ghBinary":"chunks-v1"')||raw.includes('"$ghText":"chunk-v1"')){const parsed=JSON.parse(raw),rows=parsed?.fleet?.rows,ids=[...(rows&&rows.$ghBinary==='chunks-v1'&&Array.isArray(rows.chunks)?rows.chunks:[]),...(Array.isArray(parsed?.stateCodec?.chunks)?parsed.stateCodec.chunks:[])];if(ids.length){
+          try{if(raw.includes('"$ghBinary":"chunks-v1"')||raw.includes('"$ghText":"chunk-v1"')||raw.includes('"$ghCold":"chunk-v1"')){const parsed=JSON.parse(raw),rows=parsed?.fleet?.rows,ids=[...(rows&&rows.$ghBinary==='chunks-v1'&&Array.isArray(rows.chunks)?rows.chunks:[]),...(Array.isArray(parsed?.stateCodec?.chunks)?parsed.stateCodec.chunks:[])];if(ids.length){
             const chunks=new Map(),gate={ready:false,failed:null,deferred:null,defer(script){this.deferred=(script&&script.src)||'app.js';}};
             window.__GH_NATIVE_SAVE_CHUNKS__=chunks;window.__GH_BOOT_GATE__=gate;
             Promise.all(ids.map(id=>fetch('gh://app/save-chunk/'+encodeURIComponent(id),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('save-chunk-'+r.status);return r.arrayBuffer();}).then(buffer=>{chunks.set(id,buffer);})))
@@ -902,33 +952,121 @@ final class GlobalSaveVault {
         return ids
     }
 
-    /// Deletes chunks no vault file mentions and that were not uploaded in the grace period. A chunk is kept when its id
-    /// appears anywhere in a vault file, as before. Ids listed by the current A/B headers, or found earlier in a file that
-    /// is still the same file, are known to be referenced without reading anything; other files are read as bytes (not
-    /// decoded as text) and only while some chunk is still unaccounted for.
-    private func collectChunkGarbageLocked() {
-        guard let names = try? fm.contentsOfDirectory(atPath: chunkFolder.path) else { return }
+    /// Schedules a mark/sweep pass after the current commit has become durable. Marking runs on a background queue;
+    /// sweeping returns to the serial vault queue and removes at most eight chunks per batch. No directory scan, large
+    /// vault-file read, or unbounded unlink loop is part of the save acknowledgement path.
+    private func scheduleChunkGarbageLocked(generation: Int) {
+        guard !chunkGarbageScheduled else { return }
+        chunkGarbageScheduled = true
         let cutoff = Date().addingTimeInterval(-GlobalSaveVault.chunkGracePeriod)
         recentChunkUploads = recentChunkUploads.filter { $0.value > cutoff }
-        var candidates = Set(names.filter { $0.hasSuffix(".chunk") }.map { String($0.dropLast(6)) })
-        candidates.subtract(recentChunkUploads.keys)
-        for slot in ["A", "B"] {
-            if let header = slotHeaders[slot], fileIdentity(url(slot)) == header.file { candidates.subtract(header.chunkIds) }
+        var headers: [String: ChunkReferences] = [:]
+        for slot in ["A", "B"] where slotHeaders[slot] != nil {
+            let header = slotHeaders[slot]!
+            headers[url(slot).path] = ChunkReferences(file: header.file, ids: Set(header.chunkIds))
         }
-        guard !candidates.isEmpty else { return }
+        let presence = chunkPresence.mapValues { ChunkReferences(file: $0.file, ids: $0.ids) }
+        let snapshot = ChunkGarbageSnapshot(generation: generation, startedAt: DispatchTime.now().uptimeNanoseconds, recent: Set(recentChunkUploads.keys), headers: headers, presence: presence)
+        garbageQueue.async { [weak self] in
+            guard let self else { return }
+            guard let plan = self.makeChunkGarbagePlan(snapshot) else {
+                self.queue.async { self.chunkGarbageScheduled = false; self.finishChunkGarbageLocked() }
+                return
+            }
+            var protected = Set<String>(), protectedByFile: [String: Set<String>] = [:], scannedBytes = 0, scanSucceeded = true
+            for file in plan.filesToScan {
+                guard let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { scanSucceeded = false; break }
+                scannedBytes += data.count
+                var found = Set<String>()
+                for id in plan.candidates {
+                    if data.range(of: Data(id.utf8)) != nil { protected.insert(id); found.insert(id) }
+                }
+                if !found.isEmpty { protectedByFile[file.path] = found }
+            }
+            self.queue.async {
+                self.applyChunkGarbagePlanLocked(plan, protected: protected, protectedByFile: protectedByFile, scannedBytes: scannedBytes, scanSucceeded: scanSucceeded, remaining: plan.candidates.subtracting(protected), deleted: 0)
+            }
+        }
+    }
+
+    /// Directory enumeration, file identities and the candidate set are all computed off the vault/save queue.
+    private func makeChunkGarbagePlan(_ snapshot: ChunkGarbageSnapshot) -> ChunkGarbagePlan? {
+        guard let names = try? fm.contentsOfDirectory(atPath: chunkFolder.path) else { return nil }
+        var candidates = Set(names.filter { $0.hasSuffix(".chunk") }.map { String($0.dropLast(6)) })
+        candidates.subtract(snapshot.recent)
+        guard !candidates.isEmpty else { return nil }
         let vaultFiles = ((try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension == "json" }
         var identities: [String: FileIdentity] = [:]
         for file in vaultFiles { if let identity = fileIdentity(file) { identities[file.path] = identity } }
-        chunkPresence = chunkPresence.filter { identities[$0.key] == $0.value.file }
-        for entry in chunkPresence.values { candidates.subtract(entry.ids) }
-        for file in vaultFiles where !candidates.isEmpty {
-            guard let identity = identities[file.path], let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { continue }
-            let found = candidates.filter { data.range(of: Data($0.utf8)) != nil }
-            guard !found.isEmpty else { continue }
-            chunkPresence[file.path] = (file: identity, ids: (chunkPresence[file.path]?.ids ?? []).union(found))
-            candidates.subtract(found)
+        // An unreadable protector is not proof that it has no references. Leak safely and retry on a later pass.
+        guard identities.count == vaultFiles.count else { return nil }
+        for (path, entry) in snapshot.headers where identities[path] == entry.file { candidates.subtract(entry.ids) }
+        for (path, entry) in snapshot.presence where identities[path] == entry.file { candidates.subtract(entry.ids) }
+        guard !candidates.isEmpty else { return nil }
+        // Verified A/B headers already contain every referenced id. Scanning them again would reread the largest files.
+        let filesToScan = vaultFiles.filter { file in !(snapshot.headers[file.path].map { identities[file.path] == $0.file } ?? false) }
+        return ChunkGarbagePlan(generation: snapshot.generation, startedAt: snapshot.startedAt, candidates: candidates, vaultFiles: identities, filesToScan: filesToScan)
+    }
+
+    private func applyChunkGarbagePlanLocked(_ plan: ChunkGarbagePlan, protected: Set<String>, protectedByFile: [String: Set<String>], scannedBytes: Int, scanSucceeded: Bool, remaining: Set<String>, deleted: Int) {
+        // The complete set and identity of protecting JSON files must still match the mark phase. This also catches a
+        // newly created manual slot/reset journal, not only a replacement of an existing A/B file.
+        let files = ((try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension == "json" }
+        var identities: [String: FileIdentity] = [:]
+        for file in files { if let identity = fileIdentity(file) { identities[file.path] = identity } }
+        guard scanSucceeded, identities.count == files.count, identities == plan.vaultFiles else {
+            recordChunkGarbageLocked(plan, scannedBytes: scannedBytes, protected: protected.count, deleted: deleted, aborted: true)
+            chunkGarbageScheduled = false
+            queue.asyncAfter(deadline: .now() + .milliseconds(250)) { self.scheduleChunkGarbageLocked(generation: self.currentSlotHeaderLocked()?.generation ?? plan.generation) }
+            return
         }
-        for id in candidates { try? fm.removeItem(at: chunkFolder.appendingPathComponent(id + ".chunk")) }
+        let cutoff = Date().addingTimeInterval(-GlobalSaveVault.chunkGracePeriod)
+        recentChunkUploads = recentChunkUploads.filter { $0.value > cutoff }
+        let safe = remaining.filter { recentChunkUploads[$0] == nil }
+        let batch = safe.sorted().prefix(GlobalSaveVault.chunkGarbageDeleteBatch)
+        var removed = 0
+        for id in batch {
+            let file = chunkURL(id)
+            guard fm.fileExists(atPath: file.path) else { continue }
+            do { try fm.removeItem(at: file); removed += 1 } catch { /* A later pass retries a transient failure. */ }
+        }
+        let rest = safe.subtracting(batch)
+        if !rest.isEmpty {
+            garbageQueue.asyncAfter(deadline: .now() + .milliseconds(25)) { [weak self] in
+                guard let self else { return }
+                self.queue.async { self.applyChunkGarbagePlanLocked(plan, protected: protected, protectedByFile: protectedByFile, scannedBytes: scannedBytes, scanSucceeded: scanSucceeded, remaining: rest, deleted: deleted + removed) }
+            }
+            return
+        }
+        for file in plan.filesToScan {
+            guard let identity = plan.vaultFiles[file.path], let found = protectedByFile[file.path] else { continue }
+            if !found.isEmpty { chunkPresence[file.path] = (file: identity, ids: (chunkPresence[file.path]?.ids ?? []).union(found)) }
+        }
+        recordChunkGarbageLocked(plan, scannedBytes: scannedBytes, protected: protected.count, deleted: deleted + removed, aborted: false)
+        chunkGarbageScheduled = false
+        finishChunkGarbageLocked()
+    }
+
+    private func recordChunkGarbageLocked(_ plan: ChunkGarbagePlan, scannedBytes: Int, protected: Int, deleted: Int, aborted: Bool) {
+        let elapsed = Double(DispatchTime.now().uptimeNanoseconds - plan.startedAt) / 1e6
+        lastChunkGarbageReport = ChunkGarbageReport(generation: plan.generation, durationMs: elapsed, scannedBytes: scannedBytes, candidates: plan.candidates.count, protected: protected, deleted: deleted, aborted: aborted)
+    }
+
+    private func finishChunkGarbageLocked() {
+        guard !chunkGarbageScheduled else { return }
+        let waiters = chunkGarbageWaiters
+        chunkGarbageWaiters.removeAll(keepingCapacity: true)
+        for waiter in waiters { DispatchQueue.main.async(execute: waiter) }
+    }
+
+    /// Used by maintenance/tests that need an explicit cleanup barrier. Gameplay saves never wait for this callback.
+    func drainChunkGarbageAsync(completion: @escaping () -> Void) {
+        queue.async {
+            self.chunkGarbageWaiters.append(completion)
+            if self.chunkGarbageScheduled { return }
+            self.scheduleChunkGarbageLocked(generation: self.currentSlotHeaderLocked()?.generation ?? 0)
+            self.finishChunkGarbageLocked()
+        }
     }
 
     private func sha256(_ data: Data) -> String {

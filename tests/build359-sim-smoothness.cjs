@@ -93,6 +93,18 @@ const app=fs.readFileSync(path.join(WEB,'app.js'),'utf8');
   assert.equal(CORE.create({getSimTime:()=>0,setSimTime(){},createSliceJob(){}},{cooldownAfterMs:0}).config().cooldownAfterMs,0,'0 disables the cooldown');
 }
 
+// ------------------------------------------- staged fleet value collection ---
+{
+  const STORE=require(path.join(WEB,'fleet-store-core.js')),assets=[];
+  for(let index=0;index<12_000;index++)assets.push({id:`GC-${index}`,name:`Asset ${index}`,assetMode:'road',type:'truck',ownerCompanyId:'road',baseFacility:'B1',phase:'idle',progress:0,fuel:100,condition:100,status:'متاح'});
+  const store=STORE.fromAssets(assets),orphan=STORE.intern(store,{qa:'orphan'}),steps=STORE.collectValuesStages(store,{rowSlice:1024});let yields=0,step=steps.next();
+  while(!step.done){yields++;step=steps.next();}
+  assert.ok(yields>=10,`the read-only mark phase is split (${yields} yields)`);assert.equal(step.value.stale,false);assert.equal(store.values[orphan],null,'the final sweep reclaims the orphan');
+  const later=STORE.intern(store,{qa:'retry'}),mixed=STORE.collectValuesStages(store,{rowSlice:1024});assert.equal(mixed.next().done,false);STORE.set(store,0,'condition',99);let result;while(!(result=mixed.next()).done){}
+  assert.equal(result.value.stale,true,'a write between mark slices invalidates the snapshot');assert.notEqual(store.values[later],null,'an invalidated mark never sweeps');
+  const retry=STORE.collectValuesStages(store,{rowSlice:1024});while(!(result=retry.next()).done){}assert.equal(result.value.stale,false);assert.equal(store.values[later],null,'a clean retry performs the sweep');
+}
+
 // --------------------------------------------- proof pass rollback policy ---
 {
   const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario'));
@@ -124,7 +136,9 @@ const app=fs.readFileSync(path.join(WEB,'app.js'),'utf8');
   assert.match(app,/compactSimulationState\(false,\{schemaDue:false\}\)/,'the maintenance compaction does not ask the next hourly slice for a full schema pass');
   assert.match(app,/validationSteps\(state,\{trustVerified:true\}\)/,'after a compaction the schema is validated in sections');
   assert.match(app,/rowRoots:PROOF_MAINTENANCE_ROLLBACK/,'the proof passes use the containers rollback policy');
+  assert.match(app,/GH_FLEET_DATA\.maintainStages\?\.\(state\)/,'fleet value collection is resumed across maintenance frames');
+  assert.match(app,/function recordGuardedDiagnosticFrame\([^\n]*simulationProgressExpected:false/,'guarded frames tell diagnostics that simulation progress is intentionally paused');
   assert.ok(!/checkpointProofHistory\(\);window\.GH_FLEET_DATA\.maintain\(state\);const health/.test(app),'the one-frame maintenance pass is gone');
 }
-console.log(JSON.stringify({suite:'build359-sim-smoothness',checks:['recorder-window','thread-columns','deferred-work','cooldown','proof-rollback-policy','app-wiring']}));
+console.log(JSON.stringify({suite:'build359-sim-smoothness',checks:['recorder-window','thread-columns','deferred-work','cooldown','proof-rollback-policy','conference-pause-wiring','app-wiring']}));
 console.log('BUILD359_SIM_SMOOTHNESS_PASS');

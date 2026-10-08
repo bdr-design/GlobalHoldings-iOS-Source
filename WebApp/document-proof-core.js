@@ -5,9 +5,9 @@
   const SECURITY_FIELDS=new Set(['documentSchema','documentVersion','documentProofId','documentId','documentType','issuerSnapshot','counterpartySnapshot','contentDigest','authorizationKind','authorizationProofId','signatureSnapshot','authorization','signatureAssetId','visualSealAssetId']);
   const DOCUMENT_TYPES=Object.freeze({
     'revenue-collection':'transfer-v3','invoice-receivable':'invoice-v3','invoice-payable':'invoice-v3','audit-invoice':'invoice-v3',
-    'intercompany-transfer':'transfer-v3','intercompany-interest':'transfer-v3','intercompany-energy':'transfer-v3','intercompany-loan-principal':'transfer-v3','intercompany-loan-settlement':'transfer-v3',
+    'intercompany-transfer':'transfer-v3','intercompany-interest':'transfer-v3','intercompany-energy':'transfer-v3','intercompany-service':'transfer-v3','intercompany-loan-principal':'transfer-v3','intercompany-loan-settlement':'transfer-v3','insurance-claim-payment':'transfer-v3',
     'payroll-transfer':'transfer-v3','payroll-payable':'transfer-v3','payroll-report':'payroll-v3','payable-settlement':'transfer-v3',
-    'tax-payment-transfer':'transfer-v3','tax-settlement':'tax-v3','cheque':'cheque-v3','founder-investment':'transfer-v3','founder-withdrawal':'transfer-v3',
+    'tax-payment-transfer':'transfer-v3','tax-settlement':'tax-v3','cheque':'cheque-v3','receivable-cheque':'cheque-v3','founder-investment':'transfer-v3','founder-withdrawal':'transfer-v3','equity-financing':'transfer-v3',
     'debt-financing':'debt-v3','debt-repayment':'debt-v3','debt-payment-transfer':'transfer-v3','daily-operating-settlement':'transfer-v3',
     'asset-financing':'debt-v3','debt-adjustment':'debt-v3','vat-assessment':'tax-v3','commercial-contract':'commercial-contract-v3'
   });
@@ -420,7 +420,7 @@
   function documentId(document,options={}){return clean(options.documentId||document.documentId||document.chequeNumber||document.settlementNumber||document.number||document.id||document.reference,180);}
   function documentType(document,options={}){return clean(options.type||document.documentType||document.type||document.kind||'financial-document',80);}
   function profileFor(type){const id=clean(type,80),profile=DOCUMENT_TYPES[id];if(!profile)throw new Error(`document-type-profile-unsupported:${id||'empty'}`);return profile;}
-  const financeBuckets=['invoices','cheques','periods','taxSettlements','debtRecords','debtSettlements','transfers','payrollReports'];
+  const financeBuckets=['invoices','cheques','periods','taxSettlements','debtRecords','debtSettlements','transfers','payrollReports','commercialContracts'];
   function stateDocumentEntries(state){
     // One path-aware owner for every object that the schema treats as a legal
     // document. Ledger projections are intentionally not legal documents; legacy

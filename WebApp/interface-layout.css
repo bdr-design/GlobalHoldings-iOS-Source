@@ -8,11 +8,11 @@
   /* Build 358: in landscape iOS reports an inset on both sides, but the camera housing is on one only. app.js sets
      data-notch from the device orientation; the side without it keeps a small margin instead of the full inset. */
   --rail-safe:var(--safe-right);--left-safe:var(--safe-left);
-  --sheet:min(400px,calc((100vw - var(--rail) - var(--rail-safe)) * .42));
+  --sheet:min(420px,calc((100vw - var(--rail) - var(--rail-safe)) * .43));
 }
 :root[data-notch=left]{--rail-safe:min(var(--safe-right),6px)}
 :root[data-notch=right]{--left-safe:min(var(--safe-left),6px)}
-.app-shell{position:fixed;inset:0;display:grid;grid-template-rows:calc(var(--safe-top) + var(--header)) minmax(0,1fr);background:var(--ground);isolation:isolate}
+.app-shell{position:fixed;inset:0;display:grid;grid-template-rows:calc(var(--safe-top) + var(--header)) minmax(0,1fr);background:var(--ground);color:var(--text);isolation:isolate}
 .topbar{grid-row:1;position:relative;z-index:20;display:flex;align-items:center;gap:8px;min-width:0;direction:rtl;padding:calc(var(--safe-top) + 3px) calc(var(--rail-safe) + 8px) 3px calc(var(--left-safe) + 8px);background:var(--ground);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:8px;min-width:0;flex:0 1 auto;padding:0;border:0;background:none;text-align:right;color:var(--text)}
 .brand-mark{height:30px;width:30px;flex:0 0 30px;display:grid;place-items:center;border-radius:9px;overflow:hidden;background:var(--surface);border:1.5px solid var(--accent);color:var(--accent);font:700 13px var(--font-head)}
@@ -26,6 +26,7 @@
 .ui-speeds{display:flex;gap:2px}.ui-speeds button{border:0;border-radius:9px;background:transparent;min-height:28px;min-width:40px;padding:0 5px;font:600 11px var(--font);color:var(--muted)}.ui-speeds button.active{background:var(--accent);color:var(--accent-ink)}
 .top-kpis{display:flex;align-items:center;gap:14px;flex:1 1 auto;justify-content:center;min-width:0;overflow:hidden;padding:0 6px}
 .top-kpis>div{min-width:0}.top-kpis span{display:block;font-size:9px;line-height:1.15;color:var(--muted);white-space:nowrap}.top-kpis strong{display:block;font-size:13px;font-weight:600;line-height:1.2;direction:ltr;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.top-news-ticker{display:flex;align-items:center;gap:7px;min-width:140px;max-width:250px;height:32px;flex:1 1 210px;padding:3px 8px;border:1px solid var(--chip-line,var(--line));border-radius:10px;background:var(--chip,var(--surface));color:var(--text);text-align:right;overflow:hidden}.top-news-ticker>svg{width:16px;height:16px;flex:0 0 16px;color:var(--accent)}.top-news-ticker>span{display:grid;min-width:0;flex:1}.top-news-ticker small{font-size:8px;line-height:1;color:var(--accent);font-weight:700}.top-news-ticker strong{font-size:10px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.top-news-ticker>em{font-style:normal;font-size:9px;font-weight:700;white-space:nowrap;color:var(--accent)}
 .map-style{display:flex;gap:2px;flex:0 0 auto;padding:2px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .map-style button{display:flex;align-items:center;gap:5px;min-height:28px;padding:0 9px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:600 11px var(--font)}.map-style button svg{width:15px;height:15px}
 .map-style button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
@@ -43,9 +44,9 @@
 .app-shell:has(.drawer.open,#simCalendarPanel:not(.hidden),#filterPopover:not(.hidden),#assetCard:not(.hidden)) .sheet-dock{width:var(--sheet)}
 .sheet-dock>*{position:absolute;inset:0;padding-bottom:var(--safe-bottom)}
 .side-nav{grid-column:3;position:relative;display:flex;flex-direction:column;gap:4px;min-height:0;padding:6px calc(var(--rail-safe) + 4px) calc(var(--safe-bottom) * .35 + 6px) 4px;direction:rtl;overflow-y:auto;background:var(--ground);border-left:1px solid var(--line);scrollbar-width:none}
-.side-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:48px;flex:0 0 48px;padding:3px 0;border:0;border-radius:11px;background:transparent;color:var(--muted);font:500 10px var(--font)}
-.side-nav svg{width:19px;height:19px}.side-nav button.active{background:var(--surface-2);color:var(--accent);font-weight:600}.side-nav button:hover:not(.active){color:var(--text)}
-.drawer{display:none;flex-direction:column;direction:rtl;background:var(--surface)}
+.side-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:52px;flex:0 0 52px;padding:3px 0;border:1px solid transparent;border-radius:13px;background:transparent;color:var(--muted);font:500 9px var(--font)}
+.side-nav svg{width:20px;height:20px}.side-nav button.active{background:var(--surface-2);border-color:color-mix(in srgb,var(--accent) 42%,transparent);color:var(--accent);font-weight:600}.side-nav button:hover:not(.active){color:var(--text)}
+.drawer{display:none;flex-direction:column;direction:rtl;background:var(--surface);color:var(--text)}
 .drawer.open{display:flex}
 .drawer-head{display:flex;align-items:center;justify-content:space-between;flex:0 0 56px;min-height:56px;padding:6px 12px;gap:8px;border-bottom:1px solid var(--line)}.drawer-head>div{min-width:0;flex:1}.drawer-head h2{font:700 16px/1.45 var(--font-head);white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.drawer-head .eyebrow{display:block;font-size:10px;line-height:1.3;color:var(--muted)}
 .drawer-head .close-btn{width:44px;height:44px;flex:0 0 44px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--text);padding:0}.drawer-head .close-btn svg{width:18px;height:18px}
@@ -54,14 +55,15 @@
 .sim-calendar-panel{position:absolute;inset:0;overflow-y:auto;background:var(--surface)}
 .asset-card{position:absolute;inset:0;overflow-y:auto;background:var(--surface)}
 .ui-confirm{top:calc(var(--safe-top) + var(--header) + 8px);right:calc(var(--rail) + var(--rail-safe) + 8px);width:var(--sheet);max-height:calc(100dvh - var(--safe-top) - var(--header) - 16px)}
-@media(max-width:760px){.topbar{gap:6px}.map-style button span{display:none}.top-kpis{gap:10px}.top-kpis strong{font-size:13px}.sim-clock-copy small{display:none}.ui-speeds button{min-width:36px;padding:0 4px}.topbar .icon-btn{width:30px;flex-basis:30px}}
+@media(max-width:900px){.top-kpis{flex:0 1 92px}.top-kpis>div:nth-child(2){display:none}.top-news-ticker{max-width:190px}}
+@media(max-width:760px){.topbar{gap:5px}.map-style button span{display:none}.top-kpis{display:none}.top-news-ticker{min-width:110px;max-width:none;flex-basis:150px}.top-news-ticker>em{display:none}.sim-clock-copy small{display:none}.ui-speeds button{min-width:34px;padding:0 3px}.topbar .icon-btn{width:30px;flex-basis:30px}}
 
 /* Build 358 — glass frame (owner's choice): the map runs under the top bar, the bottom strip and the rail, which
    become translucent glass tinted to the map in use. A section still opens in its own column beside the map and the
    map narrows; nothing is drawn over the map but the glass frame. The natural map gets light glass. */
 .app-shell{--glass:rgba(9,16,22,.52);--glass-line:rgba(255,255,255,.09);--chip:rgba(28,40,52,.5);--chip-line:rgba(255,255,255,.10);grid-template-rows:minmax(0,1fr)}
-.app-shell:has(.map-stage.map-natural),.app-shell:has(.map-stage.map-street){--glass:rgba(248,244,234,.58);--glass-line:rgba(20,40,56,.14);--chip:rgba(255,255,255,.55);--chip-line:rgba(20,40,56,.16)}
-.app-shell:has(.map-stage.map-natural) :is(.topbar,.side-nav,.map-strip),.app-shell:has(.map-stage.map-street) :is(.topbar,.side-nav,.map-strip){--text:#122130;--muted:#3d5466;--faint:#5c7282;--surface-2:rgba(255,255,255,.75);color:var(--text)}
+.app-shell:has(.map-stage.map-natural),.app-shell:has(.map-stage.map-street){color-scheme:light;--ground:#E8EEF2;--sea-ground:#D9E8EB;--bg:#E8EEF2;--bg-deep:#DCE6EC;--surface:#F8FAFB;--surface-2:#FFFFFF;--surface-3:#EEF3F6;--line:#D5DFE5;--line-soft:#E2E9ED;--line-strong:#BCCAD3;--text:#132632;--muted:#637683;--faint:#81919C;--accent:#D8AA4D;--accent-2:#C89432;--accent-ink:#17232B;--accent-soft:rgba(216,170,77,.14);--blue:#245B9D;--info:#245B9D;--info-soft:rgba(36,91,157,.11);--danger:#B42318;--danger-ink:#FFFFFF;--danger-soft:rgba(180,35,24,.10);--good:#187A58;--good-soft:rgba(24,122,88,.10);--warn:#9A5A12;--warn-soft:rgba(154,90,18,.10);--glass:rgba(248,250,251,.76);--glass-line:rgba(20,40,56,.15);--chip:rgba(255,255,255,.72);--chip-line:rgba(20,40,56,.16);--shadow:0 16px 38px rgba(30,54,70,.16);--shadow-soft:0 7px 20px rgba(30,54,70,.12)}
+.app-shell:has(.map-stage.map-natural) :is(.map-strip),.app-shell:has(.map-stage.map-street) :is(.map-strip){color:var(--text)}
 .topbar{position:absolute;inset:0 0 auto 0;height:calc(var(--safe-top) + var(--header));grid-row:auto;background:var(--glass);border-bottom:1px solid var(--glass-line);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4)}
 .game-frame{grid-row:1;grid-template-rows:minmax(0,1fr)}
 .map-stage{grid-row:1;grid-column:1/-1;z-index:0}
@@ -72,7 +74,7 @@
 .map-modes{position:absolute;z-index:520;bottom:calc(var(--status) + var(--safe-bottom) * .35 + 8px);left:50%;transform:translateX(-50%);display:flex;gap:2px;padding:2px;border:1px solid var(--chip-line);border-radius:11px;background:var(--chip);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);direction:rtl}
 .map-modes button{min-height:30px;padding:0 12px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:600 12px/1 inherit;cursor:pointer}
 .map-modes button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
-.app-shell:has(.drawer.open,#simCalendarPanel:not(.hidden),#filterPopover:not(.hidden),#assetCard:not(.hidden)) .map-modes{display:none}
+.app-shell:has(.drawer.open,#simCalendarPanel:not(.hidden),#filterPopover:not(.hidden),#assetCard:not(.hidden)) .map-modes{display:flex;left:calc((100vw - var(--sheet) - var(--rail) - var(--rail-safe))/2)}
 .sheet-dock{grid-row:1;z-index:1;margin-top:calc(var(--safe-top) + var(--header))}
 .side-nav{grid-row:1;z-index:1;padding-top:calc(var(--safe-top) + var(--header) + 6px);background:var(--glass);border-left:1px solid var(--glass-line);-webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4)}
 .side-nav button{color:var(--muted)}.side-nav button.active{background:var(--chip);box-shadow:inset 0 0 0 1px var(--chip-line)}
@@ -80,3 +82,6 @@
 .topbar .ui-pause{background:var(--chip)}.topbar .ui-speeds button{color:var(--muted)}.topbar .sim-clock-copy small,.topbar .top-kpis span{color:var(--muted)}
 .topbar .top-kpis strong,.topbar .sim-clock-copy strong{color:var(--text)}
 #map .leaflet-control-container .leaflet-top{top:calc(var(--safe-top) + var(--header))}
+.app-shell:has(.map-stage.map-natural) :is(.topbar,.side-nav),.app-shell:has(.map-stage.map-street) :is(.topbar,.side-nav){--text:#F3F6F8;--muted:#B9C7D0;--faint:#91A5B2;--surface-2:rgba(255,255,255,.10);--chip:rgba(255,255,255,.08);--chip-line:rgba(255,255,255,.14);color:var(--text);background:rgba(13,59,87,.94);border-color:rgba(255,255,255,.12)}
+.app-shell:has(.map-stage.map-natural) .map-strip,.app-shell:has(.map-stage.map-street) .map-strip{background:rgba(248,250,251,.78)}
+.app-shell:has(.map-stage.map-natural) .sheet-dock,.app-shell:has(.map-stage.map-street) .sheet-dock{background:var(--surface);border-color:var(--line)}

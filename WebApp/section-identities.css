@@ -1,17 +1,25 @@
-/* Build 358 — presentation-only section identities on the executive dark identity.
-   Each company keeps its own colour; sections without a company use the group gold.
-   No data-* hooks, command owners, ids, or business state are defined here. */
+/* Atlas Executive domain identity. The game keeps one navy/gold brand in both
+   map themes; a domain is recognised by its vector mark, wording and pattern,
+   while semantic colours remain reserved for status and risk. */
 #drawer[data-panel]{--section-accent:var(--accent);--section-accent-soft:var(--accent-soft)}
-#drawer[data-panel="bank"],#drawer[data-panel="banking"]{--section-accent:var(--bank);--section-accent-soft:rgba(52,211,153,.14)}
-#drawer[data-panel="energy"],#drawer[data-panel="power"]{--section-accent:var(--power);--section-accent-soft:rgba(255,122,89,.14)}
-#drawer[data-panel="assets"],#drawer[data-panel="assetMarket"],#drawer[data-panel="assetManage"],#drawer[data-panel="control"]{--section-accent:var(--info);--section-accent-soft:var(--info-soft)}
-#drawer[data-panel="facilityManage"],#drawer[data-panel="companyFacilities"],#drawer[data-panel="expansion"]{--section-accent:var(--mobility);--section-accent-soft:rgba(192,140,250,.14)}
-#drawer[data-panel="labor"],#drawer[data-panel="peopleHub"]{--section-accent:var(--warn);--section-accent-soft:var(--warn-soft)}
-#drawer[data-panel="esg"]{--section-accent:var(--good);--section-accent-soft:var(--good-soft)}
-#drawer[data-panel="market"],#drawer[data-panel="ma"]{--section-accent:var(--road);--section-accent-soft:rgba(244,162,97,.14)}
+#drawer[data-domain] .drawer-head{position:relative;background:linear-gradient(110deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface))}
+#drawer[data-domain] .drawer-head::after{content:"";position:absolute;inset:auto 12px 0;width:42px;height:2px;border-radius:2px;background:var(--accent)}
+#drawer[data-domain="operations"] .drawer-head{background-image:radial-gradient(circle,color-mix(in srgb,var(--accent) 15%,transparent) 1px,transparent 1.4px),linear-gradient(110deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface));background-size:22px 22px,auto}
+#drawer[data-domain="companies"] .drawer-head{background-image:linear-gradient(135deg,color-mix(in srgb,var(--accent) 9%,transparent) 1px,transparent 1px),linear-gradient(110deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface));background-size:24px 24px,auto}
+#drawer[data-domain="finance"] .drawer-head{background-image:linear-gradient(90deg,color-mix(in srgb,var(--accent) 8%,transparent) 1px,transparent 1px),linear-gradient(110deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface));background-size:38px 100%,auto}
+#drawer[data-domain="leadership"] .drawer-head{background-image:linear-gradient(45deg,transparent 47%,color-mix(in srgb,var(--accent) 9%,transparent) 48%,color-mix(in srgb,var(--accent) 9%,transparent) 52%,transparent 53%),linear-gradient(110deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface));background-size:34px 34px,auto}
+#drawer[data-domain="system"] .drawer-head{background-image:linear-gradient(color-mix(in srgb,var(--accent) 7%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--accent) 7%,transparent) 1px,transparent 1px),linear-gradient(110deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface));background-size:24px 24px,24px 24px,auto}
 #drawer[data-panel] .list-item-head h3{letter-spacing:-.012em}
 #drawer[data-panel] .list-item-head{position:relative}
-#drawer[data-panel] .list-item-head::after{content:"";position:absolute;inset-inline-start:0;bottom:-8px;width:42px;height:2px;border-radius:2px;background:var(--section-accent);opacity:.82}
-#drawer[data-panel] .tag{border-color:color-mix(in srgb,var(--section-accent) 32%,transparent);background:var(--section-accent-soft)}
+#drawer[data-panel] .list-item-head::after{content:none}
+#drawer[data-panel] .tag:not(.positive):not(.negative):not(.warning){border-color:color-mix(in srgb,var(--accent) 28%,var(--line));background:var(--accent-soft);color:var(--text)}
 #drawer[data-panel] .metric-row>div{min-width:0}
 #drawer[data-panel] .metric-row b{font-variant-numeric:tabular-nums}
+#drawer [data-company].primary-btn{background:var(--accent)!important;border-color:var(--accent)!important;color:var(--accent-ink)!important}
+#drawer .command-btn[data-option-logo]{isolation:isolate}
+#drawer .command-btn[data-option-logo]:hover{border-color:color-mix(in srgb,var(--accent) 42%,var(--line));background:color-mix(in srgb,var(--accent) 4%,var(--surface-2))}
+#drawer .workspace-intro{border-color:color-mix(in srgb,var(--accent) 26%,var(--line));background:linear-gradient(125deg,color-mix(in srgb,var(--accent) 7%,var(--surface-2)),var(--surface-2))}
+#drawer .workspace-intro>span{color:var(--accent);font-size:9px;font-weight:600}
+
+/* Legal and financial instruments own their paper palette and proportions. */
+#drawer :is(.financial-paper,.invoice-paper,.authority-paper,.authorization-paper,.approval-log-paper,.bank-doc){--section-accent:initial;--section-accent-soft:initial}

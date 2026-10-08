@@ -31,7 +31,7 @@ const signed=()=>Proof.stateDocuments(state).find(row=>row?.documentProofId&&!TX
   for(const trustVerified of [false,true]){
     const whole=Schema.validate(state,{trustVerified}),stepped=drain(state,{trustVerified});
     assert.equal(whole.ok,true,`seeded state validates: ${whole.errors}`);assert.deepEqual(stepped.result,whole);
-    assert.deepEqual(stepped.sections,['fleet-routes','books','authorization','document-proofs'],`sections in order: ${stepped.sections}`);
+    assert.deepEqual(stepped.sections,['fleet-routes','route-state','finance','books','authorization','document-proofs'],`sections in order: ${stepped.sections}`);
   }
   const breaks=[
     ['fleet-routes',target=>{target.customRoutes.push({id:'QA-BAD-ROUTE',routeMode:'air',ownerCompanyId:'air',fromFacility:'B1',toFacility:'B1',route:[[0,0]]});},()=>{state.customRoutes=state.customRoutes.filter(route=>route.id!=='QA-BAD-ROUTE');}],
@@ -62,7 +62,7 @@ const stagedRun=(mutate)=>{
   const tasks=ok.telemetry.postCommitCriticalTasks.map(row=>row.key);
   assert.deepEqual(tasks,['integrity-final-schema','integrity-final'],`one schema task then the business check: ${tasks}`);
   const sectionSteps=ok.stages.filter(stage=>stage.startsWith('post-commit:'));
-  assert.deepEqual(sectionSteps,['post-commit:fleet-routes','post-commit:books','post-commit:authorization','post-commit:document-proofs'],`one step per section: ${ok.stages}`);
+  assert.deepEqual(sectionSteps,['post-commit:fleet-routes','post-commit:route-state','post-commit:finance','post-commit:books','post-commit:authorization','post-commit:document-proofs'],`one step per section: ${ok.stages}`);
   assert.ok(ok.telemetry.postCommitCriticalTasks.every(row=>row.ok&&Number.isFinite(row.durationMs)),'both tasks recorded');
   delete state.profile.qaSections;
   console.log(`PASS staged schema check over ${ok.stages.length} steps: ${ok.stages.join(',')}`);

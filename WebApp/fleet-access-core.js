@@ -398,15 +398,20 @@
   function commitJournal(state,journal){if(!journal)return false;const store=storeOf(state);if(!store)return false;STORE.endJournal(journal);return true;}
   function rollbackJournal(state,journal){if(!journal)return false;STORE.rollbackJournal(journal);return true;}
   const maintenanceDays=new WeakMap();
-  function maintain(state,day){
+  function* maintainStages(state,day){
     const store=storeOf(state);if(!store)return {compacted:null,values:null};
     if(globalThis.GH_TRANSACTION_CORE?.isActive?.())throw new Error('fleet-maintenance-inside-transaction');
     const stats=STORE.stats(store),dead=Math.max(0,stats.length-stats.live);let compacted=null,values=null;
-    if(stats.length>0&&dead/stats.length>.1)compacted=STORE.compactRows(store);
+    if(stats.length>0&&dead/stats.length>.1){compacted=STORE.compactRows(store);yield {stage:'compact',...compacted};}
     const currentDay=day==null?Math.floor(timeOf(state)/86400):Math.max(0,Math.floor(Number(day)||0));
-    if(maintenanceDays.get(store)!==currentDay){values=STORE.collectValues(store);maintenanceDays.set(store,currentDay);}
+    if(maintenanceDays.get(store)!==currentDay){
+      if(typeof STORE.collectValuesStages==='function')values=yield* STORE.collectValuesStages(store,{rowSlice:4096});
+      else values=STORE.collectValues(store);
+      if(!values?.stale)maintenanceDays.set(store,currentDay);
+    }
     return {compacted,values};
   }
+  function maintain(state,day){const steps=maintainStages(state,day);let step;while(!(step=steps.next()).done){}return step.value;}
 
   // Array-mode lookups are O(1) through a cached object/id index. A hit is
   // verified against the array; a miss rebuilds once when the array changed.
@@ -669,7 +674,7 @@
     const store=storeOf(state);if(store)return STORE.removeMany(store,doomed);
     const drop=new Set(doomed),assets=arrayOf(state);invalidateArrayIndex(assets);let write=0;for(let read=0;read<assets.length;read++){if(drop.has(read))continue;if(write!==read)assets[write]=assets[read];write++;}assets.length=write;return drop.size;}
 
-  const API=Object.freeze({VERSION,forEachFieldClasses,idCollisions,countByFields,countByPhase,presentedPhase,idAtRow,distinctRefs,idLists:ID_LISTS,STOP,scan,scanStages,scanLength,columnWriter,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,storeOf,isView,
+  const API=Object.freeze({VERSION,forEachFieldClasses,idCollisions,countByFields,countByPhase,presentedPhase,idAtRow,distinctRefs,idLists:ID_LISTS,STOP,scan,scanStages,scanLength,columnWriter,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,maintainStages,storeOf,isView,
     get,has,forEach,forEachFields,some,every,find,filter,count,sum,dailyLeaseCosts,payrollTotals,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
     update,put,add,addMany,remove,removeMany,removeWhere,drafts,draft,commit});
   globalThis.GH_FLEET_DATA=API;

@@ -28,25 +28,41 @@ const {drawFounderSignature}=require('./helpers/signature-input');
   });
   await page.locator('.side-nav [data-panel=companies]').click();
   await page.evaluate(async()=>{
-    for(const type of ['air','sea','road','power','bank','mobility'])if(!__GH_STATE__.openedCompanies.includes(type)){const minimum=Number(GH_COMPANY_PLATFORM.definitionFor(__GH_STATE__,type)?.founding?.minimumCapital)||0;await qaContext.runAuthorizedDomainCommand('corporate','open-company',{type,companyId:type,capital:Math.max(50000000,minimum),legalName:'شركة اختبار '+type,formationContract:'INTERFACE-QA-'+type});}
+    for(const type of ['air','sea','road','power','bank','mobility','insurance','realestate'])if(!__GH_STATE__.openedCompanies.includes(type)){const minimum=Number(GH_COMPANY_PLATFORM.definitionFor(__GH_STATE__,type)?.founding?.minimumCapital)||0;await qaContext.runAuthorizedDomainCommand('corporate','open-company',{type,companyId:type,capital:Math.max(50000000,minimum),legalName:'شركة اختبار '+type,formationContract:'INTERFACE-QA-'+type});}
     qaContext.openDrawer('companies');
   });
 
   const report=[];
-  const panels=['companies','leadershipHub','control','peopleHub','finance','governanceHub','compliance','groupManagement','systemHub','settings','network','routes','assets','assetMarket','companyManage','labor','invoices','monthlyFinance','treasury','energy','bank','businessWorld','news','procurement','conference','research','esg','diagnostics','controlPlane'];
-  for(const panel of panels){
-    await page.evaluate(name=>qaContext.openDrawer(name,name==='companyManage'?'air':name==='labor'?'managers:air':name==='assetMarket'?'air':undefined),panel);
-    await page.waitForTimeout(50);
-    const metrics=await page.evaluate(()=>{
-      const map=GH_INTERFACE.mapViewport(),drawer=document.querySelector('#drawer').getBoundingClientRect(),body=document.querySelector('#drawerBody');
-      return {mapWidth:map.width,mapRight:map.right,drawerLeft:drawer.left,overflow:body.scrollWidth>body.clientWidth+2,text:body.innerText.length};
-    });
-    assert(metrics.mapWidth>340&&metrics.mapRight<=metrics.drawerLeft+1,panel+' hides map');
-    assert(!metrics.overflow,panel+' overflows');
-    assert(metrics.text>0);
-    report.push({panel,...metrics});
-    if(['companies','finance','labor','companyManage','leadershipHub'].includes(panel))await page.screenshot({path:path.join(out,'334-'+panel+'.png')});
+  const panels=['companies','leadershipHub','control','peopleHub','finance','governanceHub','compliance','groupManagement','systemHub','settings','network','routes','assets','assetMarket','companyManage','labor','invoices','monthlyFinance','treasury','energy','bank','insurance','realestate','businessWorld','news','procurement','conference','research','esg','diagnostics','controlPlane'];
+  for(const theme of ['dark','natural']){
+    await page.locator(`[data-map-style=${theme}]`).click();
+    await page.waitForFunction(expected=>__GH_STATE__.mapLayer===expected,theme);
+    for(const panel of panels){
+      await page.evaluate(name=>qaContext.openDrawer(name,name==='companyManage'?'air':name==='labor'?'managers:air':name==='assetMarket'?'air':undefined),panel);
+      await page.waitForTimeout(50);
+      const metrics=await page.evaluate(()=>{
+        const map=GH_INTERFACE.mapViewport(),drawer=document.querySelector('#drawer').getBoundingClientRect(),body=document.querySelector('#drawerBody'),commands=[...body.querySelectorAll('.command-btn[data-open]')];
+        return {mapWidth:map.width,mapRight:map.right,drawerLeft:drawer.left,overflow:body.scrollWidth>body.clientWidth+2,text:body.innerText.length,domain:document.querySelector('#drawer').dataset.domain||'',commands:commands.length,unmapped:commands.filter(button=>!button.dataset.optionLogo||!button.querySelector(':scope > span svg use')).length,mapModes:getComputedStyle(document.querySelector('.map-modes')).display};
+      });
+      assert(metrics.mapWidth>340&&metrics.mapRight<=metrics.drawerLeft+1,`${theme}:${panel} hides map`);
+      assert(!metrics.overflow,`${theme}:${panel} overflows`);
+      assert(metrics.text>0);
+      assert(metrics.domain,`${theme}:${panel} has no visual domain`);
+      assert.equal(metrics.unmapped,0,`${theme}:${panel} has an option without a logo`);
+      assert.notEqual(metrics.mapModes,'none',`${theme}:${panel} hides map modes`);
+      report.push({theme,panel,...metrics});
+      if(theme==='dark'&&['companies','finance','labor','companyManage','leadershipHub','insurance','realestate'].includes(panel))await page.screenshot({path:path.join(out,'334-'+panel+'.png')});
+    }
   }
+
+  const rootRoutes=await page.evaluate(()=>{
+    const read=panel=>{qaContext.openDrawer(panel);return [...document.querySelectorAll('#drawerBody .command-btn[data-open]')].map(button=>button.dataset.open);};
+    return {operations:read('control'),finance:read('finance'),leadership:read('leadershipHub')};
+  });
+  assert(rootRoutes.operations.includes('network')&&rootRoutes.operations.includes('procurement'));
+  assert(!rootRoutes.operations.includes('businessWorld'),'business relations belongs to management');
+  assert(!rootRoutes.finance.includes('bank'),'the bank belongs to the companies center');
+  assert(rootRoutes.leadership.includes('governanceHub')&&!rootRoutes.leadership.includes('groupManagement'));
 
   await page.evaluate(()=>qaContext.openDrawer('labor','managers:air'));
   await page.locator('[data-gh-action=hr-appoint-manager]').first().click();

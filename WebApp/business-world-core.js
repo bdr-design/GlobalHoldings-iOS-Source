@@ -36,6 +36,15 @@ function ensure(s){
  trim(b.opportunities,120);trim(b.sponsorships,60);trim(b.events,240);trim(b.competitorActivity,120);
  seedSponsors(s);return b;
 }
+// Presentation and reporting paths must never create or normalize persistent state. This is
+// especially important while a staged financial close is being cancelled: the map ticker is
+// refreshed immediately after the rollback and a read must leave the restored snapshot intact.
+function readWorld(s){
+ const source=s?.businessWorld&&typeof s.businessWorld==='object'&&!Array.isArray(s.businessWorld)?s.businessWorld:null;
+ const object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
+ const array=value=>Array.isArray(value)?value:[];
+ return {parties:object(source?.parties),relationships:object(source?.relationships),opportunities:array(source?.opportunities),sponsorships:array(source?.sponsorships),events:array(source?.events),competitorActivity:array(source?.competitorActivity)};
+}
 function findByName(s,name){const n=norm(name);if(!n)return null;return Object.values(ensure(s).parties).find(p=>norm(p.legalName)===n||norm(p.displayName)===n||(p.aliases||[]).some(a=>norm(a)===n))||null;}
 function upsertParty(s,p={}){
  const b=ensure(s),name=String(p.legalName||p.displayName||p.name||'').trim();if(!name)return null;
@@ -52,7 +61,7 @@ function partyIdForName(s,name,role='counterparty'){
  const raw=String(name||'').trim();if(!raw||/^(عميل تعاقدي مسجل|طرف تعاقدي مسجل|عملاء المجموعة|حسابات الموظفين|مركز التسوية|مركز تحصيل|وكلاء الحجز|المقترضون|مدفوعات الركاب)/.test(raw))return null;
  const p=findByName(s,raw)||upsertParty(s,{name:raw,role});if(p&&role&&!p.roles.includes(role))p.roles=unique([...p.roles,role]);return p?.id||null;
 }
-function resolveParty(s,value){if(!value)return null;const b=ensure(s);return b.parties[value]||findByName(s,value);}
+function resolveParty(s,value){if(!value)return null;const b=readWorld(s),direct=b.parties[value];if(direct)return direct;const n=norm(value);return Object.values(b.parties).find(p=>norm(p.legalName)===n||norm(p.displayName)===n||(p.aliases||[]).some(a=>norm(a)===n))||null;}
 function relKey(partyId,company){return `${partyId}::${company}`;}
 function touchRelationship(s,{partyId,company='group',role='customer',reference=null,contractId=null,documentNumber=null,transferRef=null}={}){
  if(!partyId)return null;company=requireBusinessCompany(s,company);const b=ensure(s),key=relKey(partyId,company),r=b.relationships[key]||{id:key,partyId,company,ownerCompanyId:company,roles:[],contractIds:[],documentNumbers:[],transferRefs:[],since:now(s),status:'نشطة'};
@@ -126,18 +135,39 @@ function tickDay(s,p={}){
  const competitor=competitorTick(s,processedDay);return {day:processedDay,sponsorshipRevenue,competitor};
 }
 function customerSnapshot(s,partyId){
- const b=ensure(s),party=b.parties[partyId];if(!party)return null;
+ const b=readWorld(s),party=b.parties[partyId];if(!party)return null;
  const names=new Set((party.aliases||[]).map(norm)),matches=x=>x?.counterpartyPartyId===partyId||names.has(norm(x?.counterparty));
  const invoices=(s.finance?.invoices||[]).filter(matches),incoming=(s.finance?.transfers||[]).filter(x=>x.fromPartyId===partyId||names.has(norm(x.from))),relationships=Object.values(b.relationships).filter(r=>r.partyId===partyId),ops=b.opportunities.filter(o=>o.partyId===partyId);
  return {party,relationships,opportunities:ops,contracts:ops.filter(o=>['نشط','منتهي'].includes(o.status)),invoices,totalBilled:invoices.filter(x=>x.kind==='دخل').reduce((n,x)=>n+num(x.total),0),outstanding:invoices.filter(x=>x.kind==='دخل'&&!['محصلة','مدفوعة','مسددة'].includes(x.status)).reduce((n,x)=>n+num(x.total),0),received:incoming.reduce((n,x)=>n+num(x.amount),0),lastInteractionAt:Math.max(0,...relationships.map(r=>num(r.lastInteractionAt)),...invoices.map(x=>num(x.at)),...incoming.map(x=>num(x.at)))};
 }
+const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number(value)||0));
+function operationalExperience(s,company,service){
+ const r=s.realism||{},sector=companySectors(s,company)[0]||company;
+ if(sector==='air')return clamp(((Number(r.aviation?.otp)||service)+(Number(r.aviation?.dispatchReliability)||service))/2,35,99);
+ if(sector==='sea'){const cii={A:96,B:88,C:76,D:63,E:48}[String(r.maritime?.cii||'C')]||76;return clamp(cii*.65+(Number(r.maritime?.utilization)||service)*.35,35,99);}
+ if(sector==='road')return clamp((Number(r.logistics?.onTime)||service)*.82+(100-(Number(r.logistics?.damageRate)||1)*7)*.18,35,99);
+ if(sector==='power')return clamp(70+(Number(r.energy?.capacityFactor)||0)*.18+(Number(r.energy?.storageHealth)||90)*.1-(Number(r.energy?.curtailment)||0)*.5,35,99);
+ if(sector==='bank')return clamp(88-(Number(r.banking?.npl)||2)*2.5+Math.min(6,((Number(r.banking?.lcr)||100)-100)*.04),35,99);
+ if(sector==='insurance'){const sum=globalThis.GH_INSURANCE_CORE?.summary?.(s),ratio=Number(sum?.lossRatio30);return clamp(service+(Number.isFinite(ratio)?Math.max(-10,Math.min(5,(.72-ratio)*20)):0),35,99);}
+ if(sector==='realestate'){const sum=globalThis.GH_REALESTATE_CORE?.summary?.(s),occupancy=Number(sum?.occupancy);return clamp(service+(Number.isFinite(occupancy)?(occupancy-.75)*12:0),35,99);}
+ return clamp(service,35,99);
+}
+function companyCustomerRating(s,company){
+ const companyId=requireBusinessCompany(s,company,{operational:company!=='group'}),b=readWorld(s),sectors=companySectors(s,companyId),r=s.realism||{},model=s.advanced?.companies?.[companyId]||{},service=clamp(Number(model.serviceLevel)||82,35,100),reputation=clamp(Number(r.reputation?.[companyId]??r.reputation?.[sectors[0]]??s.profile?.reputation??70),35,100),operations=operationalExperience(s,companyId,service),cutoff=now(s)-90*86400;
+ const relations=Object.values(b.relationships).filter(row=>row.company===companyId&&(row.roles||[]).includes('customer')),invoices=(s.finance?.invoices||[]).filter(row=>row.company===companyId&&row.kind==='دخل'&&(Number(row.at)||0)>=now(s)-365*86400),contracts=b.opportunities.filter(row=>(row.ownerCompanyId||row.company)===companyId&&['نشط','منتهي'].includes(row.status)),events=b.events.filter(row=>row.company===companyId&&(Number(row.at)||0)>=cutoff),positive=events.filter(row=>row.severity==='positive').length,negative=events.filter(row=>['critical','negative'].includes(row.severity)).length,eventAdjustment=clamp((positive-negative)*.8,-6,6),score=clamp(reputation*.42+service*.36+operations*.22+eventAdjustment,35,98),responses=Math.min(250000,relations.length*17+invoices.length*3+contracts.length*11),rating=Math.round(clamp(1+score/25,1,5)*10)/10,trendRaw=clamp((service-82)*.025+(positive-negative)*.08,-1,1),trend=Math.round(trendRaw*10)/10;
+ return {company:companyId,rating,score:Math.round(score),responses,confidence:responses>=100?'مرتفعة':responses>=25?'متوسطة':'أولية',provisional:responses<25,trend,trendLabel:trend>.2?'صاعد':trend<-.2?'يتراجع':'مستقر',components:{reputation:Math.round(reputation),service:Math.round(service),operations:Math.round(operations)},customers:relations.length,contracts:contracts.length};
+}
+function customerRatings(s){
+ const ids=platform()?.listInstances?.(s,{includeGroup:false,openedOnly:true,capability:'company.core'}).filter(row=>row.operational).map(row=>row.id)||(s.openedCompanies||[]),companies=[...new Set(ids)].map(id=>companyCustomerRating(s,id)),weight=row=>Math.max(1,row.responses),total=companies.reduce((sum,row)=>sum+weight(row),0),rating=companies.length?Math.round(companies.reduce((sum,row)=>sum+row.rating*weight(row),0)/total*10)/10:null,responses=companies.reduce((sum,row)=>sum+row.responses,0);
+ return {group:{company:'group',rating,responses,confidence:responses>=250?'مرتفعة':responses>=50?'متوسطة':'أولية',provisional:responses<50,trend:companies.length?Math.round(companies.reduce((sum,row)=>sum+row.trend,0)/companies.length*10)/10:0},companies};
+}
 function snapshot(s){
- const b=ensure(s),parties=Object.values(b.parties),customers=parties.filter(p=>p.roles.includes('customer')),competitors=parties.filter(p=>p.roles.includes('competitor')),sponsors=parties.filter(p=>p.roles.includes('sponsor'));
+ const b=readWorld(s),parties=Object.values(b.parties),customers=parties.filter(p=>(p.roles||[]).includes('customer')),competitors=parties.filter(p=>(p.roles||[]).includes('competitor')),sponsors=parties.filter(p=>(p.roles||[]).includes('sponsor'));
  return {parties,customers,competitors,sponsors,opportunities:b.opportunities,sponsorships:b.sponsorships,events:b.events,competitorActivity:b.competitorActivity,activeContracts:b.opportunities.filter(o=>o.status==='نشط').length,openOpportunities:b.opportunities.filter(o=>['متاحة','بانتظار التوقيع'].includes(o.status)).length};
 }
 function execute(ctx,cmd,p={}){const s=ctx.state||ctx;ensure(s);switch(cmd){
  case'ensure':return ensure(s);case'sync-world':return syncWorld(s,p);case'record-bid':return recordBid(s,p);case'record-contract':return recordContract(s,p);case'record-finance':return recordFinance(s,p);case'accept-sponsorship':return acceptSponsorship(s,p);case'reject-sponsorship':return rejectSponsorship(s,p);case'tick-day':return tickDay(s,p);default:throw new Error(`Unknown business-world command: ${cmd}`);
 }}
-const API={VERSION,SCHEMA,ensure,upsertParty,partyIdForName,resolveParty,touchRelationship,recordEvent,syncWorld,competitorForSector,customerSnapshot,snapshot,execute};
+const API={VERSION,SCHEMA,ensure,upsertParty,partyIdForName,resolveParty,touchRelationship,recordEvent,syncWorld,competitorForSector,customerSnapshot,companyCustomerRating,customerRatings,snapshot,execute};
 globalThis.GH_BUSINESS_WORLD=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('business-world',API);if(globalThis.window&&window!==globalThis)window.GH_BUSINESS_WORLD=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

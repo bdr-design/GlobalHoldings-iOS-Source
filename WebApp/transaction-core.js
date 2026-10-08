@@ -164,7 +164,12 @@
   // snapshots. Durable drafts may explicitly share them while their owner
   // keeps a journal open until the save is committed.
   const SNAPSHOT_OPTIONS=Object.freeze({shareSealed:true});
-  function deepClone(value,options={}){const rootCopy=cloneWithoutJournaledRoots(value,options);if(rootCopy)return rootCopy;if(typeof globalThis.structuredClone==='function'){try{return globalThis.structuredClone(value);}catch(_error){}}return jsonClone(value);}
+  function deepClone(value,options={}){
+    let out=cloneWithoutJournaledRoots(value,options);
+    if(!out&&typeof globalThis.structuredClone==='function')try{out=globalThis.structuredClone(value);}catch(_error){}
+    if(!out)out=jsonClone(value);
+    return globalThis.GH_STATE_CODEC?.inheritColdArchive?.(value,out)||out;
+  }
   function registerJournaledRoot(name,hooks={}){
     name=String(name||'').trim();if(!/^[A-Za-z_$][\w$]*$/.test(name))throw new TypeError('transaction-journaled-root-name-invalid');
     const normalized={begin:typeof hooks.begin==='function'?hooks.begin:null,commit:typeof hooks.commit==='function'?hooks.commit:null,rollback:typeof hooks.rollback==='function'?hooks.rollback:null,revision:typeof hooks.revision==='function'?hooks.revision:null};

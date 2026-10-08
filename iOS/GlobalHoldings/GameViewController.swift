@@ -880,7 +880,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
         }
         if let generation { detail["generation"] = generation }
         if let nativeVaultCommitMs, nativeVaultCommitMs.isFinite { detail["nativeVaultCommitMs"] = nativeVaultCommitMs }
-        // Build 358: where a commit's time went (parse, current slot, encode, write, verify, chunk collection; sizes).
+        // Foreground commit stages plus the last completed deferred chunk-cleanup pass and payload sizes.
         if let nativeVaultStages { detail["nativeVaultStages"] = nativeVaultStages.filter { $0.value.isFinite } }
         let event = payload["action"] as? String == "resetGameSave" ? "gh-native-reset-ack" : "gh-native-save-ack"
         reportBridgeEvent(event, detail: detail)

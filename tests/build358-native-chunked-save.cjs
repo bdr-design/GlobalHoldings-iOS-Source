@@ -64,6 +64,22 @@ const rowsOf=json=>JSON.parse(json).fleet.rows;
     resetLog();TX.execute(state,{label:'one-row',scope:['fleet'],apply:()=>STORE.set(state.fleet,STORE.CHUNK_ROWS+5,'fuel',33.5)});await P.commitState(state,{storageKey:key}).native;
     assert.equal(uploads().length,1);return {uploaded:uploads().length};
   });
+  await test('cold finance history uploads as immutable bytes and stays out of the save JSON',async()=>{
+    const archived=[{id:'OLD-AUDIT-1',number:'INV-OLD-1',at:1,amount:125.5,note:'cold-native-audit-row'}],page=CODEC.createColdArchivePage('invoices',archived,{firstAt:1,lastAt:1,createdAtSim:state.simSeconds});
+    state.coldArchive={schema:'gh-cold-archive-v1',pages:[page]};resetLog();const out=P.commitState(state,{storageKey:key});await out.native;
+    const saved=vault.saves.at(-1),tree=JSON.parse(saved),coldId=tree.coldArchive.pages[0].id;
+    assert.equal(saved.includes('cold-native-audit-row'),false);assert(tree.stateCodec.chunks.includes(coldId));
+    assert.deepEqual(uploads().map(row=>row.id),[coldId],'only the newly created cold page uploads');
+    const loaded=CODEC.deserialize(saved,{resolveChunk:id=>vault.chunks.get(id)});assert.equal(JSON.stringify(CODEC.coldArchiveRows(loaded.coldArchive.pages[0])),JSON.stringify(archived));
+    resetLog();await P.commitState(state,{storageKey:key}).native;assert.equal(uploads().length,0,'the immutable page is acknowledged once');
+    return {coldBytes:vault.chunks.get(coldId).byteLength};
+  });
+  await test('a sliced save draft retains cold-page ownership across its structured clone',async()=>{
+    resetLog();let yields=0;const out=await P.commitStateSliced(state,{storageKey:key,yieldToFrame:async()=>{yields++;}});assert.equal(out.ok,true,out.reason);
+    const saved=vault.saves.at(-1),loaded=CODEC.deserialize(saved,{resolveChunk:id=>vault.chunks.get(id)});
+    assert.equal(CODEC.validateColdArchive(loaded).ok,true);assert.equal(CODEC.coldArchiveRows(loaded.coldArchive.pages[0])[0].id,'OLD-AUDIT-1');
+    return {yields,saveRevision:out.saveRevision};
+  });
   await test('the save is the instant it was taken, even when rows change during the upload',async()=>{
     TX.execute(state,{label:'dirty',scope:['fleet'],apply:()=>{STORE.set(state.fleet,7,'fuel',11);STORE.set(state.fleet,STORE.CHUNK_ROWS+9,'fuel',12);}});
     const expected=new Uint8Array(state.fleet.rows.slice(0));vault.holdChunkAcks=[];resetLog();
@@ -133,12 +149,12 @@ const rowsOf=json=>JSON.parse(json).fleet.rows;
   // Build 358 (iPhone diagnostic: 3.4-5.3 s per native commit): GlobalSaveVault reports where a commit's time went and the
   // diagnostics keep it next to the ACK latency. Only short names with finite numbers are kept, rounded to 0.1 ms.
   await test('the native ACK carries the vault commit stages into the save telemetry',async()=>{
-    vault.stages={parseMs:182.456,currentSlotMs:0.04,encodeMs:96.21,writeMs:41,verifyMs:22.5,chunkGcMs:0.3,payloadBytes:21634300,envelopeBytes:24100000,'bad key':5,dropped:'NaN',nested:{x:1}};
+    vault.stages={parseMs:182.456,currentSlotMs:0.04,encodeMs:96.21,writeMs:41,verifyMs:22.5,chunkGcMs:0,chunkGcDeferred:1,backgroundChunkGcMs:7813.82,backgroundChunkGcDeleted:56,payloadBytes:21634300,envelopeBytes:24100000,'bad key':5,dropped:'NaN',nested:{x:1}};
     try{
       await P.commitState(state,{storageKey:key}).native;
       const ack=P.telemetry().timings.lastNativeAck;
       assert.equal(ack.kind,'native-ack');assert.equal(ack.success,true);
-      assert.deepEqual(ack.nativeVaultStages,{parseMs:182.5,currentSlotMs:0,encodeMs:96.2,writeMs:41,verifyMs:22.5,chunkGcMs:0.3,payloadBytes:21634300,envelopeBytes:24100000});
+      assert.deepEqual(ack.nativeVaultStages,{parseMs:182.5,currentSlotMs:0,encodeMs:96.2,writeMs:41,verifyMs:22.5,chunkGcMs:0,chunkGcDeferred:1,backgroundChunkGcMs:7813.8,backgroundChunkGcDeleted:56,payloadBytes:21634300,envelopeBytes:24100000});
       vault.stages=null;await P.commitState(state,{storageKey:key}).native;
       assert.equal(P.telemetry().timings.lastNativeAck.nativeVaultStages,null,'an ACK without stages (an older app) records none');
       return {stages:Object.keys(ack.nativeVaultStages).length};

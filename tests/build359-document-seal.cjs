@@ -113,7 +113,7 @@ test('a system alert snapshots only its own roots',()=>{
 
 test('a failed round of the archive seal rolls back exactly, the finance root kept by its containers',()=>{
   const {harness,minimal}=require(path.join(ROOT,'tests/helpers/core-harness'));
-  const h=harness(['save-schema','authorization-core','document-proof-core','transaction-core','domain-command-core','finance-core']),c=h.s,P=c.GH_DOCUMENT_PROOF,T=c.GH_TRANSACTION_CORE;
+  const h=harness(['state-codec-core','save-schema','authorization-core','document-proof-core','transaction-core','domain-command-core','finance-core']),c=h.s,P=c.GH_DOCUMENT_PROOF,T=c.GH_TRANSACTION_CORE;
   const w=minimal();w.profile={name:'Seal rollback',founder:'Founder'};c.GH_FINANCE_CORE.ensure(w);w.finance.auditArchive={records:{invoices:[]},digests:[]};
   const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8'),start=app.indexOf('  function financeAuditArchive()'),end=app.indexOf('  function normalizeSimulationClocks()',start);
   Object.assign(c,{state:w,clone:x=>x===undefined?undefined:JSON.parse(JSON.stringify(x)),companyFinanceTypes:()=>[],companyBook:()=>null});
@@ -125,7 +125,7 @@ test('a failed round of the archive seal rolls back exactly, the finance root ke
   assert.equal(JSON.stringify(w),before,'the round rolled back exactly');
   const telemetry=T.telemetry().last;assert.equal(telemetry.label,'audit-archive-seal');assert.equal(telemetry.fullSnapshot,false);
   const queue={queue:api.auditSealSelection(),keep:api.liveProofIds()};let sealed=0;while(queue.queue.length)sealed+=api.sealAuditRound(queue);
-  assert.ok(sealed>0);assert.equal(c.GH_SAVE_SCHEMA.validate(JSON.parse(JSON.stringify(w))).ok,true);
+  assert.ok(sealed>0);const loaded=c.GH_STATE_CODEC.deserialize(c.GH_STATE_CODEC.serialize(w));assert.equal(c.GH_SAVE_SCHEMA.validate(loaded).ok,true);
   return {sealed};
 });
 

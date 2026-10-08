@@ -109,7 +109,8 @@
     if(p.decision!=='accept')throw new Error('insurance-risk-decision-invalid');
     // A large risk earns its premium over the year and may produce one large claim (probability from its grade).
     const claimDay=day+Math.floor(deterministic(`${risk.id}:claim-day`,20,360)),claimChance=clamp(risk.expectedLoss/Math.max(1,risk.sumInsured*.15),0,.6),claims=deterministic(`${risk.id}:claim`,0,1)<claimChance;
-    ins.largeRisks.push({id:risk.id,subject:risk.subject,officeId:risk.officeId,startDay:day,endDay:day+365,premium:risk.premium,dailyPremium:risk.premium/365,claimDay:claims?claimDay:null,claimAmount:claims?Math.round(risk.sumInsured*deterministic(`${risk.id}:severity`,.05,.15)):0,claimed:false});
+    const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)throw new Error('finance-core-missing');const document=F.execute({state},'register-commercial-contract',{id:`LEGAL-${risk.id}`,company:'insurance',contractType:'وثيقة تأمين خطر تجاري كبير',counterparty:risk.subject,title:`وثيقة ${risk.subject}`,startDay:day,endDay:day+365,amount:risk.premium,terms:{officeId:risk.officeId,grade:risk.grade,sumInsured:risk.sumInsured,premium:risk.premium,expectedLoss:risk.expectedLoss},sourceRefs:[risk.id]});
+    ins.largeRisks.push({id:risk.id,subject:risk.subject,officeId:risk.officeId,startDay:day,endDay:day+365,premium:risk.premium,dailyPremium:risk.premium/365,claimDay:claims?claimDay:null,claimAmount:claims?Math.round(risk.sumInsured*deterministic(`${risk.id}:severity`,.05,.15)):0,claimed:false,legalDocumentId:document.id,documentProofId:document.documentProofId,contentDigest:document.contentDigest});
     closeRisk(ins,risk,'مقبول',{decidedDay:day});return {id:risk.id,status:'مقبول',premium:risk.premium};
   }
   function setPricing(state,p){
@@ -151,18 +152,19 @@
     premium+=largePremium;claims+=largeClaims;
     const share=num(ins.reinsurance),ceded=premium*share,cededClaims=claims*share,netClaims=claims-cededClaims,cedingCommission=ceded*CEDING_COMMISSION,commission=(premium-largePremium)*COMMISSION;
     // Claims are paid 30 days after they occur: the reserve holds the group's share (net of reinsurance) until then.
-    if(netClaims>0)ins.claimsReserve.push({day,amount:netClaims,payDay:day+CLAIMS_LAG_DAYS});
-    const paid=ins.claimsReserve.filter(row=>row.payDay<=day).reduce((sum,row)=>sum+num(row.amount),0);ins.claimsReserve=ins.claimsReserve.filter(row=>row.payDay>day);
-    const revenue=premium+cedingCommission,expense=netClaims+commission+ceded,net=revenue-expense,cashExpense=paid+commission+ceded;
-    const report={day,premium,largePremium,claims,cededClaims,claimsCount,claimsPaid:paid,reserve:ins.claimsReserve.reduce((sum,row)=>sum+num(row.amount),0),commission,ceded,cedingCommission,revenue,expense,cashExpense,net,newPolicies,lapsed,catastrophe,byLine,newRisk:generateRisk(state,ins,day)?.id||null};
+    if(netClaims>0)ins.claimsReserve.push({id:`INS-RES-${day}`,day,amount:netClaims,payDay:day+CLAIMS_LAG_DAYS});
+    const dueRows=ins.claimsReserve.filter(row=>Number(row.payDay)<=day),claimsDue=dueRows.reduce((sum,row)=>sum+num(row.amount),0),F=globalThis.GH_FINANCE_CORE,available=state.godMoney&&state.infiniteMoney?claimsDue:num(F?.operating?.(state,'insurance')),paid=Math.min(claimsDue,available);let claimSettlementReference=null;
+    if(paid>.01){if(!F?.execute)throw new Error('insurance-claim-finance-core-missing');const settlement=F.execute({state},'settle-insurance-claims',{company:'insurance',amount:paid,day,reference:`INS-CLAIM-PAY-${day}`,sourceRefs:dueRows.map(row=>row.id||`INS-RES-${row.day}`)});claimSettlementReference=settlement.reference;let remaining=paid;for(const row of ins.claimsReserve){if(Number(row.payDay)>day||remaining<=.01)continue;const applied=Math.min(num(row.amount),remaining);row.amount=Math.max(0,num(row.amount)-applied);remaining-=applied;}ins.claimsReserve=ins.claimsReserve.filter(row=>num(row.amount)>.01);}
+    const revenue=premium+cedingCommission,expense=netClaims+commission+ceded,net=revenue-expense,cashExpense=commission+ceded;
+    const report={day,premium,largePremium,claims,cededClaims,claimsCount,claimsDue,claimsPaid:paid,claimsUnpaid:Math.max(0,claimsDue-paid),claimSettlementReference,reserve:ins.claimsReserve.reduce((sum,row)=>sum+num(row.amount),0),commission,ceded,cedingCommission,revenue,expense,cashExpense,net,newPolicies,lapsed,catastrophe,byLine,newRisk:generateRisk(state,ins,day)?.id||null};
     for(const request of [...ins.riskRequests])if(day>=Number(request.expiresDay))closeRisk(ins,request,'منتهي',{decidedDay:day});
     ins.ytd.premium+=premium;ins.ytd.claims+=claims-cededClaims;ins.ytd.commission+=commission;ins.ytd.ceded+=ceded;ins.ytd.cedingCommission+=cedingCommission;ins.ytd.net+=net;ins.ytd.largeRiskPremium+=largePremium;
     // Only the newest day keeps its per-line detail; older days keep their totals (history stays small in the save).
     if(ins.dailyHistory[0]?.byLine){const {byLine:_detail,...totals}=ins.dailyHistory[0];ins.dailyHistory[0]=totals;}
     ins.dailyHistory.unshift(report);ins.dailyHistory=ins.dailyHistory.slice(0,DAILY_HISTORY);ins.lastProcessedDay=day;return clone(report);
   }
-  // The day's result for the group's daily close: revenue and expense for the P&L, and the expense actually paid today
-  // (claims leave the cash when they are paid, not when they occur).
+  // Claim cash is transferred inside tickDay on its exact due date. cashExpense therefore carries only commission and
+  // ceded premium for the generic daily close, so claim payments cannot be billed again on seven-day supplier terms.
   function dailyResult(state,day){const ins=state.insurance;const row=(ins?.dailyHistory||[]).find(item=>Number(item.day)===Number(day));return row?{revenue:num(row.revenue),expense:num(row.expense),cashExpense:num(row.cashExpense??row.expense)}:{revenue:0,expense:0,cashExpense:0};}
   function summary(state){
     const ins=ensure(state),totals={};for(const id of LINE_IDS)totals[id]=ins.offices.reduce((sum,row)=>sum+num(row.lines[id]?.policies),0);

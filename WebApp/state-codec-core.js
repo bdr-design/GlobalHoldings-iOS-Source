@@ -61,6 +61,7 @@
     const out=new Array(count);for(let i=0;i<count;i++)out[i]=runText(prefix,width,first+i);return out;
   }
   const MIN_ROWS=64,SEGMENT_ROWS=256,SEGMENT_MIN=SEGMENT_ROWS*2,SEGMENT_FLOOR=64,SEGMENT_CEIL=1024,SEG_VERSION='gh-shape-3',TEXT_VERSION='gh-shape-4',TEXT_CHUNK_MIN=16384;
+  const COLD_PAGE_VERSION='gh-cold-archive-page-v1',COLD_PAGE_MARKER='chunk-v1',COLD_PAGE_BYTES=new WeakMap();let coldPageSequence=0;
   const MIN_POOL_CHARS=40;
   const MIN_CONSTANT_ROWS=4;
   const MAX_DEPTH=64;
@@ -422,12 +423,12 @@
   }
   function encodeState(state){
     if(!isPlain(state))return state;
-    const binaryPaths=[];let out=state;
+    const binaryPaths=[],cold=prepareColdArchive(state,null);let out=cold.root;
     // Fleet rows are the only ArrayBuffer in Save Schema 3. Preserve their
     // bytes through the current JSON transport until binary chunk storage lands.
     if(isArrayBuffer(state.fleet?.rows)){const path=['fleet','rows'];out=writePathCopy(out,path,binaryMarker(state.fleet.rows));binaryPaths.push(path);}
     const scan=scanPaths(out),paths=scan.paths;
-    if(!paths.length&&!binaryPaths.length&&!scan.runs.length)return state;
+    if(!paths.length&&!binaryPaths.length&&!scan.runs.length&&!cold.hasPages)return out;
     let segments=false;
     for(const path of paths){const value=readPath(out,path);if(segmented(value))segments=true;out=writePathCopy(out,path,encodeCollection(value));}
     for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
@@ -461,6 +462,7 @@
       }
       out=writePathCopy(out,path,decodeCollection(node));
     }
+    out=adoptColdArchivePages(out,pending,options);
     if(pending.size)throw corrupt('text-chunk-unused');
     const binaryPaths=meta.binaryPaths===undefined?[]:meta.binaryPaths;if(!Array.isArray(binaryPaths))throw corrupt('binary-paths');
     for(const path of binaryPaths){
@@ -484,6 +486,53 @@
   // text, it reuses the chunk id the vault already holds instead of uploading the same bytes again.
   function isTextMarker(node){return isPlain(node)&&own(node,'$ghText');}
   function textChecksum(text){let a=0x811c9dc5|0,b=0x01000193|0;const imul=Math.imul;for(let i=0;i<text.length;i++){a=imul(a^text.charCodeAt(i),0x01000193);b=(b+a)|0;}return `${text.length}.${(a>>>0).toString(36)}.${(b>>>0).toString(36)}`;}
+  function coldPageShape(page){return isPlain(page)&&page.$ghCold===COLD_PAGE_MARKER&&page.schema===COLD_PAGE_VERSION&&typeof page.id==='string'&&CHUNK_ID.test(page.id)&&Number.isSafeInteger(page.bytes)&&page.bytes>=2&&page.bytes<=67108864&&typeof page.kind==='string'&&page.kind.length>0&&page.kind.length<=120&&Number.isSafeInteger(page.count)&&page.count>0&&typeof page.sum==='string'&&page.sum.length<=100;}
+  function coldBytesFromInline(page){
+    if(typeof page.inline!=='string')return null;let fast=null;try{fast=typeof Uint8Array.fromBase64==='function'?Uint8Array.fromBase64(page.inline):tableDecode(page.inline);}catch{fast=null;}
+    if(fast)return fast;let raw;try{raw=base64Decode(page.inline);}catch{return null;}const bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);return bytes;
+  }
+  function verifyColdPageBytes(page,bytes){
+    if(!bytes||bytes.byteLength!==page.bytes)throw corrupt('cold-page-length');
+    let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{throw corrupt('cold-page-json');}
+    if(textChecksum(text)!==page.sum)throw corrupt('cold-page-checksum');
+    return bytes;
+  }
+  function canonicalColdPage(page){const out={};for(const key of ['$ghCold','schema','id','bytes','kind','count','sum','firstAt','lastAt','createdAtSim'])if(page[key]!==undefined)out[key]=page[key];return Object.freeze(out);}
+  function adoptColdArchivePages(root,pending,options){
+    const pages=root?.coldArchive?.pages;if(pages===undefined)return root;if(!Array.isArray(pages))throw corrupt('cold-pages-shape');
+    const seen=new Set(),next=[];let changed=false;
+    for(const source of pages){
+      if(!coldPageShape(source)||seen.has(source.id))throw corrupt('cold-page-marker');seen.add(source.id);
+      let bytes=coldBytesFromInline(source);
+      if(bytes){if(pending.has(source.id))throw corrupt('cold-page-inline-listed');changed=true;}
+      else{
+        if(!pending.delete(source.id)||typeof options.resolveChunk!=='function')throw corrupt('cold-page-unlisted');
+        let data;try{data=options.resolveChunk(source.id,{coldArchive:true,byteLength:source.bytes});}catch{throw corrupt('cold-page-missing');}
+        bytes=ArrayBuffer.isView(data)?new Uint8Array(data.buffer,data.byteOffset,data.byteLength):isArrayBuffer(data)?new Uint8Array(data):null;
+      }
+      verifyColdPageBytes(source,bytes);
+      const page=Object.isFrozen(source)&&source.inline===undefined?source:canonicalColdPage(source);COLD_PAGE_BYTES.set(page,bytes);next.push(page);if(page!==source)changed=true;
+    }
+    if(!changed)return root;const cold={...root.coldArchive,pages:next};return {...root,coldArchive:cold};
+  }
+  function createColdArchivePage(kind,rows,meta={}){
+    if(!Array.isArray(rows)||!rows.length)throw new TypeError('cold-archive-rows-required');kind=String(kind||'').trim();if(!kind||kind.length>120)throw new TypeError('cold-archive-kind-invalid');
+    const text=JSON.stringify(rows),bytes=new TextEncoder().encode(text),page=canonicalColdPage({$ghCold:COLD_PAGE_MARKER,schema:COLD_PAGE_VERSION,id:`${NONCE}.c.${(++coldPageSequence).toString(36)}`,bytes:bytes.byteLength,kind,count:rows.length,sum:textChecksum(text),firstAt:meta.firstAt,lastAt:meta.lastAt,createdAtSim:meta.createdAtSim});COLD_PAGE_BYTES.set(page,bytes);return page;
+  }
+  function coldArchiveRows(page){
+    if(!coldPageShape(page))throw corrupt('cold-page-marker');const bytes=COLD_PAGE_BYTES.get(page);if(!bytes||bytes.byteLength!==page.bytes)throw corrupt('cold-page-missing');let text,rows;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);if(textChecksum(text)!==page.sum)throw corrupt('cold-page-checksum');rows=JSON.parse(text);}catch(error){if(error?.code==='STATE_CODEC_CORRUPT')throw error;throw corrupt('cold-page-json');}if(!Array.isArray(rows)||rows.length!==page.count)throw corrupt('cold-page-count');return rows;
+  }
+  function validateColdArchive(state){try{const pages=state?.coldArchive?.pages;if(pages===undefined)return {ok:true,pages:0,rows:0};if(!Array.isArray(pages))throw new Error('shape');const ids=new Set();let rows=0;for(const page of pages){if(!coldPageShape(page)||ids.has(page.id)||!COLD_PAGE_BYTES.has(page))throw new Error('page');ids.add(page.id);rows+=page.count;}return {ok:true,pages:pages.length,rows};}catch{return {ok:false,reason:'cold-archive-invalid'};}}
+  function coldArchiveStats(state){const check=validateColdArchive(state);if(!check.ok)return check;let bytes=0;for(const page of state?.coldArchive?.pages||[])bytes+=page.bytes;return {...check,bytes};}
+  // structuredClone/JSON clones intentionally cannot copy WeakMap ownership. Transaction snapshots, durable drafts and
+  // reset checkpoints call this immediately after cloning so their identical page markers inherit the immutable bytes
+  // without decoding the historical rows or retaining a second object graph.
+  function inheritColdArchive(source,target){
+    const from=source?.coldArchive?.pages,to=target?.coldArchive?.pages;if(!Array.isArray(from)||!Array.isArray(to)||!from.length)return target;
+    const bytesById=new Map();for(const page of from){const bytes=COLD_PAGE_BYTES.get(page);if(coldPageShape(page)&&bytes)bytesById.set(page.id,{page,bytes});}
+    for(const page of to){const found=bytesById.get(page?.id);if(!found||!coldPageShape(page)||page.bytes!==found.page.bytes||page.sum!==found.page.sum||page.kind!==found.page.kind||page.count!==found.page.count)continue;COLD_PAGE_BYTES.set(page,found.bytes);}
+    return target;
+  }
   const ADOPTED_TEXT=new Map();
   function resolveTextChunk(marker,options,partKey){
     const {id,bytes}=marker;
@@ -550,6 +599,16 @@
     if(current.keys)for(let i=0;i<current.keys.length;i++)if(entry.keys[i]!==current.keys[i])return false;
     return true;
   }
+  function prepareColdArchive(root,coldChunks){
+    const pages=root?.coldArchive?.pages;if(!Array.isArray(pages)||!pages.length)return {root,ids:[],hasPages:false};
+    const ids=[],next=[];let changed=false;
+    for(const page of pages){
+      if(!coldPageShape(page))throw new Error('cold-archive-page-invalid');const bytes=COLD_PAGE_BYTES.get(page);if(!bytes||bytes.byteLength!==page.bytes)throw new Error('cold-archive-page-bytes-missing');
+      if(coldChunks){ids.push(page.id);coldChunks.push({id:page.id,byteLength:bytes.byteLength,data:bytes});next.push(page);}
+      else{next.push({...page,inline:base64Encode(bytes)});changed=true;}
+    }
+    return {root:changed?writePathCopy(root,['coldArchive','pages'],next):root,ids,hasPages:true};
+  }
   // Build 358 (lighter commands): serialization as steps. serializeSteps yields after each encoded collection and after
   // each top-level member of the final text, so an asynchronous caller (a durable command's save) can spread one save
   // over several frames; serialize() runs the same steps at once. The text is the same either way: the final object is
@@ -572,15 +631,15 @@
     for(const key of Object.keys(value)){const item=value[key],json=item&&typeof item==='object'?yield* stringifySteps(item,depth+1):JSON.stringify(item);if(json!==undefined)parts.push(`${JSON.stringify(key)}:${json}`);if(++count%STRINGIFY_STEP===0)yield;}
     return `{${parts.join(',')}}`;
   }
-  function* serializeSteps(state,{rowsText=null,textChunks=null}={}){
+  function* serializeSteps(state,{rowsText=null,textChunks=null,coldChunks=null}={}){
     if(!isPlain(state))return JSON.stringify(encodeState(state));
-    const binaryPaths=[],fragments=[],live=new Set();let out=state;
+    const binaryPaths=[],fragments=[],live=new Set(),cold=prepareColdArchive(state,coldChunks);let out=cold.root;
     if(isArrayBuffer(state.fleet?.rows)){
       const path=['fleet','rows'],token=`\u0000gh-codec:${NONCE}:${fragments.length}\u0000`;
       fragments.push({token:JSON.stringify(token),text:rowsText===null?rowsMarkerText(state.fleet):rowsText});out=writePathCopy(out,path,token);binaryPaths.push(path);
     }
     const scan=scanPaths(out),paths=scan.paths;
-    if(!paths.length&&!binaryPaths.length&&!scan.runs.length)return JSON.stringify(state);
+    if(!paths.length&&!binaryPaths.length&&!scan.runs.length&&!cold.ids.length&&!cold.hasPages)return JSON.stringify(out);
     let segments=false;const livePaths=new Set();
     for(const path of paths){
       const value=readPath(out,path),key=JSON.stringify(path),shape=collectionLayout(key,value),split=shape.split;if(split)segments=true;livePaths.add(key);
@@ -604,7 +663,7 @@
     for(const key of [...COLLECTION_TEXT.keys()])if(!live.has(key))COLLECTION_TEXT.delete(key);
     for(const key of [...PATH_LAYOUT.keys()])if(!livePaths.has(key))PATH_LAYOUT.delete(key);
     for(const {path,run} of scan.runs)out=writePathCopy(out,path,run);
-    out.stateCodec=codecMeta(paths,binaryPaths,scan.runs,segments,textChunks?textChunks.map(chunk=>chunk.id):[]);
+    out.stateCodec=codecMeta(paths,binaryPaths,scan.runs,segments,[...(textChunks?textChunks.map(chunk=>chunk.id):[]),...cold.ids]);
     const members=[];for(const key of Object.keys(out)){const json=yield* stringifySteps(out[key]);if(json!==undefined)members.push(`${JSON.stringify(key)}:${json}`);yield;}
     const text=`{${members.join(',')}}`;if(!fragments.length)return text;
     // Build 359 (each fragment searched the whole text twice, O(fragments x text)): one pass replaces every token; each
@@ -660,11 +719,11 @@
   function serializeChunked(state){const steps=serializeChunkedSteps(state);let step;while(!(step=steps.next()).done){}return step.value;}
   function* serializeChunkedSteps(state){
     if(!isPlain(state)||!isArrayBuffer(state.fleet?.rows))return {text:yield* serializeSteps(state),chunks:[]};
-    const manifest=chunkManifest(state.fleet),textChunks=[],text=yield* serializeSteps(state,{rowsText:JSON.stringify(manifest.marker),textChunks});
-    return {text,chunks:[...manifest.chunks,...textChunks]};
+    const manifest=chunkManifest(state.fleet),textChunks=[],coldChunks=[],text=yield* serializeSteps(state,{rowsText:JSON.stringify(manifest.marker),textChunks,coldChunks});
+    return {text,chunks:[...manifest.chunks,...textChunks,...coldChunks]};
   }
 
-  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,serializeSteps,deserialize,selectPaths,serializeChunked,serializeChunkedSteps,adoptChunkIds,bytesToBase64:bytes=>base64Encode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)),cacheStats:()=>({...collectionCacheStats,layout:{...layoutCacheStats,entries:PATH_LAYOUT.size},entries:COLLECTION_TEXT.size,rows:{...rowCacheStats},chunks:{...chunkCacheStats},text:{...textChunkStats,adoptable:ADOPTED_TEXT.size}}),textChunkMin:TEXT_CHUNK_MIN,isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
+  const API=Object.freeze({VERSION,MIN_ROWS,encodeState,decodeState,serialize,serializeSteps,deserialize,selectPaths,serializeChunked,serializeChunkedSteps,adoptChunkIds,createColdArchivePage,coldArchiveRows,validateColdArchive,coldArchiveStats,inheritColdArchive,bytesToBase64:bytes=>base64Encode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)),cacheStats:()=>({...collectionCacheStats,layout:{...layoutCacheStats,entries:PATH_LAYOUT.size},entries:COLLECTION_TEXT.size,rows:{...rowCacheStats},chunks:{...chunkCacheStats},text:{...textChunkStats,adoptable:ADOPTED_TEXT.size}}),textChunkMin:TEXT_CHUNK_MIN,isEncoded:tree=>isPlain(tree)&&own(tree,'stateCodec')});
   globalThis.GH_STATE_CODEC=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_STATE_CODEC=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

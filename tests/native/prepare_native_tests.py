@@ -64,6 +64,9 @@ func wait<T>(_ body:(@escaping(Result<T,Error>)->Void)->Void) throws -> T {
     guard let result else {throw TestFailure(message:"Async completion timed out")}
     return try result.get()
 }
+func drainChunkGarbage() throws {
+    let _:Void = try wait { completion in vault.drainChunkGarbageAsync { completion(.success(())) } }
+}
 func makeJSON(_ rev:Int,_ epoch:Int=0,extra:String="",saveVersion:String="2.0.0") throws -> String {
     let obj:[String:Any]=["saveVersion":saveVersion,"saveRevision":rev,"resetEpoch":epoch,"simSeconds":Double(rev)*60,"label":"العساف / 海 🚢","extra":extra]
     return String(data:try JSONSerialization.data(withJSONObject:obj,options:[.sortedKeys]),encoding:.utf8)!
@@ -242,6 +245,7 @@ test("collection keeps chunks only because a vault file lists them, and removes 
     for id in ["prev.ab.5","prev.slot.6","old.session.9"] {try fm.copyItem(at:source,to:chunkFolder.appendingPathComponent(id+".chunk"))}
     let slot=try chunkJSON(2,["prev.slot.6"]);let _:GlobalSaveVault.ManualSlotMetadata=try wait{manual(0,slot,try! envelope(slot,action:"saveManualSlot"),$0)}
     let next=try chunkJSON(3,["s1.a.1","prev.ab.5"]);let _:Int=try wait{commit(next,try! envelope(next),$0)}
+    try drainChunkGarbage()
     let files=chunkFiles()
     try check(files.contains("prev.ab.5.chunk"),"A/B-referenced chunk collected: \\(files.sorted())")
     try check(files.contains("prev.slot.6.chunk"),"Manual-slot chunk collected: \\(files.sorted())")
@@ -252,17 +256,20 @@ test("collection keeps chunks only because a vault file lists them, and removes 
 // chunk ids it found in unchanged files. These cases prove the shortcuts never hide a change on disk.
 test("a chunk only a manual slot lists stays across commits and goes once the slot is cleared") {
     for rev in 4...5 {let j=try chunkJSON(rev,["s1.a.1"]);let _:Int=try wait{commit(j,try! envelope(j),$0)}}
+    try drainChunkGarbage()
     try check(chunkFiles().contains("prev.slot.6.chunk"),"Manual-slot chunk collected: \\(chunkFiles().sorted())")
     try check(!chunkFiles().contains("prev.ab.5.chunk"),"Chunk no file lists kept: \\(chunkFiles().sorted())")
     let _:Void=try wait{vault.clearManualSlotAsync(0,completion:$0)}
     let j=try chunkJSON(6,["s1.a.1"]);let _:Int=try wait{commit(j,try! envelope(j),$0)}
+    try drainChunkGarbage()
     try check(!chunkFiles().contains("prev.slot.6.chunk"),"Chunk of a cleared slot kept: \\(chunkFiles().sorted())")
     try check(chunkFiles().contains("s1.a.1.chunk"),"Referenced chunk collected: \\(chunkFiles().sorted())")
 }
 test("a commit reports its stage timings once") {
     let j=try chunkJSON(7,["s1.a.1"]);let gen:Int=try wait{commit(j,try! envelope(j),$0)}
     let stages=vault.takeCommitTimings(generation:gen) ?? [:]
-    try check(["parseMs","currentSlotMs","encodeMs","writeMs","verifyMs","chunkGcMs","payloadBytes","envelopeBytes"].allSatisfy{stages[$0] != nil},"Stage timings missing: \\(stages)")
+    try check(["parseMs","currentSlotMs","encodeMs","writeMs","verifyMs","chunkGcScheduleMs","chunkGcMs","chunkGcDeferred","payloadBytes","envelopeBytes"].allSatisfy{stages[$0] != nil},"Stage timings missing: \\(stages)")
+    try check(stages["chunkGcMs"]==0 && stages["chunkGcDeferred"]==1,"Chunk cleanup returned to the foreground commit path: \\(stages)")
     try check(vault.takeCommitTimings(generation:gen)==nil,"Stage timings reported twice")
 }
 test("a slot file changed on disk is verified again before the next commit") {

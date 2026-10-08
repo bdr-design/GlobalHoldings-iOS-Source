@@ -29,6 +29,7 @@
   }
   function sectorOfCompany(state,companyId){return platform()?.definitionFor?.(state,companyId)?.classification?.primarySectorId||companyId;}
   function companyLabel(state,companyId){return platform()?.resolveIdentity?.(state,companyId)?.legalName||state.companyRegistry?.[companyId]?.legalName||names[companyId]||companyId;}
+  function operationalCompanyForCapability(state,capability){const P=platform();if(!P?.listInstances)return null;return P.listInstances(state,{includeGroup:false,openedOnly:true,capability}).find(company=>company.operational&&state.companyFinance?.[company.id])?.id||null;}
   const defaultBudget=()=>({period:0,lines:{payroll:0,fuel:0,maintenance:0,marketing:0,insurance:0,technology:0,capex:0,other:0},actual:{payroll:0,fuel:0,maintenance:0,marketing:0,insurance:0,technology:0,capex:0,other:0},forecast:{},variance:{}});
   const initial=()=>({
     schema:SCHEMA,version:VERSION,migratedAt:0,
@@ -163,8 +164,9 @@
   // count runs in the order of the former per-mode lists (row order), so the results are the same. The flight counters
   // are written through a column writer (each column journaled once, not each row); the row is no longer checkpointed
   // first (that only re-based progress, fuel and condition on today's time without changing what a view presents).
-  // Build 358 (iPhone diagnostic, 36,000 assets: ~10 ms per 8,192-row step): 4,096 rows per daily fleet step.
-  const OPS_SLICE_ROWS=4096,OPS_FIELDS=Object.freeze(['assetMode','type','specs','lastTrip','condition','purchasePrice','phase','flightHours','flightCycles','nextCheckHours']);
+  // Build 358 (iPhone diagnostic, 36,000 assets: ~10 ms per 8,192-row step): 2,048 rows keeps the newer 30k-asset
+  // diagnostic's fleet-day work below half a 60 Hz frame. The scan remains one pass in the same row order.
+  const OPS_SLICE_ROWS=2048,OPS_FIELDS=Object.freeze(['assetMode','type','specs','lastTrip','condition','purchasePrice','phase','flightHours','flightCycles','nextCheckHours']);
   function opsVisitor(state){
     const fleet=fleetData(),r=migrate(state),write=fleet.columnWriter(state,['flightHours','flightCycles','nextCheckHours']),demand=clamp((r.economy.airDemand||100)/100,.65,1.35),bunker=Math.max(1,r.economy.bunker);
     let ask=0,rpk=0,rev=0,cost=0,fuel=0,movingAir=0,airCondition=0,maintReserve=0,maintExposure=0,airCount=0,maintenanceDue=0,aog=0;
@@ -267,13 +269,14 @@
   // fleet pass, while the fleet and time are those it read; null otherwise.
   function fleetReadinessTotal(state){const key=conditionSumKey(state);return key&&conditionSumMemo&&conditionSumMemo.state===state&&conditionSumMemo.key.fleet===key.fleet&&conditionSumMemo.key.revision===key.revision&&conditionSumMemo.key.simSeconds===key.simSeconds&&Number.isFinite(conditionSumMemo.readiness)?conditionSumMemo.readiness:null;}
   function updateInsurance(state){
-    const r=migrate(state),condition=fleetData().size(state)?fleetConditionSum(state)/fleetData().size(state):100,incidents=(state.advanced?.safety?.incidents||0),claims=(state.advanced?.insurance?.claims||[]);
+    const r=migrate(state),condition=fleetData().size(state)?fleetConditionSum(state)/fleetData().size(state):100,incidents=(state.advanced?.safety?.incidents||0),claims=(state.advanced?.insurance?.claims||[]),F=globalThis.GH_FINANCE_CORE,internalInsurer=operationalCompanyForCapability(state,'operations.insurance');
     // تسوية المطالبات: بعد فترة فحص محاكاة (3 أيام) تُصرف المطالبة فعليًا عبر الخزينة بدل ما تبقى معلقة "قيد الفحص" للأبد.
     const REVIEW_SECONDS=3*86400,nowSec=Math.max(0,Number(state.simSeconds)||0);
     for(const c of claims){
-      if(c.status==='قيد الفحص'&&nowSec-Number(c.openedAt||0)>=REVIEW_SECONDS){
-        const amount=Math.max(0,Number(c.covered)||0);
-        const companyId=rowCompanyId(state,c,'');if(amount>0&&!companyId)throw new Error(`insurance-claim-company-invalid:${c.id||'unknown'}`);if(amount>0)globalThis.GH_FINANCE_CORE?.execute?.({state},'credit',{company:companyId,amount,note:`تعويض مطالبة تأمين ${c.id}`,method:'تحويل شركة تأمين',taxable:false,counterparty:'شركة إعادة التأمين'});
+      if(['قيد الفحص','بانتظار سيولة شركة التأمين'].includes(c.status)&&nowSec-Number(c.openedAt||0)>=REVIEW_SECONDS){
+        const amount=Math.max(0,Number(c.covered)||0),companyId=rowCompanyId(state,c,'');if(amount>0&&!companyId)throw new Error(`insurance-claim-company-invalid:${c.id||'unknown'}`);
+        const insurer=String(c.insurerCompanyId||'');if(insurer&&insurer===internalInsurer){if(Math.max(0,Number(F?.operating?.(state,insurer))||0)+1e-8<amount){c.status='بانتظار سيولة شركة التأمين';continue;}const settlement=F.execute({state},'settle-intercompany-service',{from:insurer,to:companyId,amount,note:`تعويض مطالبة تأمين أسطول · ${c.id}`,serviceCategory:'تعويض مطالبة تأمين أسطول',taxCode:'insurance-claim',ref:`FLEET-CLAIM-${c.id}`,sourceRefs:[c.id,c.policyReference].filter(Boolean)});c.transferReference=settlement.reference;c.provider='شركة التأمين التابعة';}
+        else if(amount>0){const payment=F?.execute?.({state},'credit',{company:companyId,amount,note:`تعويض مطالبة تأمين ${c.id}`,method:'تحويل شركة تأمين',taxable:false,taxCode:'insurance-claim',reference:`EXT-FLEET-CLAIM-${c.id}`,counterparty:'شركة التأمين الخارجية'});c.transferReference=payment?.transferReference||`EXT-FLEET-CLAIM-${c.id}`;c.provider='شركة تأمين خارجية';}
         c.status='مدفوعة';c.paid=amount;c.paidAt=nowSec;
       }
     }
@@ -453,13 +456,13 @@
   function insuranceCover(state,companyId){const cover=state.advanced?.companies?.[companyId]?.insuranceCover;return Object.prototype.hasOwnProperty.call(INSURANCE_COVERS,cover)?cover:'standard';}
   function* runIncidents(state,maintenance,day){
     const r=migrate(state),fleet=fleetData(),F=globalThis.GH_FINANCE_CORE,stamp=Number(state.simSeconds)||0;r.incidents=Array.isArray(r.incidents)?r.incidents:[];
-    state.advanced=state.advanced||{};const book=state.advanced.insurance=state.advanced.insurance&&typeof state.advanced.insurance==='object'?state.advanced.insurance:{claims:[],annualPremium:0};book.claims=Array.isArray(book.claims)?book.claims:[];
+    state.advanced=state.advanced||{};const book=state.advanced.insurance=state.advanced.insurance&&typeof state.advanced.insurance==='object'?state.advanced.insurance:{claims:[],annualPremium:0};book.claims=Array.isArray(book.claims)?book.claims:[];book.fleetPolicies=Array.isArray(book.fleetPolicies)?book.fleetPolicies:[];const internalInsurer=operationalCompanyForCapability(state,'operations.insurance');
     // Build 359: an active HSE corrective plan (governance safety-audit) lowers incident risk 15% and halves inspection fines.
     state.advanced=state.advanced||{};const safety=state.advanced.safety=state.advanced.safety&&typeof state.advanced.safety==='object'?state.advanced.safety:{};const planActive=!!safety.plan&&day<=Number(safety.plan.untilDay),planRisk=planActive?.85:1,planFine=planActive?.5:1;
     let fleetCount=0,unsafeCount=0;for(const acc of maintenance.companies.values()){fleetCount+=acc.count||0;unsafeCount+=acc.unsafe||0;}
     for(const [companyId,acc] of maintenance.companies){
       if(!acc.count)continue;const cover=insuranceCover(state,companyId),terms=INSURANCE_COVERS[cover],wear=clamp((100-acc.conditionSum/acc.count)/100,0,.45),expected=acc.risk*(1+wear*6)*planRisk,draw=rand(`incident:${companyId}:${day}`),count=Math.floor(expected)+(draw<expected-Math.floor(expected)?1:0);
-      if(day%30===0&&terms.premium>0&&F?.execute){const premium=Math.round(acc.premium*terms.premium*clamp(r.insurance.renewalIndex||100,75,190)/100/12);if(premium>0)F.execute({state},'accrue-expense',{company:companyId,amount:premium,note:`قسط تأمين الأسطول الشهري · تغطية ${cover==='full'?'شاملة':'قياسية'}`,method:'فاتورة تأمين',taxable:false,dueDay:day+7,number:`PREM-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'شركة التأمين',line:'insurance'});}
+      if(day%30===0&&terms.premium>0&&F?.execute){const premium=Math.round(acc.premium*terms.premium*clamp(r.insurance.renewalIndex||100,75,190)/100/12),policyReference=`FLEET-POLICY-${String(companyId).toUpperCase()}-${day}`;if(premium>0){if(internalInsurer&&internalInsurer!==companyId){const settlement=F.execute({state},'settle-intercompany-service',{from:companyId,to:internalInsurer,amount:premium,note:`قسط وثيقة أسطول شهرية · تغطية ${cover==='full'?'شاملة':'قياسية'}`,serviceCategory:'قسط تأمين أسطول داخلي',taxCode:'insurance-premium',line:'insurance',ref:policyReference,sourceRefs:[companyId,String(day)]});book.fleetPolicies.unshift({id:policyReference,day,company:companyId,insurerCompanyId:internalInsurer,cover,assetCount:acc.count,insuredValue:acc.value,premium,status:'سارية',transferReference:settlement.reference});book.fleetPolicies=book.fleetPolicies.slice(0,120);}else F.execute({state},'accrue-expense',{company:companyId,amount:premium,note:`قسط تأمين الأسطول الشهري · تغطية ${cover==='full'?'شاملة':'قياسية'}`,method:'فاتورة تأمين',taxable:false,taxCode:'insurance-premium',dueDay:day+7,number:`PREM-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'شركة التأمين الخارجية',line:'insurance'});}}
       if(day>0&&day%365===0&&acc.licence>0&&F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:Math.round(acc.licence),note:`تجديد رخص التشغيل السنوية لـ ${acc.count} أصل`,method:'رسوم حكومية',taxable:false,dueDay:day+7,number:`LIC-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'هيئة النقل',line:'other'});
       if(day%30===15&&acc.unsafe>0&&acc.conditionSum/acc.count<INSPECTION_LINE){const fine=Math.round(acc.fine*planFine);if(F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:fine,note:`غرامة تفتيش السلامة: ${acc.unsafe} أصل تحت ${UNSAFE_CONDITION}%`,method:'غرامة حكومية',taxable:false,dueDay:day+7,number:`FINE-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'هيئة السلامة',line:'other'});r.inspections=Array.isArray(r.inspections)?r.inspections:[];r.inspections.unshift({day,company:companyId,unsafe:acc.unsafe,fine,avgCondition:acc.conditionSum/acc.count});r.inspections=r.inspections.slice(0,60);}
       if(!count)continue;
@@ -467,7 +470,7 @@
       const average=acc.value/acc.count,loss=Math.round(count*average*INCIDENT_SEVERITY*(Number(globalThis.GH_GOVERNANCE_CORE?.programEffects?.(state)?.incidentRepair)||1));for(const asset of hit)fleet.update(state,asset.id,{condition:55,lastIncidentAt:stamp});
       if(loss>0&&F?.execute)F.execute({state},'accrue-expense',{company:companyId,amount:loss,note:`إصلاح أضرار ${count===1?'حادث':`${count} حوادث`} · اليوم ${day}`,method:'فاتورة إصلاح',taxable:true,dueDay:day+7,number:`INC-${String(companyId).toUpperCase()}-${day}`,paymentTerms:7,counterparty:'ورش الإصلاح المعتمدة',line:'maintenance'});
       const deductible=terms.premium>0?Math.max(terms.minimum||0,loss*terms.deductible):loss,covered=Math.max(0,loss-deductible);let claimId=null;
-      if(covered>0){claimId=`CLM-${String(companyId).toUpperCase()}-${day}`;book.claims.unshift({id:claimId,company:companyId,ownerCompanyId:companyId,openedAt:stamp,status:'قيد الفحص',loss,deductible,covered,reserve:covered,incidents:count});book.claims=book.claims.slice(0,200);}
+      if(covered>0){claimId=`CLM-${String(companyId).toUpperCase()}-${day}`;const policy=book.fleetPolicies.find(row=>row.company===companyId&&row.status==='سارية');book.claims.unshift({id:claimId,company:companyId,ownerCompanyId:companyId,insurerCompanyId:policy?.insurerCompanyId||null,policyReference:policy?.id||null,openedAt:stamp,status:'قيد الفحص',loss,deductible,covered,reserve:covered,incidents:count});book.claims=book.claims.slice(0,200);}
 
       r.incidents.unshift({day,company:companyId,count,loss,cover,deductible:Math.min(loss,deductible),covered,claimId,assets:hit.map(asset=>asset.id)});r.incidents=r.incidents.slice(0,120);
       yield 'realism.incidents';
@@ -514,10 +517,25 @@
     updateCrews(state,day,[...ops.maintenance.companies.keys()]);
     yield* runIncidents(state,ops.maintenance,day);
     yield* runMaintenance(state,ops.maintenance,day);
-    updateBank(state);updateMarketShare(state,day);updateRisk(state,day);updateRating(state);updateInsurance(state);recordMarketDay(state,day);yield 'realism.market-risk';
-    updateTaxFxAndDividends(state,day);updatePrograms(state,day);updateReputation(state);supplierScores(state);yield 'realism.programs';
+    // Preserve the owner order and results, but return to the frame scheduler between owners. The former combined
+    // market/risk and programs stages were measured as one 10-14 ms step on iPhone.
+    updateBank(state);yield 'realism.bank';
+    updateMarketShare(state,day);yield 'realism.market-share';
+    updateRisk(state,day);yield 'realism.risk';
+    updateRating(state);yield 'realism.rating';
+    updateInsurance(state);yield 'realism.insurance';
+    recordMarketDay(state,day);yield 'realism.market-day';
+    updateTaxFxAndDividends(state,day);yield 'realism.tax-fx-dividends';
+    updatePrograms(state,day);yield 'realism.programs';
+    updateReputation(state);yield 'realism.reputation';
+    supplierScores(state);yield 'realism.suppliers';
     deliverDueAssets(state,day);yield 'realism.deliveries';
-    updateProjects(state,day);updateEventQueue(state,day);board(state,day);succession(state);morningBrief(state,day);integrity(state,day);
+    updateProjects(state,day);yield 'realism.projects';
+    updateEventQueue(state,day);yield 'realism.events';
+    board(state,day);yield 'realism.board';
+    succession(state);yield 'realism.succession';
+    morningBrief(state,day);yield 'realism.brief';
+    integrity(state,day);
     return 0;
   }
   function onDay(state,day){const stages=onDayStages(state,day);let step;while(!(step=stages.next()).done){}return step.value;}
