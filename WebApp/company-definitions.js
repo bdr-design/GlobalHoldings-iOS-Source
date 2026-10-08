@@ -23,10 +23,13 @@
     road:'<path d="M18 33h46v30H18zM64 43h11l8 10v10H64z" fill="#fff"/><circle cx="32" cy="68" r="8" fill="#e9b66a"/><circle cx="69" cy="68" r="8" fill="#e9b66a"/><path d="M29 24h42M65 18l8 6-8 6" fill="none" stroke="#75ddcf" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>',
     power:'<circle cx="48" cy="48" r="28" fill="none" stroke="#f8fbfa" stroke-width="8"/><path d="M53 18 31 53h17l-6 25 24-38H49z" fill="#e8bd5f"/><path d="M18 48h10M68 48h10M48 18v8M48 70v8" stroke="#73dbce" stroke-width="5" stroke-linecap="round"/>',
     bank:'<path d="M16 39 48 20l32 19v8H16zM22 51h9v22h-9zm21 0h10v22H43zm22 0h9v22h-9zM16 77h64v8H16z" fill="#fff"/><circle cx="48" cy="35" r="6" fill="#e3bd67"/><path d="M21 43h54" stroke="#77dfd1" stroke-width="4"/>',
-    mobility:'<path d="M48 16c-17 0-30 12-30 28 0 21 30 39 30 39s30-18 30-39c0-16-13-28-30-28z" fill="#fff"/><path d="M31 50h34l-4-13H35zM29 50h38v13H29z" fill="#1a9a6b"/><circle cx="37" cy="64" r="5" fill="#e5bc67"/><circle cx="59" cy="64" r="5" fill="#e5bc67"/><path d="M38 43h20" stroke="#8be6d9" stroke-width="4" stroke-linecap="round"/>'});
+    mobility:'<path d="M48 16c-17 0-30 12-30 28 0 21 30 39 30 39s30-18 30-39c0-16-13-28-30-28z" fill="#fff"/><path d="M31 50h34l-4-13H35zM29 50h38v13H29z" fill="#1a9a6b"/><circle cx="37" cy="64" r="5" fill="#e5bc67"/><circle cx="59" cy="64" r="5" fill="#e5bc67"/><path d="M38 43h20" stroke="#8be6d9" stroke-width="4" stroke-linecap="round"/>',
+    insurance:'<path d="M48 16 22 26v20c0 17 11 29 26 34 15-5 26-17 26-34V26z" fill="#fff"/><path d="m36 48 9 9 16-18" fill="none" stroke="#1f7a8c" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M30 30h36" stroke="#e6bd65" stroke-width="4" stroke-linecap="round"/>',
+    realestate:'<path d="M18 80V44l18-12v48zM40 80V24l22-10v66zM66 80V40l14 8v32z" fill="#fff"/><path d="M47 30h8M47 42h8M47 54h8M47 66h8M24 52h6M24 64h6" stroke="#b5703a" stroke-width="4" stroke-linecap="round"/><path d="M14 82h68" stroke="#e7bd66" stroke-width="5" stroke-linecap="round"/>'});
   // Build 358: how the group's name brands each subsidiary (GH_COMPANY_PLATFORM.brandedIdentity): «العساف» + «للطيران».
   const BRAND=Object.freeze({air:{ar:'للطيران',en:'Aviation',short:'AIR',glyph:GLYPH.air},sea:{ar:'للشحن البحري',en:'Marine',short:'MARINE',glyph:GLYPH.sea},road:{ar:'للنقل',en:'Logistics',short:'LOGISTICS',glyph:GLYPH.road},
-    power:{ar:'للطاقة',en:'Energy',short:'ENERGY',glyph:GLYPH.power},bank:{prefix:'بنك',legalAr:'المصرفية',en:'Bank',short:'BANK',glyph:GLYPH.bank},mobility:{ar:'للتنقل الذكي',en:'Mobility',short:'MOBILITY',glyph:GLYPH.mobility}});
+    power:{ar:'للطاقة',en:'Energy',short:'ENERGY',glyph:GLYPH.power},bank:{prefix:'بنك',legalAr:'المصرفية',en:'Bank',short:'BANK',glyph:GLYPH.bank},mobility:{ar:'للتنقل الذكي',en:'Mobility',short:'MOBILITY',glyph:GLYPH.mobility},
+    insurance:{ar:'للتأمين',en:'Insurance',short:'INSURANCE',glyph:GLYPH.insurance},realestate:{ar:'للتطوير العقاري',en:'Real Estate',short:'REAL ESTATE',glyph:GLYPH.realestate}});
   const subsidiary=(data)=>({
     ...data,identity:{...data.identity,brand:BRAND[data.id]||null},schema:FORMAT,definitionVersion:1,kind:'subsidiary',lifecycle:'active',
     instancePolicy:{mode:'multi',stateScope:'company',...(data.instancePolicy||{})},
@@ -135,6 +138,37 @@
       ui:{extensions:['mobility-company']},map:{layerProviderIds:['mobility-fleet','company-facilities'],filterGroup:'transport',markerProfileId:'mobility'},
       conference:{providerId:'mobility-company-v1'},adapters:{operations:'mobility-fleet-v1',facilities:'mobility-network-v1',map:'mobility-map-v1',conference:'mobility-company-v1'},
       legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:['mobility'],routeOwnerModes:[],assetClassByMode:{mobility:'mobility-vehicle'}}
+    }),
+    // Build 358 (owner request): two management companies without a fleet. Their offices come from the world directory
+    // (one per capital); the customer base of each office is its country's population (GH_INSURANCE_CORE,
+    // GH_REALESTATE_CORE), and the player runs them through pricing, underwriting, development and leasing decisions.
+    subsidiary({
+      id:'insurance',definitionId:'gh-insurance-v1',order:70,
+      instancePolicy:{mode:'canonical-only',stateScope:'legacy-root'},
+      identity:identity('شركة جلوبال هولدينغز للتأمين','Global Holdings Insurance Company','جي إتش للتأمين','GH INSURANCE','GH INSURANCE','assets/identity/gh-insurance.svg','#1f7a8c','#16495a','#1f7a8c','assets/images/company-system-v2.webp'),
+      classification:{primarySectorId:'insurance',sectorIds:['insurance'],operationProfileId:'insurance-services-v1',assetClasses:[],routeModes:[]},
+      capabilities:['operations.insurance','facility.insurance'],
+      founding:{defaultCapital:60000000,minimumCapital:60000000,documentPrefix:'INS'},
+      finance:{accountPrefix:'INSURANCE',documentPrefix:'INS',collectionProfileId:'insurance-revenue-v1'},
+      hr:{managerRoleProfileId:'ceo-insurance-v1',staffingProfileId:'insurance-office-v1'},
+      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['insurance'],primaryKind:'insurance',siteTemplate:{label:'مكتب تأمين',facilityKind:'insurance',cost:6000000,dailyCost:9500,capacity:'مبيعات وثائق ومركز مطالبات لسكان الدولة',deliveryCapacity:0,photo:'assets/images/company-system-v2.webp',iconKey:'insurance',groupValueFactor:.72}},
+      ui:{extensions:['insurance-company']},map:{layerProviderIds:['company-facilities'],filterGroup:'services',markerProfileId:'insurance'},
+      conference:{providerId:'generic-company-v1'},adapters:{operations:'insurance-services-v1',facilities:'insurance-network-v1',map:'company-map-v1',conference:'generic-company-v1'},
+      legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:[],routeOwnerModes:[],assetClassByMode:{}}
+    }),
+    subsidiary({
+      id:'realestate',definitionId:'gh-realestate-v1',order:80,
+      instancePolicy:{mode:'canonical-only',stateScope:'legacy-root'},
+      identity:identity('شركة جلوبال هولدينغز للتطوير العقاري','Global Holdings Real Estate Development Company','جي إتش العقارية','GH REAL ESTATE','GH REAL ESTATE','assets/identity/gh-realestate.svg','#b5703a','#5a3a22','#b5703a','assets/images/company-hq-v2.webp'),
+      classification:{primarySectorId:'realestate',sectorIds:['realestate'],operationProfileId:'real-estate-v1',assetClasses:[],routeModes:[]},
+      capabilities:['operations.realestate','facility.realestate'],
+      founding:{defaultCapital:150000000,minimumCapital:150000000,documentPrefix:'RLE'},
+      finance:{accountPrefix:'REALESTATE',documentPrefix:'RLE',collectionProfileId:'realestate-revenue-v1'},
+      hr:{managerRoleProfileId:'ceo-realestate-v1',staffingProfileId:'realestate-office-v1'},
+      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['realestate'],primaryKind:'realestate',siteTemplate:{label:'مكتب تطوير وتأجير عقاري',facilityKind:'realestate',cost:5000000,dailyCost:8000,capacity:'مبيعات وتأجير ومشاريع في المدينة',deliveryCapacity:0,photo:'assets/images/company-hq-v2.webp',iconKey:'realestate',groupValueFactor:.72}},
+      ui:{extensions:['realestate-company']},map:{layerProviderIds:['company-facilities'],filterGroup:'services',markerProfileId:'realestate'},
+      conference:{providerId:'generic-company-v1'},adapters:{operations:'real-estate-v1',facilities:'realestate-network-v1',map:'company-map-v1',conference:'generic-company-v1'},
+      legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:[],routeOwnerModes:[],assetClassByMode:{}}
     })
   ]);
   const BUILTIN_COMPANY_IDS=Object.freeze(BUILTIN_DEFINITIONS.filter(row=>row.kind!=='holding').map(row=>row.id));

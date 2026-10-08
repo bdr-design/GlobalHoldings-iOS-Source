@@ -140,6 +140,8 @@
     }else if(domain==='banking'){add('bank');add(payload.borrower);}
     else if(domain==='mobility')add(payload.ownerCompanyId||payload.companyId||payload.company||'mobility');
     else if(domain==='energy')add(payload.ownerCompanyId||payload.companyId||payload.company||'power');
+    else if(domain==='insurance')add(payload.ownerCompanyId||'insurance');
+    else if(domain==='realestate')add(payload.ownerCompanyId||'realestate');
     else if(domain==='hr'){
       if(payload.company==='all'||name==='tick-day')addAllCompanies();else add(payload.company);const candidateId=String(payload.candidateId||payload.id||''),candidate=(globalThis.GH_HR_CORE?.OFFICIAL_MANAGER_CANDIDATES||[]).find(row=>row.id===candidateId);if(candidate)add(candidate.company);if(!ids.length&&['appoint-official-manager','dismiss-official-manager','hire-executive','hire','requisition','apply-salary-raise'].includes(name))unresolved(candidateId);
     }else if(domain==='governance'){if(!ids.length)add(payload.sector);if(!ids.length)add('group');}

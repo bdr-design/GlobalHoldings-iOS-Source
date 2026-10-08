@@ -37,7 +37,14 @@ function sectorEconomics(state,options={}){
   // non-corporate interest during an interrupted-close recovery.
   const explicitUnposted=Number(bankClose?.unpostedInterestIncome),cashPostedInterest=Number(bankClose?.cashPostedInterestIncome??bankClose?.corporateInterestIncome),unpostedInterestIncome=bankClose?(Number.isFinite(explicitUnposted)?Math.max(0,explicitUnposted):Math.max(0,interestIncome-(Number.isFinite(cashPostedInterest)?Math.max(0,cashPostedInterest):0))):interestIncome;
   const bankCashRevenueToPost=bankClose?unpostedInterestIncome+securityIncome+feeIncome:bankRevenue,bankExpenseToPost=bankClose?depositExpense+wholesaleInterestExpense+expectedLoss+bankOpex-bankFacilityExpense:(depositExpense+wholesaleInterestExpense+expectedLoss+bankOpex-bankFacilityExpense)*bankFactor,bankExpense=bankExpenseToPost+bankFacilityExpense,bank=bankRevenue-bankExpense;
-  return {power,powerFreeCash,bank,detail:{generation,revenue,gasFuel,carbon,storageMargin,ppaRevenue:num(energyDetail?.ppaRevenue),spotRevenue:num(energyDetail?.spotRevenue),ppaMWh:num(energyDetail?.ppaMWh),interestIncome,securityIncome,depositExpense,wholesaleInterestExpense,expectedLoss,powerRevenue,powerExpense,powerDebtPrincipal,powerDebtInterest,powerDebtService,bankRevenue,bankCashRevenueToPost,bankExpense,bankExpenseToPost,bankFacilityExpense,powerExpenseToPost,powerFacilityExpense,takeOrPayAccrued:num(energyClose?.takeOrPayAccrued),bankOpex,feeIncome,transactionFeeIncome,reportedFeeIncome,liquidityCarry}};
+  // Build 358: companies whose engine reports its own day (insurance, real estate) hand the close their P&L and the
+  // part of it paid in cash today (an insurer pays claims 30 days after they occur).
+  const companyRevenue={},companyExpense={},companyCashExpense={};
+  for(const [engine,companyId] of [[globalThis.GH_INSURANCE_CORE,'insurance'],[globalThis.GH_REALESTATE_CORE,'realestate']]){
+    if(typeof engine?.dailyResult!=='function'||!state.openedCompanies?.includes?.(companyId))continue;
+    const row=engine.dailyResult(state,requestedDay??Math.floor(num(state.simSeconds)/86400));companyRevenue[companyId]=num(row.revenue);companyExpense[companyId]=num(row.expense);companyCashExpense[companyId]=num(row.cashExpense??row.expense);
+  }
+  return {power,powerFreeCash,bank,detail:{companyRevenue,companyExpense,companyCashExpense,generation,revenue,gasFuel,carbon,storageMargin,ppaRevenue:num(energyDetail?.ppaRevenue),spotRevenue:num(energyDetail?.spotRevenue),ppaMWh:num(energyDetail?.ppaMWh),interestIncome,securityIncome,depositExpense,wholesaleInterestExpense,expectedLoss,powerRevenue,powerExpense,powerDebtPrincipal,powerDebtInterest,powerDebtService,bankRevenue,bankCashRevenueToPost,bankExpense,bankExpenseToPost,bankFacilityExpense,powerExpenseToPost,powerFacilityExpense,takeOrPayAccrued:num(energyClose?.takeOrPayAccrued),bankOpex,feeIncome,transactionFeeIncome,reportedFeeIncome,liquidityCarry}};
 }
 const API=Object.freeze({VERSION,sectorEconomics});globalThis.GH_ECONOMICS_CORE=API;if(globalThis.window&&window!==globalThis)window.GH_ECONOMICS_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

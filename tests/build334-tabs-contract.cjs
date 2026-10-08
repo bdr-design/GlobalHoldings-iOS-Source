@@ -9,7 +9,7 @@ const registry=source.match(/^  const TAB_ATTRIBUTES=.*;$/m)?.[0]||'';
 const tabs=vm.runInNewContext(`${encoder}\n${registry}\n${renderer}\ntabs`,{});
 const used=[...new Set([...source.matchAll(/tabs\([^\n]*?,'(data-[a-z-]+)'\)/g)].map(m=>m[1]))];
 assert(used.includes('data-companytab')&&used.includes('data-labortab'));
-const allowed=['data-advanced-tab','data-company-manage-tab','data-facility-tab','data-energy-tab','data-bank-tab','data-treasury-tab','data-news-tab','data-business-tab','data-companytab','data-labortab'];
+const allowed=['data-insurance-tab','data-realestate-tab','data-advanced-tab','data-company-manage-tab','data-facility-tab','data-energy-tab','data-bank-tab','data-treasury-tab','data-news-tab','data-business-tab','data-companytab','data-labortab'];
 for(const name of allowed){
  const html=tabs([['one','الأول'],['two','الثاني']],'two',name);
  assert(html.includes(`${name}="one"`)&&html.includes(`${name}="two"`),`registered tab attribute lost: ${name}`);

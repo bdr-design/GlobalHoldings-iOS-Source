@@ -22,6 +22,8 @@
     'operations.energy':Object.freeze({id:'operations.energy',domain:'operations',description:'تشغيل مشاريع الطاقة'}),
     'operations.bank':Object.freeze({id:'operations.bank',domain:'operations',description:'تشغيل الخدمات البنكية'}),
     'operations.mobility':Object.freeze({id:'operations.mobility',domain:'operations',description:'تشغيل التنقل الذكي'}),
+    'operations.insurance':Object.freeze({id:'operations.insurance',domain:'operations',description:'الاكتتاب والتأمين وإدارة المطالبات'}),
+    'operations.realestate':Object.freeze({id:'operations.realestate',domain:'operations',description:'التطوير العقاري والبيع والتأجير'}),
     'asset.aircraft':Object.freeze({id:'asset.aircraft',domain:'assets',description:'امتلاك وتشغيل الطائرات'}),
     'asset.vessel':Object.freeze({id:'asset.vessel',domain:'assets',description:'امتلاك وتشغيل السفن'}),
     'asset.truck':Object.freeze({id:'asset.truck',domain:'assets',description:'امتلاك وتشغيل الشاحنات'}),
@@ -34,7 +36,9 @@
     'facility.logistics':Object.freeze({id:'facility.logistics',domain:'facilities',description:'مراكز لوجستية'}),
     'facility.energy':Object.freeze({id:'facility.energy',domain:'facilities',description:'منشآت طاقة'}),
     'facility.bank':Object.freeze({id:'facility.bank',domain:'facilities',description:'فروع ومرافق بنكية'}),
-    'facility.mobility':Object.freeze({id:'facility.mobility',domain:'facilities',description:'مراكز تنقل ذكي'})
+    'facility.mobility':Object.freeze({id:'facility.mobility',domain:'facilities',description:'مراكز تنقل ذكي'}),
+    'facility.insurance':Object.freeze({id:'facility.insurance',domain:'facilities',description:'مكاتب تأمين ومراكز مطالبات'}),
+    'facility.realestate':Object.freeze({id:'facility.realestate',domain:'facilities',description:'مكاتب بيع وتأجير عقاري'})
   });
   const BUILTIN_CAPABILITIES=Object.freeze(Object.values(BUILTIN_DEFINITIONS_RAW).map(row=>Object.freeze({schema:CAPABILITY_SCHEMA,...row})));
   const definitions=new Map(BUILTIN_CAPABILITIES.map(row=>[row.id,row]));

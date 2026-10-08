@@ -19,7 +19,9 @@
       'fleet-route-road-v1':['GH_FLEET_CORE','GH_ROUTE_CORE'],
       'energy-project-v1':['GH_ENERGY_CORE'],
       'banking-services-v1':['GH_BANKING_CORE'],
-      'mobility-fleet-v1':['GH_MOBILITY_CORE']
+      'mobility-fleet-v1':['GH_MOBILITY_CORE'],
+      'insurance-services-v1':['GH_INSURANCE_CORE'],
+      'real-estate-v1':['GH_REALESTATE_CORE']
     }),
     finance:Object.freeze({
       'group-treasury-v1':['GH_FINANCE_CORE'],
@@ -37,7 +39,9 @@
       'logistics-network-v1':['GH_FACILITY_CORE'],
       'energy-sites-v1':['GH_FACILITY_CORE','GH_ENERGY_CORE'],
       'bank-network-v1':['GH_FACILITY_CORE','GH_BANKING_CORE'],
-      'mobility-network-v1':['GH_FACILITY_CORE','GH_MOBILITY_CORE']
+      'mobility-network-v1':['GH_FACILITY_CORE','GH_MOBILITY_CORE'],
+      'insurance-network-v1':['GH_FACILITY_CORE','GH_INSURANCE_CORE'],
+      'realestate-network-v1':['GH_FACILITY_CORE','GH_REALESTATE_CORE']
     }),
     map:Object.freeze({
       'company-map-v1':['GH_MAP_FEATURE_CORE','GH_MAP_LAYER_REGISTRY'],

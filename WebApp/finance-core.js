@@ -16,11 +16,13 @@ const COLLECTION_PROFILES=Object.freeze({
  road:{channel:'تحصيل فواتير نقل بعد التسليم',source:'مركز تحصيل اللوجستيات · عملاء النقل والتوزيع',service:'أوامر نقل وتسليم وعقود توزيع'},
  power:{channel:'تسوية فواتير توريد الطاقة',source:'مركز تحصيل الطاقة · مشترو الطاقة والعملاء',service:'طاقة موردة وعقود شراء طاقة'},
  bank:{channel:'تحصيل فوائد ورسوم مصرفية',source:'مركز تحصيل البنك · المقترضون وعملاء الخدمات',service:'فوائد ورسوم خدمات؛ لا تشمل أصل القروض أو الودائع'},
- mobility:{channel:'تسوية نقاط البيع وبوابة الدفع',source:'مركز تحصيل التنقل · مدفوعات الركاب والعملاء',service:'رحلات مكتملة وحسابات تنقل الشركات'}
+ mobility:{channel:'تسوية نقاط البيع وبوابة الدفع',source:'مركز تحصيل التنقل · مدفوعات الركاب والعملاء',service:'رحلات مكتملة وحسابات تنقل الشركات'},
+ insurance:{channel:'تحصيل أقساط التأمين',source:'مركز تحصيل التأمين · حملة الوثائق والوسطاء',service:'أقساط مكتسبة لوثائق المركبات والصحة والممتلكات والتأمين التجاري'},
+ realestate:{channel:'تحصيل مبيعات الوحدات والإيجارات',source:'مركز تحصيل العقارات · المشترون والمستأجرون',service:'وحدات مسلّمة وإيجارات شهرية'}
 });
 const GENERIC_COLLECTION_PROFILE=Object.freeze({channel:'تحويل تحصيل مؤسسي',source:'مركز تحصيل العملاء المعتمدين',service:'خدمات تشغيلية مثبتة'});
 const COLLECTION_PROFILE_IDS=Object.freeze({
- 'holding-revenue-v1':'group','aviation-revenue-v1':'air','marine-revenue-v1':'sea','logistics-revenue-v1':'road','energy-revenue-v1':'power','banking-revenue-v1':'bank','mobility-revenue-v1':'mobility'
+ 'holding-revenue-v1':'group','aviation-revenue-v1':'air','marine-revenue-v1':'sea','logistics-revenue-v1':'road','energy-revenue-v1':'power','banking-revenue-v1':'bank','mobility-revenue-v1':'mobility','insurance-revenue-v1':'insurance','realestate-revenue-v1':'realestate'
 });
 function collectionProfile(company,s=null){
  const platform=globalThis.GH_COMPANY_PLATFORM,definition=s?platform?.resolveCompany?.(s,company)?.definition:platform?.getDefinition?.(company),profileId=definition?.finance?.collectionProfileId,legacyId=COLLECTION_PROFILE_IDS[profileId];

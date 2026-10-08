@@ -40,10 +40,12 @@
     'ceo-energy-v1':'مشاريع الطاقة والتشغيل التجاري',
     'ceo-bank-v1':'الخدمات المصرفية والخزينة',
     'ceo-mobility-v1':'التنقل الذكي والمنصات الرقمية',
+    'ceo-insurance-v1':'الاكتتاب والتسعير وإدارة المطالبات',
+    'ceo-realestate-v1':'التطوير العقاري والمبيعات والتأجير',
     'ceo-hospitality-v1':'تشغيل الضيافة وتجربة النزيل'
   });
   const GENERATED_MANAGER_CANDIDATE_COUNT=2;
-  const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,'mobility-center':18,power:32,bank:16,acquired:28});
+  const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,'mobility-center':18,power:32,bank:16,insurance:14,realestate:12,acquired:28});
   const assetOwner=a=>String(a?.ownerCompanyId||a?.companyId||platform()?.ownerForLegacyAssetMode?.(a?.assetMode||a?.type)||(!platform()?a?.type:'')||'');
   const facilityOwner=f=>String(f?.ownerCompanyId||f?.companyId||f?.company||'');
   // Build 358 (million-asset): whether any asset belongs to an owner, counted per class of rows (one cached class scan

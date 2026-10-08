@@ -1329,6 +1329,8 @@
     power:   '<svg viewBox="0 0 24 24"><path d="M13 2 L4 14 H11 L10 22 L20 9 H13 Z"/></svg>',
     bank:    '<svg viewBox="0 0 24 24"><path d="M12 2 L22 8 H2 Z M4 10 V19 H6 V10 M9.5 10 V19 H11.5 V10 M12.5 10 V19 H14.5 V10 M18 10 V19 H20 V10 M2 21 H22 V19 H2 Z"/></svg>',
     mobility:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.8" fill="#07141d"/></svg>',
+    insurance:'<svg viewBox="0 0 24 24"><path d="M12 2 L20 5 V11 C20 16.5 16.6 20.4 12 22 C7.4 20.4 4 16.5 4 11 V5 Z"/><path d="M8.5 12 L11 14.5 L15.5 9.5" fill="none" stroke="#07141d" stroke-width="2"/></svg>',
+    realestate:'<svg viewBox="0 0 24 24"><path d="M3 21 V10 L8 7 V21 M9.5 21 V4 L16 2 V21 M17.5 21 V9 L21 11 V21 M2 21 H22"/></svg>',
     hq:      '<svg viewBox="0 0 24 24"><path d="M4 21 V4 H14 V21 M14 9 H20 V21 M4 21 H20"/><path d="M7 6.5 H8.5 V8 H7 Z M10 6.5 H11.5 V8 H10 Z M7 9.5 H8.5 V11 H7 Z M10 9.5 H11.5 V11 H10 Z M7 12.5 H8.5 V14 H7 Z M10 12.5 H11.5 V14 H10 Z M16 11.5 H17.5 V13 H16 Z M16 14.5 H17.5 V16 H16 Z M16 17.5 H17.5 V19 H16 Z" fill-opacity=".6"/></svg>'
   };
   function facilityKindKey(kind){
@@ -1338,10 +1340,12 @@
     if(kind==='power') return 'power';
     if(kind==='bank') return 'bank';
     if(kind==='mobility-center') return 'mobility';
+    if(kind==='insurance') return 'insurance';
+    if(kind==='realestate') return 'realestate';
     return 'hq'; // hq, office, acquired وأي نوع إداري آخر
   }
   function facilityMarkerHtml(f){
-    const key=facilityKindKey(f.kind),company=facilityOwnerCompanyId(f)||({airport:'air',port:'sea',logistics:'road',power:'power',bank:'bank',mobility:'mobility'}[key]||'group'),logo=window.GH_IDENTITY?.logo?.(state,company);
+    const key=facilityKindKey(f.kind),company=facilityOwnerCompanyId(f)||({airport:'air',port:'sea',logistics:'road',power:'power',bank:'bank',mobility:'mobility',insurance:'insurance',realestate:'realestate'}[key]||'group'),logo=window.GH_IDENTITY?.logo?.(state,company);
     return `<div class="marker-core facility-real ${key}" data-company="${esc(company)}">${FACILITY_SVG[key]}${logo?`<img class="facility-brand-logo" src="${esc(logo)}" alt="">`:''}</div>`;
   }
   function facilityVectorMarkup(kind,className='facility-inline-vector'){
@@ -2643,6 +2647,8 @@
       // instead; the cash already moved, so neither side's internal amount is posted again here.
       const internalSupply=energyCompany?(state.energy?.dailyHistory||[]).find(row=>Number(row.day)===Number(state.lastFinancialDay))?.internalSupply:null;
       if(internalSupply&&Array.isArray(internalSupply.rows)){cashOperatingRevenue[energyCompany]=Math.max(0,Number(cashOperatingRevenue[energyCompany]||0)-Math.max(0,Number(internalSupply.cashPostedRevenue)||0));for(const row of internalSupply.rows){if(!Object.prototype.hasOwnProperty.call(operatingExpense,row.buyer))continue;const avoided=Math.min(Math.max(0,Number(row.avoidedExternalCost)||0),Number(baseByCompany[row.buyer])||0),paid=Math.max(0,Number(row.amount)||0);operatingExpense[row.buyer]=Math.max(0,(Number(operatingExpense[row.buyer])||0)-avoided+paid);cashOperatingExpense[row.buyer]=Math.max(0,(Number(cashOperatingExpense[row.buyer])||0)-avoided);}}
+      // Build 358: an engine that pays part of its day later (insurance claims, 30 days) posts only today's paid share.
+      for(const companyId of companyIds)if(ed.companyCashExpense&&Object.prototype.hasOwnProperty.call(ed.companyCashExpense,companyId))cashOperatingExpense[companyId]=Math.max(0,(Number(cashOperatingExpense[companyId])||0)-Math.max(0,Number(ed.companyExpense?.[companyId])||0)+Math.max(0,Number(ed.companyCashExpense[companyId])||0));
       // رواتب المنشآت لا تُخصم يوميًا هنا؛ تُصرف مرة واحدة في مسير يوم 27.
       const daily=Object.fromEntries(companyIds.map(companyId=>[companyId,(Number(operatingRevenue[companyId])||0)-(Number(operatingExpense[companyId])||0)]));
       yield 'finance-day.sector-economics';
@@ -3345,7 +3351,7 @@
       ${f.kind==='airport'?airportOperationalCard(f):''}${f.kind==='port'?portOperationalCard(f):''}${['depot','logistics'].includes(f.kind)?depotOperationalCard(f):''}${['airport-base','port-base'].includes(f.kind)?globalBaseOperationalCard(f):''}
     `);
   }
-  function facilityKind(k){return {hq:'مقر رئيسي',airport:'مطار',port:'ميناء',depot:'مركز تشغيل',logistics:'شركة لوجستية','mobility-center':'مركز تنقل حضري',power:'محطة طاقة',bank:'فرع بنك',office:'مقر إقليمي',acquired:'شركة مستحوذ عليها','airport-base':'قاعدة طيران','port-base':'قاعدة بحرية'}[k]||'منشأة';}
+  function facilityKind(k){return {hq:'مقر رئيسي',airport:'مطار',port:'ميناء',depot:'مركز تشغيل',logistics:'شركة لوجستية','mobility-center':'مركز تنقل حضري',power:'محطة طاقة',bank:'فرع بنك',insurance:'مكتب تأمين',realestate:'مكتب عقاري',office:'مقر إقليمي',acquired:'شركة مستحوذ عليها','airport-base':'قاعدة طيران','port-base':'قاعدة بحرية'}[k]||'منشأة';}
   function airportOperationalCard(f){
     return `<article class="list-item"><h3>الملف التشغيلي للمطار</h3>
       <div class="metric-row"><div><span>طول المدرج</span><b>${fmtNumber(f.runwayM)} م</b></div><div><span>الارتفاع</span><b>${fmtNumber(f.elevationM)} م</b></div><div><span>البوابات</span><b>${f.gates}</b></div></div>
@@ -3547,10 +3553,10 @@
 
   const panelRoot = panel => window.GH_ADVANCED?.root(panel) || ({
     formationContract:'companies',leadershipHub:'leadership',executionLog:'system',realism:'leadership',research:'leadership',esg:'leadership',news:'leadership',
-    companies:'companies',companyManage:'companies',energy:'companies',bank:'companies',
+    companies:'companies',companyManage:'companies',energy:'companies',bank:'companies',insurance:'companies',realestate:'companies',
     control:'control',network:'control',routes:'control',globalRoute:'control',companyFacilities:'companies',contracts:'control',labor:'leadership',expansion:'control',ports:'control',procurement:'control',assets:'control',assetMarket:'control',assetManage:'control',mobilityAsset:'control',facilityManage:'control',
     market:'finance',finance:'finance',monthlyFinance:'finance',invoices:'finance',treasury:'finance',budgets:'finance',maintenance:'control',crews:'leadership',
-    governanceHub:'leadership',governance:'leadership',insurance:'leadership',cyber:'leadership',safety:'leadership',
+    governanceHub:'leadership',governance:'leadership',cyber:'leadership',safety:'leadership',
     systemHub:'system',settings:'system',updates:'system',diagnostics:'system',controlPlane:'system'
   })[panel] || 'map';
   function setActiveNav(key){
@@ -3691,7 +3697,7 @@
   }
   function closeDrawer(){ window.GH_INTERFACE.resetHistory(); cancelDrawerSearch(); clearFleetListSearchRequest(); delete $('drawer').dataset.panel; $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); $('backdrop').classList.add('hidden'); setActiveNav('map'); state.lastPanel=null;state.lastPanelArg=null; requestAnimationFrame(()=>map?.invalidateSize({animate:false})); }
   $('workspaceBack').addEventListener('click',()=>window.GH_INTERFACE.back(openDrawer));
-  const ADVANCED_OWNED_PANELS=new Set(['realism','companies','leadershipHub','peopleHub','actionCenter','governanceHub','compliance','systemHub','executionLog','facilityManage','companyManage','groupManagement','treasury','procurement','cyber','safety','energy','bank','research','esg','news','businessWorld','labor','settings','updates','diagnostics','controlPlane','conference']);
+  const ADVANCED_OWNED_PANELS=new Set(['realism','companies','leadershipHub','peopleHub','actionCenter','governanceHub','compliance','systemHub','executionLog','facilityManage','companyManage','groupManagement','treasury','procurement','cyber','safety','energy','bank','insurance','realestate','research','esg','news','businessWorld','labor','settings','updates','diagnostics','controlPlane','conference']);
   function renderPanel(panel,arg){
     const advanced=window.GH_ADVANCED?.render(panel,arg,advancedContext());
     if(advanced!==null&&advanced!==undefined)return advanced;
