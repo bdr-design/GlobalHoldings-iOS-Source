@@ -18,6 +18,7 @@
     (state?.realism?.procurement?.deliveries||[]).filter(d=>d?.status!=='delivered'&&Number(d?.dueSimSeconds||Infinity)<now).forEach(d=>{const asset=(Array.isArray(d.assets)?d.assets:d.asset?[d.asset]:[])[0];out.push(task(`DEL:${d.id}`,`تسليم متأخر · ${asset?.model||d.catalogId||d.id}${Number(d.count||d.assets?.length)>1?` · ${Number(d.count||d.assets.length)} أصل`:''}`,'التشغيل','critical','procurement',d.destination||''));});
     const activeIssues=diag.activeIssues&&typeof diag.activeIssues==='object'?Object.values(diag.activeIssues):[];
     activeIssues.forEach(i=>out.push(task(`DIAG:${i.id||i.type}`,i.message||i.title||i.id||'مشكلة نظام','النظام',i.severity==='critical'?'critical':'high','diagnostics',i.detail||'')));
+    const activeIncidentIds=new Set();for(const incident of state?.controlPlane?.incidents||[]){if(incident?.status!=='open')continue;const id=String(incident.id||incident.code||'unknown');if(activeIncidentIds.has(id))continue;activeIncidentIds.add(id);out.push(task(`INC:${id}`,incident.title||incident.code||'حادث نظام',incident.domain||'النظام',incident.severity==='critical'?'critical':'high','controlPlane',incident.detail||''));}
     // Build 359: incidents of the last 30 game days, not the count since the game began (a permanent critical alarm).
     // Safety is critical at 5 incidents per 1,000 assets in 30 days, a follow-up below that; any cyber outage is high.
     const today=Math.floor(now/86400),recent=rows=>(Array.isArray(rows)?rows:[]).filter(row=>today-Number(row?.day)<30);

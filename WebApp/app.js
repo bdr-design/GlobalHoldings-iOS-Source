@@ -2639,7 +2639,7 @@
       const contractTerms={};for(const id of (state.acceptedContracts||[])){const c=contracts.find(x=>x.id===id);if(!c)continue;const companyId=contractOwnerCompanyId(c,state);if(!companyId)throw new Error(`contract-owner-unresolved-or-ambiguous:${id}`);const termDays=Math.max(1,Number(c.termMonths)||1)*30,dailyRevenue=c.value/termDays,dailyCost=c.cost/termDays;contractTerms[id]=termDays;companyContractRevenue[companyId]=(companyContractRevenue[companyId]||0)+dailyRevenue;companyContractCost[companyId]=(companyContractCost[companyId]||0)+dailyCost;contractDailyRows.push({id,companyId,sector:c.sector,client:c.client,name:c.name,revenue:dailyRevenue,cost:dailyCost});}const expiredContracts=dispatchSystemCommand({state},'contracts','tick-day',{day:state.lastFinancialDay,terms:contractTerms},{actor:'simulation'}).result?.expired||[];for(const id of expiredContracts){const c=contracts.find(x=>x.id===id);if(c)pushAlert(`اكتمل عقد ${c.name} وانتهت مدته التشغيلية بعد ${c.termMonths} شهرًا.`);}
       // Bank and energy daily owners must close first. The accounting read model
       // below then consumes the report for this same day, never yesterday's values.
-      const advancedCost=phase('simulation.finance-day.advanced-owner',()=>{const cost=window.GH_ADVANCED?window.GH_ADVANCED.onFinancialDay(state,state.lastFinancialDay):0;issueContractExpiryNotices(state.lastFinancialDay);return cost;});
+      const advancedCost=phase('simulation.finance-day.advanced-owner',()=>{const cost=window.GH_ADVANCED?window.GH_ADVANCED.onFinancialDay(state,state.lastFinancialDay,phase):0;issueContractExpiryNotices(state.lastFinancialDay);return cost;});
       yield 'finance-day.advanced-owner';
       const payrollMeta=payrollCalendarMeta(state.lastFinancialDay),payrollPlan=phase('simulation.finance-day.payroll-plan',()=>monthlyPayrollSnapshot()),payrollDueToday=payrollMeta.dayOfMonth>=27&&!payrollReportForMonth(payrollMeta.monthKey);
       const leaseByCompany=window.GH_FLEET_DATA.dailyLeaseCosts(state,companyIdSet);
@@ -3222,6 +3222,7 @@
           transaction=TX.execute(state,transactionOptions());
         }
         if(!transaction.committed)return {committed:false,retry:true,reason:transaction.reason||'transaction-rejected'};
+        const priorFailure=state.simulationKernel?.lastAdvanceFailure;if(priorFailure&&completeTo+1e-6>=Number(priorFailure.to||Infinity)){delete state.simulationKernel.lastAdvanceFailure;delete state.simulationKernel.runtimeFatal;}
         const completedBoundary=TIME.boundaryAt(completeTo);
         if(completedBoundary.day!==null){const maintenance=window.GH_FLEET_DATA.maintain(state,completedBoundary.day);if(maintenance.compacted){window.GH_MAP_STRUCTURE_REVISION=((Number(window.GH_MAP_STRUCTURE_REVISION)||0)+1)>>>0;}}
         if(out.events||journal.saleIds.length||journal.retiredRouteIds.length)window.GH_MAP_STRUCTURE_REVISION=((Number(window.GH_MAP_STRUCTURE_REVISION)||0)+1)>>>0;
@@ -3290,14 +3291,15 @@
       const active=!!detail?.active;updateDayStepControl();if(!active)renderSimulationCalendar();
       if(detail?.failed){
         const reason=String(detail.reason||'manual-advance-failed');
-        state.simulationKernel=state.simulationKernel||{};state.simulationKernel.lastAdvanceFailure={reason,stage:String(detail.stage||''),from:Number(detail.from)||state.simSeconds,to:Number(detail.to)||state.simSeconds,at:state.simSeconds,retries:Number(detail.retries)||0,error:String(detail.error||'').slice(0,240)};
-        diag('SIM_CALENDAR_ADVANCE_FAILED',state.simulationKernel.lastAdvanceFailure,'warning');
-        window.GH_DIAGNOSTICS.recorderEvent?.(state,'CALENDAR_ADVANCE_FAILED',state.simulationKernel.lastAdvanceFailure,'warning',{nowMs:Date.now()});
+        const errorDetail=detail.errorDetail&&typeof detail.errorDetail==='object'?detail.errorDetail:null,rollbackFailed=errorDetail?.code==='TRANSACTION_ROLLBACK_FAILED'||errorDetail?.cause?.code==='TRANSACTION_ROLLBACK_FAILED'||JSON.stringify(errorDetail||{}).includes('TRANSACTION_ROLLBACK_FAILED')||/rollback failed/i.test(String(detail.error||''));
+        state.simulationKernel=state.simulationKernel||{};state.simulationKernel.lastAdvanceFailure={reason,stage:String(detail.stage||''),from:Number(detail.from)||state.simSeconds,to:Number(detail.to)||state.simSeconds,at:state.simSeconds,retries:Number(detail.retries)||0,code:rollbackFailed?'TRANSACTION_ROLLBACK_FAILED':'SIM_CALENDAR_ADVANCE_FAILED',error:String(detail.error||'').slice(0,500),errorDetail};
+        diag('SIM_CALENDAR_ADVANCE_FAILED',state.simulationKernel.lastAdvanceFailure,rollbackFailed?'critical':'warning');
+        window.GH_DIAGNOSTICS.recorderEvent?.(state,'CALENDAR_ADVANCE_FAILED',state.simulationKernel.lastAdvanceFailure,rollbackFailed?'critical':'warning',{nowMs:Date.now()});
         pushAlert(`توقف تقديم التاريخ وقائيًا عند آخر حالة معتمدة (${formatSimDate()}). السبب: ${reason}. لم تُعتمد حركة أصل أو إيراد جزئي.`);
       }
     },
     isSuspended:()=>hardResetInProgress||durableCommandInProgress,
-    onFatal:error=>{simulationEngine.cancelAdvance?.('simulation-fatal');state.speed=0;diag('SIM_FATAL',{message:String(error?.message||error)});console.error('Simulation Core fatal error',error);try{pushAlert('أوقف محرك المحاكاة الوقت لحماية الحفظ بعد خطأ داخلي.');}catch(alertError){console.error('تعذر تسجيل تنبيه خطأ المحاكاة',alertError);}},
+    onFatal:error=>{simulationEngine.cancelAdvance?.('simulation-fatal');state.speed=0;state.simulationKernel=state.simulationKernel||{};const diagnostic=error?.diagnostic||{name:error?.name||'Error',message:String(error?.message||error),code:error?.code||null,transactionLabel:error?.transactionLabel||null,transactionStage:error?.transactionStage||null};state.simulationKernel.runtimeFatal={at:state.simSeconds,code:error?.code||'SIM_FATAL_STATE',error:diagnostic};if(!state.simulationKernel.lastAdvanceFailure)state.simulationKernel.lastAdvanceFailure={reason:'simulation-fatal',stage:error?.transactionStage||'finish',from:state.simSeconds,to:state.simSeconds,at:state.simSeconds,retries:0,code:error?.code||'SIM_FATAL_STATE',error:String(error?.message||error).slice(0,500),errorDetail:diagnostic};diag('SIM_FATAL',diagnostic,'critical');try{window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:true,trackTransitions:true});window.GH_CONTROL_PLANE?.check?.(state);}catch(healthError){console.error('تعذر تحديث الصحة بعد خطأ المحاكاة',healthError);}console.error('Simulation Core fatal error',error);try{pushAlert('أوقف محرك المحاكاة الوقت لحماية الحفظ بعد خطأ داخلي. افتح مركز الإجراءات لمراجعة السبب قبل إعادة المحاولة.');}catch(alertError){console.error('تعذر تسجيل تنبيه خطأ المحاكاة',alertError);}},
     onWarning:({stage,error})=>{diag('SIM_WARNING',{stage,message:String(error?.message||error)});console.warn(`Simulation Core warning [${stage}]`,error);},
     onThrottle:({took,reason,stage})=>{diag('SIM_THROTTLE',{took,reason,stage});console.warn(`Simulation watchdog throttled after ${Math.round(took)}ms ${stage||'work'} stage`);},
     onGovernor:({level,avgChunkMs,avgWorkMs,stage,took})=>{diag('SIM_GOVERNOR',{level,avgChunkMs,avgWorkMs,stage,took});runtimeGovernor={level,avgChunkMs,avgWorkMs,stage,took};}
@@ -5316,16 +5318,22 @@
   }
   simulationEngine.reset(performance.now());
   requestAnimationFrame(loop);
+  function announceRuntimeReady(bridge){
+    if(!bridge)return;let sent=false;
+    const send=()=>{if(sent)return;sent=true;requestAnimationFrame(()=>requestAnimationFrame(()=>{try{diag('NATIVE_RUNTIME_READY',{version:APP_VERSION,build:RUNTIME_BUILD,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0});bridge.postMessage({action:'runtimeReady',version:APP_VERSION,build:RUNTIME_BUILD,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0});}catch(error){state.speed=0;diag('NATIVE_RUNTIME_READY_FAILED',{message:String(error?.message||error)},'critical');console.error('Native runtime-ready signal failed',error);}}));};
+    const mapReady=()=>{if(!terrainLayer?.once){send();return;}let settled=false;const finish=()=>{if(settled)return;settled=true;send();};terrainLayer.once('load',finish);setTimeout(finish,1600);};
+    if(map?.whenReady)map.whenReady(mapReady);else mapReady();
+  }
   // A Clean Atomic update is not considered booted until every core above, the
   // save migration, map initialization and simulation scheduler reached here.
-  // Native keeps the previous WebApp until this confirmation succeeds.
+  // Native keeps its launch cover over the static HTML defaults until this confirmation and a real map paint succeed.
   setTimeout(()=>{
     try{
       const schema=window.GH_SAVE_SCHEMA?.validate?.(state),integrity=window.GH_INTEGRITY_CORE?.check?.(state);
       if(schema&&!schema.ok){state.speed=0;diag('UPDATE_BOOT_SCHEMA_REJECTED',{version:APP_VERSION,errors:schema.errors},'critical');return;}
       if(integrity?.critical?.length){state.speed=0;diag('UPDATE_BOOT_INTEGRITY_REJECTED',{version:APP_VERSION,issues:integrity.critical.map(x=>x.id||x.code||x.title)},'critical');return;}
       const bridge=window.webkit?.messageHandlers?.updateBridge;
-      if(bridge){diag('UPDATE_BOOT_CONFIRM_REQUEST',{version:APP_VERSION,build:RUNTIME_BUILD});bridge.postMessage({action:'confirmUpdateBoot',version:APP_VERSION,build:RUNTIME_BUILD});}
+      if(bridge){diag('UPDATE_BOOT_CONFIRM_REQUEST',{version:APP_VERSION,build:RUNTIME_BUILD});bridge.postMessage({action:'confirmUpdateBoot',version:APP_VERSION,build:RUNTIME_BUILD});announceRuntimeReady(bridge);}
     }catch(error){state.speed=0;diag('UPDATE_BOOT_CONFIRM_BRIDGE_FAILED',{version:APP_VERSION,message:String(error?.message||error)},'critical');console.error('Native update boot confirmation failed',error);}
   },0);
 })();

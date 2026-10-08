@@ -689,7 +689,9 @@ final class GlobalSaveVault {
           try{if(raw.includes('"$ghBinary":"chunks-v1"')||raw.includes('"$ghText":"chunk-v1"')||raw.includes('"$ghCold":"chunk-v1"')){const parsed=JSON.parse(raw),rows=parsed?.fleet?.rows,ids=[...(rows&&rows.$ghBinary==='chunks-v1'&&Array.isArray(rows.chunks)?rows.chunks:[]),...(Array.isArray(parsed?.stateCodec?.chunks)?parsed.stateCodec.chunks:[])];if(ids.length){
             const chunks=new Map(),gate={ready:false,failed:null,deferred:null,defer(script){this.deferred=(script&&script.src)||'app.js';}};
             window.__GH_NATIVE_SAVE_CHUNKS__=chunks;window.__GH_BOOT_GATE__=gate;
-            Promise.all(ids.map(id=>fetch('gh://app/save-chunk/'+encodeURIComponent(id),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('save-chunk-'+r.status);return r.arrayBuffer();}).then(buffer=>{chunks.set(id,buffer);})))
+            let cursor=0,loaded=0,lastReported=-1;const report=()=>{const bucket=Math.floor(loaded/8);if(bucket===lastReported&&loaded!==ids.length)return;lastReported=bucket;try{window.webkit?.messageHandlers?.updateBridge?.postMessage({action:'bootProgress',loaded,total:ids.length});}catch(_e){}};report();
+            const worker=async()=>{for(;;){const index=cursor++;if(index>=ids.length)return;const id=ids[index],response=await fetch('gh://app/save-chunk/'+encodeURIComponent(id),{cache:'no-store'});if(!response.ok)throw new Error('save-chunk-'+response.status);chunks.set(id,await response.arrayBuffer());loaded++;report();}};
+            Promise.all(Array.from({length:Math.min(8,ids.length)},worker))
               .catch(error=>{gate.failed=String(error&&error.message||error);console.error('GH native save chunks failed',error);})
               .finally(()=>{gate.ready=true;if(gate.deferred){const s=document.createElement('script');s.src=gate.deferred;(document.body||document.documentElement).appendChild(s);}});
           }}}catch(e){console.error('GH native save chunk manifest failed',e);}

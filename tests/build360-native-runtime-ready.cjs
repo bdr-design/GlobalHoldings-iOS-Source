@@ -1,0 +1,18 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=path.resolve(__dirname,'..'),swift=fs.readFileSync(path.join(root,'iOS/GlobalHoldings/GameViewController.swift'),'utf8'),vault=fs.readFileSync(path.join(root,'iOS/GlobalHoldings/GlobalSaveVault.swift'),'utf8'),app=fs.readFileSync(path.join(root,'WebApp/app.js'),'utf8');
+const enter=swift.slice(swift.indexOf('@objc private func enterGame()'),swift.indexOf('@objc private func retryRuntimeInitialization()'));
+assert(!enter.includes('removeFromSuperview'),'entering must not reveal static HTML defaults');
+assert(enter.includes('loadGame()'));
+assert(swift.includes('private func beginLaunchLoading()'));
+assert(swift.includes('private func completeLaunchOverlay()'));
+assert(swift.includes('case "runtimeReady":'));
+assert(swift.includes('case "bootProgress":'));
+assert(swift.includes('DispatchQueue.main.asyncAfter(deadline: .now() + 45'));
+assert(app.includes("bridge.postMessage({action:'runtimeReady'"));
+assert(app.includes("terrainLayer.once('load',finish)"));
+assert(app.includes("requestAnimationFrame(()=>requestAnimationFrame"));
+assert(/postMessage\(\{action:'confirmUpdateBoot'[\s\S]{0,240}announceRuntimeReady\(bridge\)/.test(app),'integrity/update boot confirmation precedes visual readiness');
+assert(vault.includes("Math.min(8,ids.length)"),'native cold chunks use bounded parallelism');
+assert(vault.includes("action:'bootProgress'"),'cold archive progress reaches the native launch cover');
+console.log('BUILD360_NATIVE_RUNTIME_READY_PASS');

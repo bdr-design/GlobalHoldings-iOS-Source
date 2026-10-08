@@ -4,7 +4,7 @@ src=Path(sys.argv[1]);out=Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True
 text=(src/'iOS/GlobalHoldings/GameViewController.swift').read_text()
 start=text.index('    private func isTrustedGameDocument(');end=text.index('\n    }',start)+6
 helper=text[start:end]
-gate='guard message.webView === webView, message.frameInfo.isMainFrame,\n              isTrustedGameDocument(message.frameInfo.request.url) else { return }'
+gate='guard !navigationPreparing, message.webView === webView, message.frameInfo.isMainFrame,\n              isTrustedGameDocument(message.frameInfo.request.url) else { return }'
 assert gate in text
 code=r'''import Foundation
 import AppKit
@@ -26,6 +26,7 @@ final class Probe:NSObject,WKScriptMessageHandler {
  var webView:WKWebView!
  var rows:[[String:Any]]=[]
  var phase=""
+ var navigationPreparing=false
 __HELPER__
  func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
   var accepted=false

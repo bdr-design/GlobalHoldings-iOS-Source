@@ -34,6 +34,10 @@
   });
 
   const systemNowMs=()=>globalThis.performance?.now?.() ?? Date.now();
+  function errorDetail(error,depth=0,seen=new Set()){
+    if(error==null)return null;if(depth>5)return {message:'error-chain-depth-limit'};if(typeof error!=='object')return {message:String(error).slice(0,500)};if(seen.has(error))return {message:'error-chain-cycle'};seen.add(error);
+    const out={name:String(error.name||'Error').slice(0,80),message:String(error.message||error).slice(0,500)};if(error.code!=null)out.code=String(error.code).slice(0,120);if(error.transactionLabel!=null)out.transactionLabel=String(error.transactionLabel).slice(0,160);if(error.transactionStage!=null)out.transactionStage=String(error.transactionStage).slice(0,80);if(error.owner!=null)out.owner=String(error.owner).slice(0,160);if(error.stack)out.stack=String(error.stack).split('\n').slice(0,12).join('\n');if(error.rollbackError)out.rollbackError=errorDetail(error.rollbackError,depth+1,seen);if(error.cause)out.cause=errorDetail(error.cause,depth+1,seen);return out;
+  }
 
   function normalizeConfig(options={}){
     const cfg={...DEFAULTS,...options};
@@ -64,7 +68,7 @@
       maxChunkMs:0,lastChunkMs:0,longTasks:0,hardTasks:0,droppedRealSeconds:0,backlogClamps:0,
       maxCreateMs:0,lastCreateMs:0,maxFinishMs:0,lastFinishMs:0,maxCycleMs:0,lastCycleMs:0,
       maxMaintenanceMs:0,lastMaintenanceMs:0,maxRenderMs:0,lastRenderMs:0,lastFrame:null,maxFrame:null,cooldownFrames:0,deferredRuns:0,
-      lastError:'',lastBoundary:'',lastSliceSeconds:0,lastMaintenanceHour:-1,lastCancelReason:'',lastCommitReason:'',lastWorkStage:'',governor:'GREEN',avgChunkMs:0,avgWorkMs:0,
+      lastError:'',fatalError:null,lastBoundary:'',lastSliceSeconds:0,lastMaintenanceHour:-1,lastCancelReason:'',lastCommitReason:'',lastWorkStage:'',governor:'GREEN',avgChunkMs:0,avgWorkMs:0,
       manualFailures:0,manualThrottleYields:0,lastAdvanceFailure:null,lastProgressSim:Math.max(0,Number(adapter.getSimTime())||0),lastProgressAt:clock()
     };
     let job=null,jobSlice=0,jobStart=0,jobSpeed=0,jobBoundary=null,jobWorkMs=0,jobReadyToFinish=false,manualAdvance=null;
@@ -77,7 +81,7 @@
 
     const report=(stage,error,fatal=false)=>{
       const text=`${stage}:${error?.stack||error}`;health.lastError=text;
-      if(fatal)adapter.onFatal?.(error instanceof Error?error:new Error(String(error)));
+      if(fatal){health.fatalError=errorDetail(error);adapter.onFatal?.(error instanceof Error?error:new Error(String(error)));}
       else adapter.onWarning?.({stage,error});
     };
     const getSpeed=()=>{
@@ -99,7 +103,7 @@
       if(!manualAdvance)return false;
       const failed={...manualAdvance},at=simNow();
       cancelJob(`manual-advance-failed:${reason}`);manualAdvance=null;pacing.reset(clock());
-      const detail={reason:String(reason||'manual-advance-failed'),stage:String(meta.stage||''),from:Number(meta.from??at),to:Number(meta.to??at),at,retries:Number(failed.retries)||0,error:meta.error?String(meta.error?.message||meta.error):''};
+      const detail={reason:String(reason||'manual-advance-failed'),stage:String(meta.stage||''),from:Number(meta.from??at),to:Number(meta.to??at),at,retries:Number(failed.retries)||0,error:meta.error?String(meta.error?.message||meta.error):'',errorDetail:errorDetail(meta.error)};
       health.manualFailures++;health.lastAdvanceFailure=detail;
       try{adapter.onAdvance?.({active:false,failed:true,target:failed.target,remaining:Math.max(0,failed.target-at),reason:detail.reason,stage:detail.stage,from:detail.from,to:detail.to,retries:detail.retries,error:detail.error});}catch(error){report('advance-failed',error,false);}
       return true;

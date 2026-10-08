@@ -11,6 +11,11 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
     private var webView: WKWebView!
     private let schemeHandler = GlobalGameSchemeHandler()
     private var launchOverlay: UIView?
+    private weak var launchSubtitleLabel: UILabel?
+    private weak var launchPrimaryButton: UIButton?
+    private weak var launchUpdateButton: UIButton?
+    private var launchTimeoutWorkItem: DispatchWorkItem?
+    private var launchAttempt: UInt = 0
     private var pendingIncomingUpdateURL: URL?
     private var pendingSaveJSON: String?
     private var pendingNativeUpdate: GlobalGameStorage.AppliedUpdate?
@@ -119,6 +124,7 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
     }
 
     private func showLaunchOverlay(recoveryMessage: String? = nil) {
+        launchTimeoutWorkItem?.cancel()
         launchOverlay?.removeFromSuperview()
         let overlay = UIView()
         overlay.backgroundColor = UIColor(red: 0.024, green: 0.063, blue: 0.094, alpha: 1)
@@ -192,6 +198,49 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
             update.heightAnchor.constraint(equalToConstant: 48)
         ])
         launchOverlay = overlay
+        launchSubtitleLabel = subtitle
+        launchPrimaryButton = play
+        launchUpdateButton = update
+    }
+
+    private func beginLaunchLoading() {
+        launchAttempt &+= 1
+        let attempt = launchAttempt
+        launchTimeoutWorkItem?.cancel()
+        launchSubtitleLabel?.text = "جارٍ استعادة عالمك والتحقق من الحفظ وتجهيز الخريطة…"
+        launchPrimaryButton?.setTitle("جارٍ التشغيل…", for: .normal)
+        launchPrimaryButton?.isEnabled = false
+        launchPrimaryButton?.alpha = 0.72
+        launchUpdateButton?.isEnabled = false
+        launchUpdateButton?.alpha = 0.55
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.launchAttempt == attempt, self.launchOverlay != nil else { return }
+            self.showLaunchFailure("لم يكتمل تجهيز اللعبة خلال المهلة. لم يُعرض عالم افتراضي بدل حفظك؛ أعد المحاولة أو ثبّت تحديثًا سليمًا.")
+        }
+        launchTimeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: timeout)
+    }
+
+    private func showLaunchFailure(_ message: String) {
+        launchTimeoutWorkItem?.cancel()
+        launchTimeoutWorkItem = nil
+        launchSubtitleLabel?.text = message
+        launchPrimaryButton?.setTitle("إعادة محاولة التشغيل", for: .normal)
+        launchPrimaryButton?.isEnabled = true
+        launchPrimaryButton?.alpha = 1
+        launchUpdateButton?.isEnabled = true
+        launchUpdateButton?.alpha = 1
+    }
+
+    private func completeLaunchOverlay() {
+        launchTimeoutWorkItem?.cancel()
+        launchTimeoutWorkItem = nil
+        guard let overlay = launchOverlay else { return }
+        launchOverlay = nil
+        launchSubtitleLabel = nil
+        launchPrimaryButton = nil
+        launchUpdateButton = nil
+        UIView.animate(withDuration: 0.22, animations: { overlay.alpha = 0 }) { _ in overlay.removeFromSuperview() }
     }
 
     private func makeButton(title: String, primary: Bool) -> UIButton {
@@ -209,8 +258,6 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
     }
 
     @objc private func enterGame() {
-        launchOverlay?.removeFromSuperview()
-        launchOverlay = nil
         loadGame()
     }
 
@@ -393,7 +440,12 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
     }
 
     private func loadGame(cacheBuster: String = UUID().uuidString) {
-        guard let url = URL(string: "gh://app/index.html?v=\(cacheBuster.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cacheBuster)") else { return }
+        if launchOverlay == nil { showLaunchOverlay() }
+        beginLaunchLoading()
+        guard let url = URL(string: "gh://app/index.html?v=\(cacheBuster.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cacheBuster)") else {
+            showLaunchFailure("تعذر تكوين عنوان التشغيل المحلي.")
+            return
+        }
         webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30))
     }
 
@@ -632,6 +684,21 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
         case "confirmUpdateBoot":
             guard let version = payload["version"] as? String else { return }
             confirmNativeUpdateBoot(version: version, build: payloadInteger(payload["build"]))
+        case "runtimeReady":
+            guard let version = payload["version"] as? String,
+                  version == GlobalGameStorage.shared.currentVersion,
+                  payloadInteger(payload["build"]) != nil else {
+                showLaunchFailure("رفض Native إشارة جهوزية لا تطابق إصدار اللعبة المثبّت.")
+                return
+            }
+            completeLaunchOverlay()
+        case "bootProgress":
+            guard launchOverlay != nil,
+                  let loaded = payloadInteger(payload["loaded"]),
+                  let total = payloadInteger(payload["total"]),
+                  total > 0, loaded <= total else { return }
+            let percent = min(100, Int((Double(loaded) / Double(total) * 100).rounded(.down)))
+            launchSubtitleLabel?.text = "جارٍ استعادة عالمك والتحقق من الحفظ… \(percent)%"
         case "resetGameSave":
             guard let cleanSave = payload["saveJSON"] as? String else {
                 reportSaveAck(payload: payload, success: false, generation: nil, message: "Invalid reset envelope.")
@@ -765,6 +832,18 @@ final class GameViewController: UIViewController, WKNavigationDelegate, WKUIDele
             recoveredWebProcess = false
             webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('gh-native-recovery',{detail:{source:'native-save-vault',paused:true}}));")
         }
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView else { return }
+        navigationPreparing = false
+        showLaunchFailure("تعذر تحميل محرك اللعبة المحلي: \(error.localizedDescription)")
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView else { return }
+        navigationPreparing = false
+        showLaunchFailure("توقف تحميل محرك اللعبة قبل اكتماله: \(error.localizedDescription)")
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {

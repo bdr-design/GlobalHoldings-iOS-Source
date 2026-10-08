@@ -7,6 +7,21 @@
   const stagedTargets=new Map();
   const JOURNALED_ROOTS=new Map();
   const runtimeTelemetry={last:null,lastSimulation:null,samples:[],profiledSamples:[],profiledCount:0,lastDurable:null,durableSamples:[]};
+  function compactError(error,depth=0,seen=new Set()){
+    if(error==null)return null;if(depth>5)return {message:'error-chain-depth-limit'};
+    if(typeof error!=='object')return {message:String(error).slice(0,500)};
+    if(seen.has(error))return {message:'error-chain-cycle'};seen.add(error);
+    const out={name:String(error.name||'Error').slice(0,80),message:String(error.message||error).slice(0,500)};
+    if(error.code!=null)out.code=String(error.code).slice(0,120);
+    if(error.transactionLabel!=null)out.transactionLabel=String(error.transactionLabel).slice(0,160);
+    if(error.transactionStage!=null)out.transactionStage=String(error.transactionStage).slice(0,80);
+    if(error.owner!=null)out.owner=String(error.owner).slice(0,160);
+    if(error.stack)out.stack=String(error.stack).split('\n').slice(0,12).join('\n');
+    if(Array.isArray(error.failures))out.failures=error.failures.slice(0,16).map(row=>({component:String(row?.component||'unknown').slice(0,120),error:compactError(row?.error??row,depth+1,seen)}));
+    if(error.rollbackError)out.rollbackError=compactError(error.rollbackError,depth+1,seen);
+    if(error.cause)out.cause=compactError(error.cause,depth+1,seen);
+    return out;
+  }
   function publishDurableMetric(row){const metric={...row,recordedAtMs:Date.now()};for(const key of Object.keys(metric))if(typeof metric[key]==='number')metric[key]=Math.round(metric[key]*10)/10;runtimeTelemetry.lastDurable=metric;runtimeTelemetry.durableSamples.push(metric);if(runtimeTelemetry.durableSamples.length>16)runtimeTelemetry.durableSamples.shift();return metric;}
   const runtimeClock=()=>globalThis.performance?.now?.()??Date.now();
   function publishRuntimeMetric(row){
@@ -196,7 +211,7 @@
     // A shared subtree (row-level snapshots keep immutable leaves by reference) is already restored.
     if(target===snapshot)return target;
     // A sealed value is never edited: adopt the snapshot's value instead of writing into a frozen target.
-    if(isSealed(snapshot)||isSealed(target))return snapshot;
+    if(isSealed(snapshot)||isSealed(target)||Object.isFrozen(snapshot)||Object.isFrozen(target))return snapshot;
     // Typed arrays: restore with one copy, never element by element.
     if(ArrayBuffer.isView(snapshot)){
       if(ArrayBuffer.isView(target)&&target.constructor===snapshot.constructor&&target.length===snapshot.length&&!Object.isFrozen(target)){target.set(snapshot);return target;}
@@ -311,7 +326,7 @@
   const isPlainRecord=value=>!!value&&typeof value==='object'&&!ArrayBuffer.isView(value)&&!(value instanceof ArrayBuffer);
   // A sealed container cannot change (its writers replace it): it is kept by reference, and restoring it is a no-op (the
   // member of its parent that held it is restored).
-  function captureMembers(value){return SEALED.has(value)?{ref:value,sealed:true}:Array.isArray(value)?{ref:value,array:true,items:value.slice()}:{ref:value,array:false,keys:Object.keys(value),values:{...value}};}
+  function captureMembers(value){return SEALED.has(value)||Object.isFrozen(value)?{ref:value,sealed:true}:Array.isArray(value)?{ref:value,array:true,items:value.slice()}:{ref:value,array:false,keys:Object.keys(value),values:{...value}};}
   function restoreMembers(entry){
     const ref=entry.ref;if(entry.sealed)return;
     if(entry.array){
@@ -543,7 +558,7 @@
       finally{phaseBreakdown.push({name:String((typeof name==='function'?name():name)||'unnamed').slice(0,100),durationMs:Math.max(0,runtimeClock()-started),depth,ok});if(phaseBreakdown.length>64)phaseBreakdown.shift();phaseDepth--;}
     };
     const derivedProfileContext=profiled?{kind:label.startsWith('simulation:')?'simulation-slice':label.startsWith('boundary-recovery:')?'boundary-recovery':'state-transaction',assetCount:globalThis.GH_FLEET_DATA?.size?.(target)??(Array.isArray(target.assets)?target.assets.length:null),invoiceCount:Array.isArray(target.finance?.invoices)?target.finance.invoices.length:null,receivableCount:Array.isArray(target.finance?.receivables)?target.finance.receivables.length:null,payableCount:Array.isArray(target.finance?.payables)?target.finance.payables.length:null}:null;
-    const timing={label,profiled,profileContext:profiled?compactProfileContext(options.profileContext||derivedProfileContext):null,phaseBreakdown,scopeSize:scope?scope.length:null,fullSnapshot:false,fullSnapshotFallback:false,fallbackReason:null,rollbackStorage:null,journalRecords:0,snapshotMs:0,validateMs:0,applyMs:0,postCommitCriticalMs:0,postCommitNonCriticalMs:0,postCommitCriticalTasks:[],postCommitNonCriticalTasks:[],writeAudit:auditWrites?{enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots:[],undeclaredRoots:[],declaredButUnchanged:[],stage:'pending'}:null,rollbackMs:0,totalMs:0,committed:false,stage:'snapshot'};
+    const timing={label,profiled,profileContext:profiled?compactProfileContext(options.profileContext||derivedProfileContext):null,phaseBreakdown,scopeSize:scope?scope.length:null,fullSnapshot:false,fullSnapshotFallback:false,fallbackReason:null,rollbackStorage:null,journalRecords:0,snapshotMs:0,validateMs:0,applyMs:0,postCommitCriticalMs:0,postCommitNonCriticalMs:0,postCommitCriticalTasks:[],postCommitNonCriticalTasks:[],writeAudit:auditWrites?{enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots:[],undeclaredRoots:[],declaredButUnchanged:[],stage:'pending'}:null,error:null,rollbackFailures:[],rollbackMs:0,totalMs:0,committed:false,stage:'snapshot'};
     // A durable command runs on a private deep-cloned draft that is discarded whole when anything
     // fails; live state is only replaced after schema/integrity/storage succeed. A second full-state
     // snapshot of that draft therefore protects nothing. This is honored ONLY when the target is
@@ -576,7 +591,15 @@
     const undo=typeof options.undo==='function'?options.undo:null;
     const restore=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope,context.journaledRootValues);if(context.fullCoverage){const known=new Set(context.rootOrder);for(const key of Object.keys(target))if(!known.has(key)&&!JOURNALED_ROOTS.has(key))delete target[key];}return restoreRootOrder(target,context.rootOrder);}const restored=restoreObject(target,context.snapshot,context.journaledRootValues);if(context.rowEntries)for(const [key,entry] of Object.entries(context.rowEntries))restoreEntry(target,key,entry);return restored;};
     const releaseUndos=()=>{const rows=context.undos.splice(0);for(const row of rows)row.release?.();};
-    const rollback=()=>{const restored=restore();if(undo)undo();const rows=context.undos.splice(0);for(let i=rows.length-1;i>=0;i--)rows[i].undo();return restored;};
+    // Rollback is best-effort across every independent owner. A snapshot restore failure must not strand a fleet/store
+    // journal or another registered undo in its open state; run all of them, retain every failure, then fail closed.
+    const rollback=()=>{
+      let restored=target;const failures=[],attempt=(component,work)=>{try{const value=work();if(value!==undefined)restored=value;}catch(error){failures.push({component,error});}};
+      attempt('snapshot-restore',restore);if(undo)attempt('transaction-owner-undo',undo);
+      const rows=context.undos.splice(0);for(let i=rows.length-1;i>=0;i--)attempt(`registered-undo:${i}`,()=>rows[i].undo());
+      if(failures.length){const rollbackError=new Error(`transaction-rollback-components-failed:${failures.map(row=>row.component).join(',')}`);rollbackError.code='TRANSACTION_ROLLBACK_COMPONENTS_FAILED';rollbackError.failures=failures;rollbackError.cause=failures[0].error;throw rollbackError;}
+      return restored;
+    };
     let phase='validate';activeContext=context;
     try{
       const validateStart=runtimeClock();let validation;
@@ -657,12 +680,13 @@
       return {committed:true,value,label,scope:context.scope?[...context.scope]:null};
     }catch(error){
       activeContext=null;context.postCommit.length=0;
+      timing.error=compactError(error);
       if(auditWrites&&timing.writeAudit?.stage==='pending'){const mutatedRoots=diffRootKeys(target,auditBaseline),declared=declaredWriteRoots?new Set(declaredWriteRoots):null;timing.writeAudit={enabled:true,declaredRoots:declaredWriteRoots?[...declaredWriteRoots]:null,mutatedRoots,undeclaredRoots:declared?mutatedRoots.filter(key=>!declared.has(key)):[],declaredButUnchanged:declaredWriteRoots?declaredWriteRoots.filter(key=>!mutatedRoots.includes(key)):[],stage:'failure-before-rollback'};}
       const rollbackStart=runtimeClock();
-      try{rollback();timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);}catch(restoreError){timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);timing.stage='rollback-failed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);const fatal=new Error(`${label}: rollback failed`);fatal.cause=error;fatal.rollbackError=restoreError;fatal.transactionLabel=label;fatal.transactionStage='rollback';throw fatal;}
+      try{rollback();timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);}catch(restoreError){timing.rollbackMs=Math.max(0,runtimeClock()-rollbackStart);timing.rollbackFailures=(restoreError.failures||[{component:'rollback',error:restoreError}]).map(row=>({component:String(row.component||'rollback'),error:compactError(row.error)}));timing.stage='rollback-failed';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);const fatal=new Error(`${label}: rollback failed`);fatal.code='TRANSACTION_ROLLBACK_FAILED';fatal.cause=error;fatal.rollbackError=restoreError;fatal.transactionLabel=label;fatal.transactionStage='rollback';fatal.diagnostic=compactError(fatal);throw fatal;}
       const unisolatedRoots=changedJournaledRevisions(target,durableJournalBaseline);
       if(unisolatedRoots.length){const durable=durableJournalBaseline.durableContext;durable.poisoned=true;durable.poisonReason=`durable-journaled-root-write-failed:${unisolatedRoots.join(',')}`;const guarded=new Error(durable.poisonReason);guarded.cause=error;guarded.transactionLabel=label;guarded.transactionStage='durable-root-guard';timing.stage='durable-root-guard';timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);throw guarded;}
-      timing.stage=phase;timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);error.transactionLabel=label;error.transactionStage=phase;throw error;
+      timing.stage=phase;timing.totalMs=Math.max(0,runtimeClock()-totalStart);publishRuntimeMetric(timing);error.transactionLabel=label;error.transactionStage=phase;error.diagnostic=compactError(error);throw error;
     }finally{activeContext=null;}
   }
   function resetProfileTelemetry(){runtimeTelemetry.profiledSamples.length=0;runtimeTelemetry.profiledCount=0;runtimeTelemetry.lastSimulation=null;return true;}
