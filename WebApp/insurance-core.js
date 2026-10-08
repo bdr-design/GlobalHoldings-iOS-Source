@@ -25,7 +25,7 @@
   // daily documents as every other subsidiary. The offices' running costs are their facility costs (the company
   // definition's site template), already posted by the close. Nothing here writes a document per policy or claim.
   //
-  // Load. Fixed work per office and day (four lines), at most 5 open risk requests, history capped at 400 days, 40
+  // Load. Fixed work per office and day (four lines), at most 5 open risk requests, history capped at 90 days (the screens read 30), 40
   // decisions kept. No per-frame work.
   const VERSION='3.0.0';
   const num=value=>Math.max(0,Number(value)||0),now=state=>Number(state.simSeconds)||0;
@@ -45,7 +45,7 @@
   const COMMISSION=.12,CLAIMS_LAG_DAYS=30,PRICE_LEVELS=Object.freeze([.85,.9,.95,1,1.05,1.1,1.15,1.25]);
   const REINSURANCE_LEVELS=Object.freeze([0,.2,.4,.6]),CEDING_COMMISSION=.25;
   const CAMPAIGN_DAYS=30,CAMPAIGN_GROWTH=1.6;
-  const MAX_OPEN_RISKS=5,RISK_DAYS=7,HISTORY=40,DAILY_HISTORY=400;
+  const MAX_OPEN_RISKS=5,RISK_DAYS=7,HISTORY=40,DAILY_HISTORY=90;
   const SMALL_STATES=Object.freeze({'الإمارات':9890000,'سنغافورة':5920000,'عُمان':4580000,'البحرين':1500000,'المالديف':520000,'أيرلندا':5120000,'مالطا':530000,'الكونغو الديمقراطية':102000000,'الكونغو':6000000,'ملاوي':20400000,'موريشيوس':1260000});
   function countryPopulation(country){
     const name=String(country||'').trim();if(SMALL_STATES[name])return SMALL_STATES[name];

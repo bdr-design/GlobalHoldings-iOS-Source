@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 358,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "0afa5fac73ccd37c5a41182bce97d037f0c6566ec15d19c6d86a4079942c9387",
-  "webapp_tree_sha256": "83ed108c5fd37f38b098505f156057df758d74e3b23ecfbff9bca7c2d59261ce",
+  "source_tree_sha256": "0a66d3f0a07b80fb9f2cadc00ad51a68eeb8327cf906bb328657a98f9053b754",
+  "webapp_tree_sha256": "84401b68d74f20195d8387efb120402f5266abc0102eea311f7c8be9e8fc514a",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 255218,
@@ -3151,8 +3151,8 @@
       "sha256": "1684668a36129f5769cbc830b9a7817bdaec155c6075f35e551e33f721d94cec"
     },
     "WebApp/insurance-core.js": {
-      "bytes": 21433,
-      "sha256": "d261a4bf262ec49e9deff7edfc8dd93996204b2817d49153740f0b1607dfb389"
+      "bytes": 21453,
+      "sha256": "f72fce761145fdccf1efe356f2fcc2658164beb79c3cff2a965257cecdd91d5a"
     },
     "WebApp/integrity-core.js": {
       "bytes": 24489,
@@ -3255,8 +3255,8 @@
       "sha256": "59ec1d2750f314d1236bbb890be3dd0154ff37768a748ae194548397b7b688a4"
     },
     "WebApp/realestate-core.js": {
-      "bytes": 21978,
-      "sha256": "bd020f4a0174afbddfc0ce877e153c500367085304e098970f7f21951a624b7f"
+      "bytes": 21998,
+      "sha256": "0113fca681dffd6319c332f79446cc6e1995f62aa7aaa7a2a99685b163eed368"
     },
     "WebApp/realism-core.js": {
       "bytes": 97665,
@@ -3424,7 +3424,7 @@
     },
     "project.yml": {
       "bytes": 2413,
-      "sha256": "cf8daaa525364b4d68798ba688a6eb855b10432b86279ecaafcadb8455605e24"
+      "sha256": "1403397cbfeafef254a9d87fea0b9aa7e2ccbfdb80e0ffe5e79fe4ea4ad302b2"
     },
     "BUILD": {
       "bytes": 4,

@@ -27,7 +27,7 @@
   // tenant.
   //
   // Load. Units and tenants are counts per project, not records; at most 30 active projects, 5 open tenant requests,
-  // history capped at 400 days, 40 decisions kept. No per-frame work.
+  // history capped at 90 days (the screens read 30), 40 decisions kept. No per-frame work.
   const VERSION='3.0.0';
   const num=value=>Math.max(0,Number(value)||0),now=state=>Number(state.simSeconds)||0;
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number(value)||0));
@@ -46,7 +46,7 @@
   const LAND_SHARE=.18,MILESTONES=Object.freeze([.4,.3,.3]),OFF_PLAN_DISCOUNT=.95,SALES_COMMISSION=.02,PROPERTY_OPEX=.012;
   const HOUSEHOLD_SIZE=4.5,MOVE_RATE=.06,BUSINESS_PER_PEOPLE=40,DEFAULT_POPULATION=10000000,BASE_LEASE_CHURN=.15;
   const PRICE_LEVELS=Object.freeze([.85,.9,.95,1,1.05,1.1,1.15,1.25]),SIZE_LEVELS=Object.freeze([.5,1,1.5,2]);
-  const MAX_ACTIVE_PROJECTS=30,MAX_OPEN_REQUESTS=5,REQUEST_DAYS=10,HISTORY=40,DAILY_HISTORY=400;
+  const MAX_ACTIVE_PROJECTS=30,MAX_OPEN_REQUESTS=5,REQUEST_DAYS=10,HISTORY=40,DAILY_HISTORY=90;
   function countryPopulation(country){const bank=globalThis.GH_BANKING_CORE;if(typeof bank?.countryPopulation==='function')return bank.countryPopulation(country);const row=(Array.isArray(globalThis.GH_MAP_LABELS)?globalThis.GH_MAP_LABELS:[]).find(item=>item?.name===String(country||'').trim());return Number(row?.population)>0?Number(row.population):DEFAULT_POPULATION;}
   function officeTemplate(p={}){return {id:String(p.id||''),facilityId:String(p.facilityId||''),city:String(p.city||'غير محدد'),country:String(p.country||'غير محدد'),openedAt:Number(p.openedAt)||0,active:p.active!==false,marketPopulation:Number(p.marketPopulation)>0?Number(p.marketPopulation):0,today:p.today&&typeof p.today==='object'?{...p.today}:null};}
   function ensure(state){
