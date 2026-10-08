@@ -37,6 +37,17 @@ const {harness}=require('./helpers/core-harness');
   assert.equal(JSON.stringify({rows:state.rows}),before);
 }
 
+// A full/deep scoped rollback may encounter an externally frozen subtree. The subtree cannot have been changed,
+// so rollback must adopt the captured value and continue restoring the remaining roots instead of hiding the
+// original owner failure behind "Unable to delete property". Public restoreObject remains strict (Build 340).
+{
+  const {s}=harness(['transaction-core']);const nested={value:1},frozen=Object.freeze({id:'external-constant',value:1,nested}),state={first:{frozen,changed:1},second:{changed:1}},before=JSON.stringify(state);
+  let caught=null;try{s.GH_TRANSACTION_CORE.execute(state,{label:'frozen-deep-scope-proof',scope:['first','second'],apply(){state.first.changed=9;state.first.frozen.nested.value=9;state.second.changed=9;throw Object.assign(new Error('owner-failure-after-frozen'),{code:'OWNER_FROZEN_TEST'});}});}catch(error){caught=error;}
+  assert(caught);assert.equal(caught.code,'OWNER_FROZEN_TEST');assert.equal(JSON.stringify(state),before);assert.equal(state.first.frozen,frozen);assert.equal(Object.isFrozen(state.first.frozen),true);
+  const metric=s.GH_TRANSACTION_CORE.telemetry().last;assert.equal(metric.committed,false);assert.equal(metric.rollbackFailures.length,0);assert.deepEqual(metric.rollbackFrozenPaths,['first.frozen']);
+  assert.throws(()=>s.GH_TRANSACTION_CORE.restoreObject({o:Object.freeze({a:1})},{o:{a:2}}),/Cannot delete property|read only|frozen/i,'public restore remains strict');
+}
+
 // Health cannot report a failed calendar rollback as healthy.
 {
   const {s}=harness(['diagnostics-core']);

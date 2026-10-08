@@ -15,6 +15,7 @@
     if(error.code!=null)out.code=String(error.code).slice(0,120);
     if(error.transactionLabel!=null)out.transactionLabel=String(error.transactionLabel).slice(0,160);
     if(error.transactionStage!=null)out.transactionStage=String(error.transactionStage).slice(0,80);
+    if(error.transactionRollbackPath!=null)out.transactionRollbackPath=String(error.transactionRollbackPath).slice(0,240);
     if(error.owner!=null)out.owner=String(error.owner).slice(0,160);
     if(error.stack)out.stack=String(error.stack).split('\n').slice(0,12).join('\n');
     if(Array.isArray(error.failures))out.failures=error.failures.slice(0,16).map(row=>({component:String(row?.component||'unknown').slice(0,120),error:compactError(row?.error??row,depth+1,seen)}));
@@ -204,7 +205,7 @@
   // shape changes, key order and the resulting graph stay byte-for-byte equivalent.
   // The identity of a record in a collection; null for values without one (restored in place as before).
   function recordIdentity(value){if(Array.isArray(value))return null;const id=value.documentProofId??value.id??value.number??null;return id===null||id===undefined?null:String(id);}
-  function restoreValue(target,snapshot){
+  function restoreValue(target,snapshot,rollback=null,path=''){
     // Fleet store records (one ArrayBuffer): always a fresh copy, so the store
     // sees a new buffer and rebuilds every runtime index from restored data.
     if(snapshot instanceof ArrayBuffer)return snapshot.slice(0);
@@ -212,6 +213,16 @@
     if(target===snapshot)return target;
     // A sealed value is never edited: adopt the snapshot's value instead of writing into a frozen target.
     if(isSealed(snapshot)||isSealed(target))return snapshot;
+    // A transaction snapshot is authoritative for an externally frozen subtree. The game cannot have changed that
+    // subtree in place, and trying to delete/rewrite its keys masks the original owner failure with a TypeError. This
+    // mode is rollback-only: public restoreObject deliberately keeps its strict Build 340 behaviour.
+    if(rollback?.adoptFrozen===true&&target&&typeof target==='object'&&Object.isFrozen(target)){
+      const location=path||'$';if(!rollback.frozenPaths.includes(location))rollback.frozenPaths.push(location);
+      const targetKeys=Object.keys(target),snapshotKeys=Object.keys(snapshot);let keep=targetKeys.length===snapshotKeys.length;
+      if(keep)for(let i=0;i<snapshotKeys.length;i++)if(targetKeys[i]!==snapshotKeys[i]){keep=false;break;}
+      if(keep)for(const key of snapshotKeys){const sv=snapshot[key],tv=target[key];if(sv&&typeof sv==='object'){const next=restoreValue(tv,sv,rollback,`${location}.${key}`);if(next!==tv)keep=false;}else if(!Object.is(tv,sv))keep=false;}
+      return keep?target:snapshot;
+    }
     // Typed arrays: restore with one copy, never element by element.
     if(ArrayBuffer.isView(snapshot)){
       if(ArrayBuffer.isView(target)&&target.constructor===snapshot.constructor&&target.length===snapshot.length&&!Object.isFrozen(target)){target.set(snapshot);return target;}
@@ -229,7 +240,7 @@
         // (Build 358 owner report: after a new invoice, older ones failed document-counterparty-mismatch and the save was
         // refused).
         if(sv&&typeof sv==='object'&&tv&&typeof tv==='object'&&tv!==sv&&recordIdentity(tv)!==recordIdentity(sv)){target[i]=sv;continue;}
-        if(sv&&typeof sv==='object'){const next=restoreValue(tv,sv);if(next!==tv||!(i in target))target[i]=next;}
+        if(sv&&typeof sv==='object'){const next=restoreValue(tv,sv,rollback,rollback?`${path}[${i}]`:'');if(next!==tv||!(i in target))target[i]=next;}
         else if(tv!==sv||!(i in target))target[i]=sv;
       }
       return target;
@@ -242,25 +253,25 @@
       if(sameShape){
         for(let i=0;i<snapshotKeys.length;i++){
           const key=snapshotKeys[i],sv=snapshot[key],tv=target[key];
-          if(sv&&typeof sv==='object'){const next=restoreValue(tv,sv);if(next!==tv)target[key]=next;}
+          if(sv&&typeof sv==='object'){const next=restoreValue(tv,sv,rollback,rollback?(path?`${path}.${key}`:key):'');if(next!==tv)target[key]=next;}
           else if(tv!==sv||(sv!==sv))target[key]=sv;
         }
         return target;
       }
       const existing=new Map(targetKeys.map(key=>[key,target[key]]));
       for(const key of targetKeys)delete target[key];
-      for(const [key,sv] of Object.entries(snapshot)){const tv=existing.get(key);target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}
+      for(const [key,sv] of Object.entries(snapshot)){const tv=existing.get(key);target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv,rollback,rollback?(path?`${path}.${key}`:key):''):sv;}
       return target;
     }
     return snapshot;
   }
-  function restoreObject(target,snapshot,rootValues=null){
+  function restoreObject(target,snapshot,rootValues=null,rollback=null){
     if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw new TypeError('Transaction snapshot must be an object');
     const preserved=[...JOURNALED_ROOTS.keys()].filter(key=>Object.prototype.hasOwnProperty.call(target,key)||Object.prototype.hasOwnProperty.call(snapshot,key)||(rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key)));
-    if(!preserved.length)return restoreValue(target,snapshot);
+    if(!preserved.length)return restoreValue(target,snapshot,rollback,'$');
     const keep=new Set(preserved),current=Object.keys(target),wanted=Object.keys(snapshot);
     for(const key of current)if(!keep.has(key)&&!Object.prototype.hasOwnProperty.call(snapshot,key))delete target[key];
-    for(const key of wanted){if(keep.has(key))continue;const sv=snapshot[key],tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;}
+    for(const key of wanted){if(keep.has(key))continue;const sv=snapshot[key],tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv,rollback,key):sv;}
     for(const key of preserved)if(!Object.prototype.hasOwnProperty.call(target,key)&&rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key))target[key]=rootValues[key];
     return target;
   }
@@ -358,13 +369,13 @@
     // Sealed collections of this root are shared (their rows cannot change), as a full rollback snapshot shares them.
     return {exists,value:exists&&(SEALED_COLLECTIONS.has(key)||SEALED_ROOTS.has(key))?deepClone({[key]:value},SNAPSHOT_OPTIONS)[key]:deepClone(value)};
   }
-  function restoreEntry(target,key,entry){
+  function restoreEntry(target,key,entry,rollback=null){
     if(!entry?.exists){delete target[key];return;}
     if(entry.rows){if(target[key]!==entry.ref)target[key]=entry.ref;restoreRows(entry.rows);return;}
-    const sv=entry.value,tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv):sv;
+    const sv=entry.value,tv=target[key];try{target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv,rollback,key):sv;}catch(error){if(error&&error.transactionRollbackPath==null)error.transactionRollbackPath=key;throw error;}
   }
   function captureScoped(target,scope,policies=null){const snapshot={};for(const key of scope){if(JOURNALED_ROOTS.has(key))continue;snapshot[key]=captureEntry(target,key,policies?.[key]||null);}return snapshot;}
-  function restoreScoped(target,snapshot,scope,rootValues=null){for(const key of scope){if(JOURNALED_ROOTS.has(key))continue;restoreEntry(target,key,snapshot[key]);}for(const key of JOURNALED_ROOTS.keys())if(!Object.prototype.hasOwnProperty.call(target,key)&&rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key))target[key]=rootValues[key];return target;}
+  function restoreScoped(target,snapshot,scope,rootValues=null,rollback=null){const failures=[];for(const key of scope){if(JOURNALED_ROOTS.has(key))continue;try{restoreEntry(target,key,snapshot[key],rollback);}catch(error){failures.push({key,error});}}for(const key of JOURNALED_ROOTS.keys())if(!Object.prototype.hasOwnProperty.call(target,key)&&rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key))target[key]=rootValues[key];if(failures.length){const error=new Error(`transaction-scoped-restore-failed:${failures.map(row=>row.key).join(',')}`);error.code='TRANSACTION_SCOPED_RESTORE_FAILED';error.transactionRollbackPath=failures[0].error?.transactionRollbackPath||failures[0].key;error.failures=failures.map(row=>({component:`root:${row.key}`,error:row.error}));error.cause=failures[0].error;throw error;}return target;}
   function isJournalPrimitive(value){return value===null||typeof value==='string'||typeof value==='boolean'||(typeof value==='number'&&Number.isFinite(value));}
   function captureJournal(target,scope,contracts){
     const assetContract=contracts.find(row=>row.proven===true&&row.root==='assets'&&row.mode==='asset-fields'&&Array.isArray(row.fields)&&row.fields.length);
@@ -402,8 +413,8 @@
     }
     return {ok:true};
   }
-  function restoreJournal(target,journal,rootOrder){
-    if(journal.rootScope.length)restoreScoped(target,journal.rootSnapshot,journal.rootScope);
+  function restoreJournal(target,journal,rootOrder,rollback=null){
+    if(journal.rootScope.length)restoreScoped(target,journal.rootSnapshot,journal.rootScope,null,rollback);
     const assets=target.assets||[];
     for(const entry of journal.assetEntries){
       let asset=assets[entry.index];if(!asset||asset!==entry.ref){if(entry.id!=null)asset=assets.find(row=>row?.id===entry.id);}
@@ -589,7 +600,8 @@
     // outside `scope` (the simulation slice keeps the previous asset field values instead of deep-cloning the
     // fleet). It always runs after the snapshot restore, so it also holds after a scoped -> full promotion.
     const undo=typeof options.undo==='function'?options.undo:null;
-    const restore=()=>{if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;return target;}if(context.rollbackStorage==='journal')return restoreJournal(target,context.journal,context.rootOrder);if(context.scope){restoreScoped(target,context.snapshot,context.scope,context.journaledRootValues);if(context.fullCoverage){const known=new Set(context.rootOrder);for(const key of Object.keys(target))if(!known.has(key)&&!JOURNALED_ROOTS.has(key))delete target[key];}return restoreRootOrder(target,context.rootOrder);}const restored=restoreObject(target,context.snapshot,context.journaledRootValues);if(context.rowEntries)for(const [key,entry] of Object.entries(context.rowEntries))restoreEntry(target,key,entry);return restored;};
+    const rollbackRestore={adoptFrozen:true,frozenPaths:[]};timing.rollbackFrozenPaths=rollbackRestore.frozenPaths;
+    const restore=()=>{let restored;if(context.rollbackStorage==='discardable-draft'){const durable=globalThis.__GH_DURABLE_COMMAND_CONTEXT__;if(durable&&durable.draft===target)durable.poisoned=true;restored=target;}else if(context.rollbackStorage==='journal')restored=restoreJournal(target,context.journal,context.rootOrder,rollbackRestore);else if(context.scope){restoreScoped(target,context.snapshot,context.scope,context.journaledRootValues,rollbackRestore);if(context.fullCoverage){const known=new Set(context.rootOrder);for(const key of Object.keys(target))if(!known.has(key)&&!JOURNALED_ROOTS.has(key))delete target[key];}restored=restoreRootOrder(target,context.rootOrder);}else{restored=restoreObject(target,context.snapshot,context.journaledRootValues,rollbackRestore);if(context.rowEntries)for(const [key,entry] of Object.entries(context.rowEntries))restoreEntry(target,key,entry,rollbackRestore);}timing.rollbackFrozenPaths=[...rollbackRestore.frozenPaths];return restored;};
     const releaseUndos=()=>{const rows=context.undos.splice(0);for(const row of rows)row.release?.();};
     // Rollback is best-effort across every independent owner. A snapshot restore failure must not strand a fleet/store
     // journal or another registered undo in its open state; run all of them, retain every failure, then fail closed.

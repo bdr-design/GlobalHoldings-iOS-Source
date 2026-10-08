@@ -147,7 +147,7 @@
     const result=computeStatements(state,t);if(memo)memo.set(t,statementCopy(result));return result;
   }
   // A month of interest at the rate each open debt bears (GH_FINANCE_CORE.debtRate), as the daily close bills it.
-  function monthlyDebtInterest(state,t){const F=globalThis.GH_FINANCE_CORE;if(!F?.debtRate)return 0;let sum=0;for(const row of state.finance?.debtRecords||[])if(row?.company===t&&F.interestBearing(row))sum+=Number(row.outstanding)*F.debtRate(state,row)/12;return sum;}
+  function monthlyDebtInterest(state,t){const F=globalThis.GH_FINANCE_CORE;if(!F?.debtRate)return 0;let sum=0;for(const row of state.finance?.debtRecords||[])if(row?.company===t&&F.interestBearing(row,state))sum+=F.debtOutstanding(state,row)*F.debtRate(state,row)/12;return sum;}
   function computeStatements(state,t){
     const b=books(state,t)||{debt:0,taxPayable:0},lt=ledgerTotals(state,t,30),c=cash(state,t),recv=(state.finance?.receivables||[]).filter(x=>rowCompanyId(state,x)===t).reduce((n,x)=>n+(Number(x.total)||0),0),pay=(state.finance?.payables||[]).filter(x=>rowCompanyId(state,x)===t).reduce((n,x)=>n+(Number(x.total)||0),0),debt=Math.max(0,Number(b.debt)||0),simSeconds=Math.max(0,Number(state.simSeconds)||0),simYear=2026+Math.floor(simSeconds/(365*86400));
     const fleetTotals=ownerFleetTotals(state,t),assetVal=fleetTotals.assetVal,depr=fleetTotals.depr,leaseLiab=fleetTotals.leaseLiab,rou=fleetTotals.rou,leaseInterest=fleetTotals.leaseInterest;
