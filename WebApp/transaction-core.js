@@ -182,6 +182,8 @@
   // Fast path (same key sequence, unfrozen plain data object): no key Map, no delete/re-add and
   // no write for unchanged primitives. Anything else uses the original delete/re-add path, so
   // shape changes, key order and the resulting graph stay byte-for-byte equivalent.
+  // The identity of a record in a collection; null for values without one (restored in place as before).
+  function recordIdentity(value){if(Array.isArray(value))return null;const id=value.documentProofId??value.id??value.number??null;return id===null||id===undefined?null:String(id);}
   function restoreValue(target,snapshot){
     // Fleet store records (one ArrayBuffer): always a fresh copy, so the store
     // sees a new buffer and rebuilds every runtime index from restored data.
@@ -200,6 +202,13 @@
       if(target.length!==snapshot.length)target.length=snapshot.length;
       for(let i=0;i<snapshot.length;i++){
         const sv=snapshot[i],tv=target[i];
+        // A position that now holds another record (a row was inserted or removed since the snapshot) takes the
+        // snapshot's object as it is. Writing it into the old object in place corrupted documents: publish() restores a
+        // committed draft that shares rows with the live state, so the old object at one position is the draft's row at
+        // the next, and its fields (a sealed counterparty snapshot) were overwritten before that position was read
+        // (Build 358 owner report: after a new invoice, older ones failed document-counterparty-mismatch and the save was
+        // refused).
+        if(sv&&typeof sv==='object'&&tv&&typeof tv==='object'&&tv!==sv&&recordIdentity(tv)!==recordIdentity(sv)){target[i]=sv;continue;}
         if(sv&&typeof sv==='object'){const next=restoreValue(tv,sv);if(next!==tv||!(i in target))target[i]=next;}
         else if(tv!==sv||!(i in target))target[i]=sv;
       }
