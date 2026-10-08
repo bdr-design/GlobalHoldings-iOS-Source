@@ -45,7 +45,7 @@ jobs:
       - name: Publish the exact verified IPA as a prerelease asset
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.CODEX_IPA_DELIVERY_TOKEN }}
         run: |
           set -euo pipefail
           SOURCE_SHA="$(jq -r '.workflow_commit' publish/test-ipa-verification.json)"
