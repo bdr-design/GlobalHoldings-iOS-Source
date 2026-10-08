@@ -211,7 +211,7 @@
     // A shared subtree (row-level snapshots keep immutable leaves by reference) is already restored.
     if(target===snapshot)return target;
     // A sealed value is never edited: adopt the snapshot's value instead of writing into a frozen target.
-    if(isSealed(snapshot)||isSealed(target)||Object.isFrozen(snapshot)||Object.isFrozen(target))return snapshot;
+    if(isSealed(snapshot)||isSealed(target))return snapshot;
     // Typed arrays: restore with one copy, never element by element.
     if(ArrayBuffer.isView(snapshot)){
       if(ArrayBuffer.isView(target)&&target.constructor===snapshot.constructor&&target.length===snapshot.length&&!Object.isFrozen(target)){target.set(snapshot);return target;}
