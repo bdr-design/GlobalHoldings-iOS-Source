@@ -4,6 +4,9 @@ process.env.GH_TEST_SOURCE_DIR=process.env.GH_TEST_SOURCE_DIR||path.resolve(__di
 const {scenario}=require('./helpers/business-scenario');
 const {s,state,command}=scenario(),H=s.GH_HR_CORE;
 
+const targetIds=s.GH_AUTHORIZATION.commandCompanyIds(state,{domain:'hr',name:'appoint-all-official-managers',payload:{termMonths:12}});
+assert.deepEqual(JSON.parse(JSON.stringify(targetIds)),['group','air'],'the authorization envelope resolves the group and every operational company for the one-click command');
+
 const first=command('hr','appoint-all-official-managers',{termMonths:12,source:'QA one click managers'});
 assert.equal(first.appointed,1);assert.deepEqual(JSON.parse(JSON.stringify(first.companies)),['air']);
 const manager=H.officialManager(state,'air');assert.ok(manager);const managerContract=state.advanced.labor.employmentContracts.find(row=>row.id===manager.contractId);assert.equal(managerContract.autoRenew,true);

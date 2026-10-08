@@ -3,14 +3,14 @@
   "results": [
     {
       "name": "no subsidiaries: seven days",
-      "seconds": 5.816,
+      "seconds": 1.414,
       "time": 604800,
       "days": 7,
       "hours": 168
     },
     {
       "name": "no subsidiaries: thirty more days across payroll and month end",
-      "seconds": 25.897,
+      "seconds": 6.002,
       "time": 3196800,
       "days": 37,
       "hours": 888
@@ -75,15 +75,15 @@
     {
       "name": "year request advances and cancels safely in full game",
       "requested": 34819200,
-      "committed": 3294000
+      "committed": 3366000
     },
     {
       "name": "cancelled advance exact business save/reload",
-      "time": 3294000
+      "time": 3366000
     },
     {
       "name": "all six founded companies: first day",
-      "seconds": 0.846,
+      "seconds": 0.291,
       "time": 86400,
       "days": 1,
       "hours": 24
@@ -124,13 +124,13 @@
       "day": 1,
       "hour": 47,
       "speed": 0,
-      "error": "sliceFinish:Error: qa-calendar-midnight-commit-failure\n    at eval (eval at evaluate (:291:30), <anonymous>:1:1318)\n    at Generator.next (<anonymous>)\n    at executeSteps (http://127.0.0.1:43903/transaction-core.js:613:29)\n    at executeSteps.next (<anonymous>)\n    at http://127.0.0.1:43903/transaction-core.js:522:63\n    at advance (http://127.0.0.1:43903/transaction-core.js:512:22)\n    at Object.step (http://127.0.0.1:43903/transaction-core.js:522:45)\n    at Object.step (eval at evaluate (:291:30), <anonymous>:1:1772)\n    at Object.runChunk (http://127.0.0.1:43903/app.js:3209:22)\n    at work (http://127.0.0.1:43903/simulation-core.js:270:28)",
+      "error": "sliceFinish:Error: qa-calendar-midnight-commit-failure\n    at eval (eval at evaluate (:291:30), <anonymous>:1:1318)\n    at Generator.next (<anonymous>)\n    at executeSteps (http://127.0.0.1:33245/transaction-core.js:652:29)\n    at executeSteps.next (<anonymous>)\n    at http://127.0.0.1:33245/transaction-core.js:552:63\n    at advance (http://127.0.0.1:33245/transaction-core.js:542:22)\n    at Object.step (http://127.0.0.1:33245/transaction-core.js:552:45)\n    at Object.step (eval at evaluate (:291:30), <anonymous>:1:1772)\n    at Object.runChunk (http://127.0.0.1:33245/app.js:3269:22)\n    at work (http://127.0.0.1:33245/simulation-core.js:296:28)",
       "bank": 1,
       "power": 1
     },
     {
       "name": "retry failed day succeeds without duplicate postings",
-      "seconds": 0.101,
+      "seconds": 0.106,
       "time": 172800,
       "days": 2,
       "hours": 48
@@ -152,7 +152,7 @@
     },
     {
       "name": "portrait full game day",
-      "seconds": 0.807,
+      "seconds": 0.237,
       "time": 259200,
       "days": 3,
       "hours": 72

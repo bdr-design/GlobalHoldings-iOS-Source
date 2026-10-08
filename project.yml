@@ -9,7 +9,7 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: 17.0
     TARGETED_DEVICE_FAMILY: "1"
     MARKETING_VERSION: "3.0.0"
-    CURRENT_PROJECT_VERSION: "358"
+    CURRENT_PROJECT_VERSION: "362"
 targets:
   GlobalHoldings:
     type: application
@@ -26,8 +26,8 @@ targets:
         CFBundleDisplayName: "MADAR"
         CFBundleIconName: "AppIcon"
         CFBundleShortVersionString: "3.0.0"
-        CFBundleVersion: "358"
-        GHSourceSnapshotSHA256: "e94e3aae38e70da9055dc47a75da8e89c0375094e68df24289bd84cd7354a4a2"
+        CFBundleVersion: "362"
+        GHSourceSnapshotSHA256: "e250f77950954571ce126e902889b6fbc170e33751824a2f68551b8781975c25"
         LSRequiresIPhoneOS: true
         UIRequiresFullScreen: true
         UILaunchStoryboardName: LaunchScreen

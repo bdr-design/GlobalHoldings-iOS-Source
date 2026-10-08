@@ -829,6 +829,7 @@
     "simulation-asset-worker.js",
     "simulation-core.js",
     "simulation-pacing-core.js",
+    "simulation-runtime-core.js",
     "simulation-time-core.js",
     "state-codec-core.js",
     "strategy-core.js",

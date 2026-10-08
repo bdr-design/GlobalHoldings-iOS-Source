@@ -40,7 +40,7 @@
   // مؤشر تشخيص حقيقي: هذا الرقم مضمّن داخل app.js نفسه (وليس ملف إعداد منفصل)، فيظهر على الشاشة
   // بالضبط ما يشغّله الجهاز فعليًا الآن. إذا لم يطابق آخر رقم BUILD مرفوع، فهذا دليل قاطع أن نسخة
   // WebApp المحفوظة على الجهاز لم تُستبدل بالنسخة الجديدة من الـIPA، بدل التخمين بلا أي وسيلة تحقق.
-  const RUNTIME_BUILD = 358;
+  const RUNTIME_BUILD = 362;
   const SAVE_SCHEMA_VERSION = '3.0.0';
   const FOUNDER_PRINCIPAL_ID='PLAYER-FOUNDER';
   // Keep the storage key stable across compatible app releases so existing saves are not orphaned.
@@ -958,7 +958,7 @@
       committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);lap('publishMs');diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
       if(afterCommit){try{await afterCommit(value);}catch(error){diag('DURABLE_COMMAND_PRESENTATION_FAILED',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'warning');console.warn(`Durable command committed but presentation refresh failed [${name}]`,error);if(!silent)notice('تم حفظ العملية بنجاح، لكن تعذر تحديث العرض. أعد فتح القسم لرؤية الحالة المحفوظة.','warning');}}
       return value;
-    }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-publish-failed-after-ack',{durableCommitted:true,saveRevision:Number(draft?.saveRevision)||0});state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed-after-ack');diag('DURABLE_PUBLISH_FAILED_AFTER_ACK',{name,saveRevision:Number(draft?.saveRevision)||0,reason:String(error.message||error)},'critical');console.error(`Durable command publication failed after device acknowledgement [${name}]`,error);if(!silent)notice('تم تأكيد حفظ العملية على الجهاز، لكن تعذر تحديث الذاكرة. لا تعِد تنفيذها؛ أعد فتح اللعبة لاستعادة النسخة المحفوظة.','warning');return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
+    }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-publish-failed-after-ack',{durableCommitted:true,saveRevision:Number(draft?.saveRevision)||0});state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed-after-ack');diag('DURABLE_PUBLISH_FAILED_AFTER_ACK',{name,saveRevision:Number(draft?.saveRevision)||0,reason:String(error.message||error)},'critical');console.error(`Durable command publication failed after device acknowledgement [${name}]`,error);return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
     finally{
       lap('afterMs');timing.committed=committed;timing.totalMs=Math.max(0,clockNow()-durableStart);for(const key of Object.keys(timing))if(typeof timing[key]==='number')timing[key]=Math.round(timing[key]*10)/10;const durableSink=window.__GH_APP_RUNTIME_INSTRUMENTATION__?.durable;if(durableSink){durableSink.last=timing;durableSink.samples.push(timing);if(durableSink.samples.length>16)durableSink.samples.shift();}
       if(!committed&&rootSessions.length)try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');console.error('Durable command fleet rollback failed',rollbackError);}
@@ -1037,7 +1037,9 @@
       if(error?.durableCommitted===true){
         committed=true;state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed-after-ack');
         diag('DURABLE_PUBLISH_FAILED_AFTER_ACK',{domain,name,transactionId:error.transactionId||null,saveRevision:Number(state.saveRevision)||0,reason:String(error?.message||error)},'critical');
-        if(!options.silent)notice('تم تأكيد حفظ المعاملة على الجهاز، لكن تعذر تحديث الذاكرة. أوقفت المحاكاة للحماية؛ لا تعِد تنفيذ العملية، وأعد فتح اللعبة لاستعادة النسخة المحفوظة.','warning');
+        // The persistence-status listener owns the non-mutating recovery overlay. Do not enqueue a persisted
+        // notice here: the native save is already committed and a second state command would be rejected by
+        // the reconciliation lock, masking the original publication failure with a follow-up error.
       }else{diag('AUTHORIZED_COMMAND_ROLLED_BACK',{domain,name,reason:String(error?.message||error)},'warning');if(!options.silent)notice(`أُلغيت المعاملة بالكامل: ${String(error?.message||error)}`);}
       throw error;
     }
@@ -1118,8 +1120,8 @@
   const spend = (amount,note='مصروف تشغيلي',method='تحويل بنكي',taxable=true) => spendCompany('group',amount,note,method,taxable);
 
   // ---- HR: موظفو المنشآت والقيادات فقط؛ طواقم الأصول يملكها Fleet Core ----
-  function hrContext(){return {getDynamicFacilities};}
-  function ensureFacilityWorkforceDraft(target,dispatch,company='all',source='HR authorized facility staffing'){const result=dispatch('hr','hire',{company,source,scope:'facility'},{context:hrContext()}).result;if(!result)throw new Error('HR Core unavailable');return result.facilities||[];}
+  function hrContext(target=state){return {getDynamicFacilities:()=>dynamicFacilitiesFor(target)};}
+  function ensureFacilityWorkforceDraft(target,dispatch,company='all',source='HR authorized facility staffing'){const result=dispatch('hr','hire',{company,source,scope:'facility'},{context:hrContext(target)}).result;if(!result)throw new Error('HR Core unavailable');return result.facilities||[];}
   async function ensureFacilityWorkforce(company='all',source='HR authorized facility staffing'){const out=await runAuthorizedDomainCommand('hr','hire',{company,source,scope:'facility'},{context:hrContext()});if(!out.result)throw new Error('HR Core unavailable');return out.result.facilities||[];}
   let map, currentTile, layers = {}, terrainLayer=null, routeLayers = [], ownMarkers = new Map(), facilityMarkers = new Map(), competitorMarkers = new Map(), worldMarkers = new Map(), renderedAssetIds = new Set(), renderedMobilityIds = new Set(), presentationAssetIndex = new Map(), presentationAssetIndexRevision = -1, presentationAssetIndexLength = -1, presentationAssetIndexSource = null, worldSpatialIndexCache = null, mapAssetQueryRequest = null, mapVehicleCanvas = null, mapVehicleHitTargets = new Map(), mapRenderTimer = null;
   let mapFleetRowsSource=null,mapFleetRowsMembership='',mapFleetRows=[];
@@ -2305,6 +2307,7 @@
     // the simulation core still commits every hour/day boundary atomically.
     const request=simulationEngine.advanceTo(next,{speed:SIMULATION_RATE_BY_LEVEL[4],batchSeconds:3600,reason,maxSeconds:366*86400});
     if(!request.accepted){notice('تعذر تقديم التاريخ الآن؛ لم يُكتب أي وقت مباشرة.');return false;}
+    simulationRuntime.wake();
     pushAlert(`بدأ تقديم التقويم ${label||''} عبر محرك المحاكاة الآمن.`);updateDayStepControl();renderSimulationCalendar();return true;
   }
   function renderSimulationCalendar(){
@@ -3135,25 +3138,42 @@
     return fleetEngineThreadClient.disabled?null:fleetEngineThreadClient;
   }
   const fleetContextKey=context=>{try{return JSON.stringify(context);}catch(_error){return '';}};
-  // A command that may write the fleet waits until no step is in flight on the thread. It runs with the simulation held
-  // (durableCommandInProgress: the frame loop resets the engine, which cancels the slice and rolls the thread's step
-  // back), so this is at most a frame; after 2 s it proceeds anyway (a step replayed onto a changed fleet is refused).
+  // A command that may write the fleet waits until no step is in flight on the thread. The lifecycle guard suspends
+  // the sole simulation runtime and atomically cancels its slice before the command proceeds; a stale worker result
+  // is still refused. The timeout is only a final liveness guard.
   function fleetStepSettled(){
     const client=fleetEngineThreadClient;if(!client?.busy)return Promise.resolve();
     return Promise.race([client.idle(),new Promise(resolve=>setTimeout(resolve,2000))]);
   }
   let activeStagedSlice=null;
+  function emptyCalendarAggregateLimit({from,target}={}){
+    if(globalThis.__GH_EMPTY_CALENDAR_AGGREGATION__===false)return 0;
+    const start=Math.max(0,Number(from)||0),end=Math.max(start,Number(target)||start),nextDay=(Math.floor(start/86400)+1)*86400,preClose=nextDay-3600;
+    // This path is intentionally strict. It removes transaction/snapshot churn
+    // only for a genuinely empty operating world; any time-sensitive actor keeps
+    // the original exact boundary slicing.
+    // Midnight remains its own transaction. If its close fails, the preceding
+    // 23 market hours stay committed exactly as in the original hourly engine.
+    if(end+1e-6<nextDay||preClose-start<=3600+1e-6)return 0;
+    if(window.GH_FLEET_DATA.size(state)!==0)return 0;
+    if((state.mobility?.vehicles||[]).length||(state.mobility?.activeTrips||[]).length||(state.mobility?.rideRequests||[]).some(row=>['queued','active'].includes(row?.status)))return 0;
+    if(window.GH_REALISM?.hasPendingDeliveries?.(state)!==false)return 0;
+    if(state.timeRecovery?.active||stagedStateBusy())return 0;
+    return Math.min(23*3600,preClose-start);
+  }
   function createSimulationSliceJob(sliceSeconds,meta={}){
     const TX=window.GH_TRANSACTION_CORE,EVENTS=window.GH_FLEET_EVENTS,TIME=window.GH_SIMULATION_TIME_CORE;
     if(!TX?.execute||!EVENTS?.advance||!TIME?.boundaryAt)throw new Error('Fleet event simulation owners unavailable');
     const from=Math.max(0,Number(meta.from)||0),to=Math.max(from,Number(meta.to)||from+Math.max(0,Number(sliceSeconds)||0)),
       manual=meta.manualAdvance===true,order=manual?'sweep':'events',maxEvents=manual?undefined:1500;
-    let ready=false,cancelled=false,completeTo=from,staged=null,stagedConflict=false,fleetTicket=null;
+    const aggregate=meta.aggregate===true;
+    let ready=false,cancelled=false,completeTo=from,staged=null,stagedConflict=false,fleetTicket=null,released=false;
     // The fleet step on its thread: requested on the first runChunk; false once this slice runs it here.
     const fleetStepPending=()=>{
       if(fleetTicket===false)return false;
       if(fleetTicket===null){
         const thread=fleetEngineThread();
+        if(window.GH_FLEET_DATA.size(state)===0){fleetTicket=false;return false;}
         if(!thread||!window.GH_FLEET_STORE?.isStore?.(state.fleet)||Math.abs((Number(state.simSeconds)||0)-from)>1e-6){fleetTicket=false;return false;}
         const context=simulationAssetRuntimeContext();
         // A live slice is bounded by events as here (it then commits up to the last whole timestamp); a calendar slice is
@@ -3164,12 +3184,12 @@
       return fleetTicket.status==='pending';
     };
     // Build 358: a live slice that reaches a day boundary is a STAGED transaction (GH_TRANSACTION_CORE.beginStaged): the
-    // same single transaction, rollback point, order of work and post-commit checks, run one or more stages per frame
+    // same single transaction, rollback point, order of work and post-commit checks, run one or more stages per runtime tick
     // (snapshot, fleet advance, each step of the financial close, the market hour, each critical check). runChunk()
     // reports {pending:true} until the transaction has finished; cancel() (pause, speed change, hidden app, another
-    // operation) aborts it, which rolls everything back exactly. Calendar advance stages its days the same way: run in one
-    // call, each day of a calendar jump was a 60-80 ms frame on iPhone (diagnostic, 9,000 assets, "next year").
-    const stagedDay=meta.boundary?.day!=null&&meta.staged!==false&&typeof financialDayStages==='function'&&typeof TX.beginStaged==='function';
+    // operation) aborts it, which rolls everything back exactly. Calendar advance stages its days the same way; each day
+    // used to occupy a 60-80 ms presentation frame on iPhone (diagnostic, 9,000 assets, "next year").
+    const stagedDay=meta.boundary?.day!=null&&meta.staged!==false&&typeof financialDayStages==='function'&&typeof TX.beginStaged==='function',stagedSlice=(stagedDay||aggregate)&&typeof TX.beginStaged==='function';
     let out=null,journal=null;
     const transactionOptions=()=>{
         const boundaryRequested=meta.boundary||{},deliveryWorkPending=typeof window.GH_REALISM?.deliveryDueBy==='function'?window.GH_REALISM.deliveryDueBy(state,to):window.GH_REALISM?.hasPendingDeliveries?.(state)!==false,
@@ -3178,7 +3198,8 @@
         journal=makeSimulationEffects();
         const sliceWork=function*(measure){
             const context=simulationAssetRuntimeContext();
-            out=fleetTicket?fleetEngineThreadClient?.apply(fleetTicket,state.fleet,{contextKey:fleetContextKey(context),tx:TX})||null:null;
+            const emptyFleet=window.GH_FLEET_DATA.size(state)===0;
+            out=emptyFleet?{completeTo:to,effects:makeSimulationEffects(),events:0,fast:0,slow:0,faults:0}:fleetTicket?fleetEngineThreadClient?.apply(fleetTicket,state.fleet,{contextKey:fleetContextKey(context),tx:TX})||null:null;
             if(!out){
               if(fleetTicket)fleetEngineThreadClient?.markStale();
               out=EVENTS.advance(state.fleet,{from,to,context,resolveRoute:fleetResolveRoute,
@@ -3203,23 +3224,45 @@
             // Slices never cross a boundary, so only a slice planned for one can reach an unprocessed boundary; anything
             // else would write outside the snapshot scope chosen above and is rejected (rolled back and retried).
             if((boundary.day!=null&&boundary.day>(Number(state.lastFinancialDay)||0)&&!dayBoundary)||(boundary.hour!=null&&boundary.hour>(Number(state.lastMarketHour)||0)&&steady))throw new Error('simulation-boundary-outside-scope');
-            if(stagedDay&&boundary.day!==null&&boundary.day!==undefined)yield* financialDayStages(boundary.day,measure);
-            else if(boundary.day!==null&&boundary.day!==undefined)measure('simulation.boundary.financial-day',()=>processFinancialDay(boundary.day,measure));
-            if(stagedDay&&boundary.day!==null&&boundary.day!==undefined)yield 'boundary.financial-day';
-            if(boundary.hour!==null&&boundary.hour!==undefined)measure('simulation.boundary.market-hour',()=>processMarket(boundary.hour,measure));
+            if(aggregate){
+              const firstHour=Math.floor((from+1e-6)/3600)+1,lastHour=Math.floor((completeTo+1e-6)/3600);
+              for(let hour=firstHour;hour<=lastHour;hour++){
+                const at=hour*3600;if(at>completeTo+1e-6)break;state.simSeconds=at;
+                if(hour%24===0){yield* financialDayStages(Math.floor(hour/24),measure);yield 'boundary.financial-day';}
+                measure('simulation.boundary.market-hour',()=>processMarket(hour,measure));
+                yield 'boundary.market-hour';
+              }
+              state.simSeconds=completeTo;
+            }else{
+              if(stagedDay&&boundary.day!==null&&boundary.day!==undefined)yield* financialDayStages(boundary.day,measure);
+              else if(boundary.day!==null&&boundary.day!==undefined)measure('simulation.boundary.financial-day',()=>processFinancialDay(boundary.day,measure));
+              if(stagedDay&&boundary.day!==null&&boundary.day!==undefined)yield 'boundary.financial-day';
+              if(boundary.hour!==null&&boundary.hour!==undefined)measure('simulation.boundary.market-hour',()=>processMarket(boundary.hour,measure));
+            }
             state.simulationKernel=state.simulationKernel||{};
             state.simulationKernel.lastAtomicCommit={from,to:completeTo,requestedTo:to,events:out.events,day:boundary.day,hour:boundary.hour,at:completeTo,core:EVENTS.VERSION,order};
             return true;
         };
         return {label:'simulation:'+from+'->'+to,scope,writeRoots:scope,rowRoots:simulationRowRoots(steady?'steady':hourOnly?'hour':'full'),scopedJoin:hourOnly,stagedFullScope:dayBoundary,
           auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,enforceWriteRoots:globalThis.__GH_BUILD358_ENFORCE_SLICE_SCOPE__===true&&(steady||hourOnly),
-          profileContext:{kind:'simulation-slice',from,to,speed:Number(meta.speed)||0,order,eventsBudget:maxEvents||null},
-          apply:stagedDay?sliceWork:measure=>{const steps=sliceWork(measure);let step;while(!(step=steps.next()).done){}return step.value;}
+          profileContext:{kind:'simulation-slice',from,to,speed:Number(meta.speed)||0,order,aggregate,eventsBudget:maxEvents||null},
+          apply:stagedSlice?sliceWork:measure=>{const steps=sliceWork(measure);let step;while(!(step=steps.next()).done){}return step.value;}
         };
       };
+    const cleanup=reason=>{
+      if(released)return false;let failure=null;const handle=staged;
+      try{
+        if(handle&&!handle.done){handle.abort(`simulation-slice-${reason||'released'}`);if(!handle.done)throw new Error('simulation-staged-abort-incomplete');if(handle.error?.code!=='TRANSACTION_STAGED_ABORTED')throw handle.error||new Error('simulation-staged-abort-missing-error');}
+      }catch(error){failure=error;}
+      try{if(fleetTicket)fleetEngineThreadClient?.discard(fleetTicket);}catch(error){failure??=error;}
+      if(activeStagedSlice===staged)activeStagedSlice=null;
+      staged=null;fleetTicket=null;out=null;journal=null;released=true;
+      if(failure)throw failure;return true;
+    };
     return {
+      aggregate,
       runChunk(_items,options={}){
-        if(cancelled)return true;if(!staged&&fleetStepPending())return {pending:true};if(!stagedDay){ready=true;return true;}
+        if(cancelled)return true;if(!staged&&fleetStepPending())return {pending:true};if(!stagedSlice){ready=true;return true;}
         if(!staged){
           if(Math.abs((Number(state.simSeconds)||0)-from)>1e-6){stagedConflict=true;ready=true;return true;}
           staged=TX.beginStaged(state,transactionOptions());activeStagedSlice=staged;
@@ -3230,7 +3273,7 @@
       finish(){
         if(cancelled||!ready)return {committed:false,reason:'job-not-finished'};
         let transaction;
-        if(stagedDay){
+        if(stagedSlice){
           if(stagedConflict)return {committed:false,retry:true,reason:'time-conflict'};
           const handle=staged;staged=null;if(activeStagedSlice===handle)activeStagedSlice=null;
           if(!handle?.done)return {committed:false,reason:'job-not-finished'};if(handle.error)throw handle.error;transaction=handle.result;
@@ -3247,12 +3290,14 @@
         for(const id of new Set(journal.saleIds))queueAssetSaleFinalize(id);
         return {committed:true,completeTo,boundary:completedBoundary,events:out.events,order};
       },
-      cancel(){cancelled=true;if(staged&&!staged.done)staged.abort('simulation-slice-cancelled');if(activeStagedSlice===staged)activeStagedSlice=null;staged=null;if(fleetTicket)fleetEngineThreadClient?.discard(fleetTicket);}
+      cancel(){cancelled=true;cleanup('cancelled');},
+      cleanup({outcome}={}){cleanup(outcome||'cleanup');}
     };
   }
 
   if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core compatibility check failed before app.js');
   if(!window.GH_SIMULATION_CORE?.create)throw new Error('Simulation Core failed to load before app.js');
+  if(!window.GH_SIMULATION_RUNTIME_CORE?.create)throw new Error('Simulation Runtime Core failed to load before app.js');
   let lastRealtimeHealthMs=0,lastUiRefreshMs=0;
   const REALTIME_HEALTH_MS=10000;
   const GLOBAL_HALT_IDS=Object.freeze(['CONTROL_JOURNAL_CHAIN_BREAK','CONTROL_JOURNAL_HASH_MISMATCH','CONTROL_JOURNAL_HEAD_MISMATCH','SAVE_SCHEMA_INTEGRITY','TIME_MONOTONICITY','TRANSACTION_ROLLBACK_FAILED','NATIVE_SAVE_RECOVERY_FAILED']);
@@ -3282,6 +3327,7 @@
       const limits=[eventWindow,window.GH_REALISM?.simulationSliceLimit?.(state),window.GH_MOBILITY_CORE?.simulationSliceLimit?.(state)].map(Number).filter(value=>Number.isFinite(value)&&value>0);
       return Math.max(60,Math.min(3600,...(limits.length?limits:[3600])));
     },
+    getManualAggregateLimit:emptyCalendarAggregateLimit,
     onMaintenance:hour=>{diag('SIM_MAINTENANCE',{hour});window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'SIMULATION_MAINTENANCE',domain:'simulation',actor:'simulation-core',correlationId:`SIM-HOUR-${hour}`,detail:{hour}});queueMaintenance();},
     runDeferredWork:()=>runDeferredMaintenance(),
     hasDeferredWork:()=>maintenanceQueue.length>0&&!hardResetInProgress&&!durableCommandInProgress,
@@ -3296,7 +3342,7 @@
       if(!jobActive&&!maintenanceQueue.length&&!document.hidden&&!hardResetInProgress&&!durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!window.GH_PERSISTENCE.isLocked()&&!stagedStateBusy())timed('proofAuditMs',()=>proofAuditStep(PROOF_AUDIT_RENDER_MS));
       // Diagnostics may use wall-clock cadence for UI health only. Keep their state writes outside every simulation
       // slice, including the short interval while an independently-driven slice waits for its fleet-thread result.
-      if(!jobActive&&!fleetEngineThreadClient?.busy&&!stagedStateBusy()&&!document.hidden&&!hardResetInProgress){
+      if(!jobActive&&!simulationEngine.snapshot().manualAdvance&&!fleetEngineThreadClient?.busy&&!stagedStateBusy()&&!document.hidden&&!hardResetInProgress){
         const now=performance.now();
         if(now-lastMobilityStreetHydrationMs>=1200){lastMobilityStreetHydrationMs=now;timed('streetHydrationMs',()=>{void hydrateMobilityStreetRoutes();});}
         if(now-lastRealtimeHealthMs>=REALTIME_HEALTH_MS){lastRealtimeHealthMs=now;try{timed('healthCheckMs',()=>window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:false,trackTransitions:true}));if(activeDrawerPanel==='diagnostics')timed('diagnosticsPanelMs',()=>openDrawer('diagnostics'));}catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}}
@@ -3315,19 +3361,24 @@
         pushAlert(`توقف تقديم التاريخ وقائيًا عند آخر حالة معتمدة (${formatSimDate()}). السبب: ${reason}. لم تُعتمد حركة أصل أو إيراد جزئي.`);
       }
     },
-    isSuspended:()=>hardResetInProgress||durableCommandInProgress,
+    isSuspended:()=>hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()||window.GH_CONFERENCE?.isPresentationActive?.()||state.timeRecovery?.active===true,
     onFatal:error=>{simulationEngine.cancelAdvance?.('simulation-fatal');state.speed=0;state.simulationKernel=state.simulationKernel||{};const diagnostic=error?.diagnostic||{name:error?.name||'Error',message:String(error?.message||error),code:error?.code||null,transactionLabel:error?.transactionLabel||null,transactionStage:error?.transactionStage||null};state.simulationKernel.runtimeFatal={at:state.simSeconds,code:error?.code||'SIM_FATAL_STATE',error:diagnostic};if(!state.simulationKernel.lastAdvanceFailure)state.simulationKernel.lastAdvanceFailure={reason:'simulation-fatal',stage:error?.transactionStage||'finish',from:state.simSeconds,to:state.simSeconds,at:state.simSeconds,retries:0,code:error?.code||'SIM_FATAL_STATE',error:String(error?.message||error).slice(0,500),errorDetail:diagnostic};diag('SIM_FATAL',diagnostic,'critical');try{window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:true,trackTransitions:true});window.GH_CONTROL_PLANE?.check?.(state);}catch(healthError){console.error('تعذر تحديث الصحة بعد خطأ المحاكاة',healthError);}console.error('Simulation Core fatal error',error);try{pushAlert('أوقف محرك المحاكاة الوقت لحماية الحفظ بعد خطأ داخلي. افتح مركز الإجراءات لمراجعة السبب قبل إعادة المحاولة.');}catch(alertError){console.error('تعذر تسجيل تنبيه خطأ المحاكاة',alertError);}},
     onWarning:({stage,error})=>{diag('SIM_WARNING',{stage,message:String(error?.message||error)});console.warn(`Simulation Core warning [${stage}]`,error);},
     onThrottle:({took,reason,stage})=>{diag('SIM_THROTTLE',{took,reason,stage});console.warn(`Simulation watchdog throttled after ${Math.round(took)}ms ${stage||'work'} stage`);},
     onGovernor:({level,avgChunkMs,avgWorkMs,stage,took})=>{diag('SIM_GOVERNOR',{level,avgChunkMs,avgWorkMs,stage,took});runtimeGovernor={level,avgChunkMs,avgWorkMs,stage,took};}
   },{minRealSliceSeconds:1,allowedSpeeds:[0,30,120,300,600],fallbackSpeed:30,frameBudgetMs:4,manualFrameBudgetMs:10,chunkItems:32,manualChunkItems:64,renderEveryNormalMs:260,renderEveryFastMs:650,maintenanceEveryHours:12,manualBatchSeconds:3600,manualMinBatchSeconds:300,manualRetryLimit:3});
-  window.GH_SIM_KERNEL={version:window.GH_SIMULATION_CORE.VERSION,transactionVersion:window.GH_TRANSACTION_CORE.VERSION,snapshot:()=>simulationEngine.snapshot(),health:()=>simulationEngine.health()};
+  const simulationRuntime=window.GH_SIMULATION_RUNTIME_CORE.create({
+    engine:simulationEngine,getSpeed:()=>effectiveSimulationRate(state.speed),isHidden:()=>document.hidden,
+    hasDeferredWork:()=>maintenanceQueue.length>0,
+    onError:error=>{state.speed=0;diag('SIM_RUNTIME_TASK_FAILED',{message:String(error?.message||error)},'critical');console.error('Simulation runtime task failed',error);}
+  },{manualIntervalMs:8,liveIntervalMs:16,deferredIntervalMs:50,pausedIntervalMs:250,hiddenIntervalMs:1000});
+  window.GH_SIM_KERNEL={version:window.GH_SIMULATION_CORE.VERSION,runtimeVersion:window.GH_SIMULATION_RUNTIME_CORE.VERSION,transactionVersion:window.GH_TRANSACTION_CORE.VERSION,snapshot:()=>({...simulationEngine.snapshot(),runtime:simulationRuntime.snapshot()}),health:()=>({...simulationEngine.health(),runtime:simulationRuntime.snapshot()})};
   window.GH_DIAGNOSTICS.installGlobalHandlers(()=>state,()=>({appVersion:APP_VERSION,simulation:simulationEngine.snapshot()}));
   window.GH_CONTROL_PLANE?.installDOMObserver?.(()=>state);
   diag('DIAGNOSTICS_READY',{version:window.GH_DIAGNOSTICS.VERSION});
   window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'RUNTIME_READY',domain:'control',detail:{appVersion:APP_VERSION,simulationCore:window.GH_SIMULATION_CORE.VERSION,transactionCore:window.GH_TRANSACTION_CORE.VERSION}});
   if($('runtimeBuildBadge'))$('runtimeBuildBadge').textContent=`BUILD${RUNTIME_BUILD} · v${APP_VERSION}`;
-  document.addEventListener('visibilitychange',()=>{diag(document.hidden?'WEBKIT_HIDDEN':'WEBKIT_VISIBLE');simulationEngine.setHidden(document.hidden);if(!document.hidden){requestVisualResync();updateMarkerPositions(true);}},{passive:true});
+  document.addEventListener('visibilitychange',()=>{diag(document.hidden?'WEBKIT_HIDDEN':'WEBKIT_VISIBLE');simulationEngine.setHidden(document.hidden);simulationRuntime.wake();if(!document.hidden){requestVisualResync();updateMarkerPositions(true);}},{passive:true});
   let savePressureNoticeShown=false;const savePressureReasonsLogged=new Set();
   window.addEventListener('gh-persistence-status',event=>{
     const detail=event.detail||{};
@@ -3428,7 +3479,7 @@
   function depotOperationalCard(f){return `<article class="list-item"><h3>مركز النقل البري</h3><p>المقر الإداري منفصل عن الـDepot. هنا تتم إدارة السائقين، المواقف، الصيانة، الوقود وتحضير الرحلات البرية.</p><div class="metric-row"><div><span>مواقف الشاحنات</span><b>${f.bays||'—'}</b></div><div><span>الصيانة</span><b>متاحة</b></div><div><span>السائقون</span><b>سوق عمل</b></div></div></article>`;}
   function globalBaseOperationalCard(f){return `<article class="list-item"><h3>ملف القاعدة العالمية</h3><div class="metric-row"><div><span>رمز المنشأة</span><b>${f.code||f.iata||'—'}</b></div><div><span>تشغيل يومي</span><b>${fmtMoney(f.dailyCost||0)}</b></div><div><span>الاستثمار</span><b>${fmtMoney(f.cost||0)}</b></div></div><p>يمكن اختيار هذه القاعدة عند شراء أصل جديد، كما تظهر كنقطة انطلاق/وصول عند إنشاء شبكة تشغيل متوافقة.</p></article>`;}
 
-  let worldQuery='',worldKind='all',worldRegion='',worldCountry='',worldCity='',worldPage=0,worldDirectoryIntent={},worldSearchTimer=null,globalRouteQuery='',directoryIndex=null,drawerSearchRevision=0;
+  let worldQuery='',worldKind='all',worldRegion='',worldCountry='',worldCity='',worldPage=0,worldDirectoryIntent={},worldBulkCount=1,worldBulkEnergyKind='solar',worldSearchTimer=null,globalRouteQuery='',directoryIndex=null,drawerSearchRevision=0;
   function cancelDrawerSearch(){if(worldSearchTimer!==null)clearTimeout(worldSearchTimer);worldSearchTimer=null;drawerSearchRevision++;}
   function scheduleDrawerSearch(panel,apply,delay=180){cancelDrawerSearch();const revision=drawerSearchRevision;worldSearchTimer=setTimeout(()=>{worldSearchTimer=null;if(revision===drawerSearchRevision&&activeDrawerPanel===panel&&$('drawer').getAttribute('aria-hidden')==='false')apply();},delay);}
   function directoryCompanyRows(target=state){return COMPANY_PLATFORM.listInstances(target,{includeGroup:false}).filter(company=>company.definition?.facilities?.directoryProviderIds?.length).map(company=>{const identity=COMPANY_PLATFORM.resolveIdentity(target,company.id),providers=company.definition.facilities.directoryProviderIds;return {id:company.id,opened:company.opened,operational:company.operational,code:identity?.shortName||company.definition.identity?.short||company.id,label:identity?.tradeName||identity?.legalName||company.id,providers:[...providers],kind:company.definition.facilities.primaryKind};});}
@@ -3455,7 +3506,7 @@
     if(!Number.isFinite(cost)||cost<=0||!Number.isFinite(dailyCost)||dailyCost<0)return null;
     return Object.freeze({definitionId:definition.definitionId,definitionVersion:definition.definitionVersion,kind,label,cost,dailyCost,capacity,deliveryCapacity,photo,iconKey,groupValueFactor,manager:String(provided.manager||`مدير ${label}`),detail:String(provided.detail||`${label} تابع لـ${COMPANY_PLATFORM.resolveIdentity(target,company)?.legalName||company}.`)});
   }
-  function directorySiteEntity(capital,company,options={}){const meta=facilitySiteTemplate(company);if(!capital||!meta)return null;const energyKind=company==='power'&&ENERGY_PROJECTS[options.energyKind||worldDirectoryIntent.energyKind||'solar']?options.energyKind||worldDirectoryIntent.energyKind||'solar':null,energy=energyKind?ENERGY_PROJECTS[energyKind]:null;return {key:`site:${company}:${capital.id}`,kind:'company-site',company,ownerCompanyId:company,capitalId:capital.id,iconKey:meta.iconKey,code:capital.id,name:`${energy?.name||meta.label} · ${capital.city}`,city:capital.city,country:capital.country,coords:[...capital.coords],cost:energy?.cost||meta.cost,dailyCost:meta.dailyCost,capacity:energy?`${energy.amount} ${energy.key==='storageMWh'?'MWh':'MW'} · إنشاء ثم تشغيل تجاري`:meta.capacity,deliveryCapacity:meta.deliveryCapacity,photo:meta.photo,facilityKind:meta.kind,templateDefinitionId:meta.definitionId,templateDefinitionVersion:meta.definitionVersion,...(energyKind?{energyKind}:{})};}
+  function directorySiteEntity(capital,company,options={}){const target=options.target||state,meta=facilitySiteTemplate(company,target);if(!capital||!meta)return null;const energyKind=company==='power'&&ENERGY_PROJECTS[options.energyKind||worldDirectoryIntent.energyKind||'solar']?options.energyKind||worldDirectoryIntent.energyKind||'solar':null,energy=energyKind?ENERGY_PROJECTS[energyKind]:null;return {key:`site:${company}:${capital.id}`,kind:'company-site',company,ownerCompanyId:company,capitalId:capital.id,iconKey:meta.iconKey,code:capital.id,name:`${energy?.name||meta.label} · ${capital.city}`,city:capital.city,country:capital.country,coords:[...capital.coords],cost:energy?.cost||meta.cost,dailyCost:meta.dailyCost,capacity:energy?`${energy.amount} ${energy.key==='storageMWh'?'MWh':'MW'} · إنشاء ثم تشغيل تجاري`:meta.capacity,deliveryCapacity:meta.deliveryCapacity,photo:meta.photo,facilityKind:meta.kind,templateDefinitionId:meta.definitionId,templateDefinitionVersion:meta.definitionVersion,...(energyKind?{energyKind}:{})};}
   function canonicalDirectorySite(input,expectedCompany){
     const key=typeof input==='string'?input:String(input?.key||input?.sourceKey||'');
     const entity=worldEntityByKey(key);
@@ -3464,15 +3515,29 @@
   }
   function directorySiteOwned(entity){return getDynamicFacilities().find(f=>f?.owned&&companyOfFacility(f)===entity.company&&(f.sourceKey===entity.key||(f.capitalId===entity.capitalId&&f.kind===entity.facilityKind)));}
   function worldSearchResults(){return facilityDirectoryIndex().search({state,company:worldKind,region:worldRegion,country:worldCountry,city:worldCity,text:worldQuery,page:worldPage,pageSize:24});}
+  function directoryEntityOwnedFor(entity,target=state){if(!entity)return null;return entity.kind==='company-site'?dynamicFacilitiesFor(target).find(f=>f?.owned&&companyOfFacility(f)===entity.company&&(f.sourceKey===entity.key||(f.capitalId===entity.capitalId&&f.kind===entity.facilityKind))):globalBaseFor(entity.key,entity.company,target);}
+  function countryFacilityPlan(target=state,count=worldBulkCount,energyKind=worldBulkEnergyKind){
+    const requested=Math.max(1,Math.min(10,Math.trunc(Number(count))||1)),countryId=String(worldCountry||''),items=[],skipped=[],companyTotals={};
+    if(!countryId)return {countryId,requested,items,skipped,total:0,groupFunding:0,shortfall:0};
+    for(const company of directoryCompanyRows(target)){
+      if(!company.operational){skipped.push({company:company.id,reason:'الشركة غير مؤسسة'});continue;}
+      const result=facilityDirectoryIndex().search({state:target,company:company.id,country:countryId,page:0,pageSize:24}),available=[];
+      for(const row of result.rows){const entity=directoryEntityByKey(row.key,company.id,target,{energyKind});if(!entity||directoryEntityOwnedFor(entity,target))continue;const baseCost=entity.kind==='company-site'?Number(entity.cost)||0:facilityPrice(entity),quote=constructionBid(company.id,entity.facilityKind,baseCost,entity.name).winner?.quote||0;if(quote<=0)continue;available.push({company:company.id,key:entity.key,energyKind:company.id==='power'?energyKind:null,quote,name:entity.name,country:entity.country});if(available.length>=requested)break;}
+      if(!available.length){skipped.push({company:company.id,reason:'لا يوجد موقع صالح غير مملوك في الدولة'});continue;}
+      items.push(...available);companyTotals[company.id]=available.reduce((sum,row)=>sum+row.quote,0);
+    }
+    const total=items.reduce((sum,row)=>sum+row.quote,0),groupFunding=Object.entries(companyTotals).reduce((sum,[company,amount])=>sum+Math.max(0,amount-companyOperatingBalanceFor(target,company)),0),groupCash=holdingOperatingCash(target),shortfall=Number.isFinite(groupCash)?Math.max(0,groupFunding-groupCash):0;
+    return {countryId,country:facilityDirectoryIndex().countryMetadata(countryId).label,requested,energyKind,items,skipped,companyTotals,total,groupFunding,shortfall};
+  }
   function globalBaseFor(key,companyId=null,target=state){return (target.globalBases||[]).find(base=>base.sourceKey===key&&(!companyId||companyOfFacility(base)===companyId));}
   const companyOfFacility=f=>window.GH_HR_CORE.companyOfFacility(f);
   function worldEntityCompanyCandidates(entity,target=state,{operationalOnly=false}={}){
     if(entity?.kind==='company-site')return isDirectoryCompany(entity.company,target)?[entity.company]:[];const provider=entity?.kind==='airport'?'world-airports':entity?.kind==='port'?'world-ports':null;if(!provider)return [];
     return directoryCompanyRows(target).filter(company=>company.providers.includes(provider)&&(!operationalOnly||company.operational)).map(company=>company.id);
   }
-  function directoryEntityByKey(key,companyId,target=state){
-    const entity=worldEntityByKey(key);if(!entity)return null;if(entity.kind==='company-site')return entity.company===companyId?entity:null;
-    companyId=String(companyId||'');if(!worldEntityCompanyCandidates(entity,target).includes(companyId))return null;const definition=COMPANY_PLATFORM.definitionFor(target,companyId),kind=definition?.facilities?.primaryKind;if(!kind||!definition.facilities.allowedKinds.includes(kind))return null;return {...entity,company:companyId,ownerCompanyId:companyId,facilityKind:kind};
+  function directoryEntityByKey(key,companyId,target=state,options={}){
+    key=String(key||'');companyId=String(companyId||'');const parts=key.split(':'),capital=parts[0]==='site'&&parts[1]===companyId?mobilityCapital(parts[2]):null,entity=capital?directorySiteEntity(capital,companyId,{...options,target}):worldEntityByKey(key);if(!entity)return null;if(entity.kind==='company-site')return entity.company===companyId?entity:null;
+    if(!worldEntityCompanyCandidates(entity,target).includes(companyId))return null;const definition=COMPANY_PLATFORM.definitionFor(target,companyId),kind=definition?.facilities?.primaryKind;if(!kind||!definition.facilities.allowedKinds.includes(kind))return null;return {...entity,company:companyId,ownerCompanyId:companyId,facilityKind:kind};
   }
   function directoryOffer(entity){
     const company=String(entity?.company||entity?.ownerCompanyId||''),kind=entity?.facilityKind;if(!company||!kind||!worldEntityCompanyCandidates(entity).includes(company))return {company:null,kind:null,daily:0,quote:0};
@@ -3494,10 +3559,11 @@
     const result=worldSearchResults(),companyChips=directoryCompanyRows();
     const options=(rows,selected)=>rows.map(row=>`<option value="${esc(row.id)}" ${row.id===selected?'selected':''}>${esc(row.label)} (${fmtNumber(row.count)})</option>`).join('');
     const selectedCompany=companyChips.find(row=>row.id===worldKind),airportOnly=Boolean(selectedCompany?.providers.includes('world-airports')&&!selectedCompany.providers.some(provider=>provider!=='world-airports')),scope=worldKind==='all'?'كل الشركات':companyFinanceName(worldKind),coverage=worldKind==='all'?'المواقع العالمية التي تعرّفها كل شركة':selectedCompany?.providers.includes('world-airports')?'المطارات المسجلة':selectedCompany?.providers.includes('world-ports')?'الموانئ المسجلة':selectedCompany?.providers.includes('world-capitals')?'العواصم المعتمدة':'دليل الشركة المسجل';
+    const plan=worldKind==='all'?countryFacilityPlan():null,bulkCard=worldKind==='all'?`<article class="list-item country-facility-bulk"><div class="list-item-head"><div><h3>فتح منشآت لكل الشركات في دولة واحدة</h3><p>اعتماد ذري واحد؛ أي فشل يعيد العقود والتمويل والمنشآت كلها. الشركة التي لا يملك دليلها موقعًا صالحًا تظهر كمستثناة ولا يُنشأ لها موقع خاطئ.</p></div><span class="tag">${worldCountry?esc(plan.country):'اختر دولة'}</span></div><div class="directory-filters"><label>العدد لكل شركة<select id="worldBulkCount">${[1,2,3,5,10].map(value=>`<option value="${value}" ${worldBulkCount===value?'selected':''}>${value}</option>`).join('')}</select></label><label>مشروع الطاقة<select id="worldBulkEnergyKind">${Object.entries(ENERGY_PROJECTS).map(([id,item])=>`<option value="${id}" ${worldBulkEnergyKind===id?'selected':''}>${esc(item.name)}</option>`).join('')}</select></label></div>${worldCountry?`<div class="metric-row"><div><span>المنشآت المخططة</span><b>${fmtNumber(plan.items.length)}</b></div><div><span>الشركات المشمولة</span><b>${fmtNumber(new Set(plan.items.map(row=>row.company)).size)}</b></div><div><span>قيمة العقود</span><b>${fmtMoney(plan.total)}</b></div><div><span>تمويل القابضة المطلوب</span><b>${fmtMoney(plan.groupFunding)}</b></div></div>${plan.skipped.length?`<p class="directory-payment">المستثناة: ${plan.skipped.map(row=>`${esc(companyFinanceName(row.company))} — ${esc(row.reason)}`).join('؛ ')}</p>`:''}${plan.shortfall?`<p class="negative">ينقص حساب القابضة ${fmtMoney(plan.shortfall)}.</p>`:''}<div class="action-row"><button class="primary-btn open-country-facilities-all" data-count="${plan.items.length}" ${!plan.items.length||plan.shortfall?'disabled':''}>فتح ${fmtNumber(plan.items.length)} منشأة الآن</button></div>`:'<p class="directory-payment">اختر الدولة من المرشح أدناه لعرض العدد الفعلي والتكلفة والاستثناءات قبل التنفيذ.</p>'}</article>`:'';
     return `<div class="list world-directory" data-company="${worldKind}"><article class="list-item registry-hero"><h3>فتح القواعد والمراكز</h3><p>${airportOnly?'اختر الدولة ثم المطار مباشرة؛ البحث يشمل اسم المطار والمدينة وIATA وICAO.':'اختر الشركة، ثم الدولة والمدينة والموقع.'} كل منشأة مرتبطة بشركتها وحسابها الجاري.</p><div class="directory-scope"><b>${esc(scope)}</b><span>المواقع المتاحة: ${coverage}</span></div></article>
       <div class="world-company-strip">${companyChips.map(company=>`<button class="world-company-chip ${worldKind===company.id?'active':''}" data-world-company="${esc(company.id)}" aria-pressed="${worldKind===company.id}"><b>${esc(company.code)}</b><span>${esc(company.label)}</span><small>${company.opened?'شركة مؤسسة':'الشركة غير مؤسسة'}</small></button>`).join('')}</div>
       <div class="directory-filters"><label>الشركة<select id="worldKind"><option value="all" ${worldKind==='all'?'selected':''}>كل الشركات</option>${companyChips.map(company=>`<option value="${esc(company.id)}" ${worldKind===company.id?'selected':''}>${esc(company.label)}</option>`).join('')}</select></label><label>المنطقة<select id="worldRegion"><option value="">كل المناطق</option>${(result.regions||[]).map(region=>`<option value="${esc(region.id)}" ${worldRegion===region.id?'selected':''}>${esc(region.label)}</option>`).join('')}</select></label><label>الدولة<select id="worldCountry"><option value="">${worldRegion?'كل دول المنطقة':'كل الدول'}</option>${options(result.countries,worldCountry)}</select></label>${airportOnly?'':`<label>المدينة<select id="worldCity" ${worldCountry?'':'disabled'}><option value="">${worldCountry?'كل المدن':'اختر الدولة أولًا'}</option>${worldCountry?options(result.cities,worldCity):''}</select></label>`}${worldKind==='power'?`<label>نوع المشروع<select id="worldEnergyKind">${Object.entries(ENERGY_PROJECTS).map(([id,item])=>`<option value="${id}" ${worldDirectoryIntent.energyKind===id?'selected':''}>${esc(item.name)}</option>`).join('')}</select></label>`:''}<label class="directory-search-label">بحث في المواقع<input id="worldSearch" value="${esc(worldQuery)}" placeholder="${airportOnly?'اسم المطار أو المدينة أو IATA أو ICAO':'اسم المدينة أو الدولة أو رمز الموقع'}" autocomplete="off"></label></div>
-      <div class="directory-pagination"><button class="secondary-btn" data-world-page="${result.page-1}" ${result.page===0?'disabled':''}>السابق</button><span>${fmtNumber(result.total)} موقع · صفحة ${result.pages?result.page+1:0} / ${result.pages}</span><button class="secondary-btn" data-world-page="${result.page+1}" ${result.page+1>=result.pages?'disabled':''}>التالي</button></div>
+      ${bulkCard}<div class="directory-pagination"><button class="secondary-btn" data-world-page="${result.page-1}" ${result.page===0?'disabled':''}>السابق</button><span>${fmtNumber(result.total)} موقع · صفحة ${result.pages?result.page+1:0} / ${result.pages}</span><button class="secondary-btn" data-world-page="${result.page+1}" ${result.page+1>=result.pages?'disabled':''}>التالي</button></div>
       <div class="world-results-grid">${result.rows.map(worldResultCard).join('')||'<div class="empty">لا توجد مواقع مطابقة لهذه الخيارات. غيّر الدولة أو المدينة أو البحث.</div>'}</div></div>`;
   }
   function renderWorldNetworkInto(restoreFocus=false){
@@ -3514,10 +3580,15 @@
     const country=facilityDirectoryIndex().countryMetadata(entity.countryCode||entity.country).label,candidates=worldEntityCompanyCandidates(entity).map(company=>directoryEntityByKey(key,company)).filter(Boolean),choices=candidates.map(candidate=>{const offer=directoryOffer(candidate);return `<div class="directory-scope"><b>${esc(companyFinanceName(offer.company))}</b><span>${esc(typeName(offer.company))} · عقد ${fmtNumber(offer.quote)} USD · تشغيل ${fmtMoney(offer.daily)}</span><button class="primary-btn open-facility-directory" data-kind="${esc(offer.company)}">فتح دليل الشركة</button></div>`;}).join('');
     openDrawerContent('الدليل العالمي',entity.name,`<article class="list-item"><h3>${facilityVectorMarkup(entity.iconKey||entity.facilityKind||entity.kind)} ${esc(entity.name)}</h3><p>${esc(entity.city)} · ${esc(country)} · ${esc(entity.code)}</p>${choices||'<p>لا توجد شركة معرفة لهذا النوع من المنشآت.</p>'}<div class="action-row"><button class="secondary-btn world-focus" data-key="${esc(key)}">عرض الموقع</button></div></article>`);
   }
-  async function openGlobalBase(key,opts={}){
-    const company=String(opts.companyId||''),entity=directoryEntityByKey(key,company);if(!entity||!['airport','port'].includes(entity.kind)){notice('تعذر فتح القاعدة: الموقع أو الشركة المالكة غير معروفين.');return false;}
-    const result=await runAuthorizedCompositeCommand(`open-global-base:${company}`,({state:draft,dispatch,recordAlert})=>{const instance=COMPANY_PLATFORM.requireCompany(draft,company,{registered:true,operational:true,capability:'finance.book'}),draftEntity=directoryEntityByKey(key,company,draft);if(!instance||!draftEntity)throw new Error('global-facility-company-invalid');if(globalBaseFor(key,company,draft))throw new Error('facility-already-open');const baseCost=facilityPrice(draftEntity),dailyCost=facilityDailyCost(draftEntity),facilityKind=draftEntity.facilityKind,build=awardConstructionDraft(draft,dispatch,recordAlert,company,facilityKind,`قاعدة ${draftEntity.name}`,baseCost);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=window.GH_DETERMINISM.nextId(draft,'BASE'),air=draftEntity.kind==='airport',airIdentity=air?{iata:String(draftEntity.iata||''),icao:String(draftEntity.icao||''),countryCode:String(draftEntity.countryCode||''),...(Number.isFinite(Number(draftEntity.elevationFt))?{elevationFt:Number(draftEntity.elevationFt)}:{})}:{terminal:Boolean(draftEntity.terminal)},facility={id,sourceKey:key,ownerCompanyId:company,kind:facilityKind,owned:true,deliveryCapacity:window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY[air?'airport-base':'port-base'],photo:air?PHOTOS.facility_airport:PHOTOS.facility_port,name:`قاعدة ${draftEntity.name}`,city:draftEntity.city,country:draftEntity.country,coords:[...draftEntity.coords],code:draftEntity.code,...airIdentity,cost:build.amount,dailyCost,capacity:air?`${window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['airport-base'].toLocaleString('en-US')} طائرة · تشغيل جوي وشحن`:'120 سفينة · تشغيل بحري ولوجستي',contractor:build.contractor,constructionContractId:build.id,detail:`قاعدة عالمية تابعة لـ${COMPANY_PLATFORM.resolveIdentity(draft,company)?.legalName||company} في ${draftEntity.name}.`};const created=dispatch('facilities','create',{facility,bucket:'globalBases',groupValueAdd:build.amount*.76}).result;if(!created||created.ownerCompanyId!==company)throw new Error('facility-owner-mismatch');ensureFacilityWorkforceDraft(draft,dispatch,company,'فتح قاعدة جديدة');recordAlert(`افتتحت ${facility.name} بعقد ${build.id} وربطت وجهة التسليم والموارد البشرية بالشركة المالكة.`,'facility');return {id};},{silent:Boolean(opts.silent),afterCommit:({id})=>{updateKpis();renderMap();panMapTo(entity.coords,6);if(!opts.silent)openFacility(id);}});return Boolean(result);
+  function applyGlobalBaseDraft(draft,dispatch,recordAlert,key,company){
+    COMPANY_PLATFORM.requireCompany(draft,company,{registered:true,operational:true,capability:'finance.book'});const site=directoryEntityByKey(key,company,draft);if(!site||!['airport','port'].includes(site.kind))throw new Error('global-facility-company-invalid');if(globalBaseFor(key,company,draft))throw new Error('facility-already-open');
+    const facilityKind=site.facilityKind,build=awardConstructionDraft(draft,dispatch,recordAlert,company,facilityKind,`قاعدة ${site.name}`,facilityPrice(site));if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=window.GH_DETERMINISM.nextId(draft,'BASE'),air=site.kind==='airport',airIdentity=air?{iata:String(site.iata||''),icao:String(site.icao||''),countryCode:String(site.countryCode||''),...(Number.isFinite(Number(site.elevationFt))?{elevationFt:Number(site.elevationFt)}:{})}:{terminal:Boolean(site.terminal)},facility={id,sourceKey:key,ownerCompanyId:company,kind:facilityKind,owned:true,deliveryCapacity:window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY[air?'airport-base':'port-base'],photo:air?PHOTOS.facility_airport:PHOTOS.facility_port,name:`قاعدة ${site.name}`,city:site.city,country:site.country,coords:[...site.coords],code:site.code,...airIdentity,cost:build.amount,dailyCost:facilityDailyCost(site),capacity:air?`${window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['airport-base'].toLocaleString('en-US')} طائرة · تشغيل جوي وشحن`:'120 سفينة · تشغيل بحري ولوجستي',contractor:build.contractor,constructionContractId:build.id,detail:`قاعدة عالمية تابعة لـ${COMPANY_PLATFORM.resolveIdentity(draft,company)?.legalName||company} في ${site.name}.`};
+    const created=dispatch('facilities','create',{facility,bucket:'globalBases',groupValueAdd:build.amount*.76}).result;if(!created||created.ownerCompanyId!==company)throw new Error('facility-owner-mismatch');ensureFacilityWorkforceDraft(draft,dispatch,company,'فتح قاعدة جديدة');recordAlert(`افتتحت ${facility.name} بعقد ${build.id} وربطت وجهة التسليم والموارد البشرية بالشركة المالكة.`,'facility');return {id,company,key};
   }
+  function applyLogisticsHubDraft(draft,dispatch,recordAlert,key){
+    const site=directoryEntityByKey(key,'road',draft);if(!site)throw new Error('directory-site-invalid');if(dynamicFacilitiesFor(draft).some(f=>f.sourceKey===site.key))throw new Error('facility-already-open');const name=logisticsCenterName({city:site.city,country:site.country,label:site.city}),build=awardConstructionDraft(draft,dispatch,recordAlert,'road','logistics',name,8500000);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=window.GH_DETERMINISM.nextId(draft,'HUB'),facility={id,sourceKey:site.key,capitalId:site.capitalId,company:'road',ownerCompanyId:'road',kind:'logistics',owned:true,deliveryCapacity:window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY.logistics,icon:'🚚',photo:PHOTOS.facility_logistics,name,city:site.city,country:site.country,coords:[...site.coords],bays:42,dailyCost:12500,cost:build.amount,contractor:build.contractor,constructionContractId:build.id,detail:'مركز لوجستي أنشئ عبر المشتريات المعتمدة.',capacity:`${window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY.logistics.toLocaleString('en-US')} شاحنة`,manager:'مدير المركز اللوجستي',tasks:[{id:window.GH_DETERMINISM.nextId(draft,'TASK'),title:'تجهيز أرصفة التحميل وتعيين فريق التشغيل الأول',status:'قيد التنفيذ',createdAt:draft.simSeconds||0}]};dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.72});ensureFacilityWorkforceDraft(draft,dispatch,'road','فتح مركز لوجستي');recordAlert(`افتتح ${name} وربط بـHR والتشغيل.`,'facility');return {id,company:'road',key};
+  }
+  async function openGlobalBase(key,opts={}){const company=String(opts.companyId||''),entity=directoryEntityByKey(key,company);if(!entity||!['airport','port'].includes(entity.kind)){notice('تعذر فتح القاعدة: الموقع أو الشركة المالكة غير معروفين.');return false;}const result=await runAuthorizedCompositeCommand(`open-global-base:${company}`,({state:draft,dispatch,recordAlert})=>applyGlobalBaseDraft(draft,dispatch,recordAlert,key,company),{silent:Boolean(opts.silent),afterCommit:({id})=>{updateKpis();renderMap();panMapTo(entity.coords,6);if(!opts.silent)openFacility(id);}});return Boolean(result);}
   async function openLogisticsHub(site,opts={}){
     site=canonicalDirectorySite(site,'road');if(!site){notice('اختر موقع المركز من الدليل العالمي.');return false;}const coords=[...site.coords],place={city:site.city,country:site.country,label:site.city};
     const result=await runAuthorizedCompositeCommand('open-logistics-hub',({state:draft,dispatch,recordAlert})=>{if(!draft.openedCompanies.includes('road'))throw new Error('company-not-open');if(dynamicFacilitiesFor(draft).some(f=>f.sourceKey===site.key))throw new Error('facility-already-open');const baseCost=8500000,dailyCost=12500,name=logisticsCenterName(place),build=awardConstructionDraft(draft,dispatch,recordAlert,'road','logistics',name,baseCost);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=window.GH_DETERMINISM.nextId(draft,'HUB'),facility={id,sourceKey:site.key,capitalId:site.capitalId,company:'road',ownerCompanyId:'road',kind:'logistics',owned:true,deliveryCapacity:window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY.logistics,icon:'🚚',photo:PHOTOS.facility_logistics,name,city:place.city,country:place.country,coords,bays:42,dailyCost,cost:build.amount,contractor:build.contractor,constructionContractId:build.id,detail:'مركز لوجستي أنشئ عبر المشتريات المعتمدة.',capacity:`${window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY.logistics.toLocaleString('en-US')} شاحنة`,manager:'مدير المركز اللوجستي',tasks:[{id:window.GH_DETERMINISM.nextId(draft,'TASK'),title:'تجهيز أرصفة التحميل وتعيين فريق التشغيل الأول',status:'قيد التنفيذ',createdAt:draft.simSeconds||0}]};dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.72});ensureFacilityWorkforceDraft(draft,dispatch,'road','فتح مركز لوجستي');recordAlert(`افتتح ${name} وربط بـHR والتشغيل.`,'facility');return {id};},{silent:Boolean(opts.silent),afterCommit:({id})=>{updateKpis();renderMap();panMapTo(coords,6);if(!opts.silent)openFacility(id);}});return Boolean(result);
@@ -3526,18 +3597,17 @@
   async function openMobilityCapitalCenter(capitalId,opts={}){
       const site=canonicalDirectorySite(`site:mobility:${capitalId}`,'mobility'),capital=site?mobilityCapital(site.capitalId):null;
       if(!site||!capital){if(!opts.silent)notice('اختر عاصمة معتمدة من سجل GH Mobility.');return false;}
-      const result=await runAuthorizedCompositeCommand('open-mobility-center',({state:draft,dispatch,recordAlert})=>{if(!draft.openedCompanies.includes('mobility'))throw new Error('company-not-open');if(dynamicFacilitiesFor(draft).some(f=>f.company==='mobility'&&f.kind==='mobility-center'&&f.capitalId===capital.id))throw new Error('facility-already-open');const build=awardConstructionDraft(draft,dispatch,recordAlert,'mobility','mobility-center',`مركز GH Mobility · ${capital.city}`,4500000);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=`MOB-CENTER-${capital.id}`,facility={id,sourceKey:site.key,company:'mobility',ownerCompanyId:'mobility',kind:'mobility-center',owned:true,capitalOnly:true,capitalId:site.capitalId,deliveryCapacity:window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['mobility-center'],icon:'🚘',photo:PHOTOS.facility_logistics,name:`مركز GH Mobility · ${site.city}`,city:site.city,country:site.country,coords:[...site.coords],bays:window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['mobility-center'],dailyCost:9800,cost:build.amount,capacity:`تشغيل حضري محلي · ${window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['mobility-center'].toLocaleString('en-US')} سيارة`,manager:'مدير مركز التنقل الحضري',contractor:build.contractor,constructionContractId:build.id,detail:`مركز تشغيلي في عاصمة ${site.country}. لا يُسمح بإنشائه خارج العواصم المعتمدة.`,tasks:[{id:window.GH_DETERMINISM.nextId(draft,'TASK'),title:'تجهيز المركز لاستقبال السيارات المشتراة',status:'قيد التنفيذ',createdAt:draft.simSeconds||0}]};dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.72});window.GH_MOBILITY_CORE?.ensure?.(draft);draft.mobility.capitalCenters.unshift({id:facility.id,capitalId:capital.id,city:capital.city,country:capital.country,coords:[...capital.coords],facilityId:facility.id,openedAt:draft.simSeconds||0});ensureFacilityWorkforceDraft(draft,dispatch,'mobility',`فتح مركز عاصمة ${capital.city}`);recordAlert(`افتتح ${facility.name} في العاصمة وربط بالحساب الجاري والموارد البشرية.`,'facility');return {id};},{silent:Boolean(opts.silent),afterCommit:()=>{updateKpis();renderMap();panMapTo(capital.coords,6);if(!opts.silent)openDrawer('companyFacilities',{type:'mobility'});}});return Boolean(result);
+      const result=await runAuthorizedCompositeCommand('open-mobility-center',({state:draft,dispatch,recordAlert})=>applyMobilityCenterDraft(draft,dispatch,recordAlert,site.key),{silent:Boolean(opts.silent),afterCommit:()=>{updateKpis();renderMap();panMapTo(capital.coords,6);if(!opts.silent)openDrawer('companyFacilities',{type:'mobility'});}});return Boolean(result);
   }
+  function applyMobilityCenterDraft(draft,dispatch,recordAlert,key){const site=directoryEntityByKey(key,'mobility',draft),capital=site?mobilityCapital(site.capitalId):null;if(!site||!capital)throw new Error('directory-site-invalid');if(dynamicFacilitiesFor(draft).some(f=>companyOfFacility(f)==='mobility'&&f.kind==='mobility-center'&&f.capitalId===capital.id))throw new Error('facility-already-open');const name=`مركز GH Mobility · ${capital.city}`,build=awardConstructionDraft(draft,dispatch,recordAlert,'mobility','mobility-center',name,4500000);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=`MOB-CENTER-${capital.id}`,facility={id,sourceKey:site.key,company:'mobility',ownerCompanyId:'mobility',kind:'mobility-center',owned:true,capitalOnly:true,capitalId:site.capitalId,deliveryCapacity:window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['mobility-center'],icon:'🚘',photo:PHOTOS.facility_logistics,name,city:site.city,country:site.country,coords:[...site.coords],bays:window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['mobility-center'],dailyCost:9800,cost:build.amount,capacity:`تشغيل حضري محلي · ${window.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['mobility-center'].toLocaleString('en-US')} سيارة`,manager:'مدير مركز التنقل الحضري',contractor:build.contractor,constructionContractId:build.id,detail:`مركز تشغيلي في عاصمة ${site.country}. لا يُسمح بإنشائه خارج العواصم المعتمدة.`,tasks:[{id:window.GH_DETERMINISM.nextId(draft,'TASK'),title:'تجهيز المركز لاستقبال السيارات المشتراة',status:'قيد التنفيذ',createdAt:draft.simSeconds||0}]};dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.72});window.GH_MOBILITY_CORE?.ensure?.(draft);draft.mobility.capitalCenters.unshift({id,capitalId:capital.id,city:capital.city,country:capital.country,coords:[...capital.coords],facilityId:id,openedAt:draft.simSeconds||0});ensureFacilityWorkforceDraft(draft,dispatch,'mobility',`فتح مركز عاصمة ${capital.city}`);recordAlert(`افتتح ${facility.name} في العاصمة وربط بالحساب الجاري والموارد البشرية.`,'facility');return {id,company:'mobility',key};}
   async function openGenericFacilitySite(input,opts={}){
     const company=String(input?.company||''),site=canonicalDirectorySite(input,company),template=facilitySiteTemplate(company);if(!site||!template){if(!opts.silent)notice('تعريف المنشأة أو موقعها غير مكتمل.');return false;}
-    const result=await runAuthorizedCompositeCommand(`open-facility:${company}`,({state:draft,dispatch,recordAlert})=>{
-      const instance=COMPANY_PLATFORM.requireCompany(draft,company,{registered:true,operational:true,capability:'finance.book'}),draftTemplate=facilitySiteTemplate(company,draft);if(!instance||!draftTemplate)throw new Error('facility-template-unavailable');
-      const verified=window.GH_FACILITY_CORE.verifyDirectorySite(site,company,draft);if(dynamicFacilitiesFor(draft).some(f=>companyOfFacility(f)===company&&(f.sourceKey===verified.key||(f.capitalId===verified.capitalId&&f.kind===verified.facilityKind))))throw new Error('facility-already-open');
-      const name=`${draftTemplate.label} · ${verified.city}`,build=awardConstructionDraft(draft,dispatch,recordAlert,company,draftTemplate.kind,name,draftTemplate.cost);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');
-      const id=window.GH_DETERMINISM.nextId(draft,'FACILITY'),facility={id,sourceKey:verified.key,capitalId:verified.capitalId,ownerCompanyId:company,kind:draftTemplate.kind,owned:true,photo:draftTemplate.photo,name,city:verified.city,country:verified.country,coords:[...verified.coords],dailyCost:draftTemplate.dailyCost,cost:build.amount,capacity:draftTemplate.capacity,manager:draftTemplate.manager,contractor:build.contractor,constructionContractId:build.id,detail:draftTemplate.detail,templateDefinitionId:draftTemplate.definitionId,templateDefinitionVersion:draftTemplate.definitionVersion,tasks:[{id:window.GH_DETERMINISM.nextId(draft,'TASK'),title:`تجهيز ${draftTemplate.label} وبدء خطة التشغيل`,status:'قيد التنفيذ',createdAt:draft.simSeconds||0}]};if(draftTemplate.deliveryCapacity>0)facility.deliveryCapacity=draftTemplate.deliveryCapacity;
-      const created=dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*draftTemplate.groupValueFactor}).result;if(!created||created.ownerCompanyId!==company)throw new Error('facility-owner-mismatch');ensureFacilityWorkforceDraft(draft,dispatch,company,`فتح ${draftTemplate.label}`);recordAlert(`افتتح ${name} بعقد ${build.id} وربط بدفتر ${COMPANY_PLATFORM.resolveIdentity(draft,company)?.legalName||company} والموارد البشرية.`,`facility`);return {id};
-    },{silent:Boolean(opts.silent),afterCommit:({id})=>{updateKpis();renderMap();panMapTo(site.coords,6);if(!opts.silent)openFacility(id);}});return Boolean(result);
+    const result=await runAuthorizedCompositeCommand(`open-facility:${company}`,({state:draft,dispatch,recordAlert})=>applyGenericFacilityDraft(draft,dispatch,recordAlert,site.key,company),{silent:Boolean(opts.silent),afterCommit:({id})=>{updateKpis();renderMap();panMapTo(site.coords,6);if(!opts.silent)openFacility(id);}});return Boolean(result);
   }
+  function applyGenericFacilityDraft(draft,dispatch,recordAlert,key,company){COMPANY_PLATFORM.requireCompany(draft,company,{registered:true,operational:true,capability:'finance.book'});const template=facilitySiteTemplate(company,draft),site=directoryEntityByKey(key,company,draft);if(!template||!site)throw new Error('facility-template-unavailable');const verified=window.GH_FACILITY_CORE.verifyDirectorySite(site,company,draft);if(dynamicFacilitiesFor(draft).some(f=>companyOfFacility(f)===company&&(f.sourceKey===verified.key||(f.capitalId===verified.capitalId&&f.kind===verified.facilityKind))))throw new Error('facility-already-open');const name=`${template.label} · ${verified.city}`,build=awardConstructionDraft(draft,dispatch,recordAlert,company,template.kind,name,template.cost);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=window.GH_DETERMINISM.nextId(draft,'FACILITY'),facility={id,sourceKey:verified.key,capitalId:verified.capitalId,ownerCompanyId:company,kind:template.kind,owned:true,photo:template.photo,name,city:verified.city,country:verified.country,coords:[...verified.coords],dailyCost:template.dailyCost,cost:build.amount,capacity:template.capacity,manager:template.manager,contractor:build.contractor,constructionContractId:build.id,detail:template.detail,templateDefinitionId:template.definitionId,templateDefinitionVersion:template.definitionVersion,tasks:[{id:window.GH_DETERMINISM.nextId(draft,'TASK'),title:`تجهيز ${template.label} وبدء خطة التشغيل`,status:'قيد التنفيذ',createdAt:draft.simSeconds||0}]};if(template.deliveryCapacity>0)facility.deliveryCapacity=template.deliveryCapacity;const created=dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*template.groupValueFactor}).result;if(!created||created.ownerCompanyId!==company)throw new Error('facility-owner-mismatch');ensureFacilityWorkforceDraft(draft,dispatch,company,`فتح ${template.label}`);recordAlert(`افتتح ${name} بعقد ${build.id} وربط بدفتر ${COMPANY_PLATFORM.resolveIdentity(draft,company)?.legalName||company} والموارد البشرية.`,'facility');return {id,company,key};}
+  function applyEnergyDraft(draft,dispatch,recordAlert,key,kind='solar'){const project=ENERGY_PROJECTS[kind],site=directoryEntityByKey(key,'power',draft,{energyKind:kind});if(!project||!site)throw new Error('directory-site-invalid');if(dynamicFacilitiesFor(draft).some(f=>f.sourceKey===site.key))throw new Error('facility-already-open');const name=`${project.name} · ${site.city}`,build=awardConstructionDraft(draft,dispatch,recordAlert,'power','power',name,project.cost);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');dispatch('procurement','configure-construction',{id:build.id,capacityKey:project.key,capacityAmount:project.amount,energyKind:kind,commissioned:false,leadDays:project.leadDays});const id=window.GH_DETERMINISM.nextId(draft,'POWER-SITE'),facility={id,sourceKey:site.key,capitalId:site.capitalId,company:'power',ownerCompanyId:'power',kind:'power',energyKind:kind,capacityKey:project.key,capacityAmount:project.amount,projectLeadDays:project.leadDays,owned:true,icon:'⚡',photo:PHOTOS.facility_power,name,city:site.city,country:site.country,coords:[...site.coords],cost:build.amount,dailyCost:0,plannedDailyCost:site.dailyCost||38000,capacity:`قيد الإنشاء · ${project.amount} ${project.key==='storageMWh'?'MWh':'MW'}`,commissioned:false,status:'قيد الإنشاء',contractor:build.contractor,constructionContractId:build.id,detail:'لا تدخل القدرة التشغيلية أو الإيراد قبل اكتمال الاختبارات والتشغيل التجاري.'};dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.38});ensureFacilityWorkforceDraft(draft,dispatch,'power','تجهيز فريق مشروع ومحطة طاقة');window.GH_ENERGY_CORE?.ensure?.(draft);recordAlert(`أرسى عقد ${name} على ${build.contractor} بمدة ${project.leadDays} يوم محاكاة، وربط فريق المحطة آليًا بمسير الرواتب. لا يبدأ الدخل قبل التشغيل التجاري.`,'facility');return {id,company:'power',key};}
+  function applyBankBranchDraft(draft,dispatch,recordAlert,key){const site=directoryEntityByKey(key,'bank',draft);if(!site)throw new Error('directory-site-invalid');if(dynamicFacilitiesFor(draft).some(f=>f.sourceKey===site.key))throw new Error('facility-already-open');const branchNumber=Number(draft.bank?.branches||0)+1,name=`فرع بنك المجموعة · ${site.city} #${branchNumber}`,build=awardConstructionDraft(draft,dispatch,recordAlert,'bank','bank',name,15000000);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const id=window.GH_DETERMINISM.nextId(draft,'BANK-BRANCH'),facility={id,sourceKey:site.key,capitalId:site.capitalId,company:'bank',ownerCompanyId:'bank',kind:'bank',owned:true,icon:'🏦',photo:PHOTOS.facility_bank,name,city:site.city,country:site.country,coords:[...site.coords],cost:build.amount,dailyCost:site.dailyCost||18500,capacity:'فرع مصرفي عالمي · حسابات وتحويلات وبطاقات وتمويل',contractor:build.contractor,constructionContractId:build.id,detail:'فرع تشغيلي يبدأ من صفر ثم يجذب عملاء وودائع في الإقفال اليومي، ويمكنه إنشاء محافظ تمويل يدوية.'};dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.7});const branch=dispatch('banking','open-branch',{branchId:`BR-${id}`,facilityId:id,site,servicesActive:true,services:['حسابات وودائع','تحويلات ومدفوعات'],serviceModel:'أساسي'}).result;ensureFacilityWorkforceDraft(draft,dispatch,'bank','فتح فرع بنكي');recordAlert(`افتتح ${name} بالخدمات الأساسية. وسّع خدمات الفرع يدويًا من مركز البنك حسب خطتك التجارية.`,'facility');return {id,company:'bank',key,branch};}
+  function applyDirectoryFacilityDraft(draft,dispatch,recordAlert,item){const company=String(item.company||''),key=String(item.key||'');if(!draft.openedCompanies.includes(company))throw new Error(`company-not-open:${company}`);const entity=directoryEntityByKey(key,company,draft,{energyKind:item.energyKind||'solar'});if(!entity)throw new Error(`directory-site-invalid:${company}:${key}`);if(entity.kind!=='company-site')return applyGlobalBaseDraft(draft,dispatch,recordAlert,key,company);if(company==='road')return applyLogisticsHubDraft(draft,dispatch,recordAlert,key);if(company==='mobility')return applyMobilityCenterDraft(draft,dispatch,recordAlert,key);if(company==='power')return applyEnergyDraft(draft,dispatch,recordAlert,key,item.energyKind||'solar');if(company==='bank')return applyBankBranchDraft(draft,dispatch,recordAlert,key);return applyGenericFacilityDraft(draft,dispatch,recordAlert,key,company);}
   async function openDirectorySite(key,selection={}){
     const requestedCompany=String(selection.company||''),entity=directoryEntityByKey(key,requestedCompany);if(!entity){notice('تعذر قراءة موقع الدليل العالمي أو الشركة المالكة.');return false;}
     const offer=directoryOffer(entity),company=offer.company;
@@ -3553,6 +3623,19 @@
     else if(company==='bank')result=await openBankBranch(entity.key,opts);
     else result=await openGenericFacilitySite(entity,opts);
     if(result)renderWorldNetworkInto();return result;
+  }
+  async function openCountryFacilitiesForAll(){
+    if(worldKind!=='all'||!worldCountry){notice('اختر «كل الشركات» ودولة محددة أولًا.');return false;}
+    const plan=countryFacilityPlan();if(!plan.items.length){notice('لا توجد منشآت صالحة وغير مملوكة لهذه الدولة.');return false;}if(plan.shortfall){notice(`ينقص حساب القابضة ${fmtMoney(plan.shortfall)} لتغطية التمويل المطلوب.`,'warning');return false;}
+    const byCompany=Object.entries(plan.companyTotals).map(([company,total])=>`${companyFinanceName(company)}: ${fmtNumber(plan.items.filter(row=>row.company===company).length)} · ${fmtMoney(total)}`).join('\n'),skipped=plan.skipped.length?`\n\nالمستثناة: ${plan.skipped.map(row=>`${companyFinanceName(row.company)} (${row.reason})`).join('، ')}`:'';
+    const confirmed=await window.GH_INTERFACE.confirm(`فتح ${fmtNumber(plan.items.length)} منشأة في ${plan.country}؟\n\n${byCompany}\n\nإجمالي العقود: ${fmtMoney(plan.total)}.${skipped}\n\nستنفذ كعملية واحدة؛ إذا فشل عقد أو تمويل فلن تُفتح أي منشأة.`,{title:'اعتماد منشآت الدولة',accept:'فتح المنشآت المعروضة',state,action:'open-country-facilities-all',risk:'high'});if(!confirmed)return false;
+    const fingerprint=plan.items.map(row=>`${row.company}:${row.key}:${row.energyKind||''}:${row.quote}`).join('|');
+    const result=await runAuthorizedCompositeCommand('open-country-facilities-all',async({state:draft,dispatch,recordAlert})=>{
+      const fresh=countryFacilityPlan(draft,plan.requested,plan.energyKind),freshFingerprint=fresh.items.map(row=>`${row.company}:${row.key}:${row.energyKind||''}:${row.quote}`).join('|');if(fresh.countryId!==plan.countryId||freshFingerprint!==fingerprint||fresh.shortfall>0)throw new Error('country-facility-plan-changed');
+      const opened=[];for(let index=0;index<fresh.items.length;index++){opened.push(applyDirectoryFacilityDraft(draft,dispatch,recordAlert,fresh.items[index]));if(index%2===1&&index+1<fresh.items.length)await yieldForInteractivePaint();}
+      recordAlert(`اكتمل اعتماد فتح ${opened.length} منشأة في ${fresh.country} لكل الشركات ذات المواقع الصالحة. إجمالي العقود ${fmtMoney(fresh.total)}.`,'facility');return {count:opened.length,companyIds:[...new Set(opened.map(row=>row.company))],facilityIds:opened.map(row=>row.id),country:fresh.country,total:fresh.total,skipped:fresh.skipped};
+    },{silent:true,afterCommit:()=>{updateKpis();renderMap();renderWorldNetworkInto();}});
+    if(!result){notice('أُلغي فتح منشآت الدولة كاملًا؛ لم يُعتمد تمويل أو عقد أو منشأة جزئية.','warning');return false;}notice(`تم فتح ${fmtNumber(result.count)} منشأة في ${result.country} لعدد ${fmtNumber(result.companyIds.length)} شركات ضمن اعتماد واحد.`);return result;
   }
   function renderCompanyFacilities(type){
     const company=String(type||'');if(!isCompanyType(company)||!isDirectoryCompany(company))return '<div class="empty">معرف الشركة أو دليل منشآتها غير متاح.</div>';const owned=getDynamicFacilities().filter(f=>f?.owned&&companyOfFacility(f)===company),providers=COMPANY_PLATFORM.definitionFor(state,company)?.facilities?.directoryProviderIds||[],warmStats=directoryIndex?.statsFor(state,company)||null;
@@ -3635,7 +3718,7 @@
       closeDrawer();closeMapPopovers();$('assetCard')?.classList.add('hidden');
       const founder=$('founderFlow');founder.classList.remove('hidden');founder.removeAttribute('aria-hidden');founder.style.setProperty('display','grid','important');founder.scrollTop=0;
       const shell=$('app');shell.setAttribute('aria-hidden','true');shell.style.pointerEvents='none';
-      updateFounderLogoPreview();simulationEngine.reset(performance.now(),'new-group');updateKpis();renderMap();updateMapStatus();return true;
+      updateFounderLogoPreview();simulationEngine.reset(performance.now(),'new-group');simulationRuntime.wake();updateKpis();renderMap();updateMapStatus();return true;
     }catch(error){
       if(error.requiresNativeReload){
         resetDurabilityEstablished=true;state.speed=0;
@@ -4735,6 +4818,7 @@
     
     document.querySelectorAll('.sign-contract').forEach(b=>b.addEventListener('click',()=>signContract(b.dataset.id,b.closest('article')?.querySelector('.contract-company-select')?.value||null)));
     document.querySelectorAll('.open-official-contract').forEach(b=>b.addEventListener('click',()=>openDrawer('invoices',{company:isFinanceCompany(b.dataset.company)?b.dataset.company:'all',tab:'documents',view:'contracts'})));
+    document.querySelectorAll('.open-all-companies').forEach(b=>b.addEventListener('click',async()=>{const release=beginButtonOperation(b,'جارٍ فتح الشركات…');if(!release)return;try{await openAllCompanies();}finally{release();}}));
     document.querySelectorAll('[data-companytab]').forEach(b=>b.addEventListener('click',()=>openDrawer('companies',b.dataset.companytab)));
     document.querySelectorAll('[data-labortab]').forEach(b=>b.addEventListener('click',()=>openDrawer('labor',b.dataset.labortab)));
     
@@ -4748,6 +4832,9 @@
     const worldCountrySelect=$('worldCountry');if(worldCountrySelect)worldCountrySelect.addEventListener('change',e=>{cancelDrawerSearch();worldCountry=e.target.value;worldCity='';worldPage=0;worldQuery='';renderWorldNetworkInto();});
     const worldCitySelect=$('worldCity');if(worldCitySelect)worldCitySelect.addEventListener('change',e=>{cancelDrawerSearch();worldCity=e.target.value;worldPage=0;worldQuery='';renderWorldNetworkInto();});
     const energyKindSelect=$('worldEnergyKind');if(energyKindSelect)energyKindSelect.addEventListener('change',e=>{cancelDrawerSearch();worldDirectoryIntent={energyKind:ENERGY_PROJECTS[e.target.value]?e.target.value:'solar'};renderWorldNetworkInto();});
+    const worldBulkCountSelect=$('worldBulkCount');if(worldBulkCountSelect)worldBulkCountSelect.addEventListener('change',e=>{worldBulkCount=Math.max(1,Math.min(10,Math.trunc(Number(e.target.value))||1));renderWorldNetworkInto();});
+    const worldBulkEnergySelect=$('worldBulkEnergyKind');if(worldBulkEnergySelect)worldBulkEnergySelect.addEventListener('change',e=>{worldBulkEnergyKind=ENERGY_PROJECTS[e.target.value]?e.target.value:'solar';renderWorldNetworkInto();});
+    document.querySelectorAll('.open-country-facilities-all').forEach(b=>b.addEventListener('click',async()=>{const release=beginButtonOperation(b,'جارٍ فتح المنشآت…');if(!release)return;try{await openCountryFacilitiesForAll();}finally{release();}}));
     const globalRouteSearch=$('globalRouteSearch');if(globalRouteSearch)globalRouteSearch.addEventListener('input',e=>{globalRouteQuery=e.target.value;const assetId=activeDrawerArg?.assetId;scheduleDrawerSearch('globalRoute',()=>renderGlobalRouteInto(assetId,true));});
     document.querySelectorAll('.energy-build').forEach(b=>b.addEventListener('click',()=>openWorldDirectory('power',{energyKind:b.dataset.kind||'solar'})));
     document.querySelectorAll('.fund-research').forEach(b=>b.addEventListener('click',()=>fundResearch(b.dataset.project)));
@@ -4774,11 +4861,11 @@
 
   async function buildEnergy(kind,site,opts={}){
     site=canonicalDirectorySite(site,'power');const p=ENERGY_PROJECTS[kind];if(!p||!site){notice('اختر مشروع طاقة وموقعًا صالحين.');return false;}
-    const result=await runAuthorizedCompositeCommand('build-energy',({state:draft,dispatch,recordAlert})=>{if(!draft.openedCompanies.includes('power'))throw new Error('company-not-open');if(dynamicFacilitiesFor(draft).some(f=>f.sourceKey===site.key))throw new Error('facility-already-open');const siteName=`${p.name} · ${site.city}`,build=awardConstructionDraft(draft,dispatch,recordAlert,'power','power',siteName,p.cost);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');dispatch('procurement','configure-construction',{id:build.id,capacityKey:p.key,capacityAmount:p.amount,energyKind:kind,commissioned:false,leadDays:p.leadDays});const facility={id:window.GH_DETERMINISM.nextId(draft,'POWER-SITE'),sourceKey:site.key,capitalId:site.capitalId,company:'power',ownerCompanyId:'power',kind:'power',energyKind:kind,capacityKey:p.key,capacityAmount:p.amount,projectLeadDays:p.leadDays,owned:true,icon:'⚡',photo:PHOTOS.facility_power,name:siteName,city:site.city,country:site.country,coords:[...site.coords],cost:build.amount,dailyCost:0,plannedDailyCost:site.dailyCost||38000,capacity:`قيد الإنشاء · ${p.amount} ${p.key==='storageMWh'?'MWh':'MW'}`,commissioned:false,status:'قيد الإنشاء',contractor:build.contractor,constructionContractId:build.id,detail:'لا تدخل القدرة التشغيلية أو الإيراد قبل اكتمال الاختبارات والتشغيل التجاري.'};dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.38});ensureFacilityWorkforceDraft(draft,dispatch,'power','تجهيز فريق مشروع ومحطة طاقة');window.GH_ENERGY_CORE?.ensure?.(draft);recordAlert(`أرسى عقد ${siteName} على ${build.contractor} بمدة ${p.leadDays} يوم محاكاة، وربط فريق المحطة آليًا بمسير الرواتب. لا يبدأ الدخل قبل التشغيل التجاري.`,'facility');return true;},{silent:Boolean(opts.silent),afterCommit:()=>{updateKpis();renderMap();if(!opts.silent)openDrawer('energy');}});return Boolean(result);
+    const result=await runAuthorizedCompositeCommand('build-energy',({state:draft,dispatch,recordAlert})=>applyEnergyDraft(draft,dispatch,recordAlert,site.key,kind),{silent:Boolean(opts.silent),afterCommit:()=>{updateKpis();renderMap();if(!opts.silent)openDrawer('energy');}});return Boolean(result);
   }
   async function openBankBranch(site,opts={}){
     site=canonicalDirectorySite(site,'bank');if(!site){notice('اختر موقع الفرع من الدليل العالمي.');return false;}
-    const result=await runAuthorizedCompositeCommand('open-bank-branch',({state:draft,dispatch,recordAlert})=>{if(!draft.openedCompanies.includes('bank'))throw new Error('company-not-open');if(dynamicFacilitiesFor(draft).some(f=>f.sourceKey===site.key))throw new Error('facility-already-open');const baseCost=15000000,branchNumber=Number(draft.bank?.branches||0)+1,siteName=`فرع بنك المجموعة · ${site.city} #${branchNumber}`,build=awardConstructionDraft(draft,dispatch,recordAlert,'bank','bank',siteName,baseCost);if(!build||build.insufficient)throw new Error('construction-funding-unavailable');const facilityId=window.GH_DETERMINISM.nextId(draft,'BANK-BRANCH'),facility={id:facilityId,sourceKey:site.key,capitalId:site.capitalId,company:'bank',ownerCompanyId:'bank',kind:'bank',owned:true,icon:'🏦',photo:PHOTOS.facility_bank,name:siteName,city:site.city,country:site.country,coords:[...site.coords],cost:build.amount,dailyCost:site.dailyCost||18500,capacity:'فرع مصرفي عالمي · حسابات وتحويلات وبطاقات وتمويل',contractor:build.contractor,constructionContractId:build.id,detail:'فرع تشغيلي يبدأ من صفر ثم يجذب عملاء وودائع في الإقفال اليومي، ويمكنه إنشاء محافظ تمويل يدوية.'};dispatch('facilities','create',{facility,bucket:'customHubs',groupValueAdd:build.amount*.7});const branch=dispatch('banking','open-branch',{branchId:`BR-${facilityId}`,facilityId,site,servicesActive:true,services:['حسابات وودائع','تحويلات ومدفوعات'],serviceModel:'أساسي'}).result;ensureFacilityWorkforceDraft(draft,dispatch,'bank','فتح فرع بنكي');recordAlert(`افتتح ${siteName} بالخدمات الأساسية. وسّع خدمات الفرع يدويًا من مركز البنك حسب خطتك التجارية.`,'facility');return branch;},{silent:Boolean(opts.silent),afterCommit:()=>{updateKpis();renderMap();if(!opts.silent)openDrawer('bank');}});return result||false;
+    const result=await runAuthorizedCompositeCommand('open-bank-branch',({state:draft,dispatch,recordAlert})=>applyBankBranchDraft(draft,dispatch,recordAlert,site.key),{silent:Boolean(opts.silent),afterCommit:()=>{updateKpis();renderMap();if(!opts.silent)openDrawer('bank');}});return result||false;
   }
   async function fundResearch(project){
     if(!Object.prototype.hasOwnProperty.call(state.research,project)){pushAlert('مشروع البحث غير معروف.');return false;}if(state.research[project]>=100){pushAlert('اكتمل هذا المشروع بالفعل بنسبة 100%.');openDrawer('research');return false;}if(state.advanced?.researchPrograms?.[project]?.phase){pushAlert('مرحلة هذا المشروع ما زالت جارية؛ تكتمل بعد 30 يومًا من بدايتها.');openDrawer('research');return false;}
@@ -4809,19 +4896,49 @@
     const shortfall=cost-holdingOperatingCash(target);
     return shortfall>0?`ينقص الحساب الجاري للقابضة ${fmtMoney(shortfall)}. وفّر السيولة من «المال» ثم وقّع العقد.`:null;
   }
+  function unopenedCompanyTypes(target=state){return COMPANY_PLATFORM.listInstances(target,{includeGroup:false}).filter(instance=>instance.definition?.kind==='subsidiary'&&instance.definition?.lifecycle==='active'&&!(instance.opened&&instance.operational)).map(instance=>instance.id);}
+  function prepareCompanyOpeningPlan(type,target=state){
+    type=String(type||'').trim();const definition=COMPANY_PLATFORM.getDefinition(type),branded=COMPANY_PLATFORM.brandedIdentity?.(target,type)||null,authority=founderAuthorization(target),place=window.GH_GAME_LIFECYCLE.locationFor(target.profile);
+    if(!authority.signature||!authority.mandate)throw new Error('active-visual-seal-required');
+    const companyName=branded?.legalName||definition?.identity?.legalDefault?.ar||definition?.identity?.legalDefault?.en||type,cost=Number(definition?.founding?.defaultCapital)||0;
+    const plan=window.GH_FORMATION_ENGINE.prepare({entityKind:'company',companyId:type,legalName:companyName,displayName:branded?.tradeName||definition.identity?.trade?.ar||companyName,shortName:branded?.shortName||definition.identity?.short||type.toUpperCase(),englishName:branded?.englishName||definition.identity?.legalDefault?.en||'',founder:target.profile?.founder,location:{id:place.id,city:place.city,country:place.country},capital:cost,currency:target.profile?.currency||'USD',signatureRef:authority.signature.id,signatureVersion:authority.signature.version,createdAt:Number(target.simSeconds)||0});
+    window.GH_FORMATION_ENGINE.validatePlan(plan);return plan;
+  }
+  function applyCompanyOpeningDraft(draft,plan){
+    const type=plan.companyId,draftAuthority=founderAuthorization(draft),stamp=plan.planHash.slice(0,10).toUpperCase(),short=(draft.profile.shortName||'GH').toUpperCase(),year=new Date(SIM_START+(Number(draft.simSeconds)||0)*1000).getUTCFullYear();
+    if(draft.openedCompanies.includes(type))throw new Error(`formation-company-already-open:${type}`);
+    if(!draftAuthority.signature||draftAuthority.signature.id!==plan.signature.signatureRef||draftAuthority.signature.version!==plan.signature.version)throw new Error('formation-signature-version-conflict');
+    window.GH_FORMATION_ENGINE.validatePlan(plan);
+    const payload={companyId:type,definitionId:plan.definitionId,capital:plan.capital.amount,legalName:plan.identity.legalName,shortName:plan.identity.shortName,owner:draft.profile.name,authorizedSignatory:draft.profile.founder,taxId:`${short}-${type.toUpperCase()}-${stamp}`,commercialRegistration:`CR-${year}-${stamp}`,businessLicense:`LIC-${type.toUpperCase()}-${stamp}`,formationContract:`INC-${type.toUpperCase()}-${stamp}`,invoices:[{id:`INV-${type.toUpperCase()}-${stamp}`,status:'تأسيس',amount:plan.capital.amount,issuedAt:draft.simSeconds,note:'قيد رأس المال المدفوع عند التأسيس'}]};
+    const receipt=authorizedDraftDispatch(draft,'corporate','open-company',payload,{idempotencyKey:plan.planId}),record=receipt.result;
+    if(!record||record.companyId!==type)throw new Error('formation-company-record-mismatch');
+    record.formationPlan={id:plan.planId,hash:plan.planHash,definitionId:plan.definitionId,definitionVersion:plan.definitionVersion,capital:clone(plan.capital),location:clone(plan.location),signature:clone(plan.signature),createdAt:plan.createdAt,sourceAccountId:window.GH_FINANCE_CORE.book(draft,'group').accounts[0].id};record.signatureSnapshot=signatureSnapshot(draft,plan.signature.signatureRef);record.authorizationProofId=receipt.authorizationProofId||null;
+    window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`وُقّع عقد فتح ${plan.identity.legalName} وحُوّل رأس ماله ${fmtMoney(plan.capital.amount)} من حساب القابضة. الأصول والمنشآت تبدأ من صفر وتُشترى بأوامر مستقلة.`,type:'formation'});
+    return {companyId:type,record,planId:plan.planId};
+  }
   async function openCompany(type){
-    type=String(type||'').trim();const definition=COMPANY_PLATFORM.getDefinition(type),branded=COMPANY_PLATFORM.brandedIdentity?.(state,type)||null,companyName=branded?.legalName||definition?.identity?.legalDefault?.ar||definition?.identity?.legalDefault?.en||type,cost=Number(definition?.founding?.defaultCapital)||0;
+    type=String(type||'').trim();const definition=COMPANY_PLATFORM.getDefinition(type),branded=COMPANY_PLATFORM.brandedIdentity?.(state,type)||null,companyName=branded?.legalName||definition?.identity?.legalDefault?.ar||definition?.identity?.legalDefault?.en||type;
     if(state.openedCompanies.includes(type)){openDrawer('formationContract',type);return false;}
     const blocked=openingBlocker(type);if(blocked){notice(blocked,'warning');return false;}
     const authority=founderAuthorization(state);if(!authority.signature||!authority.mandate){openSignatureDialog({required:true});notice('اعتمد توقيعك المرئي قبل توقيع عقد الفتح.');return false;}
-    const place=window.GH_GAME_LIFECYCLE.locationFor(state.profile),location={id:place.id,city:place.city,country:place.country};
-    let plan;try{plan=window.GH_FORMATION_ENGINE.prepare({entityKind:'company',companyId:type,legalName:companyName,displayName:branded?.tradeName||definition.identity?.trade?.ar||companyName,shortName:branded?.shortName||definition.identity?.short||type.toUpperCase(),englishName:branded?.englishName||definition.identity?.legalDefault?.en||'',founder:state.profile?.founder,location,capital:cost,currency:state.profile?.currency||'USD',signatureRef:authority.signature.id,signatureVersion:authority.signature.version,createdAt:Number(state.simSeconds)||0});window.GH_FORMATION_ENGINE.validatePlan(plan);}catch(error){notice(`تعذر تجهيز عقد الفتح: ${error.message}`);return false;}
-    const result=await runDurableStateCommand(`open-company:${type}`,({state:draft})=>{
-      const draftAuthority=founderAuthorization(draft),stamp=plan.planHash.slice(0,10).toUpperCase(),short=(draft.profile.shortName||'GH').toUpperCase(),payload={companyId:type,definitionId:plan.definitionId,capital:plan.capital.amount,legalName:plan.identity.legalName,shortName:plan.identity.shortName,owner:draft.profile.name,authorizedSignatory:draft.profile.founder,taxId:`${short}-${type.toUpperCase()}-${stamp}`,commercialRegistration:`CR-${simDate().getUTCFullYear()}-${stamp}`,businessLicense:`LIC-${type.toUpperCase()}-${stamp}`,formationContract:`INC-${type.toUpperCase()}-${stamp}`,invoices:[{id:`INV-${type.toUpperCase()}-${stamp}`,status:'تأسيس',amount:plan.capital.amount,issuedAt:draft.simSeconds,note:'قيد رأس المال المدفوع عند التأسيس'}]};
-      if(!draftAuthority.signature||draftAuthority.signature.id!==plan.signature.signatureRef||draftAuthority.signature.version!==plan.signature.version)throw new Error('formation-signature-version-conflict');
-      window.GH_FORMATION_ENGINE.validatePlan(plan);const receipt=authorizedDraftDispatch(draft,'corporate','open-company',payload,{idempotencyKey:plan.planId}),record=receipt.result;if(!record||record.companyId!==type)throw new Error('formation-company-record-mismatch');record.formationPlan={id:plan.planId,hash:plan.planHash,definitionId:plan.definitionId,definitionVersion:plan.definitionVersion,capital:clone(plan.capital),location:clone(plan.location),signature:clone(plan.signature),createdAt:plan.createdAt,sourceAccountId:window.GH_FINANCE_CORE.book(draft,'group').accounts[0].id};record.signatureSnapshot=signatureSnapshot(draft,plan.signature.signatureRef);record.authorizationProofId=receipt.authorizationProofId||null;window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`وُقّع عقد فتح ${plan.identity.legalName} وحُوّل رأس ماله ${fmtMoney(plan.capital.amount)} من حساب القابضة. الأصول والمنشآت تبدأ من صفر وتُشترى بأوامر مستقلة.`,type:'formation'});return {companyId:type,record,planId:plan.planId};
-    },{silent:true,afterCommit:()=>{syncMapCompanyFilterButtons();updateKpis();renderMap();openDrawer('formationContract',type);}});
+    let plan;try{plan=prepareCompanyOpeningPlan(type);}catch(error){notice(`تعذر تجهيز عقد الفتح: ${error.message}`);return false;}
+    const result=await runDurableStateCommand(`open-company:${type}`,({state:draft})=>applyCompanyOpeningDraft(draft,plan),{silent:true,afterCommit:()=>{syncMapCompanyFilterButtons();updateKpis();renderMap();openDrawer('formationContract',type);}});
     if(!result){notice(`لم تُفتح ${companyName}. ${openingBlocker(type)||'تعذر تأكيد الحفظ؛ لم يتغير شيء. أعد المحاولة.'}`,'warning');return false;}return true;
+  }
+  async function openAllCompanies(){
+    const types=unopenedCompanyTypes();if(!types.length){notice('جميع الشركات مؤسسة وتعمل بالفعل.');return false;}
+    const authority=founderAuthorization(state);if(!authority.signature||!authority.mandate){openSignatureDialog({required:true});notice('اعتمد توقيعك المرئي قبل توقيع عقود الشركات.');return false;}
+    const total=types.reduce((sum,type)=>sum+(Number(COMPANY_PLATFORM.getDefinition(type)?.founding?.defaultCapital)||0),0),shortfall=total-holdingOperatingCash();
+    if(shortfall>0){notice(`لا يمكن فتح الجميع: ينقص الحساب الجاري للقابضة ${fmtMoney(shortfall)}.`,'warning');return false;}
+    let plans;try{plans=types.map(type=>prepareCompanyOpeningPlan(type));}catch(error){notice(`تعذر تجهيز عقود الفتح: ${error.message}`);return false;}
+    const names=plans.map(plan=>plan.identity.legalName).join('، '),confirmed=await window.GH_INTERFACE.confirm(`فتح ${fmtNumber(plans.length)} شركات الآن؟\n\n${names}\n\nإجمالي رؤوس الأموال: ${fmtMoney(total)}. ستُوقّع عقود منفصلة وتُحوّل الأموال من حساب القابضة ضمن اعتماد واحد؛ عند فشل أي عقد تُلغى العملية كلها.`,{title:'اعتماد فتح جميع الشركات',accept:'توقيع العقود وفتح الجميع',state,action:'open-all-companies',risk:'high'});if(!confirmed)return false;
+    const result=await runDurableStateCommand('open-all-companies',({state:draft})=>{
+      if(plans.some(plan=>draft.openedCompanies.includes(plan.companyId)))throw new Error('formation-company-set-changed');
+      if(total-holdingOperatingCash(draft)>0)throw new Error('formation-total-capital-unavailable');
+      const records=plans.map(plan=>applyCompanyOpeningDraft(draft,plan));return {count:records.length,companyIds:records.map(row=>row.companyId),planIds:records.map(row=>row.planId),capital:total};
+    },{silent:true,afterCommit:()=>{syncMapCompanyFilterButtons();updateKpis();renderMap();openDrawer('companies','subs');}});
+    if(!result){notice('لم تُفتح أي شركة؛ أُلغي الاعتماد كاملًا دون خصم أو عقد جزئي.','warning');return false;}
+    notice(`تم فتح ${fmtNumber(result.count)} شركات وتسجيل عقودها المستقلة بإجمالي ${fmtMoney(result.capital)}.`);return result;
   }
   // Build 358: God Mode returns at the owner's request, as a test switch in Settings (System). Both engine flags turn
   // on together: purchases, payroll and transfers are no longer refused for cash; the money a payment lacks arrives as
@@ -5126,7 +5243,16 @@
     return requestCalendarAdvance(calendarAdvanceTargetDays(1),'calendar-next-day','بيوم واحد');
   }
   let resumeSpeed=startupSignatureResumeSpeed>0?startupSignatureResumeSpeed:(state.speed>0?state.speed:1);
-  function setSpeed(value){if(state.speed>0)resumeSpeed=state.speed;const next=Number(value);simulationEngine.cancelAdvance?.('user-speed-change');state.speed=SAFE_SPEED_VALUES.includes(next)?next:1;simulationEngine.reset(performance.now(),'user-speed-change');document.querySelectorAll('#speedMenu button[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===state.speed));$('speedLabel').textContent=SPEED_LABEL_BY_LEVEL[state.speed];$('speedToggle').querySelector('span').textContent=state.speed===0?'▶':'Ⅱ';$('speedToggle').setAttribute('aria-pressed',String(state.speed===0));updateDayStepControl();}
+  function setSpeed(value){
+    if(state.speed>0)resumeSpeed=state.speed;
+    const requested=Number(value),next=SAFE_SPEED_VALUES.includes(requested)?requested:1,now=performance.now();
+    // Cancel first. A staged rollback owns the pre-slice `speed` snapshot and
+    // may restore it; publishing the player's new speed only after that rollback
+    // prevents a cancelled midnight close from silently starting again.
+    simulationEngine.cancelAdvance?.('user-speed-change');simulationEngine.reset(now,'user-speed-change');
+    state.speed=next;simulationEngine.reset(now,'user-speed-change-settled');simulationRuntime.wake();
+    document.querySelectorAll('#speedMenu button[data-speed]').forEach(b=>b.classList.toggle('active',Number(b.dataset.speed)===state.speed));$('speedLabel').textContent=SPEED_LABEL_BY_LEVEL[state.speed];$('speedToggle').querySelector('span').textContent=state.speed===0?'▶':'Ⅱ';$('speedToggle').setAttribute('aria-pressed',String(state.speed===0));updateDayStepControl();
+  }
 
   function openWorld(){closeDrawer();closeMapPopovers();$('assetCard').classList.add('hidden');setActiveNav('map');updateMapStatus();}
   document.querySelectorAll('[data-panel]').forEach(btn=>btn.addEventListener('click',()=>openDrawer(btn.dataset.panel)));
@@ -5305,23 +5431,26 @@
     catch(error){ state.lastPanel=null;state.lastPanelArg=null;diag('RESTORE_LAST_PANEL_FAILED',{message:String(error?.message||error)},'warning'); }
   }
 
-  let lastMapRenderAt=0,lastPresentationPaintAt=0,lastMarkerAnimationAt=0,lastLoopRafTimestamp=null;
+  let lastMapRenderAt=0,lastPresentationPaintAt=0,lastMarkerAnimationAt=0,lastLoopRafTimestamp=null,lastLoopGuardReason='';
   const latestSimulationTransaction=()=>window.GH_TRANSACTION_CORE?.telemetry?.()?.lastSimulation||null;
   function recordGuardedDiagnosticFrame(now,callbackStartMs,guardReason){const callbackEndMs=appMetricClock(),fleetSize=window.GH_FLEET_DATA.size(state)+(state.mobility?.vehicles?.length||0);window.GH_DIAGNOSTICS?.recorderFrame?.(state,{rafTimestampMs:Number(now),callbackStartMs,callbackEndMs,simSeconds:state.simSeconds,visible:!document.hidden,hidden:!!document.hidden,panel:activeDrawerPanel||'map',mapActive:!!map,fleetSize,ownMarkers:ownMarkers.size,mobilityMarkers:renderedMobilityIds.size,simulationStage:guardReason,guardReason,simulationProgressExpected:false},{transactionProvider:latestSimulationTransaction});}
   function presentationFrameInterval(){const fleetSize=window.GH_FLEET_DATA.size(state)+(state.mobility?.vehicles?.length||0),advancing=!!simulationEngine.snapshot().manualAdvance;if(document.hidden)return 1000;if(activeDrawerPanel||advancing)return fleetSize>2000?300:fleetSize>750?220:fleetSize>250?150:100;if(fleetSize>3000)return 220;if(fleetSize>1500)return 180;if(fleetSize>750)return 140;if(fleetSize>400)return 110;if(fleetSize>180)return 80;return 55;}
   function loop(now){
     const frameIntervalMs=lastLoopRafTimestamp===null?null:Math.max(0,now-lastLoopRafTimestamp);lastLoopRafTimestamp=now;
     const frameRecorderActive=window.GH_DIAGNOSTICS?.recorderIsActive?.(state)===true,recorderCallbackStartMs=frameRecorderActive?appMetricClock():0;
-    if(window.GH_CONFERENCE?.isPresentationActive?.()){simulationEngine.reset(now,'conference-3d');if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,'conference-3d');requestAnimationFrame(loop);return;}
-    if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){simulationEngine.reset(now,'lifecycle-lock');if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,'lifecycle-lock');requestAnimationFrame(loop);return;}
-    if(processOneRecoveryBoundary()){simulationEngine.reset(now,'boundary-recovery');if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,'boundary-recovery');requestAnimationFrame(loop);return;}
-    const renderMetrics=runtimeInstrumentation.render,measureFrame=frameRecorderActive||(++renderMetrics.frameCounter%30)===0,frameStarted=measureFrame?appMetricClock():0;let simulationMs=0,targetUpdateMs=0,markerAnimationMs=0,structuralRenderMs=0,targetUpdated=false,markerAnimated=false,structureRendered=false;
+    const guardReason=window.GH_CONFERENCE?.isPresentationActive?.()?'conference-3d':hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()?'lifecycle-lock':processOneRecoveryBoundary()?'boundary-recovery':'';
+    if(guardReason){if(lastLoopGuardReason!==guardReason){lastLoopGuardReason=guardReason;simulationEngine.reset(now,guardReason);simulationRuntime.wake();}if(frameRecorderActive)recordGuardedDiagnosticFrame(now,recorderCallbackStartMs,guardReason);requestAnimationFrame(loop);return;}
+    if(lastLoopGuardReason){lastLoopGuardReason='';simulationRuntime.wake();}
+    const renderMetrics=runtimeInstrumentation.render,measureFrame=frameRecorderActive||(++renderMetrics.frameCounter%30)===0,frameStarted=measureFrame?appMetricClock():0;let simulationMs=0,simulationTaskMs=0,targetUpdateMs=0,markerAnimationMs=0,structuralRenderMs=0,targetUpdated=false,markerAnimated=false,structureRendered=false;
     // A staged day boundary lives only as long as the engine's slice job; one without a job is rolled back.
     if(stagedStateBusy()&&!simulationEngine.snapshot().jobActive)window.GH_TRANSACTION_CORE.abortStaged(state,'staged-transaction-orphaned');
-    let stageStarted=measureFrame?appMetricClock():0;simulationEngine.frame(now);if(measureFrame)simulationMs=Math.max(0,appMetricClock()-stageStarted);
+    // The frame callback observes cadence and paints only. Simulation has one
+    // owner (simulationRuntime) and executes in separate tasks, so an economic
+    // close can never be nested inside WebKit's presentation callback.
+    simulationEngine.noteFrameInterval?.(frameIntervalMs);simulationTaskMs=simulationRuntime.drainWorkMs();let stageStarted=measureFrame?appMetricClock():0;
     // Build 358: a save checkpoint when the real-time cap has passed (GH_SAVE_POLICY).
     maybeSaveCheckpoint(now);
-    // The simulation remains authoritative on every frame. Expensive target
+    // Presentation remains independent of simulation tasks. Expensive target
     // collection is sampled separately from bounded visible-marker animation.
     // Device thermal/memory acceptance still requires a real iPhone trace.
     const presentationEvery=presentationFrameInterval();
@@ -5331,15 +5460,18 @@
     if(!document.hidden&&now-lastMarkerAnimationAt>=32){lastMarkerAnimationAt=now;const measureAnimation=frameRecorderActive||(++renderMetrics.animationCounter%15)===0;if(measureAnimation)stageStarted=appMetricClock();animateMapMarkerPositions(now);if(measureAnimation){markerAnimationMs=Math.max(0,appMetricClock()-stageStarted);markerAnimated=true;recordRenderMetric('marker-animation',markerAnimationMs,{ownMarkers:ownMarkers.size,mobilityMarkers:renderedMobilityIds.size});}}
     const fleetSizeForMap=window.GH_FLEET_DATA.size(state)+(state.mobility?.vehicles?.length||0),mapStructureInterval=fleetSizeForMap>3000?30000:fleetSizeForMap>1000?20000:8000;if(map&&now-lastMapRenderAt>=mapStructureInterval){lastMapRenderAt=now;if(mapStructureSignature()!==lastMapStructureSignature){stageStarted=appMetricClock();renderMap();structuralRenderMs=Math.max(0,appMetricClock()-stageStarted);structureRendered=true;recordRenderMetric('structural-render',structuralRenderMs,{fleetSize:fleetSizeForMap,ownMarkers:ownMarkers.size,mobilityMarkers:renderedMobilityIds.size});}}
     const simulationSnapshot=frameRecorderActive?simulationEngine.snapshot():null,callbackEndMs=measureFrame?appMetricClock():0,frameWorkMs=measureFrame?Math.max(0,callbackEndMs-frameStarted):0;
-    if(measureFrame)recordRenderMetric('frame',frameWorkMs,{frameIntervalMs,simulationMs,targetUpdateMs,markerAnimationMs,structuralRenderMs,targetUpdated,markerAnimated,structureRendered,fleetSize:fleetSizeForMap,ownMarkers:ownMarkers.size,mobilityMarkers:renderedMobilityIds.size});
-    if(frameRecorderActive)window.GH_DIAGNOSTICS.recorderFrame(state,{rafTimestampMs:Number(now),callbackStartMs:frameStarted,callbackEndMs,simSeconds:state.simSeconds,simulationMs,targetUpdateMs,markerAnimationMs,structuralRenderMs,targetUpdated,markerAnimated,structureRendered,fleetSize:fleetSizeForMap,ownMarkers:ownMarkers.size,mobilityMarkers:renderedMobilityIds.size,panel:activeDrawerPanel||'map',mapActive:!!map,visible:!document.hidden,hidden:!!document.hidden,simulationStage:simulationSnapshot?.lastWorkStage,simulationGovernor:simulationSnapshot?.governor,simulationBacklog:simulationSnapshot?.backlog,simulationJobActive:simulationSnapshot?.jobActive,manualAdvance:!!simulationSnapshot?.manualAdvance,lastCreateMs:simulationSnapshot?.lastCreateMs,lastChunkMs:simulationSnapshot?.lastChunkMs,lastFinishMs:simulationSnapshot?.lastFinishMs,lastCycleMs:simulationSnapshot?.lastCycleMs,simulationStages:simulationSnapshot?.lastFrame||null,renderParts:Number(simulationSnapshot?.lastFrame?.renderMs)>0?runtimeInstrumentation.simRender.last:null},{transactionProvider:latestSimulationTransaction});
+    if(measureFrame)recordRenderMetric('frame',frameWorkMs,{frameIntervalMs,simulationMs,simulationTaskMs,targetUpdateMs,markerAnimationMs,structuralRenderMs,targetUpdated,markerAnimated,structureRendered,fleetSize:fleetSizeForMap,ownMarkers:ownMarkers.size,mobilityMarkers:renderedMobilityIds.size});
+    if(frameRecorderActive)window.GH_DIAGNOSTICS.recorderFrame(state,{rafTimestampMs:Number(now),callbackStartMs:frameStarted,callbackEndMs,simSeconds:state.simSeconds,simulationMs,simulationTaskMs,targetUpdateMs,markerAnimationMs,structuralRenderMs,targetUpdated,markerAnimated,structureRendered,fleetSize:fleetSizeForMap,ownMarkers:ownMarkers.size,mobilityMarkers:renderedMobilityIds.size,panel:activeDrawerPanel||'map',mapActive:!!map,visible:!document.hidden,hidden:!!document.hidden,simulationStage:simulationSnapshot?.lastWorkStage,simulationGovernor:simulationSnapshot?.governor,simulationBacklog:simulationSnapshot?.backlog,simulationJobActive:simulationSnapshot?.jobActive,manualAdvance:!!simulationSnapshot?.manualAdvance,lastCreateMs:simulationSnapshot?.lastCreateMs,lastChunkMs:simulationSnapshot?.lastChunkMs,lastFinishMs:simulationSnapshot?.lastFinishMs,lastCycleMs:simulationSnapshot?.lastCycleMs,simulationStages:simulationSnapshot?.lastFrame||null,renderParts:Number(simulationSnapshot?.lastFrame?.renderMs)>0?runtimeInstrumentation.simRender.last:null},{transactionProvider:latestSimulationTransaction});
     requestAnimationFrame(loop);
   }
   simulationEngine.reset(performance.now());
+  simulationRuntime.start();
+  window.addEventListener('pagehide',()=>{simulationRuntime.stop();simulationEngine.reset(performance.now(),'pagehide');},{passive:true});
+  window.addEventListener('pageshow',event=>{if(!event.persisted)return;simulationEngine.setHidden(document.hidden);simulationRuntime.start();},{passive:true});
   requestAnimationFrame(loop);
   function announceRuntimeReady(bridge){
     if(!bridge)return;let sent=false;
-    const send=()=>{if(sent)return;sent=true;requestAnimationFrame(()=>requestAnimationFrame(()=>{try{diag('NATIVE_RUNTIME_READY',{version:APP_VERSION,build:RUNTIME_BUILD,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0});bridge.postMessage({action:'runtimeReady',version:APP_VERSION,build:RUNTIME_BUILD,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0});}catch(error){state.speed=0;diag('NATIVE_RUNTIME_READY_FAILED',{message:String(error?.message||error)},'critical');console.error('Native runtime-ready signal failed',error);}}));};
+    const send=()=>{if(sent)return;sent=true;requestAnimationFrame(()=>requestAnimationFrame(()=>{try{const sourceSnapshot=String(window.GH_NATIVE_SOURCE_SNAPSHOT||'');diag('NATIVE_RUNTIME_READY',{version:APP_VERSION,build:RUNTIME_BUILD,sourceSnapshot,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0});bridge.postMessage({action:'runtimeReady',version:APP_VERSION,build:RUNTIME_BUILD,sourceSnapshot,saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0});}catch(error){state.speed=0;diag('NATIVE_RUNTIME_READY_FAILED',{message:String(error?.message||error)},'critical');console.error('Native runtime-ready signal failed',error);}}));};
     const mapReady=()=>{if(!terrainLayer?.once){send();return;}let settled=false;const finish=()=>{if(settled)return;settled=true;send();};terrainLayer.once('load',finish);setTimeout(finish,1600);};
     if(map?.whenReady)map.whenReady(mapReady);else mapReady();
   }

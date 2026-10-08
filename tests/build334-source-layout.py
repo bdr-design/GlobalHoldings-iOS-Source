@@ -10,10 +10,10 @@ class SourceValidation(unittest.TestCase):
         for folder in V.RUNTIME_DIRS:(self.root/folder).mkdir()
         (self.root/'WebApp/app.js').write_text('// test-only source fixture\n')
         (self.root/'iOS/Fixture.swift').write_text('// test-only source fixture\n')
-        (self.root/'BUILD').write_text('358\n');(self.root/'VERSION').write_text('3.0.0\n')
-        (self.root/'project.yml').write_text('CURRENT_PROJECT_VERSION: "358"\nCFBundleVersion: "358"\nMARKETING_VERSION: "3.0.0"\nCFBundleShortVersionString: "3.0.0"\n')
+        (self.root/'BUILD').write_text('362\n');(self.root/'VERSION').write_text('3.0.0\n')
+        (self.root/'project.yml').write_text('CURRENT_PROJECT_VERSION: "362"\nCFBundleVersion: "362"\nMARKETING_VERSION: "3.0.0"\nCFBundleShortVersionString: "3.0.0"\n')
         files=V.inventory(self.root)
-        self.manifest={'version':'3.0.0','build':358,'save_schema':'3.0.0','files':files,'source_tree_sha256':V.tree_digest(files)}
+        self.manifest={'version':'3.0.0','build':362,'save_schema':'3.0.0','files':files,'source_tree_sha256':V.tree_digest(files)}
         (self.root/'RUNTIME_SOURCE_MANIFEST.json').write_text(json.dumps(self.manifest));(self.root/'RELEASE_GATE.json').write_text(json.dumps({'approved':False,'blocking_issues':['fixture blocker']}))
     def tearDown(self):self.tmp.cleanup()
     def test_accept_matching_source(self):self.assertTrue(V.verify(self.root)['verified'])

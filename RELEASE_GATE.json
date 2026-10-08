@@ -1,8 +1,8 @@
 {
   "approved": false,
-  "source_tree_sha256": "26b99526b9f5a293b10d64a9f2e78ddac4cdd3bbc6471242260302c78b62c1a5",
+  "source_tree_sha256": "44006463ae6f3a146fc0e9a95e7b9c6e837db623180c800e17ecb44ff5b56a51",
   "version": "3.0.0",
-  "build": 358,
+  "build": 362,
   "save_schema": "3.0.0",
   "blocking_issues": [
     "No physical iPhone profile exists for this candidate. Frame time, touch latency, memory (803 MB JS heap at 1,000,000 assets in desktop Chromium), and thermal targets at 100,000 and 1,000,000 assets remain unverified on target hardware.",
@@ -76,7 +76,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "claude/vibrant-planck-irbtw6",
     "based_on": "build357-wip@38b21bc",
-    "source_tree_sha256": "26b99526b9f5a293b10d64a9f2e78ddac4cdd3bbc6471242260302c78b62c1a5",
+    "source_tree_sha256": "44006463ae6f3a146fc0e9a95e7b9c6e837db623180c800e17ecb44ff5b56a51",
     "working_tree_clean": null
   },
   "point": "Build 358: air/sea dispatch fix, row-level simulation snapshots (no per-slice full-state copy), 3,000-aircraft airports with compact delivery receipts; RELEASE_GATE remains closed pending CI, physical iPhone profiling and owner approval."

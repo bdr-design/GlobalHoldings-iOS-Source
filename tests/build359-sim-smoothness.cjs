@@ -90,6 +90,7 @@ const app=fs.readFileSync(path.join(WEB,'app.js'),'utf8');
   const heavy=engine.snapshot().maxFrame;assert.ok(heavy.finishMs>=30,`the frame stages name the heavy finish: ${JSON.stringify(heavy)}`);
   finishCost=1;const slicesBefore=engine.snapshot().slices;for(let k=0;k<60;k++)frame();
   assert.ok(engine.snapshot().slices>slicesBefore,'slices continue after the cooldown');
+  engine.advanceTo(sim+3600,{speed:600,batchSeconds:3600});engine.noteFrameInterval(50);frame();assert.ok(engine.snapshot().activeFrameBudgetMs<10,'a delayed display frame reduces the manual simulation budget before the next slice');
   assert.equal(CORE.create({getSimTime:()=>0,setSimTime(){},createSliceJob(){}},{cooldownAfterMs:0}).config().cooldownAfterMs,0,'0 disables the cooldown');
 }
 

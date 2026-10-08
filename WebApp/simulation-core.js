@@ -29,9 +29,10 @@
     hardTaskMs:120,
     hardTaskLimit:3,
     conflictLimit:3,
-    // Build 359: after a frame whose simulation work (render callback aside) reached this, the next frame runs no
-    // simulation work, so two heavy frames never follow each other; live time accrues as backlog meanwhile. 0 disables.
-    cooldownAfterMs:24
+    // Build 359: after a cycle whose simulation work (render callback aside) reached this, the next cycle runs no
+    // simulation work, so two heavy cycles never follow each other; live time accrues as backlog meanwhile. 0 disables.
+    cooldownAfterMs:24,
+    manualAggregateMaxSeconds:86400
   });
 
   const systemNowMs=()=>globalThis.performance?.now?.() ?? Date.now();
@@ -44,7 +45,7 @@
     const cfg={...DEFAULTS,...options};
     cfg.allowedSpeeds=Array.from(options.allowedSpeeds||DEFAULTS.allowedSpeeds).map(Number).filter(Number.isFinite);
     if(!cfg.allowedSpeeds.length)cfg.allowedSpeeds=Array.from(DEFAULTS.allowedSpeeds);
-    const positive=['quantumRealSeconds','maxRealDelta','maxBacklogNormal','maxBacklogFast','frameBudgetMs','manualFrameBudgetMs','adaptiveFrameBudgetMinMs','chunkItems','manualChunkItems','renderEveryNormalMs','renderEveryFastMs','maintenanceEveryHours','manualBatchSeconds','manualMinBatchSeconds','manualRetryLimit','longTaskWarnMs','hardTaskMs','hardTaskLimit','conflictLimit'];
+    const positive=['quantumRealSeconds','maxRealDelta','maxBacklogNormal','maxBacklogFast','frameBudgetMs','manualFrameBudgetMs','adaptiveFrameBudgetMinMs','chunkItems','manualChunkItems','renderEveryNormalMs','renderEveryFastMs','maintenanceEveryHours','manualBatchSeconds','manualMinBatchSeconds','manualRetryLimit','longTaskWarnMs','hardTaskMs','hardTaskLimit','conflictLimit','manualAggregateMaxSeconds'];
     for(const key of positive){const n=Number(cfg[key]);cfg[key]=Number.isFinite(n)&&n>0?n:DEFAULTS[key];}
     const minRealSliceSeconds=Number(cfg.minRealSliceSeconds);cfg.minRealSliceSeconds=Number.isFinite(minRealSliceSeconds)?Math.max(0,Math.min(1,minRealSliceSeconds)):0;
     cfg.chunkItems=Math.max(1,Math.floor(cfg.chunkItems));
@@ -70,12 +71,13 @@
       maxCreateMs:0,lastCreateMs:0,maxFinishMs:0,lastFinishMs:0,maxCycleMs:0,lastCycleMs:0,
       maxMaintenanceMs:0,lastMaintenanceMs:0,maxRenderMs:0,lastRenderMs:0,lastFrame:null,maxFrame:null,cooldownFrames:0,deferredRuns:0,
       lastError:'',fatalError:null,lastBoundary:'',lastSliceSeconds:0,lastMaintenanceHour:-1,lastCancelReason:'',lastCommitReason:'',lastWorkStage:'',governor:'GREEN',avgChunkMs:0,avgWorkMs:0,
-      manualFailures:0,manualThrottleYields:0,lastAdvanceFailure:null,lastProgressSim:Math.max(0,Number(adapter.getSimTime())||0),lastProgressAt:clock(),activeFrameBudgetMs:cfg.frameBudgetMs
+      manualFailures:0,manualThrottleYields:0,lastAdvanceFailure:null,lastProgressSim:Math.max(0,Number(adapter.getSimTime())||0),lastProgressAt:clock(),activeFrameBudgetMs:cfg.frameBudgetMs,frameCadencePressure:0,lastFrameIntervalMs:0,
+      aggregateSlices:0,jobCleanups:0,cleanupErrors:0
     };
     let job=null,jobSlice=0,jobStart=0,jobSpeed=0,jobBoundary=null,jobWorkMs=0,jobReadyToFinish=false,manualAdvance=null;
-    // Build 359: where a frame's simulation time goes (create, chunks, finish, the host's maintenance and render callbacks),
-    // so a slow frame names its stage in diagnostics. Measurement only; no decision reads it.
-    let frameStages=null,cooldownNext=false;const addFrameStage=(key,ms)=>{if(frameStages)frameStages[key]+=Math.max(0,Number(ms)||0);};
+    // Build 359: where a simulation cycle spends its time (create, chunks, finish, maintenance and render callbacks),
+    // so a slow cycle names its stage in diagnostics. Measurement only; no decision reads it.
+    let frameStages=null,cooldownNext=false,frameCadencePressure=0;const addFrameStage=(key,ms)=>{if(frameStages)frameStages[key]+=Math.max(0,Number(ms)||0);};
     let hardTaskStreak=0,conflictStreak=0,lastObservedSpeed=null,throttlePending=null;const durationSamples=[],workSamples=[];let lastGovernor='GREEN';
     let lastHourCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/3600);
     let lastDayCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/86400);
@@ -148,19 +150,26 @@
       if(!manualAdvance&&cfg.minRealSliceSeconds>0){const minimumSlice=alignBoundaryTarget(Math.min(quantum(speed),Math.max(1e-6,speed*cfg.minRealSliceSeconds)));if(backlog+1e-9<minimumSlice)return false;}
       // Calendar targets do not accrue real-time backlog. Preserve their bounded
       // batch extent when fixed create/commit costs trigger a lower pacing rate.
-      let batch=manualAdvance?manualAdvance.batchSeconds:quantum(speed);
+      let batch=manualAdvance?manualAdvance.batchSeconds:quantum(speed),aggregate=false;
       if(manualAdvance&&typeof adapter.getManualSliceLimit==='function'){
         try{const ownerLimit=Number(adapter.getManualSliceLimit({from:simNow(),target:manualAdvance.target,speed,batchSeconds:batch}));if(Number.isFinite(ownerLimit)&&ownerLimit>0)batch=Math.min(batch,ownerLimit);}catch(error){report('manual-slice-limit',error,false);}
       }
-      const slice=alignBoundaryTarget(Math.min(backlog,batch));
+      if(manualAdvance&&typeof adapter.getManualAggregateLimit==='function'){
+        try{
+          const aggregateLimit=Number(adapter.getManualAggregateLimit({from:simNow(),target:manualAdvance.target,speed,batchSeconds:batch}));
+          if(Number.isFinite(aggregateLimit)&&aggregateLimit>batch+1e-9){batch=Math.min(aggregateLimit,cfg.manualAggregateMaxSeconds);aggregate=true;}
+        }catch(error){report('manual-aggregate-limit',error,false);}
+      }
+      const slice=aggregate?Math.min(backlog,batch):alignBoundaryTarget(Math.min(backlog,batch));
       if(!Number.isFinite(slice)||slice<=0)return false;
       jobSlice=slice;jobStart=simNow();jobSpeed=speed;jobBoundary=boundaryFor(jobStart+slice);jobWorkMs=0;jobReadyToFinish=false;
       const createStart=clock();
       try{
-        job=adapter.createSliceJob(slice,{from:jobStart,to:jobStart+slice,speed,fast:fast(speed),manualAdvance:!!manualAdvance,boundary:{...jobBoundary}})||null;
+        job=adapter.createSliceJob(slice,{from:jobStart,to:jobStart+slice,speed,fast:fast(speed),manualAdvance:!!manualAdvance,aggregate,boundary:{...jobBoundary}})||null;
         if(!job||typeof job.runChunk!=='function'||typeof job.finish!=='function'){
           health.lastError='adapter:createSliceJob-invalid';
           if(manualAdvance)failManualAdvance('create-job-invalid',{stage:'create',from:jobStart,to:jobStart+jobSlice});
+          const invalid=job;try{invalid?.cancel?.({reason:'create-job-invalid'});}catch(error){report('sliceCancel',error,false);}try{invalid?.cleanup?.({outcome:'invalid'});if(invalid)health.jobCleanups++;}catch(error){health.cleanupErrors++;report('sliceCleanup',error,false);}
           job=null;jobSlice=0;jobBoundary=null;return false;
         }
       }catch(error){if(manualAdvance)failManualAdvance('create-error',{stage:'create',from:jobStart,to:jobStart+jobSlice,error});report('createSliceJob',error,true);job=null;jobSlice=0;jobBoundary=null;return false;}
@@ -168,11 +177,18 @@
       return true;
     }
 
+    function releaseJob(activeJob,outcome){
+      if(!activeJob)return;
+      try{activeJob.cleanup?.({outcome,from:jobStart,to:jobStart+jobSlice,speed:jobSpeed,boundary:jobBoundary});health.jobCleanups++;}
+      catch(error){health.cleanupErrors++;report('sliceCleanup',error,false);}
+      job=null;jobSlice=0;jobStart=simNow();jobSpeed=0;jobBoundary=null;jobWorkMs=0;jobReadyToFinish=false;
+    }
+
     function cancelJob(reason='cancelled'){
       if(!job)return;
-      try{job.cancel?.({reason,from:jobStart,to:jobStart+jobSlice,speed:jobSpeed,boundary:jobBoundary});}catch(error){report('sliceCancel',error,false);}
+      const activeJob=job;try{activeJob.cancel?.({reason,from:jobStart,to:jobStart+jobSlice,speed:jobSpeed,boundary:jobBoundary});}catch(error){report('sliceCancel',error,false);}
       health.cancels++;health.lastCancelReason=reason;
-      job=null;jobSlice=0;jobStart=simNow();jobSpeed=0;jobBoundary=null;jobWorkMs=0;jobReadyToFinish=false;
+      releaseJob(activeJob,'cancel');
     }
 
     function applyFallbackSpeed(meta){
@@ -235,7 +251,7 @@
       setSim(committedTo);
       pacing.consume(committedSlice);
       health.slices++;health.lastSliceSeconds=committedSlice;health.lastCommitReason='committed';health.lastProgressSim=committedTo;health.lastProgressAt=clock();
-      health.lastCycleMs=jobWorkMs;health.maxCycleMs=Math.max(health.maxCycleMs,jobWorkMs);job=null;jobSlice=0;jobStart=committedTo;jobSpeed=0;jobBoundary=null;jobWorkMs=0;jobReadyToFinish=false;
+      health.lastCycleMs=jobWorkMs;health.maxCycleMs=Math.max(health.maxCycleMs,jobWorkMs);if(activeJob.aggregate===true)health.aggregateSlices++;releaseJob(activeJob,'commit');jobStart=committedTo;
       if(committedBoundary.day!==null&&committedBoundary.day>lastDayCommitted){lastDayCommitted=committedBoundary.day;health.days++;health.lastBoundary=`day:${committedBoundary.day}`;}
       if(committedBoundary.hour!==null&&committedBoundary.hour>lastHourCommitted){lastHourCommitted=committedBoundary.hour;health.hours++;health.lastBoundary=`hour:${committedBoundary.hour}`;}
       if(committedBoundary.hour!==null&&committedBoundary.hour-health.lastMaintenanceHour>=cfg.maintenanceEveryHours){
@@ -256,9 +272,13 @@
     }
     function work(now,speed){
       // Calendar advance gets a slightly larger cooperative budget so long jumps
-      // finish promptly, but every frame still yields back to WebKit. Live play
+      // finish promptly, but every task slice still yields back to WebKit. Live play
       // keeps the tighter budget to protect interaction and map presentation.
-      const adaptiveBudget=manualAdvance?cfg.manualFrameBudgetMs:Math.max(cfg.adaptiveFrameBudgetMinMs,Math.min(cfg.frameBudgetMs,health.governor==='RED'?cfg.frameBudgetMs*.35:health.governor==='ORANGE'?cfg.frameBudgetMs*.5:health.governor==='YELLOW'?cfg.frameBudgetMs*.75:cfg.frameBudgetMs));health.activeFrameBudgetMs=adaptiveBudget;
+      const baseBudget=manualAdvance?cfg.manualFrameBudgetMs:cfg.frameBudgetMs,governorFactor=health.governor==='RED'?.35:health.governor==='ORANGE'?.5:health.governor==='YELLOW'?.75:1,cadenceFactor=Math.max(.45,1-frameCadencePressure*.55);
+      // Calendar jumps used to ignore the governor and reserve 10 ms on every 16.7 ms iPhone frame even while
+      // the engine reported pressure. Apply the same governor to manual work, with the configured cooperative
+      // floor, so a year jump yields compositor time instead of sustaining visible cadence loss.
+      const adaptiveBudget=Math.max(cfg.adaptiveFrameBudgetMinMs,Math.min(baseBudget,baseBudget*governorFactor*cadenceFactor));health.activeFrameBudgetMs=adaptiveBudget;
       const deadline=pacing.executionDeadline(!!manualAdvance,adaptiveBudget);
       while(clock()<deadline){
         if(!job&&adapter.hasDeferredWork?.()===true)break;
@@ -327,6 +347,7 @@
         if(!health.maxFrame||stages.totalMs>health.maxFrame.totalMs)health.maxFrame=stages;
       }
     }
+    function noteFrameInterval(value){const interval=Number(value);if(!Number.isFinite(interval)||interval<=0||interval>250)return frameCadencePressure;const instant=interval<=18.5?0:Math.min(1,(interval-18.5)/30);frameCadencePressure=Math.max(instant,frameCadencePressure*.82);health.frameCadencePressure=Math.round(frameCadencePressure*1000)/1000;health.lastFrameIntervalMs=Math.round(interval*100)/100;return frameCadencePressure;}
     function frameBody(now){
       health.frames++;completeManualAdvance();
       const advancing=manualAdvance,speed=advancing?advancing.speed:getSpeed();
@@ -348,8 +369,8 @@
       }
       const hidden=pacing.snapshot().hidden;
       if(!hidden&&!suspended&&!job){
-        // Build 359: a cooldown frame after a heavy one, then the host's deferred work (the maintenance parts), one part
-        // per frame and before any new slice (also while paused, so a part never waits for play to resume).
+        // Build 359: a cooldown cycle after a heavy one, then the host's deferred work (the maintenance parts), one part
+        // per cycle and before any new slice (also while paused, so a part never waits for play to resume).
         if(cooldownNext){cooldownNext=false;health.cooldownFrames=(health.cooldownFrames||0)+1;maybeRender(now,speed);return;}
         if(runDeferredWork()){maybeRender(now,speed);return;}
       }else if(job&&cooldownNext&&!hidden&&!suspended){cooldownNext=false;health.cooldownFrames=(health.cooldownFrames||0)+1;maybeRender(now,speed);return;}
@@ -366,7 +387,7 @@
     function setHidden(v){const hidden=!!v;reset(clock(),hidden?'hidden':'visible');pacing.setHidden(hidden,clock());if(hidden){try{adapter.onPersist?.({reason:'hidden',speed:getSpeed()});}catch(error){report('persist-hidden',error,false);}}}
     function snapshot(){const pace=pacing.snapshot();return {...health,simSeconds:simNow(),speed:getSpeed(),backlog:pace.backlog,jobActive:!!job,jobReadyToFinish,jobSlice,jobSpeed,hidden:pace.hidden,manualAdvance:manualSnapshot(),pacing:pace,config:{...cfg,allowedSpeeds:[...cfg.allowedSpeeds],nowMs:undefined}};}
 
-    return {version:VERSION,frame,reset,setHidden,advanceTo,cancelAdvance,snapshot,health:()=>({...health}),config:()=>({...cfg,allowedSpeeds:[...cfg.allowedSpeeds],nowMs:undefined})};
+    return {version:VERSION,frame,noteFrameInterval,reset,setHidden,advanceTo,cancelAdvance,snapshot,health:()=>({...health}),config:()=>({...cfg,allowedSpeeds:[...cfg.allowedSpeeds],nowMs:undefined})};
   }
 
   const API=Object.freeze({VERSION,DEFAULTS,normalizeConfig,create});
