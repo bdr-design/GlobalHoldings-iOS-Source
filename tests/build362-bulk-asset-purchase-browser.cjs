@@ -27,6 +27,13 @@ const {chromium}=require('playwright'),{boot}=require('./helpers/local-dom-app')
     assert.ok(purchased.first&&purchased.second);assert.deepEqual(purchased.total,{completed:600,facilities:1,chunks:2});assert.deepEqual(purchased.each,{completed:20,facilities:2,chunks:2});
     assert.deepEqual(purchased.byBase,{'QA-OMDB':610,'QA-EGLL':10});assert.equal(purchased.size,620);assert.deepEqual(purchased.progress,[[512,600],[600,600],[10,20],[20,20]]);
 
+    const overLegacyCapacity=await page.evaluate(async()=>{
+      const a=__AUDIT__,s=__GH_STATE__,model=GH_ASSET_CATALOG.air.used[0],progress=[],options={progress:(done,total)=>progress.push([done,total])};
+      const order=await a.buyAsset('air','used',model.id,'lease',3500,'QA-OMDB',true,'QA-BULK-3500-SINGLE-BASE','air',options);
+      return {order,completed:options.completedCount,facilities:options.facilityCount,chunks:options.chunkCount,progress,capacity:GH_FACILITY_CORE.assetCapacity(s.globalBases.find(row=>row.id==='QA-OMDB')),occupancy:GH_FACILITY_CORE.assetOccupancy(s,s.globalBases.find(row=>row.id==='QA-OMDB'))};
+    });
+    assert.ok(overLegacyCapacity.order,'one base accepts a real order above the previous 3,000-base limit');assert.equal(overLegacyCapacity.completed,3500);assert.equal(overLegacyCapacity.facilities,1);assert.equal(overLegacyCapacity.chunks,7);assert.equal(overLegacyCapacity.capacity,1000000);assert.equal(overLegacyCapacity.occupancy,4110);
+
     const rollback=await page.evaluate(async()=>{
       const a=__AUDIT__,s=__GH_STATE__,model=GH_ASSET_CATALOG.air.used[0],core=GH_PROCUREMENT_CORE,original=core.execute,snapshot=()=>JSON.stringify({fleet:GH_FLEET_DATA.size(s),deliveries:s.realism.procurement.deliveries.length,cheques:s.finance.cheques.length,invoices:s.finance.invoices.length,supplier:s.supplierTransactions.length,cash:GH_FINANCE_CORE.operating(s,'air')}),before=snapshot();let purchases=0;
       core.execute=function(ctx,cmd,payload){if(cmd==='purchase-assets'&&++purchases===2)throw new Error('QA-BULK-SECOND-CHUNK');return original.call(this,ctx,cmd,payload);};
@@ -40,9 +47,13 @@ const {chromium}=require('playwright'),{boot}=require('./helpers/local-dom-app')
       a.openDrawer('invoices',{company:'air',tab:'documents',view:'cheques'});
       return {headings:[...document.querySelectorAll('#drawerBody h3')].map(row=>row.textContent.trim()),text:document.querySelector('#drawerBody')?.textContent||'',incoming:__GH_STATE__.finance.cheques.filter(row=>row.direction==='incoming').length,outgoing:__GH_STATE__.finance.cheques.filter(row=>row.direction!=='incoming').length};
     });
-    assert(chequeView.headings.includes('الشيكات الواردة'));assert(chequeView.headings.includes('الشيكات الصادرة'));assert.match(chequeView.text,/شيكات واردة/);assert.match(chequeView.text,/شيكات صادرة/);assert(chequeView.incoming>=1&&chequeView.outgoing>=1);
+    assert(chequeView.headings.includes('الشيكات الواردة'));assert(chequeView.headings.includes('الشيكات الصادرة'));assert.match(chequeView.text,/الشيكات الواردة/);assert.match(chequeView.text,/الشيكات الصادرة/);assert(chequeView.incoming>=1&&chequeView.outgoing>=1);
+    await page.locator('#financeChequeDirection').selectOption('incoming');
+    const incomingOnly=await page.evaluate(()=>({text:document.querySelector('#drawerBody')?.innerText||'',documents:document.querySelectorAll('#drawerBody .cheque-instrument').length,expected:__GH_STATE__.finance.cheques.filter(row=>row.direction==='incoming').length}));assert.match(incomingOnly.text,/الشيكات الواردة/);assert.equal(incomingOnly.documents,Math.min(80,incomingOnly.expected));
+    await page.locator('#financeChequeDirection').selectOption('outgoing');
+    const outgoingOnly=await page.evaluate(()=>({text:document.querySelector('#drawerBody')?.innerText||'',documents:document.querySelectorAll('#drawerBody .cheque-instrument').length,expected:__GH_STATE__.finance.cheques.filter(row=>row.direction!=='incoming').length}));assert.match(outgoingOnly.text,/الشيكات الصادرة/);assert.equal(outgoingOnly.documents,Math.min(80,outgoingOnly.expected));
     const tooMany=await page.evaluate(async()=>{const a=__AUDIT__,s=__GH_STATE__,model=GH_ASSET_CATALOG.air.used[0],before=GH_FLEET_DATA.size(s),options={},order=await a.buyAsset('air','used',model.id,'lease',1000001,'QA-OMDB',true,'QA-TOO-MANY','air',options);return {order,error:options.errorMessage,before,after:GH_FLEET_DATA.size(s)};});
     assert.equal(tooMany.order,null);assert.match(tooMany.error,/العدد يجب أن يكون/);assert.equal(tooMany.after,tooMany.before);
-    assert.deepEqual(errors,[]);console.log(JSON.stringify({suite:'build362-bulk-asset-purchase-browser',setup,purchased,rollback,cheques:{incoming:chequeView.incoming,outgoing:chequeView.outgoing},tooMany}));console.log('BUILD362_BULK_ASSET_PURCHASE_BROWSER_PASS');
+    assert.deepEqual(errors,[]);console.log(JSON.stringify({suite:'build362-bulk-asset-purchase-browser',setup,purchased,overLegacyCapacity,rollback,cheques:{incoming:chequeView.incoming,outgoing:chequeView.outgoing},tooMany}));console.log('BUILD362_BULK_ASSET_PURCHASE_BROWSER_PASS');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

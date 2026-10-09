@@ -463,3 +463,40 @@ table{border-collapse:separate;border-spacing:0;width:100%;font-size:11px;backgr
 .energy-bid span{font-size:12px;color:var(--text)}
 .energy-bid small{font-size:11px;color:var(--muted)}
 .energy-bid button{margin-top:6px;width:100%}
+
+/* Build 364: live journey card keeps route, progress and operating figures scannable on the map sheet. */
+.asset-card{padding:18px;background:linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 92%,var(--air) 8%),var(--surface) 34%)}
+.asset-title{min-height:48px;gap:10px;padding-inline:34px 0}
+.asset-title>div{min-width:0;flex:1}
+.asset-title strong{font-size:15px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.asset-title #assetCompany{display:block;margin-top:2px;font-size:10px}
+.asset-symbol{width:40px;height:40px;border-radius:13px;font-size:19px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--air) 28%,transparent)}
+.asset-live-status{max-width:42%;padding:5px 8px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:9px!important;font-weight:700;line-height:1.3;text-align:center}
+.asset-live-status.moving{color:var(--positive);border-color:color-mix(in srgb,var(--positive) 40%,var(--line))}
+.asset-live-status.turnaround{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+.asset-live-status.idle{color:var(--muted)}
+.asset-route{margin:13px 0 8px;padding:12px 13px;border:1px solid var(--line);border-radius:14px;background:var(--surface);font-size:12px;font-weight:650;line-height:1.7;overflow-wrap:anywhere}
+.asset-live-journey{padding:9px 2px 2px}
+.asset-live-journey-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:10px;color:var(--muted)}
+.asset-live-journey-head b{color:var(--text);font-size:11px;font-variant-numeric:tabular-nums}
+.asset-journey-track{height:7px;overflow:hidden;border-radius:99px;background:var(--surface-3);box-shadow:inset 0 0 0 1px var(--line-soft)}
+.asset-journey-track i{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--air),var(--accent));transition:width .25s ease}
+.asset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:11px 0}
+.asset-grid>div{min-width:0;padding:9px 10px;border:1px solid var(--line-soft);border-radius:12px;background:color-mix(in srgb,var(--surface-2) 78%,transparent)}
+.asset-grid>div span{display:block;font-size:9px;color:var(--muted)}
+.asset-grid>div b{display:block;margin-top:3px;font-size:12px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.asset-footer{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:10px}
+.asset-footer>span{color:var(--muted)}.asset-footer>strong{font-size:14px;font-variant-numeric:tabular-nums}
+.management-flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:12px 0 18px}
+.management-flow-step{position:relative;display:grid;grid-template-columns:25px minmax(0,1fr);align-items:start;gap:4px 7px;min-height:72px;padding:9px;border:1px solid var(--line);border-radius:13px;background:var(--surface);color:var(--text);text-align:right}
+.management-flow-step>span{grid-row:span 2;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--surface-3);color:var(--accent);font-size:10px;font-weight:800}
+.management-flow-step>b{font-size:10px;line-height:1.4}.management-flow-step>small{font-size:8px;line-height:1.5;color:var(--muted)}
+.management-flow-step:focus-visible,.management-flow-step:hover{border-color:var(--accent);outline:0}.management-flow-step:active{transform:translateY(1px)}
+.management-summary{border-top:2px solid var(--accent)}.management-alerts{border-color:color-mix(in srgb,var(--warn) 35%,var(--line))}
+.stock-desk-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:2px solid var(--accent)}
+.stock-entry{border-color:color-mix(in srgb,var(--accent) 36%,var(--line))!important;background:color-mix(in srgb,var(--accent) 8%,var(--surface))!important}
+.internal-lease-form{border-color:color-mix(in srgb,var(--realestate,var(--accent)) 34%,var(--line))!important;background:color-mix(in srgb,var(--realestate,var(--accent)) 5%,var(--surface))!important}
+.internal-lease-form h4{margin:0;font-size:13px}.internal-lease-form>p{font-size:10px;color:var(--muted);line-height:1.7}
+.internal-lease-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:10px 0;border-bottom:1px solid var(--line-soft);font-size:10px}
+.internal-lease-row span{text-align:left;font-weight:650}.internal-lease-row small{grid-column:1/-1;color:var(--muted);direction:rtl}
+@media(max-width:560px){.management-flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.management-flow-step{min-height:65px}.asset-title{gap:7px}.asset-live-status{max-width:40%;font-size:8px!important}.stock-desk-heading{align-items:flex-start;flex-direction:column}}

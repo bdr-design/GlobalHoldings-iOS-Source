@@ -1,9 +1,9 @@
 (()=>{'use strict';
 const VERSION='3.0.1',num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0;
-// Build 358: every asset base takes 3,000 new assets, so one purchase (3,000 in every company) fits one base. Was:
-// airports 300, ports 120, logistics hubs 140, depots 80, mobility centers 120. Saved bases keep the capacity they
-// bought above their old default: migrateAssetCapacity() lifts them to 3,000 plus their upgrades on load.
-const DEFAULT_ASSET_CAPACITY=Object.freeze({'airport-base':3000,'port-base':3000,logistics:3000,depot:3000,'mobility-center':3000});
+// Build 364: fleet delivery bases can hold a full one-million-asset request. The protected procurement command remains
+// bounded at 3,000 and the UI executes smaller chunks inside one atomic transaction. Mobility has its own engine/store
+// and keeps its separate 3,000-vehicle operating cap until that engine has a million-scale purchase lifecycle.
+const DEFAULT_ASSET_CAPACITY=Object.freeze({'airport-base':1000000,'port-base':1000000,logistics:1000000,depot:1000000,'mobility-center':3000});
 const LEGACY_ASSET_CAPACITY=Object.freeze({'airport-base':300,'port-base':120,logistics:140,depot:80,'mobility-center':120});
 // Build 363: the former values treated a sizeable part of construction cost as a daily expense. Existing saves are
 // repriced only when they still carry the exact legacy tariff; deliberate player/provider overrides remain untouched.

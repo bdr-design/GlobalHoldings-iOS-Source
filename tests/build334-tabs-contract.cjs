@@ -16,6 +16,12 @@ for(const name of allowed){
  assert(html.includes(`class="tab-btn active" ${name}="two"`),'selected tab must remain selected');
 }
 for(const name of used)assert(allowed.includes(name),`unreviewed tab consumer: ${name}`);
+assert(source.includes("allowed=['overview','lines','offices','claims']"),'insurance claims must be a first-class desk');
+assert(source.includes("['claims','المطالبات']")&&source.includes("'insurance-tab','claims'"),'insurance lifecycle must link to the claims desk');
+assert(source.includes("ctx.state.advanced?.insurance?.claims")&&source.includes("row.transferReference"),'insurance desk must show fleet claims and their settlement references');
+assert(source.includes("action('realestate-internal-lease'")&&source.includes('data-lease=')&&source.includes('sum.internalRentReceivable'),'real-estate desk must surface the internal lease workflow and outstanding rent');
+assert(app.includes("stocks:['المال','محفظة الأسهم']")&&app.includes("if(panel==='stocks')"),'equity portfolio must have a standalone route');
+assert(!app.includes("tab('stocks','الأسهم')"),'equities must not stay nested in the market tabs');
 for(const name of ['data-companytab','data-labortab'])assert(app.includes(`querySelectorAll('[${name}]')`),`matching click owner missing: ${name}`);
 for(const name of ['onclick','data-unregistered-tab','data-companytab onclick="alert(1)"','data-labortab\n','data-company-tab','data-labor-tab']){
  const html=tabs([['safe','Safe']],'safe',name);

@@ -92,7 +92,7 @@
       founding:{defaultCapital:12000000,minimumCapital:12000000,documentPrefix:'LOG'},
       finance:{accountPrefix:'ROAD',documentPrefix:'LOG',collectionProfileId:'logistics-revenue-v1'},
       hr:{managerRoleProfileId:'ceo-logistics-v1',staffingProfileId:'fleet-road-v1'},
-      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['logistics'],primaryKind:'logistics',siteTemplate:{label:'مركز لوجستي',facilityKind:'logistics',cost:8500000,dailyCost:12500,capacity:'42 موقفًا · حتى 140 شاحنة',deliveryCapacity:140,photo:'assets/images/facility-logistics-v2.webp',iconKey:'logistics',groupValueFactor:.72}},
+      facilities:{directoryProviderIds:['world-capitals'],allowedKinds:['logistics'],primaryKind:'logistics',siteTemplate:{label:'مركز لوجستي',facilityKind:'logistics',cost:8500000,dailyCost:12500,capacity:'42 موقفًا · سعة أسطول حتى 1,000,000 شاحنة',deliveryCapacity:1000000,photo:'assets/images/facility-logistics-v2.webp',iconKey:'logistics',groupValueFactor:.72}},
       ui:{extensions:['fleet-company']},map:{layerProviderIds:['fleet-assets','company-facilities'],filterGroup:'transport',markerProfileId:'road'},
       conference:{providerId:'fleet-company-v1'},adapters:{operations:'fleet-route-road-v1',facilities:'logistics-network-v1',map:'fleet-map-v1',conference:'fleet-company-v1'},
       legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:['road'],routeOwnerModes:['road'],assetClassByMode:{road:'truck'}}

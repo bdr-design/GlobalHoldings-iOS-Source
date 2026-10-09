@@ -46,19 +46,22 @@ assert.ok(Math.abs(R.fleetWear(state,'air')-.025)<1e-12);
 const drain=gen=>{let step;while(!(step=gen.next()).done){}};
 const fleetOf=(risk,conditionSum,unsafe=0)=>({companies:new Map([['air',{count:10,conditionSum,value:10*item.price,risk,premium:10*item.price*.0035,sample:ids.map(id=>({id,price:item.price})),due:[],cost:0,restored:0,threshold:80,licence:10*25000,unsafe,fine:unsafe*40000}]])});
 assert.equal(R.insuranceCover(state,'air'),'standard');
+command('corporate','open-company',{type:'insurance',capital:200000000,legalName:'Test Group Insurer'});
+state.advanced.insurance.fleetPolicies=[{id:'POLICY-INT-QA',day:0,company:'air',insurerCompanyId:'insurance',cover:'standard',assetCount:10,insuredValue:10*item.price,premium:0,status:'سارية',transferReference:'POLICY-PREMIUM-QA'}];
 let incidentDay=0;for(let d=1000;d<1400;d++){state.simSeconds=d*DAY;drain(R.runIncidents(state,fleetOf(2,950),d));if(state.realism.incidents[0]?.day===d){incidentDay=d;break;}}
 const incident=state.realism.incidents[0];assert.ok(incidentDay&&[2,3].includes(incident.count),`2.6 expected incidents a day: ${incident?.count}`);
 assert.equal(incident.loss,Math.round(incident.count*item.price*.15));assert.equal(incident.deductible,Math.max(250000,incident.loss*.10));assert.equal(incident.covered,incident.loss-incident.deductible);
 assert.ok(state.finance.payables.some(doc=>doc.number===`INC-AIR-${incidentDay}`),'the repair is billed in full');
-const claim=state.advanced.insurance.claims.find(row=>row.id===incident.claimId);assert.ok(claim&&claim.status==='قيد الفحص'&&claim.covered===incident.covered);
+const claim=state.advanced.insurance.claims.find(row=>row.id===incident.claimId);assert.ok(claim&&claim.status==='قيد الفحص'&&claim.covered===incident.covered);assert.equal(claim.insurerCompanyId,'insurance');assert.equal(claim.policyReference,'POLICY-INT-QA','the claim stays bound to its internal fleet policy');
 assert.ok(incident.assets.every(id=>conditions()[id]===55),'the damaged assets are left at 55%');
-const cashBefore=s.GH_FINANCE_CORE.operating(state,'air');state.simSeconds=(incidentDay+3)*DAY;R.onDay(state,incidentDay+3);
-assert.equal(state.advanced.insurance.claims.find(row=>row.id===incident.claimId).status,'مدفوعة','the insurer pays after its review');
+const cashBefore=s.GH_FINANCE_CORE.operating(state,'air'),insurerCashBefore=s.GH_FINANCE_CORE.operating(state,'insurance');state.simSeconds=(incidentDay+3)*DAY;R.onDay(state,incidentDay+3);
+const paidClaim=state.advanced.insurance.claims.find(row=>row.id===incident.claimId),claimTransfer=state.finance.transfers.find(row=>row.reference===paidClaim.transferReference);
+assert.equal(paidClaim.status,'مدفوعة','the insurer pays after its review');assert.equal(paidClaim.provider,'شركة التأمين التابعة');assert.ok(paidClaim.transferReference);assert.equal(claimTransfer?.kind,'intercompany-service');assert.equal(claimTransfer.fromCompany,'insurance');assert.equal(claimTransfer.toCompany,'air');assert.equal(claimTransfer.amount,incident.covered);assert.equal(s.GH_FINANCE_CORE.operating(state,'insurance'),insurerCashBefore-incident.covered);assert.equal(s.GH_FINANCE_CORE.operating(state,'air'),cashBefore+incident.covered);
 command('corporate','set-insurance-cover',{companyId:'air',cover:'none'});state.simSeconds=2000*DAY;drain(R.runIncidents(state,fleetOf(3,1000),2000));
 const bare=state.realism.incidents[0];assert.equal(bare.day,2000);assert.equal(bare.covered,0);assert.equal(bare.claimId,null,'without cover the company bears it all');
 assert.throws(()=>command('corporate','set-insurance-cover',{companyId:'air',cover:'gold'}),/insurance-cover-invalid/);
 command('corporate','set-insurance-cover',{companyId:'air',cover:'full'});state.simSeconds=2010*DAY;drain(R.runIncidents(state,fleetOf(0,1000),2010));
-assert.ok(state.finance.payables.some(doc=>doc.number==='PREM-AIR-2010'),'the premium is billed every 30 days');
+const renewedPolicy=state.advanced.insurance.fleetPolicies.find(row=>row.id==='FLEET-POLICY-AIR-2010');assert.ok(renewedPolicy&&renewedPolicy.insurerCompanyId==='insurance'&&renewedPolicy.transferReference,'the premium renews by documented intercompany transfer every 30 days');
 
 // 5. The regulator: a yearly licence per asset, and a monthly inspection fine when the fleet averages under 75%.
 state.simSeconds=2190*DAY;drain(R.runIncidents(state,fleetOf(0,1000),2190));

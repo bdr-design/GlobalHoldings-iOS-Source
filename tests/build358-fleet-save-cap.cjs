@@ -1,6 +1,6 @@
 'use strict';
 // Build 358 fleet save policy:
-// - an airport base takes 3,000 new aircraft and one purchase can deliver all of them;
+// - a fleet base takes one million new assets; public purchases execute as bounded <=3,000 domain writes;
 // - a delivered batch keeps every asset in a compact receipt (template + columns + assetIds) that rebuilds the complete
 //   rows exactly, so receipts no longer double the saved fleet;
 // - purchases may take the fleet to the record ceiling (live assets plus pending snapshots) and not past it: 6,000 for
@@ -16,7 +16,7 @@ assert.equal(limit,6000,'browser fleet ceiling');
 const nativeMessages=[],previousWebkit=s.webkit;s.webkit={messageHandlers:{saveBridge:{postMessage:message=>nativeMessages.push(message)}}};
 assert.equal(s.GH_PERSISTENCE.fleetRecordLimit(),1000000,'native fleet ceiling: the million-asset game (records in vault chunks)');
 s.webkit=previousWebkit;
-assert.equal(s.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['airport-base'],3000,'an airport base takes 3,000 aircraft');
+assert.equal(s.GH_FACILITY_CORE.DEFAULT_ASSET_CAPACITY['airport-base'],1000000,'an airport base can take the one-million-asset fleet');
 assert.equal(s.GH_PROCUREMENT_CORE.MAX_ASSET_PURCHASE_QUANTITY,3000,'one purchase may fill an airport');
 assert.equal(s.GH_PROCUREMENT_CORE.MAX_ASSET_PURCHASE_REQUEST,1000000,'the public guarded request ceiling is one million');
 state.godMoney=true;state.infiniteMoney=true;state.advanced.facilities.B1.capacity=1e7;
@@ -31,14 +31,14 @@ function purchase(qty,order){
   })});
 }
 
-// Base capacity migration: every asset base takes 3,000 (one purchase). Old bases (airport 300, port 120, depot 80,
-// mobility center 120 bays) and upgraded ones (345, 150) are lifted on load keeping their upgrades, idempotently.
+// Fleet bases migrate to one million while preserving prior upgrades. Mobility keeps its specialized 3,000-vehicle
+// capacity. Both migrations are idempotent and update the display label.
 {
   const legacy={globalBases:[{id:'OLD-AIR',kind:'airport-base',deliveryCapacity:300,capacity:'300 طائرة · تشغيل جوي وشحن'},{id:'UPGRADED-AIR',kind:'airport-base',deliveryCapacity:345},{id:'NEW-AIR',kind:'airport-base',deliveryCapacity:3000},{id:'PORT',kind:'port-base',deliveryCapacity:120},{id:'DEPOT',kind:'depot'}],customHubs:[{id:'MOB',kind:'mobility-center',deliveryCapacity:120,bays:150,capacity:'تشغيل حضري محلي · 120 سيارة'}],advanced:{facilities:{'OLD-AIR':{assetCapacity:300}}}};
-  assert.equal(s.GH_FACILITY_CORE.migrateAssetCapacity(legacy),5);
-  assert.deepEqual(legacy.globalBases.map(row=>row.deliveryCapacity),[3000,3045,3000,3000,3000]);
+  assert.equal(s.GH_FACILITY_CORE.migrateAssetCapacity(legacy),6);
+  assert.deepEqual(legacy.globalBases.map(row=>row.deliveryCapacity),[1000000,1000045,1002700,1000000,1000000]);
   assert.equal(legacy.customHubs[0].bays,3030,'a mobility center keeps its 30 extra bays');assert.equal(legacy.customHubs[0].deliveryCapacity,3030);assert.equal(legacy.customHubs[0].capacity,'تشغيل حضري محلي · 3,030 سيارة');
-  assert.equal(legacy.globalBases[0].capacity,'3,000 طائرة · تشغيل جوي وشحن');assert.equal(legacy.advanced.facilities['OLD-AIR'].assetCapacity,3000);
+  assert.equal(legacy.globalBases[0].capacity,'1,000,000 طائرة · تشغيل جوي وشحن');assert.equal(legacy.advanced.facilities['OLD-AIR'].assetCapacity,1000000);
   assert.equal(s.GH_FACILITY_CORE.migrateAssetCapacity(legacy),0,'the migration runs once');
 }
 

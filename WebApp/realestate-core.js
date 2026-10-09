@@ -46,12 +46,13 @@
   const LAND_SHARE=.18,MILESTONES=Object.freeze([.4,.3,.3]),OFF_PLAN_DISCOUNT=.95,SALES_COMMISSION=.02,PROPERTY_OPEX=.012;
   const HOUSEHOLD_SIZE=4.5,MOVE_RATE=.06,BUSINESS_PER_PEOPLE=40,DEFAULT_POPULATION=10000000,BASE_LEASE_CHURN=.15;
   const PRICE_LEVELS=Object.freeze([.85,.9,.95,1,1.05,1.1,1.15,1.25]),SIZE_LEVELS=Object.freeze([.5,1,1.5,2]);
-  const MAX_ACTIVE_PROJECTS=30,MAX_OPEN_REQUESTS=5,REQUEST_DAYS=10,HISTORY=40,DAILY_HISTORY=90;
+  const MAX_ACTIVE_PROJECTS=30,MAX_OPEN_REQUESTS=5,MAX_INTERNAL_LEASES=120,REQUEST_DAYS=10,INTERNAL_RENT_SETTLE_DAYS=30,HISTORY=40,DAILY_HISTORY=90;
   function countryPopulation(country){const bank=globalThis.GH_BANKING_CORE;if(typeof bank?.countryPopulation==='function')return bank.countryPopulation(country);const row=(Array.isArray(globalThis.GH_MAP_LABELS)?globalThis.GH_MAP_LABELS:[]).find(item=>item?.name===String(country||'').trim());return Number(row?.population)>0?Number(row.population):DEFAULT_POPULATION;}
   function officeTemplate(p={}){return {id:String(p.id||''),facilityId:String(p.facilityId||''),city:String(p.city||'غير محدد'),country:String(p.country||'غير محدد'),openedAt:Number(p.openedAt)||0,active:p.active!==false,marketPopulation:Number(p.marketPopulation)>0?Number(p.marketPopulation):0,today:p.today&&typeof p.today==='object'?{...p.today}:null};}
   function ensure(state){
     const re=state.realEstate=state.realEstate&&typeof state.realEstate==='object'&&!Array.isArray(state.realEstate)?state.realEstate:{};
     for(const key of ['offices','projects','dailyHistory','tenantRequests','requestHistory','completedArchive'])re[key]=Array.isArray(re[key])?re[key].filter(Boolean):[];
+    re.internalRentAccounts=re.internalRentAccounts&&typeof re.internalRentAccounts==='object'&&!Array.isArray(re.internalRentAccounts)?re.internalRentAccounts:{};
     re.sequence=Math.max(0,Math.floor(Number(re.sequence)||0));re.offices=re.offices.map(officeTemplate);syncOffices(state,re);
     re.ytd=re.ytd&&typeof re.ytd==='object'?re.ytd:{};for(const key of ['sales','rent','costOfSales','opex','commission','net','capex'])re.ytd[key]=Number(re.ytd[key])||0;
     re.lastProcessedDay=Number.isFinite(Number(re.lastProcessedDay))?Math.floor(Number(re.lastProcessedDay)):-1;return re;
@@ -118,9 +119,26 @@
     project.leases=Array.isArray(project.leases)?project.leases:[];const startDay=Math.max(day,project.completeDay),endDay=startDay+request.years*365,F=globalThis.GH_FINANCE_CORE;if(!F?.execute)throw new Error('finance-core-missing');const legal=F.execute({state},'register-commercial-contract',{id:`LEGAL-LEASE-${request.id}`,company:'realestate',contractType:'عقد إيجار مؤسسي',counterparty:request.tenant,title:`إيجار ${project.name}`,startDay,endDay,amount:request.annualRent*request.years,terms:{projectId:project.id,units,rentLevel:request.rentLevel,annualRent:request.annualRent,years:request.years},sourceRefs:[request.id,project.id]}),lease={id:request.id,tenant:request.tenant,units,rentLevel:request.rentLevel,startDay,endDay,legalDocumentId:legal.id,documentProofId:legal.documentProofId,contentDigest:legal.contentDigest};project.leases.push(lease);project.leased+=units;
     closeRequest(re,request,'مقبول',{decidedDay:day,units});return {id:request.id,status:'مقبول',units,annualRent:request.annualRent};
   }
+  function leaseToCompany(state,p={}){
+    const re=ensure(state),project=re.projects.find(row=>row.id===String(p.projectId||''));if(!project)throw new Error('realestate-project-not-found');
+    const leaseId=String(p.leaseId||'').trim(),companyId=String(p.companyId||'').trim(),units=Number(p.units),rentLevel=Number(p.rentLevel),years=Number(p.years),type=TYPES[project.type];
+    if(!leaseId)throw new Error('realestate-internal-lease-id-required');
+    const duplicate=project.leases?.find(row=>row.id===leaseId);if(duplicate){if(duplicate.tenantCompanyId!==companyId||Number(duplicate.units)!==units||Number(duplicate.rentLevel)!==rentLevel||Number(duplicate.years)!==years)throw new Error('realestate-internal-lease-reference-conflict');return clone(duplicate);}
+    if(project.mode!=='lease'||project.status!=='مكتمل'||!type)throw new Error('realestate-internal-lease-project-unavailable');
+    if(companyId==='realestate'||companyId==='group')throw new Error('realestate-internal-lease-tenant-invalid');
+    const platform=globalThis.GH_COMPANY_PLATFORM;if(!platform?.requireCompany)throw new Error('company-platform-unavailable');
+    const tenant=platform.requireCompany(state,companyId,{registered:true,operational:true,capability:'finance.book'}),count=Math.floor(units),yearsAllowed=[1,3,5,10];
+    if(!Number.isSafeInteger(units)||count!==units||count<1||count>Math.max(0,project.units-project.leased))throw new Error('realestate-internal-lease-units-invalid');
+    if(!PRICE_LEVELS.includes(rentLevel)||!yearsAllowed.includes(years))throw new Error('realestate-internal-lease-terms-invalid');
+    const internalCount=re.projects.reduce((sum,row)=>sum+(row.leases||[]).filter(lease=>lease.tenantCompanyId).length,0);if(internalCount>=MAX_INTERNAL_LEASES)throw new Error('realestate-internal-lease-capacity');
+    const day=Math.floor(now(state)/86400),annualRent=Math.round(count*type.rent*rentLevel),startDay=Math.max(day,project.completeDay),endDay=startDay+years*365,F=globalThis.GH_FINANCE_CORE;
+    if(!F?.execute)throw new Error('finance-core-missing');
+    const legal=F.execute({state},'register-commercial-contract',{id:`LEGAL-${leaseId}`,company:'realestate',contractType:'عقد إيجار داخلي للمجموعة',counterparty:tenant.identity?.legalName||tenant.id,title:`إيجار داخلي · ${project.name}`,startDay,endDay,amount:annualRent*years,terms:{projectId:project.id,tenantCompanyId:tenant.id,units:count,rentLevel,annualRent,years,internal:true,settlementDays:INTERNAL_RENT_SETTLE_DAYS},sourceRefs:[leaseId,project.id]}),lease={id:leaseId,tenant:tenant.identity?.legalName||tenant.id,tenantCompanyId:tenant.id,internal:true,units:count,rentLevel,annualRent,years,startDay,endDay,legalDocumentId:legal.id,documentProofId:legal.documentProofId,contentDigest:legal.contentDigest};
+    project.leases=Array.isArray(project.leases)?project.leases:[];project.leases.push(lease);project.leased+=count;re.sequence++;return clone(lease);
+  }
   function tickDay(state,p={}){
     const re=ensure(state),day=Math.max(0,Math.floor(Number(p.day)||Math.floor(now(state)/86400)));if(re.lastProcessedDay===day)return re.dailyHistory.find(row=>row.day===day)||{day,idempotent:true};
-    let sales=0,rent=0,costOfSales=0,opex=0,commission=0,capex=0,newBuyers=0,newTenants=0,vacated=0;const completed=[];
+    let sales=0,rent=0,internalRentRevenue=0,costOfSales=0,opex=0,commission=0,capex=0,newBuyers=0,newTenants=0,vacated=0;const completed=[],internalRentByCompany=new Map();
     for(const project of re.projects){
       const office=re.offices.find(row=>row.id===project.officeId),type=TYPES[project.type],today={day,sold:0,leased:0,vacated:0,rent:0,sales:0};
       // Construction milestones and completion.
@@ -144,10 +162,11 @@
         const leases=Array.isArray(project.leases)?project.leases:[],walkIn=Math.max(0,project.leased-leases.reduce((sum,row)=>sum+row.units,0));
         const churn=clamp(BASE_LEASE_CHURN*(1+(project.priceLevel-1)*2.5),.05,.5),leaving=Math.min(walkIn,roundDraw(walkIn*churn/365,`${project.id}:${day}:churn`));
         project.leased-=leaving;today.vacated=leaving;vacated+=leaving;
-        for(const lease of leases)if(day>=lease.endDay&&!lease.ended){lease.ended=true;project.leased=Math.max(0,project.leased-lease.units);}
+        for(const lease of leases)if(day>=lease.endDay&&!lease.ended){lease.ended=true;project.leased=Math.max(0,project.leased-lease.units);const F=globalThis.GH_FINANCE_CORE;if(lease.tenantCompanyId&&lease.legalDocumentId&&F?.ensure?.(state)?.commercialContracts?.some(row=>row.id===lease.legalDocumentId))F.execute({state},'update-commercial-contract-status',{id:lease.legalDocumentId,status:'منتهي',endedAt:day,reason:'انتهاء مدة الإيجار الداخلي'});}
         project.leases=leases.filter(row=>!row.ended);
-        const dailyRent=(Math.max(0,walkIn-leaving)*type.rent*project.priceLevel+leases.filter(row=>day>=row.startDay&&day<row.endDay).reduce((sum,row)=>sum+row.units*type.rent*row.rentLevel,0))/365;
+        const activeLeases=leases.filter(row=>day>=row.startDay&&day<row.endDay),dailyRent=(Math.max(0,walkIn-leaving)*type.rent*project.priceLevel+activeLeases.reduce((sum,row)=>sum+row.units*type.rent*row.rentLevel,0))/365;
         rent+=dailyRent;project.rentRevenue+=dailyRent;today.rent=dailyRent;
+        for(const lease of activeLeases)if(lease.tenantCompanyId){const amount=lease.units*type.rent*lease.rentLevel/365,companyId=lease.tenantCompanyId,row=internalRentByCompany.get(companyId)||{companyId,amount:0,sourceRefs:[]};row.amount+=amount;if(row.sourceRefs.length<80&&!row.sourceRefs.includes(lease.id))row.sourceRefs.push(lease.id);internalRentByCompany.set(companyId,row);internalRentRevenue+=amount;}
       }
       if(project.status==='مكتمل'){const held=project.mode==='lease'?project.units:Math.max(0,project.units-project.sold);opex+=held*project.unitCost*PROPERTY_OPEX/365;}
       project.today=today;
@@ -157,15 +176,24 @@
     for(const row of done){re.completedArchive.unshift({id:row.id,name:row.name,units:row.units,salesRevenue:row.salesRevenue,completeDay:row.completeDay});}
     re.completedArchive=re.completedArchive.slice(0,100);re.projects=re.projects.filter(row=>!done.includes(row));
     for(const request of [...re.tenantRequests])if(day>=Number(request.expiresDay))closeRequest(re,request,'منتهي',{decidedDay:day});
+    const internalRentRows=[...internalRentByCompany.values()].map(row=>({...row,amount:Math.round(row.amount*100)/100})),internalRentSettlements=[],accounts=re.internalRentAccounts,F=globalThis.GH_FINANCE_CORE;
+    for(const row of internalRentRows){const account=accounts[row.companyId]||(accounts[row.companyId]={companyId:row.companyId,openedDay:day,amount:0,days:0,sourceRefs:[]});account.amount=Math.round((num(account.amount)+row.amount)*100)/100;account.days=Math.max(0,Math.floor(Number(account.days)||0))+1;for(const ref of row.sourceRefs)if(account.sourceRefs.length<80&&!account.sourceRefs.includes(ref))account.sourceRefs.push(ref);}
+    for(const companyId of Object.keys(accounts).sort()){
+      const account=accounts[companyId];if(!account||num(account.amount)<=0){delete accounts[companyId];continue;}if(Number(account.days)<INTERNAL_RENT_SETTLE_DAYS)continue;
+      try{const result=F.execute({state},'settle-intercompany-service',{from:companyId,to:'realestate',amount:account.amount,note:`إيجار عقاري داخلي · ${account.days} يومًا`,serviceCategory:'إيجار عقاري داخلي',taxCode:'intercompany-tax-group',line:'other',ref:`RE-INT-RENT-${companyId}-${day}`,sourceRefs:account.sourceRefs});internalRentSettlements.push({companyId,amount:account.amount,days:account.days,reference:result.reference});delete accounts[companyId];}
+      catch(error){if(!/insufficient-service-cash-or-budget/.test(String(error?.message||error)))throw error;account.carriedOver=(Number(account.carriedOver)||0)+1;}
+    }
     const revenue=sales+rent,expense=opex+commission,net=revenue-expense;
-    const report={day,sales,rent,costOfSales,opex,commission,capex,revenue,expense,net,newBuyers,newTenants,vacated,completed,newRequest:generateRequest(state,re,day)?.id||null};
+    const report={day,sales,rent,internalRentRevenue,internalRentRows,internalRentSettlements,costOfSales,opex,commission,capex,revenue,expense,net,newBuyers,newTenants,vacated,completed,newRequest:generateRequest(state,re,day)?.id||null};
     re.ytd.sales+=sales;re.ytd.rent+=rent;re.ytd.costOfSales+=costOfSales;re.ytd.opex+=opex;re.ytd.commission+=commission;re.ytd.net+=net;re.ytd.capex+=capex;
     re.dailyHistory.unshift(report);re.dailyHistory=re.dailyHistory.slice(0,DAILY_HISTORY);re.lastProcessedDay=day;return clone(report);
   }
-  function dailyResult(state,day){const row=(state.realEstate?.dailyHistory||[]).find(item=>Number(item.day)===Number(day));return row?{revenue:num(row.revenue),expense:num(row.expense)}:{revenue:0,expense:0};}
+  function dailyResult(state,day){const row=(state.realEstate?.dailyHistory||[]).find(item=>Number(item.day)===Number(day));if(!row)return {revenue:0,expense:0,cashRevenue:0,cashExpense:0,internalRentRows:[],internalRentSettlements:[]};return {revenue:num(row.revenue),expense:num(row.expense),cashRevenue:Math.max(0,num(row.revenue)-num(row.internalRentRevenue)),cashExpense:num(row.expense),internalRentRows:Array.isArray(row.internalRentRows)?row.internalRentRows:[],internalRentSettlements:Array.isArray(row.internalRentSettlements)?row.internalRentSettlements:[]};}
   function summary(state){
     const re=ensure(state),projects=re.projects,completedLease=projects.filter(row=>row.status==='مكتمل'&&row.mode==='lease'),leasable=completedLease.reduce((s,r)=>s+r.units,0),leased=completedLease.reduce((s,r)=>s+r.leased,0),window30=re.dailyHistory.slice(0,30);
-    return {offices:re.offices.length,projects:projects.length,underConstruction:projects.filter(row=>row.status==='قيد الإنشاء').length,units:projects.reduce((s,r)=>s+r.units,0),occupancy:leasable?leased/leasable:0,unsoldUnits:projects.filter(row=>row.mode==='sale').reduce((s,r)=>s+Math.max(0,r.units-r.sold-r.presold),0),presold:projects.reduce((s,r)=>s+r.presold,0),revenue30:window30.reduce((s,r)=>s+num(r.revenue),0),net30:window30.reduce((s,r)=>s+Number(r.net||0),0),capex30:window30.reduce((s,r)=>s+num(r.capex),0)+projects.filter(row=>row.startDay>Math.floor(now(state)/86400)-30).reduce((s,r)=>s+num(r.landCost)+num(r.buildCost)*MILESTONES[0],0),annualRentRoll:completedLease.reduce((s,r)=>s+r.leased*TYPES[r.type].rent*r.priceLevel,0),openRequests:re.tenantRequests.length};
+    const annualRentRoll=completedLease.reduce((sum,project)=>{const type=TYPES[project.type],leases=Array.isArray(project.leases)?project.leases:[],contracted=leases.reduce((total,row)=>total+row.units*type.rent*row.rentLevel,0),walkIn=Math.max(0,project.leased-leases.reduce((total,row)=>total+row.units,0));return sum+contracted+walkIn*type.rent*project.priceLevel;},0);
+    const internalRentReceivable=Object.values(re.internalRentAccounts).reduce((sum,row)=>sum+num(row?.amount),0);
+    return {offices:re.offices.length,projects:projects.length,underConstruction:projects.filter(row=>row.status==='قيد الإنشاء').length,units:projects.reduce((s,r)=>s+r.units,0),occupancy:leasable?leased/leasable:0,unsoldUnits:projects.filter(row=>row.mode==='sale').reduce((s,r)=>s+Math.max(0,r.units-r.sold-r.presold),0),presold:projects.reduce((s,r)=>s+r.presold,0),revenue30:window30.reduce((s,r)=>s+num(r.revenue),0),net30:window30.reduce((s,r)=>s+Number(r.net||0),0),capex30:window30.reduce((s,r)=>s+num(r.capex),0)+projects.filter(row=>row.startDay>Math.floor(now(state)/86400)-30).reduce((s,r)=>s+num(r.landCost)+num(r.buildCost)*MILESTONES[0],0),annualRentRoll,openRequests:re.tenantRequests.length,internalRentAccounts:Object.keys(re.internalRentAccounts).length,internalRentReceivable};
   }
   function onFinancialDay(ctx,p={}){
     const platform=globalThis.GH_COMPANY_PLATFORM,commands=globalThis.GH_DOMAIN_COMMANDS;
@@ -175,9 +203,9 @@
   }
   function execute(ctx,cmd,p={}){
     const state=ctx.state||ctx;
-    if(cmd==='ensure')return ensure(state);if(cmd==='tick-day')return tickDay(state,p);if(cmd==='start-project')return startProject(state,p);if(cmd==='set-project-price')return setProjectPrice(state,p);if(cmd==='decide-request')return decideRequest(state,p);
+    if(cmd==='ensure')return ensure(state);if(cmd==='tick-day')return tickDay(state,p);if(cmd==='start-project')return startProject(state,p);if(cmd==='set-project-price')return setProjectPrice(state,p);if(cmd==='decide-request')return decideRequest(state,p);if(cmd==='lease-to-company')return leaseToCompany(state,p);
     throw new Error(`Unknown real estate command: ${cmd}`);
   }
-  const API={VERSION,DAILY_FINANCIAL_ORDER:350,TYPES,TYPE_IDS,PRICE_LEVELS,SIZE_LEVELS,MAX_ACTIVE_PROJECTS,ensure,officeMarket,projectQuote,arrivals,tickDay,dailyResult,summary,onFinancialDay,execute};
+  const API={VERSION,DAILY_FINANCIAL_ORDER:350,TYPES,TYPE_IDS,PRICE_LEVELS,SIZE_LEVELS,MAX_ACTIVE_PROJECTS,MAX_INTERNAL_LEASES,ensure,officeMarket,projectQuote,arrivals,tickDay,dailyResult,summary,leaseToCompany,onFinancialDay,execute};
   globalThis.GH_REALESTATE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('realestate',API);if(globalThis.window&&window!==globalThis)window.GH_REALESTATE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

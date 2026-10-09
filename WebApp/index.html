@@ -152,9 +152,10 @@
 
         <section id="assetCard" class="asset-card hidden" aria-live="polite">
           <button id="assetClose" class="close-btn asset-close" aria-label="إغلاق"><svg><use href="#i-close"></use></svg></button>
-          <div class="asset-title"><span id="assetIcon" class="asset-symbol">A</span><div><strong id="assetName"></strong><span id="assetCompany"></span></div></div>
+          <div class="asset-title"><span id="assetIcon" class="asset-symbol">A</span><div><strong id="assetName"></strong><span id="assetCompany"></span></div><span id="assetStatus" class="asset-live-status"></span></div>
           <div class="asset-route" id="assetRoute"></div>
-          <div class="asset-grid"><div><span>الحالة</span><b id="assetStatus"></b></div><div><span>الوصول</span><b id="assetEta"></b></div><div><span>المتبقي</span><b id="assetDistance"></b></div><div><span>السرعة</span><b id="assetSpeed"></b></div><div><span>الوقود</span><b id="assetFuel"></b></div><div><span>الحمولة</span><b id="assetLoad"></b></div></div>
+          <section class="asset-live-journey" aria-label="تقدم الرحلة"><div class="asset-live-journey-head"><span id="assetTripStage">حالة الرحلة</span><b id="assetTripPercent">—</b></div><div id="assetJourneyTrack" class="asset-journey-track" role="progressbar" aria-label="تقدم الرحلة" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="assetJourneyProgress"></i></div></section>
+          <div class="asset-grid"><div><span>الوصول المتوقع</span><b id="assetEta"></b></div><div><span>المسافة المتبقية</span><b id="assetDistance"></b></div><div><span>السرعة الحالية</span><b id="assetSpeed"></b></div><div><span>الوقود</span><b id="assetFuel"></b></div><div><span>الحمولة</span><b id="assetLoad"></b></div></div>
           <div class="asset-footer"><span>هامش آخر دورة</span><strong id="assetMargin"></strong><button id="assetManageBtn" class="primary-btn">فتح ملف الأصل</button></div>
         </section>
       </div>

@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "source_tree_sha256": "c93326086dd763e559be7e77a92fdf35da567fb6689761525f93f879b1549487",
+  "source_tree_sha256": "bc1e4fc3f48a0fb1f872538a4d0a6e5facdca9c973e5175af11b1e15e08c1245",
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
@@ -40,7 +40,7 @@
     "build358_id_lists": "LOCAL_PASS; crew contracts, hiring log and receipts keep 64+ asset ids as canonical runs in live state (GH_FLEET_DATA.idLists), validated in Save Schema and read by migration",
     "build358_native_record_ceiling": "LOCAL_PASS; nativeFleetRecordLimit 1,000,000; physical iPhone profile pending",
     "build358_route_capacity": "LOCAL_PASS; routes carry route.fleetCapacity (up to 8,192) beyond the base 24/24/64 departure slots; bulk air/sea dispatch raises it when a fleet outgrows 240 routes; 12,000 aircraft dispatched through the native save path in 7.4 s and fly; 6,000-aircraft dispatch 82 s -> 5 s (id-index authorization, one route per batch, cached route geometry); road (240 x 64 trucks) unchanged",
-    "build358_player_requests": "LOCAL_PASS; 3,000 per purchase in every company and 3,000 per asset base (migrated on load); facility directory finds Arabic city names and ranks exact codes and main sites first; bulk payables (pay all by transfer, issue all cheques, cash all cheques) in one durable command each",
+    "build358_player_requests": "BUILD362_LOCAL_PASS; fleet request ceiling 1,000,000 and air/sea/logistics/depot facility capacity 1,000,000 after legacy migration; internal purchase command chunks remain capped at 3,000; mobility centers remain at 3,000; physical iPhone memory and thermal profile pending",
     "build358_fleet_purchase_vat": "LOCAL_PASS; aircraft, ship and truck purchases are zero-rated (as Mobility vehicles and asset sales were), so trip VAT accrues and comes due at the month close; older saves have the fleet-purchase input VAT reversed once on load (open period, then carried credit, never more than held; cash unchanged)"
   },
   "latest_direct_source_ci": {
@@ -76,7 +76,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "codex/build361-device-archive-1gb",
     "based_on": "claude/madar-map-conference-cleanup@4f3fea7",
-    "source_tree_sha256": "c93326086dd763e559be7e77a92fdf35da567fb6689761525f93f879b1549487",
+    "source_tree_sha256": "bc1e4fc3f48a0fb1f872538a4d0a6e5facdca9c973e5175af11b1e15e08c1245",
     "working_tree_clean": null
   },
   "point": "Build 362 test candidate: staged simulation cleanup, bulk company/facility and asset workflows, financial document presentation, corrected bank/mobility/energy/real-estate operating economics, and safe legacy migrations. RELEASE_GATE remains closed pending CI and physical iPhone validation."
