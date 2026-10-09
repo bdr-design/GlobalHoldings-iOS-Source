@@ -1,0 +1,138 @@
+name: Build 362 IPA only (acceptance gate disabled)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build362-ipa-only
+  cancel-in-progress: false
+
+jobs:
+  unsigned-ipa:
+    name: verify source and build unsigned iPhoneOS Release IPA
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Check out the requested source commit
+        uses: actions/checkout@v4
+
+      - name: Verify direct source and closed production approval gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-output
+          python3 tools/verify_current_source.py --root . | tee .ci-output/source-verification.json
+          shasum -a 256 -c SOURCE_INTEGRITY_SHA256.txt | tee .ci-output/source-package-integrity.log
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          manifest=json.loads(Path('RUNTIME_SOURCE_MANIFEST.json').read_text())
+          gate=json.loads(Path('RELEASE_GATE.json').read_text())
+          project=Path('project.yml').read_text()
+          if (manifest.get('build'),manifest.get('version'),manifest.get('save_schema'))!=(362,'3.0.0','3.0.0'): raise SystemExit('Build 362 identity mismatch')
+          if gate.get('approved') is not False or gate.get('source_tree_sha256')!=manifest.get('source_tree_sha256'): raise SystemExit('Release gate must stay closed and bound to this source')
+          snapshot=re.search(r'GHSourceSnapshotSHA256:\s*"([0-9a-f]{64})"',project)
+          if not snapshot or snapshot.group(1)!=manifest.get('webapp_tree_sha256'): raise SystemExit('Native project WebApp snapshot mismatch')
+          print('Exact source verified; production gate remains false.')
+          PY
+          printf 'source_commit=%s\nacceptance_gate=NOT_RUN\n' "$(git rev-parse HEAD)" | tee .ci-output/build-mode.txt
+
+      - name: Build arm64 iPhoneOS Release app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun swiftc -parse iOS/GlobalHoldings/*.swift
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
+          xcodegen generate --spec project.yml
+          DERIVED_DATA="$RUNNER_TEMP/build362-derived-data"
+          xcodebuild \
+            -project GlobalHoldings.xcodeproj \
+            -scheme GlobalHoldings \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean build 2>&1 | tee .ci-output/xcodebuild.log
+          test -d "$DERIVED_DATA/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          if [[ -e iOS/GlobalHoldings/Info.plist ]] && git ls-files --error-unmatch -- iOS/GlobalHoldings/Info.plist >/dev/null 2>&1; then
+            echo 'Generated Info.plist unexpectedly replaced a tracked file' >&2
+            exit 1
+          fi
+          if [[ -e iOS/GlobalHoldings/Info.plist ]]; then python3 -c "from pathlib import Path; Path('iOS/GlobalHoldings/Info.plist').unlink()"; fi
+          python3 tools/verify_current_source.py --root . | tee .ci-output/source-verification-after-build.json
+
+      - name: Assemble and verify unsigned IPA bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/build362-derived-data/Build/Products/Release-iphoneos/GlobalHoldings.app"
+          STAGE="$RUNNER_TEMP/build362-test-ipa"
+          IPA="$GITHUB_WORKSPACE/.ci-output/GlobalHoldings_BUILD362_unsigned_TEST.ipa"
+          REPORT="$GITHUB_WORKSPACE/.ci-output/test-ipa-verification.json"
+          mkdir -p "$STAGE/Payload"
+          ditto "$APP" "$STAGE/Payload/GlobalHoldings.app"
+          (cd "$STAGE" && /usr/bin/zip -qry "$IPA" Payload)
+          python3 - "$IPA" "$REPORT" "$GITHUB_RUN_ID" "$GITHUB_SHA" <<'PY'
+          import hashlib,json,plistlib,struct,sys,zipfile
+          from pathlib import Path
+          ipa,report=Path(sys.argv[1]),Path(sys.argv[2]);run_id,commit=int(sys.argv[3]),sys.argv[4]
+          runtime=json.loads(Path('RUNTIME_SOURCE_MANIFEST.json').read_text(encoding='utf-8'))
+          prefix='Payload/GlobalHoldings.app/'
+          with zipfile.ZipFile(ipa) as archive:
+              if archive.testzip() is not None: raise SystemExit('IPA CRC failure')
+              entries=archive.infolist();names=[row.filename for row in entries]
+              if len(names)!=len(set(names)): raise SystemExit('Duplicate IPA entries')
+              files={row.filename:row for row in entries if not row.is_dir()}
+              if not files or any(not name.startswith(prefix) for name in files): raise SystemExit('Invalid IPA root')
+              info=plistlib.loads(archive.read(prefix+'Info.plist'))
+              if (info.get('CFBundleIdentifier'),info.get('CFBundleShortVersionString'),info.get('CFBundleVersion'),info.get('UIDeviceFamily'))!=('com.example.globalholdings','3.0.0','362',[1]): raise SystemExit('IPA identity mismatch')
+              if info.get('GHSourceSnapshotSHA256')!=runtime['webapp_tree_sha256']: raise SystemExit('IPA snapshot mismatch')
+              expected={name[len('WebApp/'):]:row['sha256'] for name,row in runtime['files'].items() if name.startswith('WebApp/')}
+              actual={name[len(prefix+'WebApp/'):]:hashlib.sha256(archive.read(name)).hexdigest() for name in files if name.startswith(prefix+'WebApp/')}
+              if actual.keys()!=expected.keys() or any(actual[name]!=digest for name,digest in expected.items()): raise SystemExit('IPA WebApp bytes differ from verified source')
+              if prefix+'embedded.mobileprovision' in files or any(name.startswith(prefix+'_CodeSignature/') for name in files): raise SystemExit('Unsigned IPA contains signing material')
+              executable=prefix+'GlobalHoldings'
+              if executable not in files or not (files[executable].external_attr>>16)&0o111: raise SystemExit('Missing executable permission')
+              data=archive.read(executable)
+              if len(data)<32: raise SystemExit('Truncated executable')
+              magic,cpu,subtype,filetype,count,size,flags,reserved=struct.unpack_from('<8I',data)
+              if magic!=0xfeedfacf or cpu!=0x0100000c or filetype!=2: raise SystemExit('Not arm64 Mach-O')
+              cursor,platforms=32,[]
+              for _ in range(count):
+                  command,length=struct.unpack_from('<II',data,cursor)
+                  if length<8 or cursor+length>len(data): raise SystemExit('Invalid Mach-O load command')
+                  if command==0x32: platforms.append(struct.unpack_from('<I',data,cursor+8)[0])
+                  cursor+=length
+              if 2 not in platforms: raise SystemExit('Not built for iPhoneOS')
+          result={'ipa_created':True,'ipa_name':ipa.name,'ipa_sha256':hashlib.sha256(ipa.read_bytes()).hexdigest(),'ipa_bytes':ipa.stat().st_size,'source_tree_sha256':runtime['source_tree_sha256'],'webapp_tree_sha256':runtime['webapp_tree_sha256'],'webapp_files':len(expected),'app_files':len(files),'workflow_run_id':run_id,'workflow_commit':commit,'arm64_iphoneos':True,'unsigned':True,'experimental_test_build':True,'physical_iphone_tested':False,'production_approved':False,'acceptance_gate':'not_run','save_schema':'3.0.0'}
+          report.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(result,ensure_ascii=False))
+          PY
+
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings-Build362-IPA-only-verification
+          path: .ci-output
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload unsigned IPA and report
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlobalHoldings_BUILD362_unsigned_TEST_ipa
+          path: |
+            .ci-output/GlobalHoldings_BUILD362_unsigned_TEST.ipa
+            .ci-output/test-ipa-verification.json
+          if-no-files-found: error
+          retention-days: 30
