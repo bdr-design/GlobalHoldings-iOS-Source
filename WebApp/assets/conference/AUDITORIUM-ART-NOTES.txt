@@ -1,0 +1,11 @@
+Conference auditorium artwork
+
+The image is a cropped and WebP-compressed derivative of the approved
+conference visual reference generated in this work session. It supplies only
+the static auditorium, stage, audience, presenter, and podium artwork. The
+embedded display and navigation details are covered at runtime by the live
+HTML presentation board and native conference controls.
+
+Output: auditorium-gold.webp (1614 x 745, WebP quality 82, 155496 bytes).
+The foreground presenter/podium overprint is an inline clipped use of this same
+image, not a separate art asset.

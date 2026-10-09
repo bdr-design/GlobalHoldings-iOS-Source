@@ -17,7 +17,7 @@ function installDayOwner(){
     facilityOwnerCompanyId:f=>String(f?.ownerCompanyId||f?.companyId||f?.company||'group').trim(),
     companyDefinition:id=>s.GH_COMPANY_PLATFORM.definitionFor?.(state,id)||s.GH_COMPANY_PLATFORM.getDefinition?.(id)||null,
     getDynamicFacilities:()=>[...(state.globalBases||[]),...(state.customHubs||[])],fmtMoney:v=>`$${Number(v||0).toFixed(0)}`,
-    nextId:p=>s.GH_DETERMINISM.nextId(state,p),updateKpis:()=>{},dispatchSystemCommand:(ctx,d,n,p,o)=>s.GH_DOMAIN_COMMANDS.dispatchSystem(ctx,d,n,p,o)});
+    nextId:p=>s.GH_DETERMINISM.nextId(state,p),updateKpis:()=>{},dispatchSystemCommand:(ctx,d,n,p,o)=>s.GH_DOMAIN_COMMANDS.dispatchSystem(ctx,d,n,p,o),dispatchSystemCommandStages:(ctx,d,n,p,o)=>s.GH_DOMAIN_COMMANDS.dispatchSystemStages(ctx,d,n,p,o)});
   vm.runInContext(`
 function companyTypes(target=state,options={}){return COMPANY_PLATFORM.listInstances(target,{includeGroup:false,openedOnly:options.openedOnly===true}).filter(company=>(options.registeredOnly!==true||company.registered||company.opened)&&(options.operationalOnly!==true||company.operational)).map(company=>company.id);}
 function companyFinanceTypes(target=state,options={}){const ids=COMPANY_PLATFORM.listInstances(target,{includeGroup:true,openedOnly:options.openedOnly===true,capability:'finance.book'}).filter(company=>(company.id==='group'||company.registered||company.opened)&&(options.operationalOnly!==true||company.operational)).map(company=>company.id);return ids.includes('group')?['group',...ids.filter(id=>id!=='group')]:ids;}

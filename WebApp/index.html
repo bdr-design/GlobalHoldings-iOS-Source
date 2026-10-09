@@ -108,14 +108,14 @@
         <div><span>السيولة</span><strong id="cashKpi">$250.0M</strong></div>
         <div><span>صافي اليوم</span><strong id="profitKpi">+$0</strong></div>
       </section>
-      <button id="topNewsTicker" class="top-news-ticker" type="button" aria-label="فتح أخبار الشركات وتقييمات العملاء">
-        <svg aria-hidden="true"><use href="#i-news"></use></svg><span><small>أخبار الشركات</small><strong id="topNewsHeadline">لا توجد أحداث جديدة</strong></span><em id="topNewsRating">— / 5</em>
+      <button id="topNewsTicker" class="top-news-ticker" type="button" aria-label="فتح الأخبار الرسمية">
+        <svg aria-hidden="true"><use href="#i-news"></use></svg><span><small>الأخبار الرسمية</small><strong id="topNewsHeadline">لا توجد أحداث جديدة</strong></span><em id="topNewsStatus">موثق</em>
       </button>
       <div class="map-style" role="group" aria-label="نمط الخريطة">
         <button type="button" data-map-style="dark" aria-pressed="true"><svg><use href="#i-moon"></use></svg><span>داكن</span></button><button type="button" data-map-style="natural" aria-pressed="false"><svg><use href="#i-world"></use></svg><span>طبيعي</span></button>
       </div>
       <div class="top-actions">
-        <button id="filterToggle" class="icon-btn" aria-label="طبقات الخريطة" title="طبقات الخريطة"><svg><use href="#i-layers"></use></svg></button><button id="executionLogBtn" hidden class="icon-btn" aria-label="سجل التنفيذ" title="سجل التنفيذ"><svg><use href="#i-target"></use></svg><b id="executionLogCount">✓</b></button><button id="alertsBtn" class="icon-btn" aria-label="التنبيهات"><svg><use href="#i-bell"></use></svg><b id="alertCount">0</b></button><button id="healthBtn" hidden class="icon-btn health-shortcut" aria-label="صحة النظام" title="صحة النظام"><span>HLT</span></button><button id="settingsBtn" class="icon-btn" aria-label="النظام" title="النظام"><svg><use href="#i-settings"></use></svg></button>
+        <button id="filterToggle" class="icon-btn" aria-label="طبقات الخريطة" title="طبقات الخريطة"><svg><use href="#i-layers"></use></svg></button><button id="alertsBtn" class="icon-btn" aria-label="التنبيهات"><svg><use href="#i-bell"></use></svg><b id="alertCount">0</b></button><button id="healthBtn" hidden class="icon-btn health-shortcut" aria-label="صحة النظام" title="صحة النظام"><span>HLT</span></button><button id="settingsBtn" class="icon-btn" aria-label="النظام" title="النظام"><svg><use href="#i-settings"></use></svg></button>
       </div>
     </header>
 
@@ -184,7 +184,6 @@
   <script src="fleet-list-virtualizer.js"></script>
   <script src="fleet-list-query-core.js"></script>
   <script src="company-platform-core.js"></script>
-  <script src="company-adapters-core.js"></script>
   <script src="identity-system.js"></script>
   <script src="realism-core.js"></script>
   <script src="state-codec-core.js"></script>
@@ -229,7 +228,6 @@
   <script src="directory-core.js"></script>
   <script src="governance-core.js"></script>
   <script src="corporate-core.js"></script>
-  <script src="vendor/three/three-0.180.0.min.js"></script>
   <script src="arabic-copy-core.js"></script>
   <script src="conference-model.js"></script>
   <script src="conference-board.js"></script>
@@ -238,6 +236,8 @@
   <script src="conference-core.js"></script>
   <script src="control-plane-core.js"></script>
   <script src="authorization-core.js"></script>
+  <script src="customer-companies-core.js"></script>
+  <script src="company-adapters-core.js"></script>
   <script src="document-proof-core.js"></script>
   <script src="signature-pad-core.js"></script>
   <script src="formation-engine.js"></script>

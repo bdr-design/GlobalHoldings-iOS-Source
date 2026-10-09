@@ -22,4 +22,4 @@
 #drawer .workspace-intro>span{color:var(--accent);font-size:9px;font-weight:600}
 
 /* Legal and financial instruments own their paper palette and proportions. */
-#drawer :is(.financial-paper,.invoice-paper,.authority-paper,.authorization-paper,.approval-log-paper,.bank-doc){--section-accent:initial;--section-accent-soft:initial}
+#drawer :is(.financial-paper,.invoice-paper,.authority-paper,.authorization-paper,.bank-doc){--section-accent:initial;--section-accent-soft:initial}

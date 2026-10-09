@@ -24,6 +24,8 @@
     'operations.mobility':Object.freeze({id:'operations.mobility',domain:'operations',description:'تشغيل التنقل الذكي'}),
     'operations.insurance':Object.freeze({id:'operations.insurance',domain:'operations',description:'الاكتتاب والتأمين وإدارة المطالبات'}),
     'operations.realestate':Object.freeze({id:'operations.realestate',domain:'operations',description:'التطوير العقاري والبيع والتأجير'}),
+    'operations.telecom':Object.freeze({id:'operations.telecom',domain:'operations',description:'اشتراكات الاتصالات وخدمة العملاء والفوترة الشهرية'}),
+    'operations.dealer':Object.freeze({id:'operations.dealer',domain:'operations',description:'وكالات السيارات والعملاء والمخزون وخدمات ما بعد البيع'}),
     'asset.aircraft':Object.freeze({id:'asset.aircraft',domain:'assets',description:'امتلاك وتشغيل الطائرات'}),
     'asset.vessel':Object.freeze({id:'asset.vessel',domain:'assets',description:'امتلاك وتشغيل السفن'}),
     'asset.truck':Object.freeze({id:'asset.truck',domain:'assets',description:'امتلاك وتشغيل الشاحنات'}),

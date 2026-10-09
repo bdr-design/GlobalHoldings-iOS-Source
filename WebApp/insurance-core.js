@@ -60,7 +60,7 @@
   }
   function ensure(state){
     const ins=state.insurance=state.insurance&&typeof state.insurance==='object'&&!Array.isArray(state.insurance)?state.insurance:{};
-    for(const key of ['offices','dailyHistory','riskRequests','riskHistory','claimsReserve','largeRisks'])ins[key]=Array.isArray(ins[key])?ins[key].filter(Boolean):[];
+    for(const key of ['offices','dailyHistory','riskRequests','riskHistory','claimsReserve','largeRisks','riskDecisionBatches'])ins[key]=Array.isArray(ins[key])?ins[key].filter(Boolean):[];
     ins.sequence=Math.max(0,Math.floor(Number(ins.sequence)||0));
     ins.pricing=ins.pricing&&typeof ins.pricing==='object'?ins.pricing:{};for(const id of LINE_IDS)ins.pricing[id]=PRICE_LEVELS.includes(Number(ins.pricing[id]))?Number(ins.pricing[id]):1;
     ins.reinsurance=REINSURANCE_LEVELS.includes(Number(ins.reinsurance))?Number(ins.reinsurance):.2;
@@ -112,6 +112,15 @@
     const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)throw new Error('finance-core-missing');const document=F.execute({state},'register-commercial-contract',{id:`LEGAL-${risk.id}`,company:'insurance',contractType:'وثيقة تأمين خطر تجاري كبير',counterparty:risk.subject,title:`وثيقة ${risk.subject}`,startDay:day,endDay:day+365,amount:risk.premium,terms:{officeId:risk.officeId,grade:risk.grade,sumInsured:risk.sumInsured,premium:risk.premium,expectedLoss:risk.expectedLoss},sourceRefs:[risk.id]});
     ins.largeRisks.push({id:risk.id,subject:risk.subject,officeId:risk.officeId,startDay:day,endDay:day+365,premium:risk.premium,dailyPremium:risk.premium/365,claimDay:claims?claimDay:null,claimAmount:claims?Math.round(risk.sumInsured*deterministic(`${risk.id}:severity`,.05,.15)):0,claimed:false,legalDocumentId:document.id,documentProofId:document.documentProofId,contentDigest:document.contentDigest});
     closeRisk(ins,risk,'مقبول',{decidedDay:day});return {id:risk.id,status:'مقبول',premium:risk.premium};
+  }
+  function decideRisksBatch(state,p={}){
+    const ins=ensure(state),batchId=String(p.batchId||'').trim(),periodId=String(p.periodId??Math.floor(Math.floor(now(state)/86400)/30)),decisions=Array.isArray(p.decisions)?p.decisions:[];
+    if(!batchId||batchId.length>120)throw new Error('insurance-batch-id-required');if(!decisions.length||decisions.length>MAX_OPEN_RISKS)throw new Error('insurance-risk-batch-size-invalid');
+    const normalized=decisions.map(row=>({id:String(row?.id||''),decision:String(row?.decision||'')})).sort((a,b)=>a.id.localeCompare(b.id));if(normalized.some(row=>!row.id||!['accept','decline'].includes(row.decision)))throw new Error('insurance-risk-batch-decision-invalid');if(new Set(normalized.map(row=>row.id)).size!==normalized.length)throw new Error('insurance-risk-batch-duplicate-risk');
+    const fingerprint=JSON.stringify({periodId,decisions:normalized}),prior=ins.riskDecisionBatches.find(row=>row.batchId===batchId);if(prior){if(prior.fingerprint!==fingerprint)throw new Error('insurance-batch-reference-conflict');return clone(prior.result);}
+    const day=Math.floor(now(state)/86400),items=[];let accepted=0,declined=0,skipped=0,totalPremium=0,totalInsured=0;
+    for(const item of normalized){const risk=ins.riskRequests.find(row=>row.id===item.id);if(!risk){items.push({riskId:item.id,status:'تجاوز',reason:'insurance-risk-not-found'});skipped++;continue;}if(day>=Number(risk.expiresDay)){closeRisk(ins,risk,'منتهي',{decidedDay:day,batchId});items.push({riskId:item.id,status:'منتهي',reason:'insurance-risk-expired'});skipped++;continue;}const result=decideRisk(state,item);items.push({...result});if(item.decision==='accept'){accepted++;totalPremium+=num(result.premium);totalInsured+=num(risk.sumInsured);}else declined++;}
+    const result={batchId,periodId,accepted,declined,skipped,totalPremium,totalInsured,items};ins.riskDecisionBatches.unshift({batchId,fingerprint,result:clone(result),at:now(state)});ins.riskDecisionBatches.splice(120);return result;
   }
   function setPricing(state,p){
     const ins=ensure(state),line=String(p.line||'');if(!LINES[line])throw new Error('insurance-line-invalid');const level=Number(p.level);if(!PRICE_LEVELS.includes(level))throw new Error('insurance-price-invalid');
@@ -189,9 +198,9 @@
   function execute(ctx,cmd,p={}){
     const state=ctx.state||ctx;
     if(cmd==='ensure')return ensure(state);if(cmd==='tick-day')return tickDay(state,p);if(cmd==='set-pricing')return setPricing(state,p);if(cmd==='set-reinsurance')return setReinsurance(state,p);
-    if(cmd==='decide-risk')return decideRisk(state,p);if(cmd==='office-campaign')return officeCampaign(state,p);if(cmd==='set-office-active')return setOfficeActive(state,p);
+    if(cmd==='decide-risk')return decideRisk(state,p);if(cmd==='decide-risks-batch')return decideRisksBatch(state,p);if(cmd==='office-campaign')return officeCampaign(state,p);if(cmd==='set-office-active')return setOfficeActive(state,p);
     throw new Error(`Unknown insurance command: ${cmd}`);
   }
-  const API={VERSION,DAILY_FINANCIAL_ORDER:300,LINES,LINE_IDS,PRICE_LEVELS,REINSURANCE_LEVELS,MAX_OPEN_RISKS,CAMPAIGN_DAYS,ensure,officeMarket,countryPopulation,quote,linePrice,campaignCost,tickDay,tickDayStages,dailyResult,summary,onFinancialDay,onFinancialDayStages,execute};
+  const API={VERSION,DAILY_FINANCIAL_ORDER:300,LINES,LINE_IDS,PRICE_LEVELS,REINSURANCE_LEVELS,MAX_OPEN_RISKS,CAMPAIGN_DAYS,decideRisksBatch,ensure,officeMarket,countryPopulation,quote,linePrice,campaignCost,tickDay,tickDayStages,dailyResult,summary,onFinancialDay,onFinancialDayStages,execute};
   globalThis.GH_INSURANCE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('insurance',API);if(globalThis.window&&window!==globalThis)window.GH_INSURANCE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

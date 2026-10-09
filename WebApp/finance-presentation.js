@@ -1,7 +1,7 @@
 /* Presentation adapters only. Never read or mutate the financial state. */
 (()=>{'use strict';
 // Build 358: the cheque scales its own content to the drawer width (container units), so it needs no zoom viewport.
-const paperRoots='.bank-doc,.financial-paper,.invoice-paper,.authority-paper,.authorization-paper,.approval-log-paper';
+const paperRoots='.bank-doc,.financial-paper,.invoice-paper,.authority-paper,.authorization-paper';
 function prepare(root){
   root.querySelectorAll('.realism-budget-table').forEach(table=>{
     const head=table.querySelector('.budget-head');if(!head)return;

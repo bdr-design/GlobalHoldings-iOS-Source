@@ -21,7 +21,9 @@
       'banking-services-v1':['GH_BANKING_CORE'],
       'mobility-fleet-v1':['GH_MOBILITY_CORE'],
       'insurance-services-v1':['GH_INSURANCE_CORE'],
-      'real-estate-v1':['GH_REALESTATE_CORE']
+      'real-estate-v1':['GH_REALESTATE_CORE'],
+      'telecom-customer-v1':['GH_CUSTOMER_COMPANIES_CORE'],
+      'dealership-retail-v1':['GH_CUSTOMER_COMPANIES_CORE']
     }),
     finance:Object.freeze({
       'group-treasury-v1':['GH_FINANCE_CORE'],

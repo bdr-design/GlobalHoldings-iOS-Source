@@ -6,7 +6,7 @@ const PANEL_ICONS=Object.freeze({
  companies:'i-company',companyManage:'i-company',groupManagement:'i-company',formationContract:'i-contract',energy:'i-energy',bank:'i-bank',insurance:'i-shield',realestate:'i-building',
  finance:'i-market',monthlyFinance:'i-market',treasury:'i-treasury',budgets:'i-budget',invoices:'i-document',market:'i-market',
  leadershipHub:'i-crown',actionCenter:'i-bell',peopleHub:'i-people',labor:'i-people',crews:'i-people',governanceHub:'i-governance',compliance:'i-shield',cyber:'i-shield',safety:'i-shield',conference:'i-governance',research:'i-research',esg:'i-leaf',businessWorld:'i-contract',realism:'i-market',news:'i-news',
- systemHub:'i-settings',settings:'i-save',updates:'i-update',diagnostics:'i-health',controlPlane:'i-health',executionLog:'i-document'
+ systemHub:'i-settings',settings:'i-save',updates:'i-update',diagnostics:'i-health',controlPlane:'i-health'
 });
 const iconFor=(panel,fallback='i-company')=>PANEL_ICONS[String(panel||'')]||fallback;
 const iconMarkup=(panel,fallback)=>`<svg aria-hidden="true"><use href="#${iconFor(panel,fallback)}"></use></svg>`;
@@ -16,7 +16,7 @@ const domainForPanel=panel=>{
  if(['companies','companyManage','groupManagement','formationContract','energy','bank','insurance','realestate'].includes(key))return'companies';
  if(['finance','monthlyFinance','treasury','budgets','invoices','market'].includes(key))return'finance';
  if(['leadershipHub','actionCenter','peopleHub','labor','crews','governanceHub','compliance','cyber','safety','conference','research','esg','businessWorld','realism','news'].includes(key))return'leadership';
- if(['systemHub','settings','updates','diagnostics','controlPlane','executionLog'].includes(key))return'system';
+ if(['systemHub','settings','updates','diagnostics','controlPlane'].includes(key))return'system';
  return'map';
 };
 const history=[];let returning=false,pending=null;
@@ -62,7 +62,7 @@ const replacement=hub(panel,ctx);if(replacement!==null)root.innerHTML=replacemen
 root.querySelectorAll('.visual-hero').forEach(el=>{el.className='ui-section-hero';el.querySelector('.visual-hero-shade')?.remove();const intro=el.querySelector('p');if(intro){const detail=document.createElement('details');detail.className='ui-hero-note';const summary=document.createElement('summary');summary.textContent='نبذة';intro.before(detail);detail.append(summary,intro);}});
 const sectionHero=root.querySelector('.ui-section-hero'),sectionCompany=root.dataset.company;if(sectionHero&&!sectionHero.querySelector('.ui-section-mark'))sectionHero.insertAdjacentHTML('afterbegin',`<span class="ui-section-mark">${iconMarkup(panel,iconFor(domainForPanel(panel)))}</span>`);if(sectionHero&&sectionCompany&&globalThis.GH_IDENTITY?.logoMarkup&&!sectionHero.querySelector('.company-logo-badge'))sectionHero.insertAdjacentHTML('beforeend',globalThis.GH_IDENTITY.logoMarkup(ctx.state,sectionCompany,'small'));
 root.querySelectorAll('.command-btn[data-open]').forEach(button=>{const panelName=button.dataset.open,mark=button.querySelector(':scope>span')||document.createElement('span');if(!mark.parentElement)button.prepend(mark);mark.classList.add('command-mark');mark.innerHTML=iconMarkup(panelName);button.dataset.optionLogo=iconFor(panelName);});
-root.querySelectorAll('[style]').forEach(el=>{if(el.namespaceURI!=='http://www.w3.org/1999/xhtml'||el.closest('.financial-paper,.invoice-paper,.authority-paper,.authorization-paper,.approval-log-paper'))return;for(const key of ['background','background-color','background-image','color','box-shadow','text-shadow','border-color'])el.style.removeProperty(key);});
+root.querySelectorAll('[style]').forEach(el=>{if(el.namespaceURI!=='http://www.w3.org/1999/xhtml'||el.closest('.financial-paper,.invoice-paper,.authority-paper,.authorization-paper'))return;for(const key of ['background','background-color','background-image','color','box-shadow','text-shadow','border-color'])el.style.removeProperty(key);});
 if(panel==='finance'){const overview=root.querySelector('.finance-overview-v202');if(overview){const d=document.createElement('details');d.className='ui-more';d.innerHTML='<summary>نطاق الحسابات والديون</summary>';overview.before(d);d.append(overview);}root.querySelector('.finance-domain-nav')?.classList.add('ui-finance-tools');}
 root.querySelectorAll('.command-grid,.finance-domain-nav').forEach(grid=>{const rows=[...grid.children];if(rows.length<=4||grid.closest('.ui-more'))return;const more=document.createElement('details');more.className='ui-more';const summary=document.createElement('summary');summary.textContent=`كل أدوات القسم (${rows.length})`;more.append(summary);for(const row of rows.slice(4))more.append(row);grid.after(more);});
 root.querySelectorAll('.company-identity-editor').forEach(editor=>{const tools=editor.nextElementSibling,details=document.createElement('details');details.className='ui-more';const summary=document.createElement('summary');summary.textContent='تعديل الاسم والشعار';details.append(summary);editor.before(details);details.append(editor);if(tools?.classList.contains('company-logo-actions'))details.append(tools);});

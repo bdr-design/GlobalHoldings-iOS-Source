@@ -169,6 +169,36 @@
       ui:{extensions:['realestate-company']},map:{layerProviderIds:['company-facilities'],filterGroup:'services',markerProfileId:'realestate'},
       conference:{providerId:'generic-company-v1'},adapters:{operations:'real-estate-v1',facilities:'realestate-network-v1',map:'company-map-v1',conference:'generic-company-v1'},
       legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:[],routeOwnerModes:[],assetClassByMode:{}}
+    }),
+    // Customer-first companies. They have no map asset classes: their value is
+    // created by customer contracts, recurring bills and retail transactions.
+    subsidiary({
+      id:'telecom',definitionId:'gh-telecom-v1',order:90,
+      instancePolicy:{mode:'canonical-only',stateScope:'legacy-root'},
+      identity:identity('شركة جلوبال هولدينغز للاتصالات','Global Holdings Telecom Company','جي إتش تيليكوم','GH TELECOM','GH TEL','assets/identity/global-holdings.svg','#1688a8','#123f59','#1688a8','assets/images/company-system-v2.webp'),
+      classification:{primarySectorId:'telecom',sectorIds:['telecom'],operationProfileId:'telecom-customer-cycle-v1',assetClasses:[],routeModes:[]},
+      capabilities:['operations.telecom'],
+      founding:{defaultCapital:45000000,minimumCapital:45000000,documentPrefix:'TEL'},
+      finance:{accountPrefix:'TELECOM',documentPrefix:'TEL',collectionProfileId:'telecom-revenue-v1'},
+      hr:{managerRoleProfileId:'ceo-telecom-v1',staffingProfileId:'telecom-customer-operations-v1'},
+      facilities:{directoryProviderIds:[],allowedKinds:[],primaryKind:null},
+      ui:{extensions:['telecom-customer-company']},map:{layerProviderIds:['company-facilities'],filterGroup:'services',markerProfileId:'telecom'},
+      conference:{providerId:'generic-company-v1'},adapters:{operations:'telecom-customer-v1',conference:'generic-company-v1'},
+      legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:[],routeOwnerModes:[],assetClassByMode:{}}
+    }),
+    subsidiary({
+      id:'dealership',definitionId:'gh-dealership-v1',order:100,
+      instancePolicy:{mode:'canonical-only',stateScope:'legacy-root'},
+      identity:identity('شركة جلوبال هولدينغز لوكالات السيارات','Global Holdings Automotive Retail Company','جي إتش أوتو','GH AUTO','GH AUTO','assets/identity/global-holdings.svg','#c47b35','#57371f','#cf8135','assets/images/company-system-v2.webp'),
+      classification:{primarySectorId:'dealership',sectorIds:['dealership','automotive-retail'],operationProfileId:'automotive-retail-customer-cycle-v1',assetClasses:[],routeModes:[]},
+      capabilities:['operations.dealer'],
+      founding:{defaultCapital:65000000,minimumCapital:65000000,documentPrefix:'AUTO'},
+      finance:{accountPrefix:'AUTORETAIL',documentPrefix:'AUTO',collectionProfileId:'dealership-revenue-v1'},
+      hr:{managerRoleProfileId:'ceo-dealership-v1',staffingProfileId:'automotive-retail-v1'},
+      facilities:{directoryProviderIds:[],allowedKinds:[],primaryKind:null},
+      ui:{extensions:['automotive-retail-company']},map:{layerProviderIds:['company-facilities'],filterGroup:'services',markerProfileId:'dealership'},
+      conference:{providerId:'generic-company-v1'},adapters:{operations:'dealership-retail-v1',conference:'generic-company-v1'},
+      legacy:{companyAliases:[],sectorAliases:[],assetOwnerModes:[],routeOwnerModes:[],assetClassByMode:{}}
     })
   ]);
   const BUILTIN_COMPANY_IDS=Object.freeze(BUILTIN_DEFINITIONS.filter(row=>row.kind!=='holding').map(row=>row.id));

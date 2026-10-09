@@ -85,3 +85,13 @@
 .app-shell:has(.map-stage.map-natural) :is(.topbar,.side-nav),.app-shell:has(.map-stage.map-street) :is(.topbar,.side-nav){--text:#F3F6F8;--muted:#B9C7D0;--faint:#91A5B2;--surface-2:rgba(255,255,255,.10);--chip:rgba(255,255,255,.08);--chip-line:rgba(255,255,255,.14);color:var(--text);background:rgba(13,59,87,.94);border-color:rgba(255,255,255,.12)}
 .app-shell:has(.map-stage.map-natural) .map-strip,.app-shell:has(.map-stage.map-street) .map-strip{background:rgba(248,250,251,.78)}
 .app-shell:has(.map-stage.map-natural) .sheet-dock,.app-shell:has(.map-stage.map-street) .sheet-dock{background:var(--surface);border-color:var(--line)}
+
+/* The newsroom alone uses the owner's right-hand editorial layout; the map remains a separate column. */
+.app-shell:has(#drawer.open[data-panel="news"]){--sheet:clamp(300px,37vw,480px)}
+.app-shell:has(#drawer.open[data-panel="news"]) .game-frame{grid-template-columns:calc(var(--rail) + var(--left-safe)) minmax(0,1fr) var(--sheet)}
+.app-shell:has(#drawer.open[data-panel="news"]) .map-stage{grid-column:2}
+.app-shell:has(#drawer.open[data-panel="news"]) .sheet-dock{grid-column:3;border-left:0;border-right:1px solid var(--line)}
+.app-shell:has(#drawer.open[data-panel="news"]) .side-nav{grid-column:1;border-left:0;border-right:1px solid var(--glass-line);padding-left:calc(var(--left-safe) + 4px);padding-right:4px}
+.app-shell:has(#drawer.open[data-panel="news"]) .map-strip{padding-left:calc(var(--rail) + var(--left-safe) + 10px);padding-right:10px}
+.app-shell:has(#drawer.open[data-panel="news"]) .map-modes{left:calc((100vw + var(--rail) + var(--left-safe) - var(--sheet) - var(--rail-safe))/2)}
+@media(max-width:700px){.app-shell:has(#drawer.open[data-panel="news"]){--sheet:clamp(260px,42vw,340px)}}

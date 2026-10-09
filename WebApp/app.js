@@ -2370,8 +2370,8 @@
 
   let lastTopNewsAt=0,lastTopNewsSignature='';
   function syncTopNews(){
-    const button=$('topNewsTicker');if(!button)return;const signature=`${state.eventLog?.length||0}|${state.businessWorld?.events?.length||0}|${state.finance?.invoices?.length||0}|${state.openedCompanies?.length||0}`,stamp=Date.now();if(signature===lastTopNewsSignature&&stamp-lastTopNewsAt<5000)return;lastTopNewsAt=stamp;lastTopNewsSignature=signature;
-    const summary=window.GH_ADVANCED?.newsSummary?.(state),headline=summary?.latest?.text||'لا توجد أحداث جديدة',rating=summary?.ratings?.group?.rating;$('topNewsHeadline').textContent=headline;$('topNewsRating').textContent=rating==null?'— / 5':`${Number(rating).toFixed(1)} / 5`;button.title=headline;
+    const button=$('topNewsTicker');if(!button)return;const rawEvents=state.businessWorld?.events||[],latestRaw=rawEvents[0],signature=`${rawEvents.length}|${latestRaw?.id||''}|${latestRaw?.reference||''}`,stamp=Date.now();if(signature===lastTopNewsSignature&&stamp-lastTopNewsAt<5000)return;lastTopNewsAt=stamp;lastTopNewsSignature=signature;const summary=window.GH_ADVANCED?.newsSummary?.(state);
+    const headline=summary?.latest?.text||'بانتظار حدث مؤسسي موثق';$('topNewsHeadline').textContent=headline;$('topNewsStatus').textContent=summary?.count?`${Math.min(99,summary.count)} موثق`:'موثق';button.title=headline;
   }
   let lastKpiIdentitySignature='',lastKpiProfitSign=null;
   const setNodeText=(id,value)=>{const node=$(id),text=String(value);if(node&&node.textContent!==text)node.textContent=text;return node;};
@@ -2382,7 +2382,6 @@
     setNodeText('profitKpi',`${state.todayProfit>=0?'+':''}${fmtMoney(state.todayProfit)}`);
     const profitPositive=state.todayProfit>=0;if(profitPositive!==lastKpiProfitSign){lastKpiProfitSign=profitPositive;$('profitKpi').classList.toggle('positive',profitPositive);$('profitKpi').classList.toggle('negative',!profitPositive);}
     setNodeText('alertCount',Math.min(99,state.alerts.length));
-    setNodeText('executionLogCount','✓');
     setNodeText('simDate',formatSimDateCompact());
     setNodeText('simDay',`اليوم ${Math.floor(Math.max(0,Number(state.simSeconds)||0)/86400)+1}`);
     syncTopNews();
@@ -3248,8 +3247,8 @@
           totalEvents+=Number(legOut.events)||0;totalFast+=Number(legOut.fast)||0;totalSlow+=Number(legOut.slow)||0;totalFaults+=Number(legOut.faults)||0;
           if(legOut.events)mapRevisionBumps++;completeTo=legComplete;subSlices++;
           if(completeTo>=to-1e-6)break;
-          legFrom=completeTo;legTo=Math.min(to,legFrom+TIME.clampSliceToBoundary(legFrom,to-legFrom));fleetTicket=null;requestContext=null;requestContextKey='';awaitingFleet=true;
-          yield 'window.await-fleet';
+          legFrom=completeTo;legTo=Math.min(to,legFrom+TIME.clampSliceToBoundary(legFrom,to-legFrom));
+          if(!emptyFleet){fleetTicket=null;requestContext=null;requestContextKey='';awaitingFleet=true;yield 'window.await-fleet';}
         }
         return true;
       };
@@ -3265,12 +3264,19 @@
     };
     return {
       aggregate:true,
-      runChunk(){
+      runChunk(_items,options={}){
         if(cancelled)return true;
         if(windowFailure){abortForFallback();return true;}
         if(awaitingFleet){const pending=fleetStepPending();if(windowFailure){abortForFallback();return true;}if(pending)return {pending:true};awaitingFleet=false;}
         if(!staged){if(Math.abs((Number(state.simSeconds)||0)-from)>1e-6){stagedConflict=true;ready=true;return true;}staged=TX.beginStaged(state,transactionOptions());activeStagedSlice=staged;}
-        else staged.step(-Infinity);
+        else if(window.GH_FLEET_DATA.size(state)===0){
+          // With an empty fleet, every child hour is local and synchronous, so
+          // the staged transaction can safely consume the frame's bounded
+          // budget. A fleet window must still yield one stage at a time because
+          // its generator pauses between asynchronous worker requests.
+          const deadline=Number(options?.deadline);
+          staged.step(Number.isFinite(deadline)?deadline:-Infinity);
+        }else staged.step(-Infinity);
         if(staged.done){ready=true;return true;}return {pending:true};
       },
       finish(){
@@ -3832,12 +3838,12 @@
   }
 
   const panelMeta={
-    formationContract:arg=>['الشركات',arg&&arg!=='group'?'عقد فتح شركة':'عقد التأسيس'],leadershipHub:['الإدارة','الإدارة'],executionLog:['النظام','سجل التنفيذ'],actionCenter:['الإدارة','المهام الآن'],companies:['الشركات','الشركات التابعة'],control:['العمليات','العمليات'],governanceHub:['الإدارة','الحوكمة والمخاطر'],systemHub:['النظام','النظام'],network:['العمليات','الدليل العالمي'],routes:['العمليات','المسارات'],globalRoute:['العمليات','مسار عالمي'],companyFacilities:['العمليات','قواعد ومراكز الشركة'],market:['المال','الأسواق والمحفظة'],stocks:['المال','محفظة الأسهم'],budgets:['المال','الميزانيات'],maintenance:['العمليات','الصيانة والتأمين'],crews:['الإدارة','الأجور والطواقم'],contracts:['العمليات','العقود والعملاء'],businessWorld:['الإدارة','العلاقات التجارية'],labor:['الإدارة','الموارد البشرية'],assets:['العمليات','الأصول المملوكة'],assetMarket:['العمليات','شراء الأصول'],assetManage:['العمليات','إدارة الأصل'],mobilityAsset:['العمليات','إدارة سيارة التنقل'],expansion:['العمليات','الشبكة والمنشآت'],finance:['المال','المركز المالي'],monthlyFinance:['المال','الدخل والمصروفات الشهرية'],invoices:['المال','المستندات والالتزامات'],news:['الإدارة','أحداث المجموعة'],settings:['النظام','الحفظ والإعدادات'],diagnostics:['النظام','صحة اللعبة'],energy:['الشركات','الطاقة'],bank:['الشركات','البنك'],research:['الإدارة','البحث والتطوير'],esg:['الإدارة','الاستدامة'],realism:['الإدارة','السوق والاقتصاد'],ports:['العمليات','شبكة الموانئ']
+    formationContract:arg=>['الشركات',arg&&arg!=='group'?'عقد فتح شركة':'عقد التأسيس'],leadershipHub:['الإدارة','الإدارة'],actionCenter:['الإدارة','المهام الآن'],companies:['الشركات','الشركات التابعة'],control:['العمليات','العمليات'],governanceHub:['الإدارة','الحوكمة والمخاطر'],systemHub:['النظام','النظام'],network:['العمليات','الدليل العالمي'],routes:['العمليات','المسارات'],globalRoute:['العمليات','مسار عالمي'],companyFacilities:['العمليات','قواعد ومراكز الشركة'],market:['المال','الأسواق والمحفظة'],stocks:['المال','محفظة الأسهم'],budgets:['المال','الميزانيات'],maintenance:['العمليات','الصيانة والتأمين'],crews:['الإدارة','الأجور والطواقم'],contracts:['العمليات','العقود والعملاء'],businessWorld:['الإدارة','العلاقات التجارية'],labor:['الإدارة','الموارد البشرية'],assets:['العمليات','الأصول المملوكة'],assetMarket:['العمليات','شراء الأصول'],assetManage:['العمليات','إدارة الأصل'],mobilityAsset:['العمليات','إدارة سيارة التنقل'],expansion:['العمليات','الشبكة والمنشآت'],finance:['المال','المركز المالي'],monthlyFinance:['المال','الدخل والمصروفات الشهرية'],invoices:['المال','المستندات والالتزامات'],news:['الإدارة','الأخبار الحصرية'],settings:['النظام','الحفظ والإعدادات'],diagnostics:['النظام','صحة اللعبة'],energy:['الشركات','الطاقة'],bank:['الشركات','البنك'],research:['الإدارة','البحث والتطوير'],esg:['الإدارة','الاستدامة'],realism:['الإدارة','السوق والاقتصاد'],ports:['العمليات','شبكة الموانئ']
   };
 
 
   const panelRoot = panel => window.GH_ADVANCED?.root(panel) || ({
-    formationContract:'companies',leadershipHub:'leadership',executionLog:'system',realism:'leadership',research:'leadership',esg:'leadership',news:'leadership',
+    formationContract:'companies',leadershipHub:'leadership',realism:'leadership',research:'leadership',esg:'leadership',news:'leadership',
     companies:'companies',companyManage:'companies',energy:'companies',bank:'companies',insurance:'companies',realestate:'companies',
     control:'control',network:'control',routes:'control',globalRoute:'control',companyFacilities:'companies',contracts:'control',labor:'leadership',expansion:'control',ports:'control',procurement:'control',assets:'control',assetMarket:'control',assetManage:'control',mobilityAsset:'control',facilityManage:'control',
     market:'finance',stocks:'finance',finance:'finance',monthlyFinance:'finance',invoices:'finance',treasury:'finance',budgets:'finance',maintenance:'control',crews:'leadership',
@@ -4006,7 +4012,7 @@
   }
   function closeDrawer(){ window.GH_INTERFACE.resetHistory(); cancelDrawerSearch(); clearFleetListSearchRequest(); delete $('drawer').dataset.panel; $('drawer').classList.remove('open'); $('drawer').setAttribute('aria-hidden','true'); $('backdrop').classList.add('hidden'); setActiveNav('map'); state.lastPanel=null;state.lastPanelArg=null; requestAnimationFrame(()=>map?.invalidateSize({animate:false})); }
   $('workspaceBack').addEventListener('click',()=>window.GH_INTERFACE.back(openDrawer));
-  const ADVANCED_OWNED_PANELS=new Set(['realism','companies','leadershipHub','peopleHub','actionCenter','governanceHub','compliance','systemHub','executionLog','facilityManage','companyManage','groupManagement','treasury','procurement','cyber','safety','energy','bank','insurance','realestate','research','esg','news','businessWorld','labor','settings','updates','diagnostics','controlPlane','conference']);
+  const ADVANCED_OWNED_PANELS=new Set(['realism','companies','leadershipHub','peopleHub','actionCenter','governanceHub','compliance','systemHub','facilityManage','companyManage','groupManagement','treasury','procurement','cyber','safety','energy','bank','insurance','realestate','research','esg','news','businessWorld','labor','settings','updates','diagnostics','controlPlane','conference']);
   function renderPanel(panel,arg){
     const advanced=window.GH_ADVANCED?.render(panel,arg,advancedContext());
     if(advanced!==null&&advanced!==undefined)return advanced;
@@ -5472,7 +5478,6 @@
   $('alertsBtn').addEventListener('click',()=>openDrawer('news')); $('topNewsTicker')?.addEventListener('click',()=>openDrawer('news')); $('healthBtn')?.addEventListener('click',()=>openDrawer('diagnostics')); $('settingsBtn').addEventListener('click',()=>openDrawer('systemHub'));
   document.querySelectorAll('[data-map-style]').forEach(btn=>btn.addEventListener('click',()=>{setMapLayer(btn.dataset.mapStyle);}));
   document.querySelectorAll('button[data-map-mode]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();setMapMode(btn.dataset.mapMode);}));
-  $('executionLogBtn')?.addEventListener('click',()=>openDrawer('executionLog'));
   $('drawerClose').addEventListener('click',closeDrawer);
   $('backdrop').addEventListener('click',closeDrawer);
   $('assetClose').addEventListener('click',()=>{$('assetCard').classList.add('hidden');selectedAssetId=null;renderMap();});
@@ -5635,7 +5640,7 @@
   document.querySelectorAll('.filter-btn').forEach(b=>{const selected=b.dataset.filter===state.activeFilter;b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));});
   initMap();
   if(startupSignatureRequired){state.speed=0;setTimeout(()=>{openSignatureDialog({required:true});startupSignatureRequired=false;pendingAuthorizedResumeSpeed=startupSignatureResumeSpeed;setSignatureDialogError('المحاكاة متوقفة وقائيًا. اعتمد توقيع المؤسس المرئي قبل استئناف العمليات الآلية أو اليدوية.');updateKpis();},0);}
-  if(['governance','audit','legal','insurance','career','workspaceHub','ma'].includes(state.lastPanel)){state.lastPanel=null;state.lastPanelArg=null;}
+  if(['governance','audit','legal','insurance','career','workspaceHub','ma','executionLog'].includes(state.lastPanel)){state.lastPanel=null;state.lastPanelArg=null;}
   if(state.onboardingComplete&&state.lastPanel){
     try{ openDrawer(state.lastPanel,state.lastPanelArg??undefined); }
     catch(error){ state.lastPanel=null;state.lastPanelArg=null;diag('RESTORE_LAST_PANEL_FAILED',{message:String(error?.message||error)},'warning'); }
