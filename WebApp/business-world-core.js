@@ -11,6 +11,7 @@ const num=v=>Math.max(0,Number(v)||0),now=s=>Number(s.simSeconds)||0,day=s=>Math
 const norm=v=>String(v||'').trim().toLowerCase().replace(/[\s._,،/\\()-]+/g,' ');
 const unique=a=>[...new Set((a||[]).filter(Boolean).map(String))];
 const trim=(a,n)=>{if(Array.isArray(a)&&a.length>n)a.length=n;return a;};
+function retainBusinessEvents(events){if(!Array.isArray(events)||events.length<=240)return Array.isArray(events)?events:[];const official=events.filter(event=>event?.official===true).slice(0,160),others=events.filter(event=>event?.official!==true).slice(0,Math.max(0,240-official.length));return [...official,...others].sort((a,b)=>(Number(b.at)||0)-(Number(a.at)||0)).slice(0,240);}
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,Number(value)||0));
 const platform=()=>globalThis.GH_COMPANY_PLATFORM||null;
 function requireBusinessCompany(s,value,{operational=true}={}){
@@ -36,7 +37,7 @@ function ensure(s){
  for(const k of ['opportunities','sponsorships','events','competitorActivity'])b[k]=Array.isArray(b[k])?b[k]:[];delete b.campaigns;
  b.sequence=Math.max(0,Math.floor(Number(b.sequence)||0));const lastWeek=Number(b.lastCompetitorWeek);b.lastCompetitorWeek=Number.isFinite(lastWeek)?Math.max(-1,Math.floor(lastWeek)):-1;
  const customers=b.customers=b.customers&&typeof b.customers==='object'&&!Array.isArray(b.customers)?b.customers:{};customers.schema=CUSTOMER_SCHEMA;customers.profiles=customers.profiles&&typeof customers.profiles==='object'&&!Array.isArray(customers.profiles)?customers.profiles:{};customers.segments=customers.segments&&typeof customers.segments==='object'&&!Array.isArray(customers.segments)?customers.segments:{};customers.profileOrder=Array.isArray(customers.profileOrder)?customers.profileOrder.filter(key=>customers.profiles[key]).slice(0,CUSTOMER_PROFILE_LIMIT):[];for(const key of Object.keys(customers.profiles))if(!customers.profileOrder.includes(key)&&customers.profileOrder.length<CUSTOMER_PROFILE_LIMIT)customers.profileOrder.push(key);customers.reviewCursor=Math.max(0,Math.floor(Number(customers.reviewCursor)||0));customers.lastReviewDay=Number.isFinite(Number(customers.lastReviewDay))?Math.floor(Number(customers.lastReviewDay)):-1;
- trim(b.opportunities,120);trim(b.sponsorships,60);trim(b.events,240);trim(b.competitorActivity,120);
+ trim(b.opportunities,120);trim(b.sponsorships,60);b.events=retainBusinessEvents(b.events);trim(b.competitorActivity,120);
  seedSponsors(s);return b;
 }
 // Presentation and reporting paths must never create or normalize persistent state. This is
@@ -116,7 +117,7 @@ function recordEvent(s,p={}){
  const b=ensure(s),ref=String(p.reference||'').trim(),kind=String(p.kind||'commercial'),company=ownerFromPayload(s,p);
  if(ref){const old=b.events.find(e=>e.reference===ref&&e.kind===kind);if(old)return old;}
  const id=`BW-EVT-${String(++b.sequence).padStart(6,'0')}`,row={id,at:now(s),day:day(s),kind,category:p.category||'business',partyId:p.partyId||null,company,ownerCompanyId:company,title:String(p.title||'حدث تجاري'),detail:String(p.detail||''),amount:num(p.amount),reference:ref||id,severity:p.severity||'neutral',official:p.official===true,sourceDomain:p.official?String(p.sourceDomain||'business-world'):null,sourceRef:p.official?String(p.sourceRef||ref||id):null,documentRef:p.official?String(p.documentRef||''):null};
- b.events.unshift(row);trim(b.events,240);return row;
+ b.events.unshift(row);b.events=retainBusinessEvents(b.events);return row;
 }
 function seedSponsors(s){
  const b=s.businessWorld;if(!b||b.__seeding)return;b.__seeding=true;

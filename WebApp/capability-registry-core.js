@@ -40,7 +40,9 @@
     'facility.bank':Object.freeze({id:'facility.bank',domain:'facilities',description:'فروع ومرافق بنكية'}),
     'facility.mobility':Object.freeze({id:'facility.mobility',domain:'facilities',description:'مراكز تنقل ذكي'}),
     'facility.insurance':Object.freeze({id:'facility.insurance',domain:'facilities',description:'مكاتب تأمين ومراكز مطالبات'}),
-    'facility.realestate':Object.freeze({id:'facility.realestate',domain:'facilities',description:'مكاتب بيع وتأجير عقاري'})
+    'facility.realestate':Object.freeze({id:'facility.realestate',domain:'facilities',description:'مكاتب بيع وتأجير عقاري'}),
+    'facility.telecom':Object.freeze({id:'facility.telecom',domain:'facilities',description:'فروع اتصالات وخدمة مشتركين'}),
+    'facility.dealership':Object.freeze({id:'facility.dealership',domain:'facilities',description:'وكالات سيارات ومبيعات وخدمة عملاء'})
   });
   const BUILTIN_CAPABILITIES=Object.freeze(Object.values(BUILTIN_DEFINITIONS_RAW).map(row=>Object.freeze({schema:CAPABILITY_SCHEMA,...row})));
   const definitions=new Map(BUILTIN_CAPABILITIES.map(row=>[row.id,row]));

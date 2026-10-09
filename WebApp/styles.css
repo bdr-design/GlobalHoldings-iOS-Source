@@ -124,6 +124,11 @@ label > input,label > select{margin-top: 4px;}
 .company-identity-editor{margin-top: 8px;}
 .company-identity-card{display: flex; align-items: flex-start; gap: 10px;}
 .company-identity-card > div:last-child{flex: 1 1 0%;}
+.company-quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0;padding:2px}
+.company-quick-actions button{display:flex;min-height:62px;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;padding:10px 12px;border:1px solid var(--line,#d7e2e5);border-radius:12px;background:var(--surface,#fff);color:var(--ink,#142b3b);text-align:right}
+.company-quick-actions button:hover{border-color:var(--teal,#148b83);background:var(--surface-soft,#f3f8f7)}
+.company-quick-actions b{font-size:13px}.company-quick-actions span{color:var(--muted,#687b87);font-size:11px;line-height:1.45}
+@media(max-width:620px){.company-quick-actions{grid-template-columns:1fr 1fr;gap:6px}.company-quick-actions button{min-height:58px;padding:8px}.company-quick-actions b{font-size:12px}.company-quick-actions span{font-size:10px}}
 .company-logo-badge,.company-brand-badge,.finance-logo,.brand-logo{width:52px;height:52px;flex:0 0 52px;display:grid;place-items:center;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;color:var(--blue);font-size:12px;box-shadow:0 5px 14px rgba(0,0,0,.08);}
 .company-logo-badge img,.company-brand-badge img,.finance-logo img,.brand-logo img{width:100%;height:100%;object-fit:contain;}
 .company-logo-badge[data-company="air"]{border-color:rgba(45,114,223,.38)}.company-logo-badge[data-company="sea"]{border-color:rgba(17,156,148,.4)}.company-logo-badge[data-company="road"]{border-color:rgba(223,138,61,.4)}.company-logo-badge[data-company="power"]{border-color:rgba(208,163,63,.45)}.company-logo-badge[data-company="bank"]{border-color:rgba(115,91,199,.4)}.company-logo-badge[data-company="mobility"]{border-color:rgba(26,154,107,.4)}

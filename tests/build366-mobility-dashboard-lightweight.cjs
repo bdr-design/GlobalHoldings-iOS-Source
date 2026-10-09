@@ -1,0 +1,23 @@
+'use strict';
+const assert=require('node:assert/strict'),path=require('node:path');
+const ROOT=process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..');
+process.env.GH_TEST_SOURCE_DIR=ROOT;
+const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario'));
+
+const env=scenario(),{state,s}=env,M=s.GH_MOBILITY_CORE;
+env.command('corporate','open-company',{type:'mobility',capital:500000000,legalName:'Test Mobility'});
+state.customHubs.push({id:'MOB-CENTER-RUH',name:'Riyadh',kind:'mobility-center',ownerCompanyId:'mobility',owned:true,capitalId:'RUH',city:'Riyadh',country:'Saudi Arabia',coords:[24.7,46.7],bays:120});
+M.ensure(state);state.mobility.capitalCenters.push({id:'MOB-CENTER-RUH',capitalId:'RUH',city:'Riyadh',country:'Saudi Arabia',coords:[24.7,46.7],facilityId:'MOB-CENTER-RUH'});
+const total=50000,vehicles=Array.from({length:total},(_,index)=>({id:`MOB-${index}`,ownerCompanyId:'mobility',centerId:'RUH',status:'available',purchasePrice:1000}));
+let vehicleReads=0;state.mobility.vehicles=new Proxy(vehicles,{get(target,key,receiver){if(/^\d+$/.test(String(key)))vehicleReads++;return Reflect.get(target,key,receiver);}});
+state.mobility.kpis.completed=5;state.mobility.kpis.grossBookings=10000;state.mobility.kpis.driverPayouts=1000;state.mobility.kpis.platformRevenue=7400;
+state.mobility.kpisByCenter.RUH={completed:5,grossBookings:10000,driverPayouts:1000,platformRevenue:7400};
+const html=M.render({state,fmtMoney:value=>`$${value}`,fmtNumber:value=>String(value),esc:value=>String(value),companyPerformance:()=>({grossRevenue:10000,expenses:2600,net:7400,reportedDays:1})});
+assert.match(html,/الفروع ومصادر الدخل/);assert.match(html,/صافي الشركة المالي/);assert.match(html,/إدارة الفروع/);assert.match(html,/إدارة الفرع/);
+assert.equal(vehicleReads,0,'opening the Mobility dashboard must use bounded counts and persisted KPIs without reading individual fleet rows');
+assert.equal(M.managementSnapshot(state).vehicles,total,'the dashboard count comes from the persisted fleet length');
+vehicleReads=0;const firstClusters=M.centerClusters(state);assert.equal(vehicleReads,total,'first branch count builds one per-center cache');
+vehicleReads=0;const secondClusters=M.centerClusters(state);assert.equal(vehicleReads,0,'reopening the route panel reuses the unchanged per-center count cache');
+assert.equal(firstClusters[0]?.vehicles,total);assert.equal(secondClusters[0]?.vehicles,total);
+state.mobility.vehicles.push({id:'MOB-EXTRA',ownerCompanyId:'mobility',centerId:'RUH',status:'available'});vehicleReads=0;const afterPurchase=M.centerClusters(state);assert.equal(vehicleReads,total+1,'a fleet membership change invalidates the cached branch count');assert.equal(afterPurchase[0]?.vehicles,total+1);
+console.log(JSON.stringify({suite:'build366-mobility-dashboard-lightweight',fleetRows:total,dashboardFleetReads:0,firstBranchIndexReads:total,reopenedBranchIndexReads:0,postPurchaseIndexReads:total+1,branchRows:1,financialSource:'company-ledger'}));

@@ -8,7 +8,7 @@
     'intercompany-transfer':'transfer-v3','intercompany-interest':'transfer-v3','intercompany-energy':'transfer-v3','intercompany-service':'transfer-v3','intercompany-loan-principal':'transfer-v3','intercompany-loan-settlement':'transfer-v3','insurance-claim-payment':'transfer-v3',
     'payroll-transfer':'transfer-v3','payroll-payable':'transfer-v3','payroll-report':'payroll-v3','payable-settlement':'transfer-v3',
     'tax-payment-transfer':'transfer-v3','tax-settlement':'tax-v3','cheque':'cheque-v3','receivable-cheque':'cheque-v3','founder-investment':'transfer-v3','founder-withdrawal':'transfer-v3','equity-financing':'transfer-v3',
-    'debt-financing':'debt-v3','debt-repayment':'debt-v3','debt-payment-transfer':'transfer-v3','daily-operating-settlement':'transfer-v3',
+    'debt-financing':'debt-v3','debt-repayment':'debt-v3','debt-payment-transfer':'transfer-v3','daily-operating-settlement':'transfer-v3','market-security-trade':'transfer-v3','market-security-dividend':'transfer-v3',
     'asset-financing':'debt-v3','debt-adjustment':'debt-v3','vat-assessment':'tax-v3','commercial-contract':'commercial-contract-v3'
   });
   const TRANSITIONS=Object.freeze([

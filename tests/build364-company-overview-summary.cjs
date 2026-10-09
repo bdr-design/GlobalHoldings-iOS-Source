@@ -14,25 +14,27 @@ let renderedActionOrigin='';
 
 {
   const state={...minimal(),globalBases:[{id:'INS-RUH',kind:'insurance',ownerCompanyId:'insurance',owned:true}],customHubs:[],assets:[],businessWorld:{customers:{segments:{insurance:{consumer:{marketCustomers:2100,namedCustomers:12}}}}}};
-  s.GH_INSURANCE_CORE={summary:()=>({offices:1,policies:2840,openRisks:3})};
+  s.GH_INSURANCE_CORE={summary:()=>({offices:1,activeOffices:1,policies:2840,activeLargeRisks:2,openRisks:3})};
   const overview=summaryFor(state,'insurance','operations.insurance','insurance');
   assert.equal(overview.category,'service');
   assert.equal(overview.fleetCount,0,'insurance does not receive synthetic fleet assets');
-  assert.equal(overview.primaryOperatingLabel,'مكاتب العملاء');
-  assert.equal(overview.primaryOperatingCount,1);
+  assert.equal(overview.primaryOperatingLabel,'وثائق تأمين');
+  assert.equal(overview.primaryOperatingCount,2840);
   assert.equal(overview.facilityCount,1);
   assert.equal(overview.hasPrimaryFacility,true);
-  assert.deepEqual(plain(overview.metrics),[['مكاتب العملاء',1],['قاعدة العملاء',2112],['وثائق سارية',2840],['مخاطر بانتظار القرار',3]]);
+  assert.deepEqual(plain(overview.metrics),[['مكاتب نشطة',1],['وثائق تأمين سارية',2840],['تغطيات تجارية كبيرة',2],['مخاطر بانتظار القرار',3]]);
+  assert.equal(overview.metrics.some(([label])=>label==='قاعدة العملاء'),false,'insurance uses owned policy metrics rather than generic customer segments');
 }
 
 {
-  const state={...minimal(),globalBases:[],customHubs:[],realEstate:{offices:[{id:'RE-RUH'}],projects:[{leases:[{id:'L1'},{id:'L2'}]}]},businessWorld:{customers:{segments:{realestate:{enterprise:{namedCustomers:3,marketCustomers:0}}}}}};
+  const state={...minimal(),simSeconds:30*86400,globalBases:[],customHubs:[],realEstate:{offices:[{id:'RE-RUH'}],projects:[{id:'RE-P1',mode:'lease',status:'مكتمل',units:20,leased:8,leases:[{id:'L1',units:2,startDay:1,endDay:90},{id:'L2',units:3,startDay:1,endDay:20},{id:'L3',units:4,startDay:30,endDay:90}]}]},businessWorld:{customers:{segments:{realestate:{enterprise:{namedCustomers:3000000,marketCustomers:7000000}}}}}};
   s.GH_REALESTATE_CORE={summary:()=>({offices:1,projects:1,openRequests:4})};
   const overview=summaryFor(state,'realestate','operations.realestate','realestate');
   assert.equal(overview.category,'service');
   assert.equal(overview.fleetCount,0);
   assert.equal(overview.needsPrimaryFacility,true);
-  assert.deepEqual(plain(overview.metrics),[['مكاتب العملاء',1],['قاعدة العملاء',3],['مشاريع',1],['عقود التأجير',2],['طلبات العملاء',4]]);
+  assert.deepEqual(plain(overview.metrics),[['مكاتب',1],['مشاريع',1],['عقود إيجار نشطة',2],['وحدات مؤجرة',8],['طلبات تأجير',4]]);
+  assert.equal(overview.metrics.some(([label])=>label==='قاعدة العملاء'),false,'real-estate portfolio does not read the generic customer segments');
 }
 
 {
@@ -68,10 +70,14 @@ let renderedActionOrigin='';
 }
 
 {
-  const state={...minimal(),globalBases:[{id:'BANK-RUH',kind:'bank',ownerCompanyId:'bank',owned:true}],customHubs:[],bank:{branchNetwork:[{id:'BR1',retailCustomers:1200,businessCustomers:25}],loanRequests:[{id:'LR1'}]}};
+  const state={...minimal(),globalBases:[{id:'BANK-RUH',kind:'bank',ownerCompanyId:'bank',owned:true}],customHubs:[],businessWorld:{customers:{segments:{bank:{consumer:{namedCustomers:1000000,marketCustomers:9000000},enterprise:{namedCustomers:500000,marketCustomers:1500000}}}}},bank:{retailCustomers:400,businessCustomers:20,branchNetwork:[{id:'BR1',retailCustomers:1200,businessCustomers:25}],loanRequests:[{id:'LR1'}]}};
   const overview=summaryFor(state,'bank','operations.bank','bank');
   assert.equal(overview.category,'service');
-  assert.deepEqual(plain(overview.metrics),[['الفروع',1],['عملاء أفراد',1200],['عملاء شركات',25],['قاعدة العملاء المسجلة',0],['طلبات تمويل',1]]);
+  assert.deepEqual(plain(overview.metrics),[['الفروع',1],['عملاء أفراد',400],['عملاء شركات',20],['طلبات تمويل',1]]);
+  assert.equal(overview.metrics.some(([label])=>label==='قاعدة العملاء المسجلة'||label==='قاعدة العملاء'),false,'bank summary uses bank-owned customer totals and does not duplicate a generic portfolio count');
+  const legacyState={...state,bank:{branchNetwork:[{id:'BR1',retailCustomers:1200,businessCustomers:25}],loanRequests:[]}};
+  const fallback=summaryFor(legacyState,'bank','operations.bank','bank');
+  assert.deepEqual(plain(fallback.metrics),[['الفروع',1],['عملاء أفراد',1200],['عملاء شركات',25],['طلبات تمويل',0]],'legacy bank saves fall back to the bank-owned branch aggregates when top-level totals are absent');
 }
 
 {
@@ -98,6 +104,13 @@ let renderedActionOrigin='';
   assert.match(detail,/data-open="invoices" data-arg="telecom"/,'operations panel links to the existing company document flow');
   assert.match(detail,/telecom-create-subscription/,'telecom operations expose the actual subscription command');
   assert.match(detail,/telecom-set-cohort/,'telecom operations support aggregated customer cohorts');
+  const dashboard=Advanced.render('companyManage',{type:'dealership',tab:'overview'},ctx);
+  assert.match(dashboard,/company-quick-actions/,'company overview provides one concise direct-access panel');
+  for(const target of ['operations','people','finance'])assert.match(dashboard,new RegExp(`data-company-manage-tab="${target}"`),`company dashboard links directly to ${target}`);
+  assert.match(dashboard,/data-open="companyFacilities" data-arg="dealership"/,'company dashboard opens its branch and facility directory directly');
+  const telecomDashboard=Advanced.render('companyManage',{type:'telecom',tab:'overview'},ctx);
+  assert.match(telecomDashboard,/data-open="companyFacilities" data-arg="telecom"/,'telecom dashboard has a direct route to its accessible physical branches');
+  assert.match(telecomDashboard,/قاعدة العملاء/);assert.match(telecomDashboard,/اشتراكات سارية/);assert.match(telecomDashboard,/فواتير شهرية/,'customer-led company dashboard retains its customer and billing indicators');
   const dealerDetail=Advanced.render('companyManage',{type:'dealership',tab:'operations'},ctx);
   renderedActionOrigin=(dealerDetail.match(/data-gh-action-origin="([^"]+)"/)||[])[1]||'';
   assert.match(dealerDetail,/المصنعون والموردون/);
@@ -127,6 +140,6 @@ async function verifyActionWiring(){
   await run('dealership-settle-financed-sale',{sale:'SALE-1'});const settlement=dispatched.at(-1);assert.deepEqual([settlement.domain,settlement.name],['customer-companies','settle-financed-sale']);assert.equal(settlement.payload.company,'dealership');assert.equal(settlement.idempotencyKey,undefined,'pending receipt checks can be retried without replaying a cached pending result');
   const selectionInputs=Array.from({length:6},(_,index)=>({dataset:{realestateRequestSelect:`RE-REQ-${index+1}`},checked:false,addEventListener(name,fn){this[`on${name}`]=fn;}})),batchButton={tagName:'BUTTON',dataset:{ghAction:'realestate-decide-requests-batch',ghActionOrigin:origin,decision:'accept'},disabled:false,addEventListener(_name,fn){this.onClick=fn;}},countNode={textContent:''},root={querySelectorAll(selector){if(selector==='[data-gh-action]')return [batchButton];if(selector==='[data-gh-action="realestate-decide-requests-batch"]')return [batchButton];if(selector==='[data-realestate-request-select]')return selectionInputs;return [];},querySelector(selector){return selector==='#reBatchSelectedCount'?countNode:null;}};
   Object.assign(s.document,{querySelectorAll:selector=>selector==='[data-realestate-request-select]:checked'?selectionInputs.filter(input=>input.checked):[]});s.GH_AUTHORIZATION={digest:value=>`stable-${value.periodId}-${value.selected.join('-')}`};const batchCtx={state:{...minimal(),simSeconds:61*86400},currentPanel:'realestate',runAuthorizedDomainCommand:async request=>(dispatched.push(request),{ok:true,result:{accepted:5,declined:0,skipped:0,totalUnits:10,totalAnnualRent:1400000}}),openDrawer(){},pushAlert(){},save(){},updateKpis(){},fmtMoney:String};s.GH_WORKFLOW={confirm:()=>true};Advanced.bind(root,batchCtx);for(const input of selectionInputs){input.checked=true;input.onchange?.();}assert.equal(selectionInputs[5].checked,false,'UI prevents selecting more than five requests');assert.equal(countNode.textContent,'5 / 5');assert.equal(batchButton.disabled,false);await batchButton.onClick();const realEstateBatch=dispatched.at(-1);assert.deepEqual([realEstateBatch.domain,realEstateBatch.name],['realestate','decide-requests-batch']);assert.deepEqual(Array.from(realEstateBatch.payload.decisions,row=>row.id),['RE-REQ-1','RE-REQ-2','RE-REQ-3','RE-REQ-4','RE-REQ-5']);assert.equal(realEstateBatch.payload.periodId,'2');assert.equal(realEstateBatch.payload.batchId,`RE-LEASE-2-accept-${('stable-2-RE-REQ-1-RE-REQ-2-RE-REQ-3-RE-REQ-4-RE-REQ-5').slice(0,24)}`);assert.equal(realEstateBatch.idempotencyKey,realEstateBatch.payload.batchId,'UI uses one stable monthly ID for command replay');assert.equal(realEstateBatch.context.subjectId,'realestate','grouped action remains signed against the real-estate company');
-  console.log(JSON.stringify({suite:'build364-company-overview-summary',passed:11,total:11,scope:'derived sector summaries, bounded customer operations, and signed command click owners'}));
+  console.log(JSON.stringify({suite:'build364-company-overview-summary',passed:16,total:16,scope:'derived sector summaries, concise company navigation, bounded customer operations, and signed command click owners'}));
 }
 verifyActionWiring().catch(error=>{console.error(error);process.exitCode=1;});

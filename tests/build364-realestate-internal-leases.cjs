@@ -41,6 +41,7 @@ assert.ok(transfer.expenseDocumentNumber&&transfer.incomeDocumentNumber,'the set
 assert.equal(F.operating(state,'bank'),bankBefore-settlement.amount);assert.equal(F.operating(state,'realestate'),realestateBefore+settlement.amount);
 const close=s.GH_ECONOMICS_CORE.sectorEconomics(state,{day:31,preferDailyReport:true}).detail;
 assert.ok(close.companyExpense.bank>0,'tenant receives a daily P&L expense');assert.equal(close.companyCashExpense.bank,0,'a completed internal transfer is not charged again by generic daily close');
-assert.equal(close.companyCashRevenue.realestate,day31.revenue-day31.internalRentRevenue,'owner cash income excludes internal rent already handled by its transfer');
+assert.ok(Math.abs(close.companyCashRevenue.realestate-(day31.revenue-day31.internalRentRevenue-day31.externalRentRevenue))<.01,'owner cash income excludes internal rent settled separately and contracted external rent billed monthly');
+assert.ok(Math.abs(close.companyRevenue.realestate-day31.revenue)<.01,'earned rent remains fully visible in the owner daily P&L while cash credits are deferred');
 assert.equal(Object.keys(re.internalRentAccounts).length,0,'settled receivable clears');assert.equal(s.GH_SAVE_SCHEMA.validate(state).ok,true,'new lease state passes the current save schema');
 console.log(JSON.stringify({suite:'build364-realestate-internal-leases',passed:1,total:1,leaseId:lease.id,settlement:transfer.reference,amount:settlement.amount}));

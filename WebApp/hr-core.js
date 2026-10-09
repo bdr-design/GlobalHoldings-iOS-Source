@@ -45,7 +45,7 @@
     'ceo-hospitality-v1':'تشغيل الضيافة وتجربة النزيل'
   });
   const GENERATED_MANAGER_CANDIDATE_COUNT=2;
-  const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,'mobility-center':18,power:32,bank:16,insurance:14,realestate:12,acquired:28});
+  const FACILITY_STANDARDS=Object.freeze({hq:42,office:18,'airport-base':36,'port-base':44,logistics:24,depot:20,'mobility-center':18,'telecom-branch':14,'dealership-branch':18,power:32,bank:16,insurance:14,realestate:12,acquired:28});
   const assetOwner=a=>String(a?.ownerCompanyId||a?.companyId||platform()?.ownerForLegacyAssetMode?.(a?.assetMode||a?.type)||(!platform()?a?.type:'')||'');
   const facilityOwner=f=>String(f?.ownerCompanyId||f?.companyId||f?.company||'');
   // Build 358 (million-asset): whether any asset belongs to an owner, counted per class of rows (one cached class scan
@@ -93,7 +93,7 @@
     hr.policy=hr.policy&&typeof hr.policy==='object'?hr.policy:{approvalMode:'executive-authorization',contractMonths:24,minimumCoverage:100};
     retireLegacyExecutives(state,hr);return hr;
   }
-  function companyOfFacility(f){const owner=facilityOwner(f);if(owner)return owner;if(f?.kind==='airport-base')return'air';if(f?.kind==='port-base')return'sea';if(['depot','logistics'].includes(f?.kind))return'road';if(f?.kind==='mobility-center')return'mobility';if(f?.kind==='power')return'power';if(f?.kind==='bank')return'bank';return'group';}
+  function companyOfFacility(f){const owner=facilityOwner(f);if(owner)return owner;if(f?.kind==='airport-base')return'air';if(f?.kind==='port-base')return'sea';if(['depot','logistics'].includes(f?.kind))return'road';if(f?.kind==='mobility-center')return'mobility';if(f?.kind==='telecom-branch')return'telecom';if(f?.kind==='dealership-branch')return'dealership';if(f?.kind==='power')return'power';if(f?.kind==='bank')return'bank';return'group';}
   function facilityNeed(f,state=null){
     const base=FACILITY_STANDARDS[f?.kind]||12;
     // A Mobility center's 3,000 bays are capacity, not 3,000 occupied vehicles. Staffing grows with the delivered fleet.

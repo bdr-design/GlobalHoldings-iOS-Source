@@ -1,0 +1,12 @@
+/* Geometry follows the measured square side displays on the auditorium still (1846 x 852). */
+.ghc3-side-signage{position:absolute;inset:0;z-index:1;pointer-events:none;transform-origin:center}
+.ghc3-signage-panel{position:absolute;top:32.746%;height:11.268%;overflow:hidden;background:transparent;color:#f7e6b4;text-align:center;pointer-events:none}
+.ghc3-signage-panel-left{left:17.497%;width:4.171%;clip-path:inset(0)}
+.ghc3-signage-panel-right{right:17.443%;width:4.171%;clip-path:inset(0)}
+/* The mark fills about 76% of each safe glass width while retaining clear inset. */
+.ghc3-signage-logo{position:absolute;top:50%;left:50%;display:grid;place-items:center;width:min(64%,52px);height:auto;aspect-ratio:1;overflow:hidden;transform:translate(-50%,-50%)}
+.ghc3-signage-logo img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:transparent}
+.ghc3-signage-logo b{display:grid;place-items:center;width:100%;height:100%;border:1px solid rgba(240,202,117,.72);border-radius:50%;background:#0a2942;color:#f4d58c;font:700 clamp(9px,1.2vw,16px)/1 Arial,sans-serif}
+/* The auditorium artwork is scaled for the selected fixed view; signage follows that same transform. */
+.ghc3[data-angle="wide"] .ghc3-side-signage{transform:scale(.93)}
+.ghc3[data-angle="stage"] .ghc3-side-signage{transform:scale(1.04)}

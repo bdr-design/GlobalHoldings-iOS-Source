@@ -17,6 +17,11 @@ M.ensure(state);state.mobility.capitalCenters.push({id:'MOB-CENTER-RUH',ownerCom
 command('mobility','buy-fleet',{quantity:3000,centerId:'RUH',classId:'eco-ev'});
 assert.equal(state.mobility.vehicles.length,3000,'3,000 vehicles in one purchase');
 assert.throws(()=>command('mobility','buy-fleet',{quantity:1,centerId:'RUH',classId:'eco-ev'}),/mobility-center-capacity/,'the center is full at 3,000');
+const expansion=F.execute({state},'expand',{id:'MOB-CENTER-RUH',addCapacity:500,cost:0});
+assert.equal(expansion.assetCapacity,3500,'facility expansion updates the capacity enforced by Mobility purchases');
+assert.equal(state.customHubs[0].bays,3500,'the Mobility bay limit stays synchronized with the expanded delivery capacity');
+command('mobility','buy-fleet',{quantity:1,centerId:'RUH',classId:'eco-ev'});
+assert.equal(state.mobility.vehicles.length,3001,'the expanded center accepts newly available bays');
 assert.equal(s.GH_SAVE_SCHEMA.validate(state).ok,true);
 console.log(JSON.stringify({suite:'build358-purchase-caps',vehicles:state.mobility.vehicles.length}));
 console.log('PASS fleet command chunk stays at 3,000; capacity and request ceiling tests cover the million-scale path');

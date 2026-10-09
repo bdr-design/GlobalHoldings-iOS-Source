@@ -42,6 +42,7 @@ const official=(id,kind,reference,at,extra={})=>({id,kind,reference,at,title:`خ
    oldCenterButton:!!document.querySelector('[data-open="executionLog"],#executionLogBtn'),
    tracks:getComputedStyle(document.querySelector('.game-frame')).gridTemplateColumns,
    mapColumn:getComputedStyle(document.querySelector('.map-stage')).gridColumnStart,
+   navRect:(()=>{const r=document.querySelector('.side-nav').getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};})(),mapRect:(()=>{const r=document.querySelector('.map-stage').getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};})(),sheetRect:(()=>{const r=document.querySelector('.sheet-dock').getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};})(),
    title:document.querySelector('#drawerTitle')?.textContent||''
   }));
   assert.equal(result.cards,3,'news UI renders only the three fully sourced official records');
@@ -50,15 +51,22 @@ const official=(id,kind,reference,at,extra={})=>({id,kind,reference,at,title:`خ
   assert(!result.text.includes('DOC-NEWS-'),'document identifiers stay out of the newsroom UI');
   assert(!/تحذير واجهة|عرض غير معتمد|مرفوضة|خبر منافس مولد|نسخة مكررة|عقد قديم موثق/.test(result.text));
   assert.equal(result.oldCenterButton,false,'approval/execution log center has no UI entry point');
-  assert.equal(result.mapColumn,'2','the map stays between the left rail and the right newsroom');
+  assert.equal(result.mapColumn,'2','the map stays between the left rail and the right newsroom');assert(result.navRect.right<=result.mapRect.left+1,'the physical navigation rail stays left of the map');assert(result.mapRect.right<=result.sheetRect.left+1,'the map stays left of the right-hand news panel');assert(result.sheetRect.right>=1279,'the news panel reaches the right edge in landscape');
   assert(result.tracks.split(' ').length===3,'the landscape news layout uses separate map, rail, and panel columns');
   assert.equal(await page.locator('#executionLogBtn').count(),0);
+  await page.evaluate(()=>{window.GH_BUSINESS_WORLD.recordEvent(window.__GH_STATE__,{kind:'billing',company:'group',ownerCompanyId:'group',title:'إصدار فاتورة شهرية موثقة',detail:'فاتورة TEL-INV-PRODUCER-2026-02',amount:38,reference:'BILL-telecom-2026-02-PRODUCER',official:true,sourceDomain:'finance',sourceRef:'BILL-telecom-2026-02-PRODUCER',documentRef:'TEL-INV-PRODUCER-2026-02'});window.__AUDIT__.updateKpis();});
+  await page.waitForFunction(()=>document.querySelector('#drawerBody')?.innerText.includes('إصدار فاتورة شهرية موثقة'));
+  assert.equal(await page.locator('.official-news-lead h2').innerText(),'إصدار فاتورة شهرية موثقة','an official billing event recorded while the newsroom is open appears without reopening it');
+  assert.doesNotMatch(await page.locator('.official-news-page').innerText(),/TEL-INV-PRODUCER-2026-02/,'the newsroom does not expose document identifiers in event details');
+  await page.evaluate(()=>{const s=window.__GH_STATE__;for(let i=0;i<300;i++)window.GH_BUSINESS_WORLD.recordEvent(s,{kind:'bid',company:'group',title:`نشاط غير رسمي ${i}`,reference:`BID-NOISE-${i}`});});
+  const retained=await page.evaluate(()=>({count:window.GH_ADVANCED.newsSummary(window.__GH_STATE__).count,hasBilling:window.__GH_STATE__.businessWorld.events.some(event=>event.reference==='BILL-telecom-2026-02-PRODUCER')}));
+  assert.equal(retained.count,4,'official stories remain available after a burst of non-news business events');assert.equal(retained.hasBilling,true,'the official record is retained ahead of low-value feed noise');
   const artwork=Object.fromEntries(['company-energy-v2.webp','company-bank-v2.webp','company-hq-v2.webp'].map(name=>[name,fs.readFileSync(path.resolve(__dirname,`../WebApp/assets/images/${name}`)).toString('base64')]));
   await page.evaluate(images=>document.querySelectorAll('.official-news-thumb').forEach(img=>{const name=img.getAttribute('src').split('/').pop(),data=images[name];if(data)img.src=`data:image/webp;base64,${data}`;}),artwork);
   await page.screenshot({path:path.resolve(__dirname,'../verification/build365-official-news-landscape.png'),fullPage:false});
   await page.locator('[data-news-close]').click();
   assert.equal(await page.locator('#drawer.open').count(),0,'news close control returns to the uncovered map');
   assert.deepEqual(errors,[],'browser boot and newsroom render without uncaught errors');
-  console.log('Build365 official news: PASS (allowlist, legacy contract, dedupe, source refs, old center removed)');
+  console.log('Build365 official news: PASS (allowlist, real source refs, billing events, live refresh, physical landscape columns)');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

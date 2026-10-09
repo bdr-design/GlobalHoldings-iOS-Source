@@ -1,6 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Global Holdings Group">
-  <defs><linearGradient id="a" x1="9" y1="5" x2="87" y2="91"><stop stop-color="#174f70"/><stop offset="1" stop-color="#092d48"/></linearGradient></defs>
-  <rect x="3" y="3" width="90" height="90" rx="26" fill="url(#a)"/>
-  <path d="M24 32c5-9 14-14 25-14 9 0 17 3 23 9l-9 9c-4-4-8-6-14-6-11 0-19 8-19 18s8 18 19 18c5 0 9-1 12-4v-8H48V43h28v25c-7 8-16 12-27 12-20 0-35-14-35-32 0-6 2-11 5-16z" fill="#f8fbfa"/>
-  <path d="M80 17 74 30H62l7-13z" fill="#e4bd67"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="المجموعة القابضة"><path d="M20 86C27 54 44 36 64 36s37 18 44 50" fill="none" stroke="#C68B2C" stroke-width="5" stroke-linecap="round"/><circle cx="64" cy="20" r="8" fill="#C68B2C"/><circle cx="18" cy="86" r="7" fill="#173B66"/><circle cx="110" cy="86" r="7" fill="#173B66"/><path d="M35 82V64l16-11v29m7 0V45l14-10v47m7 0V59l18 10v13" fill="#173B66"/><path d="M22 97c19-8 65-8 84 0" fill="none" stroke="#173B66" stroke-width="6" stroke-linecap="round"/></svg>

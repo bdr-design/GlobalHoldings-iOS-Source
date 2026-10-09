@@ -1,11 +1,20 @@
 Conference auditorium artwork
 
-The image is a cropped and WebP-compressed derivative of the approved
-conference visual reference generated in this work session. It supplies only
-the static auditorium, stage, audience, presenter, and podium artwork. The
-embedded display and navigation details are covered at runtime by the live
-HTML presentation board and native conference controls.
+Active still background: auditorium-live-stage.webp, derived from the generated
+landscape image at /workspace/generated_images/exec-9e464edb-44c6-4b50-b621-f5e5137ec3b0.png.
+Source and WebP dimensions are 1846 x 852 px; WebP quality 86, 196460 bytes.
+The hall, stage, audience, central blank LED, and presenter/lectern are retained.
+The previous tall side columns were replaced by compact architectural display
+panels integrated into the gold-trimmed cladding. Display glass is blank for
+runtime logo overlays; no logo or slide text is baked into the background.
 
-Output: auditorium-gold.webp (1614 x 745, WebP quality 82, 155496 bytes).
-The foreground presenter/podium overprint is an inline clipped use of this same
-image, not a separate art asset.
+Measured bounds in the 1846 x 852 source:
+- Center LED active glass bounding box: x=419..1429, y=94..618.
+- Left architectural panel outer frame: x=317..407, y=274..382.
+  Active glass: x=323..400, y=279..375.
+  Safe logo overlay area: x=329..394, y=286..368.
+- Right architectural panel outer frame: x=1440..1529, y=274..382.
+  Active glass: x=1445..1522, y=279..375.
+  Safe logo overlay area: x=1451..1516, y=286..368.
+The side panels are vertically centered on the center LED and sit about 12 px
+outside its edges. Preserve the safe bounds when aligning CSS/DOM overlays.

@@ -114,6 +114,7 @@
     closeRisk(ins,risk,'مقبول',{decidedDay:day});return {id:risk.id,status:'مقبول',premium:risk.premium};
   }
   function decideRisksBatch(state,p={}){
+    if(!globalThis.GH_TRANSACTION_CORE?.isActive?.())throw new Error('insurance-batch-transaction-required');
     const ins=ensure(state),batchId=String(p.batchId||'').trim(),periodId=String(p.periodId??Math.floor(Math.floor(now(state)/86400)/30)),decisions=Array.isArray(p.decisions)?p.decisions:[];
     if(!batchId||batchId.length>120)throw new Error('insurance-batch-id-required');if(!decisions.length||decisions.length>MAX_OPEN_RISKS)throw new Error('insurance-risk-batch-size-invalid');
     const normalized=decisions.map(row=>({id:String(row?.id||''),decision:String(row?.decision||'')})).sort((a,b)=>a.id.localeCompare(b.id));if(normalized.some(row=>!row.id||!['accept','decline'].includes(row.decision)))throw new Error('insurance-risk-batch-decision-invalid');if(new Set(normalized.map(row=>row.id)).size!==normalized.length)throw new Error('insurance-risk-batch-duplicate-risk');
@@ -182,7 +183,8 @@
   function summary(state){
     const ins=ensure(state),totals={};for(const id of LINE_IDS)totals[id]=ins.offices.reduce((sum,row)=>sum+num(row.lines[id]?.policies),0);
     const policies=Object.values(totals).reduce((a,b)=>a+b,0),last=ins.dailyHistory[0]||null,window30=ins.dailyHistory.slice(0,30),premium30=window30.reduce((s,r)=>s+num(r.premium),0),claims30=window30.reduce((s,r)=>s+num(r.claims),0);
-    return {offices:ins.offices.length,activeOffices:ins.offices.filter(row=>row.active).length,policies,byLine:totals,last,premium30,claims30,lossRatio30:premium30?claims30/premium30:0,net30:window30.reduce((s,r)=>s+Number(r.net||0),0),reserve:ins.claimsReserve.reduce((s,r)=>s+num(r.amount),0),reinsurance:ins.reinsurance,openRisks:ins.riskRequests.length};
+    const day=Math.floor(now(state)/86400),activeLargeRisks=ins.largeRisks.filter(row=>day>=Number(row.startDay)&&day<Number(row.endDay)).length;
+    return {offices:ins.offices.length,activeOffices:ins.offices.filter(row=>row.active).length,policies,activeLargeRisks,byLine:totals,last,premium30,claims30,lossRatio30:premium30?claims30/premium30:0,net30:window30.reduce((s,r)=>s+Number(r.net||0),0),reserve:ins.claimsReserve.reduce((sum,row)=>sum+num(row.amount),0),reinsurance:ins.reinsurance,openRisks:ins.riskRequests.length};
   }
   function onFinancialDay(ctx,p={}){
     const platform=globalThis.GH_COMPANY_PLATFORM,commands=globalThis.GH_DOMAIN_COMMANDS;

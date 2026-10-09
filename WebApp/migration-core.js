@@ -134,11 +134,13 @@
   }
   function structural(state,defaultState){
     if(!state||typeof state!=='object'||Array.isArray(state))throw new Error('MIGRATION_STATE_INVALID');
-    const arrayKeys=['unlockedSectors','openedCompanies','ownedCompanies','hired','acceptedContracts','failedBids','branches','globalBases','customHubs','customRoutes','leasedAssets','eventLog','alerts','constructionContracts','commercialTenders','supplierTransactions','insurancePolicies'];
+    const arrayKeys=['unlockedSectors','openedCompanies','ownedCompanies','hired','acceptedContracts','failedBids','branches','globalBases','customHubs','customRoutes','leasedAssets','eventLog','alerts','constructionContracts','commercialTenders','supplierTransactions','insurancePolicies','portfolioTrades'];
     for(const key of arrayKeys){if(!Array.isArray(state[key]))state[key]=clone(defaultState[key]||[]);else state[key]=state[key].filter(Boolean);}
     migrateFleet(state);state.routesRevision=Math.max(0,Math.floor(Number(state.routesRevision)||0));
-    const objectKeys=['stakes','maDeals','contractStartDays','portfolio','portfolioBook','routeEndpoints','routeCache','companyRegistry','companyModules','companyFinance','contractRegistry','governance','research','esg','ipo'];
+    const objectKeys=['stakes','maDeals','contractStartDays','portfolio','portfolioBook','portfolioLots','routeEndpoints','routeCache','companyRegistry','companyModules','companyFinance','contractRegistry','governance','research','esg','ipo'];
     for(const key of objectKeys)if(!state[key]||typeof state[key]!=='object'||Array.isArray(state[key]))state[key]=clone(defaultState[key]||{});
+    state.portfolioTradeSequence=Math.max(0,Math.floor(Number(state.portfolioTradeSequence)||0));
+    if(state.ipo.listed===true&&(!Array.isArray(state.ipo.capTable)||!state.ipo.capTable.length)){const issuedPct=Math.max(0,Math.min(100,Number(state.ipo.issuedPct)||18)),legacyIssued=Math.max(1,Math.floor(Number(state.ipo.sharesIssued)||18000000)),totalShares=Math.max(legacyIssued,Math.round(legacyIssued/(issuedPct/100))),publicShares=Math.min(totalShares,legacyIssued);state.ipo.totalShares=totalShares;state.ipo.capTable=[{holderId:'founders',label:'المؤسسون والمساهمون الحاليون',shares:totalShares-publicShares},{holderId:'public-float',label:'المساهمون العموم',shares:publicShares}];}
     if(!state.profile||typeof state.profile!=='object')state.profile=clone(defaultState.profile);
     if(!state.energy||typeof state.energy!=='object')state.energy=clone(defaultState.energy);
     if(!state.bank||typeof state.bank!=='object')state.bank=clone(defaultState.bank);

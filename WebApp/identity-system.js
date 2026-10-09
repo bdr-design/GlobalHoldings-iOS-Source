@@ -153,7 +153,10 @@ function resolve(state,type='group',options={}){
   return Object.freeze({
     type:String(type||'unknown'),known:def.known,usage,customized:Boolean(customLogo||row?.legalName||row?.shortName||(type==='group'&&(row?.name||row?.shortName))),
     short:shortName(state,type,options),display:displayName(state,type,false,options),legal:legalName(state,type,options),mapLabel:validPlainText(String(row?.mapName||''),{maximum:48})?String(row.mapName).trim():def.labels[preferredLanguage(options)].map,
-    logo:customLogo||familyLogo(state,type)||def.identity.logos[usage],customLogo:Boolean(customLogo),accent,secondary,route,definition:def
+    // Built-in marks are stable assets. Preserve an explicitly uploaded company logo,
+    // then use the definition's shipped logo; never synthesize a new default from the
+    // current group name, palette, or abbreviation.
+    logo:customLogo||def.identity.logos[usage]||def.identity.logos.symbol||def.identity.logos.default||UNKNOWN_LOGO,customLogo:Boolean(customLogo),accent,secondary,route,definition:def
   });
 }
 function logo(state,type='group',usage='symbol'){const options=typeof usage==='object'?usage:{usage};return resolve(state,type,options).logo;}

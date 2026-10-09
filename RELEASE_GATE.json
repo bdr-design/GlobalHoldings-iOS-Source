@@ -1,10 +1,11 @@
 {
   "approved": false,
-  "source_tree_sha256": "aac08ddebd740ad12a191fd9e5f6d5c6257f69745d9c7ae3daeb366d7a2863b0",
+  "source_tree_sha256": "d15d99e9bc1b39217357739c6fa4890e8598587abbb5fc0041feedba056fd739",
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
   "blocking_issues": [
+    "The offline sourced policy-rate snapshot covers only the Euro Area, Saudi Arabia, and the United States. Insurance pricing, local energy tariffs, real-estate pricing, and other countries still use the game model. SAMA redistribution terms for its announcement have not been confirmed; review before commercial redistribution.",
     "No physical iPhone profile exists for this candidate. Frame time, touch latency, memory (803 MB JS heap at 1,000,000 assets in desktop Chromium), and thermal targets at 100,000 and 1,000,000 assets remain unverified on target hardware.",
     "Build 358 direct-source CI passed on commit 1c618ad (run 37077522739: 147/147 source gates, unsigned arm64 iPhoneOS Release build); the recorded artifact block below still belongs to Build 357 (commit af36368). Later commits are verified by their own runs.",
     "Native fleet persistence admits purchases up to 1,000,000 records (fleet records in 4 MiB native vault chunks outside the save JSON; the browser localStorage save keeps 6,000). Measured only in desktop Chromium with the full app at 1,000,000 assets: 150 s of play at 600x with 5 frames over 100 ms (longest 0.45 s), staged daily close 2.7 s with a 174 ms longest task, warm save 83 ms (0.73 MB JSON), purchase 0.28 s, boot 2.8 s.",
@@ -78,7 +79,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "codex/build361-device-archive-1gb",
     "based_on": "claude/madar-map-conference-cleanup@4f3fea7",
-    "source_tree_sha256": "aac08ddebd740ad12a191fd9e5f6d5c6257f69745d9c7ae3daeb366d7a2863b0",
+    "source_tree_sha256": "d15d99e9bc1b39217357739c6fa4890e8598587abbb5fc0041feedba056fd739",
     "working_tree_clean": null
   },
   "point": "Build 362 follow-up candidate: customer-focused telecom and dealership companies, safe grouped customer finance and real-estate decisions, refreshed landscape conference theatre, and lifecycle fixes. Targeted local checks passed; full acceptance/CI and physical iPhone validation remain pending; RELEASE_GATE stays closed."

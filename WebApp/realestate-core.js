@@ -158,9 +158,40 @@
     const legal=F.execute({state},'register-commercial-contract',{id:`LEGAL-${leaseId}`,company:'realestate',contractType:'عقد إيجار داخلي للمجموعة',counterparty:tenant.identity?.legalName||tenant.id,title:`إيجار داخلي · ${project.name}`,startDay,endDay,amount:annualRent*years,terms:{projectId:project.id,tenantCompanyId:tenant.id,units:count,rentLevel,annualRent,years,internal:true,settlementDays:INTERNAL_RENT_SETTLE_DAYS},sourceRefs:[leaseId,project.id]}),lease={id:leaseId,tenant:tenant.identity?.legalName||tenant.id,tenantCompanyId:tenant.id,internal:true,units:count,rentLevel,annualRent,years,startDay,endDay,legalDocumentId:legal.id,documentProofId:legal.documentProofId,contentDigest:legal.contentDigest};
     project.leases=Array.isArray(project.leases)?project.leases:[];project.leases.push(lease);project.leased+=count;re.sequence++;return clone(lease);
   }
+  function rentPeriodKey(state,day){const F=globalThis.GH_FINANCE_CORE,key=F?.calendarMonthForDay?.(day);if(typeof key!=='string'||!key)throw new Error('realestate-finance-period-unavailable');return key;}
+  function rentInvoiceSource(projectId,leaseId,period){return `RENT-EXT:${String(projectId)}:${String(leaseId)}:${String(period)}`;}
+  function invoiceBySource(state,sourceRef){const live=(state.finance?.invoices||[]).find(row=>row?.sourceRef===sourceRef);return live||globalThis.GH_FINANCE_CORE?.findArchivedDocument?.(state,'invoices','sourceRef',sourceRef)||null;}
+  function invoiceByNumber(state,number){const live=(state.finance?.invoices||[]).find(row=>row?.number===number);return live||globalThis.GH_FINANCE_CORE?.findArchivedDocument?.(state,'invoices','number',number)||null;}
+  function issueExternalRentInvoice(state,{project,leaseId,tenant,amount,period,day}){
+    const rounded=Math.round(Number(amount)*100)/100;if(!(rounded>.005))return null;
+    const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)throw new Error('finance-core-missing');
+    const sourceRef=rentInvoiceSource(project.id,leaseId,period),number=`RLE-${hash(sourceRef).toString(36).toUpperCase()}`;
+    const prior=invoiceBySource(state,sourceRef),numberConflict=invoiceByNumber(state,number);
+    if(prior){if(prior.company!=='realestate'||prior.kind!=='دخل'||Math.abs(Number(prior.total??prior.amount)-rounded)>.01||prior.number!==number)throw new Error('realestate-rent-invoice-reference-conflict');return prior;}
+    if(numberConflict)throw new Error('realestate-rent-invoice-number-conflict');
+    return F.execute({state},'issue-invoice',{company:'realestate',kind:'دخل',amount:rounded,note:`إيجار شهر ${period} · ${project.name}`,method:'فاتورة إيجار شهرية',taxable:true,status:'مستحقة',counterparty:tenant,number,dueDay:day+7,paymentTerms:7,sourceRef});
+  }
+  function rentInvoiceStatus(state,invoiceOrNumber,day=Math.floor(now(state)/86400)){
+    const invoice=typeof invoiceOrNumber==='string'?invoiceByNumber(state,invoiceOrNumber):invoiceOrNumber;
+    if(!invoice||invoice.company!=='realestate'||invoice.kind!=='دخل'||!String(invoice.sourceRef||'').startsWith('RENT-EXT:'))return 'غير موجود';
+    if(['محصلة','مدفوعة','مسددة'].includes(String(invoice.status||'')))return 'مدفوع';
+    return Number(invoice.dueDay)<Number(day)?'متأخر':'مستحق';
+  }
+  function collectRentInvoice(state,p={}){
+    const number=String(p.number||p.invoiceNumber||''),invoice=invoiceByNumber(state,number);
+    if(!invoice||invoice.company!=='realestate'||invoice.kind!=='دخل'||!String(invoice.sourceRef||'').startsWith('RENT-EXT:'))throw new Error('realestate-rent-invoice-not-found');
+    if(rentInvoiceStatus(state,invoice)==='مدفوع')return {number,amount:0,status:'مدفوع',idempotent:true,reference:invoice.transferReference||null};
+    const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)throw new Error('finance-core-missing');
+    const reference=String(p.reference||`RENT-COLLECT-${number}`);if(reference.length>120)throw new Error('realestate-rent-collection-reference-invalid');
+    const result=F.execute({state},'collect-receivable',{number,company:'realestate',reference,sourceRefs:[invoice.sourceRef]});
+    return {...result,number,status:'مدفوع'};
+  }
+  function externalRentBilling(state,{project,leaseId,tenant,period,amount,day}){
+    return issueExternalRentInvoice(state,{project,leaseId,tenant,period,amount,day});
+  }
   function tickDay(state,p={}){
     const re=ensure(state),day=Math.max(0,Math.floor(Number(p.day)||Math.floor(now(state)/86400)));if(re.lastProcessedDay===day)return re.dailyHistory.find(row=>row.day===day)||{day,idempotent:true};
-    let sales=0,rent=0,internalRentRevenue=0,costOfSales=0,opex=0,commission=0,capex=0,newBuyers=0,newTenants=0,vacated=0;const completed=[],internalRentByCompany=new Map();
+    let sales=0,rent=0,internalRentRevenue=0,externalRentRevenue=0,costOfSales=0,opex=0,commission=0,capex=0,newBuyers=0,newTenants=0,vacated=0;const completed=[],internalRentByCompany=new Map(),rentInvoices=[];
     for(const project of re.projects){
       const office=re.offices.find(row=>row.id===project.officeId),type=TYPES[project.type],today={day,sold:0,leased:0,vacated:0,rent:0,sales:0};
       // Construction milestones and completion.
@@ -180,13 +211,23 @@
         }else if(take>0&&project.mode==='lease'&&project.status==='مكتمل'){project.leased+=take;today.leased=take;newTenants+=take;commission+=take*type.rent*project.priceLevel/12;}
       }
       if(project.status==='مكتمل'&&project.mode==='lease'){
-        // Walk-in tenants rent at the project's level; corporate leases at their own rent until their end day.
-        const leases=Array.isArray(project.leases)?project.leases:[],walkIn=Math.max(0,project.leased-leases.reduce((sum,row)=>sum+row.units,0));
+        // Public occupancy remains on its existing daily settlement path. Contracted external leases stay in daily
+        // P&L accrual but are invoiced once per month from their lease record; no tenant-level state is created.
+        const leases=Array.isArray(project.leases)?project.leases:[],contractUnits=leases.filter(row=>!row.ended).reduce((sum,row)=>sum+num(row.units),0),walkIn=Math.max(0,project.leased-contractUnits),period=rentPeriodKey(state,day);
         const churn=clamp(BASE_LEASE_CHURN*(1+(project.priceLevel-1)*2.5),.05,.5),leaving=Math.min(walkIn,roundDraw(walkIn*churn/365,`${project.id}:${day}:churn`));
         project.leased-=leaving;today.vacated=leaving;vacated+=leaving;
-        for(const lease of leases)if(day>=lease.endDay&&!lease.ended){lease.ended=true;project.leased=Math.max(0,project.leased-lease.units);const F=globalThis.GH_FINANCE_CORE;if(lease.tenantCompanyId&&lease.legalDocumentId&&F?.ensure?.(state)?.commercialContracts?.some(row=>row.id===lease.legalDocumentId))F.execute({state},'update-commercial-contract-status',{id:lease.legalDocumentId,status:'منتهي',endedAt:day,reason:'انتهاء مدة الإيجار الداخلي'});}
+        for(const lease of leases){
+          const external=!lease.tenantCompanyId,active=day>=Number(lease.startDay)&&day<Number(lease.endDay)&&!lease.ended,leasePeriod=period;
+          if(external&&lease.rentPeriod!==leasePeriod){if(lease.rentPeriod&&num(lease.rentAccrued)>.005){const invoice=externalRentBilling(state,{project,leaseId:lease.id,tenant:lease.tenant,period:lease.rentPeriod,amount:lease.rentAccrued,day});if(invoice)rentInvoices.push(invoice.number);}lease.rentPeriod=leasePeriod;lease.rentAccrued=0;}
+          if(external&&active){lease.rentAccrued=Math.round((num(lease.rentAccrued)+lease.units*type.rent*lease.rentLevel/365)*100000)/100000;externalRentRevenue+=lease.units*type.rent*lease.rentLevel/365;}
+          if(day>=Number(lease.endDay)&&!lease.ended){
+            if(external&&num(lease.rentAccrued)>.005){const invoice=externalRentBilling(state,{project,leaseId:lease.id,tenant:lease.tenant,period:lease.rentPeriod||leasePeriod,amount:lease.rentAccrued,day});if(invoice)rentInvoices.push(invoice.number);lease.rentAccrued=0;}
+            lease.ended=true;project.leased=Math.max(0,project.leased-num(lease.units));
+            const F=globalThis.GH_FINANCE_CORE;if(lease.tenantCompanyId&&lease.legalDocumentId&&F?.ensure?.(state)?.commercialContracts?.some(row=>row.id===lease.legalDocumentId))F.execute({state},'update-commercial-contract-status',{id:lease.legalDocumentId,status:'منتهي',endedAt:day,reason:'انتهاء مدة الإيجار الداخلي'});
+          }
+        }
         project.leases=leases.filter(row=>!row.ended);
-        const activeLeases=leases.filter(row=>day>=row.startDay&&day<row.endDay),dailyRent=(Math.max(0,walkIn-leaving)*type.rent*project.priceLevel+activeLeases.reduce((sum,row)=>sum+row.units*type.rent*row.rentLevel,0))/365;
+        const activeLeases=leases.filter(row=>day>=row.startDay&&day<row.endDay),dailyWalkIn=Math.max(0,walkIn-leaving)*type.rent*project.priceLevel/365,dailyContract=activeLeases.reduce((sum,row)=>sum+row.units*type.rent*row.rentLevel,0)/365,dailyRent=dailyWalkIn+dailyContract;
         rent+=dailyRent;project.rentRevenue+=dailyRent;today.rent=dailyRent;
         for(const lease of activeLeases)if(lease.tenantCompanyId){const amount=lease.units*type.rent*lease.rentLevel/365,companyId=lease.tenantCompanyId,row=internalRentByCompany.get(companyId)||{companyId,amount:0,sourceRefs:[]};row.amount+=amount;if(row.sourceRefs.length<80&&!row.sourceRefs.includes(lease.id))row.sourceRefs.push(lease.id);internalRentByCompany.set(companyId,row);internalRentRevenue+=amount;}
       }
@@ -206,11 +247,12 @@
       catch(error){if(!/insufficient-service-cash-or-budget/.test(String(error?.message||error)))throw error;account.carriedOver=(Number(account.carriedOver)||0)+1;}
     }
     const revenue=sales+rent,expense=opex+commission,net=revenue-expense;
-    const report={day,sales,rent,internalRentRevenue,internalRentRows,internalRentSettlements,costOfSales,opex,commission,capex,revenue,expense,net,newBuyers,newTenants,vacated,completed,newRequest:generateRequest(state,re,day)?.id||null};
+    const report={day,sales,rent,internalRentRevenue,externalRentRevenue,internalRentRows,internalRentSettlements,rentInvoices,costOfSales,opex,commission,capex,revenue,expense,net,newBuyers,newTenants,vacated,completed,newRequest:generateRequest(state,re,day)?.id||null};
     re.ytd.sales+=sales;re.ytd.rent+=rent;re.ytd.costOfSales+=costOfSales;re.ytd.opex+=opex;re.ytd.commission+=commission;re.ytd.net+=net;re.ytd.capex+=capex;
     re.dailyHistory.unshift(report);re.dailyHistory=re.dailyHistory.slice(0,DAILY_HISTORY);re.lastProcessedDay=day;return clone(report);
   }
-  function dailyResult(state,day){const row=(state.realEstate?.dailyHistory||[]).find(item=>Number(item.day)===Number(day));if(!row)return {revenue:0,expense:0,cashRevenue:0,cashExpense:0,internalRentRows:[],internalRentSettlements:[]};return {revenue:num(row.revenue),expense:num(row.expense),cashRevenue:Math.max(0,num(row.revenue)-num(row.internalRentRevenue)),cashExpense:num(row.expense),internalRentRows:Array.isArray(row.internalRentRows)?row.internalRentRows:[],internalRentSettlements:Array.isArray(row.internalRentSettlements)?row.internalRentSettlements:[]};}
+  function dailyResult(state,day){const row=(state.realEstate?.dailyHistory||[]).find(item=>Number(item.day)===Number(day));if(!row)return {revenue:0,expense:0,cashRevenue:0,cashExpense:0,internalRentRows:[],internalRentSettlements:[]};return {revenue:num(row.revenue),expense:num(row.expense),cashRevenue:Math.max(0,num(row.revenue)-num(row.internalRentRevenue)-num(row.externalRentRevenue)),cashExpense:num(row.expense),internalRentRows:Array.isArray(row.internalRentRows)?row.internalRentRows:[],internalRentSettlements:Array.isArray(row.internalRentSettlements)?row.internalRentSettlements:[]};}
+  function rentInvoices(state,projectId=null){const rows=(state.finance?.invoices||[]).filter(row=>row?.company==='realestate'&&row.kind==='دخل'&&String(row.sourceRef||'').startsWith('RENT-EXT:')&&(!projectId||String(row.sourceRef).startsWith(`RENT-EXT:${projectId}:`)));return rows.map(row=>({number:row.number,sourceRef:row.sourceRef,amount:Number(row.total??row.amount)||0,dueDay:Number(row.dueDay)||0,status:rentInvoiceStatus(state,row),ledgerStatus:row.status,counterparty:row.counterparty}));}
   function summary(state){
     const re=ensure(state),projects=re.projects,completedLease=projects.filter(row=>row.status==='مكتمل'&&row.mode==='lease'),leasable=completedLease.reduce((s,r)=>s+r.units,0),leased=completedLease.reduce((s,r)=>s+r.leased,0),window30=re.dailyHistory.slice(0,30);
     const annualRentRoll=completedLease.reduce((sum,project)=>{const type=TYPES[project.type],leases=Array.isArray(project.leases)?project.leases:[],contracted=leases.reduce((total,row)=>total+row.units*type.rent*row.rentLevel,0),walkIn=Math.max(0,project.leased-leases.reduce((total,row)=>total+row.units,0));return sum+contracted+walkIn*type.rent*project.priceLevel;},0);
@@ -225,9 +267,9 @@
   }
   function execute(ctx,cmd,p={}){
     const state=ctx.state||ctx;
-    if(cmd==='ensure')return ensure(state);if(cmd==='tick-day')return tickDay(state,p);if(cmd==='start-project')return startProject(state,p);if(cmd==='set-project-price')return setProjectPrice(state,p);if(cmd==='decide-request')return decideRequest(state,p);if(cmd==='decide-requests-batch')return decideRequestsBatch(state,p);if(cmd==='lease-to-company')return leaseToCompany(state,p);
+    if(cmd==='ensure')return ensure(state);if(cmd==='tick-day')return tickDay(state,p);if(cmd==='start-project')return startProject(state,p);if(cmd==='set-project-price')return setProjectPrice(state,p);if(cmd==='decide-request')return decideRequest(state,p);if(cmd==='decide-requests-batch')return decideRequestsBatch(state,p);if(cmd==='lease-to-company')return leaseToCompany(state,p);if(cmd==='collect-rent-invoice')return collectRentInvoice(state,p);
     throw new Error(`Unknown real estate command: ${cmd}`);
   }
-  const API={VERSION,DAILY_FINANCIAL_ORDER:350,TYPES,TYPE_IDS,PRICE_LEVELS,SIZE_LEVELS,MAX_ACTIVE_PROJECTS,MAX_INTERNAL_LEASES,MAX_OPEN_REQUESTS,ensure,officeMarket,projectQuote,arrivals,tickDay,dailyResult,summary,leaseToCompany,decideRequestsBatch,onFinancialDay,execute};
+  const API={VERSION,DAILY_FINANCIAL_ORDER:350,TYPES,TYPE_IDS,PRICE_LEVELS,SIZE_LEVELS,MAX_ACTIVE_PROJECTS,MAX_INTERNAL_LEASES,MAX_OPEN_REQUESTS,ensure,officeMarket,projectQuote,arrivals,tickDay,dailyResult,summary,rentInvoices,rentInvoiceStatus,leaseToCompany,decideRequestsBatch,onFinancialDay,execute};
   globalThis.GH_REALESTATE_CORE=API;globalThis.GH_DOMAIN_COMMANDS?.register?.('realestate',API);if(globalThis.window&&window!==globalThis)window.GH_REALESTATE_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
