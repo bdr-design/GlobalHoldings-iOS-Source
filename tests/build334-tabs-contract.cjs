@@ -42,6 +42,9 @@ console.log(JSON.stringify({result:'passed',registeredAttributes:allowed.length,
  let instances=[],calls=[];
  const render=vm.runInNewContext(source.slice(start,end)+'\nrenderCompanies',{
   companyInstances:()=>instances,identityName:(_s,id)=>id,assetOwnerCompanyId:a=>a.ownerCompanyId,
+  companyOverviewIndex:()=>({fleet:new Map(),facilities:new Map()}),
+  companyOverviewSummary:()=>({category:'service',categoryLabel:'service',primaryOperatingLabel:'operations',primaryOperatingCount:0,metrics:[]}),
+  companyNextAction:()=>'',
   tabs,metrics:rows=>JSON.stringify(rows),text:value=>String(value??''),findPhoto:()=>'',
   nextStepButton:()=>'',platform:()=>null,fleetData:()=>require('../WebApp/fleet-access-core.js')
  });

@@ -25,10 +25,10 @@ function hospitalityDefinition(id,definitionId,prefix,order){
 }
 
 test('built-in definitions are centralized, valid, and separated by dimensions',()=>{
-  assert.equal(JSON.stringify(P.companyIds({includeGroup:false})),JSON.stringify(['air','sea','road','power','bank','mobility','insurance','realestate']));
+  assert.equal(JSON.stringify(P.companyIds({includeGroup:false})),JSON.stringify(['air','sea','road','power','bank','mobility','insurance','realestate','telecom','dealership']));
   assert.equal(P.validateRegistry().ok,true);const air=P.getDefinition('air');
   assert.equal(air.classification.primarySectorId,'air');assert.equal(air.classification.operationProfileId,'fleet-route-air-v1');assert.equal(JSON.stringify(air.classification.assetClasses),JSON.stringify(['aircraft']));assert.equal(JSON.stringify(air.classification.routeModes),JSON.stringify(['air']));
-  assert.equal(P.listByCapability('conference.participant',{includeGroup:false}).length,8);
+  assert.equal(P.listByCapability('conference.participant',{includeGroup:false}).length,10);
 });
 
 const customLogo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -136,6 +136,6 @@ test('corporate provisioning uses dynamic company id and fails closed for unknow
 });
 
 P.seal({runtimeCheck:false});
-test('sealed platform rejects late definitions and exposes deterministic snapshot',()=>{assert.equal(P.isSealed(),true);assert.throws(()=>P.installDefinition(hospitalityDefinition('late-company','late-company-v1','LATE',99)),/company-platform-sealed/);assert.equal(P.snapshot().definitions,11);});
+test('sealed platform rejects late definitions and exposes deterministic snapshot',()=>{assert.equal(P.isSealed(),true);assert.throws(()=>P.installDefinition(hospitalityDefinition('late-company','late-company-v1','LATE',99)),/company-platform-sealed/);assert.equal(P.snapshot().definitions,13);});
 
 console.log(`PASS company platform ${results.length}/${results.length}`);
