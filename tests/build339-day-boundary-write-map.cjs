@@ -4,7 +4,7 @@ const {scenario}=require('./helpers/business-scenario');
 const ROOT=path.resolve(__dirname,'..'),app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8'),results=[];
 function fragment(start,end){const a=app.indexOf(start),b=app.indexOf(end,a);assert(a>=0&&b>a,`${start} -> ${end}`);return app.slice(a,b);}
 const EXPECTED={
-  1:['acceptedContracts','advanced','assets','bank','businessWorld','cash','companyBudgets','companyFinance','contractStartDays','documentProofs','domainRuntime','failedBids','finance','groupValue','lastClosedProfit','lastClosedSectorProfit','lastFinancialDay','mobility','operations','profile','realism','todayProfit','treasury'],
+  1:['acceptedContracts','advanced','assets','bank','businessWorld','cash','companyBudgets','companyFinance','contractStartDays','documentProofs','domainRuntime','failedBids','finance','groupValue','lastClosedProfit','lastClosedSectorProfit','lastFinancialDay','maPortfolio','operations','portfolio','portfolioBook','portfolioLots','portfolioTradeSequence','portfolioTrades','profile','realism','todayProfit','treasury'],
   26:['alerts','businessWorld','cash','companyBudgets','companyFinance','documentProofs','domainRuntime','eventLog','finance','groupValue','lastClosedProfit','lastClosedSectorProfit','lastFinancialDay','operations','realism','sequences','treasury'],
   30:['alerts','businessWorld','cash','companyBudgets','companyFinance','documentProofs','domainRuntime','eventLog','finance','groupValue','lastFinancialDay','operations','realism','sequences','treasury']
 };

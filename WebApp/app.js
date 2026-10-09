@@ -1993,34 +1993,26 @@
     if(!asset?.id)return null;const position=assetPosition(asset);if(!position)return null;const base=geography.byId.get(asset.baseFacility);
     return {id:`fleet:${asset.id}`,source:'fleet',asset,position,countryId:base?.countryId||'',facilityId:asset.baseFacility||'',ownerCompanyId:assetOwnerCompanyId(asset)||'',mode:assetModeOf(asset)||asset.type||'asset',routeId:asset.routeId||'',selected:asset.id===selectedAssetId};
   }
-  function mobilityMapCandidate(vehicle){
-    if(!vehicle?.id)return null;const center=window.GH_MOBILITY_CORE?.centerMeta?.(state,vehicle.centerId),position=vehicle.coords||interpolatePresentationRoute(vehicle.route,vehicle.progress);
-    if(!position)return null;let countryId=String(center?.countryId||center?.countryCode||'').trim();if(!countryId&&center?.country)try{countryId=facilityDirectoryIndex().countryMetadata(center.country).id;}catch(_error){countryId=normalizeSearch(center.country);}
-    return {id:`mobility:${vehicle.id}`,source:'mobility',vehicle,position,countryId,facilityId:center?.facilityId||`MOB-CENTER-${vehicle.centerId||'unknown'}`,ownerCompanyId:vehicle.ownerCompanyId||'mobility',mode:'mobility',routeId:vehicle.routeKey||vehicle.tripId||'',selected:vehicle.id===selectedMobilityId};
-  }
   function competitorMapCandidate(asset){
     const position=interpolatePresentationRoute(asset.route,asset.progress);return position?{id:`competitor:${asset.id}`,source:'competitor',asset,position,countryId:'',facilityId:'',ownerCompanyId:asset.company||'competitor',mode:asset.type||'asset',routeId:asset.id,selected:false}:null;
   }
   function addVehicleCandidateMarker(candidate){
-    const selected=candidate.selected===true,source=candidate.source,type=source==='mobility'?'mobility':candidate.asset?.type||candidate.mode||'asset',moving=source==='mobility'?candidate.vehicle.phase==='moving':source==='competitor'||candidate.asset?.phase==='moving',motionKey=source==='fleet'?`own:${candidate.asset.id}`:source==='mobility'?`own:mobility:${candidate.vehicle.id}`:`competitor:${candidate.asset.id}`,start=markerDisplayStart(motionKey,candidate.position),bearing=source==='fleet'?assetBearing(candidate.asset):source==='mobility'?routeBearing(candidate.vehicle.route,candidate.vehicle.progress):routeBearing(candidate.asset.route,candidate.asset.progress);
+    const selected=candidate.selected===true,source=candidate.source,type=candidate.asset?.type||candidate.mode||'asset',moving=source==='competitor'||candidate.asset?.phase==='moving',motionKey=source==='fleet'?`own:${candidate.asset.id}`:`competitor:${candidate.asset.id}`,start=markerDisplayStart(motionKey,candidate.position),bearing=source==='fleet'?assetBearing(candidate.asset):routeBearing(candidate.asset.route,candidate.asset.progress);
     let marker=null;
     if(mapVehicleCanvas){
       marker=mapVehicleCanvas.add(candidate.id,{position:start,type:markerKind(type),bearing,selected,opacity:moving?1:.9,size:selected?30:26,zIndex:selected?100:source==='competitor'?10:50,color:source==='competitor'?'#e76d72':identityRouteColor(candidate.ownerCompanyId,candidate.mode),spriteUrl:VEHICLE_MARKER_PHOTOS[markerKind(type)]});
       if(marker)mapVehicleHitTargets.set(candidate.id,candidate);
     }else if(source==='fleet'){
       const asset=candidate.asset,icon=L.divIcon({className:`asset-marker map-vehicle ${asset.type}${moving?' is-moving':''}${selected?' is-selected':''}`,html:vehicleMarkerHtml(asset),iconSize:[30,30],iconAnchor:[15,15]});marker=L.marker(start,{icon,zIndexOffset:selected?760:700}).addTo(map);marker.on('click',()=>showAsset(asset.id));
-    }else if(source==='mobility'){
-      const vehicle=candidate.vehicle,icon=L.divIcon({className:`asset-marker map-vehicle mobility mobility-car-marker${moving?' is-moving':''}${selected?' is-selected':''}`,html:vehicleVisualHtml('mobility',bearing,null,moving),iconSize:[30,30],iconAnchor:[15,15]});marker=L.marker(start,{icon,zIndexOffset:selected?750:680,keyboard:true,riseOnHover:true}).addTo(map);marker.on('click',()=>{selectedAssetId=null;selectedMobilityId=vehicle.id;renderMap();openDrawer('mobilityAsset',vehicle.id);});
     }else{
       const asset=candidate.asset,icon=L.divIcon({className:'competitor-marker map-vehicle',html:competitorMarkerHtml(asset),iconSize:[30,30],iconAnchor:[15,15]});marker=L.marker(start,{icon,zIndexOffset:300}).addTo(map).bindPopup(`<b>${esc(asset.name)}</b><br>${esc(asset.company)}<br><span style="color:#9fb0b5">منافس — حركة سوقية</span>`);
     }
     if(!marker)return;
     if(source==='fleet'){ownMarkers.set(candidate.asset.id,marker);renderedAssetIds.add(candidate.asset.id);}
-    else if(source==='mobility'){ownMarkers.set(`mobility:${candidate.vehicle.id}`,marker);renderedMobilityIds.add(candidate.vehicle.id);}
     else competitorMarkers.set(candidate.asset.id,marker);
   }
   function renderAllocatedVehicles(candidates,zoom){
-    const limit=Math.min(300,MAP_VIEW.budget('vehicles',zoom)),selectedId=selectedAssetId?`fleet:${selectedAssetId}`:selectedMobilityId?`mobility:${selectedMobilityId}`:'',bounds=map.getBounds().pad(.16),allocator=window.GH_MAP_PROXY_CORE;
+    const limit=Math.min(300,MAP_VIEW.budget('vehicles',zoom)),selectedId=selectedAssetId?`fleet:${selectedAssetId}`:'',bounds=map.getBounds().pad(.16),allocator=window.GH_MAP_PROXY_CORE;
     const unique=[...new Map(candidates.filter(Boolean).map(candidate=>[candidate.id,candidate])).values()],selected=allocator?.allocate?allocator.allocate(unique,{limit,selectedId,paddedBounds:bounds,zoom,world:zoom<5,declutterRadius:18,project:candidate=>map.latLngToContainerPoint(candidate.position)}):unique.slice(0,limit);
     for(const candidate of selected)addVehicleCandidateMarker(candidate);mapVehicleCanvas?.draw?.();return selected.length;
   }
@@ -2059,10 +2051,8 @@
     });
     return {routes:[...routes.values()],parkedByBase,representatives};
   }
-  // Owner review (Build 358): "no blue lines, a clean screen". The map draws no route network in any mode; a route line
-  // appears only for the vehicle the player taps (drawn in renderMap and mobilityVehicleCandidates).
-  // Candidate collection is deliberately separate from drawing.  A single geographic allocator then shares one budget
-  // across the owned fleet, Mobility and competitors, so no source can silently allocate another 300 markers.
+  // Owner review (Build 358): Mobility vehicles are managed in their company panel; the map shows only its branches.
+  // The shared vehicle allocator handles the player fleet and competitors under one bounded marker budget.
   function operationVehicleCandidates(filterState,presentation,visibleAssets,geography){
     const assets=[];
     if(presentation.representatives){
@@ -2072,11 +2062,6 @@
       for(const asset of visibleAssets)if(asset.phase==='moving'||asset.id===selectedAssetId)assets.push(asset);
     }
     return assets.map(asset=>fleetMapCandidate(asset,geography)).filter(Boolean);
-  }
-  function mobilityVehicleCandidates(){
-    const includeIds=selectedMobilityId?[selectedMobilityId]:[],rows=window.GH_MOBILITY_CORE?.liveVehicles?.(state,500,{movingOnly:true,includeIds})||[];
-    for(const vehicle of rows)if(selectedMobilityId===vehicle.id&&vehicle.phase==='moving'&&mapCategoryVisible('routes')){const selectedLine=L.polyline(vehicle.route,{color:identityRouteColor('mobility','mobility'),weight:3.2,opacity:.92,lineCap:'round',smoothFactor:1.2,interactive:false}).addTo(map);routeLayers.push(selectedLine);}
-    return rows.map(mobilityMapCandidate).filter(Boolean);
   }
   function placeBubbleHtml(count,kind=''){return `<div class="map-place-bubble${kind?` ${kind}`:''}"><b dir="ltr">${MAP_VIEW.countLabel(count)}</b></div>`;}
   function mapOwnedFacilities(filter){
@@ -2159,7 +2144,7 @@
     updateMapStatus();renderWorldInfrastructureMarkers();lastMapStructureSignature=mapStructureSignature();updateMarkerPositions(true);mapVehicleCanvas?.draw?.();
   }
 
-  let mapStatusCache={assetKey:'',ownerKey:'',mobilityKey:'',moving:0,idle:0,turn:0,routed:0,ownedFacilities:0,mobilityMoving:0,mobilityVehicles:0,countedAt:0,countedRevision:null,countedAssets:null,pendingRecount:false};
+  let mapStatusCache={assetKey:'',ownerKey:'',moving:0,idle:0,turn:0,routed:0,ownedFacilities:0,countedAt:0,countedRevision:null,countedAssets:null,pendingRecount:false};
   function updateMapStatus(){
     // Expansion mode writes its own line (airports and ports in view).
     if(window.GH_MAP_VIEW_CORE?.normalizeMode?.(state.mapMode)==='expansion'||(mapCategoryVisible('infrastructure')&&['airport','port'].includes(state.activeFilter)))return;
@@ -3505,7 +3490,7 @@
       if(!jobActive&&!maintenanceQueue.length&&!document.hidden&&!hardResetInProgress&&!durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!window.GH_PERSISTENCE.isLocked()&&!stagedStateBusy())timed('proofAuditMs',()=>proofAuditStep(PROOF_AUDIT_RENDER_MS));
       // Diagnostics may use wall-clock cadence for UI health only. Keep their state writes outside every simulation
       // slice, including the short interval while an independently-driven slice waits for its fleet-thread result.
-      if(!jobActive&&!simulationEngine.snapshot().manualAdvance&&!fleetEngineThreadClient?.busy&&!stagedStateBusy()&&!document.hidden&&!hardResetInProgress){
+      if(!jobActive&&!simulationEngine.snapshot().manualAdvance&&!fleetEngineThreadClient?.busy&&!stagedStateBusy()&&!document.hidden&&!hardResetInProgress&&!window.GH_PERSISTENCE.isLocked()){
         const now=performance.now();
         if(now-lastMobilityStreetHydrationMs>=1200){lastMobilityStreetHydrationMs=now;timed('streetHydrationMs',()=>{void hydrateMobilityStreetRoutes();});}
         if(now-lastRealtimeHealthMs>=REALTIME_HEALTH_MS){lastRealtimeHealthMs=now;try{timed('healthCheckMs',()=>window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:false,trackTransitions:true}));if(activeDrawerPanel==='diagnostics')timed('diagnosticsPanelMs',()=>openDrawer('diagnostics'));}catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}}

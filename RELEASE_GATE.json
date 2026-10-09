@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "source_tree_sha256": "d15d99e9bc1b39217357739c6fa4890e8598587abbb5fc0041feedba056fd739",
+  "source_tree_sha256": "dc823abf21d0b506c044b3a6809267ca825cef1664ff33c3e2a0de0f05bdc364",
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
@@ -13,7 +13,7 @@
     "Manual advance consults adapter.getManualSliceLimit and estimates a slice from a 1,500-event window, with 60-second and 3,600-second bounds; actual per-frame timing still needs iPhone profiling.",
     "The incremental spatial index and device-scale map/list rendering profile remain unverified.",
     "Road fleets remain capped at 240 routes x 64 trucks (15,360) for bulk dispatch; air and sea routes scale their capacity, road planning (external road provider) does not yet.",
-    "This follow-up working snapshot has targeted local checks only; full source acceptance, CI/IPA build, and physical iPhone profiling have not run. Release remains closed.",
+    "The full source acceptance suite passed 260/260 locally on Node 24.19.0. The macOS native/WKWebView/unsigned IPA workflow and physical iPhone profiling remain pending. Release remains closed.",
     "Mobility centers deliberately retain the 3,000-vehicle cap: each vehicle synchronously creates driver and HR records, and this separate engine has not been redesigned or profiled at million scale."
   ],
   "phase_status": {
@@ -79,8 +79,8 @@
     "mode": "direct_git_tracked_branch",
     "branch": "codex/build361-device-archive-1gb",
     "based_on": "claude/madar-map-conference-cleanup@4f3fea7",
-    "source_tree_sha256": "d15d99e9bc1b39217357739c6fa4890e8598587abbb5fc0041feedba056fd739",
+    "source_tree_sha256": "dc823abf21d0b506c044b3a6809267ca825cef1664ff33c3e2a0de0f05bdc364",
     "working_tree_clean": null
   },
-  "point": "Build 362 follow-up candidate: customer-focused telecom and dealership companies, safe grouped customer finance and real-estate decisions, refreshed landscape conference theatre, and lifecycle fixes. Targeted local checks passed; full acceptance/CI and physical iPhone validation remain pending; RELEASE_GATE stays closed."
+  "point": "Build 362 follow-up candidate: customer-focused telecom and dealership companies, safe grouped customer finance and real-estate decisions, refreshed landscape conference theatre, and lifecycle fixes. Local full source acceptance passed 260/260; RELEASE_GATE stays closed pending macOS native/WKWebView/IPA results and physical iPhone validation."
 }

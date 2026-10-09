@@ -102,8 +102,8 @@ function syncMarketCohorts(s){
  const insurance=s.insurance,policies=Array.isArray(insurance?.offices)?insurance.offices.reduce((sum,office)=>sum+Object.values(office.lines||{}).reduce((lineSum,line)=>lineSum+num(line?.policies),0),0):0;setMarketCustomers(s,'insurance','consumer',policies);
  const realEstate=s.realEstate,projects=Array.isArray(realEstate?.projects)?realEstate.projects:[],propertyCustomers=projects.reduce((sum,row)=>sum+num(row.sold)+num(row.presold)+num(row.leased),0);setMarketCustomers(s,'realestate','consumer',propertyCustomers);
 }
-function reviewCustomerBatch(s,processedDay){
- const customers=ensure(s).customers;if(customers.lastReviewDay===processedDay||!customers.profileOrder.length)return 0;const count=Math.min(CUSTOMER_REVIEW_BATCH,customers.profileOrder.length);for(let offset=0;offset<count;offset++){const index=(customers.reviewCursor+offset)%customers.profileOrder.length,profile=customers.profiles[customers.profileOrder[index]];if(!profile)continue;const service=operationalExperience(s,profile.company,profile.serviceQuality),age=Math.max(0,processedDay-Math.floor(num(profile.lastInteractionAt)/86400)),payment=clamp(profile.paymentReliability-(profile.outstanding>profile.received*.5+1000000?2:0),35,100),target=clamp(service*.5+payment*.25+profile.trust*.25,35,98);profile.serviceQuality=Math.round(service);profile.paymentReliability=Math.round(payment);profile.satisfaction=Math.round(profile.satisfaction*.75+target*.25);profile.churnRisk=Math.round(clamp(100-profile.satisfaction+(age>90?Math.min(25,(age-90)/4):0),2,95));profile.lastReviewedDay=processedDay;if(!profile.contractIds.length&&age>180){profile.stage='dormant';profile.status='at-risk';}}
+function reviewCustomerBatch(s,processedDay,customers=ensure(s).customers){
+if(customers.lastReviewDay===processedDay||!customers.profileOrder.length)return 0;const count=Math.min(CUSTOMER_REVIEW_BATCH,customers.profileOrder.length);for(let offset=0;offset<count;offset++){const index=(customers.reviewCursor+offset)%customers.profileOrder.length,profile=customers.profiles[customers.profileOrder[index]];if(!profile)continue;const service=operationalExperience(s,profile.company,profile.serviceQuality),age=Math.max(0,processedDay-Math.floor(num(profile.lastInteractionAt)/86400)),payment=clamp(profile.paymentReliability-(profile.outstanding>profile.received*.5+1000000?2:0),35,100),target=clamp(service*.5+payment*.25+profile.trust*.25,35,98);profile.serviceQuality=Math.round(service);profile.paymentReliability=Math.round(payment);profile.satisfaction=Math.round(profile.satisfaction*.75+target*.25);profile.churnRisk=Math.round(clamp(100-profile.satisfaction+(age>90?Math.min(25,(age-90)/4):0),2,95));profile.lastReviewedDay=processedDay;if(!profile.contractIds.length&&age>180){profile.stage='dormant';profile.status='at-risk';}}
  customers.reviewCursor=(customers.reviewCursor+count)%customers.profileOrder.length;customers.lastReviewDay=processedDay;return count;
 }
 function customerPortfolio(s,company=null){
@@ -170,15 +170,15 @@ function billSponsorship(s,offer,processedDay){
  const F=globalThis.GH_FINANCE_CORE;if(!F?.execute)return 0;const period=offer.billedPeriods+1,ref=`SPON-${offer.id}-P${period}`,party=resolveParty(s,offer.partyId),amount=Math.min(offer.monthlyValue,Math.max(0,offer.value-offer.billedPeriods*offer.monthlyValue));
  if(amount<=0){offer.status='منتهي';return 0;}F.execute({state:s},'credit',{company:offer.company,amount,reference:ref,note:`دفعة رعاية ${offer.id} · الفترة ${period}`,counterparty:party?.legalName||party?.displayName||'راعٍ تجاري',taxable:true,sourceRefs:[offer.id]});offer.billedPeriods=period;offer.lastBillingDay=processedDay;offer.nextBillingDay+=30;if(offer.nextBillingDay>offer.endDay||offer.billedPeriods*offer.monthlyValue>=offer.value-.01)offer.status='منتهي';return amount;
 }
-function competitorTick(s,processedDay){
- const b=ensure(s),week=Math.floor(processedDay/7);if(week<=0||b.lastCompetitorWeek>=week)return null;b.lastCompetitorWeek=week;
+function competitorTick(s,processedDay,b=ensure(s)){
+ const week=Math.floor(processedDay/7);if(week<=0||b.lastCompetitorWeek>=week)return null;b.lastCompetitorWeek=week;
  const rivals=Object.values(b.parties).filter(p=>p.roles.includes('competitor'));if(!rivals.length)return null;const rnd=globalThis.GH_DETERMINISM?.nextFloat?.(s,'business-world-weekly-rival')??0.5,r=rivals[Math.min(rivals.length-1,Math.floor(rnd*rivals.length))],sector=r.sectors[0]||'market';
  const kinds=['عقد جديد','توسعة تجارية','شراكة قطاعية','مناقصة خارجية'],kind=kinds[week%kinds.length],row={id:`RIVAL-${week}-${r.id}`,at:now(s),day:processedDay,partyId:r.id,sector,kind,detail:`${r.displayName} أعلنت ${kind} في ${r.industry||'السوق'}.`};b.competitorActivity.unshift(row);trim(b.competitorActivity,120);recordEvent(s,{kind:'competitor',partyId:r.id,company:'group',title:row.detail,detail:'حدث سوقي خارجي للمنافس ولا ينفذ أي قرار داخل شركاتك.',reference:row.id});return row;
 }
 function tickDay(s,p={}){
  const processedDay=Math.max(0,Math.floor(Number(p.day)||day(s))),b=ensure(s);let sponsorshipRevenue=0;
  for(const offer of b.sponsorships)sponsorshipRevenue+=billSponsorship(s,offer,processedDay);
- syncMarketCohorts(s);const reviewedCustomers=reviewCustomerBatch(s,processedDay),competitor=competitorTick(s,processedDay);return {day:processedDay,sponsorshipRevenue,reviewedCustomers,competitor};
+ syncMarketCohorts(s);const reviewedCustomers=reviewCustomerBatch(s,processedDay,b.customers),competitor=competitorTick(s,processedDay,b);return {day:processedDay,sponsorshipRevenue,reviewedCustomers,competitor};
 }
 function customerSnapshot(s,partyId){
  const b=readWorld(s),party=b.parties[partyId];if(!party)return null;

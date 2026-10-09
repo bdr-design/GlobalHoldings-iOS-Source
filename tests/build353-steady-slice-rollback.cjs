@@ -61,7 +61,7 @@ test('boundary and delivery slices use declared roots while the fleet journal ow
   assert.equal(job.finish().committed,true);
   let metric=boundary.s.GH_TRANSACTION_CORE.telemetry().last;
   assert.equal(metric.fullSnapshot,false);assert.equal(metric.fullSnapshotFallback,false);
-  assert.equal(metric.scopeSize,transactionScope(boundary.s,'SIMULATION_TRANSACTION_SCOPE').length);
+  assert.equal(metric.scopeSize,transactionScope(boundary.s,'SIMULATION_FINANCIAL_TRANSACTION_SCOPE').length);
   assert.deepEqual(metric.writeAudit.undeclaredRoots,[]);
 
   const delivery=createSimulationAdapter({assets:[makeAsset('B353-DELIVERY')],deliveryWork:true});

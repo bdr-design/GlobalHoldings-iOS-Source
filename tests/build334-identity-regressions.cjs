@@ -18,28 +18,28 @@ const expected={
 };
 const legacy={air:'الشركة العالمية للطيران',sea:'الشركة العالمية للشحن البحري',road:'اللوجستيات العالمية',power:'شركة الطاقة العالمية',bank:'بنك المجموعة',mobility:'GH Mobility للتنقل الذكي'};
 const customLogo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
-const state={profile:{name:'مجموعة اللاعب الخاصة',shortName:'PGRP',logo:customLogo},companyRegistry:{}};
+const state={profile:{name:'مجموعة اللاعب الخاصة',shortName:'PGRP'},companyRegistry:{}};
 for(const [type,name] of Object.entries(legacy))state.companyRegistry[type]={legalName:name};
 for(const [type,[short,legal]] of Object.entries(expected)){
  assert.equal(identity.shortName(state,type),short,`${type} short identity`);
  assert.equal(identity.legalName(state,type),legal,`${type} legacy default maps to the central Build 334 legal identity`);
- // Build 358: logo family «ج», generated from the sector glyph and the group's band (abbreviation or uploaded logo).
- {const logo=identity.logo(state,type),svg=decodeURIComponent(logo.slice(logo.indexOf(',')+1));assert.match(logo,/^data:image\/svg\+xml/,`${type} vector logo`);assert(svg.includes('translate(48 38) scale(.6)'),`${type} logo carries its sector glyph`);assert(svg.includes('PGRP')||svg.includes('<image href="data:image/png'),`${type} logo carries the group band`);}
+ const symbol=identity.resolve(state,type,{usage:'symbol'}).logo,horizontal=identity.resolve(state,type,{usage:'horizontal'}).logo;
+ assert.equal(symbol,`assets/identity/approved/${({air:'air',sea:'sea',road:'road',power:'power',bank:'bank',mobility:'mobility'})[type]}-symbol.webp`,`${type} uses its approved independent symbol`);
+ assert.equal(horizontal,`assets/identity/approved/${({air:'air',sea:'sea',road:'road',power:'power',bank:'bank',mobility:'mobility'})[type]}-horizontal.webp`,`${type} uses its approved horizontal lockup`);
 }
 assert.equal(identity.legalName(state,'group'),'مجموعة اللاعب الخاصة');
 assert.equal(identity.shortName(state,'group'),'PGRP');
-assert.equal(identity.logo(state,'group'),customLogo);
+assert.equal(identity.resolve(state,'group',{usage:'symbol'}).logo,'assets/identity/approved/group-symbol.webp');
+state.profile.logo=customLogo;assert.equal(identity.logo(state,'group'),customLogo,'the player group upload overrides its approved default');
 state.companyRegistry.air={legalName:'شركة سماوات اللاعب',shortName:'SKY-X',logo:customLogo,customName:true};
 assert.equal(identity.legalName(state,'air'),'شركة سماوات اللاعب','custom company name must win');
 assert.equal(identity.shortName(state,'air'),'SKY-X','custom company short name must win');
 assert.equal(identity.logo(state,'air'),customLogo,'custom company logo must win');
 assert.match(identity.logoMarkup(state,'air'),/data-custom="true"/);
-for(const file of ['global-holdings.svg','group-default.svg','gh-air.svg','gh-marine.svg','gh-logistics.svg','gh-energy.svg','gh-bank.svg','gh-mobility.svg']){
- const body=fs.readFileSync(path.join(web,'assets/identity',file),'utf8');
- assert.match(body,/^<svg\b/);assert(!/<image\b/i.test(body),`${file} must remain vector-native`);
-}
+const approved=['group','air','sea','road','power','bank','mobility','insurance','realestate','telecom','dealership'].flatMap(name=>[`${name}-symbol.webp`,`${name}-horizontal.webp`]).map(name=>`assets/identity/approved/${name}`);
+for(const file of approved){const bytes=fs.readFileSync(path.join(web,file));assert(bytes.length>256,`${file} is a real visual asset`);assert.equal(bytes.toString('ascii',0,4),'RIFF',`${file} has WebP RIFF header`);assert.equal(bytes.toString('ascii',8,12),'WEBP',`${file} has WebP payload`);}
 const runtime=JSON.parse(fs.readFileSync(path.join(web,'runtime-required.json'),'utf8')).files;
-for(const file of ['identity-system.js',...['global-holdings.svg','group-default.svg','gh-air.svg','gh-marine.svg','gh-logistics.svg','gh-energy.svg','gh-bank.svg','gh-mobility.svg'].map(x=>'assets/identity/'+x)])assert(runtime.includes(file),`${file} required at runtime`);
+for(const file of ['identity-system.js',...approved])assert(runtime.includes(file),`${file} required at runtime`);
 const html=fs.readFileSync(path.join(web,'index.html'),'utf8');
 assert(html.indexOf('identity-system.js')>html.indexOf('catalog.js')&&html.indexOf('identity-system.js')<html.indexOf('finance-core.js'),'identity must load before feature renderers');
 const layout=fs.readFileSync(path.join(web,'interface-layout.css'),'utf8');
@@ -47,4 +47,4 @@ assert.match(layout,/--header:38px/);assert.match(layout,/--rail:56px/);assert.m
 const app=fs.readFileSync(path.join(web,'app.js'),'utf8');
 const build=fs.readFileSync(path.join(root,'BUILD'),'utf8').trim();
 assert(app.includes(`const RUNTIME_BUILD = ${build};`),`app runtime build must match source BUILD ${build}`);assert.match(app,/identityRouteColor/);
-console.log('PASS Build 334 central vector identity, six defaults, player customization precedence, runtime manifest and map colors');
+console.log('PASS Build 334 approved independent company identities, player customization precedence, runtime manifest and map colors');

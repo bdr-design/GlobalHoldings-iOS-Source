@@ -10,7 +10,7 @@ function environment(){
  e.state.simSeconds=3600;e.state.lastMarketHour=0;return e;
 }
 function test(name,fn){try{results.push({name,ok:true,detail:fn()});}catch(error){results.push({name,ok:false,error:String(error.stack||error)});}}
-const expected=['advanced','controlPlane','deliveryClosure','domainRuntime','lastMarketHour','maPortfolio','portfolio','portfolioBook','realism','simulationWorld'];
+const expected=['advanced','controlPlane','deliveryClosure','domainRuntime','lastMarketHour','maPortfolio','portfolio','portfolioBook','portfolioLots','portfolioTradeSequence','portfolioTrades','realism','simulationWorld'];
 
 test('actual hourly market owner publishes a stable clean-source root write map',()=>{
  const e=environment(),out=e.s.GH_TRANSACTION_CORE.execute(e.state,{label:'build339-hour-write-map',auditWrites:true,apply:()=>e.s.processMarket(1)});assert.equal(out.committed,true);const audit=e.s.GH_TRANSACTION_CORE.telemetry().last.writeAudit;assert.deepEqual(audit.mutatedRoots,expected);assert.equal(e.s.GH_INTEGRITY_CORE.check(e.state).status,'healthy');return audit;

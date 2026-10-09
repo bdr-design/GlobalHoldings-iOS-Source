@@ -5,6 +5,7 @@ process.env.GH_TEST_SOURCE_DIR=ROOT;
 const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario'));
 
 const env=scenario(),{state,s}=env,M=s.GH_MOBILITY_CORE;
+const emptyState={};assert.equal(M.snapshot(emptyState).status,'not-launched');assert.equal(Object.hasOwn(emptyState,'mobility'),false,'read-only snapshot must not create Mobility state');assert.equal(M.managementSnapshot(emptyState).vehicles,0);assert.equal(Object.hasOwn(emptyState,'mobility'),false,'dashboard fallback must remain read-only for a company that has not been opened');assert.equal(M.pendingStreetRoutes(emptyState).length,0);assert.equal(Object.hasOwn(emptyState,'mobility'),false,'route hydration probe must remain read-only for an unopened company');
 env.command('corporate','open-company',{type:'mobility',capital:500000000,legalName:'Test Mobility'});
 state.customHubs.push({id:'MOB-CENTER-RUH',name:'Riyadh',kind:'mobility-center',ownerCompanyId:'mobility',owned:true,capitalId:'RUH',city:'Riyadh',country:'Saudi Arabia',coords:[24.7,46.7],bays:120});
 M.ensure(state);state.mobility.capitalCenters.push({id:'MOB-CENTER-RUH',capitalId:'RUH',city:'Riyadh',country:'Saudi Arabia',coords:[24.7,46.7],facilityId:'MOB-CENTER-RUH'});
