@@ -72,15 +72,20 @@
       maxMaintenanceMs:0,lastMaintenanceMs:0,maxRenderMs:0,lastRenderMs:0,lastFrame:null,maxFrame:null,cooldownFrames:0,deferredRuns:0,
       lastError:'',fatalError:null,lastBoundary:'',lastSliceSeconds:0,lastMaintenanceHour:-1,lastCancelReason:'',lastCommitReason:'',lastWorkStage:'',governor:'GREEN',avgChunkMs:0,avgWorkMs:0,
       manualFailures:0,manualThrottleYields:0,lastAdvanceFailure:null,lastProgressSim:Math.max(0,Number(adapter.getSimTime())||0),lastProgressAt:clock(),activeFrameBudgetMs:cfg.frameBudgetMs,frameCadencePressure:0,lastFrameIntervalMs:0,
-      aggregateSlices:0,jobCleanups:0,cleanupErrors:0
+      aggregateSlices:0,aggregateWindows:0,aggregateSubSlices:0,lastAggregateHours:0,aggregateFallbacks:0,jobCleanups:0,cleanupErrors:0
     };
     let job=null,jobSlice=0,jobStart=0,jobSpeed=0,jobBoundary=null,jobWorkMs=0,jobReadyToFinish=false,manualAdvance=null;
     // Build 359: where a simulation cycle spends its time (create, chunks, finish, maintenance and render callbacks),
     // so a slow cycle names its stage in diagnostics. Measurement only; no decision reads it.
     let frameStages=null,cooldownNext=false,frameCadencePressure=0;const addFrameStage=(key,ms)=>{if(frameStages)frameStages[key]+=Math.max(0,Number(ms)||0);};
     let hardTaskStreak=0,conflictStreak=0,lastObservedSpeed=null,throttlePending=null;const durationSamples=[],workSamples=[];let lastGovernor='GREEN';
-    let lastHourCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/3600);
-    let lastDayCommitted=Math.floor((Math.max(0,Number(adapter.getSimTime())||0)+1e-6)/86400);
+    // boundaryAt treats a value within its relative epsilon as the boundary.
+    // Use the same rule for cumulative health counters so a grouped window
+    // reports every hour/day it actually crossed, rather than one counter tick
+    // for the window's final boundary.
+    const completedBoundaryOrdinal=(seconds,unit)=>Math.floor(Math.max(0,Number(seconds)||0)/unit+Math.max(0,Number(TIME.BOUNDARY_EPSILON)||0));
+    let lastHourCommitted=completedBoundaryOrdinal(adapter.getSimTime(),3600);
+    let lastDayCommitted=completedBoundaryOrdinal(adapter.getSimTime(),86400);
 
     const report=(stage,error,fatal=false)=>{
       const text=`${stage}:${error?.stack||error}`;health.lastError=text;
@@ -159,7 +164,9 @@
       }
       if(manualAdvance&&typeof adapter.getManualAggregateLimit==='function'){
         try{
-          const aggregateLimit=Number(adapter.getManualAggregateLimit({from:simNow(),target:manualAdvance.target,speed,batchSeconds:batch}));
+          const from=simNow(),nextHour=Math.floor((from+1e-6)/3600)+1,
+            maintenanceHour=Math.max(nextHour,health.lastMaintenanceHour+cfg.maintenanceEveryHours),maintenanceDueAt=maintenanceHour*3600;
+          const aggregateLimit=Number(adapter.getManualAggregateLimit({from,target:manualAdvance.target,speed,batchSeconds:batch,maintenanceDueAt,maintenanceHour}));
           if(Number.isFinite(aggregateLimit)&&aggregateLimit>batch+1e-9){batch=Math.min(aggregateLimit,cfg.manualAggregateMaxSeconds);aggregate=true;}
         }catch(error){report('manual-aggregate-limit',error,false);}
       }
@@ -234,6 +241,7 @@
       const committed=result===true||result?.committed===true;
       if(!committed){
         const reason=result?.reason||'commit-rejected',retryable=reason==='asset-conflict'||result?.retry;
+        if(activeJob?.aggregate===true)health.aggregateFallbacks++;
         health.lastCommitReason=reason;
         if(retryable){health.conflicts++;conflictStreak++;}
         cancelJob(reason);
@@ -254,9 +262,12 @@
       setSim(committedTo);
       pacing.consume(committedSlice);
       health.slices++;health.lastSliceSeconds=committedSlice;health.lastCommitReason='committed';health.lastProgressSim=committedTo;health.lastProgressAt=clock();
-      health.lastCycleMs=jobWorkMs;health.maxCycleMs=Math.max(health.maxCycleMs,jobWorkMs);if(activeJob.aggregate===true)health.aggregateSlices++;releaseJob(activeJob,'commit');jobStart=committedTo;
-      if(committedBoundary.day!==null&&committedBoundary.day>lastDayCommitted){lastDayCommitted=committedBoundary.day;health.days++;health.lastBoundary=`day:${committedBoundary.day}`;}
-      if(committedBoundary.hour!==null&&committedBoundary.hour>lastHourCommitted){lastHourCommitted=committedBoundary.hour;health.hours++;health.lastBoundary=`hour:${committedBoundary.hour}`;}
+      health.lastCycleMs=jobWorkMs;health.maxCycleMs=Math.max(health.maxCycleMs,jobWorkMs);
+      if(activeJob.aggregate===true){const subSlices=Math.max(1,Math.floor(Number(result?.aggregateSubSlices)||1));health.aggregateSlices++;health.aggregateWindows++;health.aggregateSubSlices+=subSlices;health.lastAggregateHours=committedSlice/3600;}
+      releaseJob(activeJob,'commit');jobStart=committedTo;
+      const completedDay=completedBoundaryOrdinal(committedTo,86400),completedHour=completedBoundaryOrdinal(committedTo,3600);
+      if(completedDay>lastDayCommitted){health.days+=completedDay-lastDayCommitted;lastDayCommitted=completedDay;health.lastBoundary=`day:${completedDay}`;}
+      if(completedHour>lastHourCommitted){health.hours+=completedHour-lastHourCommitted;lastHourCommitted=completedHour;health.lastBoundary=`hour:${completedHour}`;}
       if(committedBoundary.hour!==null&&committedBoundary.hour-health.lastMaintenanceHour>=cfg.maintenanceEveryHours){
         health.lastMaintenanceHour=committedBoundary.hour;
         const maintenanceStart=clock();
@@ -390,7 +401,7 @@
     function reset(now=clock(),reason='reset'){
       const cancelled=manualAdvance;manualAdvance=null;cancelJob(reason);pacing.reset(now);jobSlice=0;jobStart=simNow();jobSpeed=0;jobBoundary=null;jobWorkMs=0;jobReadyToFinish=false;hardTaskStreak=0;conflictStreak=0;throttlePending=null;
       if(cancelled)try{adapter.onAdvance?.({active:false,cancelled:true,target:cancelled.target,reason});}catch(error){report('advance-reset',error,false);}
-      lastHourCommitted=Math.floor((simNow()+1e-6)/3600);lastDayCommitted=Math.floor((simNow()+1e-6)/86400);lastObservedSpeed=getSpeed();
+      lastHourCommitted=completedBoundaryOrdinal(simNow(),3600);lastDayCommitted=completedBoundaryOrdinal(simNow(),86400);lastObservedSpeed=getSpeed();
     }
     // Build 358: hiding the app is the engine's only save request (onPersist); the host owns every other save (GH_SAVE_POLICY).
     function setHidden(v){const hidden=!!v;reset(clock(),hidden?'hidden':'visible');pacing.setHidden(hidden,clock());if(hidden){try{adapter.onPersist?.({reason:'hidden',speed:getSpeed()});}catch(error){report('persist-hidden',error,false);}}}

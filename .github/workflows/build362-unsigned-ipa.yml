@@ -97,8 +97,34 @@ jobs:
           from pathlib import Path
           root=Path(sys.argv[1]);result=json.loads(Path(sys.argv[2]).read_text())
           source=json.loads((root/'RUNTIME_SOURCE_MANIFEST.json').read_text())['source_tree_sha256']
-          required=227
+          required_tests={
+              'build361-bulk-opening-browser.cjs',
+              'build361-button-binding-browser.cjs',
+              'build363-facility-scope-bank-browser.cjs',
+              'build363-company-economics-balance.cjs',
+              'build362-simulation-runtime.cjs',
+              'build362-simulation-lifecycle.cjs',
+              'build362-empty-calendar-browser.cjs',
+              'build362-bulk-asset-purchase-browser.cjs',
+              'build362-idempotency-byte-budget.cjs',
+              'build362-calendar-window-equivalence.cjs',
+              'build362-fleet-window-session.cjs',
+              'build363-energy-health-contract.cjs',
+              'build363-staged-holdings-command.cjs',
+              'build363-control-outbox-atomicity.cjs',
+              'build363-runtime-diagnostics-contract.cjs',
+          }
+          executed_tests={
+              Path(argv[1]).name
+              for row in result.get('tests',[])
+              for argv in [row.get('argv')]
+              if isinstance(argv,list) and len(argv)>1
+              and argv[0]=='node' and Path(argv[1]).parent==Path('tests')
+          }
+          missing=sorted(required_tests-executed_tests)
+          required=227+len(required_tests)
           if result.get('completed') is not True or result.get('all_tests_passed') is not True or result.get('runtime_unchanged') is not True: raise SystemExit('Full source acceptance did not pass')
+          if missing: raise SystemExit('Required Build 361/362 root-performance gates were not executed: '+', '.join(missing))
           if result.get('total',0)<required or result.get('passed')!=result.get('total'): raise SystemExit('Acceptance gates are missing or failed')
           if result.get('runtime_source',{}).get('source_tree_sha256')!=source: raise SystemExit('Acceptance result is bound to another runtime')
           print('Acceptance: %s/%s gates; exact runtime source preserved' % (result['passed'],result['total']))

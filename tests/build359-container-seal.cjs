@@ -58,17 +58,18 @@ test('an unchanged archive part is answered without listing it, and the save reu
 });
 
 test('after maintenance the trusted check takes only the changes and agrees with a full one',()=>{
-  const rounds=[];
+  const rounds=[],changeVisits=[];
   for(let round=0;round<3;round++){
     cheques(30);archiveLive(60);
     // Amend live documents and checkpoint their old versions (maintenance).
     Proof.checkpointAncestors(state);TX.sealCollections(state);
-    const check=Schema.validate(draftOf(),{trustVerified:true});rounds.push(answered());
+    const check=Schema.validate(draftOf(),{trustVerified:true}),work=Schema.telemetry().lastValidation.documentProofWork;rounds.push(answered());
     assert.equal(check.ok,true,JSON.stringify(check.errors));
+    assert.equal(work.archiveMode,'changes','the changed sealed version uses the incremental path');const visits=Object.entries(work).filter(([key,value])=>key.startsWith('change')&&Number.isSafeInteger(value)).reduce((total,[,value])=>total+value,0);assert.ok(visits>0,`changed rows are represented in work units: ${JSON.stringify(work)}`);changeVisits.push(visits);
   }
   assert.ok(rounds.every(value=>value===1),`answered by the changes each round (${rounds})`);
   assert.equal(Schema.validate(state).ok,true,'a full validation agrees');
-  return {rounds};
+  return {rounds,changeVisits};
 });
 
 test('faults in the changes are refused, and changes that do not add up go to the full pass',()=>{

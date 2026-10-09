@@ -3,6 +3,13 @@
   const VERSION='3.0.0';
   let activeContext=null,durableSequence=0;
   const targetRevisions=new WeakMap();
+  // Runtime-only indexes owned by other cores must follow every in-place state
+  // replacement.  A durable publish, a recovery restore and a hard reset all
+  // preserve the root object identity, so a WeakMap keyed only by that identity
+  // would otherwise keep metadata for the state that was just replaced.
+  const STATE_REPLACEMENT_OBSERVERS=new Set();
+  function registerStateReplacementObserver(observer){if(typeof observer!=='function')throw new TypeError('transaction-state-replacement-observer-required');STATE_REPLACEMENT_OBSERVERS.add(observer);return ()=>STATE_REPLACEMENT_OBSERVERS.delete(observer);}
+  function notifyStateReplacement(phase,target,snapshot,kind,ok=null){for(const observer of STATE_REPLACEMENT_OBSERVERS)try{observer({phase,target,snapshot,kind,ok});}catch(error){globalThis.console?.warn?.('State replacement observer failed',error);}}
   const durableTargets=new WeakSet();
   const stagedTargets=new Map();
   const JOURNALED_ROOTS=new Map();
@@ -265,20 +272,23 @@
     }
     return snapshot;
   }
-  function restoreObject(target,snapshot,rootValues=null,rollback=null){
+  function restoreObject(target,snapshot,rootValues=null,rollback=null,replacementKind='restore'){
     if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw new TypeError('Transaction snapshot must be an object');
-    const preserved=[...JOURNALED_ROOTS.keys()].filter(key=>Object.prototype.hasOwnProperty.call(target,key)||Object.prototype.hasOwnProperty.call(snapshot,key)||(rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key)));
-    if(!preserved.length)return restoreValue(target,snapshot,rollback,'$');
-    const keep=new Set(preserved),current=Object.keys(target),wanted=Object.keys(snapshot);
-    for(const key of current)if(!keep.has(key)&&!Object.prototype.hasOwnProperty.call(snapshot,key))delete target[key];
-    for(const key of wanted){if(keep.has(key))continue;const sv=snapshot[key],tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv,rollback,key):sv;}
-    for(const key of preserved)if(!Object.prototype.hasOwnProperty.call(target,key)&&rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key))target[key]=rootValues[key];
-    return target;
+    notifyStateReplacement('before',target,snapshot,replacementKind);
+    try{
+      const preserved=[...JOURNALED_ROOTS.keys()].filter(key=>Object.prototype.hasOwnProperty.call(target,key)||Object.prototype.hasOwnProperty.call(snapshot,key)||(rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key)));
+      if(!preserved.length){const restored=restoreValue(target,snapshot,rollback,'$');notifyStateReplacement('after',target,snapshot,replacementKind,true);return restored;}
+      const keep=new Set(preserved),current=Object.keys(target),wanted=Object.keys(snapshot);
+      for(const key of current)if(!keep.has(key)&&!Object.prototype.hasOwnProperty.call(snapshot,key))delete target[key];
+      for(const key of wanted){if(keep.has(key))continue;const sv=snapshot[key],tv=target[key];target[key]=sv&&typeof sv==='object'?restoreValue(tv,sv,rollback,key):sv;}
+      for(const key of preserved)if(!Object.prototype.hasOwnProperty.call(target,key)&&rootValues&&Object.prototype.hasOwnProperty.call(rootValues,key))target[key]=rootValues[key];
+      notifyStateReplacement('after',target,snapshot,replacementKind,true);return target;
+    }catch(error){notifyStateReplacement('after',target,snapshot,replacementKind,false);throw error;}
   }
   // Publishing a draft after the durable store has acknowledged it is not a rollback. Externally frozen leaves
   // are authoritative immutable values, so publication adopts the draft leaf instead of trying to rewrite it.
   // Keep restoreObject strict for callers that use a failed write as a contract/safety signal.
-  function publishObject(target,snapshot,rootValues=null){return restoreObject(target,snapshot,rootValues,{adoptFrozen:true,frozenPaths:[]});}
+  function publishObject(target,snapshot,rootValues=null){return restoreObject(target,snapshot,rootValues,{adoptFrozen:true,frozenPaths:[]},'publish');}
   function sameOrder(keys,expected){return keys.length===expected.length&&keys.every((key,index)=>key===expected[index]);}
   function restoreRootOrder(target,rootOrder){
     if(!Array.isArray(rootOrder)||!rootOrder.length)return target;
@@ -757,5 +767,5 @@
       throw error;
     }finally{if(!durableCommitted&&rootSessions.length)try{rollbackJournaledRoots(rootSessions);}catch{}if(globalThis.__GH_DURABLE_COMMAND_CONTEXT__===context)delete globalThis.__GH_DURABLE_COMMAND_CONTEXT__;durableTargets.delete(liveState);}
   }
-  const API=Object.freeze({VERSION,deepClone,restoreObject,publishObject,beginStaged,isStaged:target=>target?stagedTargets.has(target):stagedTargets.size>0,abortStaged:(target,reason)=>stagedTargets.get(target)?.abort?.(reason)===true,registerJournaledRoot,registerSealedCollections,registerSealedRoot,isSealed,sealCollections,deriveContainer,containerChanges,beginJournaledRoots,commitJournaledRoots,rollbackJournaledRoots,execute,join,extendScope,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,deepClone,restoreObject,publishObject,registerStateReplacementObserver,beginStaged,isStaged:target=>target?stagedTargets.has(target):stagedTargets.size>0,abortStaged:(target,reason)=>stagedTargets.get(target)?.abort?.(reason)===true,registerJournaledRoot,registerSealedCollections,registerSealedRoot,isSealed,sealCollections,deriveContainer,containerChanges,beginJournaledRoots,commitJournaledRoots,rollbackJournaledRoots,execute,join,extendScope,executeDurable,isActive,registerUndo,isDurableActive:target=>target?durableTargets.has(target):!!globalThis.__GH_DURABLE_COMMAND_CONTEXT__,revision,afterCommit,transactionMemo,transactionMemoGet,transactionMemoSet,resetProfileTelemetry,telemetry:telemetrySnapshot});globalThis.GH_TRANSACTION_CORE=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_TRANSACTION_CORE=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

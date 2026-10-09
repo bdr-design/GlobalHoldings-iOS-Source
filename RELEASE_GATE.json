@@ -1,6 +1,6 @@
 {
   "approved": false,
-  "source_tree_sha256": "1305035aaa3f3bf628c497343fd3dfe7c16e50e43d271cdabd47e7d2fd8d5552",
+  "source_tree_sha256": "c93326086dd763e559be7e77a92fdf35da567fb6689761525f93f879b1549487",
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
@@ -76,7 +76,7 @@
     "mode": "direct_git_tracked_branch",
     "branch": "codex/build361-device-archive-1gb",
     "based_on": "claude/madar-map-conference-cleanup@4f3fea7",
-    "source_tree_sha256": "1305035aaa3f3bf628c497343fd3dfe7c16e50e43d271cdabd47e7d2fd8d5552",
+    "source_tree_sha256": "c93326086dd763e559be7e77a92fdf35da567fb6689761525f93f879b1549487",
     "working_tree_clean": null
   },
   "point": "Build 362 test candidate: staged simulation cleanup, bulk company/facility and asset workflows, financial document presentation, corrected bank/mobility/energy/real-estate operating economics, and safe legacy migrations. RELEASE_GATE remains closed pending CI and physical iPhone validation."

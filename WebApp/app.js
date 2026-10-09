@@ -48,6 +48,7 @@
   const resetMarkerKey = 'global-holdings-reset-epoch';
   let hardResetInProgress=false,hardResetSettlement=Promise.resolve({committed:false});
   let durableCommandInProgress=false;
+  let diagnosticExportTail=Promise.resolve();window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__=false;
   let mapInteractionActive=false,lastMarkerFrameAt=0,lastHudRefreshAt=0,lastMapStructureSignature='',visualResyncRequested=false;
   const markerMotionStates=new Map();let markerVisualCarry=new Map();
   const legacyStorageKeys = ['global-holdings-world-v2.0.0','global-holdings-world-v1.2.0','global-holdings-world-v1.1.0','global-holdings-premium-v1.0.0','global-holdings-clean-v0.1.2'];
@@ -562,7 +563,8 @@
   if(!window.GH_CONTROL_PLANE?.bootstrap)throw new Error('Central Control Plane failed to load before app.js');
   if(!window.GH_PERSISTENCE?.saveSlot||!window.GH_WORKFLOW?.run||!window.GH_EVENT_LEDGER?.ensure||!window.GH_DEPENDENCY_CORE?.ensure||!window.GH_POLICY_CORE?.evaluate||!window.GH_LIFECYCLE_CORE?.transition||!window.GH_DELIVERY_MONITOR?.ensure||!window.GH_INTEGRITY_CORE?.check)throw new Error('Business Lifecycle cores failed to load before app.js');
   window.__GH_STATE__=state;
-  window.GH_CONTROL_PLANE.bootstrap(state,{
+  const nativeBridgeConnected=Boolean(window.webkit?.messageHandlers?.saveBridge),nativeBuild=Number(window.GH_NATIVE_BUILD),nativeBuildLabel=Number.isFinite(nativeBuild)&&nativeBuild>0?`Build${Math.floor(nativeBuild)}`:'Unavailable';
+  const controlPlaneEngineMetadata=()=>({
     simulation:{version:window.GH_SIMULATION_CORE?.VERSION||APP_VERSION,role:'Single owner of simulation time'},
     businessWorld:{version:window.GH_BUSINESS_WORLD?.VERSION||APP_VERSION,role:'External party identity, commercial relationships and market events'},
     finance:{version:APP_VERSION,role:'Accounting and money mutation owner'},
@@ -570,8 +572,9 @@
     assets:{version:APP_VERSION,role:'Asset lifecycle owner'},routes:{version:APP_VERSION,role:'Route lifecycle owner'},staffing:{version:window.GH_HR_CORE?.VERSION||APP_VERSION,role:'HR demand, recruitment and workforce lifecycle owner'},
     save:{version:window.GH_PERSISTENCE?.VERSION||APP_VERSION,role:'Browser persistence coordinated with Native Save Vault'},
     update:{version:window.GH_ADVANCED?.VERSION||APP_VERSION,role:'Signed clean-snapshot update lifecycle'},
-    nativeBridge:{version:'Build251',role:'WKWebView durable save/update bridge'},diagnostics:{version:window.GH_DIAGNOSTICS?.VERSION||APP_VERSION,role:'Runtime health and evidence collection'}
+    nativeBridge:{version:nativeBuildLabel,role:'WKWebView durable save/update bridge',connected:nativeBridgeConnected,minimumNativeBuild:251,nativeBuild:Number.isFinite(nativeBuild)&&nativeBuild>0?Math.floor(nativeBuild):null},diagnostics:{version:window.GH_DIAGNOSTICS?.VERSION||APP_VERSION,role:'Runtime health and evidence collection'}
   });
+  window.GH_CONTROL_PLANE.bootstrap(state,controlPlaneEngineMetadata());
   window.GH_EVENT_LEDGER.ensure(state);window.GH_DEPENDENCY_CORE.ensure(state);window.GH_DELIVERY_MONITOR.ensure(state);
   const capabilitySnapshot=window.GH_CAPABILITY_REGISTRY?.isSealed?.()?window.GH_CAPABILITY_REGISTRY.snapshot():window.GH_CAPABILITY_REGISTRY?.seal?.();
   const companyPlatformSnapshot=COMPANY_PLATFORM.isSealed?.()?COMPANY_PLATFORM.snapshot():COMPANY_PLATFORM.seal();
@@ -590,10 +593,10 @@
   // Build 358: between the steps of a staged transaction (the daily close, captured root by root over several frames)
   // nothing outside it writes the state; a diagnostic recorded then (the engine's governor, between frames) waits until
   // it settles. Recorded inside a step it belongs to the transaction, and a rollback removes it, as before.
-  const diag=(type,detail={})=>{
+  const diag=(type,detail={},severity='info')=>{
     const tx=window.GH_TRANSACTION_CORE;
-    if(tx?.isStaged?.(state)===true&&tx.isActive?.()!==true){afterStagedState(()=>window.GH_DIAGNOSTICS.record(state,type,detail));return;}
-    return window.GH_DIAGNOSTICS.record(state,type,detail);
+    if(tx?.isStaged?.(state)===true&&tx.isActive?.()!==true){afterStagedState(()=>window.GH_DIAGNOSTICS.record(state,type,detail,severity));return;}
+    return window.GH_DIAGNOSTICS.record(state,type,detail,severity);
   };
   const nonCritical=(stage,error)=>{diag('NONCRITICAL_ERROR',{stage,message:String(error?.message||error)});console.warn(`[${stage}]`,error);};
   window.GH_MIGRATION_CORE.completeBusinessState(state,{defaultState,initialStocks,crewRolesSeed});
@@ -757,13 +760,13 @@
   }
   cleanupObsoleteStorage();
   let simulationPersistenceTask=null;
-  const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,proofAudit:null,durable:{last:null,samples:[]},render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]},simRender:{last:null,max:{},count:0},maintenance:{last:{},max:{},runs:0,lastTask:'',pending:[]}};
+  const runtimeInstrumentation={lastCompaction:null,lastSavePreparation:null,pendingCompaction:null,proofAudit:null,diagnosticExport:null,durable:{last:null,samples:[]},render:{lastFrame:null,lastTargetUpdate:null,lastMarkerAnimation:null,lastStructuralRender:null,maxFrameMs:0,maxTargetUpdateMs:0,maxMarkerAnimationMs:0,maxStructuralRenderMs:0,frameCounter:0,animationCounter:0,samples:[]},simRender:{last:null,max:{},count:0},maintenance:{last:{},max:{},runs:0,lastTask:'',pending:[]}};
   const appMetricClock=()=>globalThis.performance?.now?.()??Date.now();
   function recordRenderMetric(kind,durationMs,detail={}){const render=runtimeInstrumentation.render,row={kind,durationMs:Math.max(0,Number(durationMs)||0),recordedAtMs:Date.now(),...detail};if(kind==='frame'){render.lastFrame=row;render.maxFrameMs=Math.max(render.maxFrameMs,row.durationMs);}else if(kind==='target-update'){render.lastTargetUpdate=row;render.maxTargetUpdateMs=Math.max(render.maxTargetUpdateMs,row.durationMs);}else if(kind==='marker-animation'){render.lastMarkerAnimation=row;render.maxMarkerAnimationMs=Math.max(render.maxMarkerAnimationMs,row.durationMs);}else if(kind==='structural-render'){render.lastStructuralRender=row;render.maxStructuralRenderMs=Math.max(render.maxStructuralRenderMs,row.durationMs);}render.samples.push(row);if(render.samples.length>120)render.samples.shift();return row;}
   window.__GH_APP_RUNTIME_INSTRUMENTATION__=runtimeInstrumentation;
   // The fleet engine thread's client (created with the first simulation slice, see fleetEngineThread()).
   let fleetEngineThreadClient=null;
-  window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,durable:runtimeInstrumentation.durable,render:runtimeInstrumentation.render,simRender:runtimeInstrumentation.simRender,maintenance:runtimeInstrumentation.maintenance,
+  window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,diagnosticExport:runtimeInstrumentation.diagnosticExport,durable:runtimeInstrumentation.durable,render:runtimeInstrumentation.render,simRender:runtimeInstrumentation.simRender,maintenance:runtimeInstrumentation.maintenance,
     // Build 358: whether the fleet engine thread runs the steps (stats: steps replayed, fallbacks and why, syncs, last timings).
     fleetEngineThread:fleetEngineThreadClient?fleetEngineThreadClient.stats():{created:false,worker:typeof Worker==='function',disabledByFlag:globalThis.__GH_FLEET_ENGINE_THREAD__===false}}))});
   function cancelSimulationPersistence(){
@@ -784,14 +787,14 @@
   let stagedSaveQueued=false;
   function scheduleSimulationPersistence(){
     if(stagedStateBusy()){if(!stagedSaveQueued){stagedSaveQueued=true;afterStagedState(()=>{stagedSaveQueued=false;scheduleSimulationPersistence();});}return true;}
-    if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
     if(simulationPersistenceTask)return true;
     const task={epoch:Number(state.resetEpoch)||0,idle:typeof window.requestIdleCallback==='function',handle:null};
     simulationPersistenceTask=task;
     const run=()=>{
       if(simulationPersistenceTask!==task)return;
       simulationPersistenceTask=null;
-      if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked()||(Number(state.resetEpoch)||0)!==task.epoch)return;
+      if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked()||(Number(state.resetEpoch)||0)!==task.epoch)return;
       if(stagedStateBusy()){scheduleSimulationPersistence();return;}
       try{
         const metricClock=()=>globalThis.performance?.now?.()??Date.now(),compactionStart=metricClock();compactSimulationState(false);
@@ -821,7 +824,7 @@
   }
   function maybeSaveCheckpoint(nowMs){
     if(nowMs-lastCheckpointCheckMs<1000)return false;lastCheckpointCheckMs=nowMs;
-    if(document.hidden||hardResetInProgress||durableCommandInProgress||simulationPersistenceTask||window.GH_PERSISTENCE.isLocked())return false;
+    if(document.hidden||window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||simulationPersistenceTask||window.GH_PERSISTENCE.isLocked())return false;
     // The owner's choice: no checkpoint while a calendar advance runs.
     if(simulationEngine.snapshot().manualAdvance)return false;
     const reason=checkpointDue(nowMs);if(!reason)return false;
@@ -830,11 +833,12 @@
   }
   // Save Now (settings): one ordinary save, right away (after the day close in progress, if any).
   function saveNow(){
-    if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked()){notice('الحفظ مشغول الآن بعملية أخرى. أعد المحاولة بعد لحظات.');return false;}
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked()){notice('الحفظ مشغول الآن بعملية أخرى. أعد المحاولة بعد لحظات.');return false;}
     const staged=stagedStateBusy();
     return persistStateSliced().then(ok=>{diag('SAVE_MANUAL',{ok,staged,saveRevision:Number(state.saveRevision)||0});notice(!ok?'تعذر حفظ اللعبة الآن. التفاصيل في صحة النظام.':staged?'سيُحفظ التقدم فور انتهاء إقفال اليوم الجاري.':'تم حفظ اللعبة.');return ok;});
   }
   function setSaveCap(minutes){
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true)return false;
     const policy=window.GH_SAVE_POLICY,value=Number(minutes);if(!policy?.CAP_CHOICES.includes(value))return false;
     state.savePolicy={...(state.savePolicy&&typeof state.savePolicy==='object'?state.savePolicy:{}),capMinutes:value};return true;
   }
@@ -845,7 +849,7 @@
   function persistStateNow(options={}){
     // A save in slices holds persistence: this save joins it (it runs once more after, with its checks, on the state then).
     if(window.GH_PERSISTENCE.slicedActive?.())return window.GH_PERSISTENCE.commitState(state,{storageKey,appVersion:APP_VERSION}).ok===true;
-    if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return false;
     if(stagedStateBusy()){if(!stagedSaveQueued){stagedSaveQueued=true;afterStagedState(()=>{stagedSaveQueued=false;persistStateNow({...options,throwOnError:false});});}diag('SAVE_DEFERRED_STAGED',{saveRevision:Number(state.saveRevision)||0});return true;}
     const metricClock=()=>globalThis.performance?.now?.()??Date.now(),runtimeMetrics=window.__GH_APP_RUNTIME_INSTRUMENTATION__||null,pending=runtimeMetrics?.pendingCompaction||null;
     const metric={kind:'save-preparation',simSeconds:Number(state.simSeconds)||0,saveRevisionBefore:Number(state.saveRevision)||0,compactionMs:Number(pending?.durationMs)||0,baselineIntegrityMs:0,prepareMs:0,finalIntegrityMs:0,persistenceSyncMs:0,totalMs:0,ok:false};
@@ -875,7 +879,7 @@
     return introduced.length?{ok:false,reason:`Critical integrity failed: ${introduced.map(x=>x.code||x.title).join(',')}`}:{ok:true};
   }
   async function persistStateSliced(){
-    if(hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__)return false;
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__)return false;
     if(stagedStateBusy())return persistStateNow();
     const out=await window.GH_PERSISTENCE.commitStateSliced(state,{storageKey,appVersion:APP_VERSION,prepare:prepareSlicedSave,yieldToFrame:()=>yieldForInteractivePaint()});
     if(out?.ok)diag('SAVE_OK',{bytes:out.utf8Bytes??null,saveRevision:state.saveRevision,sliced:true});else{diag('SAVE_FAILED',{message:String(out?.reason||'sliced-save-failed'),sliced:true});console.warn('تعذر حفظ اللعبة',out?.reason);}
@@ -925,9 +929,9 @@
   }
   async function runDurableStateCommand(name,apply,{afterCommit=null,silent=false}={}){
     await stagedStateSettled();await window.GH_PERSISTENCE.slicedSettled?.();
-    if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){if(!silent)notice('الحفظ مشغول بعملية ذرية أخرى. لم يتغير أي أصل؛ أعد المحاولة بعد لحظات.');return false;}
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){if(!silent)notice('الحفظ مشغول بعملية ذرية أخرى. لم يتغير أي أصل؛ أعد المحاولة بعد لحظات.');return false;}
     durableCommandInProgress=true;
-    let draft=null,committed=false,settleDurableCommand=null,rootSessions=[];
+    let draft=null,committed=false,settleDurableCommand=null,rootSessions=[],afterPublishTasks=[];
     durableCommandSettlement=new Promise(resolve=>{settleDurableCommand=resolve;});
     await fleetStepSettled();
     // Build 358: phase timings of every player command (diagnostics: GH_APP_RUNTIME_METRICS.snapshot().durable).
@@ -937,7 +941,7 @@
       rootSessions=transactionCore?.beginJournaledRoots?.(state)||[];
       draft=transactionCore?.deepClone?transactionCore.deepClone(state,{shareJournaledRoots:true}):clone(state);lap('cloneMs');
       window.GH_SAVE_SCHEMA?.inheritVerified?.(state,draft);const runtime=routeRuntimeForState(draft),previousRevision=Math.max(0,Math.floor(Number(state.saveRevision)||0));lap('prepareMs');
-      window.__GH_DURABLE_COMMAND_CONTEXT__={name,liveState:state,draft};
+      window.__GH_DURABLE_COMMAND_CONTEXT__={name,liveState:state,draft,afterPublish(fn){if(typeof fn==='function')afterPublishTasks.push(fn);}};
       const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(row=>row.severity==='critical').map(row=>String(row.id||row.code||row.title)));lap('baselineIntegrityMs');
       const value=await apply({state:draft,routes:runtime});lap('applyMs');if(value===false)throw new Error(`${name}-rejected`);
       if(window.__GH_DURABLE_COMMAND_CONTEXT__?.poisoned===true)throw new Error(`${name}-draft-poisoned`);
@@ -955,7 +959,7 @@
       mark=clockNow();await window.GH_PERSISTENCE.commitDurableState(draft,{storageKey,appVersion:APP_VERSION,prevalidated:true,yieldToFrame:()=>yieldForInteractivePaint()});lap('persistMs');
       // Storage has already committed. A publication failure is a recovery
       // condition, never a successful rollback and never safe to retry blindly.
-      committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);lap('publishMs');diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
+      committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);for(const task of afterPublishTasks)try{await task(value,window.__GH_DURABLE_COMMAND_CONTEXT__);}catch(error){console.warn(`Durable command after-publish hook failed [${name}]`,error);}lap('publishMs');diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
       if(afterCommit){try{await afterCommit(value);}catch(error){diag('DURABLE_COMMAND_PRESENTATION_FAILED',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'warning');console.warn(`Durable command committed but presentation refresh failed [${name}]`,error);if(!silent)notice('تم حفظ العملية بنجاح، لكن تعذر تحديث العرض. أعد فتح القسم لرؤية الحالة المحفوظة.','warning');}}
       return value;
     }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-publish-failed-after-ack',{durableCommitted:true,saveRevision:Number(draft?.saveRevision)||0});state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed-after-ack');diag('DURABLE_PUBLISH_FAILED_AFTER_ACK',{name,saveRevision:Number(draft?.saveRevision)||0,reason:String(error.message||error)},'critical');console.error(`Durable command publication failed after device acknowledgement [${name}]`,error);return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
@@ -1017,6 +1021,12 @@
     const commandOptions={...options,actor};if(validSeal)commandOptions.authority={principalId:FOUNDER_PRINCIPAL_ID,mandateId:authority.mandate.id};else delete commandOptions.authority;
     return window.GH_DOMAIN_COMMANDS.dispatchSystem(ctx,domain,name,payload,commandOptions);
   }
+  function dispatchSystemCommandStages(ctx,domain,name,payload={},options={}){
+    const actor=String(options.actor||'');if(!actor)throw new Error(`system-actor-required:${domain}.${name}`);
+    const target=ctx?.state||ctx||state,authority=founderAuthorization(target),validSeal=authority.signature&&window.GH_AUTHORIZATION?.validateVisualSeal?.(authority.signature)?.ok===true&&authority.signature.ownerPersonId===FOUNDER_PRINCIPAL_ID&&authority.mandate?.principalId===FOUNDER_PRINCIPAL_ID;
+    const commandOptions={...options,actor};if(validSeal)commandOptions.authority={principalId:FOUNDER_PRINCIPAL_ID,mandateId:authority.mandate.id};else delete commandOptions.authority;
+    return window.GH_DOMAIN_COMMANDS.dispatchSystemStages(ctx,domain,name,payload,commandOptions);
+  }
   function authorizedDraftDispatch(target,domain,name,payload={},options={}){
     const authority=founderAuthorization(target);if(!authority.signature||!authority.mandate)throw new Error('active-visual-seal-required');
     const envelope=window.GH_AUTHORIZATION.buildActiveEnvelope(target,{domain,name,payload,principalId:FOUNDER_PRINCIPAL_ID,actor:{kind:'player',principalId:FOUNDER_PRINCIPAL_ID},idempotencyKey:options.idempotencyKey||authorizationIdempotencyKey(target,domain,name,payload)});
@@ -1027,7 +1037,7 @@
     domain=String(domain||'').trim();name=String(name||'').trim();if(!domain||!name)throw new Error('authorized-command-invalid');
     const authority=founderAuthorization(state);if(!authority.signature||!authority.mandate){openSignatureDialog?.({required:true});if(!options.silent)notice('اعتمد توقيعك المرئي أولًا. لم تُنفذ المعاملة.');throw new Error('active-visual-seal-required');}
     await stagedStateSettled();await window.GH_PERSISTENCE.slicedSettled?.();
-    if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked())throw new Error('durable-transaction-in-progress');
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked())throw new Error('durable-transaction-in-progress');
     const envelope=window.GH_AUTHORIZATION.buildActiveEnvelope(state,{domain,name,payload,principalId:FOUNDER_PRINCIPAL_ID,actor:{kind:'player',principalId:FOUNDER_PRINCIPAL_ID},idempotencyKey:options.idempotencyKey||authorizationIdempotencyKey(state,domain,name,payload)});
     durableCommandInProgress=true;let committed=false,settle=null;durableCommandSettlement=new Promise(resolve=>{settle=resolve;});
     try{
@@ -1458,6 +1468,7 @@
   const normalizeMapLayer=name=>['dark','natural','street','satellite'].includes(name)?name:'dark';
   const terrainTileUrl=name=>normalizeMapLayer(name)==='dark'?'assets/maps/ne2-dark/{z}/{x}/{y}.webp':'assets/maps/ne2/{z}/{x}/{y}.webp';
   function setMapLayer(name){
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true)return false;
     if(!map)return;const selected=normalizeMapLayer(name),layer=layers[selected];terrainLayer?.setUrl(terrainTileUrl(selected));if(currentTile)map.removeLayer(currentTile);mapTileFailures=0;mapTileSuccesses=0;setMapTilesOffline(false);currentTile=layer.addTo(map);
     state.mapLayer=selected;map.fire('baselayerchange');
     const stage=document.querySelector('.map-stage');stage.classList.remove('map-dark','map-natural','map-street','map-satellite');stage.classList.add(`map-${selected}`);
@@ -1958,6 +1969,7 @@
     document.querySelector('.map-stage')?.setAttribute('data-map-view',mode);
   }
   function setMapMode(mode){
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true)return false;
     const next=MAP_VIEW.normalizeMode(mode);if(state.mapMode===next){syncMapModeButtons();return;}
     state.mapMode=next;syncMapModeButtons();renderMap();
   }
@@ -2299,6 +2311,7 @@
   function calendarAdvanceTargetDays(days){const now=Math.max(0,Number(state.simSeconds)||0),currentDay=Math.floor(now/86400);return Math.max(now+1,(currentDay+Math.max(1,Math.floor(Number(days)||1)))*86400);}
   function calendarAdvanceTargetYear(){const d=simDate(),y=d.getUTCFullYear()+1,m=d.getUTCMonth(),day=d.getUTCDate(),last=new Date(Date.UTC(y,m+1,0)).getUTCDate();return calendarDayStartSeconds(new Date(Date.UTC(y,m,Math.min(day,last))));}
   function requestCalendarAdvance(target,reason,label){
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true){notice('انتظر اكتمال تصدير التشخيص قبل تقديم التقويم.');return false;}
     const active=simulationEngine.snapshot().manualAdvance;if(active){notice('هناك تقديم زمني جارٍ الآن. أوقفه أولًا ثم اختر مدة جديدة.');return false;}
     const now=Math.max(0,Number(state.simSeconds)||0),next=Math.floor(Number(target)||0);if(!Number.isFinite(next)||next<=now){notice('اختر تاريخًا لاحقًا عن التاريخ الحالي.');return false;}
     const max=366*86400;if(next-now>max+1){notice('للحفاظ على سلامة المحاكاة يمكن التقديم حتى سنة واحدة في كل عملية.');return false;}
@@ -2687,7 +2700,9 @@
       // Build 358 (iPhone diagnostic: 13-19 ms and 10-18 ms single steps): due terms, operating revenue and payroll
       // each sign several documents per company, so each company is its own step.
       for(const company of [...new Set([...companyIds,'group'])]){phase('simulation.finance-day.debt-interest',()=>dispatchSystemCommand({state},'finance','accrue-debt-interest',{day:state.lastFinancialDay,company},{actor:'financial-close'}));yield 'finance-day.debt-interest';}
-      phase('simulation.finance-day.holdings',()=>dispatchSystemCommand({state},'market','settle-holdings',{day:state.lastFinancialDay},{actor:'financial-close'}));yield 'finance-day.holdings';
+      const holdingsCommand=dispatchSystemCommandStages({state},'market','settle-holdings',{day:state.lastFinancialDay},{actor:'financial-close'});let holdingsYielded=false;
+      for(;;){const step=phase('simulation.finance-day.holdings',()=>holdingsCommand.next());if(step.done)break;holdingsYielded=true;yield 'finance-day.holdings';}
+      if(!holdingsYielded)yield 'finance-day.holdings';
       for(const company of [...new Set([...companyIds,'group'])]){let remaining=0;do{const settled=phase('simulation.finance-day.settle-due-terms',()=>dispatchSystemCommand({state},'finance','settle-due-terms',{day:state.lastFinancialDay,company,maxRows:8},{actor:'financial-close'}).result);remaining=Math.max(0,Number(settled?.remaining)||0);yield 'finance-day.settle-due-terms';}while(remaining>0);}
       const contractRowsByCompany=new Map();for(const row of contractDailyRows){const list=contractRowsByCompany.get(row.companyId)||[];list.push(row);contractRowsByCompany.set(row.companyId,list);}
       for(const companyId of companyIds){
@@ -3004,13 +3019,13 @@
       const check=step.value;if(check&&check.ok===false){const reason=check.reason||check.errors?.join(',')||'invalid state';diag('SAVE_SCHEMA_INTEGRITY',{reason:String(reason).slice(0,240),source:'maintenance-compaction'},'critical');haltOnGlobalFault({issues:[{id:'SAVE_SCHEMA_INTEGRITY',severity:'critical'}]});}
       return true;
     }
-    if(entry.task==='health'){const health=window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()});const central=window.GH_CONTROL_PLANE?.check?.(state);haltOnGlobalFault(health,central);return true;}
+    if(entry.task==='health'){const evidence=captureDiagnosticEvidence({trackTransitions:true,storeResult:true}),health=evidence.health,central=window.GH_CONTROL_PLANE?.check?.(state,{evidence});haltOnGlobalFault(health,central);return true;}
     return true;
   }
   // One part (or one schema section) per call. True when a part ran, so the engine yields the frame.
   function runDeferredMaintenance(){
     const entry=maintenanceQueue[0];if(!entry)return false;
-    if(hardResetInProgress||durableCommandInProgress||stagedStateBusy())return false;
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||stagedStateBusy())return false;
     const metric=runtimeInstrumentation.maintenance,started=appMetricClock();let finished=true;
     try{finished=runMaintenanceTask(entry)!==false;}
     catch(error){finished=true;diag('SIM_MAINTENANCE_FAILED',{task:entry.task,error:String(error?.message||error).slice(0,240)},'warning');console.warn('تعذر تنفيذ جزء من الصيانة الدورية',entry.task,error);}
@@ -3035,7 +3050,7 @@
   normalizeSimulationClocks();
 
   function processOneRecoveryBoundary(){
-    const r=state.timeRecovery||{};if(!r.active||stagedStateBusy())return false;
+    const r=state.timeRecovery||{};if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||!r.active||stagedStateBusy())return false;
     const nextDay=state.lastFinancialDay<Number(r.financialTarget||0)?state.lastFinancialDay+1:null;
     const nextHour=state.lastMarketHour<Number(r.marketTarget||0)?state.lastMarketHour+1:null;
     if(nextDay===null&&nextHour===null){r.active=false;diag('BOUNDARY_RECOVERY_COMPLETE');return false;}
@@ -3146,22 +3161,137 @@
     return Promise.race([client.idle(),new Promise(resolve=>setTimeout(resolve,2000))]);
   }
   let activeStagedSlice=null;
-  function emptyCalendarAggregateLimit({from,target}={}){
-    if(globalThis.__GH_EMPTY_CALENDAR_AGGREGATION__===false)return 0;
-    const start=Math.max(0,Number(from)||0),end=Math.max(start,Number(target)||start),nextDay=(Math.floor(start/86400)+1)*86400,preClose=nextDay-3600;
-    // This path is intentionally strict. It removes transaction/snapshot churn
-    // only for a genuinely empty operating world; any time-sensitive actor keeps
-    // the original exact boundary slicing.
-    // Midnight remains its own transaction. If its close fails, the preceding
-    // 23 market hours stay committed exactly as in the original hourly engine.
-    if(end+1e-6<nextDay||preClose-start<=3600+1e-6)return 0;
-    if(window.GH_FLEET_DATA.size(state)!==0)return 0;
-    if((state.mobility?.vehicles||[]).length||(state.mobility?.activeTrips||[]).length||(state.mobility?.rideRequests||[]).some(row=>['queued','active'].includes(row?.status)))return 0;
+  let calendarWindowFallbackFrom=null;
+  function calendarWindowLimit({from,target,batchSeconds,maintenanceDueAt}={}){
+    if(globalThis.__GH_MANUAL_CALENDAR_WINDOWS__===false)return 0;
+    const start=Math.max(0,Number(from)||0),end=Math.max(start,Number(target)||start),normal=Math.max(1,Number(batchSeconds)||3600);
+    // Preserve the existing partition when an owner has deliberately reduced
+    // the calendar slice below one hour (event pressure or another sub-hour owner).
+    if(normal<3600-1e-6)return 0;
+    if(calendarWindowFallbackFrom!==null){if(Math.abs(start-calendarWindowFallbackFrom)<1e-6)return 0;if(start>calendarWindowFallbackFrom+1e-6)calendarWindowFallbackFrom=null;}
+    // A window contains exact hourly child steps, but owns one rollback point.
+    // Keep midnight as the existing full-scope daily transaction and stop at the
+    // next maintenance checkpoint so its deferred work retains the same cadence.
+    const nextDay=(Math.floor(start/86400)+1)*86400,preClose=nextDay-3600,
+      maintenanceEnd=Number.isFinite(Number(maintenanceDueAt))?Number(maintenanceDueAt):start+6*3600,
+      windowEnd=Math.min(end,start+6*3600,preClose,maintenanceEnd);
+    if(windowEnd-start<=normal+1e-6)return 0;
+    // Delivery reconciliation may be due between hour boundaries. Its proven
+    // 600-second path stays unchanged until it has an equivalent window owner.
     if(window.GH_REALISM?.hasPendingDeliveries?.(state)!==false)return 0;
     if(state.timeRecovery?.active||stagedStateBusy())return 0;
-    return Math.min(23*3600,preClose-start);
+    if(window.GH_FLEET_DATA.size(state)!==0){
+      const thread=fleetEngineThread();
+      if(!thread||thread.windowProtocol!=='journal-v1'||typeof thread.beginWindow!=='function'||typeof thread.requestWindow!=='function'||typeof thread.applyWindow!=='function'||typeof thread.settleWindow!=='function')return 0;
+    }
+    return windowEnd-start;
+  }
+  // Kept for the local audit harness and older diagnostic probes.
+  const emptyCalendarAggregateLimit=calendarWindowLimit;
+  function createManualCalendarWindowJob(sliceSeconds,meta={}){
+    const TX=window.GH_TRANSACTION_CORE,EVENTS=window.GH_FLEET_EVENTS,TIME=window.GH_SIMULATION_TIME_CORE;
+    if(!TX?.beginStaged||!EVENTS?.advance||!TIME?.boundaryAt||!TIME?.clampSliceToBoundary)throw new Error('Calendar window owners unavailable');
+    const from=Math.max(0,Number(meta.from)||0),to=Math.max(from,Number(meta.to)||from+Math.max(0,Number(sliceSeconds)||0)),order='sweep';
+    let ready=false,cancelled=false,released=false,staged=null,stagedConflict=false,completeTo=from,windowFailure='',
+      fleetClient=null,fleetSession=null,fleetTicket=null,requestContext=null,requestContextKey='',awaitingFleet=true,
+      legFrom=from,legTo=Math.min(to,from+TIME.clampSliceToBoundary(from,to-from)),subSlices=0,mapRevisionBumps=0,
+      journal=makeSimulationEffects(),totalEvents=0,totalFast=0,totalSlow=0,totalFaults=0;
+    const failWindow=reason=>{windowFailure=String(reason||'calendar-window-fallback');calendarWindowFallbackFrom=from;return false;};
+    const fallbackError=reason=>{failWindow(reason);const error=new Error(windowFailure);error.code='CALENDAR_WINDOW_FALLBACK';return error;};
+    const settleWindow=outcome=>{if(fleetSession){try{fleetClient?.settleWindow?.(fleetSession,outcome);}catch(_error){fleetClient?.markStale?.();}fleetSession=null;}fleetTicket=null;};
+    const abortForFallback=()=>{
+      if(staged&&!staged.done){staged.abort(`calendar-window-fallback:${windowFailure}`);if(!staged.done)throw new Error('calendar-window-abort-incomplete');}
+      if(staged?.error&&staged.error.code!=='TRANSACTION_STAGED_ABORTED'&&staged.error.code!=='CALENDAR_WINDOW_FALLBACK')throw staged.error;
+      settleWindow('rollback');if(activeStagedSlice===staged)activeStagedSlice=null;staged=null;ready=true;
+    };
+    const fleetStepPending=()=>{
+      if(windowFailure)return false;
+      if(requestContext===null){requestContext=simulationAssetRuntimeContext();requestContextKey=fleetContextKey(requestContext);}
+      if(window.GH_FLEET_DATA.size(state)===0){fleetTicket=false;return false;}
+      if(!fleetClient){fleetClient=fleetEngineThread();if(!fleetClient)return failWindow('calendar-window-worker-unavailable');}
+      if(!fleetSession){fleetSession=fleetClient.beginWindow(state.fleet,{from,target:to});if(!fleetSession)return failWindow('calendar-window-session-unavailable');}
+      if(fleetTicket===null){
+        fleetTicket=fleetClient.requestWindow(fleetSession,state.fleet,{from:legFrom,to:legTo,context:requestContext,contextKey:requestContextKey,tripAlertLimit:64,order,budget:FLEET_THREAD_EVENT_BUDGET})||null;
+        if(!fleetTicket)return failWindow(fleetSession.reason||'calendar-window-request-refused');
+      }
+      if(fleetTicket.status==='pending')return true;
+      if(fleetTicket.status!=='ready')return failWindow(fleetTicket.reason||'calendar-window-worker-failed');
+      return false;
+    };
+    const transactionOptions=()=>{
+      const sliceWork=function*(measure){
+        while(legFrom<to-1e-6){
+          if(awaitingFleet||requestContext===null)throw fallbackError('calendar-window-step-not-ready');
+          const emptyFleet=window.GH_FLEET_DATA.size(state)===0;
+          let legOut=emptyFleet?{completeTo:legTo,effects:makeSimulationEffects(),events:0,fast:0,slow:0,faults:0}:fleetClient?.applyWindow(fleetTicket,state.fleet,{contextKey:requestContextKey,tx:TX})||null;
+          if(!legOut)throw fallbackError(fleetSession?.reason||fleetTicket?.reason||'calendar-window-apply-refused');
+          const legComplete=Math.max(legFrom,Math.min(legTo,Number(legOut.completeTo)));
+          if(!Number.isFinite(legComplete)||Math.abs(legComplete-legTo)>1e-6)throw fallbackError('calendar-window-partial-step');
+          // These effects have post-commit runtime owners in the legacy path.
+          // Re-run this timestamp hourly rather than changing their cadence.
+          if(legOut.effects?.saleIds?.length||legOut.effects?.retiredRouteIds?.length)throw fallbackError('calendar-window-post-commit-effects');
+          state.simSeconds=legComplete;const legJournal=makeSimulationEffects();mergeSimulationEffects(legJournal,legOut.effects);mergeSimulationEffects(journal,legOut.effects);
+          yield 'window.fleet-apply';
+          for(const companyId of Object.keys(legJournal.tripCount))window.GH_CORPORATE_CORE?.model?.(state,companyId);
+          window.GH_FINANCE_CORE.execute({state},'apply-simulation-journal',{journal:legJournal});
+          window.GH_CORPORATE_CORE.execute({state},'adjust-group-value',{delta:Number(legJournal.groupValue)||0});
+          for(const text of simulationAlertTexts(legJournal))window.GH_OPERATIONS_CORE.execute({state},'record-alert',{text,type:'simulation'});
+          yield 'window.business-journal';
+          const mobility=window.GH_MOBILITY_CORE;if(mobility?.advanceThrough)mobility.advanceThrough({state},legFrom,legComplete);else mobility?.onSimulationTime?.({state},legComplete);
+          const elapsed=Math.max(0,legComplete-legFrom);
+          for(const asset of competitorAssets||[]){const distance=routeDistance(asset.route),trip=distance/(Number(asset.speed)||1)*3600;if(Number.isFinite(trip)&&trip>0)asset.progress=(Number(asset.progress)||0)+elapsed/trip-Math.floor((Number(asset.progress)||0)+elapsed/trip);}
+          yield 'window.mobility';
+          const boundary=TIME.boundaryAt(legComplete);if(boundary.day!==null&&boundary.day!==undefined)throw fallbackError('calendar-window-midnight');
+          if(boundary.hour!==null&&boundary.hour!==undefined){measure('simulation.boundary.market-hour',()=>processMarket(boundary.hour,measure));yield 'window.market-hour';}
+          state.simulationKernel=state.simulationKernel||{};
+          state.simulationKernel.lastAtomicCommit={from:legFrom,to:legComplete,requestedTo:legTo,events:Number(legOut.events)||0,day:boundary.day,hour:boundary.hour,at:legComplete,core:EVENTS.VERSION,order};
+          totalEvents+=Number(legOut.events)||0;totalFast+=Number(legOut.fast)||0;totalSlow+=Number(legOut.slow)||0;totalFaults+=Number(legOut.faults)||0;
+          if(legOut.events)mapRevisionBumps++;completeTo=legComplete;subSlices++;
+          if(completeTo>=to-1e-6)break;
+          legFrom=completeTo;legTo=Math.min(to,legFrom+TIME.clampSliceToBoundary(legFrom,to-legFrom));fleetTicket=null;requestContext=null;requestContextKey='';awaitingFleet=true;
+          yield 'window.await-fleet';
+        }
+        return true;
+      };
+      return {label:'simulation-window:'+from+'->'+to,scope:SIMULATION_HOUR_TRANSACTION_SCOPE,writeRoots:SIMULATION_HOUR_TRANSACTION_SCOPE,rowRoots:simulationRowRoots('hour'),scopedJoin:true,stagedScope:true,
+        auditWrites:globalThis.__GH_BUILD339_WRITE_AUDIT__===true,enforceWriteRoots:globalThis.__GH_BUILD358_ENFORCE_SLICE_SCOPE__===true,
+        profileContext:{kind:'simulation-calendar-window',from,to,speed:Number(meta.speed)||0,order,aggregate:true},apply:sliceWork};
+    };
+    const cleanup=reason=>{
+      if(released)return false;let failure=null,handle=staged;
+      try{if(handle&&!handle.done){handle.abort(`simulation-window-${reason||'released'}`);if(!handle.done)throw new Error('simulation-window-abort-incomplete');if(handle.error?.code!=='TRANSACTION_STAGED_ABORTED')throw handle.error||new Error('simulation-window-abort-missing-error');}}catch(error){failure=error;}
+      try{settleWindow('rollback');}catch(error){failure??=error;}
+      if(activeStagedSlice===handle)activeStagedSlice=null;staged=null;released=true;if(failure)throw failure;return true;
+    };
+    return {
+      aggregate:true,
+      runChunk(){
+        if(cancelled)return true;
+        if(windowFailure){abortForFallback();return true;}
+        if(awaitingFleet){const pending=fleetStepPending();if(windowFailure){abortForFallback();return true;}if(pending)return {pending:true};awaitingFleet=false;}
+        if(!staged){if(Math.abs((Number(state.simSeconds)||0)-from)>1e-6){stagedConflict=true;ready=true;return true;}staged=TX.beginStaged(state,transactionOptions());activeStagedSlice=staged;}
+        else staged.step(-Infinity);
+        if(staged.done){ready=true;return true;}return {pending:true};
+      },
+      finish(){
+        if(cancelled||!ready)return {committed:false,reason:'job-not-finished'};
+        if(stagedConflict){settleWindow('rollback');return {committed:false,retry:true,reason:'time-conflict'};}
+        const handle=staged;staged=null;if(activeStagedSlice===handle)activeStagedSlice=null;
+        if(windowFailure||handle?.error?.code==='CALENDAR_WINDOW_FALLBACK'||handle?.error?.code==='TRANSACTION_STAGED_ABORTED'){
+          if(!windowFailure)failWindow(handle?.error?.message||'calendar-window-aborted');settleWindow('rollback');released=true;return {committed:false,retry:true,reason:'calendar-window-fallback'};
+        }
+        if(!handle?.done)return {committed:false,reason:'job-not-finished'};if(handle.error)throw handle.error;
+        const transaction=handle.result;if(!transaction?.committed)return {committed:false,retry:true,reason:transaction?.reason||'transaction-rejected'};
+        const priorFailure=state.simulationKernel?.lastAdvanceFailure;if(priorFailure&&completeTo+1e-6>=Number(priorFailure.to||Infinity)){delete state.simulationKernel.lastAdvanceFailure;delete state.simulationKernel.runtimeFatal;}
+        if(mapRevisionBumps)window.GH_MAP_STRUCTURE_REVISION=((Number(window.GH_MAP_STRUCTURE_REVISION)||0)+mapRevisionBumps)>>>0;
+        return {committed:true,completeTo,boundary:TIME.boundaryAt(completeTo),events:totalEvents,fast:totalFast,slow:totalSlow,faults:totalFaults,order,aggregateSubSlices:subSlices};
+      },
+      cancel(){cancelled=true;cleanup('cancelled');},
+      cleanup({outcome}={}){cleanup(outcome||'cleanup');}
+    };
   }
   function createSimulationSliceJob(sliceSeconds,meta={}){
+    if(meta.aggregate===true)return createManualCalendarWindowJob(sliceSeconds,meta);
     const TX=window.GH_TRANSACTION_CORE,EVENTS=window.GH_FLEET_EVENTS,TIME=window.GH_SIMULATION_TIME_CORE;
     if(!TX?.execute||!EVENTS?.advance||!TIME?.boundaryAt)throw new Error('Fleet event simulation owners unavailable');
     const from=Math.max(0,Number(meta.from)||0),to=Math.max(from,Number(meta.to)||from+Math.max(0,Number(sliceSeconds)||0)),
@@ -3310,7 +3440,19 @@
     const issues=reports.flatMap(report=>Array.isArray(report?.issues)?report.issues:[]);
     return issues.some(issue=>issue?.severity==='critical'&&GLOBAL_HALT_IDS.some(id=>String(issue.id||issue.code||'').startsWith(id)));
   }
-  let runtimeGovernor={level:'green',avgChunkMs:0,avgWorkMs:0};
+  let runtimeGovernor={level:'GREEN',avgChunkMs:0,avgWorkMs:0};
+  const governorEventCoalescer=window.GH_DIAGNOSTICS.createGovernorEventCoalescer({windowMs:10000,nowMs:()=>Date.now(),emit:detail=>diag('SIM_GOVERNOR',detail)});
+  function captureDiagnosticEvidence(options={}){
+    return window.GH_DIAGNOSTICS.captureExportEvidence(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:options.simulation||simulationEngine.snapshot()},{recordEvent:options.recordEvent===true,trackTransitions:options.trackTransitions===true,storeResult:options.storeResult===true});
+  }
+  async function diagnosticLifecycleSettled(){
+    for(;;){
+      await stagedStateSettled();await window.GH_PERSISTENCE.slicedSettled?.();
+      const pending=[];if(durableCommandInProgress)pending.push(durableCommandSettlement);if(hardResetInProgress)pending.push(hardResetSettlement);if(!pending.length){if(!stagedStateBusy())return;continue;}await Promise.all(pending);
+    }
+  }
+  async function settleGovernorDiagnostics(reason){await diagnosticLifecycleSettled();return governorEventCoalescer.flush(String(reason||'diagnostic-export'));}
+  async function clearDiagnosticsState(){await diagnosticExportTail;await diagnosticLifecycleSettled();governorEventCoalescer.discard();return window.GH_DIAGNOSTICS.clear(state);}
   // Build 358: the recurring save runs every 60 s of real time (90 s at fast speeds). Every action already saves at once
   // through its durable command, and leaving the app saves on the hidden event, so a longer gap loses nothing.
   const simulationEngine=window.GH_SIMULATION_CORE.create({
@@ -3332,7 +3474,7 @@
       const limits=[eventWindow,window.GH_REALISM?.simulationSliceLimit?.(state),window.GH_MOBILITY_CORE?.simulationSliceLimit?.(state)].map(Number).filter(value=>Number.isFinite(value)&&value>0);
       return Math.max(60,Math.min(3600,...(limits.length?limits:[3600])));
     },
-    getManualAggregateLimit:emptyCalendarAggregateLimit,
+    getManualAggregateLimit:calendarWindowLimit,
     onMaintenance:hour=>{diag('SIM_MAINTENANCE',{hour});window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'SIMULATION_MAINTENANCE',domain:'simulation',actor:'simulation-core',correlationId:`SIM-HOUR-${hour}`,detail:{hour}});queueMaintenance();},
     runDeferredWork:()=>runDeferredMaintenance(),
     hasDeferredWork:()=>maintenanceQueue.length>0&&!hardResetInProgress&&!durableCommandInProgress,
@@ -3366,11 +3508,11 @@
         pushAlert(`توقف تقديم التاريخ وقائيًا عند آخر حالة معتمدة (${formatSimDate()}). السبب: ${reason}. لم تُعتمد حركة أصل أو إيراد جزئي.`);
       }
     },
-    isSuspended:()=>hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()||window.GH_CONFERENCE?.isPresentationActive?.()||state.timeRecovery?.active===true,
-    onFatal:error=>{simulationEngine.cancelAdvance?.('simulation-fatal');state.speed=0;state.simulationKernel=state.simulationKernel||{};const diagnostic=error?.diagnostic||{name:error?.name||'Error',message:String(error?.message||error),code:error?.code||null,transactionLabel:error?.transactionLabel||null,transactionStage:error?.transactionStage||null};state.simulationKernel.runtimeFatal={at:state.simSeconds,code:error?.code||'SIM_FATAL_STATE',error:diagnostic};if(!state.simulationKernel.lastAdvanceFailure)state.simulationKernel.lastAdvanceFailure={reason:'simulation-fatal',stage:error?.transactionStage||'finish',from:state.simSeconds,to:state.simSeconds,at:state.simSeconds,retries:0,code:error?.code||'SIM_FATAL_STATE',error:String(error?.message||error).slice(0,500),errorDetail:diagnostic};diag('SIM_FATAL',diagnostic,'critical');try{window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:true,trackTransitions:true});window.GH_CONTROL_PLANE?.check?.(state);}catch(healthError){console.error('تعذر تحديث الصحة بعد خطأ المحاكاة',healthError);}console.error('Simulation Core fatal error',error);try{pushAlert('أوقف محرك المحاكاة الوقت لحماية الحفظ بعد خطأ داخلي. افتح مركز الإجراءات لمراجعة السبب قبل إعادة المحاولة.');}catch(alertError){console.error('تعذر تسجيل تنبيه خطأ المحاكاة',alertError);}},
+    isSuspended:()=>window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()||window.GH_CONFERENCE?.isPresentationActive?.()||state.timeRecovery?.active===true,
+    onFatal:error=>{simulationEngine.cancelAdvance?.('simulation-fatal');state.speed=0;state.simulationKernel=state.simulationKernel||{};const diagnostic=error?.diagnostic||{name:error?.name||'Error',message:String(error?.message||error),code:error?.code||null,transactionLabel:error?.transactionLabel||null,transactionStage:error?.transactionStage||null};state.simulationKernel.runtimeFatal={at:state.simSeconds,code:error?.code||'SIM_FATAL_STATE',error:diagnostic};if(!state.simulationKernel.lastAdvanceFailure)state.simulationKernel.lastAdvanceFailure={reason:'simulation-fatal',stage:error?.transactionStage||'finish',from:state.simSeconds,to:state.simSeconds,at:state.simSeconds,retries:0,code:error?.code||'SIM_FATAL_STATE',error:String(error?.message||error).slice(0,500),errorDetail:diagnostic};diag('SIM_FATAL',diagnostic,'critical');try{const evidence=captureDiagnosticEvidence({recordEvent:true,trackTransitions:true,storeResult:true});window.GH_CONTROL_PLANE?.check?.(state,{evidence});}catch(healthError){console.error('تعذر تحديث الصحة بعد خطأ المحاكاة',healthError);}console.error('Simulation Core fatal error',error);try{pushAlert('أوقف محرك المحاكاة الوقت لحماية الحفظ بعد خطأ داخلي. افتح مركز الإجراءات لمراجعة السبب قبل إعادة المحاولة.');}catch(alertError){console.error('تعذر تسجيل تنبيه خطأ المحاكاة',alertError);}},
     onWarning:({stage,error})=>{diag('SIM_WARNING',{stage,message:String(error?.message||error)});console.warn(`Simulation Core warning [${stage}]`,error);},
     onThrottle:({took,reason,stage})=>{diag('SIM_THROTTLE',{took,reason,stage});console.warn(`Simulation watchdog throttled after ${Math.round(took)}ms ${stage||'work'} stage`);},
-    onGovernor:({level,avgChunkMs,avgWorkMs,stage,took})=>{diag('SIM_GOVERNOR',{level,avgChunkMs,avgWorkMs,stage,took});runtimeGovernor={level,avgChunkMs,avgWorkMs,stage,took};}
+    onGovernor:({level,avgChunkMs,avgWorkMs,stage,took,speed})=>{runtimeGovernor={level,avgChunkMs,avgWorkMs,stage,took,speed};governorEventCoalescer.observe(runtimeGovernor);}
   },{minRealSliceSeconds:1,allowedSpeeds:[0,30,120,300,600],fallbackSpeed:30,frameBudgetMs:4,manualFrameBudgetMs:10,chunkItems:32,manualChunkItems:64,renderEveryNormalMs:260,renderEveryFastMs:650,maintenanceEveryHours:12,manualBatchSeconds:3600,manualMinBatchSeconds:300,manualRetryLimit:3});
   const simulationRuntime=window.GH_SIMULATION_RUNTIME_CORE.create({
     engine:simulationEngine,getSpeed:()=>effectiveSimulationRate(state.speed),isHidden:()=>document.hidden,
@@ -3399,7 +3541,7 @@
         const text=document.createElement('p');text.textContent=postAck?'الحفظ مؤكد على الجهاز. لا تعِد العملية؛ أعد فتح اللعبة لتحميل الجيل المحفوظ ومتابعة اللعب بأمان.':'لم يصل تأكيد حفظ موثوق. أُوقفت المحاكاة، ولن تُحذف بياناتك أو تبدأ مجموعة جديدة. أعد فتح آخر حفظ مكتمل من المخزن الأصلي.';
         const reason=document.createElement('code');reason.id='nativeSaveReconcileReason';reason.textContent=String(detail.reason||detail.message||'native-save-ack-uncertain').slice(0,300);reason.style.cssText='max-width:100%;overflow-wrap:anywhere;user-select:text;font-size:12px';
         const retry=document.createElement('button');retry.id='nativeSaveReconcileRetry';retry.className='primary-btn';retry.textContent='إعادة فتح آخر حفظ مكتمل';retry.addEventListener('click',()=>{retry.disabled=true;retry.textContent='جارٍ إعادة فتح الحفظ…';try{window.location.reload();}catch(error){retry.disabled=false;retry.textContent='إعادة المحاولة';reason.textContent=String(error.message||error).slice(0,300);}});
-        const exportButton=document.createElement('button');exportButton.id='nativeSaveReconcileExport';exportButton.className='secondary-btn';exportButton.textContent='تصدير تقرير العطل';exportButton.addEventListener('click',()=>{try{exportDiagnosticsFile();}catch(error){reason.textContent=String(error.message||error).slice(0,300);}});
+        const exportButton=document.createElement('button');exportButton.id='nativeSaveReconcileExport';exportButton.className='secondary-btn';exportButton.textContent='تصدير تقرير العطل';exportButton.addEventListener('click',async()=>{try{await exportDiagnosticsFile();}catch(error){reason.textContent=String(error.message||error).slice(0,300);}});
         box.append(title,text,reason,retry,exportButton);document.body.appendChild(box);retry.focus();
         // No automatic reload loop. A deliberate retry is gated by the native
         // navigation owner, which obtains one verified snapshot before boot.
@@ -3708,14 +3850,14 @@
 
   async function hardResetGame(){
     await window.GH_PERSISTENCE.slicedSettled?.();
-    if(hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked())return false;
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked())return false;
     const previousState=clone(state);hardResetInProgress=true;state.speed=0;
     let settleHardReset=null,resetDurabilityEstablished=false;
     hardResetSettlement=new Promise(resolve=>{settleHardReset=resolve;});
     try{
       const cleanupKeys=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k?.startsWith('global-holdings-'))cleanupKeys.push(k);}
       await window.GH_GAME_LIFECYCLE.reset(state,defaultState,{storageKey,resetMarkerKey,appVersion:APP_VERSION,checkpoint:previousState,cleanupKeys,clearManualSlots:true,prepare:next=>{
-        window.GH_ADVANCED.migrate(next);window.GH_REALISM.migrate(next);window.GH_EVENT_LEDGER.ensure(next);window.GH_DEPENDENCY_CORE.ensure(next);window.GH_DELIVERY_MONITOR.ensure(next);window.GH_FINANCE_CORE.ensure(next);window.GH_DIAGNOSTICS.ensure(next);window.GH_CONTROL_PLANE.bootstrap(next);next.advanced.saveSlots=[null,null,null];
+        window.GH_ADVANCED.migrate(next);window.GH_REALISM.migrate(next);window.GH_EVENT_LEDGER.ensure(next);window.GH_DEPENDENCY_CORE.ensure(next);window.GH_DELIVERY_MONITOR.ensure(next);window.GH_FINANCE_CORE.ensure(next);window.GH_DIAGNOSTICS.ensure(next);window.GH_CONTROL_PLANE.bootstrap(next,controlPlaneEngineMetadata());next.advanced.saveSlots=[null,null,null];
       }});
       resetDurabilityEstablished=true;
       selectedAssetId=null;
@@ -3744,23 +3886,46 @@
   window.GH_FORCE_NEW_GAME=()=>hardResetGame();
 
   function runFullDiagnostics(options={}){
-    const legacy=window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:options.recordEvent===true,trackTransitions:options.trackTransitions!==false});
-    const central=window.GH_CONTROL_PLANE?.check?.(state,{openWarnings:options.openWarnings===true});
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true)return state.diagnostics?.lastHealth||null;
+    const evidence=captureDiagnosticEvidence({recordEvent:options.recordEvent===true,trackTransitions:options.trackTransitions!==false,storeResult:true}),legacy=evidence.health;
+    const central=window.GH_CONTROL_PLANE?.check?.(state,{openWarnings:options.openWarnings===true,evidence});
     return central?{...legacy,centralControl:central,status:central.status==='critical'?'critical':legacy.status==='critical'?'critical':central.status==='warning'||legacy.status==='warning'?'warning':'healthy'}:legacy;
   }
-  function exportControlPlaneFile(kind='diagnostic',id=null){
-    const cp=window.GH_CONTROL_PLANE;if(!cp)return null;const out=kind==='incident'?cp.exportIncident(state,id):kind==='health'?cp.exportHealth(state):kind==='trace'?cp.trace(state,id):kind==='support'?cp.exportSupport(state):cp.exportDiagnostic(state);
-    const ext={incident:'ghincident',health:'ghhealth',trace:'ghtrace',support:'ghsupport',diagnostic:'ghdiagnostic'}[kind]||'ghdiagnostic',filename=`GlobalHoldings_${kind}_v${APP_VERSION}_${Date.now()}.${ext}`,json=JSON.stringify(out,null,2),bridge=window.webkit?.messageHandlers?.diagnosticBridge;
-    if(bridge)bridge.postMessage({action:'exportDiagnostic',filename,json});else{const blob=new Blob([json],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);}
-    cp.appendEvent(state,{type:'CONTROL_EXPORT',domain:'control',actor:'player',detail:{kind,filename,id}});return out;
+  async function exportControlPlaneFile(kind='diagnostic',id=null){
+    const cp=window.GH_CONTROL_PLANE;if(!cp)return null;
+    return withDiagnosticSnapshot(async({evidence,simulation,yieldToHost,budgetMs,marker})=>{
+      const out=kind==='incident'?cp.exportIncident(state,id,{evidence,readOnly:true}):kind==='health'?cp.exportHealth(state,{evidence,readOnly:true}):kind==='trace'?cp.trace(state,id):kind==='support'?(cp.exportSupportAsync?await cp.exportSupportAsync(state,{evidence,simulation,yieldToHost,budgetMs,readOnly:true}):cp.exportSupport(state,{evidence,readOnly:true})):(cp.exportDiagnosticAsync?await cp.exportDiagnosticAsync(state,{evidence,simulation,yieldToHost,budgetMs,readOnly:true}):cp.exportDiagnostic(state,{evidence,readOnly:true}));
+      const started=appMetricClock(),serialized=await window.GH_DIAGNOSTICS.stringifyAsync(out,{yieldToHost,budgetMs,space:2}),json=serialized.text;if(typeof json!=='string')throw new Error('diagnostic-export-json-unavailable');
+      const measured=await window.GH_DIAGNOSTICS.utf8ByteLengthAsync(json,{yieldToHost,budgetMs}),bridge=window.webkit?.messageHandlers?.diagnosticBridge;if(bridge&&measured.bytes>8_000_000)throw new Error(`حجم التقرير ${(measured.bytes/1_000_000).toFixed(2)} ميجابايت ويتجاوز حد iOS البالغ 8 ميجابايت.`);
+      assertDiagnosticSnapshotUnchanged(marker);const ext={incident:'ghincident',health:'ghhealth',trace:'ghtrace',support:'ghsupport',diagnostic:'ghdiagnostic'}[kind]||'ghdiagnostic',filename=`GlobalHoldings_${kind}_v${APP_VERSION}_${Date.now()}.${ext}`;
+      if(bridge)bridge.postMessage({action:'exportDiagnostic',filename,json});else{const blob=new Blob([json],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);}
+      runtimeInstrumentation.diagnosticExport={kind,completedAt:new Date().toISOString(),bytes:measured.bytes,sizeMeasurement:measured.timing,serializedChars:serialized.timing.outputChars,stringify:serialized.timing,exportPerformance:out.diagnostics?.exportPerformance||null,evidenceId:evidence.id,simulationSeconds:simulation.simSeconds};
+      runtimeInstrumentation.diagnosticExport.stringifyWallMs=Math.max(0,appMetricClock()-started);return out;
+    });
   }
-  function exportDiagnosticsFile(){return exportControlPlaneFile('diagnostic');}
+  function diagnosticSnapshotMarker(evidence){return {saveRevision:Number(evidence.saveRevision)||0,simSeconds:Number(evidence.simSeconds)||0,stateRevision:Number(evidence.stateRevision)||0,fleetRevision:Number(evidence.fleetRevision)||0,transactionRevision:Number(evidence.transactionRevision)||0,controlEventSequence:Number(evidence.controlEventSequence)||0,diagnosticEventCount:Number(evidence.diagnosticEventCount)||0,diagnosticEventHead:evidence.diagnosticEventHead||null,resetEpoch:Number(state.resetEpoch)||0,domainCommandSequence:Number(state.domainRuntime?.commandSequence)||0,routeRevision:Number(state.routesRevision)||0,saveCapMinutes:Number(state.savePolicy?.capMinutes)||0,mapMode:String(state.mapMode||''),mapLayer:String(state.mapLayer||'')};}
+  function assertDiagnosticSnapshotUnchanged(marker){const current={saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,stateRevision:Number(state.controlPlane?.revision)||0,fleetRevision:Number(state.fleet?.revision)||0,transactionRevision:Number(window.GH_TRANSACTION_CORE?.revision?.(state))||0,controlEventSequence:Number(state.controlPlane?.eventSequence)||0,diagnosticEventCount:Number(state.diagnostics?.events?.length)||0,diagnosticEventHead:state.diagnostics?.events?.[0]?.id||null,resetEpoch:Number(state.resetEpoch)||0,domainCommandSequence:Number(state.domainRuntime?.commandSequence)||0,routeRevision:Number(state.routesRevision)||0,saveCapMinutes:Number(state.savePolicy?.capMinutes)||0,mapMode:String(state.mapMode||''),mapLayer:String(state.mapLayer||'')};for(const key of Object.keys(marker))if(!Object.is(marker[key],current[key])){const error=new Error(`diagnostic-export-state-changed:${key}`);error.code='DIAGNOSTIC_EXPORT_STATE_CHANGED';throw error;}return true;}
+  async function withDiagnosticSnapshot(work){
+    const previous=diagnosticExportTail;let release;diagnosticExportTail=new Promise(resolve=>{release=resolve;});await previous.catch(()=>{});
+    try{
+      while(simulationEngine.snapshot().manualAdvance)await yieldForInteractivePaint(20);
+      window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__=true;cancelSimulationPersistence();
+      await diagnosticLifecycleSettled();await fleetStepSettled();await yieldForInteractivePaint(20);await diagnosticLifecycleSettled();
+      await settleGovernorDiagnostics('diagnostic-export');
+      window.GH_DIAGNOSTICS.flushDeferred?.(state);
+      const simulation=simulationEngine.snapshot(),evidence=captureDiagnosticEvidence({simulation,recordEvent:false,trackTransitions:false,storeResult:false}),marker=diagnosticSnapshotMarker(evidence);
+      const yieldToHost=()=>yieldForInteractivePaint(20),budgetMs=8,result=await work({evidence,simulation,yieldToHost,budgetMs,marker});assertDiagnosticSnapshotUnchanged(marker);return result;
+    }finally{window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__=false;window.GH_DIAGNOSTICS.flushDeferred?.(state);release();}
+  }
+  async function exportDiagnosticsFile(){return exportControlPlaneFile('diagnostic');}
   function startSimulationFaultRecorder(){
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true)return null;
     const out=window.GH_DIAGNOSTICS.recorderStart?.(state,simulationEngine.snapshot(),{nowMs:Date.now(),context:{appVersion:APP_VERSION,build:RUNTIME_BUILD,saveSchemaVersion:SAVE_SCHEMA_VERSION}})||null;
     if(out)diag('SIM_FAULT_RECORDER_STARTED',{simSeconds:state.simSeconds,speed:state.speed});
     return out;
   }
   function finishSimulationFaultRecorder(){
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true)return null;
     const summary=window.GH_DIAGNOSTICS.recorderStop?.(state,simulationEngine.snapshot(),{nowMs:Date.now(),context:{appVersion:APP_VERSION,build:RUNTIME_BUILD,saveSchemaVersion:SAVE_SCHEMA_VERSION}})||null;
     // The panel action that stops the recorder saves once (its refresh); the stop itself does not save again.
     if(summary)diag('SIM_FAULT_RECORDER_FINISHED',{status:summary.status,events:summary.events,samples:summary.samples,simDelta:summary.simDelta});
@@ -3770,7 +3935,7 @@
 
   function advancedContext(){
     return {state,fmtMoney,fmtNumber,formatDuration,esc,typeName,facilityKind,findFacility,competitors,assetCatalog,WORLD,storageKey,
-    getDynamicFacilities,strategicPartners,supplierFor,awardConstruction,payNamedSupplier,canSpend,spend,canCompanySpend,spendCompany,companyOperatingBalance,companyTotalBalance,companyBudget,companyBudgetRemaining,transferBetweenCompanies,bulkTransferFromGroup,transferWithinCompany,creditCompany,companyPerformance:(type,days=30)=>window.GH_FINANCE_CORE.performance(state,type,days),pushAlert,save,savePolicyStatus,refreshRouteRuntime,runDurableStateCommand,runAuthorizedDomainCommand,dispatchAuthorizedDomain:runAuthorizedDomainCommand,dispatchSystemCommand,authorizationSignatureMarkup,openSignatureDialog,activeAuthorization:()=>clone(founderAuthorization(state)),signatureStatus:()=>{const authority=founderAuthorization(state);return {principalId:FOUNDER_PRINCIPAL_ID,ready:Boolean(authority.signature&&authority.mandate),signatureId:authority.signature?.id||null,signatureVersion:authority.signature?.version||null,mandateId:authority.mandate?.id||null,mandateVersion:authority.mandate?.version||null};},updateKpis,renderMap,panMapTo,openDrawer,openWorldDirectory,buyAsset,routeRuntimeSnapshot:()=>clone(routeTemplates),restoreRouteRuntime:snapshot=>{for(const key of Object.keys(routeTemplates))delete routeTemplates[key];Object.assign(routeTemplates,clone(snapshot||{}));state.routesRevision=(Math.max(0,Math.floor(Number(state.routesRevision)||0))+1);},assignRoute,ensureFacilityWorkforce,ensureBankCorporateClients,bankLiquidityMetrics,bankReviewCorporateLimits,bankDrawCorporateFacility,bankIssueTradeInstrument,bankCashSweep,hardResetGame,worldEntityByKey,appVersion:APP_VERSION,runtimeBuild:RUNTIME_BUILD,saveSchemaVersion:SAVE_SCHEMA_VERSION,runDiagnostics:runFullDiagnostics,exportDiagnostics:exportDiagnosticsFile,startFaultRecorder:startSimulationFaultRecorder,finishFaultRecorder:finishSimulationFaultRecorder,faultRecorder:simulationFaultRecorder,exportControlPlane:exportControlPlaneFile,controlPlane:()=>window.GH_CONTROL_PLANE?.ensure?.(state),controlHealth:()=>window.GH_CONTROL_PLANE?.check?.(state),controlTrace:id=>window.GH_CONTROL_PLANE?.trace?.(state,id),clearDiagnostics:()=>window.GH_DIAGNOSTICS.clear(state),diagnostics:()=>state.diagnostics,businessIntegrity:()=>window.GH_INTEGRITY_CORE.check(state),businessLedger:()=>window.GH_EVENT_LEDGER.summary(state),deliveryClosure:()=>window.GH_DELIVERY_MONITOR.reconcile(state),dependencyGraph:()=>state.dependencyGraph,getSimulationSpeed:()=>state.speed,setSimulationSpeed:value=>setSpeed(value),currentPanel:activeDrawerPanel,currentArg:activeDrawerArg};
+    getDynamicFacilities,strategicPartners,supplierFor,awardConstruction,payNamedSupplier,canSpend,spend,canCompanySpend,spendCompany,companyOperatingBalance,companyTotalBalance,companyBudget,companyBudgetRemaining,transferBetweenCompanies,bulkTransferFromGroup,transferWithinCompany,creditCompany,companyPerformance:(type,days=30)=>window.GH_FINANCE_CORE.performance(state,type,days),pushAlert,save,savePolicyStatus,refreshRouteRuntime,runDurableStateCommand,runAuthorizedDomainCommand,dispatchAuthorizedDomain:runAuthorizedDomainCommand,dispatchSystemCommand,authorizationSignatureMarkup,openSignatureDialog,activeAuthorization:()=>clone(founderAuthorization(state)),signatureStatus:()=>{const authority=founderAuthorization(state);return {principalId:FOUNDER_PRINCIPAL_ID,ready:Boolean(authority.signature&&authority.mandate),signatureId:authority.signature?.id||null,signatureVersion:authority.signature?.version||null,mandateId:authority.mandate?.id||null,mandateVersion:authority.mandate?.version||null};},updateKpis,renderMap,panMapTo,openDrawer,openWorldDirectory,buyAsset,routeRuntimeSnapshot:()=>clone(routeTemplates),restoreRouteRuntime:snapshot=>{for(const key of Object.keys(routeTemplates))delete routeTemplates[key];Object.assign(routeTemplates,clone(snapshot||{}));state.routesRevision=(Math.max(0,Math.floor(Number(state.routesRevision)||0))+1);},assignRoute,ensureFacilityWorkforce,ensureBankCorporateClients,bankLiquidityMetrics,bankReviewCorporateLimits,bankDrawCorporateFacility,bankIssueTradeInstrument,bankCashSweep,hardResetGame,worldEntityByKey,appVersion:APP_VERSION,runtimeBuild:RUNTIME_BUILD,saveSchemaVersion:SAVE_SCHEMA_VERSION,runDiagnostics:runFullDiagnostics,exportDiagnostics:exportDiagnosticsFile,startFaultRecorder:startSimulationFaultRecorder,finishFaultRecorder:finishSimulationFaultRecorder,faultRecorder:simulationFaultRecorder,exportControlPlane:exportControlPlaneFile,controlPlane:()=>window.GH_CONTROL_PLANE?.ensure?.(state),controlHealth:()=>window.GH_CONTROL_PLANE?.check?.(state),controlTrace:id=>window.GH_CONTROL_PLANE?.trace?.(state,id),clearDiagnostics:clearDiagnosticsState,diagnostics:()=>state.diagnostics,businessIntegrity:()=>window.GH_INTEGRITY_CORE.check(state),businessLedger:()=>window.GH_EVENT_LEDGER.summary(state),deliveryClosure:()=>window.GH_DELIVERY_MONITOR.reconcile(state),dependencyGraph:()=>state.dependencyGraph,getSimulationSpeed:()=>state.speed,setSimulationSpeed:value=>setSpeed(value),currentPanel:activeDrawerPanel,currentArg:activeDrawerArg};
   }
 
   // Native imports arrive after iOS has already validated and atomically
@@ -3778,9 +3943,10 @@
   // through the same code path used by the in-game update center.
   window.GH_RUNTIME={
     businessIntegrity:()=>window.GH_INTEGRITY_CORE?.check?.(state),
-    exportDiagnostics:()=>window.GH_DIAGNOSTICS.exportBundle(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()}),
+    exportDiagnostics:async()=>withDiagnosticSnapshot(async({evidence,simulation,yieldToHost,budgetMs,marker})=>{const bundle=await window.GH_DIAGNOSTICS.exportBundleAsync(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation,evidence},{evidence,yieldToHost,budgetMs});assertDiagnosticSnapshotUnchanged(marker);return bundle;}),
     persistForBackground:async()=>{
       // A save in slices finishes first (it holds persistence until its commit); the background save then takes the latest state.
+      while(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true)await diagnosticExportTail;
       await window.GH_PERSISTENCE.slicedSettled?.();
       const revisionAtRequest=Math.max(0,Math.floor(Number(state.saveRevision)||0)),resetEpochAtRequest=Number(state.resetEpoch)||0;
       let waitedForLifecycle=false,durabilityEstablished=false;
@@ -5284,6 +5450,7 @@
   }
   let resumeSpeed=startupSignatureResumeSpeed>0?startupSignatureResumeSpeed:(state.speed>0?state.speed:1);
   function setSpeed(value){
+    if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true){notice('انتظر اكتمال تصدير التشخيص قبل تغيير السرعة.');return false;}
     if(state.speed>0)resumeSpeed=state.speed;
     const requested=Number(value),next=SAFE_SPEED_VALUES.includes(requested)?requested:1,now=performance.now();
     // Cancel first. A staged rollback owns the pre-slice `speed` snapshot and

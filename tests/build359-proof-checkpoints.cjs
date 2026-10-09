@@ -38,7 +38,8 @@ assert.ok(after.bytes<before.bytes*.55,`the proof store shrinks (${before.bytes}
 for(const document of documents()){const record=Proof.record(state,document.documentProofId);assert.ok(record&&record.form===Proof.COMPACT_FORM&&!record.signedContent,'a current version stays compact');}
 assert.ok(allVerify(),'every document verifies after');
 assert.deepEqual([...new Set(Object.values(store().periodDigests).map(row=>row.count))].reduce((n,c)=>n+c,0)>0,true);
-assert.equal(Schema.validate(state).ok,true,'full validation');assert.equal(Schema.validate(state,{trustVerified:true}).ok,true,'trusted validation');
+const checkpointWork=Proof.verifyCheckpoints(state,null,{fresh:true});assert.equal(checkpointWork.ok,true);assert.equal(checkpointWork.stats.checkpointRows,after.checkpoints);assert.equal(checkpointWork.stats.digestRows,after.checkpoints);assert.ok(checkpointWork.stats.periodRows>=Object.keys(store().periodDigests).length,'period work is counted inside the verifier');
+assert.equal(Schema.validate(state).ok,true,'full validation');const schemaWork=Schema.telemetry().lastValidation.documentProofWork;assert.equal(schemaWork.checkpointRows,after.checkpoints);assert.ok(schemaWork.total>=schemaWork.checkpointRows+schemaWork.checkpointDigestRows,'schema telemetry includes checkpoint hashing work');assert.equal(Schema.validate(state,{trustVerified:true}).ok,true,'trusted validation');
 
 // Tampering is refused (on a copy, the state is sealed).
 const copy=()=>JSON.parse(JSON.stringify(state));

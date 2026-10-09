@@ -312,19 +312,21 @@
     const validation=validateState(state);return {state,changed:original!==JSON.stringify(state),errors:validation.errors,warnings:validation.warnings};
   }
   function validateState(state,options={}){
-    const errors=[],warnings=[];
-    if(!object(state))return {ok:false,errors:['company-platform-root'],warnings};
+    const errors=[],warnings=[],measure=options?.measureWork===true,work=measure?{stateChecks:1,registryRows:0,openedNormalizationRows:0,openedRows:0,assetFieldVisits:0,assetFallbackRows:0,deliveryRows:0,deliveryProjectionRows:0,deliveryAssetRows:0,routeRows:0,facilityRows:0,companyFinanceRows:0}:null;let logicalRows=0;
+    const answer=()=>{const out={ok:errors.length===0,errors:[...new Set(errors)],warnings:[...new Set(warnings)]};if(measure){out.work=work;out.logicalRows=logicalRows;}return out;};
+    if(!object(state)){errors.push('company-platform-root');return answer();}
     if(state.companyPlatform!==undefined&&(!object(state.companyPlatform)||state.companyPlatform.schema!==STATE_SCHEMA||Number(state.companyPlatform.schemaVersion)!==STATE_SCHEMA_VERSION))errors.push('company-platform-schema');
     const registry=object(state.companyRegistry)?state.companyRegistry:null;if(!registry)errors.push('company-registry-shape');
-    const opened=Array.isArray(state.openedCompanies)?state.openedCompanies:[];if(!Array.isArray(state.openedCompanies))errors.push('opened-companies-shape');if(unique(opened).length!==opened.length)errors.push('opened-companies-duplicate');
+    const opened=Array.isArray(state.openedCompanies)?state.openedCompanies:[];if(!Array.isArray(state.openedCompanies))errors.push('opened-companies-shape');const normalizedOpened=[];for(const value of opened){if(work)work.openedNormalizationRows++;const normalized=String(value||'').trim();if(normalized)normalizedOpened.push(normalized);}if(new Set(normalizedOpened).size!==opened.length)errors.push('opened-companies-duplicate');
     for(const [companyId,record] of Object.entries(registry||{})){
+      if(work)work.registryRows++;
       if(!validId(companyId)||!object(record)){errors.push(`company-record-shape:${companyId}`);continue;}
       if(record.id!==undefined&&record.id!==companyId)errors.push(`company-record-id:${companyId}`);if(record.companyId!==undefined&&record.companyId!==companyId)errors.push(`company-record-company-id:${companyId}`);
       if(record.definitionId!==undefined&&!validId(record.definitionId))errors.push(`company-record-definition-id:${companyId}`);
       for(const key of ['sectorIds','assetClasses','routeModes'])if(record[key]!==undefined&&(!Array.isArray(record[key])||record[key].some(value=>!validDataId(value))))errors.push(`company-record-${key}:${companyId}`);
       const definition=definitionFor(state,companyId);if(!definition)warnings.push(`company-definition-missing:${companyId}`);else if(!instanceAllowed(state,companyId,definition))errors.push(`company-instance-policy:${companyId}:${definition.definitionId}`);
     }
-    for(const companyId of opened){if(!validId(companyId))errors.push(`opened-company-id:${companyId}`);else if(!registry?.[companyId])errors.push(`opened-company-record:${companyId}`);}
+    for(const companyId of opened){if(work)work.openedRows++;if(!validId(companyId))errors.push(`opened-company-id:${companyId}`);else if(!registry?.[companyId])errors.push(`opened-company-record:${companyId}`);}
     // Build 358: thousands of assets share a handful of owners and classes; each distinct value is checked once per call.
     const referenceChecks=new Map(),classChecks=new Map();
     const validReference=companyId=>{let ok=referenceChecks.get(companyId);if(ok===undefined){ok=validId(companyId)&&Boolean(registry?.[companyId]||getDefinition(companyId));referenceChecks.set(companyId,ok);}return ok;};
@@ -334,13 +336,13 @@
     // pattern (GH_FLEET_DATA.forEachFieldClasses). These checks read only class-level values, so a class either passes
     // whole or fails for every member; a failing class is then reported member by member, exactly as a per-row scan.
     const assetFields=['id','ownerCompanyId','companyId','assetMode','type','assetClass'];
-    if(options?.assetScan==='rows'||typeof fleetData().forEachFieldClasses!=='function')fleetData().forEachFields(state,assetFields,asset=>validateAsset(asset),{raw:true});
-    else fleetData().forEachFieldClasses(state,assetFields,(asset,count,info)=>{const before=errors.length;validateAsset(asset);if(errors.length===before||info.members<=1)return;errors.length=before;info.forEachMember(member=>validateAsset(member));});
-    for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[])for(const asset of fleetData().isCompactReceipt(delivery)?fleetData().receiptDistinctFields(delivery,['ownerCompanyId','companyId','assetMode','type','assetClass']).map(row=>({...row,id:delivery.id})):Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[])validateAsset(asset,'delivery-asset');
-    for(const route of Array.isArray(state.customRoutes)?state.customRoutes:[]){const companyId=String(route?.ownerCompanyId||route?.companyId||route?.company||ownerForLegacyRouteMode(route?.routeMode||route?.type)||''),routeMode=String(route?.routeMode||route?.type||'');if(!validReference(companyId))errors.push(`route-company-reference:${route?.id||'unknown'}`);if(!validDataId(routeMode))errors.push(`route-mode:${route?.id||'unknown'}`);}
-    for(const bucket of ['globalBases','customHubs','branches'])for(const facility of Array.isArray(state[bucket])?state[bucket]:[]){const companyId=String(facility?.ownerCompanyId||facility?.companyId||facility?.company||'').trim();if(companyId&&!validReference(companyId))errors.push(`facility-company-reference:${facility?.id||'unknown'}`);}
-    for(const companyId of Object.keys(object(state.companyFinance)?state.companyFinance:{}))if(!validReference(companyId))warnings.push(`company-finance-orphan:${companyId}`);
-    return {ok:errors.length===0,errors:[...new Set(errors)],warnings:[...new Set(warnings)]};
+    if(options?.assetScan==='rows'||typeof fleetData().forEachFieldClasses!=='function')fleetData().forEachFields(state,assetFields,asset=>{if(work)work.assetFieldVisits++;logicalRows++;validateAsset(asset);},{raw:true});
+    else fleetData().forEachFieldClasses(state,assetFields,(asset,count,info)=>{if(work)work.assetFieldVisits++;if(count>0)logicalRows+=count;const before=errors.length;validateAsset(asset);if(errors.length===before||info.members<=1)return;errors.length=before;info.forEachMember(member=>{if(work)work.assetFallbackRows++;validateAsset(member);});});
+    for(const delivery of Array.isArray(state.realism?.procurement?.deliveries)?state.realism.procurement.deliveries:[]){if(work)work.deliveryRows++;let assets;if(fleetData().isCompactReceipt(delivery)){assets=[];for(const row of fleetData().receiptDistinctFields(delivery,['ownerCompanyId','companyId','assetMode','type','assetClass'])){if(work)work.deliveryProjectionRows++;assets.push({...row,id:delivery.id});}}else assets=Array.isArray(delivery?.assets)?delivery.assets:delivery?.asset?[delivery.asset]:[];for(const asset of assets){if(work)work.deliveryAssetRows++;validateAsset(asset,'delivery-asset');}}
+    for(const route of Array.isArray(state.customRoutes)?state.customRoutes:[]){if(work)work.routeRows++;const companyId=String(route?.ownerCompanyId||route?.companyId||route?.company||ownerForLegacyRouteMode(route?.routeMode||route?.type)||''),routeMode=String(route?.routeMode||route?.type||'');if(!validReference(companyId))errors.push(`route-company-reference:${route?.id||'unknown'}`);if(!validDataId(routeMode))errors.push(`route-mode:${route?.id||'unknown'}`);}
+    for(const bucket of ['globalBases','customHubs','branches'])for(const facility of Array.isArray(state[bucket])?state[bucket]:[]){if(work)work.facilityRows++;const companyId=String(facility?.ownerCompanyId||facility?.companyId||facility?.company||'').trim();if(companyId&&!validReference(companyId))errors.push(`facility-company-reference:${facility?.id||'unknown'}`);}
+    for(const companyId of Object.keys(object(state.companyFinance)?state.companyFinance:{})){if(work)work.companyFinanceRows++;if(!validReference(companyId))warnings.push(`company-finance-orphan:${companyId}`);}
+    return answer();
   }
   function validateRegistry(){
     const errors=[];for(const definition of definitionsById.values()){const validation=validateDefinition(definition);if(!validation.ok)errors.push(...validation.errors);for(const [kind,id] of Object.entries(definition.adapters||{})){const adapter=capabilityRegistry.getAdapter(kind,id);if(!adapter){errors.push(`company-adapter-missing:${definition.id}:${kind}:${id}`);continue;}const descriptor=capabilityRegistry.validateAdapter?.(kind,id,adapter);if(descriptor&&!descriptor.ok)errors.push(...descriptor.errors.map(error=>`${definition.id}:${error}`));if(typeof adapter.supports!=='function'||adapter.supports(definition)!==true)errors.push(`company-adapter-unsupported:${definition.id}:${kind}:${id}`);}}

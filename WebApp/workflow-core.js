@@ -63,7 +63,7 @@
       throw error;
     }
   }
-  function summary(s){const w=ensure(state(s));return w?{sequence:w.sequence,count:w.history.length,lastIntegrity:w.lastIntegrity,recent:w.history.slice(0,30)}:{sequence:0,count:0,lastIntegrity:null,recent:[]};}
+  function summary(s){const target=state(s),w=target?.workflowControl&&typeof target.workflowControl==='object'?target.workflowControl:null,history=Array.isArray(w?.history)?w.history:[];return {sequence:Math.max(0,Number(w?.sequence)||0),count:history.length,lastIntegrity:w?.lastIntegrity&&typeof w.lastIntegrity==='object'?w.lastIntegrity:null,recent:history.slice(0,30)};}
   const API=Object.freeze({VERSION,HISTORY_LIMIT,ensure,record,notify,confirm:confirmAction,postCheck,run,summary});
   globalThis.GH_WORKFLOW=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_WORKFLOW=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();

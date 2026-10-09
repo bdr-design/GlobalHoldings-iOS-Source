@@ -8,7 +8,7 @@
 // Messages out: ready, result (or fallback with a reason: the main thread then runs that step itself), error.
 importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js');
 
-const STORE=self.GH_FLEET_STORE,EVENTS=self.GH_FLEET_EVENTS,VERSION='GH-FLEET-ENGINE-WORKER-358.1.0';
+const STORE=self.GH_FLEET_STORE,EVENTS=self.GH_FLEET_EVENTS,VERSION='GH-FLEET-ENGINE-WORKER-362.1.0';
 let store=null,routes=new Map(),specs={},open=null;
 
 const routeKey=(routeId,base)=>String(routeId||'')+'\u0000'+String(base||'');
@@ -40,9 +40,45 @@ function advance(message){
   // Reused slots first (any order), then appended slots in ascending order: the main thread interns them at these numbers.
   for(const ref of journal.reused)values.push([ref,store.values[ref]]);
   for(let ref=valuesLength;ref<store.values.length;ref++)values.push([ref,store.values[ref]]);
-  open={id:message.id,journal};
+  open={kind:'step',id:message.id,journal};
   const budget=Math.max(1,Math.floor(Number(message.budget)||1500));
   return {out,indices,bytes:rows.bytes,extras:rows.extras,values,revisionDelta:store.revision-revision,staticRows:out.slow>0,
+    nextBudgetTime:EVENTS.timeForEventBudget(store,budget)};
+}
+
+function beginWindow(message){
+  if(!store)throw new Error('window-replica-missing');
+  if(open)throw new Error('window-while-step-open');
+  const from=Number(message.from),target=Number(message.target);if(!Number.isFinite(from)||!Number.isFinite(target)||target<=from)throw new Error('window-range-invalid');
+  open={kind:'window',id:message.id,journal:STORE.beginJournal(store),length:store.length,structure:store.structure,valuesLength:store.values.length,nextFrom:from,target,nextSeq:0};
+}
+function advanceWindow(message){
+  if(!store)return {fallback:'replica-missing'};
+  if(!open||open.kind!=='window'||open.id!==message.windowId)return {fallback:'window-session-missing'};
+  const from=Number(message.from),to=Number(message.to),seq=Number(message.seq);
+  if(seq!==open.nextSeq||!Number.isFinite(from)||!Number.isFinite(to)||Math.abs(from-open.nextFrom)>1e-6||to<=from||to>open.target+1e-6){STORE.rollbackJournal(open.journal);open=null;return {fallback:'window-sequence-invalid'};}
+  const revision=store.revision;
+  let out;
+  try{
+    out=EVENTS.advance(store,{from:message.from,to:message.to,context:message.context,resolveRoute,catalogSpecs,tripAlertLimit:message.tripAlertLimit,order:message.order,...(Number.isFinite(message.maxEvents)?{maxEvents:message.maxEvents}:{})});
+  }catch(error){
+    STORE.rollbackJournal(open.journal);open=null;
+    return {fallback:error instanceof MissingRoute?String(error.message):`engine-error:${String(error?.message||error).slice(0,160)}`};
+  }
+  if(store.length!==open.length||store.structure!==open.structure){STORE.rollbackJournal(open.journal);open=null;return {fallback:'structure-changed'};}
+  // The outer journal contains every row touched since the start of the window.
+  // The main side removes rows already equal to its last applied checkpoint, so
+  // repeated hourly steps retain the exact per-step revision and data semantics.
+  const log=open.journal.log,indices=new Int32Array(log.count);
+  for(let k=0;k<log.count;k++)indices[k]=log.rows[k];
+  indices.sort();
+  const rows=STORE.readRows(store,indices),values=[];
+  for(const ref of open.journal.reused)values.push([ref,store.values[ref]]);
+  for(let ref=open.valuesLength;ref<store.values.length;ref++)values.push([ref,store.values[ref]]);
+  const budget=Math.max(1,Math.floor(Number(message.budget)||1500));
+  open.nextFrom=Number(out.completeTo);open.nextSeq++;
+  if(!Number.isFinite(open.nextFrom)||open.nextFrom<from-1e-6||open.nextFrom>to+1e-6){STORE.rollbackJournal(open.journal);open=null;return {fallback:'window-complete-to-invalid'};}
+  return {windowId:message.windowId,seq,from,to,out,indices,bytes:rows.bytes,extras:rows.extras,values,revisionDelta:store.revision-revision,staticRows:out.slow>0,
     nextBudgetTime:EVENTS.timeForEventBudget(store,budget)};
 }
 
@@ -51,7 +87,7 @@ self.addEventListener('message',event=>{
   try{
     switch(message.type){
       case 'replica':
-        if(open){STORE.endJournal(open.journal);open=null;}
+        if(open){STORE.rollbackJournal(open.journal);open=null;}
         store=STORE.importReplica(message.payload);
         self.postMessage({type:'ready',version:VERSION,id:message.id,length:store.length});
         return;
@@ -84,8 +120,20 @@ self.addEventListener('message',event=>{
         self.postMessage({type:'result',version:VERSION,id:message.id,ms,...result},[result.bytes,result.indices.buffer]);
         return;
       }
+      case 'window-begin':beginWindow(message);return;
+      case 'window-advance':{
+        const started=performance.now(),result=advanceWindow(message),ms=performance.now()-started;
+        if(result.fallback){self.postMessage({type:'result',version:VERSION,id:message.id,fallback:result.fallback,ms});return;}
+        self.postMessage({type:'result',version:VERSION,id:message.id,ms,...result},[result.bytes,result.indices.buffer]);
+        return;
+      }
       case 'settle':
-        if(!open||open.id!==message.id)return;
+        if(!open||open.kind!=='step'||open.id!==message.id)return;
+        if(message.outcome==='commit')STORE.endJournal(open.journal);else STORE.rollbackJournal(open.journal);
+        open=null;
+        return;
+      case 'window-settle':
+        if(!open||open.kind!=='window'||open.id!==message.id)return;
         if(message.outcome==='commit')STORE.endJournal(open.journal);else STORE.rollbackJournal(open.journal);
         open=null;
         return;

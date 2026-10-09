@@ -9,7 +9,8 @@
 //  3. a fault only a late section finds (a tampered signed document) aborts the staged transaction and rolls it back
 //     exactly;
 //  4. the published validation time counts only the sections' own work, not the frames between them;
-//  5. outside a staged transaction a stepped task still runs to the end at once.
+//  5. each published section sample names the section and records finite duration and the work actually visited;
+//  6. outside a staged transaction a stepped task still runs to the end at once.
 const assert=require('node:assert/strict'),path=require('node:path'),ROOT=process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..');
 const {scenario}=require(path.join(ROOT,'tests/helpers/business-scenario'));
 const e=scenario(),s=e.s,state=e.state,TX=s.GH_TRANSACTION_CORE,Schema=s.GH_SAVE_SCHEMA,CP=s.GH_CONTROL_PLANE,Proof=s.GH_DOCUMENT_PROOF;
@@ -21,6 +22,9 @@ for(let order=0;order<3;order++){
   assert.equal(out.committed,true);
 }
 const drain=(target,options)=>{const steps=Schema.validationSteps(target,options),sections=[];let step;while(!(step=steps.next()).done)sections.push(step.value);return {result:step.value,sections};};
+const sectionNames=['fleet-routes','route-state','finance','books','authorization','document-proofs','company-platform'];
+const sectionWork=metric=>Array.from(metric.sectionSamples,({name,units})=>({name,units}));
+const assertedWork=sample=>Object.values(sample.details.work).reduce((total,value)=>total+(Number.isSafeInteger(value)&&value>=0?value:0),0);
 // Build 359: a final document (the seed's paid purchases) is sealed, frozen and never edited; the tampered document is an
 // open payable, which the business rules may still amend.
 e.command('finance','issue-invoice',{kind:'مصروف',amount:1000,company:'air',counterparty:'Supplier LLC',note:'QA open payable'});
@@ -29,9 +33,12 @@ const signed=()=>Proof.stateDocuments(state).find(row=>row?.documentProofId&&!TX
 // 1. Same result as validate(), section by section, valid and broken.
 {
   for(const trustVerified of [false,true]){
-    const whole=Schema.validate(state,{trustVerified}),stepped=drain(state,{trustVerified});
+    const whole=Schema.validate(state,{trustVerified}),wholeMetric=Schema.telemetry().lastValidation,stepped=drain(state,{trustVerified}),steppedMetric=Schema.telemetry().lastValidation;
     assert.equal(whole.ok,true,`seeded state validates: ${whole.errors}`);assert.deepEqual(stepped.result,whole);
     assert.deepEqual(stepped.sections,['fleet-routes','route-state','finance','books','authorization','document-proofs'],`sections in order: ${stepped.sections}`);
+    assert.deepEqual(Array.from(steppedMetric.sectionSamples,row=>row.name),sectionNames,'telemetry includes every executed section, including the final non-yielding section');
+    assert.deepEqual(sectionWork(steppedMetric).filter(row=>!['authorization','document-proofs'].includes(row.name)),sectionWork(wholeMetric).filter(row=>!['authorization','document-proofs'].includes(row.name)),'sections without verification caches execute the same visits');
+    for(const sample of steppedMetric.sectionSamples){assert.equal(Number.isFinite(sample.durationMs)&&sample.durationMs>=0,true,`${sample.name}: finite duration`);assert.equal(Number.isSafeInteger(sample.units)&&sample.units>=0,true,`${sample.name}: integer work units`);assert.equal(sample.units,assertedWork(sample),`${sample.name}: units are exactly the measured work breakdown`);}
   }
   const breaks=[
     ['fleet-routes',target=>{target.customRoutes.push({id:'QA-BAD-ROUTE',routeMode:'air',ownerCompanyId:'air',fromFacility:'B1',toFacility:'B1',route:[[0,0]]});},()=>{state.customRoutes=state.customRoutes.filter(route=>route.id!=='QA-BAD-ROUTE');}],
@@ -44,6 +51,50 @@ const signed=()=>Proof.stateDocuments(state).find(row=>row?.documentProofId&&!TX
     repair();assert.equal(Schema.validate(state).ok,true,`${section}: repaired`);
   }
   console.log('PASS sections give exactly validate() on valid and broken states');
+}
+
+// A compressed million-row fleet performs one class visit while retaining the
+// logical fleet size as context. The reference row scan reports every callback
+// it actually executes; units never substitute the logical size for that work.
+{
+  const scale=scenario(),ss=scale.s,scaleState=scale.state,realFleet=ss.GH_FLEET_DATA,MILLION=1_000_000;
+  const asset={id:'N-AIR-00000001',name:'QA Aircraft',model:'QA-1',status:'active',assetMode:'air',type:'air',ownerCompanyId:'air',baseFacility:'B1',phase:'idle',progress:0,fuel:100,condition:100};
+  ss.GH_FLEET_DATA=Object.freeze({...realFleet,mode:()=> 'store',size:()=>MILLION,idCollisions:()=>({duplicate:false,missing:false}),forEachFieldClasses(_state,_fields,fn){fn(asset,MILLION,{index:0,members:MILLION,forEachMember:cb=>cb(asset,0)});return {classes:1,singles:0};},forEachFields(_state,_fields,fn){for(let index=0;index<MILLION;index++)fn(asset,index);}});
+  ss.GH_SAVE_SCHEMA.validate(scaleState);const compressedMetric=ss.GH_SAVE_SCHEMA.telemetry().lastValidation,compressed=compressedMetric.sectionSamples.find(row=>row.name==='fleet-routes'),compressedCompany=compressedMetric.sectionSamples.find(row=>row.name==='company-platform');
+  ss.GH_SAVE_SCHEMA.validate(scaleState,{assetScan:'rows'});const rowMetric=ss.GH_SAVE_SCHEMA.telemetry().lastValidation,rows=rowMetric.sectionSamples.find(row=>row.name==='fleet-routes'),rowCompany=rowMetric.sectionSamples.find(row=>row.name==='company-platform');
+  assert.equal(compressed.details.logicalRows,MILLION);assert.equal(compressed.details.work.assetFieldVisits,1,'one compressed class is one executed visit');assert.ok(compressed.units<100,`compressed units stay physical: ${compressed.units}`);
+  assert.equal(rows.details.logicalRows,MILLION);assert.equal(rows.details.work.assetFieldVisits,MILLION,'the reference scan reports every executed row visit');assert.ok(rows.units>=MILLION);
+  assert.equal(compressedCompany.details.logicalRows,MILLION);assert.equal(compressedCompany.details.work.assetFieldVisits,1,'company validation also counts its compressed class visit');assert.ok(compressedCompany.units<100);
+  assert.equal(rowCompany.details.logicalRows,MILLION);assert.equal(rowCompany.details.work.assetFieldVisits,MILLION,'company row validation reports every row callback');assert.ok(rowCompany.units>=MILLION);
+  console.log(`PASS compressed ${MILLION} logical assets report ${compressed.units} work units; row scan reports ${rows.units}`);
+}
+
+// Finance work is recorded where nested rows are already visited. Adding
+// accounts, journal lines and budget lines raises units by precisely those
+// loop iterations without a second enumeration for telemetry.
+{
+  Schema.validate(state,{trustVerified:true});const before=Schema.telemetry().lastValidation,beforeWork=before.financeWork,beforeUnits=before.sectionSamples.find(row=>row.name==='finance').units;
+  const accounts=state.companyFinance.air.accounts,accountStart=accounts.length,journal=state.finance.journalEntries,journalStart=journal.length,budgetKey='qaTelemetryNested',budgetCount=257,lineCount=1024,accountCount=513;
+  for(let index=0;index<accountCount;index++)accounts.push({id:`QA-ACCOUNT-${index}`,balance:0});
+  journal.push({id:'QA-JOURNAL-NESTED',lines:Array.from({length:lineCount},(_,index)=>index<lineCount/2?{debit:1,credit:0}:{debit:0,credit:1})});
+  state.companyBudgets[budgetKey]={enabled:false,limit:0,spent:0,reserved:0,lines:Object.fromEntries(Array.from({length:budgetCount},(_,index)=>[`line-${index}`,0])),spentByLine:{},reservedByLine:{}};
+  const result=Schema.validate(state,{trustVerified:true}),after=Schema.telemetry().lastValidation,afterWork=after.financeWork,afterUnits=after.sectionSamples.find(row=>row.name==='finance').units;
+  assert.equal(result.ok,true,`nested finance fixture remains valid: ${result.errors}`);assert.equal(afterWork.accountRows-beforeWork.accountRows,accountCount);assert.equal(afterWork.journalRows-beforeWork.journalRows,1);assert.equal(afterWork.journalLineRows-beforeWork.journalLineRows,lineCount);assert.equal(afterWork.budgetRows-beforeWork.budgetRows,1);assert.equal(afterWork.budgetLineRows-beforeWork.budgetLineRows,budgetCount);
+  assert.equal(afterUnits-beforeUnits,accountCount+1+lineCount+1+budgetCount,'finance units equal the nested rows actually visited');
+  accounts.length=accountStart;journal.length=journalStart;delete state.companyBudgets[budgetKey];assert.equal(Schema.validate(state,{trustVerified:true}).ok,true);
+  console.log(`PASS finance units grow by ${afterUnits-beforeUnits} actual nested visits`);
+}
+
+// 5. Work units come from the validation walks themselves. Unsigned live
+// finance documents still cost collection/inspection work even though the
+// proof maps do not grow, and a sealed archive memo must remain unenumerated.
+{
+  Schema.validate(state,{trustVerified:true});const before=Schema.telemetry().lastValidation,beforeWork=before.documentProofWork,beforeUnits=before.sectionSamples.find(row=>row.name==='document-proofs').units;
+  const count=2048,start=state.finance.transfers.length;for(let index=0;index<count;index++)state.finance.transfers.push({id:`QA-UNSIGNED-${index}`,reference:`QA-UNSIGNED-${index}`,amount:1,status:'executed'});
+  const result=Schema.validate(state,{trustVerified:true}),after=Schema.telemetry().lastValidation,afterWork=after.documentProofWork,afterUnits=after.sectionSamples.find(row=>row.name==='document-proofs').units;
+  assert.equal(result.ok,true,`unsigned document fixture remains valid: ${result.errors}`);assert.equal(afterWork.archiveMode,'same');assert.equal(afterWork.archiveDocuments,0,'a trusted same-version pass does not enumerate sealed archive documents');assert.equal(afterWork.checkpointRows,0);assert.equal(afterWork.sealRows,0);assert.equal(afterWork.liveDocuments,beforeWork.liveDocuments+count);assert.equal(afterUnits,beforeUnits+count,'document-proof units must scale with actual live document visits');
+  state.finance.transfers.length=start;assert.equal(Schema.validate(state,{trustVerified:true}).ok,true);
+  console.log(`PASS document-proof work units scale by ${count} live documents without walking the sealed archive`);
 }
 
 // 2-3. A staged transaction runs the schema check across steps, and a late-section fault rolls it back.
@@ -86,10 +137,11 @@ const stagedRun=(mutate)=>{
   const metric=Schema.telemetry().lastValidation;
   assert.ok(metric.totalMs<waited,`published time ${metric.totalMs} ms excludes ${waited} ms of pauses`);
   assert.ok(Math.abs(metric.totalMs-(metric.authorizationMs+metric.documentProofMs+metric.companyPlatformMs+metric.otherMs))<0.5,'sections add up');
+  assert.ok(Math.abs(metric.totalMs-metric.sectionSamples.reduce((total,row)=>total+row.durationMs,0))<0.5,'section samples add up to active validation time');
   console.log(`PASS validation time ${metric.totalMs.toFixed(2)} ms excludes ${waited} ms of pauses`);
 }
 
-// 5. Outside staging: a stepped critical task runs at once (execute) and outside any transaction (afterCommit).
+// 6. Outside staging: a stepped critical task runs at once (execute) and outside any transaction (afterCommit).
 {
   let sections=0,done=false;
   const out=TX.execute(state,{label:'qa-sections-plain',apply:()=>{TX.afterCommit(function*(){sections++;yield 'a';sections++;yield 'b';done=true;},{critical:true,key:'qa-stepped'});return true;}});

@@ -1,0 +1,96 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {harness,minimal}=require('./helpers/core-harness');
+
+function stateForEnergy(){
+  const state=minimal();state.saveVersion='3.0.0';state.speed=1;state.cash=1000000;state.debt=0;state.groupValue=1000000;state.eventLog=[];state.sectorProfitToday={};state.tripRevenueAccrued={};state.constructionContracts=[];
+  state.energy={gasMW:0,solarMW:0,windMW:0,storageMWh:0,availability:90,sites:[]};
+  state.realism={energy:{reserveMargin:0,availableMW:0,storageHealth:99},procurement:{deliveries:[]},projects:[]};
+  return state;
+}
+const ids=report=>Array.from(report.issues).filter(row=>row.domain==='energy').map(row=>String(row.id));
+const generationFacility=(overrides={})=>({id:'POWER-1',kind:'power',ownerCompanyId:'power',energyKind:'gas',capacityAmount:100,capacity:'100 MW',commissioned:true,...overrides});
+const generationSite=(overrides={})=>({id:'SITE-POWER-1',facilityId:'POWER-1',kind:'gas',capacity:100,commissioned:true,commissionedDay:0,...overrides});
+
+{
+  const {s}=harness(['integrity-core']),I=s.GH_INTEGRITY_CORE;
+  let state=stateForEnergy(),lifecycle;assert.equal(I.energyLifecycleSnapshot(state).status,'unformed');assert.deepEqual(ids(I.check(state)),[]);
+
+  state=stateForEnergy();state.openedCompanies=['power'];assert.equal(I.energyLifecycleSnapshot(state).status,'formed');assert.deepEqual(ids(I.check(state)),['POWER_NOT_COMMISSIONED']);
+
+  state=stateForEnergy();state.openedCompanies=['power'];state.customHubs=[generationFacility({commissioned:false})];state.constructionContracts=[{id:'BUILD-P',ownerCompanyId:'power',capacityKey:'gasMW',capacityAmount:100,commissioned:false}];assert.equal(I.energyLifecycleSnapshot(state).status,'construction');assert.deepEqual(ids(I.check(state)),[]);
+  state.realism.projects=[{sourceId:'BUILD-P',progress:80,stage:'Commissioning'}];assert.equal(I.energyLifecycleSnapshot(state).status,'commissioning');assert.deepEqual(ids(I.check(state)),[]);
+
+  state=stateForEnergy();state.openedCompanies=['power'];state.energy.storageMWh=200;state.customHubs=[generationFacility({energyKind:'storage',capacityAmount:200,capacity:'200 MWh'})];assert.equal(I.energyLifecycleSnapshot(state).status,'storage-only');assert.deepEqual(ids(I.check(state)),[]);
+
+  state=stateForEnergy();state.energy.sites=[{id:'STORAGE-ORPHAN',kind:'storage',capacity:200,commissioned:true,commissionedDay:0}];lifecycle=I.energyLifecycleSnapshot(state);assert.equal(lifecycle.opened,true);assert.equal(lifecycle.status,'storage-only');assert.equal(lifecycle.commissionedStorageSites,1);assert.deepEqual(ids(I.check(state)),[]);
+
+  state=stateForEnergy();state.openedCompanies=['power'];state.simSeconds=2*86400;state.lastFinancialDay=2;state.energy.gasMW=100;state.energy.availability=84.24;state.realism.energy={reserveMargin:8,availableMW:84.24,storageHealth:99,adequacyEvaluatedDay:2};lifecycle=I.energyLifecycleSnapshot(state);assert.equal(lifecycle.status,'operational-generation');assert.equal(lifecycle.legacyAggregateOnly,true);assert.deepEqual(ids(I.check(state)),[]);
+
+  state=stateForEnergy();state.simSeconds=2*86400;state.lastFinancialDay=2;state.energy.gasMW=100;state.energy.availability=84.24;state.realism.energy={reserveMargin:8,availableMW:84.24,storageHealth:99,adequacyEvaluatedDay:2};s.GH_COMPANY_PLATFORM={resolveCompany:()=>({known:true,operational:false})};lifecycle=I.energyLifecycleSnapshot(state);assert.equal(lifecycle.status,'operational-generation');assert.equal(lifecycle.opened,true,'legacy aggregate capacity remains operational even when the platform has no opened company record');assert.deepEqual(ids(I.check(state)),[]);delete s.GH_COMPANY_PLATFORM;
+
+  state=stateForEnergy();state.openedCompanies=['power'];state.simSeconds=2*86400;state.lastFinancialDay=2;state.energy.gasMW=100;state.energy.availability=84.24;state.realism.energy={reserveMargin:8,availableMW:84.24,storageHealth:99,adequacyEvaluatedDay:2};state.customHubs=[generationFacility({commissioned:false})];state.constructionContracts=[{id:'BUILD-P',ownerCompanyId:'power',capacityKey:'gasMW',capacityAmount:100,commissioned:false}];lifecycle=I.energyLifecycleSnapshot(state);assert.equal(lifecycle.status,'operational-generation');assert.equal(lifecycle.legacyAggregateOnly,true,'a new construction project does not reclassify older aggregate-only operating capacity');assert.deepEqual(ids(I.check(state)),[]);
+
+  const operational=margin=>{const value=stateForEnergy(),availableMW=78*(1+Number(margin)/100);value.openedCompanies=['power'];value.simSeconds=2*86400;value.lastFinancialDay=2;value.energy.gasMW=100;value.energy.availability=availableMW;value.customHubs=[generationFacility()];value.energy.sites=[generationSite()];value.realism.energy={reserveMargin:margin,availableMW,storageHealth:99,adequacyEvaluatedDay:2};return value;};
+  assert.deepEqual(ids(I.check(operational(-.1))),['POWER_RESERVE_MARGIN_NEGATIVE']);
+  assert.deepEqual(ids(I.check(operational(0))),['POWER_RESERVE_MARGIN_LOW']);
+  assert.deepEqual(ids(I.check(operational(7.999))),['POWER_RESERVE_MARGIN_LOW']);
+  assert.deepEqual(ids(I.check(operational(8))),[]);
+  state=operational(0);delete state.realism.energy.reserveMargin;assert.deepEqual(ids(I.check(state)),['POWER_ADEQUACY_METRIC_UNAVAILABLE']);
+  state=operational(0);delete state.realism.energy.adequacyEvaluatedDay;assert.equal(I.energyLifecycleSnapshot(state).metricFresh,false,'a migrated default is not evidence that adequacy was evaluated');assert.deepEqual(ids(I.check(state)),[]);state.realism.energy.adequacyEvaluatedDay=2;assert.equal(I.energyLifecycleSnapshot(state).metricFresh,true);assert.deepEqual(ids(I.check(state)),['POWER_RESERVE_MARGIN_LOW']);
+
+  state=operational(8);state.simSeconds=100*86400;state.lastFinancialDay=100;state.realism.energy.adequacyEvaluatedDay=2;assert.equal(I.energyLifecycleSnapshot(state).metricFresh,false,'an old daily metric is stale after later closes');assert.deepEqual(ids(I.check(state)),[]);
+  state=operational(-50);state.energy.availability=90;state.realism.energy.availableMW=90;assert.equal(I.energyLifecycleSnapshot(state).adequacyMetricConsistent,false);assert.deepEqual(ids(I.check(state)),['POWER_ADEQUACY_METRIC_INCONSISTENT'],'inconsistent evidence must not raise a false critical reserve breach');
+  state=operational(-50);state.energy.availability=20;state.realism.energy.availableMW=20;assert.equal(I.energyLifecycleSnapshot(state).expectedReserveMargin,-50);assert.equal(I.energyLifecycleSnapshot(state).adequacyMetricConsistent,true);assert.deepEqual(ids(I.check(state)),['POWER_RESERVE_MARGIN_NEGATIVE'],'the integrity formula must match the writer clamp at the lower bound');
+  state=operational(-50);state.energy.availability=0;state.realism.energy.availableMW=0;assert.equal(I.energyLifecycleSnapshot(state).adequacyMetricConsistent,true,'zero availability is a real outage, not the 90% default');assert.deepEqual(ids(I.check(state)),['POWER_RESERVE_MARGIN_NEGATIVE']);
+
+  state=stateForEnergy();state.openedCompanies=['power'];state.realism.energy.storageHealth=60;assert.deepEqual(ids(I.check(state)),['POWER_NOT_COMMISSIONED'],'storage health does not apply without storage');
+  state=stateForEnergy();state.openedCompanies=['power'];state.realism.energy.storageHealth=60;state.customHubs=[generationFacility({energyKind:'storage',capacityAmount:0,capacity:'0 MWh'})];assert.equal(I.energyLifecycleSnapshot(state).hasStorage,false);assert.deepEqual(ids(I.check(state)),['POWER_NOT_COMMISSIONED'],'a zero-capacity storage record is not an operating asset');
+  state=operational(8);state.realism.energy.storageHealth=60;assert.deepEqual(ids(I.check(state)),[],'generation-only operations do not own a storage-health metric');
+  state=operational(8);state.energy.storageMWh=200;state.realism.energy.storageHealth=60;assert.deepEqual(ids(I.check(state)),['POWER_STORAGE_HEALTH_LOW'],'actual storage keeps the health warning');
+
+  state=operational(0);state.simSeconds=10*86400;state.energy.sites[0].commissionedDay=10;assert.equal(I.energyLifecycleSnapshot(state).metricFresh,false);assert.deepEqual(ids(I.check(state)),[],'commissioning-day metric must not be judged before its first fresh evaluation');
+
+  state=operational(0);state.energy.gasMW=0;state.realism.energy.availableMW=0;assert.equal(I.energyLifecycleSnapshot(state).capacityStateMismatch,true);assert.deepEqual(ids(I.check(state)),['POWER_CAPACITY_STATE_MISMATCH']);
+
+  state=operational(0);state.openedCompanies=[];state.energy.gasMW=0;state.realism.energy.availableMW=0;lifecycle=I.energyLifecycleSnapshot(state);assert.equal(lifecycle.opened,true,'a power facility/site is lifecycle evidence even when the company-open list is incomplete');assert.equal(lifecycle.status,'operational-generation');assert.equal(lifecycle.capacityStateMismatch,true);assert.deepEqual(ids(I.check(state)),['POWER_CAPACITY_STATE_MISMATCH']);
+
+  state=operational(0);state.customHubs.push(generationFacility({id:'POWER-2'}));state.energy.sites.push(generationSite({id:'SITE-POWER-2',facilityId:'POWER-2'}));lifecycle=I.energyLifecycleSnapshot(state);assert.equal(lifecycle.commissionedGenerationMW,200);assert.equal(lifecycle.capacityStateMismatch,true,'partial aggregate capacity must suspend the reserve verdict');assert.deepEqual(ids(I.check(state)),['POWER_CAPACITY_STATE_MISMATCH']);
+
+  state=operational(8);state.finance.marker={amount:17};state.companyFinance.power={accounts:[{id:'POWER-OPER',balance:50}],debt:0,taxPayable:0,taxPaid:0};state.cash=50;const before=JSON.stringify({energy:state.energy,realism:state.realism,finance:state.finance,companyFinance:state.companyFinance,cash:state.cash});I.energyLifecycleSnapshot(state);I.check(state);assert.equal(JSON.stringify({energy:state.energy,realism:state.realism,finance:state.finance,companyFinance:state.companyFinance,cash:state.cash}),before,'energy health reads must not mutate economic state');
+}
+
+{
+  const {s}=harness(['realism-core','integrity-core']),state=stateForEnergy();state.simSeconds=300*86400;state.openedCompanies=['power'];state.energy.gasMW=100;delete state.realism;
+  s.GH_REALISM.migrate(state);assert.equal(state.realism.energy.adequacyEvaluatedDay,null,'migration must not fabricate an adequacy evaluation');assert.equal(s.GH_INTEGRITY_CORE.energyLifecycleSnapshot(state).metricFresh,false);assert.deepEqual(ids(s.GH_INTEGRITY_CORE.check(state)),[],'an old save waits for the next real daily evaluation');
+}
+
+{
+  const {s}=harness(['energy-core']),state=stateForEnergy();state.energy.gasMW=100;state.energy.availability=0;delete state.energy.availabilityInitialized;s.GH_ENERGY_CORE.ensure(state);assert.equal(state.energy.availability,90,'a legacy uninitialized zero migrates once');assert.equal(state.energy.availabilityInitialized,true);state.energy.availability=0;s.GH_ENERGY_CORE.ensure(state);assert.equal(state.energy.availability,0,'an initialized zero remains a real outage');
+
+  const storage=stateForEnergy();storage.energy.storageMWh=200;storage.energy.availability=0;delete storage.energy.availabilityInitialized;s.GH_ENERGY_CORE.ensure(storage);assert.equal(storage.energy.availability,90,'legacy storage-only capacity must receive the one-time availability default');assert.equal(storage.energy.availabilityInitialized,true);storage.energy.availability=0;s.GH_ENERGY_CORE.ensure(storage);assert.equal(storage.energy.availability,0,'an initialized storage outage must remain zero');
+
+  const storageSite=stateForEnergy();storageSite.energy.availability=0;delete storageSite.energy.availabilityInitialized;storageSite.customHubs=[generationFacility({owned:true,energyKind:'storage',capacityAmount:200,capacity:'200 MWh'})];s.GH_ENERGY_CORE.ensure(storageSite);assert.equal(storageSite.energy.availability,90,'a commissioned storage site must initialize legacy availability');assert.equal(storageSite.energy.availabilityInitialized,true);
+}
+
+{
+  const {s}=harness(['integrity-core','diagnostics-core']),D=s.GH_DIAGNOSTICS,state=stateForEnergy();state.openedCompanies=['power'];state.simSeconds=2*86400;state.lastFinancialDay=2;state.energy.gasMW=100;state.energy.availability=87.36;state.customHubs=[generationFacility()];state.energy.sites=[generationSite()];state.realism.energy={reserveMargin:12,availableMW:87.36,storageHealth:99,adequacyEvaluatedDay:2};
+  const economicBefore=JSON.stringify({energy:state.energy,realism:state.realism,finance:state.finance,companyFinance:state.companyFinance,cash:state.cash}),simulation={speed:30,manualAdvance:{requestedSpeed:600,speed:600}};
+  const health=D.runHealthCheck(state,{simulation},{recordEvent:false,trackTransitions:false});assert.equal(health.summary.speed,1);assert.equal(health.summary.speedLevel,1);assert.equal(health.summary.effectiveRate,30);assert.equal(health.summary.requestedRate,600);assert.equal(health.summary.manualAdvance,true);
+  const bundle=D.exportBundle(state,{appVersion:'3.0.0',saveSchemaVersion:'3.0.0',simulation});assert.equal(bundle.stateSummary.speed,1);assert.equal(bundle.stateSummary.speedLevel,1);assert.equal(bundle.stateSummary.effectiveRate,30);assert.equal(bundle.stateSummary.requestedRate,600);assert.equal(bundle.stateSummary.energy.status,'operational-generation');assert.equal(bundle.stateSummary.energy.installedGenerationMW,100);assert.equal(bundle.stateSummary.energy.reserveMargin,12);assert.equal(JSON.stringify({energy:state.energy,realism:state.realism,finance:state.finance,companyFinance:state.companyFinance,cash:state.cash}),economicBefore,'diagnostic export must not mutate economic state');
+}
+
+{
+  const {s}=harness(['transaction-core','control-plane-core']),C=s.GH_CONTROL_PLANE,TX=s.GH_TRANSACTION_CORE,state=stateForEnergy();state.simSeconds=4321;
+  const pending=stateForEnergy();pending.simSeconds=77;C.registerEngine(pending,'probeFrom',{version:'1'});C.registerEngine(pending,'probeTo',{version:'1'});const pendingLink=C.registerLink(pending,'probeFrom','probeTo','test contract',{critical:false});assert.equal(pendingLink.status,'unverified');assert.equal(pendingLink.lastCheckedSim,null);let pendingHealth=C.check(pending);const checkedLink=pendingHealth.dependencyLinks.find(row=>row.key===pendingLink.key);assert.equal(checkedLink.status,'unverified');assert.equal(checkedLink.lastCheckedSim,77);assert.equal(checkedLink.endpointPresence.from,true);assert.equal(checkedLink.endpointPresence.to,true);
+  const engines={simulation:{version:'3.0.0'},businessWorld:{version:'3.1.0'},finance:{version:'3.0.0'},procurement:{version:'3.0.0'},assets:{version:'3.0.0'},routes:{version:'3.0.0'},staffing:{version:'3.0.2'},save:{version:'3.0.0'},update:{version:'3.0.0'},nativeBridge:{version:'3.0.0',connected:false,minimumNativeBuild:362,nativeBuild:'Build362'},diagnostics:{version:'3.0.0'},extensionEngine:{version:'1.2.3',critical:false}};
+  const economicBefore=JSON.stringify({energy:state.energy,realism:state.realism,finance:state.finance,companyFinance:state.companyFinance,cash:state.cash});let health=C.bootstrap(state,engines);assert.equal(health.nodes.businessWorld.status,'healthy');assert.equal(health.nodes.businessWorld.required,true);assert.equal(health.nodes.extensionEngine.status,'healthy');assert.equal(health.nodes.extensionEngine.required,false);assert.equal(state.controlPlane.registry.engines.nativeBridge.connected,false);assert.equal(state.controlPlane.registry.engines.nativeBridge.minimumNativeBuild,362);assert.equal(state.controlPlane.registry.engines.nativeBridge.nativeBuild,'Build362');assert.equal(health.nodes.nativeBridge.status,'disconnected');assert.equal(health.nodes.nativeBridge.connected,false);assert.equal(health.nodes.nativeBridge.minimumNativeBuild,362);assert.equal(health.nodes.nativeBridge.nativeBuild,'Build362');assert.ok(health.issues.some(row=>row.id==='ENGINE_DISCONNECTED:nativeBridge'));assert.ok(health.dependencyLinks.length>0);for(const link of health.dependencyLinks){assert.equal(link.status,'unverified');assert.equal(link.lastCheckedSim,4321);assert.equal(link.checkKind,'endpoint-presence');assert.equal(link.endpointPresence.from,true);assert.equal(link.endpointPresence.to,true);}assert.equal(JSON.stringify({energy:state.energy,realism:state.realism,finance:state.finance,companyFinance:state.companyFinance,cash:state.cash}),economicBefore,'control-plane health may update control metadata but must not mutate economic state');
+  const stale=stateForEnergy();stale.controlPlane={registry:{engines:{businessWorld:{name:'businessWorld',version:'old'},extensionEngine:{name:'extensionEngine',version:'old',critical:false}},links:[]}};const staleHealth=C.bootstrap(stale,{});assert.equal(staleHealth.nodes.businessWorld.status,'stale');assert.equal(staleHealth.nodes.businessWorld.runtimePresent,false);assert.ok(staleHealth.issues.some(row=>row.id==='ENGINE_STALE:businessWorld'));assert.equal(staleHealth.nodes.extensionEngine.status,'stale');assert.equal(staleHealth.nodes.extensionEngine.runtimePresent,false);
+  const incompatible=stateForEnergy(),incompatibleEngines={...engines,nativeBridge:{version:'Build361',connected:true,minimumNativeBuild:362,nativeBuild:361}};const incompatibleHealth=C.bootstrap(incompatible,incompatibleEngines);assert.equal(incompatibleHealth.nodes.nativeBridge.status,'incompatible');assert.ok(incompatibleHealth.issues.some(row=>row.id==='ENGINE_NATIVE_BUILD_UNSUPPORTED'));
+  const resetDraft=stateForEnergy();resetDraft.simSeconds=0;C.bootstrap(resetDraft,engines);TX.restoreObject(state,resetDraft);health=C.check(state);for(const name of ['control','simulation','businessWorld','finance','procurement','assets','routes','staffing','save','update','nativeBridge','diagnostics']){assert.equal(health.nodes[name].runtimePresent,true,`hard reset lost runtime presence for ${name}`);assert.notEqual(health.nodes[name].status,'missing');assert.notEqual(health.nodes[name].status,'stale');}assert.equal(state.controlPlane.registry.engines.nativeBridge.minimumNativeBuild,362);assert.equal(state.controlPlane.registry.engines.nativeBridge.nativeBuild,'Build362');
+  const scalarOnly=C.registerEngine(state,'metadataProbe',{connected:{value:true},minimumNativeBuild:[362],nativeBuild:{label:'Build362'}});assert.equal(scalarOnly.connected,null);assert.equal(scalarOnly.minimumNativeBuild,null);assert.equal(scalarOnly.nativeBuild,null,'engine metadata must reject object/array payloads');
+  delete state.controlPlane.registry.engines.businessWorld;health=C.check(state);assert.equal(health.nodes.businessWorld.status,'missing');assert.ok(health.issues.some(row=>row.id==='ENGINE_MISSING:businessWorld'));
+  delete state.controlPlane.registry.engines.finance;health=C.check(state);const financeLink=health.dependencyLinks.find(row=>row.from==='control'&&row.to==='finance'),linkIssue=health.issues.find(row=>row.id.startsWith('DEPENDENCY_LINK_ENDPOINT_MISSING:control->finance:'));assert.equal(financeLink.status,'missing-endpoint');assert.equal(financeLink.endpointPresence.from,true);assert.equal(financeLink.endpointPresence.to,false);assert.equal(linkIssue.severity,'warning');assert.equal(linkIssue.evidence.critical,true);assert.equal(state.controlPlane.incidents.length,0,'missing registry endpoints must not open critical incidents during a partial bootstrap');
+}
+
+console.log('build363 energy health contract: PASS');

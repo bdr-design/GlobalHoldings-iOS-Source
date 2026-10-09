@@ -13,7 +13,7 @@ function facilityExpense(state,companyId){
  return 0;
 }
 function sectorEconomics(state,options={}){
-  const e=state.energy||{},m=state.advanced?.economy||{},availability=Math.max(0,Math.min(1,num(e.availability||100)/100));
+  const e=state.energy||{},m=state.advanced?.economy||{},rawAvailability=Number(e.availability),availability=Math.max(0,Math.min(1,(Number.isFinite(rawAvailability)?rawAvailability:100)/100));
   const requestedDay=Number.isFinite(Number(options.day))?Math.floor(Number(options.day)):null,energyClose=options.preferDailyReport&&requestedDay!==null?(e.dailyHistory||[]).find(row=>Number(row.day)===requestedDay):null,energyDetail=energyClose||globalThis.GH_ENERGY_CORE?.economics?.(state,m),gasMWh=num(e.gasMW)*24*.56*availability,solarMWh=num(e.solarMW)*24*.25*availability,windMWh=num(e.windMW)*24*.39*availability;
   const generation=energyDetail?.generation??(gasMWh+solarMWh+windMWh),revenue=energyDetail?.powerRevenue??(generation*num(m.electricityPriceMWh||90));
   const gasFuel=energyDetail?.gasFuel??(gasMWh*num(m.gasCostMWh||39)),carbon=energyDetail?.carbon??(gasMWh*.36*num(m.carbonPriceTon||0)),om=energyDetail?.operations??((num(e.gasMW)*18+num(e.solarMW)*7+num(e.windMW)*12)*availability);

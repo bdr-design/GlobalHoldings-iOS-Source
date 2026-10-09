@@ -171,21 +171,24 @@
   // The whole check (save schema, or a checkpoint not yet verified). Rows and entries verified before are not hashed again
   // unless {fresh:true}; the shape, residency and period membership are checked every time.
   function verifyCheckpoints(state,cache=null,{fresh=false}={}){
-    if(cache?.checkpoints&&!fresh)return cache.checkpoints;
+    if(cache?.checkpoints&&!fresh)return {...cache.checkpoints,stats:{checkpointRows:0,periodRows:0,digestRows:0,cacheHit:true}};
     const store=state?.documentProofs||{},rows=store.checkpointsById,periods=store.periodDigests;
-    const done=out=>{if(cache)cache.checkpoints=out;return out;},fail=reason=>done({ok:false,reason});
+    const stats={checkpointRows:0,periodRows:0,digestRows:0,cacheHit:false},done=out=>{const result={...out,stats:{...stats}};if(cache)cache.checkpoints=result;return result;},fail=reason=>done({ok:false,reason});
     if(rows===undefined&&periods===undefined)return done({ok:true});
     if(!rows||typeof rows!=='object'||Array.isArray(rows)||!periods||typeof periods!=='object'||Array.isArray(periods))return fail('document-proof-checkpoint-shape');
     const known=row=>!fresh&&VERIFIED_CHECKPOINTS.has(row),grouped=new Map();
     for(const [id,row] of Object.entries(rows)){
+      stats.checkpointRows++;
       if(!known(row)){const fault=checkpointRowFault(row,id);if(fault)return fail(fault);}
       if(store.recordsById?.[id]||store.archiveById?.[id]||store.supersededById?.[id])return fail('document-proof-checkpoint-residency');
       const list=grouped.get(row.period);if(list)list.push(row);else grouped.set(row.period,[row]);
     }
-    for(const key of Object.keys(periods))if(!grouped.has(key))return fail('document-proof-checkpoint-period-unused');
+    for(const key of Object.keys(periods)){stats.periodRows++;if(!grouped.has(key))return fail('document-proof-checkpoint-period-unused');}
     for(const [period,list] of grouped){
+      stats.periodRows++;
       const entry=periods[period];if(!entry||entry.period!==period||entry.form!==PERIOD_FORM||entry.count!==list.length||!isDigest(entry.digest))return fail('document-proof-checkpoint-period');
       if(!fresh&&VERIFIED_PERIODS.has(entry)&&list.every(known))continue;
+      stats.digestRows+=list.length;
       if(hexOf(list.reduce((total,row)=>(total+sumOf(checkpointDigest(row)))%DIGEST_MOD,0n))!==entry.digest)return fail('document-proof-checkpoint-period-tampered');
       VERIFIED_PERIODS.add(entry);for(const row of list)VERIFIED_CHECKPOINTS.add(row);
     }
@@ -406,9 +409,9 @@
   }
   // Sealed periods hold no rows to check them against; their shape is checked (one entry per period, a positive count, a digest).
   function verifySeals(state){
-    const seals=state?.documentProofs?.sealedPeriods;if(seals===undefined)return {ok:true,documents:0};if(!seals||typeof seals!=='object'||Array.isArray(seals))return {ok:false,reason:'document-proof-seal-shape'};
-    let documents=0;for(const [period,entry] of Object.entries(seals)){if(!entry||typeof entry!=='object'||Array.isArray(entry)||entry.period!==period||!/^P\d{4,}$/.test(period)||entry.form!==PERIOD_FORM||!Number.isSafeInteger(entry.count)||entry.count<1||!isDigest(entry.digest)||Object.keys(entry).length!==4)return {ok:false,reason:'document-proof-seal-period'};documents+=entry.count;}
-    return {ok:true,documents};
+    const seals=state?.documentProofs?.sealedPeriods;if(seals===undefined)return {ok:true,documents:0,stats:{sealRows:0}};if(!seals||typeof seals!=='object'||Array.isArray(seals))return {ok:false,reason:'document-proof-seal-shape',stats:{sealRows:0}};
+    let documents=0,sealRows=0;for(const [period,entry] of Object.entries(seals)){sealRows++;if(!entry||typeof entry!=='object'||Array.isArray(entry)||entry.period!==period||!/^P\d{4,}$/.test(period)||entry.form!==PERIOD_FORM||!Number.isSafeInteger(entry.count)||entry.count<1||!isDigest(entry.digest)||Object.keys(entry).length!==4)return {ok:false,reason:'document-proof-seal-period',stats:{sealRows}};documents+=entry.count;}
+    return {ok:true,documents,stats:{sealRows}};
   }
   function companyProfile(state,companyId){
     const platform=globalThis.GH_COMPANY_PLATFORM,id=clean(companyId||'group',100),registryRecord=state.companyRegistry?.[id]||{},record=id==='group'?{...registryRecord,...(state.profile||{})}:registryRecord,resolved=platform?.resolveDocumentProfile?.(state,id),legalName=clean(resolved?.legalName||record.legalName||record.name||(id==='group'?state.profile?.name:'')||id,240),logo=resolved?.logo||record.logo||record.logoAssetId||null;
@@ -421,18 +424,17 @@
   function documentType(document,options={}){return clean(options.type||document.documentType||document.type||document.kind||'financial-document',80);}
   function profileFor(type){const id=clean(type,80),profile=DOCUMENT_TYPES[id];if(!profile)throw new Error(`document-type-profile-unsupported:${id||'empty'}`);return profile;}
   const financeBuckets=['invoices','cheques','periods','taxSettlements','debtRecords','debtSettlements','transfers','payrollReports','commercialContracts'];
-  function stateDocumentEntries(state){
+  function* walkDocumentEntries(state){
     // One path-aware owner for every object that the schema treats as a legal
     // document. Ledger projections are intentionally not legal documents; legacy
     // company-ledger archive buckets remain enumerable until migration repairs
     // them so corruption cannot be hidden by changing the validator surface.
-    const rows=[],seen=new Set();
-    const append=(document,path,role='canonical')=>{if(document&&typeof document==='object'&&!seen.has(document)){seen.add(document);rows.push({document,path,role});}};
-    for(const bucket of financeBuckets){const list=Array.isArray(state.finance?.[bucket])?state.finance[bucket]:[];for(let index=0;index<list.length;index++)append(list[index],`finance.${bucket}[${index}]`);}
-    for(const [id,document] of Object.entries(state.contractRegistry||{}))append(document,`contractRegistry.${id}`);
-    for(const [bucket,list] of Object.entries(state.finance?.auditArchive?.records||{}))if(Array.isArray(list))for(let index=0;index<list.length;index++)append(list[index],`finance.auditArchive.records.${bucket}[${index}]`,String(bucket).startsWith('companyLedger-')?'legacy-ledger':'canonical-archive');
-    return rows;
+    const seen=new Set(),entry=(document,path,role='canonical')=>{if(!document||typeof document!=='object'||seen.has(document))return null;seen.add(document);return {document,path,role};};
+    for(const bucket of financeBuckets){const list=Array.isArray(state.finance?.[bucket])?state.finance[bucket]:[];for(let index=0;index<list.length;index++){const row=entry(list[index],`finance.${bucket}[${index}]`);if(row)yield row;}}
+    const registry=state.contractRegistry||{};for(const id in registry)if(Object.prototype.hasOwnProperty.call(registry,id)){const row=entry(registry[id],`contractRegistry.${id}`);if(row)yield row;}
+    const records=state.finance?.auditArchive?.records||{};for(const bucket in records)if(Object.prototype.hasOwnProperty.call(records,bucket)){const list=records[bucket];if(Array.isArray(list))for(let index=0;index<list.length;index++){const row=entry(list[index],`finance.auditArchive.records.${bucket}[${index}]`,String(bucket).startsWith('companyLedger-')?'legacy-ledger':'canonical-archive');if(row)yield row;}}
   }
+  function stateDocumentEntries(state){return [...walkDocumentEntries(state)];}
   // Build 359: the documents alone, without the path text of each (every validation collected them). {archive:false}
   // leaves out the finance audit archive (a validation that answers the sealed archive by identity, GH_SAVE_SCHEMA).
   function stateDocuments(state,{archive=true}={}){
@@ -679,23 +681,35 @@
     if(expectedObject||actualObject){if(!expectedObject||!actualObject)return path;const keys=[...new Set([...Object.keys(expected),...Object.keys(actual)])].sort();for(const key of keys){if(!Object.prototype.hasOwnProperty.call(expected,key)||!Object.prototype.hasOwnProperty.call(actual,key))return `${path}.${key}`;const diff=firstDifferencePath(expected[key],actual[key],`${path}.${key}`);if(diff)return diff;}return null;}
     return path;
   }
-  function forensicDocument(state,entry){
-    const document=entry?.document,proofId=document?.documentProofId||null,record=proofId?getRecord(state,proofId):null,verification=proofId?verifyDocument(state,document):{ok:true,reason:null};let differencePath=null,actualContentDigest=null;
+  function forensicDocument(state,entry,cache=null,canonicalByProofId=null){
+    const document=entry?.document,proofId=document?.documentProofId||null,record=proofId?getRecord(state,proofId):null,verification=proofId?verifyDocument(state,document,cache):{ok:true,reason:null};let differencePath=null,actualContentDigest=null;
     const envelopePaths={'document-digest-reference-mismatch':'$.contentDigest','document-issuer-company-mismatch':'$.company','document-id-mismatch':'$.documentId','document-type-mismatch':'$.documentType','document-issuer-snapshot-mismatch':'$.issuerSnapshot','document-counterparty-mismatch':'$.counterpartySnapshot','document-authorization-kind-mismatch':'$.authorizationKind','document-authorization-reference-mismatch':'$.authorizationProofId','document-signature-snapshot-mismatch':'$.signatureSnapshot'};differencePath=envelopePaths[verification?.reason]||null;
     // Build 359: a record without its signed content (compact or archived form) is compared with the content rebuilt from
     // the canonical document when that one verifies (a copy that differs from it, such as a ledger row); otherwise the
     // whole content ('$') differs.
-    if(proofId&&record&&verification?.reason==='document-content-tampered'&&(isArchivedForm(record)||isCompactForm(record)))try{const content=archivedSignedContent(document,record),canonical=canonicalDocumentEntry(state,proofId)?.document;actualContentDigest=digest(content);differencePath=canonical&&canonical!==document&&verifyDocument(state,canonical).ok?firstDifferencePath(archivedSignedContent(canonical,record),content):'$';}catch(error){differencePath=`$<recompute:${String(error?.message||error)}>`;}
+    if(proofId&&record&&verification?.reason==='document-content-tampered'&&(isArchivedForm(record)||isCompactForm(record)))try{const content=archivedSignedContent(document,record),canonical=(canonicalByProofId?.get(proofId)||canonicalDocumentEntry(state,proofId))?.document;actualContentDigest=digest(content);differencePath=canonical&&canonical!==document&&verifyDocument(state,canonical,cache).ok?firstDifferencePath(archivedSignedContent(canonical,record),content):'$';}catch(error){differencePath=`$<recompute:${String(error?.message||error)}>`;}
     else if(proofId&&record&&verification?.reason==='document-content-tampered')try{const issuer={...clone(record.issuerSnapshot),companyId:clean(document.company||document.companyId||'group',100)},counterparty=counterpartySnapshot(document),content=Number(record.version)===2?signedContentV2(document,issuer,counterparty,{issuedAtSim:record.signedContent?.issuedAtSim}):signedContent(document,issuer,counterparty,{issuedAtSim:record.signedContent?.issuedAtSim,fixedIssuedAt:true,chain:record.signedContent?.chain||null});differencePath=firstDifferencePath(record.signedContent,content);actualContentDigest=digest(content);}catch(error){differencePath=`$<recompute:${String(error?.message||error)}>`;}
     return {path:entry?.path||null,role:entry?.role||null,documentId:documentId(document||{}),proofId,ok:verification?.ok===true,reason:verification?.reason||null,differencePath,expectedContentDigest:record?.contentDigest||null,actualContentDigest};
   }
-  function forensicInspectStateProofs(state){
-    const store=state?.documentProofs||{},recordsById=store.recordsById||{},archiveById=store.archiveById||{},documents=stateDocumentEntries(state),latent=[];
-    for(const [company,book] of Object.entries(state.companyFinance||{}))if(Array.isArray(book?.ledger))for(let index=0;index<book.ledger.length;index++)if(book.ledger[index]?.documentProofId)latent.push({document:book.ledger[index],path:`companyFinance.${company}.ledger[${index}]`,role:'latent-ledger'});
-    if(Array.isArray(state.treasury?.ledger))for(let index=0;index<state.treasury.ledger.length;index++)if(state.treasury.ledger[index]?.documentProofId)latent.push({document:state.treasury.ledger[index],path:`treasury.ledger[${index}]`,role:'latent-ledger'});
-    const documentFailures=[],recordFailures=[],danglingReferences=[];for(const entry of [...documents,...latent]){const proofId=entry.document?.documentProofId;if(!proofId)continue;const detail=forensicDocument(state,entry);if(!getRecord(state,proofId))danglingReferences.push(detail);if(!detail.ok)documentFailures.push(detail);}
-    for(const proofId of [...Object.keys(recordsById),...Object.keys(archiveById)]){const result=verifyRecord(state,proofId);if(!result.ok&&!result.legacy)recordFailures.push({proofId,reason:result.reason||null});}
-    return {totalRecords:Object.keys(recordsById).length,totalArchived:Object.keys(archiveById).length,totalDocuments:documents.length,latentProtectedLedgerRows:latent.length,danglingReferences,documentFailures,recordFailures,ok:!danglingReferences.length&&!documentFailures.length&&!recordFailures.length};
+  // A diagnostic export verifies every retained proof, but it must not hold the
+  // main thread for the whole archive. The generator keeps the former result
+  // shape and yields after each bounded row; the synchronous API drains it for
+  // older callers, while the async API groups rows into host-yielding batches.
+  function* forensicInspectStateProofsSteps(state){
+    const store=state?.documentProofs||{},recordsById=store.recordsById||{},archiveById=store.archiveById||{},documents=[],canonicalByProofId=new Map(),latent=[],authorization={proofs:new Map(),sealDigests:new Map(),mandateDigests:new Map()},cache={records:new Map(),signedContentStable:new Map(),authorization};
+    for(const entry of walkDocumentEntries(state)){documents.push(entry);const proofId=entry.document?.documentProofId;if(proofId&&entry.role!=='legacy-ledger'&&!canonicalByProofId.has(proofId))canonicalByProofId.set(proofId,entry);yield {phase:'document-collection',units:1};}
+    for(const [company,book] of Object.entries(state.companyFinance||{}))if(Array.isArray(book?.ledger))for(let index=0;index<book.ledger.length;index++){const document=book.ledger[index];if(document?.documentProofId)latent.push({document,path:`companyFinance.${company}.ledger[${index}]`,role:'latent-ledger'});yield {phase:'latent-ledger',units:1};}
+    if(Array.isArray(state.treasury?.ledger))for(let index=0;index<state.treasury.ledger.length;index++){const document=state.treasury.ledger[index];if(document?.documentProofId)latent.push({document,path:`treasury.ledger[${index}]`,role:'latent-ledger'});yield {phase:'latent-ledger',units:1};}
+    const documentFailures=[],recordFailures=[],danglingReferences=[];
+    for(const list of [documents,latent])for(const entry of list){const proofId=entry.document?.documentProofId;if(proofId){const detail=forensicDocument(state,entry,cache,canonicalByProofId);if(!getRecord(state,proofId))danglingReferences.push(detail);if(!detail.ok)documentFailures.push(detail);}yield {phase:'documents',units:1};}
+    let totalRecords=0,totalArchived=0;for(const [source,archived] of [[recordsById,false],[archiveById,true]])for(const proofId in source)if(Object.prototype.hasOwnProperty.call(source,proofId)){if(archived)totalArchived++;else totalRecords++;const result=verifyRecord(state,proofId,new Set(),cache);if(!result.ok&&!result.legacy)recordFailures.push({proofId,reason:result.reason||null});yield {phase:'records',units:1};}
+    return {totalRecords,totalArchived,totalDocuments:documents.length,latentProtectedLedgerRows:latent.length,danglingReferences,documentFailures,recordFailures,ok:!danglingReferences.length&&!documentFailures.length&&!recordFailures.length};
+  }
+  function forensicInspectStateProofs(state){const steps=forensicInspectStateProofsSteps(state);let step;while(!(step=steps.next()).done){}return step.value;}
+  async function forensicInspectStateProofsAsync(state,options={}){
+    const clock=typeof options.clock==='function'?options.clock:()=>globalThis.performance?.now?.()??Date.now(),yieldToHost=typeof options.yieldToHost==='function'?options.yieldToHost:()=>new Promise(resolve=>setTimeout(resolve,0)),batchSize=Math.max(1,Math.floor(Number(options.batchSize)||256)),budgetMs=Math.max(.25,Number(options.budgetMs)||8),steps=forensicInspectStateProofsSteps(state),started=clock();let sliceStarted=started,batch=0,busyMs=0,maxSliceMs=0,yields=0,units=0,step;
+    for(;;){step=steps.next();if(step.done)break;units+=Math.max(0,Number(step.value?.units)||1);batch++;const now=clock();if(batch>=batchSize||now-sliceStarted>=budgetMs){const busy=Math.max(0,now-sliceStarted);busyMs+=busy;maxSliceMs=Math.max(maxSliceMs,busy);yields++;await yieldToHost();sliceStarted=clock();batch=0;}}
+    const ended=clock(),tail=Math.max(0,ended-sliceStarted);busyMs+=tail;maxSliceMs=Math.max(maxSliceMs,tail);return {result:step.value,timing:{name:'proof-forensics',wallMs:Math.max(0,ended-started),busyMs,maxSliceMs,yields,units,batchSize,budgetMs}};
   }
   function projectLedgerCopy(document,sourceRecord,overrides={}){
     const row=clone(document);clearSecurityEnvelope(row);Object.assign(row,clone(overrides||{}));row.ledgerProjectionSchema='gh-ledger-projection-v1';row.sourceDocumentProofId=sourceRecord?.id||document?.documentProofId||document?.sourceDocumentProofId||null;row.sourceDocumentId=sourceRecord?.documentId||document?.documentId||documentId(document||{})||null;row.sourceDocumentType=sourceRecord?.documentType||document?.documentType||documentType(document||{})||null;row.sourceDocumentDigest=sourceRecord?.contentDigest||document?.contentDigest||document?.sourceDocumentDigest||null;return row;
@@ -761,5 +775,5 @@
   // Build 359: the archive, checkpoints and period sums are replaced on every change (copy-on-write), never edited: each is
   // sealed whole once its members are (a container, GH_TRANSACTION_CORE), so commands share them without walking them.
   (globalThis.GH_TRANSACTION_CORE?.registerSealedCollections||((root,keys,options)=>(globalThis.__GH_PENDING_SEALED_COLLECTIONS__=globalThis.__GH_PENDING_SEALED_COLLECTIONS__||[]).push([root,keys,options])))('documentProofs',['archiveById','checkpointsById','periodDigests','sealedPeriods'],{container:true});
-  const API=Object.freeze({VERSION,ARCHIVED_FORM_V2,COMPACT_FORM,compactLiveRecords,checkpointAuditSteps,walkDocuments,checkpointVerified,periodVerified,releasesAuthorization,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,sequenceMark,recordsSince,compact,checkpoint:getCheckpoint,checkpointAncestors,compactArchivedRecords,ARCHIVED_FORM,verifyCheckpoints,migratePeriodDigests,sealDocuments,verifySeals,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofs,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
+  const API=Object.freeze({VERSION,ARCHIVED_FORM_V2,COMPACT_FORM,compactLiveRecords,checkpointAuditSteps,walkDocuments,walkDocumentEntries,checkpointVerified,periodVerified,releasesAuthorization,SCHEMA,CONTENT_SCHEMA,RECORD_VERSION,LIMITS,DOCUMENT_TYPES,TRANSITIONS,ensure,record:getRecord,records,sequenceMark,recordsSince,compact,checkpoint:getCheckpoint,checkpointAncestors,compactArchivedRecords,ARCHIVED_FORM,verifyCheckpoints,migratePeriodDigests,sealDocuments,verifySeals,stateDocumentEntries,stateDocuments,companyProfile,issuerSnapshot,counterpartySnapshot,materialDetails,signedContent,sealDocument,amendDocument,markLegacy,verifyRecord,verifyDocument,forensicInspectStateProofsSteps,forensicInspectStateProofs,forensicInspectStateProofsAsync,ledgerProjection,migrateLegacyLedgerProjections,collectResultDocuments,bindAuthorization,locateDocument});globalThis.GH_DOCUMENT_PROOF=API;if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_DOCUMENT_PROOF=API;if(typeof module!=='undefined'&&module.exports)module.exports=API;
 })();
