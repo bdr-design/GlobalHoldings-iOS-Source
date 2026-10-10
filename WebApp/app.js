@@ -1752,12 +1752,12 @@
       // Build 358 (million-asset): one row pass finds the company's idle assets of this mode (views only for them, at
       // most the network planner's limit per dispatch; a larger fleet departs in successive dispatches) and counts the
       // assets that stay on their routes.
-      const F=window.GH_FLEET_DATA,eligibleUnsorted=[],initialLoads=new Map();let remaining=0;
+      const F=window.GH_FLEET_DATA,eligibleUnsorted=[],initialLoads=new Map();let remaining=0,remainingOnRoutes=0;
       F.scan(draft,SHARED_DISPATCH_FIELDS,(row,index)=>{
         if(assetOwnerCompanyId(row)!==companyId||assetModeOf(row)!==type)return;
         const idle=row.deliveryStatus!=='pending'&&row.phase!=='moving'&&!row.departureScheduled&&!row.salePending;
         if(idle&&eligibleUnsorted.length<SHARED_DISPATCH_LIMIT){eligibleUnsorted.push(F.viewAt(draft,index));return;}
-        if(idle)remaining++;
+        if(idle){remaining++;if(row.routeId)remainingOnRoutes++;}
         if(row.routeId)initialLoads.set(row.routeId,(initialLoads.get(row.routeId)||0)+1);
       });
       if(!eligibleUnsorted.length)throw new Error(`لا توجد ${label} متاحة للمغادرة`);
@@ -1775,9 +1775,17 @@
       // Build 358 (million-asset routes): the mode plans within its own registry quota (GH_ROUTE_CORE.modeRouteBudget).
       const fleet=window.GH_FLEET_CORE,baseCapacity=fleet.routeCapacity(type),modeBudget=window.GH_ROUTE_CORE.modeRouteBudget(draft,type),availableRoutes=modeBudget.planning;
       let stayingOnRoutes=0;for(const count of initialLoads.values())stayingOnRoutes+=count;
-      const usableRoutes=Math.max(1,availableRoutes-originsById.size),capacity=fleet.requiredRouteCapacity(type,eligibleUnsorted.length+stayingOnRoutes,usableRoutes),minimumRoutes=Math.ceil(eligibleUnsorted.length/capacity);
+      // Build 371 (a million aircraft stopped at 100,000): a fleet above SHARED_DISPATCH_LIMIT departs in successive
+      // commands, and each command sized its routes for its own 20,000 assets (a load of about 72). The routes earlier
+      // commands filled were then at that load, so every later command opened new routes until the mode quota ran out.
+      // Capacity and target load are now those of the whole fleet the series places (this command's assets, those
+      // staying on routes and the idle ones later commands take): the same for every command of the series, so each
+      // command fills the routes the previous ones opened up to that load before it opens new ones.
+      // (An idle asset left for a later command that still holds its route is counted once, in stayingOnRoutes.)
+      const plannedFleet=eligibleUnsorted.length+stayingOnRoutes+remaining-remainingOnRoutes;
+      const usableRoutes=Math.max(1,availableRoutes-originsById.size),capacity=fleet.requiredRouteCapacity(type,plannedFleet,usableRoutes),minimumRoutes=Math.ceil(eligibleUnsorted.length/capacity);
       if(availableRoutes<minimumRoutes)throw new Error(`سعة سجل المسارات لا تكفي لتوزيع أسطول ${label} بأمان؛ المتاح ${availableRoutes} مسار والحد الأدنى المطلوب ${minimumRoutes}`);
-      const targetLoad=fleet.automaticRouteTargetLoad(type,eligibleUnsorted.length,capacity>baseCapacity?usableRoutes:availableRoutes,capacity),eligibleById=new Map(eligibleUnsorted.map(asset=>[asset.id,asset])),previousRouteIds=new Set(eligibleUnsorted.map(asset=>asset.routeId).filter(Boolean)),registeredRoutes=draft.customRoutes.filter(route=>routeOwnerCompanyId(route)===companyId&&routeModeOf(route)===type&&routes[route.id]);
+      const targetLoad=fleet.automaticRouteTargetLoad(type,plannedFleet,capacity>baseCapacity?usableRoutes:availableRoutes,capacity),eligibleById=new Map(eligibleUnsorted.map(asset=>[asset.id,asset])),previousRouteIds=new Set(eligibleUnsorted.map(asset=>asset.routeId).filter(Boolean)),registeredRoutes=draft.customRoutes.filter(route=>routeOwnerCompanyId(route)===companyId&&routeModeOf(route)===type&&routes[route.id]);
       source.metrics.registeredRouteCount=registeredRoutes.length;
       const originRoutes=[...originsById.values()].map(origin=>({originId:origin.id,routeIds:registeredRoutes.filter(route=>sameUnderlyingFacilityFor(draft,origin.id,route.fromFacility)||sameUnderlyingFacilityFor(draft,origin.id,route.toFacility)).map(route=>route.id)}));
       const plannerInput={targetLoad,routeCapacity:capacity,assets:eligibleUnsorted.map(asset=>({id:String(asset.id),originId:String(originByAssetId.get(asset.id).id),rangeKm:assetRangeKm(asset)})),routes:registeredRoutes.map(route=>({id:String(route.id),fromFacility:String(route.fromFacility||''),toFacility:String(route.toFacility||''),legKm:Number(route.maxLegKm)||routeLongestLeg(route.route)})),originRoutes,initialLoads:Object.fromEntries(initialLoads)};
