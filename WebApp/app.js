@@ -2272,9 +2272,10 @@
     }
     // Build 371: the road routes are found from every asset's routeId (1.5 s of 90 s of play with a million aircraft,
     // since the save revision moves on most slices). Over 5 ms, a recount waits 40 times its last duration; a new map
-    // structure revision is counted at once.
+    // structure revision is counted at once. The cost kept is the larger of the last one and half the one before: a count
+    // served from the store's per-chunk cache (under 5 ms) does not let the next full one (about 100 ms) run at once.
     if(mapStatusCache.ownerKey!==ownerKey){const clock=()=>globalThis.performance?.now?.()??Date.now(),ownerCostMs=Number(mapStatusCache.ownerCostMs)||0,nowMs=Date.now();
-      if(ownerCostMs<5||mapStatusCache.ownerMapRevision!==mapRevision||nowMs-(mapStatusCache.ownerAt||0)>=ownerCostMs*40){const started=clock();mapStatusCache.routed=operationalRoutes('road').filter(r=>r.routingSource).length;mapStatusCache.ownedFacilities=getDynamicFacilities().filter(f=>f?.owned).length;mapStatusCache.ownerKey=ownerKey;mapStatusCache.ownerMapRevision=mapRevision;mapStatusCache.ownerAt=nowMs;mapStatusCache.ownerCostMs=clock()-started;}}
+      if(ownerCostMs<5||mapStatusCache.ownerMapRevision!==mapRevision||nowMs-(mapStatusCache.ownerAt||0)>=ownerCostMs*40){const started=clock();mapStatusCache.routed=operationalRoutes('road').filter(r=>r.routingSource).length;mapStatusCache.ownedFacilities=getDynamicFacilities().filter(f=>f?.owned).length;mapStatusCache.ownerKey=ownerKey;mapStatusCache.ownerMapRevision=mapRevision;mapStatusCache.ownerAt=nowMs;mapStatusCache.ownerCostMs=Math.max(clock()-started,ownerCostMs/2);}}
     const offline=mapTilesOffline?'تضاريس محلية · ':'';$('mapStatus').textContent=`${offline}${mapStatusCache.moving} في الحركة · ${mapStatusCache.turn} في المحطات · ${assetLength} أصل`;$('mapStatus').title=`${mapStatusCache.idle} متوقف · ${mapStatusCache.ownedFacilities} منشأة · ${mapStatusCache.routed} مسار بري`;
   }
 

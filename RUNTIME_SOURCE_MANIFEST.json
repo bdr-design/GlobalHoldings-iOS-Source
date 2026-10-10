@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "c5732dc05b86b72398bf9dd64ffea5212c2b9821f3ca764a928fa8c13a8ffee3",
-  "webapp_tree_sha256": "84e4188e42b9a7bf87aa1399c75894ac7a2bfb6a7beea3d6678f9265ce6c10fc",
+  "source_tree_sha256": "9e1f7f5c200fc5753628106e1b828476f82258d3e54fd3b71c21f08381cd0871",
+  "webapp_tree_sha256": "aa97cff0d86f9d858669b7d7bcc58acdd06d8da21bebddc89f957f7ef28be46c",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 317666,
@@ -19,8 +19,8 @@
       "sha256": "71612fdabc72cbd0327a5dcc28b02576a011d8c710ee24b6a5c11b6d918e24cf"
     },
     "WebApp/app.js": {
-      "bytes": 876319,
-      "sha256": "349357ca725b6c29c4873830decf950c4ff36966e4c8f214b5bbe266a6cc72bf"
+      "bytes": 876539,
+      "sha256": "4d4fc0181d4036860ba6931ec54c95a612e8f5a73f449e7536a9e6c376cda400"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -3548,7 +3548,7 @@
     },
     "project.yml": {
       "bytes": 2413,
-      "sha256": "73d355b75773bc5e91fcbda349d2ce6282f84d5cdb5bca8fea69a3310d042151"
+      "sha256": "f3c4140bc85680c0d1fc05450e0e1bdfedc363f729c7bc9b50bda3736a133762"
     },
     "BUILD": {
       "bytes": 4,
