@@ -25,7 +25,8 @@ async function settleDays(page,days){for(let day=0;day<days;day++){const t=await
 async function armBoundaryCancel(page,{failCompaction=false}={}){
   await page.evaluate(({SNAPSHOT,CONSERVATION,failCompaction})=>{
     const snapshot=eval(SNAPSHOT),conservation=eval(CONSERVATION);window.qaSnapshot=snapshot;window.qaConservation=conservation;
-    const plane=window.__qaPlane||(window.__qaPlane=window.GH_CONTROL_PLANE);window.qaRace={armed:true,failCompaction,compactionFailures:0};
+    const plane=window.__qaPlane||(window.__qaPlane=window.GH_CONTROL_PLANE);window.qaRace={armed:true,failCompaction,compactionFailures:0,maintenanceFailures:[]};
+    const diagnostics=window.__qaDiagnostics||(window.__qaDiagnostics=window.GH_DIAGNOSTICS);window.GH_DIAGNOSTICS={...diagnostics,record(state,type,detail,severity){if(type==='SIM_MAINTENANCE_FAILED')qaRace.maintenanceFailures.push({task:detail?.task,error:detail?.error});return diagnostics.record(state,type,detail,severity);}};
     window.GH_CONTROL_PLANE={...plane,appendEvent(state,event){const out=plane.appendEvent(state,event);
       if(event?.type==='SIMULATION_MAINTENANCE'&&qaRace.armed&&Math.floor(__GH_STATE__.simSeconds/86400)!==__GH_STATE__.simulationKernel?.lastCompactDay){
         qaRace.armed=false;
@@ -45,14 +46,13 @@ async function armBoundaryCancel(page,{failCompaction=false}={}){
   await page.evaluate(()=>document.querySelector('[data-calendar-advance="year"]').click());
   await page.waitForFunction(()=>!!window.qaRace.atPublish,null,{timeout:120000});
   // Observation window: the engine keeps running frames; nothing may write after the publish.
-  const runsAtPublish=await page.evaluate(()=>qaRace.atPublish.runs);
-  await page.waitForFunction(({runs})=>{const k=GH_SIM_KERNEL.snapshot();window.qaFramesAfter=(window.qaFramesAfter||0)+1;return k.runtime.ticks>=0&&window.qaFramesAfter>=60;},{runs:runsAtPublish},{timeout:60000,polling:'raf'});
-  await page.evaluate(()=>{window.qaFramesAfter=0;});
+  // Observation window: 60 more frames of the engine after the publish; nothing may write in them.
+  await page.evaluate(async()=>{for(let frame=0;frame<60;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));});
   return page.evaluate(()=>({race:{...qaRace,atClick:{...qaRace.atClick,snapshot:undefined},atPublish:{...qaRace.atPublish,snapshot:undefined}},
     sameAtPublish:qaRace.atPublish.snapshot===qaSnapshot(),changedAfterPublish:Object.keys(JSON.parse(qaRace.atPublish.snapshot)).filter(k=>JSON.stringify(JSON.parse(qaRace.atPublish.snapshot)[k])!==JSON.stringify(JSON.parse(qaSnapshot())[k])),
     changedBySettling:Object.keys(JSON.parse(qaRace.atClick.snapshot)).filter(k=>JSON.stringify(JSON.parse(qaRace.atClick.snapshot)[k])!==JSON.stringify(JSON.parse(qaRace.atPublish.snapshot)[k])),
     runsNow:GH_APP_RUNTIME_METRICS.snapshot().maintenance.runs,timeNow:__GH_STATE__.simSeconds,lastCompactDay:__GH_STATE__.simulationKernel?.lastCompactDay,day:Math.floor(__GH_STATE__.simSeconds/86400),
-    failures:(__GH_STATE__.diagnostics?.events||[]).filter(e=>e?.code==='SIM_MAINTENANCE_FAILED'||e?.id==='SIM_MAINTENANCE_FAILED').length}));
+    maintenanceFailures:qaRace.maintenanceFailures}));
 }
 function checkSettledCancel(out,label){
   const {race}=out;
@@ -97,12 +97,13 @@ function checkSettledCancel(out,label){
     assert.equal(failed.race.atClick.time,failed.race.atPublish.time);assert.equal(failed.runsNow,failed.race.atPublish.runs);assert.equal(failed.sameAtPublish,true,`rollback: state changed after the publish: ${JSON.stringify(failed.changedAfterPublish)}`);
     assert(!failed.changedBySettling.includes('finance')&&!failed.changedBySettling.includes('books'),`a failed compaction leaves the books exactly as at the click: ${JSON.stringify(failed.changedBySettling)}`);
     assert.deepEqual(failed.race.atPublish.conservation,failed.race.atClick.conservation);
+    assert.deepEqual(failed.maintenanceFailures,[{task:'compact',error:'qa-compaction-failure'}],'the failed compaction is recorded as a maintenance failure');
+    assert.deepEqual(first.maintenanceFailures,[],'no maintenance failure in the normal cancel');
     await page.evaluate(()=>{if(window.__qaTx)window.GH_TRANSACTION_CORE=window.__qaTx;});
     results.push({name:'compaction failure while settling rolls back whole',changedBySettling:failed.changedBySettling});
 
     // 4. Recovery: the published state is what a reload restores.
-    const saved=await page.evaluate(({SNAPSHOT})=>{__AUDIT__.saveNow?.();return eval(SNAPSHOT)();},{SNAPSHOT:`(${SNAPSHOT})`});
-    await page.evaluate(()=>GH_PERSISTENCE.drain?.());
+    const saved=await page.evaluate(async({SNAPSHOT})=>{const read=eval(SNAPSHOT);const ok=await __AUDIT__.saveNow();if(ok!==true)throw new Error(`save-rejected:${ok}`);await GH_PERSISTENCE.drain();return read();},{SNAPSHOT:`(${SNAPSHOT})`});
     ({page}=await reboot(page,{browser,errors}));
     const restored=await page.evaluate(({SNAPSHOT})=>eval(SNAPSHOT)(),{SNAPSHOT:`(${SNAPSHOT})`});
     assert.deepEqual(JSON.parse(restored),JSON.parse(saved),'reload restores the published state');

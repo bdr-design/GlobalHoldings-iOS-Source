@@ -351,21 +351,24 @@
     // slice starts after the cancel, but the cancellation is published (manualAdvance null, onAdvance cancelled) only
     // once the maintenance its committed boundaries scheduled has drained, one part per cycle (completeManualAdvance's
     // rule). Publishing it at once let that maintenance (the daily ledger compaction, the proof passes) rewrite the books
-    // after the request was reported cancelled. While the host is suspended its hasDeferredWork does not report the
-    // queue, so the cancellation waits for the host to resume. `immediate` (a global halt, a fatal fault) publishes at
-    // once: the host may never run its maintenance again.
+    // after the request was reported cancelled. The host's hasQueuedWork reports its queue even while it is suspended
+    // (hasDeferredWork reads false then), so a cancel with nothing queued publishes at once, suspended or not; one with
+    // queued work waits for the host to run it. `immediate` (a global halt, a fatal fault, a save that needs recovery)
+    // publishes at once under its own reason: the host may never run its maintenance again.
     function publishCancelledAdvance(){
       const cancelled=manualAdvance;manualAdvance=null;pacing.reset(clock());
       try{adapter.onAdvance?.({active:false,cancelled:true,target:cancelled.target,reason:cancelled.cancelling.reason});}catch(error){report(cancelled.cancelling.source,error,false);}
       return true;
     }
     function settleCancelledAdvance(){
-      if(!manualAdvance?.cancelling||job||adapter.isSuspended?.()||adapter.hasDeferredWork?.()===true)return false;
+      if(!manualAdvance?.cancelling||job)return false;
+      if(typeof adapter.hasQueuedWork==='function'){if(adapter.hasQueuedWork()===true)return false;}
+      else if(adapter.hasDeferredWork?.()===true)return false;
       return publishCancelledAdvance();
     }
     function beginCancelAdvance(reason,source,immediate){
       if(!manualAdvance)return false;
-      cancelJob(reason);if(!manualAdvance.cancelling)manualAdvance.cancelling={reason,source};pacing.reset(clock());
+      cancelJob(reason);if(!manualAdvance.cancelling||immediate)manualAdvance.cancelling={reason,source};pacing.reset(clock());
       if(immediate)publishCancelledAdvance();else settleCancelledAdvance();
       return true;
     }

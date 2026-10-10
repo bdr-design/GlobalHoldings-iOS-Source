@@ -14,6 +14,7 @@ function harness({parts=3,suspended=()=>false}={}){
     createSliceJob:(_slice,meta)=>{h.created++;return {aggregate:meta.aggregate,runChunk:()=>{h.now+=3;return true;},finish:()=>{h.finished++;return {committed:true,completeTo:meta.to};},cancel:()=>{h.cancelled++;},cleanup:()=>{}};},
     onMaintenance:()=>{h.deferred+=parts;},
     hasDeferredWork:()=>!suspended()&&h.deferred>0,
+    hasQueuedWork:()=>h.deferred>0,
     runDeferredWork:()=>{if(suspended()||!h.deferred)return false;h.deferred--;h.deferredRuns++;if(h.published)h.writesAfterPublish++;return true;},
     isSuspended:()=>suspended(),
     onAdvance:detail=>{h.events.push(detail);if(detail.active===false)h.published=true;}
@@ -91,6 +92,35 @@ test('repeated advance and cancel cycles post each boundary once and publish eac
 test('completion is unchanged: published after the drain, never as a cancel',()=>{
   const h=harness({parts:3});h.engine.advanceTo(43200,{speed:600,batchSeconds:3600});for(let i=0;i<400&&h.engine.snapshot().manualAdvance;i++)h.frame();
   const ends=terminal(h);assert.equal(ends.length,1);assert.equal(ends[0].completed,true);assert.equal(h.deferred,0);assert.equal(h.time,43200);assert.equal(h.writesAfterPublish,0);
+});
+
+test('a permanently suspended host with nothing queued (save recovery lock) publishes the cancel at once',()=>{
+  // Review finding: reset(now,'lifecycle-lock') under GH_PERSISTENCE recoveryRequired left the request cancelling for
+  // ever (the button, and diagnostic export waiting for manualAdvance, never finished).
+  let suspended=false;const h=harness({parts:2,suspended:()=>suspended});h.engine.advanceTo(3*86400,{speed:600,batchSeconds:3600});h.untilMaintenanceQueued();
+  for(let i=0;i<20&&h.deferred;i++)h.frame();assert.equal(h.deferred,0,'the round drained while the request was running');assert(h.engine.snapshot().manualAdvance);
+  suspended=true;h.engine.reset(h.now,'lifecycle-lock');assert.equal(h.engine.snapshot().manualAdvance,null,'published in the same call');
+  for(let i=0;i<50;i++)h.frame();assert.equal(terminal(h).length,1);assert.equal(terminal(h)[0].reason,'lifecycle-lock');
+});
+
+test('a permanently suspended host with work queued: the save-recovery cancel publishes at once under its own reason',()=>{
+  let suspended=false;const h=harness({parts:3,suspended:()=>suspended});h.engine.advanceTo(3*86400,{speed:600,batchSeconds:3600});h.untilMaintenanceQueued();
+  suspended=true;h.engine.reset(h.now,'lifecycle-lock');for(let i=0;i<50;i++)h.frame();
+  assert(h.engine.snapshot().manualAdvance?.cancelling,'queued work keeps it settling while the host cannot run it');assert.equal(terminal(h).length,0);
+  h.engine.cancelAdvance('save-recovery-required',{immediate:true});
+  assert.equal(h.engine.snapshot().manualAdvance,null);assert.equal(terminal(h).length,1);assert.equal(terminal(h)[0].reason,'save-recovery-required','the emergency reason, not the first one');
+  for(let i=0;i<20;i++)h.frame();assert.equal(terminal(h).length,1,'published once');
+});
+
+test('an emergency cancel while a cancel settles publishes at once under the emergency reason',()=>{
+  const h=harness({parts:5});h.engine.advanceTo(3*86400,{speed:600,batchSeconds:3600});h.untilMaintenanceQueued();h.engine.cancelAdvance('user');h.frame();
+  assert(h.engine.snapshot().manualAdvance?.cancelling);h.engine.cancelAdvance('global-halt',{immediate:true});
+  assert.equal(terminal(h).length,1);assert.equal(terminal(h)[0].reason,'global-halt');
+});
+
+test('a temporarily suspended host with nothing queued publishes at once (as before Build 371)',()=>{
+  let suspended=false;const h=harness({parts:0,suspended:()=>suspended});h.engine.advanceTo(300*86400,{speed:600,batchSeconds:3600});for(let i=0;i<200&&!h.engine.snapshot().slices;i++)h.frame();
+  suspended=true;assert.equal(h.engine.cancelAdvance('qa'),true);assert.equal(h.engine.snapshot().manualAdvance,null);assert.equal(terminal(h).length,1);
 });
 
 console.log(JSON.stringify({suite:'build371-calendar-cancel-settle-core',passed:results.filter(r=>r.ok).length,total:results.length,results},null,2));
