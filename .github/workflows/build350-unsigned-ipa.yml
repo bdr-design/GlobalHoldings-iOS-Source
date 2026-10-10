@@ -12,6 +12,17 @@ on:
         description: Successful Build 362 run whose verified IPA should be published as an unsigned prerelease
         required: false
         type: string
+      publish_part:
+        description: Relay one bounded Base64 segment (0-3) or all segments
+        required: false
+        type: choice
+        options:
+          - all
+          - '0'
+          - '1'
+          - '2'
+          - '3'
+        default: all
 
 permissions:
   contents: read
@@ -46,24 +57,28 @@ jobs:
       # own job-log channel; 3,900,000 is divisible by three, so the four base64
       # streams concatenate into the exact original bytes before SHA verification.
       - name: Relay IPA bytes 0
+        if: ${{ inputs.publish_part == 'all' || inputs.publish_part == '0' }}
         shell: bash
         run: |
           set -euo pipefail
           dd if=publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa bs=1 skip=0 count=3900000 status=none | base64 -w 48000 | awk '{printf "@@IPA362:0:%06d:%s\n", NR, $0}'
 
       - name: Relay IPA bytes 1
+        if: ${{ inputs.publish_part == 'all' || inputs.publish_part == '1' }}
         shell: bash
         run: |
           set -euo pipefail
           dd if=publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa bs=1 skip=3900000 count=3900000 status=none | base64 -w 48000 | awk '{printf "@@IPA362:1:%06d:%s\n", NR, $0}'
 
       - name: Relay IPA bytes 2
+        if: ${{ inputs.publish_part == 'all' || inputs.publish_part == '2' }}
         shell: bash
         run: |
           set -euo pipefail
           dd if=publish/GlobalHoldings_BUILD362_unsigned_TEST.ipa bs=1 skip=7800000 count=3900000 status=none | base64 -w 48000 | awk '{printf "@@IPA362:2:%06d:%s\n", NR, $0}'
 
       - name: Relay IPA bytes 3
+        if: ${{ inputs.publish_part == 'all' || inputs.publish_part == '3' }}
         shell: bash
         run: |
           set -euo pipefail
