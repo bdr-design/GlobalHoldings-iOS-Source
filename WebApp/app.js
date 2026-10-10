@@ -2240,9 +2240,14 @@
         // Build 358: a HUD line. The fleet is counted (one column read) when the save or the fleet size changes; after a
         // simulation slice alone it is recounted at most every 2 s, keeping the last counts in between. (The former
         // engine summary carried no phase counts any more and printed "NaN في الحركة · undefined في المحطات".)
-        const nowMs=Date.now(),sliceOnly=mapStatusCache.countedRevision===revision&&mapStatusCache.countedAssets===assetLength;
-        if(sliceOnly&&nowMs-(mapStatusCache.countedAt||0)<2000){mapStatusCache.pendingRecount=true;}
-        else{const phases=window.GH_FLEET_DATA.countByPhase(state);mapStatusCache.moving=phases.get('moving')||0;mapStatusCache.idle=phases.get('idle')||0;mapStatusCache.turn=phases.get('turnaround')||0;mapStatusCache.countedAt=nowMs;mapStatusCache.countedRevision=revision;mapStatusCache.countedAssets=assetLength;mapStatusCache.pendingRecount=false;}
+        // Build 371 (a million moving aircraft: the count read every row, 130 ms, and the save revision moved between most
+        // counts, so it ran about every second and was 41% of the frames lost in play): after the first count, a count
+        // waits 40 times its last duration (2 s at least when only a slice passed), so it takes at most a fortieth of the
+        // main thread. A count under 5 ms still follows a new save revision at once, and a new fleet size always does.
+        const nowMs=Date.now(),sameSize=mapStatusCache.countedAssets===assetLength,sameRevision=mapStatusCache.countedRevision===revision,costMs=Number(mapStatusCache.countMs)||0;
+        const waitMs=!sameSize?0:sameRevision?Math.max(2000,costMs*40):costMs<5?0:costMs*40;
+        if(nowMs-(mapStatusCache.countedAt||0)<waitMs){mapStatusCache.pendingRecount=true;}
+        else{const clock=()=>globalThis.performance?.now?.()??Date.now(),countStarted=clock(),phases=window.GH_FLEET_DATA.countByPhase(state);mapStatusCache.countMs=clock()-countStarted;mapStatusCache.moving=phases.get('moving')||0;mapStatusCache.idle=phases.get('idle')||0;mapStatusCache.turn=phases.get('turnaround')||0;mapStatusCache.countedAt=nowMs;mapStatusCache.countedRevision=revision;mapStatusCache.countedAssets=assetLength;mapStatusCache.pendingRecount=false;}
       }
       if(!mapStatusCache.pendingRecount)mapStatusCache.assetKey=assetKey;
     }
@@ -3523,7 +3528,7 @@
   if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core compatibility check failed before app.js');
   if(!window.GH_SIMULATION_CORE?.create)throw new Error('Simulation Core failed to load before app.js');
   if(!window.GH_SIMULATION_RUNTIME_CORE?.create)throw new Error('Simulation Runtime Core failed to load before app.js');
-  let lastRealtimeHealthMs=0,lastUiRefreshMs=0;
+  let lastRealtimeHealthMs=0,lastUiRefreshMs=0,lastRealtimeHealthCostMs=0;
   const REALTIME_HEALTH_MS=10000;
   const GLOBAL_HALT_IDS=Object.freeze(['CONTROL_JOURNAL_CHAIN_BREAK','CONTROL_JOURNAL_HASH_MISMATCH','CONTROL_JOURNAL_HEAD_MISMATCH','SAVE_SCHEMA_INTEGRITY','TIME_MONOTONICITY','TRANSACTION_ROLLBACK_FAILED','NATIVE_SAVE_RECOVERY_FAILED']);
   function requiresGlobalHalt(...reports){
@@ -3582,7 +3587,10 @@
       if(!jobActive&&!simulationEngine.snapshot().manualAdvance&&!fleetEngineThreadClient?.busy&&!stagedStateBusy()&&!document.hidden&&!hardResetInProgress&&!window.GH_PERSISTENCE.isLocked()){
         const now=performance.now();
         if(now-lastMobilityStreetHydrationMs>=1200){lastMobilityStreetHydrationMs=now;timed('streetHydrationMs',()=>{void hydrateMobilityStreetRoutes();});}
-        if(now-lastRealtimeHealthMs>=REALTIME_HEALTH_MS){lastRealtimeHealthMs=now;try{timed('healthCheckMs',()=>window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:false,trackTransitions:true}));if(activeDrawerPanel==='diagnostics')timed('diagnosticsPanelMs',()=>openDrawer('diagnostics'));}catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}}
+        // Build 371: with a million assets the check reads every row (180-310 ms in desktop Chromium); the next one waits
+        // 40 times the last one's duration when that is longer than REALTIME_HEALTH_MS, so it takes at most a fortieth
+        // of the main thread.
+        if(now-lastRealtimeHealthMs>=Math.max(REALTIME_HEALTH_MS,lastRealtimeHealthCostMs*40)){lastRealtimeHealthMs=now;const healthStarted=performance.now();try{timed('healthCheckMs',()=>window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:false,trackTransitions:true}));lastRealtimeHealthCostMs=performance.now()-healthStarted;if(activeDrawerPanel==='diagnostics')timed('diagnosticsPanelMs',()=>openDrawer('diagnostics'));}catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}}
       }
       const metric=runtimeInstrumentation.simRender;metric.count++;metric.last={...parts,recordedAtMs:Date.now()};for(const [key,value] of Object.entries(parts))metric.max[key]=Math.max(Number(metric.max[key])||0,value);
     },
