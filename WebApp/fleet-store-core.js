@@ -88,7 +88,7 @@
       r={values:store.values,views:makeViews(store.rows),index:new Map(),indexedTo:0,free:[],ids:null,profileGroups:null,leaseGroups:null,payrollGroups:null,
         dirty:[],dirtyFrom:store.revision,dirtyLost:false,dirtyColumns:null,suppressDirtyLog:false,
         dirtyChunks:new Uint8Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),allDirty:true,journal:null,epoch:++epochCounter,valuesGeneration:++epochCounter,
-        uid:++epochCounter,chunkVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),staticVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),massVersion:0};
+        uid:++epochCounter,chunkVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),staticVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),identityVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),massVersion:0};
       runtime.set(store,r);
     }
     if(r.indexedTo>store.values.length){r.index=new Map();r.indexedTo=0;r.free=[];r.valuesGeneration=++epochCounter;}
@@ -157,12 +157,18 @@
       const chunks=Math.max(1,Math.ceil(cap/CHUNK_ROWS));if(r.dirtyChunks.length<chunks){const next=new Uint8Array(chunks);next.set(r.dirtyChunks);r.dirtyChunks=next;}
       if(r.chunkVersions.length<chunks){const next=new Uint32Array(chunks);next.set(r.chunkVersions);r.chunkVersions=next;}
       if(r.staticVersions.length<chunks){const next=new Uint32Array(chunks);next.set(r.staticVersions);r.staticVersions=next;}
+      if(r.identityVersions.length<chunks){const next=new Uint32Array(chunks);next.set(r.identityVersions);r.identityVersions=next;}
       if(r.journal&&r.journal.active&&r.journal.seen.length<cap){const seen=new Uint8Array(cap);seen.set(r.journal.seen);r.journal.seen=seen;}
     }
   }
   function trimCapacity(store){if(store.capacity!==store.length)resize(store,store.length);return store;}
   function isAlive(store,index){return index>=0&&index<store.length&&(views(store).u8[index*STRIDE+O.flags]&ALIVE)!==0;}
-  function markDirty(r,index){const chunk=index>>>CHUNK_SHIFT;r.dirtyChunks[chunk]=1;r.chunkVersions[chunk]++;r.staticVersions[chunk]++;}
+  function markDirty(r,index){const chunk=index>>>CHUNK_SHIFT;r.dirtyChunks[chunk]=1;r.chunkVersions[chunk]++;r.staticVersions[chunk]++;r.identityVersions[chunk]++;}
+  // Build 371: identityVersions move with every write except an in-place write of an ENGINE_FIELDS field (its column or
+  // the binding group, no extras involved: set() decides), so class tables, distinct lists and the id check over fields
+  // outside ENGINE_FIELDS (owner, company, mode, type, class, id, routeId) survive the arrivals and departures of a moving
+  // fleet, which rewrite from/to/load and the engine fields of rows in every chunk (and so move staticVersions).
+  function markVolatileDirty(r,index){const chunk=index>>>CHUNK_SHIFT;r.dirtyChunks[chunk]=1;r.chunkVersions[chunk]++;r.staticVersions[chunk]++;}
   // The event engine's fast path (toucher) writes only ENGINE_FIELDS (and `at`): it leaves staticVersions alone, so
   // class tables over other fields stay valid while the fleet moves.
   function markEngineDirty(r,index){const chunk=index>>>CHUNK_SHIFT;r.dirtyChunks[chunk]=1;r.chunkVersions[chunk]++;}
@@ -222,9 +228,9 @@
   }
   // First write to a row: journal its preimage (inside a transaction), bump the
   // revision, log it for incremental owners and mark its chunk dirty.
-  function remember(store,index){
+  function remember(store,index,volatile=false){
     const journal=journalFor(store),r=rt(store);if(journal)logRow(journal,store,r,index);
-    store.revision++;if(journal)journal.high=store.revision;logDirty(r,index);markDirty(r,index);
+    store.revision++;if(journal)journal.high=store.revision;logDirty(r,index);(volatile?markVolatileDirty:markDirty)(r,index);
   }
   // remember() for a hot loop: the journal is resolved once, on first use.
   function toucher(store){
@@ -366,9 +372,13 @@
   // Write one asset field exactly as a plain object assignment would (undefined
   // deletes, as JSON drops it). All writes are journaled inside a transaction.
   function set(store,index,field,value){
-    checkRow(store,index);remember(store,index);
-    const idBefore=field==='id'?idAt(store,index):undefined;
+    checkRow(store,index);
     const hot=HOT_KIND.get(field)||null,extras=extrasOf(store,index);
+    // An IDENTITY_EXEMPT value written in place (its column, or the binding group) leaves identityVersions alone; a value
+    // that moves into or out of extras, and every other field, moves them.
+    const volatile=IDENTITY_EXEMPT.has(field)&&!(extras&&own(extras,field))&&(hot?value===undefined||hotFits(hot,value):BINDING_SET.has(field));
+    remember(store,index,volatile);
+    const idBefore=field==='id'?idAt(store,index):undefined;
     if(extras&&own(extras,field))setExtra(store,index,field,undefined);
     if(hot){if(value===undefined)clearHot(store,index,field);else if(hotFits(hot,value))writeHot(store,index,field,hot,value);else{clearHot(store,index,field);setExtra(store,index,field,value);}}
     else if(PROFILE_SET.has(field))setGroupField(store,index,'profile',field,value);
@@ -549,13 +559,17 @@
   // When the fleet did change, only the chunks (CHUNK_ROWS rows) written since are scanned again: each chunk keeps its
   // own class table, valid while the chunk's write version is unchanged, and the tables merge in chunk order (classes
   // in order of first row, counts summed, extremes taken with the same strict comparisons in row order, singles in row
-  // order), which is exactly the result of one pass. A field set without ENGINE_FIELDS uses staticVersions, which the
-  // event engine's fast path does not bump, so those tables survive a moving fleet (the Company Platform asset checks).
+  // order), which is exactly the result of one pass. A field set without ENGINE_FIELDS uses identityVersions, which no
+  // in-place write of an engine field bumps (Build 371; before, staticVersions, which every arrival moved), so those
+  // tables survive a moving fleet (the Company Platform asset checks).
   const ENGINE_FIELDS=new Set(['phase','progress','fuel','condition','dwellRemaining','departureScheduled','departureScheduledAt','crewBlocked','reverse','lastTrip','baseFacility',...BINDING_FIELDS]);
+  // Fields an arrival or departure rewrites in place besides ENGINE_FIELDS (the engine's carried seconds): writing them
+  // moves staticVersions but not identityVersions, so a table over one of them keys on staticVersions.
+  const IDENTITY_EXEMPT=new Set([...ENGINE_FIELDS,'simCarrySeconds']);
   function classScan(store,names,numericSet){
     const r=rt(store),signature=JSON.stringify([names,[...numericSet].sort()]),cache=r.classCache||(r.classCache=new Map()),cached=cache.get(signature);
     if(cached&&cached.revision===store.revision&&cached.length===store.length&&cached.structure===store.structure)return cached;
-    const versions=names.some(field=>ENGINE_FIELDS.has(field))?r.chunkVersions:r.staticVersions,stamp=`${r.epoch}:${r.massVersion}:${r.valuesGeneration}`;
+    const versions=names.some(field=>ENGINE_FIELDS.has(field))?r.chunkVersions:names.some(field=>IDENTITY_EXEMPT.has(field))?r.staticVersions:r.identityVersions,stamp=`${r.epoch}:${r.massVersion}:${r.valuesGeneration}`;
     const priorTables=cached&&cached.stamp===stamp?cached.chunkTables:null,chunkTables=[];
     const plan=names.map(field=>({field,inherited:field in Object.prototype,kind:HOT_KIND.get(field)||null,profile:PROFILE_SET.has(field),binding:BINDING_SET.has(field)}));
     let mask=0;const keyed=[],nums=[];
@@ -565,7 +579,10 @@
       else keyed.push({field:step.field,kind:step.kind,bit:HOT_BIT[step.field],slot:step.kind==='pattern'?PATTERN_SLOTS[step.field]:O[step.field]});
     }
     const useProfile=plan.some(step=>!step.kind&&step.profile),useBinding=plan.some(step=>!step.kind&&step.binding);
-    const v=views(store),u8=v.u8,W=v.u32,F=v.f64,V=store.values,EX=store.extras,length=store.length,width=2+keyed.length*2+(useProfile?1:0)+(useBinding?1:0);
+    // Build 371: the views are bound for the scan and released before the result is cached (members() binds them again):
+    // a cached scan held the row buffer of its time, so a store that grew kept its previous buffers alive.
+    let u8,W,F,V,EX;const bind=()=>{const v=views(store);u8=v.u8;W=v.u32;F=v.f64;V=store.values;EX=store.extras;},release=()=>{u8=W=F=V=EX=null;};bind();
+    const length=store.length,width=2+keyed.length*2+(useProfile?1:0)+(useBinding?1:0);
     const comps=[],first=[],counts=[],key=new Uint32Array(width),previous=new Uint32Array(width);
     // Hot-loop builtins as locals: global lookups are slow where the game runs inside a vm context (Node tests).
     const imul=Math.imul,larger=Math.max;
@@ -627,20 +644,25 @@
     }
     // Members of a class (failure paths only): the rows whose key equals the class key, found by a second scan, so
     // the common path keeps no per-row class map.
-    const members=id=>cb=>{const c=comps[id];for(let index=0;index<length;index++){if(!(u8[index*STRIDE+O.flags]&ALIVE)||!fill(index))continue;let same=true;for(let k=0;k<width;k++)if(c[k]!==key[k]){same=false;break;}if(same)cb(projectRow(store,index,plan),index);}};
+    const members=id=>cb=>{bind();try{const c=comps[id];for(let index=0;index<length;index++){if(!(u8[index*STRIDE+O.flags]&ALIVE)||!fill(index))continue;let same=true;for(let k=0;k<width;k++)if(c[k]!==key[k]){same=false;break;}if(same)cb(projectRow(store,index,plan),index);}}finally{release();}};
     const scan={revision:store.revision,length:store.length,structure:store.structure,stamp,chunkTables,plan,comps,first,counts,mins,maxs,nans,nums,nCount,singles,members};
-    if(cache.size>=16)cache.clear();cache.set(signature,scan);return scan;
+    release();if(cache.size>=16)cache.clear();cache.set(signature,scan);return scan;
   }
   // Build 358 (million-asset): the distinct truthy values of a hot ref field (routeId, baseFacility) over live rows, in
   // order of first occurrence; with whereField (a profile field) only rows whose profile holds whereValue there. Rows
   // with extras are read as views read them (peek). Each chunk keeps its own ordered list, valid while the chunk's
-  // static version is unchanged (the event engine's fast path writes no ref field, profile or extras), and the lists
+  // version for that field is unchanged (Build 371: chunkVersions for baseFacility, which the event engine's fast path
+  // writes; identityVersions for routeId; a profile `where` moves identityVersions too), and the lists
   // merge in chunk order, which is the order of one pass. Returns a new array.
   function distinctRefs(store,field,whereField=null,whereValue){
     if(HOT_KIND.get(field)!=='ref')throw new RangeError(`fleet-distinct-ref-field:${field}`);
     if(whereField&&!PROFILE_SET.has(whereField))throw new RangeError(`fleet-distinct-where-field:${whereField}`);
     const r=rt(store),signature=JSON.stringify([field,whereField,whereValue===undefined?null:[typeof whereValue,whereValue]]),cache=r.distinctCache||(r.distinctCache=new Map()),stamp=`${r.epoch}:${r.massVersion}:${r.valuesGeneration}`;
     let entry=cache.get(signature);if(!entry||entry.stamp!==stamp){entry={stamp,tables:[]};if(cache.size>=16)cache.clear();cache.set(signature,entry);}
+    // Build 371: the versions that move with every write of `field`: baseFacility is an engine field, which the event
+    // engine's fast path writes in place (an arrival at the other end of the route), so its list keys on chunkVersions
+    // (staticVersions missed those arrivals); routeId keys on identityVersions.
+    const versions=ENGINE_FIELDS.has(field)?r.chunkVersions:IDENTITY_EXEMPT.has(field)?r.staticVersions:r.identityVersions;
     const v=views(store),u8=v.u8,W=v.u32,V=store.values,bit=HOT_BIT[field]>>>0,slot=O[field],length=store.length,profileMatch=new Map();
     const scanChunk=(start,end)=>{
       const values=[],seenRefs=new Set(),seenValues=new Set();
@@ -655,7 +677,7 @@
     };
     const out=[],seen=new Set();
     for(let chunk=0,start=0;start<length;chunk++,start+=CHUNK_ROWS){
-      const end=Math.min(length,start+CHUNK_ROWS),version=r.staticVersions[chunk];let table=entry.tables[chunk];
+      const end=Math.min(length,start+CHUNK_ROWS),version=versions[chunk];let table=entry.tables[chunk];
       if(!table||table.version!==version||table.end!==end){table={version,end,values:scanChunk(start,end)};entry.tables[chunk]=table;}
       for(const value of table.values)if(!seen.has(value)){seen.add(value);out.push(value);}
     }
@@ -684,8 +706,8 @@
   // while no chunk's static version moved (and no mass write, compaction or new value table happened).
   function idCollisions(store){
     const r=rt(store),cached=r.idCollisionCache,stamp=`${r.epoch}:${r.massVersion}:${r.valuesGeneration}:${store.length}:${store.structure}`,chunks=Math.ceil(store.length/CHUNK_ROWS);
-    if(cached&&cached.stamp===stamp){let same=true;for(let chunk=0;chunk<chunks;chunk++)if(cached.versions[chunk]!==r.staticVersions[chunk]){same=false;break;}if(same)return {...cached.result};}
-    const result=scanIdCollisions(store);r.idCollisionCache={stamp,versions:r.staticVersions.slice(0,chunks),result};return {...result};
+    if(cached&&cached.stamp===stamp){let same=true;for(let chunk=0;chunk<chunks;chunk++)if(cached.versions[chunk]!==r.identityVersions[chunk]){same=false;break;}if(same)return {...cached.result};}
+    const result=scanIdCollisions(store);r.idCollisionCache={stamp,versions:r.identityVersions.slice(0,chunks),result};return {...result};
   }
   function scanIdCollisions(store){
     const v=views(store),u8=v.u8,W=v.u32,V=store.values,EX=store.extras,length=store.length,groups=new Map(),exact=new Set(),larger=Math.max,digitTail=/\d$/;let missing=false,duplicate=false;
@@ -942,6 +964,13 @@
   // (journaled once inside a transaction, marked for the engine and the dirty log), then moves the revision by at least
   // `revisionDelta` (the writer's own count). `staticRows`: the writes may reach fields outside the engine's (the general
   // path), so class tables over those rows are invalidated too.
+  // Build 371: the replica's static write versions per chunk, and the chunks whose version moved since such a snapshot
+  // (rows written through remember(): set, patch, extras, profiles; the engine's fast path leaves them alone).
+  function staticSnapshot(store){const r=rt(store),chunks=Math.ceil(store.length/CHUNK_ROWS);return {static:r.staticVersions.slice(0,chunks),identity:r.identityVersions.slice(0,chunks)};}
+  function staticChunksSince(store,snapshot){
+    const r=rt(store),chunks=Math.ceil(store.length/CHUNK_ROWS),moved=(versions,before)=>{const out=[];for(let chunk=0;chunk<chunks;chunk++)if(!before||chunk>=before.length||versions[chunk]!==before[chunk])out.push(chunk);return out;};
+    return {static:moved(r.staticVersions,snapshot?.static),identity:moved(r.identityVersions,snapshot?.identity)};
+  }
   function writeRows(store,indices,bytes,extras,{revisionDelta=0,staticRows=false}={}){
     const before=store.revision,touch=toucher(store),src=new Uint32Array(bytes),dst=views(store).u32;
     if(src.length!==indices.length*WORDS_PER_ROW)throw new Error('fleet-replica-rows-invalid');
@@ -951,13 +980,20 @@
       const extra=extras?.[k];if(extra===undefined||extra===null)delete store.extras[index];else store.extras[index]=extra;
     }
     const r=rt(store);
-    if(staticRows&&indices.length){invalidateProfiles(store);for(let k=0;k<indices.length;k++){const chunk=indices[k]>>>CHUNK_SHIFT;r.staticVersions[chunk]++;}}
+    // `staticRows`: true marks the chunks of every row written; a list names the chunks to mark (Build 371: the engine
+    // thread lists the chunks its replica wrote outside the fast path, instead of every chunk once any row did).
+    // ({static,identity} chunk lists, from staticChunksSince; a plain list marks both tiers.)
+    if(staticRows&&typeof staticRows==='object'){
+      const lists=Array.isArray(staticRows)?{static:staticRows,identity:staticRows}:staticRows,mark=(versions,list)=>{for(const chunk of Array.isArray(list)?list:[]){const at=Math.floor(Number(chunk));if(at>=0&&at<versions.length)versions[at]++;}};
+      if((lists.static||[]).length||(lists.identity||[]).length)invalidateProfiles(store);mark(r.staticVersions,lists.static);mark(r.identityVersions,lists.identity);
+    }
+    else if(staticRows&&indices.length){invalidateProfiles(store);for(let k=0;k<indices.length;k++){const chunk=indices[k]>>>CHUNK_SHIFT;r.staticVersions[chunk]++;r.identityVersions[chunk]++;}}
     const target=before+Math.max(0,Math.floor(Number(revisionDelta)||0));if(store.revision<target)store.revision=target;
     if(r.journal&&r.journal.active)r.journal.high=Math.max(r.journal.high,store.revision);
   }
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,I32_NULL,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
-    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,readColumns,writeColumns,drainDirty,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
+    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,readColumns,writeColumns,drainDirty,staticSnapshot,staticChunksSince,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
     views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,collectValuesStages,distinctRefs,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,exportReplica,importReplica,valueChanges,applyValueChanges,internAt,readRows,writeRows,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;

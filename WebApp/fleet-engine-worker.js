@@ -24,7 +24,7 @@ function advance(message){
   if(!store)return {fallback:'replica-missing'};
   if(open)return {fallback:'previous-step-unsettled'};
   const length=store.length,structure=store.structure,revision=store.revision,valuesLength=store.values.length;
-  const journal=STORE.beginJournal(store);
+  const journal=STORE.beginJournal(store),staticBefore=STORE.staticSnapshot(store);
   let out;
   try{
     out=EVENTS.advance(store,{from:message.from,to:message.to,context:message.context,resolveRoute,catalogSpecs,tripAlertLimit:message.tripAlertLimit,order:message.order,...(Number.isFinite(message.maxEvents)?{maxEvents:message.maxEvents}:{})});
@@ -42,7 +42,9 @@ function advance(message){
   for(let ref=valuesLength;ref<store.values.length;ref++)values.push([ref,store.values[ref]]);
   open={kind:'step',id:message.id,journal};
   const budget=Math.max(1,Math.floor(Number(message.budget)||1500));
-  return {out,indices,bytes:rows.bytes,extras:rows.extras,values,revisionDelta:store.revision-revision,staticRows:out.slow>0,
+  // Build 371: the chunks this step wrote outside the fast path (staticRows used to name every row once any was slow,
+  // so a moving million-asset fleet dropped every static class table on each slice).
+  return {out,indices,bytes:rows.bytes,extras:rows.extras,values,revisionDelta:store.revision-revision,staticRows:STORE.staticChunksSince(store,staticBefore),
     nextBudgetTime:EVENTS.timeForEventBudget(store,budget)};
 }
 
@@ -50,7 +52,7 @@ function beginWindow(message){
   if(!store)throw new Error('window-replica-missing');
   if(open)throw new Error('window-while-step-open');
   const from=Number(message.from),target=Number(message.target);if(!Number.isFinite(from)||!Number.isFinite(target)||target<=from)throw new Error('window-range-invalid');
-  open={kind:'window',id:message.id,journal:STORE.beginJournal(store),length:store.length,structure:store.structure,valuesLength:store.values.length,nextFrom:from,target,nextSeq:0};
+  open={kind:'window',id:message.id,journal:STORE.beginJournal(store),staticBefore:STORE.staticSnapshot(store),length:store.length,structure:store.structure,valuesLength:store.values.length,nextFrom:from,target,nextSeq:0};
 }
 function advanceWindow(message){
   if(!store)return {fallback:'replica-missing'};
@@ -78,7 +80,8 @@ function advanceWindow(message){
   const budget=Math.max(1,Math.floor(Number(message.budget)||1500));
   open.nextFrom=Number(out.completeTo);open.nextSeq++;
   if(!Number.isFinite(open.nextFrom)||open.nextFrom<from-1e-6||open.nextFrom>to+1e-6){STORE.rollbackJournal(open.journal);open=null;return {fallback:'window-complete-to-invalid'};}
-  return {windowId:message.windowId,seq,from,to,out,indices,bytes:rows.bytes,extras:rows.extras,values,revisionDelta:store.revision-revision,staticRows:out.slow>0,
+  // The chunks written outside the fast path since the window began (the rows sent are those of the whole window too).
+  return {windowId:message.windowId,seq,from,to,out,indices,bytes:rows.bytes,extras:rows.extras,values,revisionDelta:store.revision-revision,staticRows:STORE.staticChunksSince(store,open.staticBefore),
     nextBudgetTime:EVENTS.timeForEventBudget(store,budget)};
 }
 
