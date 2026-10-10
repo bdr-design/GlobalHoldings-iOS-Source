@@ -35,6 +35,7 @@ function createSimulationAdapter({from=7200,assets=null,routeOverrides={},financ
     clone:value=>value===undefined?undefined:structuredClone(value),
     routeOwnerCompanyId:route=>route?.ownerCompanyId||route?.companyId||route?.company||'',
     routeMatchingFacility:routeId=>templates[routeId]||null,
+    recordAssetDepartureTrace:()=>null,
     simulationAssetRuntimeContext:()=>fixture.context(Number(state.simSeconds)||0),
     catalogItem:()=>null,queueAssetSaleFinalize:()=>{},
     processFinancialDay:day=>{s.__financialDays.push(day);state.lastFinancialDay=day;},
