@@ -510,6 +510,28 @@
     }
     return Math.max(start,end);
   }
+  // Build 371 (a million assets: each 500-asset chunk of a 20,000-aircraft dispatch decoded every row, 80 passes and
+  // 32 s of a 74 s command): the rows holding a route (a truthy routeId), in row order, each presented exactly as
+  // scan() presents it. Other rows are passed over on the routeId column alone. fn returning SKIP_ROUTE passes over the
+  // later rows of that row's routeId the same way; STOP ends the pass.
+  const SKIP_ROUTE=Object.freeze({scan:'skip-route'});
+  function scanRouted(state,fields,fn){
+    const names=[...new Set(['routeId',...(Array.isArray(fields)?fields:[])])],skipped=new Set(),store=storeOf(state);
+    const visit=(row,index)=>{const routeId=row.routeId;if(!routeId||skipped.has(routeId))return undefined;const out=fn(row,index);if(out===SKIP_ROUTE)skipped.add(routeId);return out;};
+    if(!store){scan(state,names,(row,index)=>visit(row,index)===STOP?STOP:undefined);return;}
+    const skippedRefs=new Set(),ROUTE=BIT.routeId>>>0,SR=STORE.STRIDE,WR=STORE.WORDS_PER_ROW,ALIVE=STORE.ALIVE,EXTRAS=STORE.EXTRAS;
+    for(let index=0;index<store.length;index++){
+      // Views and the value table are read per row: fn may not write, but a row decoded below may grow the table.
+      const v=STORE.views(store),flags=v.u8[index*SR+O.flags];if(!(flags&ALIVE))continue;
+      let ref=0;
+      if(!(flags&EXTRAS)){
+        const w=index*WR;if(!(v.u32[w+O.present]&ROUTE))continue;ref=v.u32[w+O.routeId];if(ref===0||skippedRefs.has(ref))continue;
+        const value=store.values[ref];if(!value)continue;if(skipped.has(value)){skippedRefs.add(ref);continue;}
+      }
+      let out,routeId;scan(state,names,(row,at)=>{routeId=row.routeId;out=visit(row,at);},{from:index,to:index+1});
+      if(out===STOP)return;if(out===SKIP_ROUTE&&ref)skippedRefs.add(ref);
+    }
+  }
   // Read-only projections keep validation and other narrow consumers off the
   // per-row proxy path while preserving the store boundary. The projection is
   // newly allocated and contains only the requested fields.
@@ -674,7 +696,7 @@
     const store=storeOf(state);if(store)return STORE.removeMany(store,doomed);
     const drop=new Set(doomed),assets=arrayOf(state);invalidateArrayIndex(assets);let write=0;for(let read=0;read<assets.length;read++){if(drop.has(read))continue;if(write!==read)assets[write]=assets[read];write++;}assets.length=write;return drop.size;}
 
-  const API=Object.freeze({VERSION,forEachFieldClasses,idCollisions,countByFields,countByPhase,presentedPhase,idAtRow,distinctRefs,idLists:ID_LISTS,STOP,scan,scanStages,scanLength,columnWriter,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,maintainStages,storeOf,isView,
+  const API=Object.freeze({VERSION,forEachFieldClasses,idCollisions,countByFields,countByPhase,presentedPhase,idAtRow,distinctRefs,idLists:ID_LISTS,STOP,SKIP_ROUTE,scan,scanRouted,scanStages,scanLength,columnWriter,configure,mode,source,ensure,size,persistenceRecordCount,isCompactReceipt,compactReceipt,receiptAssets,receiptAssetCount,receiptFirstAsset,receiptFields,receiptDistinctFields,revision,stats,membershipRevision,beginJournal,commitJournal,rollbackJournal,maintain,maintainStages,storeOf,isView,
     get,has,forEach,forEachFields,some,every,find,filter,count,sum,dailyLeaseCosts,payrollTotals,map,list,ids,indexById,plain,released,viewAt,indexOf:indexOfId,
     update,put,add,addMany,remove,removeMany,removeWhere,drafts,draft,commit});
   globalThis.GH_FLEET_DATA=API;

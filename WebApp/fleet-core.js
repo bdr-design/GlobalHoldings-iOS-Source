@@ -188,16 +188,19 @@
     asset.routeId=p.routeId||null;asset.routeSignature=signature;asset.releaseExclusiveRouteOnArrival=false;asset.baseFacility=p.baseFacility??asset.baseFacility;asset.phase=p.phase||'turnaround';asset.progress=0;asset.dwellRemaining=0;asset.crewBlocked=false;asset.routeSlot=slot;asset.departureScheduled=false;delete asset.departureScheduledAt;delete asset.simulationFault;
     const reverse=asset.baseFacility===p.route.toFacility;asset.reverse=reverse;asset.from=reverse?p.route.to:p.route.from;asset.to=reverse?p.route.from:p.route.to;return asset;
   }
-  // Every live asset outside `skipIds`, in row order, with whether requireFleetAsset accepts it (asked once per owner,
-  // mode and class): what the former passes over drafts of the whole fleet read, without a draft per asset.
+  // Every live asset holding a route (a truthy routeId; both callers pass over the others) outside `skipIds`, in row
+  // order, with whether requireFleetAsset accepts it (asked once per owner, mode and class): what the former passes over
+  // drafts of the whole fleet read, without a draft per asset.
+  // Build 371 (a million assets: every 500-asset chunk of a dispatch decoded all rows, 80 full passes per command): the
+  // rows come from GH_FLEET_DATA.scanRouted, and fn returns SKIP_ROUTE once it needs no later holder of that route.
   const ROUTE_HOLDER_FIELDS=Object.freeze(['id','routeId','routeSlot','phase','releaseExclusiveRouteOnArrival','ownerCompanyId','companyId','assetMode','type','assetClass']);
   function scanRouteHolders(state,skipIds,fn){
     const fleet=fleetData(),owners=new Map();
-    fleet.scan(state,ROUTE_HOLDER_FIELDS,row=>{
-      if(skipIds&&skipIds.has(row.id))return;
+    fleet.scanRouted(state,ROUTE_HOLDER_FIELDS,row=>{
+      if(skipIds&&skipIds.has(row.id))return undefined;
       const key=`${row.ownerCompanyId}\u0000${row.companyId}\u0000${row.assetMode}\u0000${row.type}\u0000${row.assetClass}`;let owned=owners.get(key);
       if(owned===undefined){try{requireFleetAsset(state,row);owned=true;}catch(_error){owned=false;}owners.set(key,owned);}
-      fn(row,owned);
+      return fn(row,owned);
     });
   }
   // Build 358 (million-asset): a batch may name each distinct route once (`routes`, keyed by the row's routeRef)
@@ -214,9 +217,12 @@
     const fleet=fleetData(),requested=new Set(),batchIds=new Set(rows.map(row=>row?.id).filter(Boolean));
     if(batchIds.size!==rows.length)throw new Error('route-assignment-batch-duplicate');
     const assetById=new Map();for(const id of batchIds){const draft=fleet.draft(state,id);if(draft)assetById.set(id,draft);}
-    const prepared=[],slotUsage=new Map(),fixedAirRoutes=[];
+    const prepared=[],slotUsage=new Map(),fixedAirRoutes=[],batchRouteIds=new Set(rows.map(row=>row?.routeId).filter(Boolean)),firstAirHolder=new Set();
+    // Slots are read below for the batch's routes only, and occupyAir keeps the first air holder of a route: any other
+    // route is passed over after its first holder outside the batch.
     scanRouteHolders(state,batchIds,(other,owned)=>{
-      if(assetMode(other)==='air'&&other.routeId)fixedAirRoutes.push([other.routeId,other.id]);
+      if(assetMode(other)==='air'&&other.routeId&&!firstAirHolder.has(other.routeId)){firstAirHolder.add(other.routeId);fixedAirRoutes.push([other.routeId,other.id]);}
+      if(!batchRouteIds.has(other.routeId))return fleetData().SKIP_ROUTE;
       if(!other.routeId||!owned)return;
       let used=slotUsage.get(other.routeId);if(!used){used=new Set();slotUsage.set(other.routeId,used);}
       const preferred=Number.isInteger(other.routeSlot)&&other.routeSlot>=0?other.routeSlot:null;
@@ -467,12 +473,15 @@
     const fleet=fleetData(),assetById=new Map(),requested=new Set(),prepared=[],
       routeIndex=new Map((state.customRoutes||[]).filter(Boolean).map(route=>[route.id,route])),routeOccupancy=new Map(),routeOwner=new Map();
     for(const p of rows)if(p?.id&&!assetById.has(p.id)){const draft=fleet.draft(state,p.id);if(draft)assetById.set(p.id,draft);}
+    for(const p of rows){const route=batchRoute(p,routeTable);if(route?.id&&!routeIndex.has(route.id))routeIndex.set(route.id,route);}
+    const affectedRoutes=new Set(rows.map(p=>batchRoute(p,routeTable)?.id));
+    // Counts are read below for the affected routes only; any other route needs only whether it has a counted holder
+    // and the first one (its place in the occupation order and the reported owner), so it is passed over after it.
     scanRouteHolders(state,null,(asset,owned)=>{
       if(!asset.routeId||asset.releaseExclusiveRouteOnArrival===true&&asset.phase==='moving'||!owned)return;
       routeOccupancy.set(asset.routeId,(routeOccupancy.get(asset.routeId)||0)+1);if(!routeOwner.has(asset.routeId))routeOwner.set(asset.routeId,asset.id);
+      if(!affectedRoutes.has(asset.routeId))return fleetData().SKIP_ROUTE;
     });
-    for(const p of rows){const route=batchRoute(p,routeTable);if(route?.id&&!routeIndex.has(route.id))routeIndex.set(route.id,route);}
-    const affectedRoutes=new Set(rows.map(p=>batchRoute(p,routeTable)?.id));
     for(const [routeId,count] of routeOccupancy){if(!affectedRoutes.has(routeId))continue;
       const route=routeIndex.get(routeId);if(route&&count>routeCapacity(route))throw new Error(`asset-route-capacity:${routeOwner.get(routeId)||routeId}`);
     }

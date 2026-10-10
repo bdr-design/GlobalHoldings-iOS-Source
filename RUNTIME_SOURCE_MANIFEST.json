@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "b60e33674054be07d61e43c1fe38db0431c5495a1ed37603e226794d09cfa621",
-  "webapp_tree_sha256": "c4be73af217262f94e898eb99dd631327b73facb9585841b4e3dc0d5245f1878",
+  "source_tree_sha256": "ccc80e5227979844ea03747bbd65c6dc27c3ad48c033b83647f62e50aa9fc6cb",
+  "webapp_tree_sha256": "926388dd8569a4c9a30dbf4c26ea0f398d7a5641fdcd58a041de9294fed15158",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 317666,
@@ -3207,12 +3207,12 @@
       "sha256": "2185b66024aa817032cbe2dcdaf804178962f05a552cf1b2230deb3725cd6a6e"
     },
     "WebApp/fleet-access-core.js": {
-      "bytes": 54788,
-      "sha256": "ac759f3c9c6685d415e64584379f65efeda1e940045cc35ff6d27a3ace44b0bf"
+      "bytes": 56611,
+      "sha256": "58d1efc2ae25f33b4775a6b78356bba1ae576304fa6cf8328ca9e18b8ac7e99a"
     },
     "WebApp/fleet-core.js": {
-      "bytes": 52651,
-      "sha256": "056397611b25fb6ff9b2b16e78e99145ffa221064ce21bd49a5cbcc258ccf61f"
+      "bytes": 53724,
+      "sha256": "4bd5a5ab4fe523859a3ba6821759e8c4d38369b20c78e3200f478dbe5b15a731"
     },
     "WebApp/fleet-engine-thread.js": {
       "bytes": 21953,
@@ -3548,7 +3548,7 @@
     },
     "project.yml": {
       "bytes": 2413,
-      "sha256": "d3dcfeea23df8cf274e7c9b087601b1470e6c694a23a34d06be16a61c4e47109"
+      "sha256": "e8b53336ca87737c997e05a8b19ecfba899f09d0bbe02dbcc78fa4c6e3c4b0fd"
     },
     "BUILD": {
       "bytes": 4,
