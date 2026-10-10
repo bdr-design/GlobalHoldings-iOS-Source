@@ -7,6 +7,19 @@ const html=fs.readFileSync(path.join(web,'index.html'),'utf8');
 const runtime=JSON.parse(fs.readFileSync(path.join(web,'runtime-required.json'),'utf8'));
 const csp=html.match(/http-equiv="Content-Security-Policy" content="([^"]+)"/)?.[1]||'';
 
+const actualRuntimeFiles=[];
+function collectRuntimeFiles(directory,relative=''){
+  for(const entry of fs.readdirSync(directory,{withFileTypes:true})){
+    const rel=relative?`${relative}/${entry.name}`:entry.name;
+    if(entry.isSymbolicLink())assert.fail(`runtime symlink forbidden: ${rel}`);
+    if(entry.isDirectory())collectRuntimeFiles(path.join(directory,entry.name),rel);
+    else if(entry.isFile())actualRuntimeFiles.push(rel);
+  }
+}
+collectRuntimeFiles(web);
+assert.equal(new Set(runtime.files).size,runtime.files.length,'duplicate runtime manifest entry');
+assert.deepEqual([...runtime.files].sort(),actualRuntimeFiles.sort(),'runtime manifest must exactly cover bundled WebApp files');
+
 assert.match(csp,/default-src 'self'/);
 assert.match(csp,/script-src 'self'(?:;|$)/);
 assert.doesNotMatch(csp,/script-src[^;]*(?:'unsafe-inline'|'unsafe-eval'|https?:)/);
@@ -28,4 +41,4 @@ assert(html.includes('accept="image/png,image/jpeg,image/webp"'),'logo picker MI
 assert(firstParty.includes('image/png')&&firstParty.includes('image/jpeg')&&firstParty.includes('image/webp'),'logo decoder MIME allowlist missing');
 assert(firstParty.includes('native-save-ack-timeout')&&firstParty.includes('saveHash')&&firstParty.includes('expectedPreviousRevision'),'native persistence correlation contract missing');
 
-console.log(JSON.stringify({passed:true,csp:true,localScripts:scripts.length,runtimeFiles:runtime.files.length,unsafeExecutors:0,logoMimeAllowlist:true,nativeAckCorrelation:true},null,2));
+console.log(JSON.stringify({passed:true,csp:true,localScripts:scripts.length,runtimeFiles:runtime.files.length,runtimeInventoryExact:true,unsafeExecutors:0,logoMimeAllowlist:true,nativeAckCorrelation:true},null,2));

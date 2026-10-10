@@ -155,8 +155,14 @@ def run(root: Path, artifact: Path, acceptance: Path, output: Path) -> dict:
             if not rel.startswith('WebApp/') and digest(app / rel) != h:
                 raise ValueError(f'Native byte changed during resource assembly: {rel}')
         required = json.loads((app / 'WebApp/runtime-required.json').read_text())
-        if not all(p in web_hashes for p in required['files']):
-            raise ValueError('Missing required runtime resource')
+        required_files = set(required['files'])
+        web_files = set(web_hashes)
+        if len(required_files) != len(required['files']):
+            raise ValueError('Duplicate required runtime resource')
+        if required_files != web_files:
+            missing = sorted(required_files - web_files)
+            unexpected = sorted(web_files - required_files)
+            raise ValueError(f'Runtime manifest differs from bundled WebApp files: missing={missing}, extra={unexpected}')
         zip_path = stage / 'test.ipa'
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
             for folder in [payload, *sorted(p for p in payload.rglob('*') if p.is_dir())]:
