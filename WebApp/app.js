@@ -3654,13 +3654,13 @@
   window.GH_CONTROL_PLANE?.appendEvent?.(state,{type:'RUNTIME_READY',domain:'control',detail:{appVersion:APP_VERSION,simulationCore:window.GH_SIMULATION_CORE.VERSION,transactionCore:window.GH_TRANSACTION_CORE.VERSION}});
   if($('runtimeBuildBadge'))$('runtimeBuildBadge').textContent=`BUILD${RUNTIME_BUILD} · v${APP_VERSION}`;
   document.addEventListener('visibilitychange',()=>{diag(document.hidden?'WEBKIT_HIDDEN':'WEBKIT_VISIBLE');simulationEngine.setHidden(document.hidden);simulationRuntime.wake();updateDayStepControl();if(!document.hidden){requestVisualResync();updateMarkerPositions(true);}},{passive:true});
+  // Build 371: a save that needs recovery locks the simulation until a reload, so a calendar request (or its cancel,
+  // waiting on maintenance that cannot run any more) ends now.
+  window.addEventListener('gh-persistence-status',event=>{const detail=event.detail||{};if(detail.ok===false&&(detail.requiresNativeReconciliation||detail.critical===true))simulationEngine.cancelAdvance?.('save-recovery-required',{immediate:true});});
   let savePressureNoticeShown=false;const savePressureReasonsLogged=new Set();
   window.addEventListener('gh-persistence-status',event=>{
     const detail=event.detail||{};
     if(detail.validated)window.GH_CONTROL_PLANE.recordBridge(state,detail.ok?'SAVE_ACK':'SAVE_NACK',detail,detail.ok?'info':'critical');
-    // Build 371: a save that needs recovery locks the simulation until a reload, so a calendar request (or its cancel,
-    // waiting on maintenance that cannot run any more) ends now.
-    if(detail.ok===false&&(detail.requiresNativeReconciliation||detail.critical===true))simulationEngine.cancelAdvance?.('save-recovery-required',{immediate:true});
     if(detail.ok===false&&detail.requiresNativeReconciliation){
       const postAck=detail.durableCommitted===true||String(detail.reason||'').includes('publish-failed-after-ack'),incidentCode=postAck?'DURABLE_PUBLISH_FAILED_AFTER_ACK':'NATIVE_SAVE_ACK_UNCERTAIN';
       state.speed=0;window.GH_CONTROL_PLANE.incident(state,{fingerprint:incidentCode,severity:'critical',domain:'save',code:incidentCode,title:postAck?'حُفظت العملية وتعذر تحديث الذاكرة':'يلزم توفيق نسخة الحفظ الأصلية',detail:postAck?'وصل تأكيد الحفظ من الجهاز، لكن فشل نشر الحالة في الذاكرة. توقفت المحاكاة لمنع تكرار العملية.':'تعذر تأكيد الحفظ؛ توقفت المحاكاة وتتاح إعادة فتح آخر جيل مكتمل وتصدير سبب العطل.',evidence:detail});
