@@ -134,9 +134,20 @@
   // moving count comes from the fleet store's class count (1 ms on the desktop at 24,000) and progress is the store's
   // revision, which every fleet write advances, so an unchanged revision while assets move is the stall the check looks
   // for. Assets not yet in a store (before migration) are summed as before.
-  const recorderAssetSignal=state=>{
+  // Build 371 (a million moving aircraft: the count read every row, about 130 ms each rate window, and cost 2.1 s of 90 s
+  // of play while recording): a fleet whose revision has not moved since the last signal reuses its count (nothing was
+  // written, so the count is the same, and the stall check compares like with like); a moving fleet above
+  // ASSET_SIGNAL_SWEEP_ROWS takes the moving count of the app's last complete status sweep (meta.fleetPhaseHint, for a
+  // fleet of the same size, at most a few seconds old) instead of reading every row in one frame.
+  const ASSET_SIGNAL_SWEEP_ROWS=50000;
+  const recorderAssetSignal=(state,hint=null,last=null)=>{
     const fleet=fleetData(),revision=fleet.revision(state);
-    if(revision!==null)return {assets:fleet.size(state),moving:fleet.countByPhase(state).get('moving')||0,progress:revision};
+    if(revision!==null){
+      const assets=fleet.size(state);
+      if(last&&last.progress===revision&&last.assets===assets&&Number.isFinite(last.moving))return {assets,moving:last.moving,progress:revision};
+      if(assets>ASSET_SIGNAL_SWEEP_ROWS&&hint&&hint.assets===assets&&Number.isFinite(hint.moving))return {assets,moving:hint.moving,progress:revision};
+      return {assets,moving:fleet.countByPhase(state).get('moving')||0,progress:revision};
+    }
     let assets=0,moving=0,progress=0;
     fleet.scan(state,['phase','progress'],a=>{assets++;if(a&&a.phase==='moving'){moving++;progress+=Number(a.progress)||0;}});
     return {assets,moving,progress:Math.round(progress*1e6)/1e6};
@@ -163,7 +174,7 @@
     ensure(state);const r=recorderFor(state);if(!r?.active)return r||null;
     // Build 359: the asset signal is taken once per rate window (and on start and stop); samples in between carry the
     // last one.
-    const atMs=recorderNow(meta),simSeconds=Number(state.simSeconds)||0,requestedRate=Number(simulation.manualAdvance?.speed??simulation.speed)||0,assetDue=meta.forceSample===true||!r.lastAssetSignal||atMs-Number(r.rateWindow?.atMs??atMs)>=RECORDER_RATE_WINDOW_MS,asset=assetDue?recorderAssetSignal(state):r.lastAssetSignal,revenue=recorderRevenueSignal(state),engine={frames:Number(simulation.frames)||0,slices:Number(simulation.slices)||0,cancels:Number(simulation.cancels)||0,hardTasks:Number(simulation.hardTasks)||0,backlogClamps:Number(simulation.backlogClamps)||0,manualFailures:Number(simulation.manualFailures)||0};
+    const atMs=recorderNow(meta),simSeconds=Number(state.simSeconds)||0,requestedRate=Number(simulation.manualAdvance?.speed??simulation.speed)||0,assetDue=meta.forceSample===true||!r.lastAssetSignal||atMs-Number(r.rateWindow?.atMs??atMs)>=RECORDER_RATE_WINDOW_MS,asset=assetDue?recorderAssetSignal(state,meta.fleetPhaseHint,r.lastAssetSignal):r.lastAssetSignal,revenue=recorderRevenueSignal(state),engine={frames:Number(simulation.frames)||0,slices:Number(simulation.slices)||0,cancels:Number(simulation.cancels)||0,hardTasks:Number(simulation.hardTasks)||0,backlogClamps:Number(simulation.backlogClamps)||0,manualFailures:Number(simulation.manualFailures)||0};
     const prevEngine=r.lastEngine||{};
     if(engine.cancels>Number(prevEngine.cancels||0))recorderEvent(state,'SIM_SLICE_CANCELLED',{delta:engine.cancels-Number(prevEngine.cancels||0),reason:simulation.lastCancelReason||'',jobActive:!!simulation.jobActive,jobReadyToFinish:!!simulation.jobReadyToFinish},'warning',{nowMs:atMs});
     if(engine.hardTasks>Number(prevEngine.hardTasks||0))recorderEvent(state,'SIM_STAGE_HARD_TASK',{delta:engine.hardTasks-Number(prevEngine.hardTasks||0),stage:simulation.lastWorkStage||'',lastCreateMs:Number(simulation.lastCreateMs)||0,lastChunkMs:Number(simulation.lastChunkMs)||0,lastFinishMs:Number(simulation.lastFinishMs)||0,maxCycleMs:Number(simulation.maxCycleMs)||0,governor:simulation.governor||''},'warning',{nowMs:atMs});

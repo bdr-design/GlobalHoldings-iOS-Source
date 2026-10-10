@@ -3601,7 +3601,7 @@
       // names what it spent its time on. Measurement only.
       const parts={},timed=(key,fn)=>{const started=appMetricClock();try{return fn();}finally{parts[key]=(parts[key]||0)+Math.max(0,appMetricClock()-started);}};
       if(now-lastUiRefreshMs>=500){lastUiRefreshMs=now;timed('kpisMs',()=>updateKpis());timed('mapStatusMs',()=>updateMapStatus());if(selectedAssetId&&!$('assetCard').classList.contains('hidden'))timed('assetCardMs',()=>refreshAssetCard(selectedAssetId));}
-      timed('recorderMs',()=>{try{window.GH_DIAGNOSTICS.recorderSample?.(state,simulationEngine.snapshot(),{nowMs:Date.now(),context:{governor:runtimeGovernor}});}catch(error){console.warn('تعذر أخذ عينة مسجل عطل المحاكاة',error);}});
+      timed('recorderMs',()=>{try{window.GH_DIAGNOSTICS.recorderSample?.(state,simulationEngine.snapshot(),{nowMs:Date.now(),context:{governor:runtimeGovernor},fleetPhaseHint:mapStatusCache.countedAt?{assets:mapStatusCache.countedAssets,moving:mapStatusCache.moving}:null});}catch(error){console.warn('تعذر أخذ عينة مسجل عطل المحاكاة',error);}});
       // Build 359: the proof audit also takes a short step (PROOF_AUDIT_RENDER_MS) on a render callback while no slice job,
       // maintenance part, player command or save is in flight, so a cycle over every proof completes in minutes of play.
       if(!jobActive&&!maintenanceQueue.length&&!document.hidden&&!hardResetInProgress&&!durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!window.GH_PERSISTENCE.isLocked()&&!stagedStateBusy())timed('proofAuditMs',()=>proofAuditStep(PROOF_AUDIT_RENDER_MS));
