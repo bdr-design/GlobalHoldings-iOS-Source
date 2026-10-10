@@ -106,7 +106,7 @@
     // Wall-clock pacing, backlog, frame execution budget and render cadence are
     // runtime-only concerns. They never own or write authoritative economic time.
     const pacing=PACING.create({...cfg,nowMs:clock,isFast:fast});
-    const manualSnapshot=()=>manualAdvance?{target:manualAdvance.target,remaining:Math.max(0,manualAdvance.target-simNow()),speed:manualAdvance.speed,requestedSpeed:manualAdvance.requestedSpeed,batchSeconds:manualAdvance.batchSeconds,reason:manualAdvance.reason,requestedAt:manualAdvance.requestedAt,retries:manualAdvance.retries||0,yields:manualAdvance.yields||0}:null;
+    const manualSnapshot=()=>manualAdvance?{target:manualAdvance.target,remaining:Math.max(0,manualAdvance.target-simNow()),speed:manualAdvance.speed,requestedSpeed:manualAdvance.requestedSpeed,batchSeconds:manualAdvance.batchSeconds,reason:manualAdvance.reason,requestedAt:manualAdvance.requestedAt,retries:manualAdvance.retries||0,yields:manualAdvance.yields||0,...(manualAdvance.cancelling?{cancelling:true,cancelReason:manualAdvance.cancelling.reason}:{})}:null;
     function failManualAdvance(reason,meta={}){
       if(!manualAdvance)return false;
       const failed={...manualAdvance},at=simNow();
@@ -122,7 +122,7 @@
       // Maintenance scheduled by a committed boundary belongs to the same calendar request. Keep the request active
       // until those bounded tasks drain; otherwise the UI can observe "complete" and immediately start another staged
       // close while an old fleet-maintenance task is still able to rewrite the store underneath its rollback baseline.
-      if(!manualAdvance||job||simNow()+1e-6<manualAdvance.target||adapter.hasDeferredWork?.()===true)return false;
+      if(!manualAdvance||manualAdvance.cancelling||job||simNow()+1e-6<manualAdvance.target||adapter.hasDeferredWork?.()===true)return false;
       const completed={...manualAdvance};manualAdvance=null;pacing.clearBacklog();
       try{adapter.onAdvance?.({active:false,completed:true,target:completed.target,reason:completed.reason});}catch(error){report('advance-complete',error,false);}
       return true;
@@ -335,6 +335,7 @@
       const current=simNow(),requested=Number(target),maxSeconds=Math.max(86400,Math.min(366*86400,Number(options.maxSeconds)||366*86400));
       if(!Number.isFinite(requested)||requested<=current+1e-6)return {accepted:false,reason:'advance-target-not-forward',target:current};
       if(requested-current>maxSeconds)return {accepted:false,reason:'advance-target-too-far',target:current};
+      if(manualAdvance?.cancelling)return {accepted:false,reason:'advance-cancel-settling',target:current};
       const preferred=Number(options.speed),positiveSpeeds=cfg.allowedSpeeds.filter(speed=>speed>0),fastest=positiveSpeeds.length?Math.max(...positiveSpeeds):0;
       const speed=cfg.allowedSpeeds.includes(preferred)&&preferred>0?preferred:fastest;
       if(speed<=0)return {accepted:false,reason:'advance-speed-unavailable',target:current};
@@ -346,11 +347,30 @@
       try{adapter.onAdvance?.({active:true,target:requested,remaining:requested-current,speed,reason:manualAdvance.reason});}catch(error){report('advance-start',error,false);}
       return {accepted:true,...manualSnapshot()};
     }
-    function cancelAdvance(reason='manual-advance-cancelled'){
-      if(!manualAdvance)return false;
-      const cancelled={...manualAdvance};cancelJob(reason);manualAdvance=null;pacing.reset(clock());
-      try{adapter.onAdvance?.({active:false,cancelled:true,target:cancelled.target,reason});}catch(error){report('advance-cancel',error,false);}
+    // Build 371: a cancelled calendar request ends the way a completed one does. The slice in flight is cancelled and no
+    // slice starts after the cancel, but the cancellation is published (manualAdvance null, onAdvance cancelled) only
+    // once the maintenance its committed boundaries scheduled has drained, one part per cycle (completeManualAdvance's
+    // rule). Publishing it at once let that maintenance (the daily ledger compaction, the proof passes) rewrite the books
+    // after the request was reported cancelled. While the host is suspended its hasDeferredWork does not report the
+    // queue, so the cancellation waits for the host to resume. `immediate` (a global halt, a fatal fault) publishes at
+    // once: the host may never run its maintenance again.
+    function publishCancelledAdvance(){
+      const cancelled=manualAdvance;manualAdvance=null;pacing.reset(clock());
+      try{adapter.onAdvance?.({active:false,cancelled:true,target:cancelled.target,reason:cancelled.cancelling.reason});}catch(error){report(cancelled.cancelling.source,error,false);}
       return true;
+    }
+    function settleCancelledAdvance(){
+      if(!manualAdvance?.cancelling||job||adapter.isSuspended?.()||adapter.hasDeferredWork?.()===true)return false;
+      return publishCancelledAdvance();
+    }
+    function beginCancelAdvance(reason,source,immediate){
+      if(!manualAdvance)return false;
+      cancelJob(reason);if(!manualAdvance.cancelling)manualAdvance.cancelling={reason,source};pacing.reset(clock());
+      if(immediate)publishCancelledAdvance();else settleCancelledAdvance();
+      return true;
+    }
+    function cancelAdvance(reason='manual-advance-cancelled',options={}){
+      return beginCancelAdvance(reason,'advance-cancel',options?.immediate===true);
     }
     function frame(now=clock()){
       frameStages={createMs:0,chunkMs:0,finishMs:0,maintenanceMs:0,renderMs:0};const started=clock();
@@ -364,6 +384,11 @@
     function noteFrameInterval(value){const interval=Number(value);if(!Number.isFinite(interval)||interval<=0||interval>250)return frameCadencePressure;const instant=interval<=18.5?0:Math.min(1,(interval-18.5)/30);frameCadencePressure=Math.max(instant,frameCadencePressure*.82);health.frameCadencePressure=Math.round(frameCadencePressure*1000)/1000;health.lastFrameIntervalMs=Math.round(interval*100)/100;return frameCadencePressure;}
     function frameBody(now){
       health.frames++;completeManualAdvance();
+      if(manualAdvance?.cancelling){
+        const hidden=pacing.snapshot().hidden,suspended=!!adapter.isSuspended?.();
+        if(!hidden&&!suspended&&runDeferredWork()){maybeRender(now,getSpeed());return;}
+        settleCancelledAdvance();pacing.reset(now);lastObservedSpeed=getSpeed();maybeRender(now,lastObservedSpeed);return;
+      }
       const advancing=manualAdvance,speed=advancing?advancing.speed:getSpeed();
       if(lastObservedSpeed===null)lastObservedSpeed=speed;
       if(speed!==lastObservedSpeed){cancelJob('speed-change');pacing.reset(now);lastObservedSpeed=speed;maybeRender(now,speed);return;}
@@ -399,8 +424,7 @@
     }
 
     function reset(now=clock(),reason='reset'){
-      const cancelled=manualAdvance;manualAdvance=null;cancelJob(reason);pacing.reset(now);jobSlice=0;jobStart=simNow();jobSpeed=0;jobBoundary=null;jobWorkMs=0;jobReadyToFinish=false;hardTaskStreak=0;conflictStreak=0;throttlePending=null;
-      if(cancelled)try{adapter.onAdvance?.({active:false,cancelled:true,target:cancelled.target,reason});}catch(error){report('advance-reset',error,false);}
+      if(manualAdvance)beginCancelAdvance(reason,'advance-reset',false);else cancelJob(reason);pacing.reset(now);jobSlice=0;jobStart=simNow();jobSpeed=0;jobBoundary=null;jobWorkMs=0;jobReadyToFinish=false;hardTaskStreak=0;conflictStreak=0;throttlePending=null;
       lastHourCommitted=completedBoundaryOrdinal(simNow(),3600);lastDayCommitted=completedBoundaryOrdinal(simNow(),86400);lastObservedSpeed=getSpeed();
     }
     // Build 358: hiding the app is the engine's only save request (onPersist); the host owns every other save (GH_SAVE_POLICY).

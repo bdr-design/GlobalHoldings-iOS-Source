@@ -42,15 +42,16 @@ const PLAN=[
       await page.evaluate(type=>__AUDIT__.openDrawer('routes',type),row.type);
       const button=page.locator(`.dispatch-international-network[data-company="${row.type}"]`).first();
       await button.waitFor({state:'visible',timeout:30000});await button.click();
-      let status=null;
-      for(let i=0;i<120;i++){
-        status=await page.evaluate(type=>{const owned=GH_FLEET_DATA.filter(__GH_STATE__,asset=>(asset.ownerCompanyId||asset.companyId)===type);return {owned:owned.length,routed:owned.filter(asset=>asset.routeId).length,underway:owned.filter(asset=>asset.phase==='moving'||asset.departureScheduled).length,alerts:(__GH_STATE__.alerts||[]).slice(0,3).map(r=>String(r.text||r))};},row.type);
-        if(status.routed===status.owned)break;
-        await page.waitForTimeout(250);
-      }
+      const sample=type=>{const owned=GH_FLEET_DATA.filter(__GH_STATE__,asset=>(asset.ownerCompanyId||asset.companyId)===type);return {owned:owned.length,routed:owned.filter(asset=>asset.routeId).length,underway:owned.filter(asset=>asset.phase==='moving'||asset.departureScheduled).length,inCommand:!!window.__GH_DURABLE_COMMAND_CONTEXT__,alerts:(__GH_STATE__.alerts||[]).slice(0,3).map(r=>String(r.text||r))};};
       // Build 359: the dispatch assigns in chunks, so the routes show before the command ends; it reopens the routes panel
-      // when it commits. Wait for that before the next panel.
+      // when it commits. Build 371: the command shares the fleet store with the live state, so a reading taken while it
+      // runs can show every asset routed and none departed yet (the assignment chunks run before the departure chunks);
+      // CI read exactly that once (12 routed, 0 underway). The counts are therefore read after the command committed and
+      // its save drained: the committed state, not a step of the command.
+      await page.waitForFunction(type=>!!window.__GH_DURABLE_COMMAND_CONTEXT__||GH_FLEET_DATA.filter(__GH_STATE__,asset=>(asset.ownerCompanyId||asset.companyId)===type&&asset.routeId).length>0,row.type,{timeout:30000});
       await page.waitForFunction(()=>!window.__GH_DURABLE_COMMAND_CONTEXT__&&!GH_PERSISTENCE.isLocked(),null,{timeout:180000});await page.evaluate(()=>GH_PERSISTENCE.drain());
+      const status=await page.evaluate(`(${sample})(${JSON.stringify(row.type)})`);
+      assert.equal(status.inCommand,false,`${row.type}: read after the command`);
       assert(!status.alerts.some(text=>/fleet-view-read-only|أُلغي الأمر بالكامل/.test(text)),`${row.type}: dispatch rolled back: ${JSON.stringify(status.alerts)}`);
       assert.equal(status.routed,row.qty,`${row.type}: every asset must receive a route: ${JSON.stringify(status)}`);
       assert.equal(status.underway,row.qty,`${row.type}: every asset must depart or hold a departure slot: ${JSON.stringify(status)}`);
