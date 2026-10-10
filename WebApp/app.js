@@ -1764,7 +1764,10 @@
       source.metrics.assetsPlanned=eligibleUnsorted.length;
       if(!source.length)throw new Error(`دليل الوجهات ${routeLabel} فارغ`);
       const originsById=new Map(),originByAssetId=new Map();
-      for(const asset of eligibleUnsorted){const origin=routeOriginForAsset(asset,draft,routes);if(!origin)throw new Error(`${asset.name}: لا توجد نقطة انطلاق ${routeLabel} صالحة`);originsById.set(origin.id,origin);originByAssetId.set(asset.id,origin);}
+      // One facility index for the whole fleet (the first facility of each id, as routeFacilityFor's find): the list was
+      // rebuilt for every asset, 20,000 times per command. Nothing in this loop adds a facility.
+      const originFacilities=new Map();for(const facility of dynamicFacilitiesFor(draft))if(facility&&!originFacilities.has(facility.id))originFacilities.set(facility.id,facility);
+      for(const asset of eligibleUnsorted){const origin=routeOriginForAsset(asset,draft,routes,originFacilities);if(!origin)throw new Error(`${asset.name}: لا توجد نقطة انطلاق ${routeLabel} صالحة`);originsById.set(origin.id,origin);originByAssetId.set(asset.id,origin);}
       source.metrics.originCount=originsById.size;
       // A route carries its mode's base capacity (24 aircraft or ships) until the fleet outgrows the route registry at
       // that capacity; then every route this dispatch uses carries the even share (GH_FLEET_CORE.requiredRouteCapacity),
