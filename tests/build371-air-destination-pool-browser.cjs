@@ -56,7 +56,8 @@ function installVault(){
       const s=__GH_STATE__,F=GH_FLEET_DATA,routes=(s.customRoutes||[]).filter(r=>(r.routeMode||r.type)==='air'),users=new Map();let owned=0,routed=0,underway=0;
       F.scan(s,['ownerCompanyId','companyId','routeId','phase','departureScheduled'],r=>{if((r.ownerCompanyId||r.companyId)!=='air')return;owned++;if(r.routeId){routed++;users.set(r.routeId,(users.get(r.routeId)||0)+1);}if(r.phase==='moving'||r.departureScheduled)underway++;});
       const trace=GH_DIAGNOSTICS.departureTraceSnapshot(s),destinations=new Set(routes.map(r=>r.toFacility));
-      return {owned,routed,underway,routes:routes.length,destinations:destinations.size,over:routes.filter(r=>(users.get(r.id)||0)>GH_FLEET_CORE.routeCapacity(r)).length,raised:routes.filter(r=>r.fleetCapacity).length,alert:(s.alerts||[]).slice(0,5).map(row=>String(row?.text||row)).join(' | '),reasons:Object.keys(trace?.byReason||{}),valid:GH_SAVE_SCHEMA.validate(s).ok};
+      const origin=s.globalBases.find(row=>row.id==='QA-air-OMDB')?.coords||null,range=GH_ASSET_CATALOG.air.used.find(row=>row.id==='UA-ATR72').specs.rangeKm,rad=Math.PI/180,directReachable=origin?GH_WORLD_DATA.airports.filter(row=>{const lat1=origin[0]*rad,lat2=row[6]*rad,dl=(row[6]-origin[0])*rad,dn=(row[7]-origin[1])*rad,h=Math.sin(dl/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dn/2)**2,d=2*6371.0088*Math.asin(Math.sqrt(h));return d>=35&&d<=range*1.005;}).length:0;
+      return {owned,routed,underway,routes:routes.length,destinations:destinations.size,over:routes.filter(r=>(users.get(r.id)||0)>GH_FLEET_CORE.routeCapacity(r)).length,raised:routes.filter(r=>r.fleetCapacity).length,alert:(s.alerts||[]).slice(0,5).map(row=>String(row?.text||row)).join(' | '),reasons:Object.keys(trace?.byReason||{}),planner:trace?.recent?.[0]?.planner||null,origin,range,directReachable,valid:GH_SAVE_SCHEMA.validate(s).ok};
     });
     assert.equal(last?.committed,true,`the dispatch commits: ${JSON.stringify({last,dispatched})}`);
     assert.equal(dispatched.routed,QTY,`every aircraft has a route: ${JSON.stringify(dispatched)}`);
@@ -66,6 +67,69 @@ function installVault(){
     assert.match(dispatched.alert,/انضمت \d+ دفعة إلى مسارات قائمة/,'the player is told that batches joined existing routes once the reachable destinations ran out');
     assert.ok(dispatched.raised>0,'the joined routes record their raised capacity');
     assert.equal(dispatched.over,0,'no route carries more than its capacity');
+    assert.equal(dispatched.planner?.indexBuilds,1,'the origin distance index is built once for the dispatch');
+    assert.equal(dispatched.planner?.rowsScanned,await page.evaluate(()=>GH_WORLD_DATA.airports.length),'the index scans each airport once');
+    assert.ok(dispatched.planner?.indexCacheHits>0,'different ATR range groups reuse the same origin index');
+    assert.ok(dispatched.planner?.indexMaxDistanceSliceMs<16,'fallback distance calculations yield in bounded slices');
+    assert.ok(dispatched.planner?.indexMaxSortSliceMs<16,'the no-Worker fallback yields during sorting instead of blocking on one full catalogue sort');
+    const firstRoutes=await page.evaluate(()=>{const routes=(__GH_STATE__.customRoutes||[]).filter(r=>(r.routeMode||r.type)==='air');return {ids:[...new Set(routes.map(r=>r.id))],capacity:Object.fromEntries(routes.map(r=>[r.id,GH_FLEET_CORE.routeCapacity(r)]))};});
+    const secondPurchase=await page.evaluate(async({qty,modelId})=>{
+      const a=__AUDIT__,s=__GH_STATE__,site=s.globalBases.find(row=>row.id==='QA-air-OMDB');if(!site)return {error:'base-missing'};
+      const previousIds=new Set();GH_FLEET_DATA.scan(s,['ownerCompanyId','companyId','id'],row=>{if((row.ownerCompanyId||row.companyId)==='air')previousIds.add(row.id);});
+      let bought=0,order=0;while(bought<qty){const n=Math.min(3000,qty-bought);if(!await a.buyAsset('air','used',modelId,'lease',n,site.id,true,`QA-POOL-REUSE-${order++}`,'air'))return {error:'purchase',bought};bought+=n;}
+      const ids=[];GH_FLEET_DATA.scan(s,['ownerCompanyId','companyId','id'],row=>{if((row.ownerCompanyId||row.companyId)==='air'&&!previousIds.has(row.id))ids.push(row.id);});
+      window.__GH_POOL_REUSE_IDS__=ids;return {bought,ids:ids.length,revision:s.saveRevision};
+    },{qty:300,modelId:MODEL});
+    assert.equal(secondPurchase.bought,300,`a second purchased batch exists: ${JSON.stringify(secondPurchase)}`);
+    await page.evaluate(()=>__AUDIT__.openDrawer('routes','air'));
+    const beforeReuse=secondPurchase.revision;await button.click();
+    let reuseRevision=beforeReuse;
+    for(let i=0;i<600;i++){reuseRevision=await page.evaluate(()=>__GH_STATE__.saveRevision);if(reuseRevision>beforeReuse)break;await page.waitForTimeout(250);}
+    assert.ok(reuseRevision>beforeReuse,'the second dispatch commits after purchasing more aircraft');
+    const reuseCommit=await page.evaluate(()=>window.GH_APP_RUNTIME_METRICS?.snapshot?.().durable?.last||null);
+    assert.equal(reuseCommit?.name,'authorized:bulk-shared-departure:air','the reused-route dispatch is the last durable command');
+    assert.equal(reuseCommit?.committed,true,'the reused-route dispatch receives a durable commit');
+    const reuse=await page.evaluate(({qty,previous,previousCapacity})=>{
+      const s=__GH_STATE__,F=GH_FLEET_DATA,ids=new Set(window.__GH_POOL_REUSE_IDS__||[]),users=new Map(),routes=(s.customRoutes||[]).filter(r=>(r.routeMode||r.type)==='air');let routed=0,over=0,existingRouteAssets=0;
+      F.scan(s,['ownerCompanyId','companyId','id','routeId'],r=>{if((r.ownerCompanyId||r.companyId)!=='air')return;if(r.routeId)users.set(r.routeId,(users.get(r.routeId)||0)+1);if(ids.has(r.id)&&r.routeId){routed++;if(previous.includes(r.routeId))existingRouteAssets++;}});
+      const byId=new Map(routes.map(route=>[route.id,route]));let raisedOldRoutes=0,underOldCapacity=0;for(const [id,count] of users){const route=byId.get(id),capacity=route?GH_FLEET_CORE.routeCapacity(route):0,oldCapacity=previousCapacity[id]||0;if(!route||count>capacity||capacity>8192)over++;if(previous.includes(id)&&capacity>oldCapacity)raisedOldRoutes++;if(previous.includes(id)&&count>oldCapacity&&capacity<=oldCapacity)underOldCapacity++;}
+      return {routed,existingRouteAssets,routes:routes.length,createdSinceFirst:routes.filter(r=>!previous.includes(r.id)).length,over,raisedOldRoutes,underOldCapacity,alert:(s.alerts||[]).slice(0,5).map(row=>String(row?.text||row)).join(' | '),valid:GH_SAVE_SCHEMA.validate(s).ok};
+    },{qty:300,previous:firstRoutes.ids,previousCapacity:firstRoutes.capacity});
+    assert.equal(reuse.routed,300,`all newly bought aircraft are routed: ${JSON.stringify(reuse)}`);
+    assert.ok(reuse.existingRouteAssets>0,`the later order reuses at least one route that existed before that order: ${JSON.stringify(reuse)}`);
+    assert.equal(reuse.createdSinceFirst,0,`the second dispatch reuses routes without creating new destinations: ${JSON.stringify(reuse)}`);
+    assert.ok(reuse.raisedOldRoutes>0,`at least one route registered before the second purchase has its capacity raised: ${JSON.stringify(reuse)}`);
+    assert.equal(reuse.over,0,'second dispatch respects the route capacity ceiling');
+    assert.equal(reuse.underOldCapacity,0,'no preexisting route load exceeds its recorded pre-dispatch capacity');
+    assert.equal(reuse.valid,true,'the second dispatch save validates');
+    const largePool=await page.evaluate(async({qty,modelId})=>{
+      const a=__AUDIT__,s=__GH_STATE__,airport=GH_WORLD_DATA.airports.find(r=>r[0]==='EGLL'),facility={id:'QA-air-EGLL',name:'QA Airport EGLL',kind:'airport-base',company:'air',ownerCompanyId:'air',owned:true,sourceKey:'air:EGLL',code:airport[1]||airport[0],icao:airport[0],iata:airport[1],city:airport[3]||airport[4]||'—',country:String(airport[5]||'—'),coords:[airport[6],airport[7]]};
+      await a.runAuthorizedDomainCommand('facilities','create',{facility,bucket:'globalBases'},{silent:true});
+      if(!await a.buyAsset('air','used',modelId,'lease',qty,facility.id,true,'QA-POOL-LARGE','air'))return {error:'purchase'};
+      const original=window.GH_ROUTE_CORE;window.__GH_ROUTE_CORE_ORIGINAL__=original;let remaining=900;window.__GH_FORCED_PREVIEW_CONFLICTS__=0;
+      window.GH_ROUTE_CORE={...original,conflict(target,route){if(String(route?.id||'').startsWith('PREVIEW-AIR-')&&remaining>0){remaining--;window.__GH_FORCED_PREVIEW_CONFLICTS__++;return true;}return original.conflict(target,route);}};
+      return {bought:qty,revision:s.saveRevision,rangeKm:GH_ASSET_CATALOG.air.used.find(row=>row.id===modelId).specs.rangeKm};
+    },{qty:32,modelId:MODEL});
+    assert.equal(largePool.bought,32,`a long-range airport fixture is ready: ${JSON.stringify(largePool)}`);
+    await page.evaluate(()=>__AUDIT__.openDrawer('routes','air'));
+    const beforeLargePool=largePool.revision;await button.click();let largeRevision=beforeLargePool;
+    for(let i=0;i<600;i++){largeRevision=await page.evaluate(()=>__GH_STATE__.saveRevision);if(largeRevision>beforeLargePool)break;await page.waitForTimeout(250);}
+    const largePoolResult=await page.evaluate(()=>{
+      const s=__GH_STATE__,trace=GH_DIAGNOSTICS.departureTraceSnapshot(s),routes=(s.customRoutes||[]).filter(route=>(route.routeMode||route.type)==='air');
+      const ids=new Set();GH_FLEET_DATA.scan(s,['ownerCompanyId','companyId','routeId','baseFacility'],row=>{if((row.ownerCompanyId||row.companyId)==='air'&&row.baseFacility==='QA-air-EGLL'&&row.routeId)ids.add(row.routeId);});
+      const original=window.GH_ROUTE_CORE;window.GH_ROUTE_CORE=window.__GH_ROUTE_CORE_ORIGINAL__||original;
+      const planner=trace?.recent?.[0]?.planner||{};
+      return {routes:ids.size,forcedConflicts:window.__GH_FORCED_PREVIEW_CONFLICTS__,windows:planner.windows||0,acceptedWindow:planner.lastAcceptedWindow||0,maxAcceptedWindow:planner.maxAcceptedWindow||0,reachable:planner.reachableMax||0,valid:GH_SAVE_SCHEMA.validate(s).ok};
+    });
+    assert.ok(largeRevision>beforeLargePool,'the dispatch succeeds after rejecting the entire first destination window');
+    const largeCommit=await page.evaluate(()=>window.GH_APP_RUNTIME_METRICS?.snapshot?.().durable?.last||null);
+    assert.equal(largeCommit?.name,'authorized:bulk-shared-departure:air','the later-window dispatch is the last durable command');
+    assert.equal(largeCommit?.committed,true,'the later-window dispatch receives a durable commit');
+    assert.equal(largePoolResult.forcedConflicts,900,'the test makes all 900 candidates in the first window conflict');
+    assert.ok(largePoolResult.reachable>900&&largePoolResult.windows>=2,`the planner inspects a second window from a pool larger than 900: ${JSON.stringify(largePoolResult)}`);
+    assert.ok(largePoolResult.maxAcceptedWindow>=2,`at least one chosen destination came from a later window: ${JSON.stringify(largePoolResult)}`);
+    assert.ok(largePoolResult.routes>0,'the second window supplies a valid route');
+    assert.equal(largePoolResult.valid,true,'the large-pool dispatch save validates');
     assert.ok(!dispatched.reasons.some(code=>/^GH (AIR|SEA) \d+$/.test(code)),`no reason code reads as an asset name: ${dispatched.reasons}`);
     assert.equal(dispatched.valid,true,'the save validates');
 
@@ -81,7 +145,7 @@ function installVault(){
     assert.equal(flown.valid,true,'the save still validates');
     assert.ok(flown.saves>0,'the native vault holds the committed save');
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({suite:'build371-air-destination-pool-browser',aircraft:QTY,site:SITE,model:MODEL,dispatchMs,routes:dispatched.routes,raised:dispatched.raised,after3h:{moving:flown.moving,trips:flown.trips},environment:`Chromium local DOM; in-page native vault stand-in; ${path.basename(__filename)}`}));
+    console.log(JSON.stringify({suite:'build371-air-destination-pool-browser',aircraft:QTY,site:SITE,model:MODEL,dispatchMs,routes:dispatched.routes,raised:dispatched.raised,planner:dispatched.planner,reused:{assets:reuse.routed,preexistingRouteAssets:reuse.existingRouteAssets,createdSinceFirst:reuse.createdSinceFirst},largePool:{reachable:largePoolResult.reachable,windows:largePoolResult.windows,forcedConflicts:largePoolResult.forcedConflicts},after3h:{moving:flown.moving,assetsWithLastTrip:flown.trips},environment:`Chromium local DOM; in-page native vault stand-in; ${path.basename(__filename)}`}));
     console.log('BUILD371_AIR_DESTINATION_POOL_PASS');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

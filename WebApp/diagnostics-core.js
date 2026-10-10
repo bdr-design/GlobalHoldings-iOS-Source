@@ -34,7 +34,7 @@
     for(const [mode,count] of Object.entries(input.modeCounts||{}))addDepartureBucket(trace.byMode,String(mode||'unknown').slice(0,20),count);
     for(const [reason,count] of Object.entries(input.reasonCounts||{}))addDepartureBucket(trace.byReason,reason,count);
     const rows=Array.isArray(input.samples)?input.samples.slice(0,DEPARTURE_TRACE_SAMPLE_LIMIT).map(row=>cleanDetail({atMs:nowMs,simSeconds,source,...row})):[];
-    if(!rows.length)rows.push(cleanDetail({atMs:nowMs,simSeconds,source,outcome:blocked?'blocked':scheduled?'scheduled':'departed',attempts,departed,scheduled,blocked,modeCounts:input.modeCounts||{},reasonCounts:input.reasonCounts||{},routeIds:Array.isArray(input.routeIds)?input.routeIds.slice(0,12):[],error:input.error?String(input.error).slice(0,240):undefined}));
+    if(!rows.length)rows.push(cleanDetail({atMs:nowMs,simSeconds,source,outcome:blocked?'blocked':scheduled?'scheduled':'departed',attempts,departed,scheduled,blocked,modeCounts:input.modeCounts||{},reasonCounts:input.reasonCounts||{},routeIds:Array.isArray(input.routeIds)?input.routeIds.slice(0,12):[],planner:input.planner||undefined,error:input.error?String(input.error).slice(0,240):undefined}));
     for(const row of rows){trace.recent.unshift(row);if(trace.recent.length>DEPARTURE_TRACE_LIMIT){trace.recent.length=DEPARTURE_TRACE_LIMIT;trace.droppedRows++;}}
     return {recorded:rows.length,totalAttempts:trace.totalAttempts,totalDeparted:trace.totalDeparted,totalScheduled:trace.totalScheduled,totalBlocked:trace.totalBlocked};
   }

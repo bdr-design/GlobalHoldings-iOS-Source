@@ -16,11 +16,15 @@ const {createSimulationAdapter,fixture}=require('./helpers/fleet-simulation-adap
   assert.equal(snapshot.byReason['route-capacity-full'],800);
   assert.equal(snapshot.recent.length,160,'departure evidence ring remains bounded');
   assert.equal(JSON.stringify(state).includes('assetDepartureTrace'),false,'runtime trace does not enlarge saved game state');
+  const plannerState=minimal();s.GH_DIAGNOSTICS.recordAssetDepartureTrace(plannerState,{source:'automatic-network-dispatch',attempts:10,departed:4,scheduled:6,modeCounts:{air:10},reasonCounts:{'departure-accepted':10},planner:{indexBuilds:1,rowsScanned:28291,windows:3,reachableMax:1200}});
+  assert.equal(JSON.stringify(s.GH_DIAGNOSTICS.departureTraceSnapshot(plannerState).recent[0].planner),JSON.stringify({indexBuilds:1,rowsScanned:28291,windows:3,reachableMax:1200}),'departure diagnostics retain bounded candidate-index timings and window counters');
 
   const appSource=fs.readFileSync(path.resolve(__dirname,'../WebApp/app.js'),'utf8');
   assert.match(appSource,/match\(\/\^authorized:bulk-shared-departure:/,'durable rollback recognizes shared departure commands');
   assert.match(appSource,/recordAssetDepartureTrace\(\{source:'durable-command-rollback'[\s\S]{0,700}simSeconds:Number\(state\.simSeconds\)/,'durable rollback records a departure trace where false is returned');
-  assert.match(appSource,/assetDepartureTrace=\{mode:source\.type,planner:rejected\}/,'planner rejection keeps bounded candidate rejection counts on the thrown error');
+  assert.match(appSource,/assetDepartureTrace=\{mode:source\.type,planner:\{\.\.\.rejected,source:source\.snapshot\?\.\(\)\|\|null\}\}/,'planner rejection keeps bounded candidate rejection counts and index metrics on the thrown error');
+  assert.match(appSource,/createDestinationWindowCursor\(poolLength,offset\)/,'destination planning scans deterministic, non-overlapping windows over the complete pool');
+  assert.match(appSource,/indexMaxSortSliceMs/,'the distance-index fallback measures its longest cooperative sort slice');
   assert.match(appSource,/attempts:eligibleUnsorted\.length,blocked:eligibleUnsorted\.length/,'a failed atomic fleet dispatch records the full rolled-back fleet count');
   const rollbackState=minimal();
   s.GH_DIAGNOSTICS.recordAssetDepartureTrace(rollbackState,{source:'durable-command-rollback',attempts:160000,blocked:160000,modeCounts:{air:160000},reasonCounts:{'GH AIR 3181':160000},error:'GH AIR 3181: destination unavailable',samples:[{outcome:'blocked',mode:'air',reasonCode:'GH AIR 3181',attemptedAssets:160000,planner:{ranked:900,missingEndpoint:0,routeGeometry:140,outOfRange:760,corridorConflict:0}}]});

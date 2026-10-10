@@ -103,5 +103,29 @@
     for(const row of plan.ranked){const sample=samples.get(row?.sampleIndex),expected=sample&&rankSample(input,sample,context,false);if(!expected||row.worldIndex!==expected.worldIndex||['direct','reuse','sectorUse','bandUse'].some(key=>!Number.isFinite(Number(row[key]))||Math.abs(Number(row[key])-expected[key])>1e-7)||!Number.isFinite(Number(row.separation))||Number(row.separation)<0||Number(row.separation)>20000.001)return false;if(previous&&compareDestination(previous,row)>0)return false;previous=row;}
     return true;
   }
-  return Object.freeze({VERSION,validate,createPlanner,plan,validatePlan,validateDestinationInput,createDestinationPlanner,rankDestinations,validateDestinationPlan});
+  function createDestinationWindowCursor(length,start=0){
+    const total=Math.max(0,Math.floor(Number(length)||0));let cursor=0;
+    if(!Number.isSafeInteger(total)||total>1000000)throw new TypeError('air-sea-destination-pool-size-invalid');
+    let stride=1;if(total>1){stride=37%total||1;while(gcd(stride,total)!==1)stride=(stride+1)%total||1;}
+    const offset=total?((Math.floor(Number(start)||0)%total)+total)%total:0;
+    function next(limit=900){const size=Math.max(1,Math.min(900,Math.floor(Number(limit)||900))),count=Math.min(size,total-cursor),positions=new Array(count);for(let index=0;index<count;index++)positions[index]=(offset+((cursor+index)*stride)%total)%total;cursor+=count;return positions;}
+    return Object.freeze({next,isDone:()=>cursor>=total,visited:()=>cursor,total,stride,offset});
+  }
+  function gcd(a,b){while(b){const next=a%b;a=b;b=next;}return a;}
+  function rankWorldDistances(input){
+    const coords=input?.coordinates,origin=input?.originCoords;if(!(coords instanceof Float64Array)||coords.length%2||!Array.isArray(origin)||origin.length!==2||coords.length/2>1000000||!origin.every(value=>Number.isFinite(Number(value))))throw new TypeError('air-sea-distance-index-input-invalid');
+    const count=coords.length/2,rad=Math.PI/180,originLat=Number(origin[0])*rad,originLon=Number(origin[1])*rad,distances=new Float64Array(count),ordered=Array.from({length:count},(_,index)=>index);
+    for(let index=0;index<count;index++){
+      const lat=coords[index*2],lon=coords[index*2+1];if(!Number.isFinite(lat)||!Number.isFinite(lon)){distances[index]=Infinity;continue;}
+      const latRad=lat*rad,deltaLat=latRad-originLat,deltaLon=lon*rad-originLon,h=Math.sin(deltaLat/2)**2+Math.cos(originLat)*Math.cos(latRad)*Math.sin(deltaLon/2)**2;
+      distances[index]=2*6371.0088*Math.asin(Math.sqrt(Math.max(0,Math.min(1,h))));
+    }
+    ordered.sort((a,b)=>{const difference=distances[a]-distances[b];return Number.isNaN(difference)||difference===0?a-b:difference;});
+    return {version:VERSION,indices:Uint32Array.from(ordered),distances};
+  }
+  function validateWorldDistanceIndex(input,index){
+    const count=input?.coordinates?.length/2;if(!Number.isSafeInteger(count)||count<0||count>1000000||!index||index.version!==VERSION||!(index.indices instanceof Uint32Array)||!(index.distances instanceof Float64Array)||index.indices.length!==count||index.distances.length!==count)return false;
+    const seen=new Uint8Array(count);for(let row=0;row<count;row++){const item=index.indices[row],distance=index.distances[item];if(item>=count||seen[item]||Number.isNaN(distance)||distance<0)return false;seen[item]=1;if(row&&index.distances[index.indices[row-1]]>distance)return false;}return true;
+  }
+  return Object.freeze({VERSION,validate,createPlanner,plan,validatePlan,validateDestinationInput,createDestinationPlanner,rankDestinations,validateDestinationPlan,createDestinationWindowCursor,rankWorldDistances,validateWorldDistanceIndex});
 });

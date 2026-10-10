@@ -1062,8 +1062,8 @@
       const recordAlert=(text,type='operation')=>window.GH_OPERATIONS_CORE.execute({state:context.state},'record-alert',{text,type});
       return apply({...context,dispatch,recordAlert});
     },options);
-    if(String(name).startsWith('bulk-shared-departure:')&&result?.departed){const type=String(result.type||name.split(':').at(-1)||'unknown'),attempts=Number(result.departed)||0,scheduled=Math.max(0,Number(result.scheduled)||0),moving=Math.max(0,Number(result.moving??(attempts-scheduled))||0);recordAssetDepartureTrace({source:'automatic-network-dispatch',attempts,departed:moving,scheduled,modeCounts:{[type]:attempts},reasonCounts:{'departure-accepted':attempts},routeIds:Array.isArray(result.routeIds)?result.routeIds.slice(0,12):[],simSeconds:Number(state.simSeconds)||0});}
-    return result;}catch(error){if(String(name).startsWith('bulk-shared-departure:')){const type=String(name.split(':').at(-1)||'unknown'),code=String(error?.code||error?.message||'automatic-dispatch-rejected').slice(0,120);recordAssetDepartureTrace({source:'automatic-network-planning',blocked:1,reasonCounts:{[code]:1},modeCounts:{[type]:1},error:code,simSeconds:Number(state.simSeconds)||0});}throw error;}
+    if(String(name).startsWith('bulk-shared-departure:')&&result?.departed){const type=String(result.type||name.split(':').at(-1)||'unknown'),attempts=Number(result.departed)||0,scheduled=Math.max(0,Number(result.scheduled)||0),moving=Math.max(0,Number(result.moving??(attempts-scheduled))||0);recordAssetDepartureTrace({source:'automatic-network-dispatch',attempts,departed:moving,scheduled,modeCounts:{[type]:attempts},reasonCounts:{'departure-accepted':attempts},routeIds:Array.isArray(result.routeIds)?result.routeIds.slice(0,12):[],planner:result.planner||undefined,simSeconds:Number(state.simSeconds)||0});}
+    return result;}catch(error){if(String(name).startsWith('bulk-shared-departure:')){const type=String(name.split(':').at(-1)||'unknown'),code=String(error?.code||error?.message||'automatic-dispatch-rejected').slice(0,120),planner=error?.assetDepartureTrace?.planner;recordAssetDepartureTrace({source:'automatic-network-planning',blocked:1,reasonCounts:{[code]:1},modeCounts:{[type]:1},error:code,planner,samples:[{outcome:'blocked',mode:type,reasonCode:code,planner}],simSeconds:Number(state.simSeconds)||0});}throw error;}
   }
   function runBusinessOperation(name,apply){
     const tx=window.GH_TRANSACTION_CORE;
@@ -1636,43 +1636,69 @@
     const destinationKey=String(key||`${Number(coords[0]).toFixed(3)}:${Number(coords[1]).toFixed(3)}`),sector=globalRouteSector(coords),band=globalRouteDistanceBand(Number(distanceKm)||0);
     ledger.destinations.set(destinationKey,(ledger.destinations.get(destinationKey)||0)+1);ledger.sectors.set(sector,(ledger.sectors.get(sector)||0)+1);ledger.bands.set(band,(ledger.bands.get(band)||0)+1);ledger.coords.push([Number(coords[0]),Number(coords[1])]);
   }
-  function worldRouteCandidateSource(type){
-    const rows=type==='air'?WORLD.airports:WORLD.ports,project=type==='air'?airportEntity:portEntity,cache=new Map(),reachableCache=new Map();
-    // Build 371 (iPhone diagnostic, code GH AIR 3181): the world rows an origin can reach (35 km up to the range), read once per
-    // origin and range for one dispatch. Sampling the whole catalogue (28,291 airports, most of them North American
-    // strips) left an ATR 72 at Riyadh about 7 reachable candidates per sample, all taken after ~140 routes.
-    const reachable=(originCoords,rangeKm)=>{
-      const key=`${originCoords[0]},${originCoords[1]}|${Number(rangeKm)||0}`;let out=reachableCache.get(key);if(out)return out;
-      const limit=Number(rangeKm)>0?Number(rangeKm)*1.005:Infinity;out=[];
-      for(let index=0;index<rows.length;index++){const raw=rows[index],coords=type==='air'?[raw[6],raw[7]]:[raw[3],raw[4]];if(!Number.isFinite(coords[0])||!Number.isFinite(coords[1]))continue;const distance=haversine(originCoords,coords);if(distance>=35&&distance<=limit)out.push(index);}
-      reachableCache.set(key,out);return out;
+  function worldRouteCandidateSource(type,workerClient=null){
+    const rows=type==='air'?WORLD.airports:WORLD.ports,project=type==='air'?airportEntity:portEntity,cache=new Map(),originIndexCache=new Map(),metrics={indexBuilds:0,rowsScanned:0,indexBuildMs:0,indexWorkerMs:0,indexScanWorkMs:0,indexDistanceMs:0,indexSortMs:0,indexMaxSliceMs:0,indexMaxDistanceSliceMs:0,indexMaxSortSliceMs:0,indexCacheHits:0,indexCacheMisses:0,windows:0,candidateRowsRanked:0,reachableMax:0,lastPoolStart:0,lastPoolEnd:0,poolFirstKm:0,poolLastKm:0,lastAcceptedWindow:0,maxAcceptedWindow:0,lastAcceptedWindowStart:0,lastAcceptedWindowEnd:0};
+    const yieldPlanning=()=>new Promise(resolve=>setTimeout(resolve,0));
+    const compareDistance=(distances,a,b)=>{const difference=distances[a]-distances[b];return Number.isNaN(difference)||difference===0?a-b:difference;};
+    const lowerBound=(indices,distances,value)=>{let low=0,high=indices.length;while(low<high){const middle=(low+high)>>>1;if(distances[indices[middle]]<value)low=middle+1;else high=middle;}return low;};
+    const upperBound=(indices,distances,value)=>{let low=0,high=indices.length;while(low<high){const middle=(low+high)>>>1;if(distances[indices[middle]]<=value)low=middle+1;else high=middle;}return low;};
+    const cooperativeSort=async(indices,distances)=>{
+      let source=indices,target=new Uint32Array(indices.length),sliceStarted=performance.now();
+      for(let width=1;width<indices.length;width*=2){for(let start=0;start<indices.length;start+=width*2){let left=start,right=Math.min(start+width,indices.length),leftEnd=right,rightEnd=Math.min(start+width*2,indices.length),write=start,work=0;while(left<leftEnd&&right<rightEnd){target[write++]=compareDistance(distances,source[left],source[right])<=0?source[left++]:source[right++];if((++work&255)===0&&performance.now()-sliceStarted>=3){const sliceMs=performance.now()-sliceStarted;metrics.indexMaxSortSliceMs=Math.max(metrics.indexMaxSortSliceMs,sliceMs);await yieldPlanning();sliceStarted=performance.now();}}while(left<leftEnd){target[write++]=source[left++];if((++work&255)===0&&performance.now()-sliceStarted>=3){const sliceMs=performance.now()-sliceStarted;metrics.indexMaxSortSliceMs=Math.max(metrics.indexMaxSortSliceMs,sliceMs);await yieldPlanning();sliceStarted=performance.now();}}while(right<rightEnd){target[write++]=source[right++];if((++work&255)===0&&performance.now()-sliceStarted>=3){const sliceMs=performance.now()-sliceStarted;metrics.indexMaxSortSliceMs=Math.max(metrics.indexMaxSortSliceMs,sliceMs);await yieldPlanning();sliceStarted=performance.now();}}const sliceMs=performance.now()-sliceStarted;metrics.indexMaxSortSliceMs=Math.max(metrics.indexMaxSortSliceMs,sliceMs);if(sliceMs>=3){await yieldPlanning();sliceStarted=performance.now();}}[source,target]=[target,source];}
+      return source;
     };
-    return Object.freeze({type,rows,length:rows.length,reachable,at(index){if(cache.has(index))return cache.get(index);const raw=rows[index],entity=raw?project(raw):null;cache.set(index,entity);return entity;}});
+    // One bounded distance index per origin replaces a full catalogue scan for every aircraft range. The scan yields
+    // between slices, and binary bounds select each range from the same sorted index. Only four origins are retained.
+    const indexFor=async originCoords=>{
+      const key=`${Number(originCoords[0])},${Number(originCoords[1])}`;let index=originIndexCache.get(key);
+      if(index){originIndexCache.delete(key);originIndexCache.set(key,index);metrics.indexCacheHits++;return index;}
+      metrics.indexCacheMisses++;const started=performance.now(),coordinates=new Float64Array(rows.length*2);
+      for(let from=0;from<rows.length;from+=768){const sliceStarted=performance.now(),until=Math.min(rows.length,from+768);for(let rowIndex=from;rowIndex<until;rowIndex++){
+        const raw=rows[rowIndex];coordinates[rowIndex*2]=Number(type==='air'?raw?.[6]:raw?.[3]);coordinates[rowIndex*2+1]=Number(type==='air'?raw?.[7]:raw?.[4]);
+      }const sliceMs=performance.now()-sliceStarted;metrics.indexScanWorkMs+=sliceMs;metrics.indexMaxSliceMs=Math.max(metrics.indexMaxSliceMs,sliceMs);metrics.rowsScanned+=until-from;if(performance.now()-started>=6&&until<rows.length)await yieldPlanning();}
+      const indexInput={originCoords:[Number(originCoords[0]),Number(originCoords[1])],coordinates},workerStarted=performance.now();let remote=await workerClient?.distanceIndex?.(indexInput);metrics.indexWorkerMs+=performance.now()-workerStarted;
+      if(remote)index={indices:remote.indices,distances:remote.distances};else{
+        const distanceStarted=performance.now(),distances=new Float64Array(rows.length),indices=new Uint32Array(rows.length),rad=Math.PI/180,originLat=Number(originCoords[0])*rad,originLon=Number(originCoords[1])*rad;
+        for(let from=0;from<rows.length;from+=512){const sliceStarted=performance.now(),until=Math.min(rows.length,from+512);for(let rowIndex=from;rowIndex<until;rowIndex++){indices[rowIndex]=rowIndex;const lat=coordinates[rowIndex*2],lon=coordinates[rowIndex*2+1];if(!Number.isFinite(lat)||!Number.isFinite(lon)){distances[rowIndex]=Infinity;continue;}const latRad=lat*rad,deltaLat=latRad-originLat,deltaLon=lon*rad-originLon,h=Math.sin(deltaLat/2)**2+Math.cos(originLat)*Math.cos(latRad)*Math.sin(deltaLon/2)**2;distances[rowIndex]=2*6371.0088*Math.asin(Math.sqrt(Math.max(0,Math.min(1,h))));}const sliceMs=performance.now()-sliceStarted;metrics.indexMaxDistanceSliceMs=Math.max(metrics.indexMaxDistanceSliceMs,sliceMs);if(performance.now()-distanceStarted>=3&&until<rows.length)await yieldPlanning();}
+        metrics.indexDistanceMs+=performance.now()-distanceStarted;
+        const sortStarted=performance.now();index={indices:await cooperativeSort(indices,distances),distances};metrics.indexSortMs+=performance.now()-sortStarted;
+      }
+      metrics.indexBuilds++;metrics.indexBuildMs+=performance.now()-started;
+      originIndexCache.set(key,index);while(originIndexCache.size>4)originIndexCache.delete(originIndexCache.keys().next().value);return index;
+    };
+    const reachable=async(originCoords,rangeKm)=>{const index=await indexFor(originCoords),start=lowerBound(index.indices,index.distances,35),limit=Number(rangeKm)>0?Number(rangeKm)*1.005:Infinity,end=Number.isFinite(limit)?upperBound(index.indices,index.distances,limit):lowerBound(index.indices,index.distances,Infinity),length=Math.max(0,end-start);metrics.reachableMax=Math.max(metrics.reachableMax,length);metrics.lastPoolStart=start;metrics.lastPoolEnd=end;metrics.poolFirstKm=length?index.distances[index.indices[start]]:0;metrics.poolLastKm=length?index.distances[index.indices[end-1]]:0;return {indices:index.indices,start,end,length};};
+    const snapshot=()=>({...metrics,cachedOrigins:originIndexCache.size});
+    return Object.freeze({type,rows,length:rows.length,reachable,snapshot,metrics,at(index){if(cache.has(index)){const entity=cache.get(index);cache.delete(index);cache.set(index,entity);return entity;}const raw=rows[index],entity=raw?project(raw):null;if(cache.size>=1200)cache.delete(cache.keys().next().value);cache.set(index,entity);return entity;}});
   }
   async function chooseDiverseWorldDestination({source,origin,asset,target,routes,ledger,selectionKey,workerClient}){
     const length=Math.max(0,Math.trunc(Number(source?.length)||0)),range=assetRangeKm(asset);if(!length||typeof source?.at!=='function'||!origin?.coords)return null;
-    // Samples are drawn from the rows within reach of the origin (all of them up to 900), at a stride coprime with the pool.
-    const pool=typeof source.reachable==='function'?source.reachable(origin.coords,range):null,poolLength=pool?pool.length:length,limit=Math.min(poolLength,900),stride=poolLength<=900?1:[37,41,43].find(prime=>poolLength%prime);
-    const offset=Math.floor(window.GH_DETERMINISM.nextFloat(target,selectionKey)*Math.max(1,poolLength)),samples=[];
-    for(let index=0;index<limit;index++){
-      const worldIndex=pool?pool[(offset+index*stride)%poolLength]:(offset+index*37)%length,raw=source.rows[worldIndex];if(!raw)continue;
-      const coords=source.type==='air'?[raw[6],raw[7]]:[raw[3],raw[4]];if(!Array.isArray(coords))continue;
-      const key=source.type==='air'?`air:${raw[0]}`:`port:${raw[0]}:${raw[3]}:${raw[4]}`;samples.push({sampleIndex:index,worldIndex,key,coords});
-    }
-    const input={originCoords:[...origin.coords],rangeKm:range,samples,ledger:{destinations:[...ledger.destinations],sectors:[...ledger.sectors],bands:[...ledger.bands],coords:ledger.coords.map(point=>[...point])}};
-    let plan=await workerClient?.rankDestinations?.(input);
-    if(!plan){const core=window.GH_AIR_SEA_NETWORK_CORE,planner=core?.createDestinationPlanner?.(input);if(!planner)throw new Error('air-sea-destination-planner-unavailable');while(!planner.isDone()){const until=performance.now()+8;do planner.runChunk(36);while(!planner.isDone()&&performance.now()<until);if(!planner.isDone())await yieldFleetPlanning();}plan=planner.result();}
-    if(!window.GH_AIR_SEA_NETWORK_CORE.validateDestinationPlan(input,plan))throw new Error('air-sea-destination-plan-invalid');
-    let previewSliceStarted=performance.now();const rejected={reachable:poolLength,ranked:plan.ranked.length,missingEndpoint:0,routeGeometry:0,outOfRange:0,corridorConflict:0};
-    for(const row of plan.ranked){
-      const candidate=source.at(row.worldIndex);
-      if(!candidate?.coords)rejected.missingEndpoint++;else{
-        const preview=buildPublicRoute(asset,origin,{...candidate,id:`PREVIEW-${asset.type}-${row.sampleIndex}`},target,`PREVIEW-${asset.type.toUpperCase()}-${row.sampleIndex}`);
-        if(!preview)rejected.routeGeometry++;else if(!routeFitsAsset(asset,preview))rejected.outOfRange++;else if(window.GH_ROUTE_CORE.conflict(target.customRoutes||[],preview))rejected.corridorConflict++;else return {candidate,direct:row.direct};
+    const pool=typeof source.reachable==='function'?await source.reachable(origin.coords,range):null,poolLength=pool?pool.length:length;
+    const offset=Math.floor(window.GH_DETERMINISM.nextFloat(target,selectionKey)*Math.max(1,poolLength)),windowCursor=window.GH_AIR_SEA_NETWORK_CORE.createDestinationWindowCursor(poolLength,offset),rejected={reachable:poolLength,eligible:0,ranked:0,windows:0,missingEndpoint:0,routeGeometry:0,outOfRange:0,corridorConflict:0},usedKeys=ledger.destinations;
+    let previewSliceStarted=performance.now();
+    while(!windowCursor.isDone()){
+      const positions=windowCursor.next(900),samples=[];
+      for(let index=0;index<positions.length;index++){
+        const position=positions[index],worldIndex=pool?pool.indices[pool.start+position]:position,raw=source.rows[worldIndex];if(!raw)continue;
+        const coords=source.type==='air'?[raw[6],raw[7]]:[raw[3],raw[4]];if(!Array.isArray(coords))continue;
+        const key=source.type==='air'?`air:${raw[0]}`:`port:${raw[0]}:${raw[3]}:${raw[4]}`;if(usedKeys.has(key))continue;
+        samples.push({sampleIndex:index,worldIndex,key,coords});
       }
-      if(performance.now()-previewSliceStarted>=6){await yieldFleetPlanning();previewSliceStarted=performance.now();}
+      rejected.eligible+=samples.length;rejected.windows++;source.metrics.windows++;source.metrics.candidateRowsRanked+=samples.length;
+      const input={originCoords:[...origin.coords],rangeKm:range,samples,ledger:{destinations:[...ledger.destinations],sectors:[...ledger.sectors],bands:[...ledger.bands],coords:ledger.coords.map(point=>[...point])}};
+      let plan=await workerClient?.rankDestinations?.(input);
+      if(!plan){const core=window.GH_AIR_SEA_NETWORK_CORE,planner=core?.createDestinationPlanner?.(input);if(!planner)throw new Error('air-sea-destination-planner-unavailable');while(!planner.isDone()){const until=performance.now()+8;do planner.runChunk(36);while(!planner.isDone()&&performance.now()<until);if(!planner.isDone())await yieldFleetPlanning();}plan=planner.result();}
+      if(!window.GH_AIR_SEA_NETWORK_CORE.validateDestinationPlan(input,plan))throw new Error('air-sea-destination-plan-invalid');rejected.ranked+=plan.ranked.length;
+      for(const row of plan.ranked){
+        const candidate=source.at(row.worldIndex);
+        if(!candidate?.coords)rejected.missingEndpoint++;else{
+          const preview=buildPublicRoute(asset,origin,{...candidate,id:`PREVIEW-${asset.type}-${row.worldIndex}`},target,`PREVIEW-${asset.type.toUpperCase()}-${row.worldIndex}`);
+          if(!preview)rejected.routeGeometry++;else if(!routeFitsAsset(asset,preview))rejected.outOfRange++;else if(window.GH_ROUTE_CORE.conflict(target.customRoutes||[],preview))rejected.corridorConflict++;else{source.metrics.lastAcceptedWindow=rejected.windows;source.metrics.maxAcceptedWindow=Math.max(source.metrics.maxAcceptedWindow,rejected.windows);source.metrics.lastAcceptedWindowStart=windowCursor.visited()-positions.length;source.metrics.lastAcceptedWindowEnd=windowCursor.visited();return {candidate,direct:row.direct};}
+        }
+        if(performance.now()-previewSliceStarted>=6){await yieldFleetPlanning();previewSliceStarted=performance.now();}
+      }
+      if(!windowCursor.isDone())await yieldFleetPlanning();
     }
-    const error=new Error(`${asset.name}: لا توجد وجهة ${source.type==='air'?'الجوية':'البحرية'} آمنة ومتنوعة ضمن مدى مجموعة الأسطول`);error.code=`${source.type}-destination-pool-exhausted`;error.assetDepartureTrace={mode:source.type,planner:rejected};throw error;
+    const error=new Error(`${asset.name}: لا توجد وجهة ${source.type==='air'?'الجوية':'البحرية'} آمنة ومتنوعة ضمن مدى مجموعة الأسطول`);error.code=`${source.type}-destination-pool-exhausted`;error.assetDepartureTrace={mode:source.type,planner:{...rejected,source:source.snapshot?.()||null}};throw error;
   }
   async function createGlobalRoute(assetId,destinationKey){
     return runAuthorizedCompositeCommand('create-global-route',({state:draft,routes,dispatch})=>{
@@ -1694,15 +1720,15 @@
     if(typeof Worker!=='function')return null;
     let worker;try{worker=new Worker('air-sea-network-worker.js');}catch(_error){return null;}
     const pending=new Map();let closed=false;
-    const settle=(requestId,value)=>{const resolve=pending.get(requestId);if(!resolve)return;pending.delete(requestId);resolve(value);};
+    const settle=(requestId,value)=>{const resolve=pending.get(requestId);if(!resolve)return;pending.delete(requestId);clearTimeout(resolve.timeout);resolve(value);};
     const close=()=>{if(closed)return;closed=true;for(const [requestId] of pending)settle(requestId,null);try{worker.terminate();}catch{}};
-    worker.onmessage=event=>{const message=event?.data||{},resolve=pending.get(message.requestId);if(!resolve)return;const core=window.GH_AIR_SEA_NETWORK_CORE;let valid=false;if(message.type==='result'&&message.version===core?.VERSION){const kind=resolve.kind;valid=kind==='plan'?core.validatePlan(resolve.input,message.plan):kind==='rank-destinations'?core.validateDestinationPlan(resolve.input,message.plan):false;}settle(message.requestId,valid?message.plan:null);};
+    worker.onmessage=event=>{const message=event?.data||{},resolve=pending.get(message.requestId);if(!resolve)return;const core=window.GH_AIR_SEA_NETWORK_CORE;let valid=false;if(message.type==='result'&&message.version===core?.VERSION){const kind=resolve.kind;valid=kind==='plan'?core.validatePlan(resolve.input,message.plan):kind==='rank-destinations'?core.validateDestinationPlan(resolve.input,message.plan):kind==='distance-index'?core.validateWorldDistanceIndex(resolve.input,message.plan):false;}settle(message.requestId,valid?message.plan:null);};
     worker.onerror=()=>close();worker.onmessageerror=()=>close();
     const request=(type,input)=>{
       if(closed)return Promise.resolve(null);const requestId=++airSeaNetworkWorkerRequestId;
-      return new Promise(resolve=>{pending.set(requestId,Object.assign(resolve,{kind:type,input}));try{worker.postMessage({type,requestId,input});}catch(_error){settle(requestId,null);}});
+      return new Promise(resolve=>{const pendingResolve=Object.assign(resolve,{kind:type,input,timeout:null});pending.set(requestId,pendingResolve);pendingResolve.timeout=setTimeout(()=>{settle(requestId,null);close();},10000);try{worker.postMessage({type,requestId,input});}catch(_error){settle(requestId,null);}});
     };
-    return Object.freeze({plan:input=>request('plan',input),rankDestinations:input=>request('rank-destinations',input),close});
+    return Object.freeze({plan:input=>request('plan',input),rankDestinations:input=>request('rank-destinations',input),distanceIndex:input=>request('distance-index',input),close});
   }
   async function planAirSeaNetworkCooperatively(input){
     const core=window.GH_AIR_SEA_NETWORK_CORE;if(!core?.createPlanner)throw new Error('air-sea-network-planner-unavailable');
@@ -1714,9 +1740,10 @@
     const companyId=routeCompanyFromInput(companyInput),type=companyId?companyRouteModes(companyId).find(mode=>['air','sea'].includes(mode)):null;
     if(!companyId||!type)throw new Error('unsupported-shared-international-company');
     await yieldFleetPlanning();
-    const label=type==='air'?'الطائرات':'السفن',routeLabel=type==='air'?'الجوية':'البحرية',source=worldRouteCandidateSource(type);
+    const label=type==='air'?'الطائرات':'السفن',routeLabel=type==='air'?'الجوية':'البحرية';
     return runAuthorizedCompositeCommand(`bulk-shared-departure:${companyId}`,async({state:draft,routes,dispatch})=>{
       const routeWorker=createAirSeaNetworkWorkerClient();
+      const source=worldRouteCandidateSource(type,routeWorker);
       try{
       // Build 358 (million-asset): one row pass finds the company's idle assets of this mode (views only for them, at
       // most the network planner's limit per dispatch; a larger fleet departs in successive dispatches) and counts the
@@ -1748,7 +1775,7 @@
       if(!window.GH_AIR_SEA_NETWORK_CORE.validatePlan(plannerInput,routePlan))throw new Error('رفض مخطط شبكة الطيران والبحرية قبل الاعتماد');
       const eligible=routePlan.sortedAssetIds.map(id=>eligibleById.get(id));if(eligible.some(asset=>!asset))throw new Error('تعذر ربط مخطط الشبكة بأصوله الحالية');
       const registeredRouteById=new Map(registeredRoutes.map(route=>[route.id,route])),assignments=[],createdRoutes=[],diversity=newRouteDiversityLedger(),diversityRoutes=new Set(),routeLoads=new Map(initialLoads);let sharedBatches=0;
-      for(const row of routePlan.assignments){const asset=eligibleById.get(row.assetId),route=registeredRouteById.get(row.routeId),origin=originByAssetId.get(row.assetId);if(!asset||!route||!origin)throw new Error('فقد أصل أو مسار قائم أثناء تخطيط الشبكة');assignments.push({asset,route});routeLoads.set(route.id,(routeLoads.get(route.id)||0)+1);if(!diversityRoutes.has(route.id)){const fromOrigin=sameUnderlyingFacilityFor(draft,origin.id,route.fromFacility),point=fromOrigin?route.route.at(-1):route.route[0];recordRouteDiversity(diversity,route.id,point,haversine(origin.coords,point));diversityRoutes.add(route.id);}}
+      for(const row of routePlan.assignments){const asset=eligibleById.get(row.assetId),route=registeredRouteById.get(row.routeId),origin=originByAssetId.get(row.assetId);if(!asset||!route||!origin)throw new Error('فقد أصل أو مسار قائم أثناء تخطيط الشبكة');assignments.push({asset,route});routeLoads.set(route.id,(routeLoads.get(route.id)||0)+1);if(!diversityRoutes.has(route.id)){const fromOrigin=sameUnderlyingFacilityFor(draft,origin.id,route.fromFacility),destinationId=fromOrigin?route.toFacility:route.fromFacility,endpoint=routeFacilityFor(draft,destinationId),point=fromOrigin?route.route.at(-1):route.route[0];recordRouteDiversity(diversity,endpoint?.sourceKey||route.id,point,haversine(origin.coords,point));diversityRoutes.add(route.id);}}
       // New routes for the assets still waiting at each origin share the mode's free slots: the target load while the
       // slots allow it, else a higher load per route (a new base never fails for want of registry slots).
       let groupSlots;try{groupSlots=window.GH_ROUTE_CORE.allocateForBudget(window.GH_ROUTE_CORE.modeRouteBudget(draft,type),routePlan.waitingGroups.map(group=>group.assetIds.length),targetLoad,window.GH_ROUTE_CORE.LIMITS.fleetCapacity);}
@@ -1810,7 +1837,7 @@
       if(previousRouteIds.size){const inUse=window.GH_FLEET_DATA.distinctRefs(draft,'routeId');for(const routeId of previousRouteIds)if(!inUse.has(routeId)&&(draft.customRoutes||[]).some(route=>route.id===routeId)){window.GH_ROUTE_CORE.execute({state:draft},'delete',{id:routeId});delete routes[routeId];}}
       const routeIds=[...new Set(normalized.map(asset=>asset.routeId))],moving=normalized.filter(asset=>asset.phase==='moving').length,scheduled=normalized.filter(asset=>asset.departureScheduled).length;
       window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`وُزعت ${eligible.length} ${type==='air'?'طائرة':'سفينة'} ذريًا على ${routeIds.length} مسارًا ${routeLabel} مشتركًا؛ ${moving} غادرت و${scheduled} مجدولة بفتحات زمنية، وأُنشئ ${createdRoutes.length} مسار جديد فقط.${sharedBatches?` نفدت الوجهات المميزة ضمن المدى لبعض نقاط الانطلاق، فانضمت ${sharedBatches} دفعة إلى مسارات قائمة منها.`:''}`,type:'dispatch'});
-      return {departed:eligible.length,routeIds,moving,scheduled,createdRoutes:createdRoutes.length,sharedBatches,targetLoad,routeCapacity:capacity,remaining};
+      return {departed:eligible.length,routeIds,moving,scheduled,createdRoutes:createdRoutes.length,sharedBatches,targetLoad,routeCapacity:capacity,remaining,planner:source.snapshot()};
       }finally{routeWorker?.close();}
     },{afterCommit:()=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('routes',companyId);}});
   }
