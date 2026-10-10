@@ -360,6 +360,14 @@
   // 53-bit FNV-1a style hash of a canonical text (stable across runs).
   function hashText(text){let a=0x811c9dc5,b=0x9747b28c;for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);a=Math.imul(a^c,0x01000193);b=Math.imul(b^c,0x5bd1e995);}return (a>>>0)*2097152+((b>>>0)&0x1fffff);}
   function note(env,list,value){env.notes.push({t:env.curT,row:env.curRow,seq:env.notes.length,list,value});}
+  function noteDeparture(env,outcome,asset,reasonCode=''){
+    let trace=env.departureTrace;if(!trace)trace=env.departureTrace={attempts:0,departed:0,blocked:0,modeCounts:{},reasonCounts:{},samples:[]};
+    const mode=String(CORE.assetMode(asset)||asset?.type||'unknown'),reason=String(reasonCode||'departure-accepted');trace.attempts++;
+    trace.modeCounts[mode]=(trace.modeCounts[mode]||0)+1;
+    if(outcome==='departed')trace.departed++;else{trace.blocked++;trace.reasonCounts[reason]=(trace.reasonCounts[reason]||0)+1;}
+    if(trace.samples.length<24)trace.samples.push({assetId:String(asset?.id||'').slice(0,100),type:String(asset?.type||mode).slice(0,40),mode,companyId:String(CORE.assetOwner(asset)||'').slice(0,80),routeId:String(asset?.routeId||'').slice(0,100),baseFacility:String(asset?.baseFacility||'').slice(0,100),phase:String(asset?.phase||''),outcome,reasonCode:outcome==='departed'?'departure-accepted':reason,simSeconds:Number(env.curT)||0});
+  }
+  function departureTraceSummary(env){const t=env.departureTrace;if(!t)return null;return {attempts:t.attempts,departed:t.departed,blocked:t.blocked,modeCounts:t.modeCounts,reasonCounts:t.reasonCounts,samples:t.samples};}
   // Per-trip bookkeeping shared by both paths: the trip total, and per-row
   // alert records until the alert limit is exceeded.
   function countTrip(env,row,eco,name){
@@ -423,6 +431,7 @@
       if(!cls.staffingReady||!pair.contract)return NaN;
       const dwell0=Math.max(0,(present&B.dwellRemaining)?number(F[f+F_DWELL]):0);if(T<at+dwell0)return NaN;
       const nextReverse=pair.baseIsTo?1:0,binding=departureBinding(env,pair,bindingRef,nextReverse);
+      noteDeparture(env,'departed',{id:STORE.peek(store,row,'id'),type:cls.type,assetMode:cls.mode,ownerCompanyId:cls.owner,routeId:V[routeRef],baseFacility:V[baseRef],phase:'turnaround'});
       env.touch(row);
       U[u+U_REVERSE]=nextReverse;W[w+W_PHASE]=ph.moving;F[f+F_PROGRESS]=0;F[f+F_DWELL]=0;F[f+F_FUEL]=100;U[u+U_CREW_BLOCKED]=0;U[u+U_DEP_SCHEDULED]=0;
       W[w+W_PRESENT]=(present|B.reverse|B.dwellRemaining|B.crewBlocked|B.departureScheduled)&~B.departureScheduledAt;
@@ -455,6 +464,7 @@
     const store=env.store,before=STORE.materialize(store,row),asset=STORE.materialize(store,row);
     const at=STORE.slot(store,'at',row)-Math.max(0,number(asset.simCarrySeconds)),scheduledTrip=Number(before.tripSeconds),routeId=asset.routeId;
     const route=routeId?routeFor(env,routeId,asset.baseFacility):null;
+    let departureAttempted=false;
     try{
       if(asset.simulationFault)return writeBack(env,row,before,asset,null);
       // processOne's first step: normalize from the route and catalog.
@@ -464,6 +474,7 @@
       if(!route){
         if(Number.isFinite(scheduledTrip)&&scheduledTrip>0||asset.phase==='turnaround')derive(asset,at,T,scheduledTrip);
         asset.simulationFault={code:'ROUTE_RUNTIME_MISSING',at:T,detail:`Route runtime missing: ${String(asset.routeId).slice(0,80)}`};asset.crewBlocked=true;
+        if(before.phase==='turnaround')noteDeparture(env,'blocked',before,'route-runtime-missing');
         note(env,'alerts',`${asset.name||asset.id}: عُزل الأصل لأن تعريف مساره غير متاح. لم يتقدم الأصل أو الزمن التشغيلي الخاص به؛ أعد تعيين المسار بعد المراجعة.`);
         return writeBack(env,row,before,asset,T);
       }
@@ -473,12 +484,15 @@
         asset.dwellRemaining=0;
         if(asset.staffing?.mode!=='automatic-fixed'||asset.staffing.ready!==true){
           if(!asset.crewBlocked)note(env,'alerts',`${asset.name}: تكوين الطاقم الثابت غير مكتمل؛ أوقفت هذه الرحلة دون التأثير على بقية اللعبة.`);
+          if(!asset.crewBlocked)noteDeparture(env,'blocked',asset,'asset-staffing-invalid');
           asset.crewBlocked=true;return writeBack(env,row,before,asset,T);
         }
+        departureAttempted=true;
         const owner=CORE.assetOwner(asset);
         if(route.id!==asset.routeId||CORE.routeMode(route)!==CORE.assetMode(asset)||CORE.routeOwner(route)!==owner||![route.fromFacility,route.toFacility].includes(asset.baseFacility))throw new Error('route-departure-contract');
         asset.reverse=asset.baseFacility===route.toFacility;asset.phase='moving';asset.progress=0;asset.dwellRemaining=0;asset.fuel=100;asset.crewBlocked=false;asset.departureScheduled=false;delete asset.departureScheduledAt;delete asset.simulationFault;
         asset.from=asset.reverse?route.to:route.from;asset.to=asset.reverse?route.from:route.to;asset.load=CORE.loadLabel(asset);
+        noteDeparture(env,'departed',asset);
         return writeBack(env,row,before,asset,T);
       }
       // Moving.
@@ -508,6 +522,7 @@
       return writeBack(env,row,before,asset,T,ecoRef);
     }catch(error){
       env.faults++;
+      if(departureAttempted)noteDeparture(env,'blocked',before,String(error?.code||error?.message||'departure-runtime-error').slice(0,100));
       const isolated={...before};
       if(Number.isFinite(scheduledTrip)&&scheduledTrip>0)derive(isolated,at,T,scheduledTrip);else if(isolated.phase==='turnaround')derive(isolated,at,T,0);
       isolated.simulationFault={code:'ASSET_SIMULATION_ISOLATED',at:T,detail:String(error?.message||error).slice(0,180)};isolated.crewBlocked=true;
@@ -609,7 +624,7 @@
     });
     q.revision=store.revision;
     if(to>from)e.rate=e.rate>0?e.rate*.5+env.events/(to-from)*.5:env.events/(to-from);
-    return {effects:finishEffects(env),events:env.events,fast:env.fast,slow:env.slow,faults:env.faults,completeTo,order};
+    return {effects:finishEffects(env),departureTrace:departureTraceSummary(env),events:env.events,fast:env.fast,slow:env.slow,faults:env.faults,completeTo,order};
   }
 
   // Current (derived) values for presentation and read models at time t.

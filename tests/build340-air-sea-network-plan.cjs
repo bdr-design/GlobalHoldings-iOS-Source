@@ -24,7 +24,7 @@ function destinationInputFor(count=900){
 function destinationReference(input){
   const haversine=(a,b)=>{const rad=Math.PI/180,lat1=a[0]*rad,lat2=b[0]*rad,dLat=(b[0]-a[0])*rad,dLon=(b[1]-a[1])*rad,h=Math.sin(dLat/2)**2+Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;return 2*6371.0088*Math.asin(Math.sqrt(h));},sectorOf=coords=>{const lat=Number(coords[0])||0,lon=((Number(coords[1])||0)+540)%360-180,band=lat<-23?'S':lat>23?'N':'E',lonBand=Math.floor((lon+180)/45);return `${band}:${Math.max(0,Math.min(7,lonBand))}`;},distanceBand=distance=>distance<2000?'near':distance<6500?'mid':'far',destinations=new Map(input.ledger.destinations),sectors=new Map(input.ledger.sectors),bands=new Map(input.ledger.bands),ranked=[];
   for(const sample of input.samples){const direct=haversine(input.originCoords,sample.coords);if(direct<35||(input.rangeKm&&direct>input.rangeKm*1.005))continue;const sector=sectorOf(sample.coords),band=distanceBand(direct);let separation=20000;if(input.ledger.coords.length)separation=Math.min(...input.ledger.coords.map(point=>haversine(point,sample.coords)));ranked.push({sampleIndex:sample.sampleIndex,worldIndex:sample.worldIndex,direct,reuse:destinations.get(sample.key)||0,sectorUse:sectors.get(sector)||0,bandUse:bands.get(band)||0,separation});}
-  ranked.sort((a,b)=>a.reuse-b.reuse||a.sectorUse-b.sectorUse||a.bandUse-b.bandUse||b.separation-a.separation||a.sampleIndex-b.sampleIndex);return ranked.slice(0,160);
+  ranked.sort((a,b)=>a.reuse-b.reuse||a.sectorUse-b.sectorUse||a.bandUse-b.bandUse||b.separation-a.separation||a.sampleIndex-b.sampleIndex);return ranked.slice(0,900);
 }
 
 for(const count of [4300,20000]){
@@ -40,8 +40,10 @@ console.log('PASS air/sea bulk route plan parity, stable ordering, capacity/rang
 {
   const input=destinationInputFor(),before=JSON.stringify(input),expected=destinationReference(input),started=performance.now(),actual=Core.rankDestinations(input),elapsedMs=+(performance.now()-started).toFixed(2);
   assert.deepEqual(actual.ranked,expected,'destination ranking preserves the previous geography, range, diversity and stable tie-break rules');
+  assert(actual.ranked.length>160,'ranking preserves eligible destinations beyond the former 160-row cutoff');
   assert.equal(Core.validateDestinationPlan(input,actual),true);assert.equal(JSON.stringify(input),before,'destination ranking does not change its ledger or candidate DTO');
   const cooperative=Core.createDestinationPlanner(input);while(!cooperative.isDone())cooperative.runChunk(19);assert.deepEqual(cooperative.result(),actual,'cooperative destination fallback is exact');
   const stale={...actual,ranked:actual.ranked.map((row,index)=>index===0?{...row,direct:row.direct+1}:row)};assert.equal(Core.validateDestinationPlan(input,stale),false,'a result inconsistent with the frozen candidate DTO is rejected');
+  const rejected=new Set(actual.ranked.slice(0,160).map(row=>row.sampleIndex)),chosen=actual.ranked.find(row=>!rejected.has(row.sampleIndex));assert.equal(chosen.sampleIndex,actual.ranked[160].sampleIndex,'route search can continue to the 161st ranked candidate after rejecting the first 160');
   console.log(JSON.stringify({suite:'build340-air-sea-destination-ranking',candidates:input.samples.length,returned:actual.ranked.length,nodeRankingMs:elapsedMs,parity:true,environment:`Node ${process.version}; synthetic immutable world DTOs; not iPhone performance`}));
 }

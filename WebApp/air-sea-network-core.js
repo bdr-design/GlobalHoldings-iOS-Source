@@ -92,13 +92,13 @@
   function createDestinationPlanner(input){
     validateDestinationInput(input);let cursor=0;const ranked=[],context=destinationContext(input);
     function runChunk(limit=48){const budget=Math.max(1,Math.floor(Number(limit)||48)),end=Math.min(input.samples.length,cursor+budget);while(cursor<end){const row=rankSample(input,input.samples[cursor],context);if(row)ranked.push(row);cursor++;}return cursor>=input.samples.length;}
-    function result(){if(cursor<input.samples.length)throw new Error('air-sea-destination-plan-incomplete');ranked.sort(compareDestination);return {version:VERSION,ranked:ranked.slice(0,160).map(row=>({...row}))};}
+    function result(){if(cursor<input.samples.length)throw new Error('air-sea-destination-plan-incomplete');ranked.sort(compareDestination);return {version:VERSION,ranked:ranked.slice(0,900).map(row=>({...row}))};}
     return Object.freeze({runChunk,isDone:()=>cursor>=input.samples.length,result});
   }
   function rankDestinations(input){const planner=createDestinationPlanner(input);planner.runChunk(Math.max(1,input.samples.length));return planner.result();}
   function validateDestinationPlan(input,plan){
     try{validateDestinationInput(input);}catch{return false;}
-    if(!plan||plan.version!==VERSION||!Array.isArray(plan.ranked)||plan.ranked.length>160)return false;
+    if(!plan||plan.version!==VERSION||!Array.isArray(plan.ranked)||plan.ranked.length>900)return false;
     const samples=new Map(input.samples.map(row=>[row.sampleIndex,row])),context=destinationContext(input);let previous=null;
     for(const row of plan.ranked){const sample=samples.get(row?.sampleIndex),expected=sample&&rankSample(input,sample,context,false);if(!expected||row.worldIndex!==expected.worldIndex||['direct','reuse','sectorUse','bandUse'].some(key=>!Number.isFinite(Number(row[key]))||Math.abs(Number(row[key])-expected[key])>1e-7)||!Number.isFinite(Number(row.separation))||Number(row.separation)<0||Number(row.separation)>20000.001)return false;if(previous&&compareDestination(previous,row)>0)return false;previous=row;}
     return true;

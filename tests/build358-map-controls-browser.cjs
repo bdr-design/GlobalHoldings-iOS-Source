@@ -29,6 +29,9 @@ const {drawFounderSignature}=require('./helpers/signature-input');
 
     // Filters, by touch.
     await page.tap('#filterToggle');
+    const filterGeometry=await page.evaluate(()=>{const panel=document.getElementById('filterPopover').getBoundingClientRect(),dock=document.querySelector('.sheet-dock').getBoundingClientRect(),grid=document.querySelector('#filterPopover .filter-grid').getBoundingClientRect();return {panel:panel.width,dock:dock.width,panelLeft:panel.left,dockLeft:dock.left,gridLeft:grid.left,gridRight:grid.right};});
+    assert(Math.abs(filterGeometry.panel-filterGeometry.dock)<=1,`map filters fill the side dock without a dead gutter: ${JSON.stringify(filterGeometry)}`);
+    assert(filterGeometry.gridRight-filterGeometry.gridLeft>=filterGeometry.panel-32,`filter choices use the full dock content width: ${JSON.stringify(filterGeometry)}`);
     assert.equal(await page.evaluate(()=>[...document.querySelectorAll('#filterPopover .filter-section')].find(section=>section.querySelector('b')?.textContent.includes('التشغيل'))?.hidden),true,'no empty operations heading before a company opens');
     await page.tap('.filter-btn[data-filter="airport"]');
     // Build 359: the airport filter opens the expansion mode; airports are grouped in bubbles with Western counts.

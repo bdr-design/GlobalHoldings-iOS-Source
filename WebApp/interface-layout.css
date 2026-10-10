@@ -43,6 +43,9 @@
 .sheet-dock{grid-column:2;position:relative;width:0;min-height:0;overflow:hidden;direction:rtl;background:var(--surface);border-left:1px solid var(--line)}
 .app-shell:has(.drawer.open,#simCalendarPanel:not(.hidden),#filterPopover:not(.hidden),#assetCard:not(.hidden)) .sheet-dock{width:var(--sheet)}
 .sheet-dock>*{position:absolute;inset:0;padding-bottom:var(--safe-bottom)}
+/* Sheet children fill their dock. The filter popover's standalone width used to leave
+   an empty gutter beside the map while its controls stayed pinned to the rail. */
+.sheet-dock>.filter-popover{width:auto;min-width:0;max-width:none;align-content:start}
 .side-nav{grid-column:3;position:relative;display:flex;flex-direction:column;gap:4px;min-height:0;padding:6px calc(var(--rail-safe) + 4px) calc(var(--safe-bottom) * .35 + 6px) 4px;direction:rtl;overflow-y:auto;background:var(--ground);border-left:1px solid var(--line);scrollbar-width:none}
 .side-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:52px;flex:0 0 52px;padding:3px 0;border:1px solid transparent;border-radius:13px;background:transparent;color:var(--muted);font:500 9px var(--font)}
 .side-nav svg{width:20px;height:20px}.side-nav button.active{background:var(--surface-2);border-color:color-mix(in srgb,var(--accent) 42%,transparent);color:var(--accent);font-weight:600}.side-nav button:hover:not(.active){color:var(--text)}
