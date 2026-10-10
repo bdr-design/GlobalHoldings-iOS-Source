@@ -1402,13 +1402,27 @@
     if(!result.ok){diag('MAP_PROVIDER_DEGRADED',{status:result.status,reason:result.reason},'warning');return null;}
     return result.geometry;
   }
+  // Build 371: a geometry that arrives after a network await (hydrateRoadRoutes) used to be applied whatever ran then. The
+  // fleet root is shared with a durable command's draft, so its normalized rows went into that command's journal (kept by
+  // its commit, though no part of it, with the route template then rebuilt from the draft; or rolled back while the
+  // template kept the new geometry). The live state is written only when no command, staged slice or persistence lock
+  // holds it; applyRoadGeometryWhenSettled waits for that.
+  function liveStateWritable(){return !durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!hardResetInProgress&&!stagedStateBusy()&&window.GH_PERSISTENCE.isLocked()!==true;}
+  async function applyRoadGeometryWhenSettled(routeId,geometry,saveCache=true){
+    // A save lock that outlasts about 10 s (a recovery-required save keeps it until a reload) drops the geometry; the next
+    // start fetches it again.
+    for(let attempt=0;attempt<200;attempt++){await diagnosticLifecycleSettled();if(liveStateWritable())return applyRoadGeometry(routeId,geometry,saveCache);await yieldForInteractivePaint(50);}
+    return false;
+  }
   function applyRoadGeometry(routeId,geometry,saveCache=true){
-    const tpl=routeTemplates[routeId];if(!tpl||!geometry?.route)return;
+    if(!liveStateWritable())return false;
+    const tpl=routeTemplates[routeId];if(!tpl||!geometry?.route)return false;
     tpl.route=geometry.route;tpl.routingSource='OSRM · شبكة طرق فعلية';prepareRoute(tpl);
     if(geometry.durationSeconds)tpl.effectiveSpeedKmh=clamp(tpl.distanceKm/(geometry.durationSeconds/3600),42,82);
     tpl.tripSeconds=tpl.distanceKm/tpl.effectiveSpeedKmh*3600;
     if(saveCache)dispatchSystemCommand({state},'routes','cache-geometry',{id:routeId,route:tpl.route,distanceKm:tpl.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'system-routing-provider'});
     const rows=window.GH_FLEET_DATA.drafts(state).filter(a=>a?.routeId===routeId);rows.forEach(normalizeAsset);window.GH_FLEET_DATA.commit(state,rows);
+    return true;
   }
   const ROUTE_CACHE_MAX_AGE_DAYS = 90;
   function isRouteCacheFresh(cached){
@@ -1440,12 +1454,12 @@
       if(tpl.roadGeometryVersion===311&&tpl.roadNetworkDistanceKm>0)return; // Canonical verified road geometry is already saved; never re-request an active trip.
       const cached=state.routeCache[tpl.id];
       if(cached?.canonicalRouteId===tpl.id)return;
-      if(isRouteCacheFresh(cached)&&cached.route){applyRoadGeometry(tpl.id,cached,false);changedRouteIds.add(tpl.id);stateChanged=true;return;}
+      if(isRouteCacheFresh(cached)&&cached.route){if(await applyRoadGeometryWhenSettled(tpl.id,cached,false)){changedRouteIds.add(tpl.id);stateChanged=true;}return;}
       const from=routeFacility(tpl.fromFacility),to=routeFacility(tpl.toFacility);if(!from||!to)return;
       let geometry=await requestRoadGeometry(from.coords,to.coords);
       if(!geometry){ await delay(1500); geometry=await requestRoadGeometry(from.coords,to.coords); } // محاولة ثانية عند انقطاع مؤقت
-      if(geometry){applyRoadGeometry(tpl.id,geometry,true);changedRouteIds.add(tpl.id);stateChanged=true;}
-      else if(cached?.route){applyRoadGeometry(tpl.id,cached,false);changedRouteIds.add(tpl.id);stateChanged=true;} // نستمر بالمسار المخزن القديم بدل خط مستقيم مفاجئ
+      if(geometry){if(await applyRoadGeometryWhenSettled(tpl.id,geometry,true)){changedRouteIds.add(tpl.id);stateChanged=true;}}
+      else if(cached?.route){if(await applyRoadGeometryWhenSettled(tpl.id,cached,false)){changedRouteIds.add(tpl.id);stateChanged=true;}} // نستمر بالمسار المخزن القديم بدل خط مستقيم مفاجئ
     }));
     if(changedRouteIds.size){
       const selected=selectedAssetId?window.GH_FLEET_DATA.get(state,selectedAssetId):null;
