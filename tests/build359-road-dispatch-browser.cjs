@@ -57,6 +57,7 @@ async function osrmDouble(page){
       window.GH_FLEET_DATA=Object.freeze({...data,forEachFieldClasses(...args){if(window.__GH_DURABLE_COMMAND_CONTEXT__)probe.contexts++;return data.forEachFieldClasses(...args);}});
       let last=performance.now();const tick=now=>{const inCommand=!!window.__GH_DURABLE_COMMAND_CONTEXT__;if(inCommand){probe.frames.push(now-last);probe.commandFrames++;}last=now;requestAnimationFrame(tick);};requestAnimationFrame(tick);
     });
+    await page.evaluate(()=>GH_DIAGNOSTICS.recorderStart(__GH_STATE__,GH_SIM_KERNEL.snapshot(),{}));
     const button=page.locator('.dispatch-existing-network[data-company="road"]').first();await button.waitFor({state:'visible'});await button.click();
     await page.waitForFunction(()=>/bulk-shared-departure:road/.test(GH_APP_RUNTIME_METRICS.snapshot().durable?.last?.name||''),null,{timeout:300000,polling:200});
     await page.waitForFunction(()=>!window.__GH_DURABLE_COMMAND_CONTEXT__&&!GH_PERSISTENCE.isLocked(),null,{timeout:120000});
@@ -65,7 +66,8 @@ async function osrmDouble(page){
       const s=__GH_STATE__,probe=window.__ROAD_PROBE__,durable=GH_APP_RUNTIME_METRICS.snapshot().durable.last,phases={};let routed=0;
       GH_FLEET_DATA.forEach(s,asset=>{if((asset.ownerCompanyId||asset.companyId)!=='road')return;const key=asset.phase+(asset.departureScheduled?'+scheduled':'');phases[key]=(phases[key]||0)+1;if(asset.routeId)routed++;});
       const schema=GH_SAVE_SCHEMA.validate(s),integrity=GH_INTEGRITY_CORE.check(s);
-      return {durable,contexts:probe.contexts,commandFrames:probe.commandFrames,worstFrameMs:Math.round(Math.max(0,...probe.frames)),phases,routed,schemaOk:schema.ok,schemaErrors:schema.errors,critical:(integrity.critical||(integrity.issues||[]).filter(row=>row.severity==='critical')).map(row=>row.id||row.code)};
+      const departure=GH_DIAGNOSTICS.departureTraceSnapshot(s)?.recent?.[0]||null;
+      return {durable,departure,contexts:probe.contexts,commandFrames:probe.commandFrames,worstFrameMs:Math.round(Math.max(0,...probe.frames)),phases,routed,schemaOk:schema.ok,schemaErrors:schema.errors,critical:(integrity.critical||(integrity.issues||[]).filter(row=>row.severity==='critical')).map(row=>row.id||row.code)};
     });
     console.log(JSON.stringify(out));
     assert.equal(out.durable.committed,true,'the road dispatch committed');
@@ -74,6 +76,14 @@ async function osrmDouble(page){
     assert.ok(out.contexts<=8,`fleet passes in the command: ${out.contexts} (a few, whatever the fleet; one per truck before: about ${TRUCKS})`);
     assert.ok(out.commandFrames>=Math.ceil(TRUCKS/500)*2,`the commit yields between chunks (${out.commandFrames} frames during the command)`);
     assert.ok(out.worstFrameMs<out.durable.applyMs,`no frame lasts the whole command (worst ${out.worstFrameMs} ms, apply ${out.durable.applyMs} ms)`);
+    assert.equal(out.departure.modeCounts.road,TRUCKS,'road fleet dispatch is included in the cross-mode issue trace');
+    assert.equal(out.departure.planner.plannedAssignments,TRUCKS,'the road trace records the assigned truck count');
+    assert.ok(out.departure.routeIds.length>0&&out.departure.routeIds.length<=12,'the road issue trace retains a bounded sample of route IDs');
+    assert.ok(out.departure.planner.planningMs>=0&&out.departure.planner.dispatchApplyMs>=0,'the route plan and durable apply have separate measured durations');
+    assert.equal(out.departure.performance.durable.committed,true,'the issue log includes committed-command timing');
+    assert.ok(out.departure.performance.wallMs>=out.departure.planner.planningMs+out.durable.totalMs-100,'the issue log wall window includes both road planning and its durable command');
+    assert.equal(out.departure.performance.faultRecorder.active,true,'the issue log knows the fault recorder is active');
+    assert.ok(out.departure.performance.faultRecorder.frameSummary.frameCallbacks>0,'the issue log includes frame measurements captured while route dispatch was running');
     assert.equal(out.schemaOk,true,JSON.stringify(out.schemaErrors));assert.deepEqual(out.critical,[]);
     assert.deepEqual(errors,[]);
     console.log('BUILD359_ROAD_DISPATCH_BROWSER_PASS');
