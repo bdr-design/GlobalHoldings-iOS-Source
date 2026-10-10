@@ -962,7 +962,7 @@
       committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);for(const task of afterPublishTasks)try{await task(value,window.__GH_DURABLE_COMMAND_CONTEXT__);}catch(error){console.warn(`Durable command after-publish hook failed [${name}]`,error);}lap('publishMs');diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
       if(afterCommit){try{await afterCommit(value);}catch(error){diag('DURABLE_COMMAND_PRESENTATION_FAILED',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'warning');console.warn(`Durable command committed but presentation refresh failed [${name}]`,error);if(!silent)notice('تم حفظ العملية بنجاح، لكن تعذر تحديث العرض. أعد فتح القسم لرؤية الحالة المحفوظة.','warning');}}
       return value;
-    }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-publish-failed-after-ack',{durableCommitted:true,saveRevision:Number(draft?.saveRevision)||0});state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed-after-ack');diag('DURABLE_PUBLISH_FAILED_AFTER_ACK',{name,saveRevision:Number(draft?.saveRevision)||0,reason:String(error.message||error)},'critical');console.error(`Durable command publication failed after device acknowledgement [${name}]`,error);return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),sharedDeparture=String(name||'').match(/^authorized:bulk-shared-departure:(.+)$/);if(sharedDeparture){const companyId=sharedDeparture[1],mode=companyRouteModes(companyId).find(value=>value==='air'||value==='sea'),trace=error.assetDepartureTrace||{},code=String(error.code||reason.match(/GH\s+(?:AIR|SEA)\s+\d{3,5}/i)?.[0]||reason.slice(0,64)||'dispatch-rollback');recordAssetDepartureTrace({source:'durable-command-rollback',attempts:Math.max(1,Number(trace.attempts)||1),blocked:Math.max(1,Number(trace.blocked)||1),modeCounts:{[trace.mode||mode||'unknown']:Math.max(1,Number(trace.blocked)||1)},reasonCounts:{[code]:Math.max(1,Number(trace.blocked)||1)},error:reason,samples:[{outcome:'blocked',mode:trace.mode||mode||'unknown',reasonCode:code,companyId,commandName:String(name).slice(0,100),error:reason.slice(0,180),planner:trace.planner||undefined,attemptedAssets:Number(trace.attempts)||1}],simSeconds:Number(state.simSeconds)||0});}const capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
+    }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-publish-failed-after-ack',{durableCommitted:true,saveRevision:Number(draft?.saveRevision)||0});state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed-after-ack');diag('DURABLE_PUBLISH_FAILED_AFTER_ACK',{name,saveRevision:Number(draft?.saveRevision)||0,reason:String(error.message||error)},'critical');console.error(`Durable command publication failed after device acknowledgement [${name}]`,error);return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),sharedDeparture=String(name||'').match(/^authorized:bulk-shared-departure:(.+)$/);if(sharedDeparture){const companyId=sharedDeparture[1],mode=companyRouteModes(companyId).find(value=>value==='air'||value==='sea'),trace=error.assetDepartureTrace||{},code=String(error.code||reason.slice(0,64)||'dispatch-rollback');recordAssetDepartureTrace({source:'durable-command-rollback',attempts:Math.max(1,Number(trace.attempts)||1),blocked:Math.max(1,Number(trace.blocked)||1),modeCounts:{[trace.mode||mode||'unknown']:Math.max(1,Number(trace.blocked)||1)},reasonCounts:{[code]:Math.max(1,Number(trace.blocked)||1)},error:reason,samples:[{outcome:'blocked',mode:trace.mode||mode||'unknown',reasonCode:code,companyId,commandName:String(name).slice(0,100),error:reason.slice(0,180),planner:trace.planner||undefined,attemptedAssets:Number(trace.attempts)||1}],simSeconds:Number(state.simSeconds)||0});}const capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
     finally{
       lap('afterMs');timing.committed=committed;timing.totalMs=Math.max(0,clockNow()-durableStart);for(const key of Object.keys(timing))if(typeof timing[key]==='number')timing[key]=Math.round(timing[key]*10)/10;const durableSink=window.__GH_APP_RUNTIME_INSTRUMENTATION__?.durable;if(durableSink){durableSink.last=timing;durableSink.samples.push(timing);if(durableSink.samples.length>16)durableSink.samples.shift();}
       if(!committed&&rootSessions.length)try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');console.error('Durable command fleet rollback failed',rollbackError);}
@@ -1637,13 +1637,25 @@
     ledger.destinations.set(destinationKey,(ledger.destinations.get(destinationKey)||0)+1);ledger.sectors.set(sector,(ledger.sectors.get(sector)||0)+1);ledger.bands.set(band,(ledger.bands.get(band)||0)+1);ledger.coords.push([Number(coords[0]),Number(coords[1])]);
   }
   function worldRouteCandidateSource(type){
-    const rows=type==='air'?WORLD.airports:WORLD.ports,project=type==='air'?airportEntity:portEntity,cache=new Map();return Object.freeze({type,rows,length:rows.length,at(index){if(cache.has(index))return cache.get(index);const raw=rows[index],entity=raw?project(raw):null;cache.set(index,entity);return entity;}});
+    const rows=type==='air'?WORLD.airports:WORLD.ports,project=type==='air'?airportEntity:portEntity,cache=new Map(),reachableCache=new Map();
+    // Build 371 (iPhone diagnostic, code GH AIR 3181): the world rows an origin can reach (35 km up to the range), read once per
+    // origin and range for one dispatch. Sampling the whole catalogue (28,291 airports, most of them North American
+    // strips) left an ATR 72 at Riyadh about 7 reachable candidates per sample, all taken after ~140 routes.
+    const reachable=(originCoords,rangeKm)=>{
+      const key=`${originCoords[0]},${originCoords[1]}|${Number(rangeKm)||0}`;let out=reachableCache.get(key);if(out)return out;
+      const limit=Number(rangeKm)>0?Number(rangeKm)*1.005:Infinity;out=[];
+      for(let index=0;index<rows.length;index++){const raw=rows[index],coords=type==='air'?[raw[6],raw[7]]:[raw[3],raw[4]];if(!Number.isFinite(coords[0])||!Number.isFinite(coords[1]))continue;const distance=haversine(originCoords,coords);if(distance>=35&&distance<=limit)out.push(index);}
+      reachableCache.set(key,out);return out;
+    };
+    return Object.freeze({type,rows,length:rows.length,reachable,at(index){if(cache.has(index))return cache.get(index);const raw=rows[index],entity=raw?project(raw):null;cache.set(index,entity);return entity;}});
   }
   async function chooseDiverseWorldDestination({source,origin,asset,target,routes,ledger,selectionKey,workerClient}){
-    const length=Math.max(0,Math.trunc(Number(source?.length)||0)),range=assetRangeKm(asset),limit=Math.min(length,900);if(!length||typeof source?.at!=='function'||!origin?.coords)return null;
-    const offset=Math.floor(window.GH_DETERMINISM.nextFloat(target,selectionKey)*length),samples=[];
+    const length=Math.max(0,Math.trunc(Number(source?.length)||0)),range=assetRangeKm(asset);if(!length||typeof source?.at!=='function'||!origin?.coords)return null;
+    // Samples are drawn from the rows within reach of the origin (all of them up to 900), at a stride coprime with the pool.
+    const pool=typeof source.reachable==='function'?source.reachable(origin.coords,range):null,poolLength=pool?pool.length:length,limit=Math.min(poolLength,900),stride=poolLength<=900?1:[37,41,43].find(prime=>poolLength%prime);
+    const offset=Math.floor(window.GH_DETERMINISM.nextFloat(target,selectionKey)*Math.max(1,poolLength)),samples=[];
     for(let index=0;index<limit;index++){
-      const worldIndex=(offset+index*37)%length,raw=source.rows[worldIndex];if(!raw)continue;
+      const worldIndex=pool?pool[(offset+index*stride)%poolLength]:(offset+index*37)%length,raw=source.rows[worldIndex];if(!raw)continue;
       const coords=source.type==='air'?[raw[6],raw[7]]:[raw[3],raw[4]];if(!Array.isArray(coords))continue;
       const key=source.type==='air'?`air:${raw[0]}`:`port:${raw[0]}:${raw[3]}:${raw[4]}`;samples.push({sampleIndex:index,worldIndex,key,coords});
     }
@@ -1651,7 +1663,7 @@
     let plan=await workerClient?.rankDestinations?.(input);
     if(!plan){const core=window.GH_AIR_SEA_NETWORK_CORE,planner=core?.createDestinationPlanner?.(input);if(!planner)throw new Error('air-sea-destination-planner-unavailable');while(!planner.isDone()){const until=performance.now()+8;do planner.runChunk(36);while(!planner.isDone()&&performance.now()<until);if(!planner.isDone())await yieldFleetPlanning();}plan=planner.result();}
     if(!window.GH_AIR_SEA_NETWORK_CORE.validateDestinationPlan(input,plan))throw new Error('air-sea-destination-plan-invalid');
-    let previewSliceStarted=performance.now();const rejected={ranked:plan.ranked.length,missingEndpoint:0,routeGeometry:0,outOfRange:0,corridorConflict:0};
+    let previewSliceStarted=performance.now();const rejected={reachable:poolLength,ranked:plan.ranked.length,missingEndpoint:0,routeGeometry:0,outOfRange:0,corridorConflict:0};
     for(const row of plan.ranked){
       const candidate=source.at(row.worldIndex);
       if(!candidate?.coords)rejected.missingEndpoint++;else{
@@ -1660,7 +1672,7 @@
       }
       if(performance.now()-previewSliceStarted>=6){await yieldFleetPlanning();previewSliceStarted=performance.now();}
     }
-    const error=new Error(`${asset.name}: لا توجد وجهة ${source.type==='air'?'الجوية':'البحرية'} آمنة ومتنوعة ضمن مدى مجموعة الأسطول`);error.code=`GH ${source.type==='air'?'AIR':'SEA'} 3181`;error.assetDepartureTrace={mode:source.type,planner:rejected};throw error;
+    const error=new Error(`${asset.name}: لا توجد وجهة ${source.type==='air'?'الجوية':'البحرية'} آمنة ومتنوعة ضمن مدى مجموعة الأسطول`);error.code=`${source.type}-destination-pool-exhausted`;error.assetDepartureTrace={mode:source.type,planner:rejected};throw error;
   }
   async function createGlobalRoute(assetId,destinationKey){
     return runAuthorizedCompositeCommand('create-global-route',({state:draft,routes,dispatch})=>{
@@ -1735,8 +1747,8 @@
       let routePlan=await routeWorker?.plan(plannerInput);if(!routePlan)routePlan=await planAirSeaNetworkCooperatively(plannerInput);
       if(!window.GH_AIR_SEA_NETWORK_CORE.validatePlan(plannerInput,routePlan))throw new Error('رفض مخطط شبكة الطيران والبحرية قبل الاعتماد');
       const eligible=routePlan.sortedAssetIds.map(id=>eligibleById.get(id));if(eligible.some(asset=>!asset))throw new Error('تعذر ربط مخطط الشبكة بأصوله الحالية');
-      const registeredRouteById=new Map(registeredRoutes.map(route=>[route.id,route])),assignments=[],createdRoutes=[],diversity=newRouteDiversityLedger(),diversityRoutes=new Set();
-      for(const row of routePlan.assignments){const asset=eligibleById.get(row.assetId),route=registeredRouteById.get(row.routeId),origin=originByAssetId.get(row.assetId);if(!asset||!route||!origin)throw new Error('فقد أصل أو مسار قائم أثناء تخطيط الشبكة');assignments.push({asset,route});if(!diversityRoutes.has(route.id)){const fromOrigin=sameUnderlyingFacilityFor(draft,origin.id,route.fromFacility),point=fromOrigin?route.route.at(-1):route.route[0];recordRouteDiversity(diversity,route.id,point,haversine(origin.coords,point));diversityRoutes.add(route.id);}}
+      const registeredRouteById=new Map(registeredRoutes.map(route=>[route.id,route])),assignments=[],createdRoutes=[],diversity=newRouteDiversityLedger(),diversityRoutes=new Set(),routeLoads=new Map(initialLoads);let sharedBatches=0;
+      for(const row of routePlan.assignments){const asset=eligibleById.get(row.assetId),route=registeredRouteById.get(row.routeId),origin=originByAssetId.get(row.assetId);if(!asset||!route||!origin)throw new Error('فقد أصل أو مسار قائم أثناء تخطيط الشبكة');assignments.push({asset,route});routeLoads.set(route.id,(routeLoads.get(route.id)||0)+1);if(!diversityRoutes.has(route.id)){const fromOrigin=sameUnderlyingFacilityFor(draft,origin.id,route.fromFacility),point=fromOrigin?route.route.at(-1):route.route[0];recordRouteDiversity(diversity,route.id,point,haversine(origin.coords,point));diversityRoutes.add(route.id);}}
       // New routes for the assets still waiting at each origin share the mode's free slots: the target load while the
       // slots allow it, else a higher load per route (a new base never fails for want of registry slots).
       let groupSlots;try{groupSlots=window.GH_ROUTE_CORE.allocateForBudget(window.GH_ROUTE_CORE.modeRouteBudget(draft,type),routePlan.waitingGroups.map(group=>group.assetIds.length),targetLoad,window.GH_ROUTE_CORE.LIMITS.fleetCapacity);}
@@ -1745,20 +1757,33 @@
         const group={origin:originsById.get(plannedGroup.originId),assets:plannedGroup.assetIds.map(id=>eligibleById.get(id))};if(!group.origin||group.assets.some(asset=>!asset))throw new Error('فقد أصل أو نقطة انطلاق أثناء تخطيط الشبكة');
         group.assets.sort((a,b)=>assetRangeKm(a)-assetRangeKm(b)||String(a.id).localeCompare(String(b.id)));
         const groupLoad=Math.max(1,groupSlots[groupIndex].load||targetLoad),groupCapacity=Math.max(capacity,groupLoad);
+        // Build 371 (iPhone diagnostic GH AIR 3181): when the origin has no distinct destination left within a batch's range,
+        // the batch joins the least-loaded route from this origin that fits all its members (opened by this dispatch or
+        // registered before; its capacity is raised below) instead of rolling the whole fleet back. Batches run in
+        // ascending range, so every route opened before a batch fits it, and the search is skipped for a batch whose range
+        // is no longer than the one that ran out.
+        const originRouteIds=originRoutes.find(row=>row.originId===group.origin.id)?.routeIds||[],openedHere=[];let exhaustedRange=-1;
         for(let offset=0;offset<group.assets.length;offset+=groupLoad){
-          const members=group.assets.slice(offset,offset+groupLoad),seedAsset=members[0];let choice;try{choice=await chooseDiverseWorldDestination({source,origin:group.origin,asset:seedAsset,target:draft,routes,ledger:diversity,selectionKey:`${type}-fleet:${group.origin.id}:${offset}`,workerClient:routeWorker});}catch(error){error.assetDepartureTrace={...(error.assetDepartureTrace||{}),mode:type,attempts:eligibleUnsorted.length,blocked:eligibleUnsorted.length};throw error;}const entity=choice?.candidate;
-          if(!entity)throw new Error(`${seedAsset.name}: لا توجد وجهة ${routeLabel} آمنة ومتنوعة ضمن مدى مجموعة الأسطول`);
+          const members=group.assets.slice(offset,offset+groupLoad),seedAsset=members[0],seedRange=assetRangeKm(seedAsset);let choice=null,exhausted=null;
+          if(seedRange>exhaustedRange)try{choice=await chooseDiverseWorldDestination({source,origin:group.origin,asset:seedAsset,target:draft,routes,ledger:diversity,selectionKey:`${type}-fleet:${group.origin.id}:${offset}`,workerClient:routeWorker});}catch(error){if(error.code!==`${type}-destination-pool-exhausted`){error.assetDepartureTrace={...(error.assetDepartureTrace||{}),mode:type,attempts:eligibleUnsorted.length,blocked:eligibleUnsorted.length};throw error;}exhausted=error;exhaustedRange=seedRange;}
+          if(!choice?.candidate){
+            const shared=[...openedHere,...originRouteIds.map(id=>registeredRouteById.get(id))].filter(route=>route&&(routeLoads.get(route.id)||0)+members.length<=window.GH_ROUTE_CORE.LIMITS.fleetCapacity&&members.every(asset=>routeFitsAsset(asset,route))).sort((a,b)=>(routeLoads.get(a.id)||0)-(routeLoads.get(b.id)||0)||String(a.id).localeCompare(String(b.id)))[0];
+            if(!shared){const error=exhausted||new Error(`${seedAsset.name}: لا توجد وجهة ${routeLabel} آمنة ومتنوعة ضمن مدى مجموعة الأسطول`);error.code=error.code||`${type}-destination-pool-exhausted`;error.assetDepartureTrace={...(error.assetDepartureTrace||{}),mode:type,attempts:eligibleUnsorted.length,blocked:eligibleUnsorted.length};throw error;}
+            for(const asset of members)assignments.push({asset,route:shared});routeLoads.set(shared.id,(routeLoads.get(shared.id)||0)+members.length);sharedBatches++;continue;
+          }
+          const entity=choice.candidate;
           const destination=ensurePublicRouteEndpoint(entity,draft),route=buildPublicRoute(seedAsset,group.origin,destination,draft);if(!route)throw new Error(`${seedAsset.name}: تعذر بناء هندسة المسار ${routeLabel}`);
           if(groupCapacity>baseCapacity)route.fleetCapacity=groupCapacity;
           if(members.some(asset=>!routeFitsAsset(asset,route)))throw new Error(`${seedAsset.name}: المسار المختار لا يناسب كل أصول الدفعة`);
-          dispatch('routes','create',{route});routes[route.id]=route;createdRoutes.push(route);recordRouteDiversity(diversity,entity.key,entity.coords,choice.direct);for(const asset of members)assignments.push({asset,route});
+          dispatch('routes','create',{route});routes[route.id]=route;createdRoutes.push(route);openedHere.push(route);routeLoads.set(route.id,members.length);recordRouteDiversity(diversity,entity.key,entity.coords,choice.direct);for(const asset of members)assignments.push({asset,route});
           await yieldFleetPlanning();
         }
       }
       if(assignments.length!==eligible.length)throw new Error(`لم يكتمل توزيع جميع ${label} على شبكة التشغيل`);
-      // Existing routes that now carry more than their capacity take the dispatch's capacity (recorded on the route).
-      {const loads=new Map(initialLoads);for(const {route} of assignments)loads.set(route.id,(loads.get(route.id)||0)+1);
-        for(const [routeId,load] of loads){const runtimeRoute=routes[routeId];if(!runtimeRoute||!registeredRouteById.has(routeId)||load<=fleet.routeCapacity(runtimeRoute))continue;const raised=Math.max(capacity,load);dispatch('routes','set-fleet-capacity',{id:routeId,capacity:raised,inUse:load});routes[routeId]={...runtimeRoute,fleetCapacity:raised};}}
+      // Routes (existing, or opened here and joined by a shared batch) that now carry more than their capacity take the
+      // dispatch's capacity or their load (recorded on the route).
+      {const loads=new Map(initialLoads),createdIds=new Set(createdRoutes.map(route=>route.id));for(const {route} of assignments)loads.set(route.id,(loads.get(route.id)||0)+1);
+        for(const [routeId,load] of loads){const runtimeRoute=routes[routeId];if(!runtimeRoute||!(registeredRouteById.has(routeId)||createdIds.has(routeId))||load<=fleet.routeCapacity(runtimeRoute))continue;const raised=Math.max(capacity,load);dispatch('routes','set-fleet-capacity',{id:routeId,capacity:raised,inUse:load});routes[routeId]={...runtimeRoute,fleetCapacity:raised};}}
       // Each distinct (route, base) once per command (rows name it by routeRef): the command is authorized, hashed and
       // copied as a whole, and route geometry repeated on every asset made a 12,000-aircraft payload megabytes long.
       const routeTable={},routeRefOf=(routeId,baseFacility)=>{const ref=`${routeId}@${baseFacility||''}`;if(!Object.prototype.hasOwnProperty.call(routeTable,ref))routeTable[ref]=routeMatchingFacilityFor(draft,routes,routeId,baseFacility);return ref;};
@@ -1784,8 +1809,8 @@
       if(departed.length!==eligible.length)throw new Error(`رفض محرك الأسطول جدولة مغادرة ${label}`);
       if(previousRouteIds.size){const inUse=window.GH_FLEET_DATA.distinctRefs(draft,'routeId');for(const routeId of previousRouteIds)if(!inUse.has(routeId)&&(draft.customRoutes||[]).some(route=>route.id===routeId)){window.GH_ROUTE_CORE.execute({state:draft},'delete',{id:routeId});delete routes[routeId];}}
       const routeIds=[...new Set(normalized.map(asset=>asset.routeId))],moving=normalized.filter(asset=>asset.phase==='moving').length,scheduled=normalized.filter(asset=>asset.departureScheduled).length;
-      window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`وُزعت ${eligible.length} ${type==='air'?'طائرة':'سفينة'} ذريًا على ${routeIds.length} مسارًا ${routeLabel} مشتركًا؛ ${moving} غادرت و${scheduled} مجدولة بفتحات زمنية، وأُنشئ ${createdRoutes.length} مسار جديد فقط.`,type:'dispatch'});
-      return {departed:eligible.length,routeIds,moving,scheduled,createdRoutes:createdRoutes.length,targetLoad,routeCapacity:capacity,remaining};
+      window.GH_OPERATIONS_CORE.execute({state:draft},'record-alert',{text:`وُزعت ${eligible.length} ${type==='air'?'طائرة':'سفينة'} ذريًا على ${routeIds.length} مسارًا ${routeLabel} مشتركًا؛ ${moving} غادرت و${scheduled} مجدولة بفتحات زمنية، وأُنشئ ${createdRoutes.length} مسار جديد فقط.${sharedBatches?` نفدت الوجهات المميزة ضمن المدى لبعض نقاط الانطلاق، فانضمت ${sharedBatches} دفعة إلى مسارات قائمة منها.`:''}`,type:'dispatch'});
+      return {departed:eligible.length,routeIds,moving,scheduled,createdRoutes:createdRoutes.length,sharedBatches,targetLoad,routeCapacity:capacity,remaining};
       }finally{routeWorker?.close();}
     },{afterCommit:()=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('routes',companyId);}});
   }
