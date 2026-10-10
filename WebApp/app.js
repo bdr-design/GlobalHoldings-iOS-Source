@@ -2230,6 +2230,7 @@
     updateMapStatus();renderWorldInfrastructureMarkers();lastMapStructureSignature=mapStructureSignature();updateMarkerPositions(true);mapVehicleCanvas?.draw?.();
   }
 
+  const MAP_STATUS_SWEEP_ROWS=50000,MAP_STATUS_SWEEP_MS=4;
   let mapStatusCache={assetKey:'',ownerKey:'',moving:0,idle:0,turn:0,routed:0,ownedFacilities:0,countedAt:0,countedRevision:null,countedAssets:null,pendingRecount:false};
   function updateMapStatus(){
     // Expansion mode writes its own line (airports and ports in view).
@@ -2240,18 +2241,40 @@
         // Build 358: a HUD line. The fleet is counted (one column read) when the save or the fleet size changes; after a
         // simulation slice alone it is recounted at most every 2 s, keeping the last counts in between. (The former
         // engine summary carried no phase counts any more and printed "NaN في الحركة · undefined في المحطات".)
-        // Build 371 (a million moving aircraft: the count read every row, 130 ms, and the save revision moved between most
-        // counts, so it ran about every second and was 41% of the frames lost in play): after the first count, a count
-        // waits 40 times its last duration (2 s at least when only a slice passed), so it takes at most a fortieth of the
-        // main thread. A count under 5 ms still follows a new save revision at once, and a new fleet size always does.
-        const nowMs=Date.now(),sameSize=mapStatusCache.countedAssets===assetLength,sameRevision=mapStatusCache.countedRevision===revision,costMs=Number(mapStatusCache.countMs)||0;
-        const waitMs=!sameSize?0:sameRevision?Math.max(2000,costMs*40):costMs<5?0:costMs*40;
-        if(nowMs-(mapStatusCache.countedAt||0)<waitMs){mapStatusCache.pendingRecount=true;}
-        else{const clock=()=>globalThis.performance?.now?.()??Date.now(),countStarted=clock(),phases=window.GH_FLEET_DATA.countByPhase(state);mapStatusCache.countMs=clock()-countStarted;mapStatusCache.moving=phases.get('moving')||0;mapStatusCache.idle=phases.get('idle')||0;mapStatusCache.turn=phases.get('turnaround')||0;mapStatusCache.countedAt=nowMs;mapStatusCache.countedRevision=revision;mapStatusCache.countedAssets=assetLength;mapStatusCache.pendingRecount=false;}
+        // Build 371 (a million moving aircraft: one count read every row, 130 ms in desktop Chromium, and ran about every
+        // 2 s since a moving fleet changes every chunk: 41% of the frames lost in play): above MAP_STATUS_SWEEP_ROWS the
+        // count is a sweep of the rows, MAP_STATUS_SWEEP_MS per call, continued on the next frames until it is complete,
+        // and the line shows the last complete count meanwhile. Each row is read as countByPhase reads it (the stored
+        // phase, routeId and simulationFault, presentedPhase), so a complete sweep is countByPhase's result; it restarts
+        // when rows move (membershipRevision). Smaller fleets keep the single count.
+        const nowMs=Date.now(),sliceOnly=mapStatusCache.countedRevision===revision&&mapStatusCache.countedAssets===assetLength;
+        const F=window.GH_FLEET_DATA,store=F.storeOf?.(state),finish=(phases,startedRevision)=>{mapStatusCache.moving=phases.get('moving')||0;mapStatusCache.idle=phases.get('idle')||0;mapStatusCache.turn=phases.get('turnaround')||0;mapStatusCache.countedAt=nowMs;mapStatusCache.countedRevision=startedRevision;mapStatusCache.countedAssets=assetLength;mapStatusCache.pendingRecount=false;};
+        let sweep=mapStatusCache.sweep;if(sweep&&(!store||sweep.store!==store||sweep.membership!==F.membershipRevision(state)))sweep=mapStatusCache.sweep=null;
+        // A sweep starts at most every 2 s on a fleet of the same size (a moving fleet changes the save revision on most
+        // slices); a smaller fleet counts at once when the revision moved, as before.
+        const sweeping=!!store&&assetLength>MAP_STATUS_SWEEP_ROWS;
+        if(!sweep&&mapStatusCache.countedAssets===assetLength&&(sliceOnly||sweeping)&&nowMs-(mapStatusCache.countedAt||0)<2000){mapStatusCache.pendingRecount=true;}
+        else if(!sweep&&(!store||assetLength<=MAP_STATUS_SWEEP_ROWS)){finish(F.countByPhase(state),revision);}
+        else{
+          if(!sweep)sweep=mapStatusCache.sweep={store,membership:F.membershipRevision(state),next:0,counts:new Map(),revision};
+          const STORE=window.GH_FLEET_STORE,clock=()=>globalThis.performance?.now?.()??Date.now(),until=clock()+MAP_STATUS_SWEEP_MS,length=store.length;let index=sweep.next;
+          while(index<length){
+            const end=Math.min(length,index+4096);
+            for(;index<end;index++){if(!STORE.isAlive(store,index))continue;const phase=F.presentedPhase(state,{phase:STORE.peek(store,index,'phase'),routeId:STORE.peek(store,index,'routeId'),simulationFault:STORE.peek(store,index,'simulationFault')});sweep.counts.set(phase,(sweep.counts.get(phase)||0)+1);}
+            if(clock()>=until)break;
+          }
+          sweep.next=index;
+          if(index>=length){mapStatusCache.sweep=null;finish(sweep.counts,sweep.revision);}
+          else{mapStatusCache.pendingRecount=true;if(!mapStatusCache.sweepTimer)mapStatusCache.sweepTimer=setTimeout(()=>{mapStatusCache.sweepTimer=0;updateMapStatus();},16);}
+        }
       }
       if(!mapStatusCache.pendingRecount)mapStatusCache.assetKey=assetKey;
     }
-    if(mapStatusCache.ownerKey!==ownerKey){mapStatusCache.routed=operationalRoutes('road').filter(r=>r.routingSource).length;mapStatusCache.ownedFacilities=getDynamicFacilities().filter(f=>f?.owned).length;mapStatusCache.ownerKey=ownerKey;}
+    // Build 371: the road routes are found from every asset's routeId (1.5 s of 90 s of play with a million aircraft,
+    // since the save revision moves on most slices). Over 5 ms, a recount waits 40 times its last duration; a new map
+    // structure revision is counted at once.
+    if(mapStatusCache.ownerKey!==ownerKey){const clock=()=>globalThis.performance?.now?.()??Date.now(),ownerCostMs=Number(mapStatusCache.ownerCostMs)||0,nowMs=Date.now();
+      if(ownerCostMs<5||mapStatusCache.ownerMapRevision!==mapRevision||nowMs-(mapStatusCache.ownerAt||0)>=ownerCostMs*40){const started=clock();mapStatusCache.routed=operationalRoutes('road').filter(r=>r.routingSource).length;mapStatusCache.ownedFacilities=getDynamicFacilities().filter(f=>f?.owned).length;mapStatusCache.ownerKey=ownerKey;mapStatusCache.ownerMapRevision=mapRevision;mapStatusCache.ownerAt=nowMs;mapStatusCache.ownerCostMs=clock()-started;}}
     const offline=mapTilesOffline?'تضاريس محلية · ':'';$('mapStatus').textContent=`${offline}${mapStatusCache.moving} في الحركة · ${mapStatusCache.turn} في المحطات · ${assetLength} أصل`;$('mapStatus').title=`${mapStatusCache.idle} متوقف · ${mapStatusCache.ownedFacilities} منشأة · ${mapStatusCache.routed} مسار بري`;
   }
 
