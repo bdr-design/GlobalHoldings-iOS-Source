@@ -8,6 +8,8 @@
 // - applied outside a command it is recorded once (advanced.updateHistory) with its operations;
 // - a second application of the same pack is refused (false) and changes nothing;
 // - a later command, committed or rolled back, keeps the update and its record;
+// - an interrupted application records nothing, and its retry applies once;
+// - after a crash before any save the reload holds no trace of it, and applying it again records it once;
 // - a reload restores both, and the pack is still refused as a duplicate after it.
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright'),{boot,reboot}=require('./helpers/local-dom-app'),{createHash}=require('node:crypto');
@@ -103,7 +105,35 @@ async function settled(page,pattern){
     assert.deepEqual(afterCommit.history,applied.history,'a committed command keeps the update record');assert.equal(afterCommit.content,applied.content,'and its operations');
     report.push({name:'later commands (rolled back and committed) keep the update'});
 
-    // 5. Recovery: a reload restores the update; the pack stays a duplicate.
+    // 5. Interrupted application: an operation fails inside the update's transaction. Nothing is recorded or applied, the
+    // failure is reported (GameViewController rolls the pack back); a retry of the same pack then applies it once.
+    const interruptedPack=await makePack(page,'interrupted');
+    const beforeInterrupt=await page.evaluate(`(${UPDATE_STATE})()`);
+    await page.evaluate(()=>{const strategy=window.GH_STRATEGY_CORE;window.__qaStrategy=strategy;window.GH_STRATEGY_CORE={...strategy,execute(ctx,cmd,payload){if(cmd==='apply-runtime-update'){const out=strategy.execute(ctx,cmd,payload);throw new Error('qa-update-operation-failure');}return strategy.execute(ctx,cmd,payload);}};});
+    const interrupted=await apply(page,interruptedPack);
+    await page.evaluate(()=>{window.GH_STRATEGY_CORE=window.__qaStrategy;});
+    assert.match(String(interrupted.error),/qa-update-operation-failure/,'the failure is reported, not retried');
+    const afterInterrupt=await page.evaluate(`(${UPDATE_STATE})()`);
+    assert.deepEqual({...afterInterrupt,saveRevision:0},{...beforeInterrupt,saveRevision:0},'the interrupted update left no record and no operation');
+    const retried=await apply(page,interruptedPack);assert.equal(retried.result,true,'a retry applies it');
+    const afterRetry=await page.evaluate(`(${UPDATE_STATE})()`);
+    assert.equal(afterRetry.history.filter(row=>row.id===interruptedPack.manifest.id).length,1,'recorded once');
+    assert.equal((await apply(page,interruptedPack)).result,false,'and refused as a duplicate after it');
+    report.push({name:'interrupted application leaves nothing; its retry applies once'});
+
+    // 6. Crash before any save: the reload holds the last save, without the update; applying it again records it once.
+    const crashPack=await makePack(page,'crash');
+    await page.evaluate(async()=>{const ok=await __AUDIT__.saveNow();if(ok!==true)throw new Error(`save-rejected:${ok}`);await GH_PERSISTENCE.drain();});
+    assert.equal((await apply(page,crashPack)).result,true);
+    ({page}=await reboot(page,{browser,errors}));await withDigest(page);
+    const afterCrash=await page.evaluate(`(${UPDATE_STATE})()`);
+    assert.equal(afterCrash.history.some(row=>row.id===crashPack.manifest.id),false,'the unsaved update is not in the reloaded state');
+    assert.equal((await apply(page,crashPack)).result,true,'re-applied after the crash');
+    assert.equal((await page.evaluate(`(${UPDATE_STATE})()`)).history.filter(row=>row.id===crashPack.manifest.id).length,1,'recorded once');
+    assert.equal((await apply(page,crashPack)).result,false,'then refused as a duplicate');
+    report.push({name:'crash before save: the update is re-applied once'});
+
+    // 7. Recovery: a reload restores the update; the pack stays a duplicate.
     const saved=await page.evaluate(async UPDATE_STATE=>{const read=eval(UPDATE_STATE);const ok=await __AUDIT__.saveNow();if(ok!==true)throw new Error(`save-rejected:${ok}`);await GH_PERSISTENCE.drain();return read();},`(${UPDATE_STATE})`);
     ({page}=await reboot(page,{browser,errors}));await withDigest(page);
     const restored=await page.evaluate(`(${UPDATE_STATE})()`);
