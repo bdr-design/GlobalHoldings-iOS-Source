@@ -163,18 +163,19 @@
         post({type:'sync',...(into||{}),length:store.length,live:store.live,structure:store.structure,values,rows:{indices,bytes:rows.bytes,extras:rows.extras}},[rows.bytes,indices.buffer]);
         stats.rowsSent+=count;
       }
-      if(columnNames){const payload=STORE.readColumns(store,columnNames);post({type:'columns',reported:log.columns,payload},payload.columns.map(([,buffer])=>buffer));stats.columnSyncs++;}
+      if(columnNames){const payload=STORE.readColumns(store,columnNames);post({type:'columns',...(into||{}),reported:log.columns,payload},payload.columns.map(([,buffer])=>buffer));stats.columnSyncs++;}
       if(values.changes.length||values.length!==synced.values.length)synced.values=store.values.slice();
       synced.length=store.length;
       stats.incrementalSyncs++;stats.lastSyncMs=clock()-started;stats.maxSyncMs=Math.max(stats.maxSyncMs,stats.lastSyncMs);
       return routesReady;
     }
-    // Build 372: rows, values and appended rows this side wrote after replaying the open step, or the open calendar
-    // window's last leg (the rest of a slice before its post-commit checks: its business journal, deliveries, the market
-    // hour, the day close), go into that step or window: the worker writes them inside its journal, so settling it
-    // commits or rolls them back with it (and this side's rollback logs every row it restores, so the next exchange
+    // Build 372: rows, values, appended rows and columns rewritten wholesale (the day close's flight counters) this side
+    // wrote after replaying the open step, or the open calendar window's last leg (the rest of a slice before its
+    // post-commit checks: its business journal, deliveries, the market hour, the day close), go into that step or window:
+    // the worker writes them inside its journal (a column through its journal's column snapshot), so settling it commits
+    // or rolls them back with it (and this side's rollback logs every row and column it restores, so the next exchange
     // sends them again in any case). The slice's save check then takes its classes from the worker (refused, it read
-    // every row here: 334 ms at a million assets). A compaction, a column rewritten wholesale, a shorter store, new
+    // every row here: 334 ms at a million assets). A compaction, a column outside the record slots, a shorter store, new
     // route plans, a replica due for a new copy or a window that is not open keep the refusal (the caller then reads
     // the store itself, as before). Returns '' once sent, else the refusal's reason.
     function syncIntoOpen(store){
@@ -182,7 +183,9 @@
       const session=!pending&&windowSession&&windowSession.status==='open'&&!windowSession.settled&&windowSession.store===store?windowSession:null;
       if(!step&&!session)return 'written-since-step';
       if(needsFull)return 'stale-since-step';
-      if(!STORE.replicaRowsOnly(store))return 'mass-write-since-step';
+      const held=STORE.replicaPending(store);
+      if(held.compactions)return 'compaction-since-step';
+      if(!held.columns.every(name=>Object.prototype.hasOwnProperty.call(STORE.SLOTS,name)))return 'mass-write-since-step';
       if(store.length<synced.length)return 'rows-removed-since-step';
       if(routesRevision()!==routesAt)return 'routes-since-step';
       try{sync(store,step?{step:step.id}:{window:session.id});}catch(error){disable(`open-sync:${error?.message||error}`);return 'open-sync-failed';}

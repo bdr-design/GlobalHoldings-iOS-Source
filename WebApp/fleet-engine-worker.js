@@ -147,8 +147,12 @@ self.addEventListener('message',event=>{
         return;
       }
       // Build 359: columns the main thread rewrote wholesale (after the rows of the same exchange).
+      // Build 372: columns addressed to the open step or window (message.step / message.window) are snapshotted into its
+      // journal first (rememberColumn), so settling it commits or restores them with it.
       case 'columns':{
-        if(!store||open){self.postMessage({type:'error',version:VERSION,id:message.id,error:open?'columns-while-step-open':'replica-missing'});return;}
+        const into=!!open&&(open.kind==='step'?message.step!=null&&message.step===open.id:message.window!=null&&message.window===open.id);
+        if(!store||(open&&!into)){self.postMessage({type:'error',version:VERSION,id:message.id,error:open?'columns-while-step-open':'replica-missing'});return;}
+        if(into)for(const [name] of message.payload?.columns||[])STORE.rememberColumn(store,name,{quiet:true});
         STORE.writeColumns(store,message.payload,{reported:message.reported||[]});
         return;
       }

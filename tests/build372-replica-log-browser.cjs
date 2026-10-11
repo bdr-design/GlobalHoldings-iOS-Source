@@ -5,8 +5,8 @@
 // (records, value table, extras, length, live count, structure) and no whole copy of the store may be made:
 //   seed + writes made before the first exchange (set, add, remove, extras, new values); a step replayed and committed;
 //   one replayed and rolled back; one discarded; the engine run on the main thread (the fallback path) committed and
-//   rolled back; a column pass committed and rolled back; rows, extras, a new value and appended rows written after a
-//   replayed step (and after a window's leg) and sent into it while it is open, then committed and rolled back (compared
+//   rolled back; a column pass committed and rolled back; rows, extras, a new value, appended rows and columns written
+//   after a replayed step (and after a window's leg) and sent into it while it is open, then committed and rolled back (compared
 //   inside, and after settling before any new exchange); compactions (two before one exchange, with rows written before
 //   and after each); value reclamation; a calendar window rolled back and one committed; and a new store (a reset), the
 //   one case that takes a whole copy, counted as such.
@@ -33,7 +33,7 @@ const pageSources=['fleet-store-core.js','simulation-asset-core.js','fleet-event
       for(let at=0;at<byteLength;at+=chunkBytes)chunks.push(store.rows.slice(at,Math.min(byteLength,at+chunkBytes)));
       if(!STORE.setReplicaSeed(store,{chunks,chunkBytes,byteLength}))throw new Error('seed-refused');
       const url=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'})),plans=new Map(Object.entries(routes));
-      const client=GH_FLEET_ENGINE_THREAD.create({workerFactory:()=>new Worker(url),resolveRoute:id=>plans.get(String(id))?{...plans.get(String(id))}:null,routesRevision:()=>0,catalogSpecs:()=>({}),timeoutMs:60000});
+      let routesRev=0;const client=GH_FLEET_ENGINE_THREAD.create({workerFactory:()=>new Worker(url),resolveRoute:id=>plans.get(String(id))?{...plans.get(String(id))}:null,routesRevision:()=>routesRev,catalogSpecs:()=>({}),timeoutMs:60000});
       const resolveRoute=id=>plans.get(String(id))?{...plans.get(String(id))}:null;
       const ids=()=>[...Array(store.length).keys()].filter(index=>STORE.isAlive(store,index));
       // A transaction as Transaction Core runs it for a row root: one store journal, undo callbacks settled with it.
@@ -86,7 +86,8 @@ const pageSources=['fleet-store-core.js','simulation-asset-core.js','fleet-event
       // a request that needs the replica to be the store (fieldClasses) sends them into the step, which journals them with
       // its own rows. The replica equals the store inside the step (then after a second write and exchange), and after
       // the step's commit or rollback before any new exchange (the worker's journal settled them itself); then the same
-      // for a calendar window after its leg. A column rewrite after a step keeps the refusal.
+      // for a calendar window after its leg, and for columns rewritten wholesale after a step. New route plans after a step
+      // keep the refusal.
       const writeInside=tag=>{
         const live=ids();for(const index of live.slice(1000,1400))STORE.set(store,index,'condition',tag.endsWith('commit')?41:42);
         STORE.set(store,live[1500],'note',{inside:tag});STORE.set(store,live[1501],'registration',`QA-OPEN-${tag}`);
@@ -111,11 +112,22 @@ const pageSources=['fleet-store-core.js','simulation-asset-core.js','fleet-event
         if(outcome==='commit'){x.commit();t+=3600;}else x.rollback();
         await check(`in-window-${outcome}-settled`,{prime:false});await check(`in-window-${outcome}-next`);
       }
+      // Columns rewritten wholesale after the step (the day close's flight counters) go into it too, through its journal's
+      // column snapshot: equal inside, and after commit or rollback before any new exchange.
+      for(const outcome of ['rollback','commit']){
+        const ticket=await step(t,t+1800),x=tx();if(!client.apply(ticket,store,{contextKey:'k',tx:x}))throw new Error('apply refused');
+        const put=STORE.columnWriter(store,['flightHours','flightCycles']);for(const index of ids()){put(index,'flightHours',4242+index%7);put(index,'flightCycles',outcome==='commit'?11:12);}
+        STORE.set(store,ids()[1700],'condition',44);
+        await askInside(`in-step-columns-${outcome}`);await check(`in-step-columns-${outcome}`,{prime:false});
+        if(outcome==='commit'){x.commit();t+=1800;}else x.rollback();
+        await check(`in-step-columns-${outcome}-settled`,{prime:false});await check(`in-step-columns-${outcome}-next`);
+      }
+      // New route plans after a step keep the refusal (the caller reads the store itself).
       {
         const ticket=await step(t,t+1800),x=tx();if(!client.apply(ticket,store,{contextKey:'k',tx:x}))throw new Error('apply refused');
-        const put=STORE.columnWriter(store,['flightHours']);for(const index of ids())put(index,'flightHours',4242);
+        STORE.set(store,ids()[1800],'condition',45);routesRev++;
         const refused=client.fieldClasses(store,{fields:['type']})===null;x.rollback();
-        if(!refused)throw new Error('a column rewrite after a step was not refused');await check('in-step-column-refused');
+        if(!refused)throw new Error('new route plans after a step were not refused');await check('in-step-routes-refused');
       }
       // 5. Compactions: two before one exchange, rows written before and after each.
       STORE.removeMany(store,ids().filter(index=>index%7===3));STORE.set(store,ids()[100],'condition',33);STORE.compactRows(store);
@@ -149,8 +161,8 @@ const pageSources=['fleet-store-core.js','simulation-asset-core.js','fleet-event
     assert.equal(result.seedStats.seedSyncs,1);assert.equal(result.seedStats.fullSyncs,0);
     assert.equal(result.before.fullSyncs,0,'no whole copy before the reset');assert.deepEqual(result.before.fullSyncReasons,{});
     assert.ok(result.before.compactions>=2);assert.ok(result.before.applied>=4);assert.equal(result.before.windowCommits,2);assert.equal(result.before.windowRollbacks,2);
-    assert.equal(result.before.openSyncs,6,'rows written after a replayed step or window leg went into it');
-    assert.deepEqual(result.before.replicaRefusals,{'mass-write-since-step':1});
+    assert.equal(result.before.openSyncs,8,'rows and columns written after a replayed step or window leg went into it');
+    assert.deepEqual(result.before.replicaRefusals,{'routes-since-step':1});
     assert.equal(result.after.fullSyncs,1);assert.deepEqual(result.after.fullSyncReasons,{'store-replaced':1});
     console.log(JSON.stringify({ok:true,steps:result.after.applied,seedMs:result.seedStats.maxSeedSyncMs,routeAnswerMs:result.seedStats.maxRouteAnswerMs}));
   }finally{await browser.close();}
