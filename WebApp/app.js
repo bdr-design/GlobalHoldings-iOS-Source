@@ -928,6 +928,18 @@
     while(!(step=steps.next()).done)if(clockNow()-slice>=10){await yieldForInteractivePaint();slice=clockNow();}
     return step.value;
   }
+  // Build 371: fields the page writes on the live state while a durable command runs (the player's speed, map layer and
+  // mode, open panel, competitor toggle; protective stops that set speed 0: a native process recovery, a failed save
+  // status). replaceLiveState(draft) erased them on commit: a protective stop was undone and the simulation resumed.
+  // A field changed on the live state during the command is carried into the draft, before its save and again before
+  // its publication, unless the command changed it itself; a live stop (speed 0) always wins, so no stop is undone.
+  const LIVE_PREFERENCE_KEYS=Object.freeze(['speed','mapLayer','mapMode','lastPanel','lastPanelArg','showCompetitors']);
+  function captureLivePreferences(){const out={};for(const key of LIVE_PREFERENCE_KEYS)out[key]=state[key];return out;}
+  function carryLivePreferences(draft,start){
+    const carried=[];
+    for(const key of LIVE_PREFERENCE_KEYS){const live=state[key];if(Object.is(live,start[key])||Object.is(draft[key],live))continue;if(!(key==='speed'&&Number(live)===0)&&!Object.is(draft[key],start[key]))continue;draft[key]=live;carried.push(key);}
+    return carried;
+  }
   async function runDurableStateCommand(name,apply,{afterCommit=null,silent=false}={}){
     await stagedStateSettled();await window.GH_PERSISTENCE.slicedSettled?.();
     if(window.__GH_DIAGNOSTIC_EXPORT_IN_PROGRESS__===true||hardResetInProgress||durableCommandInProgress||window.GH_PERSISTENCE.isLocked()){if(!silent)notice('الحفظ مشغول بعملية ذرية أخرى. لم يتغير أي أصل؛ أعد المحاولة بعد لحظات.');return false;}
@@ -940,13 +952,14 @@
     try{
       const transactionCore=window.GH_TRANSACTION_CORE;
       rootSessions=transactionCore?.beginJournaledRoots?.(state)||[];
-      draft=transactionCore?.deepClone?transactionCore.deepClone(state,{shareJournaledRoots:true}):clone(state);lap('cloneMs');
+      draft=transactionCore?.deepClone?transactionCore.deepClone(state,{shareJournaledRoots:true}):clone(state);lap('cloneMs');const livePreferences=captureLivePreferences();
       window.GH_SAVE_SCHEMA?.inheritVerified?.(state,draft);const runtime=routeRuntimeForState(draft),previousRevision=Math.max(0,Math.floor(Number(state.saveRevision)||0));lap('prepareMs');
       window.__GH_DURABLE_COMMAND_CONTEXT__={name,liveState:state,draft,afterPublish(fn){if(typeof fn==='function')afterPublishTasks.push(fn);}};
       const priorCriticalIds=new Set(((window.GH_INTEGRITY_CORE.check(state)?.issues)||[]).filter(row=>row.severity==='critical').map(row=>String(row.id||row.code||row.title)));lap('baselineIntegrityMs');
       const value=await apply({state:draft,routes:runtime});lap('applyMs');if(value===false)throw new Error(`${name}-rejected`);
       if(window.__GH_DURABLE_COMMAND_CONTEXT__?.poisoned===true)throw new Error(`${name}-draft-poisoned`);
       draft.saveRevision=previousRevision+1;
+      {const carried=carryLivePreferences(draft,livePreferences);if(carried.length)diag('DURABLE_COMMAND_LIVE_FIELDS_CARRIED',{name,stage:'before-save',fields:carried});}
       const shouldYieldForValidation=(window.GH_FLEET_DATA.size(draft)+(draft.mobility?.vehicles?.length||0))>=500;
       if(shouldYieldForValidation)await yieldForInteractivePaint();
       // The draft inherited the verified-once ledger above: proofs already verified are trusted, new or changed ones are
@@ -960,7 +973,7 @@
       mark=clockNow();await window.GH_PERSISTENCE.commitDurableState(draft,{storageKey,appVersion:APP_VERSION,prevalidated:true,yieldToFrame:()=>yieldForInteractivePaint()});lap('persistMs');
       // Storage has already committed. A publication failure is a recovery
       // condition, never a successful rollback and never safe to retry blindly.
-      committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);replaceLiveState(draft);for(const task of afterPublishTasks)try{await task(value,window.__GH_DURABLE_COMMAND_CONTEXT__);}catch(error){console.warn(`Durable command after-publish hook failed [${name}]`,error);}lap('publishMs');diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
+      committed=true;transactionCore?.commitJournaledRoots?.(rootSessions);{const carried=carryLivePreferences(draft,livePreferences);if(carried.length)diag('DURABLE_COMMAND_LIVE_FIELDS_CARRIED',{name,stage:'before-publish',fields:carried});}replaceLiveState(draft);for(const task of afterPublishTasks)try{await task(value,window.__GH_DURABLE_COMMAND_CONTEXT__);}catch(error){console.warn(`Durable command after-publish hook failed [${name}]`,error);}lap('publishMs');diag('DURABLE_COMMAND_COMMITTED',{name,saveRevision:state.saveRevision});
       if(afterCommit){try{await afterCommit(value);}catch(error){diag('DURABLE_COMMAND_PRESENTATION_FAILED',{name,saveRevision:state.saveRevision,reason:String(error.message||error)},'warning');console.warn(`Durable command committed but presentation refresh failed [${name}]`,error);if(!silent)notice('تم حفظ العملية بنجاح، لكن تعذر تحديث العرض. أعد فتح القسم لرؤية الحالة المحفوظة.','warning');}}
       return value;
     }catch(error){if(committed){window.GH_PERSISTENCE.markRecoveryRequired('durable-publish-failed-after-ack',{durableCommitted:true,saveRevision:Number(draft?.saveRevision)||0});state.speed=0;simulationEngine.cancelAdvance?.('durable-publication-failed-after-ack',{immediate:true});diag('DURABLE_PUBLISH_FAILED_AFTER_ACK',{name,saveRevision:Number(draft?.saveRevision)||0,reason:String(error.message||error)},'critical');console.error(`Durable command publication failed after device acknowledgement [${name}]`,error);return true;}try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');error.rollbackError=rollbackError;error.critical=true;}const reason=String(error.message||error),sharedDeparture=String(name||'').match(/^authorized:bulk-shared-departure:(.+)$/);if(sharedDeparture){const companyId=sharedDeparture[1],mode=companyRouteModes(companyId).find(value=>['air','sea','road'].includes(value)),trace=error.assetDepartureTrace||{},code=String(error.code||reason.slice(0,64)||'dispatch-rollback');recordAssetDepartureTrace({source:'durable-command-rollback',attempts:Math.max(1,Number(trace.attempts)||1),blocked:Math.max(1,Number(trace.blocked)||1),modeCounts:{[trace.mode||mode||'unknown']:Math.max(1,Number(trace.blocked)||1)},reasonCounts:{[code]:Math.max(1,Number(trace.blocked)||1)},error:reason,samples:[{outcome:'blocked',mode:trace.mode||mode||'unknown',reasonCode:code,companyId,commandName:String(name).slice(0,100),error:reason.slice(0,180),planner:trace.planner||undefined,attemptedAssets:Number(trace.attempts)||1}],simSeconds:Number(state.simSeconds)||0});}const capExceeded=reason.startsWith('fleet-persistence-record-cap:'),saveTooLarge=['save-size-hard-limit','native-save-size-hard-limit'].some(prefix=>reason.includes(prefix)),playerMessage=capExceeded?'بلغ الأسطول الحد المؤقت الآمن للحفظ. لم يُخصم أي مبلغ ولم يُضف أي أصل.':saveTooLarge?'تجاوز الحفظ الحد الحالي؛ أُلغيت العملية ولم يُخصم أي مبلغ.':`أُلغي الأمر بالكامل ولم يتغير أي أصل: ${reason}`;diag('DURABLE_COMMAND_ROLLED_BACK',{name,reason},'warning');console.warn(`Durable command rolled back [${name}]`,error);if(!silent)notice(playerMessage);return false;}
@@ -3716,8 +3729,17 @@
     // each warning kind once per session instead of one event per recurring save.
     if(detail.warning){const reason=String(detail.reason||'save-size-pressure');if(!savePressureReasonsLogged.has(reason)){savePressureReasonsLogged.add(reason);diag(detail.mirror===true?'SAVE_MIRROR_PRESSURE':'SAVE_SIZE_PRESSURE',detail,detail.mirror===true?'info':'warning');}if(detail.mirror!==true&&!savePressureNoticeShown){savePressureNoticeShown=true;notice('اقترب الحفظ من حد السعة. يُنصح بتصدير نسخة احتياطية؛ سيوقف النظام أي كتابة تتجاوز الحد الآمن.');}}
   });
-  window.addEventListener('gh-native-recovery',()=>{state.speed=0;diag('WEBKIT_PROCESS_RECOVERY',{source:'native-save-vault'});window.GH_CONTROL_PLANE?.recordBridge?.(state,'WEBKIT_RECOVERY',{source:'native-save-vault'},'warning');pushAlert('تم استرداد آخر حفظ Native مكتمل بعد إعادة تشغيل محرك WebKit. المحاكاة متوقفة مؤقتًا للمراجعة.');save();});
-  window.addEventListener('gh-update-lifecycle',event=>{const detail=event.detail||{},phase=String(detail.phase||'LIFECYCLE'),severity=['BOOT_CONFIRM_FAILED','FAILED'].includes(phase)?'critical':['ROLLBACK_STARTED','ROLLED_BACK'].includes(phase)?'warning':'info';diag(`UPDATE_${phase}`,detail,severity);window.GH_CONTROL_PLANE?.recordBridge?.(state,`UPDATE_${phase}`,detail,severity);if(severity==='critical')window.GH_CONTROL_PLANE?.incident?.(state,{fingerprint:`UPDATE:${phase}`,severity:'critical',domain:'update',code:`UPDATE_${phase}`,title:'خلل في دورة التحديث',detail:String(detail.message||detail.reason||phase||'Update lifecycle failure'),evidence:detail});save();});
+  // Build 371: native bridge events can arrive while a durable command or a staged slice holds the state. Their records
+  // (control-plane bridge entries, incidents, alerts) and saves then wait for it to settle: written at once they were
+  // refused (pushAlert throws on a held state, losing the alert and the save) or erased by the command's commit. A stop
+  // (speed 0) still applies at once (runDurableStateCommand carries it into the draft).
+  function afterLiveStateSettles(label,fn){
+    const run=()=>{try{fn();}catch(error){console.warn(`تعذر تسجيل حدث ${label}`,error);diag('BRIDGE_EVENT_RECORD_FAILED',{label,reason:String(error?.message||error).slice(0,240)},'warning');}};
+    if(!durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!stagedStateBusy()&&!hardResetInProgress)return run();
+    diagnosticLifecycleSettled().then(run);
+  }
+  window.addEventListener('gh-native-recovery',()=>{state.speed=0;diag('WEBKIT_PROCESS_RECOVERY',{source:'native-save-vault'});afterLiveStateSettles('WEBKIT_RECOVERY',()=>{state.speed=0;window.GH_CONTROL_PLANE?.recordBridge?.(state,'WEBKIT_RECOVERY',{source:'native-save-vault'},'warning');pushAlert('تم استرداد آخر حفظ Native مكتمل بعد إعادة تشغيل محرك WebKit. المحاكاة متوقفة مؤقتًا للمراجعة.');save();});});
+  window.addEventListener('gh-update-lifecycle',event=>{const detail=event.detail||{},phase=String(detail.phase||'LIFECYCLE'),severity=['BOOT_CONFIRM_FAILED','FAILED'].includes(phase)?'critical':['ROLLBACK_STARTED','ROLLED_BACK'].includes(phase)?'warning':'info';diag(`UPDATE_${phase}`,detail,severity);afterLiveStateSettles(`UPDATE_${phase}`,()=>{window.GH_CONTROL_PLANE?.recordBridge?.(state,`UPDATE_${phase}`,detail,severity);if(severity==='critical')window.GH_CONTROL_PLANE?.incident?.(state,{fingerprint:`UPDATE:${phase}`,severity:'critical',domain:'update',code:`UPDATE_${phase}`,title:'خلل في دورة التحديث',detail:String(detail.message||detail.reason||phase||'Update lifecycle failure'),evidence:detail});save();});});
 
 
   function assetStatus(asset){
