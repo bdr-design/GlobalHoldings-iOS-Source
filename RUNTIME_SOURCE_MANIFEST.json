@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "3dece600e539eb7877af629aab3d8690e1966005a29fe8f8b8353a6a952d4ab5",
-  "webapp_tree_sha256": "deab38babd7a441d081eab34f067d50a9b7120d5c84b97c6c56ac9f5aef54fb7",
+  "source_tree_sha256": "0b2a38715b24592b7a674b51689a7049f96d4a5aa5406b86b6279dd69ebb696b",
+  "webapp_tree_sha256": "9ff31cfc8f77bce38e1129acaed1cf39660978455bee55c73a3f746c32ed29de",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 317666,
@@ -3215,12 +3215,12 @@
       "sha256": "4bd5a5ab4fe523859a3ba6821759e8c4d38369b20c78e3200f478dbe5b15a731"
     },
     "WebApp/fleet-engine-thread.js": {
-      "bytes": 33172,
-      "sha256": "8cd5b638b9cfeb4a62cd4e849c9042a0650e4ffe2d668cd8c6427bb1579712e6"
+      "bytes": 35129,
+      "sha256": "7ba2030386e3bc7b147b8fb7140674838ae596f433b7c3d8bc427774d3e8e5c6"
     },
     "WebApp/fleet-engine-worker.js": {
-      "bytes": 15985,
-      "sha256": "f96cb8216d10e20488e682bf41312a64799320a9b5905915aee52fd402df3fb3"
+      "bytes": 16774,
+      "sha256": "d9f2f6e1d2f0a8c2b9f761c14885b5144bc92258907e3b1e759688341044d305"
     },
     "WebApp/fleet-event-core.js": {
       "bytes": 48478,
@@ -3243,8 +3243,8 @@
       "sha256": "a2295332b18114e604c07108d4c862a4fc80b6271bf1eccd8c559c32776d8e0d"
     },
     "WebApp/fleet-store-core.js": {
-      "bytes": 94209,
-      "sha256": "478cd339b152ed365333d0d798f7a2bac8dd690b7bb6747a011f8ae558cec394"
+      "bytes": 94451,
+      "sha256": "088324598bd44fad74cbef56cd5679aeaf7d69e8300967001f6f138d3b26bf0c"
     },
     "WebApp/formation-engine.js": {
       "bytes": 10243,
@@ -3556,7 +3556,7 @@
     },
     "project.yml": {
       "bytes": 2413,
-      "sha256": "c75c8ef736f7bfca0f780875210ac91bb4756e1e84666bf0e61f6dac1b04e78a"
+      "sha256": "f2049b89503a6b8f55fd51744a8c999e027b44f7acda9bc00d3c2e8bbae005d6"
     },
     "BUILD": {
       "bytes": 4,

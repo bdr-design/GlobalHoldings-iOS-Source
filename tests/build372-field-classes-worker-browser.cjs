@@ -6,7 +6,9 @@
 //   - with nothing in flight the replica is brought to the store first (writes made just before are included);
 //   - with a step in flight that has not been replayed here: null (the replica holds a step the store does not);
 //   - with a step replayed here and nothing written since: the classes of the store with that step (as both hold it);
-//   - with a step replayed here and a write since: null;
+//   - with a step replayed here and rows and a new value written since: those go into the open step, and the classes
+//     are the store's with the step and the writes;
+//   - with a step replayed here and a column rewritten wholesale since: null;
 //   - current(result, store) is false once the store is written after the request, or for another store.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
@@ -51,8 +53,12 @@ const fields=JSON.parse(read('save-schema.js').match(/FLEET_VALIDATION_FIELDS=Ob
       // Replayed (inside a journal, as a transaction does), nothing written since: the classes of the store with the step.
       const journal=STORE.beginJournal(store),undo=[];const out=client.apply(ticket,store,{contextKey:'k',tx:{registerUndo(rollback,commit){undo.push([rollback,commit]);}}});if(!out)throw new Error('apply refused');
       await compare('replayed-step');
-      // Replayed, then written here: refused.
-      STORE.set(store,rows[60],'condition',77);const refusedDirty=client.fieldClasses(store,{fields,numeric})===null;
+      // Replayed, then written here: the writes go into the open step, and the classes are the store's.
+      STORE.set(store,rows[60],'condition',77);STORE.set(store,rows[61],'registration','QA-AFTER-STEP');STORE.set(store,rows[62],'mode','sea');
+      await compare('replayed-step-written');
+      // Replayed, then a column rewritten wholesale: refused (the save check reads the store itself).
+      const put=STORE.columnWriter(store,['flightHours']);for(const index of live())put(index,'flightHours',99);
+      const refusedColumn=client.fieldClasses(store,{fields,numeric})===null;
       STORE.rollbackJournal(journal);for(const [rollback] of undo.reverse())rollback();
       await compare('after-rollback');
       // A result is current only for the same store unchanged.
@@ -60,13 +66,15 @@ const fields=JSON.parse(read('save-schema.js').match(/FLEET_VALIDATION_FIELDS=Ob
       const staleAfterWrite=client.current(late,store)===false,otherStore=client.current(late,STORE.fromAssets([],{at:0}))===false;
       await compare('after-late-write');
       const stats=client.stats();client.terminate('done');
-      return {log,refusedInFlight,refusedReady,refusedDirty,staleAfterWrite,otherStore,stats:{classRequests:stats.classRequests,maxClassesWorkerMs:stats.maxClassesWorkerMs}};
+      return {log,refusedInFlight,refusedReady,refusedColumn,staleAfterWrite,otherStore,stats:{classRequests:stats.classRequests,maxClassesWorkerMs:stats.maxClassesWorkerMs,openSyncs:stats.openSyncs||0,replicaRefusals:stats.replicaRefusals||{}}};
     },{workerSource,fleet:FIX.fleet(),routes:FIX.routes,context:FIX.context(0),fields});
     for(const row of result.log)console.log(JSON.stringify(row));
     assert.deepEqual(errors,[]);assert.ok(result.log.every(row=>row.ok));
     assert.equal(result.log.find(row=>row.label==='after-writes').ids.duplicate,true,'the duplicate id is seen by both');
     assert.equal(result.refusedInFlight,true,'refused with a step in flight');assert.equal(result.refusedReady,true,'refused with a step not yet replayed');
-    assert.equal(result.refusedDirty,true,'refused after a write following the replayed step');
+    assert.equal(result.refusedColumn,true,'refused after a column rewrite following the replayed step');
+    assert.equal(result.stats.openSyncs,1,'the rows written after the replayed step went into it once');
+    assert.equal(result.stats.replicaRefusals['mass-write-since-step'],1);assert.equal(result.stats.replicaRefusals['written-since-step'],undefined);
     assert.equal(result.staleAfterWrite,true,'a result is not current once the store is written');assert.equal(result.otherStore,true);
     console.log(JSON.stringify({ok:true,...result.stats}));
   }finally{await browser.close();}

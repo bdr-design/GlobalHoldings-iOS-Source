@@ -19,7 +19,7 @@
 //   before, and the next exchange sends the whole store.
 (()=>{
   'use strict';
-  const VERSION='1.2.0';
+  const VERSION='1.3.0';
   const STORE=globalThis.GH_FLEET_STORE||(typeof require==='function'?require('./fleet-store-core.js'):null);
   if(!STORE)throw new Error('Fleet engine thread requires the Fleet Store core');
   const W_ROUTE=STORE.O.routeId,W_BASE=STORE.O.baseFacility,WR=STORE.WORDS_PER_ROW;
@@ -142,8 +142,9 @@
       for(const [ref] of values){while(synced.values.length<ref)synced.values.push(null);synced.values[ref]=store.values[ref]??null;}
     }
     // Brings the replica up to this store. Returns false while the worker's route pairs are not answered (a step then
-    // waits as a deferred ticket).
-    function sync(store){
+    // waits as a deferred ticket). `into` ({step} or {window}: its id) sends the rows into that open step or window
+    // (syncIntoOpen); the worker refuses any other sync while one is open.
+    function sync(store,into=null){
       const runtime=STORE.chunkStamp(store).runtime;
       const reason=needsFull?'stale':!synced?'first':synced.store!==store?'store-replaced':synced.runtime!==runtime?'store-runtime':'';
       if(reason)newReplica(store,reason);
@@ -159,7 +160,7 @@
       }else if(indices.length){const keys=new Set();addRouteKeys(store,keys,indices);const plans=closeRouteKeys(keys);if(plans.length)post({type:'routes',replace:false,plans});}
       if(indices.length||values.changes.length||store.length!==synced.length||log.compactions.length){
         const rows=STORE.readRows(store,indices),count=indices.length;
-        post({type:'sync',length:store.length,live:store.live,structure:store.structure,values,rows:{indices,bytes:rows.bytes,extras:rows.extras}},[rows.bytes,indices.buffer]);
+        post({type:'sync',...(into||{}),length:store.length,live:store.live,structure:store.structure,values,rows:{indices,bytes:rows.bytes,extras:rows.extras}},[rows.bytes,indices.buffer]);
         stats.rowsSent+=count;
       }
       if(columnNames){const payload=STORE.readColumns(store,columnNames);post({type:'columns',reported:log.columns,payload},payload.columns.map(([,buffer])=>buffer));stats.columnSyncs++;}
@@ -168,17 +169,36 @@
       stats.incrementalSyncs++;stats.lastSyncMs=clock()-started;stats.maxSyncMs=Math.max(stats.maxSyncMs,stats.lastSyncMs);
       return routesReady;
     }
+    // Build 372: rows, values and appended rows this side wrote after replaying the open step, or the open calendar
+    // window's last leg (the rest of a slice before its post-commit checks: its business journal, deliveries, the market
+    // hour, the day close), go into that step or window: the worker writes them inside its journal, so settling it
+    // commits or rolls them back with it (and this side's rollback logs every row it restores, so the next exchange
+    // sends them again in any case). The slice's save check then takes its classes from the worker (refused, it read
+    // every row here: 334 ms at a million assets). A compaction, a column rewritten wholesale, a shorter store, new
+    // route plans, a replica due for a new copy or a window that is not open keep the refusal (the caller then reads
+    // the store itself, as before). Returns '' once sent, else the refusal's reason.
+    function syncIntoOpen(store){
+      const step=pending&&pending.applied&&!pending.settled&&!windowSession&&pending.store===store?pending:null;
+      const session=!pending&&windowSession&&windowSession.status==='open'&&!windowSession.settled&&windowSession.store===store?windowSession:null;
+      if(!step&&!session)return 'written-since-step';
+      if(needsFull)return 'stale-since-step';
+      if(!STORE.replicaRowsOnly(store))return 'mass-write-since-step';
+      if(store.length<synced.length)return 'rows-removed-since-step';
+      if(routesRevision()!==routesAt)return 'routes-since-step';
+      try{sync(store,step?{step:step.id}:{window:session.id});}catch(error){disable(`open-sync:${error?.message||error}`);return 'open-sync-failed';}
+      stats.openSyncs=(stats.openSyncs||0)+1;return '';
+    }
     // The replica, once the messages posted so far are handled, is exactly this store: with nothing in flight it is
-    // brought to the store first; with a step or window in flight, only once this side replayed its result and wrote
-    // nothing since (both then hold that step). Returns the store's tag (for current()), or null.
+    // brought to the store first; with a step or window in flight, only once this side replayed its result (both then
+    // hold that step), what this side wrote since sent into it (syncIntoOpen). Returns the store's tag (for current()),
+    // or null.
     function replicaIsStore(store){
       const refuse=reason=>{const r=stats.replicaRefusals||(stats.replicaRefusals={});r[reason]=(r[reason]||0)+1;return null;};
       if(disabled||!worker||!STORE.isStore(store)||!synced||synced.store!==store)return refuse('no-replica');
       if(pending&&!pending.applied)return refuse('step-not-replayed');
       if(!pending&&!windowSession){if(!prime(store))return refuse('prime');}
-      else if(!STORE.replicaClean(store))return refuse('written-since-step');
-      else if(STORE.valueChanges(store,synced.values).changes.length)return refuse('values-since-step');
-      else if(synced.runtime!==STORE.chunkStamp(store).runtime||synced.length!==store.length)return refuse('store-changed');
+      else if(synced.runtime!==STORE.chunkStamp(store).runtime)return refuse('store-changed');
+      else if(!STORE.replicaClean(store)||synced.length!==store.length||STORE.valueChanges(store,synced.values).changes.length){const reason=syncIntoOpen(store);if(reason)return refuse(reason);}
       return {store,runtime:STORE.chunkStamp(store).runtime,revision:store.revision,structure:store.structure,length:store.length};
     }
     // Keeps the replica current between steps (after load, after commands): a later step then sends only its own
@@ -331,8 +351,9 @@
       },
       // Build 372: the store's classes of rows (STORE.forEachClass over `fields`, extremes of `numeric`) and, with ids, its id
       // collision check, found by the worker on a replica that is exactly this store now: with nothing in flight it is
-      // brought to the store first; with a step or window in flight, only once this side has replayed its result and has
-      // written nothing since (then both hold that step). Otherwise null at once (the caller finds them itself).
+      // brought to the store first; with a step or window in flight, only once this side has replayed its result (then
+      // both hold that step), its rows written since sent into it (syncIntoOpen). Otherwise null at once (the caller finds
+      // them itself).
       // Resolves with {store, runtime, revision, structure, length, rows: [[row, count, index, members], ...], ids}, or
       // null; the caller checks current(result) before it uses one.
       fieldClasses(store,{fields=[],numeric=[],ids=false}={}){

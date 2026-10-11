@@ -189,7 +189,7 @@ GH_PERF_ROOT=$PWD node --max-old-space-size=8192 tools/measure_fullgame_trace.cj
 ### 4.5 الطلبات غير الخطوات (`health`، `fieldClasses`، `query`)
 تُرسل فقط إن كانت النسخة **هي المخزن تمامًا** (`replicaIsStore`، `fleet-engine-thread.js` سطر 174)، في حالتين:
 - **(أ)** لا خطوة ولا نافذة قيد التنفيذ، فتُزامَن النسخة أولًا (`prime`).
-- **(ب)** خطوة أُعيد تشغيلها على الرئيسي ولم يُكتب شيء بعدها (`replicaClean` ولا تغيّر في القيم).
+- **(ب)** خطوة (أو آخر شوط من نافذة تقويم) أُعيد تشغيلها على الرئيسي. ما كُتب بعدها من صفوف وقيم وصفوف مُضافة يُرسَل **داخل الخطوة المفتوحة** (`syncIntoOpen`، رسالة `sync` تحمل `step` أو `window`)، فيكتبه العامل داخل journal الخطوة، ويُثبَّت أو يُتراجَع عنه معها. يبقى الرفض إن كان بعدها دمج، أو عمود أعيدت كتابته كاملًا، أو أسطول أقصر، أو تغيّر في خطط المسارات، أو نسخة تحتاج تجديدًا، أو نافذة غير مفتوحة. عندها يقرأ المستدعي المخزن بنفسه كما كان.
 
 ثم:
 - كل نتيجة تحمل وسمًا `{store, runtime, revision, length, structure}`.
@@ -230,7 +230,7 @@ GH_PERF_ROOT=$PWD node --max-old-space-size=8192 tools/measure_fullgame_trace.cj
 | `replica` | نسخة كاملة (rows منقولة) + `importId` | `ready` + `route-keys` |
 | `seed` | مقاطع الحفظ (منقولة) + meta + values + extras + `importId` | `ready` + `route-keys` |
 | `compact` | `{dead:Int32Array, length}` | — |
-| `sync` | الطول، live، structure، تغييرات القيم، الصفوف (bytes منقولة) | — (يقتطع إن قصر الطول) |
+| `sync` | الطول، live، structure، تغييرات القيم، الصفوف (bytes منقولة)؛ واختياريًا `step` أو `window` (معرّف المفتوح) | — (يقتطع إن قصر الطول؛ الموجّهة للمفتوح تُكتب في journal‑ه ولا تقبل أسطولًا أقصر، وغير الموجّهة تُرفض والخطوة مفتوحة) |
 | `columns` | أعمدة كاملة | — |
 | `routes` | خطط المسارات (`replace` أو إضافة) | — |
 | `advance` / `window-*` / `settle` | خطوات المحرك (كما في 371) | `result` |
@@ -285,10 +285,10 @@ GH_PERF_ROOT=$PWD node --max-old-space-size=8192 tools/measure_fullgame_trace.cj
 
 | الثابت | الاختبار |
 |---|---|
-| نسخة العامل = المخزن بايتًا ببايت بعد كل نوع تغيير: بذرة، commit، rollback، discard، محرك على الرئيسي، أعمدة، تبادل داخل معاملة ثم تراجع، دمجان، استعادة القيم، النوافذ، reset | `build372-replica-log-browser` (5 طفرات مزروعة فشلت) |
+| نسخة العامل = المخزن بايتًا ببايت بعد كل نوع تغيير: بذرة، commit، rollback، discard، محرك على الرئيسي، أعمدة، تبادل داخل معاملة ثم تراجع، كتابات بعد خطوة أو شوط نافذة تُرسل داخلها (داخلها، وبعد commit وrollback قبل أي تبادل جديد)، دمجان، استعادة القيم، النوافذ، reset | `build372-replica-log-browser` (5 طفرات مزروعة فشلت؛ سيناريو 4c جديد لم يُشغَّل بعد) |
 | حفظ → فتح من الخزنة → بذرة بلا نسخ كامل، النسخة مطابقة، اللعب كله على العامل، حفظ → فتح | `build372-native-seed-browser` |
 | مشكلات صحة الأسطول من العامل = من الرئيسي، بكل أنواع الأعطال وتراجعها؛ رفض أثناء خطوة؛ النتيجة تسمّي مخزنها | `build372-fleet-health-worker-browser` |
-| أصناف العامل = أصناف الرئيسي (NaN، extras، حذف)؛ البوابة: خطوة غير مُعادة، ثم مُعادة، ثم مكتوب بعدها؛ القِدم | `build372-field-classes-worker-browser` |
+| أصناف العامل = أصناف الرئيسي (NaN، extras، حذف)؛ البوابة: خطوة غير مُعادة (رفض)، ثم مُعادة، ثم مكتوب بعدها (يُرسل داخلها ويطابق)، ثم عمود كامل بعدها (رفض)؛ القِدم | `build372-field-classes-worker-browser` (معدّل، لم يُشغَّل بعد) |
 | التحقق الكامل بأصناف العامل = `validate()` الأصلي، سليمًا ومع كل عطل؛ النتيجة القديمة لا تُستخدم | `build372-save-validation-worker-browser` |
 | كل أعداد الخريطة وسطر الحالة من الملخص = حساب الرئيسي؛ الأحدث يحل محل الأقدم؛ لا فهارس عبر دمج | `build372-map-summary-worker-browser` |
 | التراجع يستعيد المخزن تمامًا رغم إعادة استخدام سجل الـ journal | `build372-journal-pool` (طفرة فشلت) |
@@ -342,7 +342,8 @@ GH_PERF_ROOT=$PWD node --max-old-space-size=8192 tools/measure_fullgame_trace.cj
 | الإرسال | `deepClone` / `cloneWithoutJournaledRoots` | نسخ الحالة في بداية كل أمر دائم | **باقٍ** |
 | الإرسال | جسم الأمر (`app.js` ~1811)، `assignRoutesBatch`/`departBatch`، `materialize`/`plain`، `encode`/`sha256`، `indexOfId` | عمل الأمر نفسه على الرئيسي | **باقٍ** |
 | الإرسال | `commitDurableState`/`saveHash`/`uploadChunks` | الحفظ | **باقٍ** |
-| اللعب | 334ms: `runCriticalTask → validationSteps → forEachSaveAssetClass` | العامل رفض الطلب، والسبب غير معروف على مليون (على 100 ألف: `step-not-replayed` و`written-since-step`) | **باقٍ — اقرأ `replicaRefusals`** |
+| اللعب | 334ms: `runCriticalTask → validationSteps → forEachSaveAssetClass` | فحص الحفظ بعد التثبيت داخل معاملة الشريحة المرحلية: الخطوة مُعادة ومفتوحة، والشريحة كتبت بعدها (`written-since-step`/`values-since-step`) | **عولج (syncIntoOpen)، غير مُختبر ولا مقاس** |
+| التقويم | 239 / 205ms: نفس المسار داخل نافذة التقويم بعد آخر شوط | نفس السبب (`windowSession` مفتوحة وكُتب بعدها) | **عولج (syncIntoOpen للنوافذ)، غير مُختبر ولا مقاس** |
 | اللعب والتقويم | 110–147ms: `GH_INTEGRITY_CORE.check → validateState → forEachClass` (دورة السوق وفحص الصحة) | تحرر المسارات كان يبطل جداول الهوية | **عولج 743eb2e، غير مقاس** |
 | اللعب | 288 / 151ms GC خالص | ضغط تخصيص غير مشخَّص (ذروة heap 871MB) | **باقٍ** |
 | اللعب | 1179ms / 108ms `recorderStart`/`recorderStop` | **من أداة القياس** (بلا `fleetPhaseHint`)، ليس من اللعبة | أصلح الأداة أو تجاهله |

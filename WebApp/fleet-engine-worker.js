@@ -4,7 +4,8 @@
 // the result (rows written, values interned) inside the simulation slice's transaction. Each step stays open here until
 // the main thread settles it: 'commit' keeps it, 'rollback' restores the replica exactly (its own store journal).
 // Messages in:  replica (whole store), seed (Build 372: the chunk buffers a decoded store came from), compact (the main
-//               thread's compaction, by its removed rows), sync (rows and values changed on the main thread), columns
+//               thread's compaction, by its removed rows), sync (rows and values changed on the main thread; Build 372:
+//               addressed to the open step or window, written inside its journal), columns
 //               (fields rewritten wholesale), routes, specs, advance, settle, health (Build 372: the health check's fleet
 //               issues, fleet-health-core, on the replica), classes (the save check's classes of rows and id check on
 //               the replica), query (a fleet-query-core pass on the replica), inspect (a copy of the replica, for gates).
@@ -12,7 +13,7 @@
 //               resolve), result (or fallback with a reason: the main thread then runs that step itself), error.
 importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js','fleet-access-core.js','fleet-health-core.js','fleet-query-core.js');
 
-const STORE=self.GH_FLEET_STORE,EVENTS=self.GH_FLEET_EVENTS,VERSION='GH-FLEET-ENGINE-WORKER-372.1.0';
+const STORE=self.GH_FLEET_STORE,EVENTS=self.GH_FLEET_EVENTS,VERSION='GH-FLEET-ENGINE-WORKER-372.2.0';
 let store=null,routes=new Map(),specs={},open=null;
 
 const routeKey=(routeId,base)=>String(routeId||'')+'\u0000'+String(base||'');
@@ -129,7 +130,13 @@ self.addEventListener('message',event=>{
         STORE.compactRowsAt(store,{dead:message.dead,length:message.length});
         return;
       case 'sync':{
-        if(!store||open){self.postMessage({type:'error',version:VERSION,id:message.id,error:open?'sync-while-step-open':'replica-missing'});return;}
+        // Build 372: rows the main thread wrote after it replayed the open step (or the open window's last leg) come
+        // addressed to it (message.step / message.window) and are written inside its journal: settling it commits or rolls
+        // them back with it. Never a shorter store there (that sync waits for the step to settle). Any other sync waits
+        // for no step to be open.
+        const into=!!open&&(open.kind==='step'?message.step!=null&&message.step===open.id:message.window!=null&&message.window===open.id);
+        if(!store||(open&&!into)){self.postMessage({type:'error',version:VERSION,id:message.id,error:open?'sync-while-step-open':'replica-missing'});return;}
+        if(into&&message.length<store.length){self.postMessage({type:'error',version:VERSION,id:message.id,error:'sync-into-step-shorter'});return;}
         // Rows appended on the main thread (purchases) arrive with their records. Build 372: a shorter store is a rollback
         // of rows appended inside a transaction (compactions arrive before, as 'compact'): those rows go, as there.
         if(message.length<store.length)STORE.truncateReplica(store,message.length);
