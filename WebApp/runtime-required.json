@@ -810,6 +810,7 @@
     "fleet-health-core.js",
     "fleet-list-query-core.js",
     "fleet-list-virtualizer.js",
+    "fleet-query-core.js",
     "fleet-store-core.js",
     "formation-engine.js",
     "founding.css",

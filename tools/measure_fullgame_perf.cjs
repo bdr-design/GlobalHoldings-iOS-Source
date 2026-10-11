@@ -24,7 +24,7 @@ function args(){
   const argv=process.argv.slice(2);for(let i=0;i<argv.length;i++){const key=argv[i].replace(/^--/,'');if(key in out){const v=argv[++i];out[key]=typeof out[key]==='number'?Number(v):String(v);}}
   out.sites=out.sites.split(',').filter(Boolean);return out;
 }
-const workerSource=()=>['fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js','fleet-access-core.js','fleet-health-core.js'].map(file=>fs.readFileSync(path.join(web,file),'utf8')).join('\n;\n')+'\n;\n'+
+const workerSource=()=>['fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js','fleet-access-core.js','fleet-health-core.js','fleet-query-core.js'].map(file=>fs.readFileSync(path.join(web,file),'utf8')).join('\n;\n')+'\n;\n'+
   fs.readFileSync(path.join(web,'fleet-engine-worker.js'),'utf8').replace(/^importScripts\([^)]*\);$/m,'');
 
 function installVault(){

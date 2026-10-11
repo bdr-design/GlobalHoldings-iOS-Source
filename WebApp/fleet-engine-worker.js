@@ -7,10 +7,10 @@
 //               thread's compaction, by its removed rows), sync (rows and values changed on the main thread), columns
 //               (fields rewritten wholesale), routes, specs, advance, settle, health (Build 372: the health check's fleet
 //               issues, fleet-health-core, on the replica), classes (the save check's classes of rows and id check on
-//               the replica), inspect (a copy of the replica, for gates).
+//               the replica), query (a fleet-query-core pass on the replica), inspect (a copy of the replica, for gates).
 // Messages out: ready, route-keys (after a replica or seed: the (route, base) pairs its rows name, for the main thread to
 //               resolve), result (or fallback with a reason: the main thread then runs that step itself), error.
-importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js','fleet-access-core.js','fleet-health-core.js');
+importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js','fleet-access-core.js','fleet-health-core.js','fleet-query-core.js');
 
 const STORE=self.GH_FLEET_STORE,EVENTS=self.GH_FLEET_EVENTS,VERSION='GH-FLEET-ENGINE-WORKER-372.1.0';
 let store=null,routes=new Map(),specs={},open=null;
@@ -168,6 +168,14 @@ self.addEventListener('message',event=>{
         STORE.forEachClass(store,Array.isArray(message.fields)?message.fields:[],(row,count,info)=>{rows.push([row,count,info.index,info.members]);},{numeric:Array.isArray(message.numeric)?message.numeric:[]});
         const ids=message.ids?STORE.idCollisions(store):null;
         self.postMessage({type:'classes',version:VERSION,id:message.id,rows,ids,ms:performance.now()-started});
+        return;
+      }
+      // Build 372: a fleet pass of fleet-query-core on the replica (asked, like 'classes', only when it is the main
+      // thread's store). No legacy owner table here: a pass that needs one answers {legacy:true}.
+      case 'query':{
+        if(!store||!self.GH_FLEET_QUERY||!self.GH_FLEET_DATA){self.postMessage({type:'query',version:VERSION,id:message.id,unavailable:!store?'replica-missing':'query-core-missing'});return;}
+        const started=performance.now(),result=self.GH_FLEET_QUERY.run(String(message.name),{fleet:store,simSeconds:Number(message.simSeconds)||0},self.GH_FLEET_DATA,message.params||{});
+        self.postMessage({type:'query',version:VERSION,id:message.id,result,ms:performance.now()-started});
         return;
       }
       // A copy of the replica, on request only (the differential gates compare it with the main thread's store).

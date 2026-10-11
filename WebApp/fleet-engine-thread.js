@@ -27,7 +27,7 @@
 
   function create({workerFactory,resolveRoute,catalogSpecs,routesRevision=()=>0,clock=()=>performance.now(),timeoutMs=15000}={}){
     let worker=null,disabled=null,nextId=1,needsFull=true,synced=null,routeTable=new Map(),routesAt=null,pending=null,windowSession=null,lastBudgetTime=Infinity,importId=0,routesReady=true;
-    const tickets=new Map(),waiters=[],inspections=new Map(),healthChecks=new Map(),classRequests=new Map(),stats={requests:0,applied:0,fallbacks:0,windowBegins:0,windowSteps:0,windowCommits:0,windowRollbacks:0,windowFallbacks:0,fullSyncs:0,seedSyncs:0,incrementalSyncs:0,columnSyncs:0,compactions:0,rowsSent:0,routeKeysAnswered:0,deferredRequests:0,windowDeferred:0,lastWorkerMs:0,lastApplyMs:0,lastSyncMs:0,maxWorkerMs:0,maxApplyMs:0,maxSyncMs:0,maxFullSyncMs:0,maxSeedSyncMs:0,maxRouteAnswerMs:0,lastReason:'',fullSyncReasons:{}};
+    const tickets=new Map(),waiters=[],inspections=new Map(),healthChecks=new Map(),classRequests=new Map(),queryRequests=new Map(),stats={requests:0,applied:0,fallbacks:0,windowBegins:0,windowSteps:0,windowCommits:0,windowRollbacks:0,windowFallbacks:0,fullSyncs:0,seedSyncs:0,incrementalSyncs:0,columnSyncs:0,compactions:0,rowsSent:0,routeKeysAnswered:0,deferredRequests:0,windowDeferred:0,lastWorkerMs:0,lastApplyMs:0,lastSyncMs:0,maxWorkerMs:0,maxApplyMs:0,maxSyncMs:0,maxFullSyncMs:0,maxSeedSyncMs:0,maxRouteAnswerMs:0,lastReason:'',fullSyncReasons:{}};
     const settleWaiters=()=>{if(pending||windowSession)return;while(waiters.length)waiters.shift()();};
     function disable(reason){
       if(disabled)return;disabled=String(reason||'disabled');stats.lastReason=disabled;
@@ -37,7 +37,7 @@
       // it busy until that transaction explicitly settles the session; otherwise
       // an external fleet writer could enter before main has restored leg 1.
       if(windowSession){windowSession.status='failed';windowSession.reason=disabled;}
-      tickets.clear();pending=null;routesReady=true;for(const resolve of inspections.values())resolve(null);inspections.clear();for(const entry of healthChecks.values())entry.resolve(null);healthChecks.clear();for(const entry of classRequests.values())entry.resolve(null);classRequests.clear();settleWaiters();
+      tickets.clear();pending=null;routesReady=true;for(const resolve of inspections.values())resolve(null);inspections.clear();for(const entry of healthChecks.values())entry.resolve(null);healthChecks.clear();for(const entry of classRequests.values())entry.resolve(null);classRequests.clear();for(const entry of queryRequests.values())entry.resolve(null);queryRequests.clear();settleWaiters();
     }
     function ensureWorker(){
       if(disabled)return null;if(worker)return worker;
@@ -56,6 +56,7 @@
       if(message.type==='route-keys'){answerRouteKeys(message);return;}
       if(message.type==='health'){const entry=healthChecks.get(message.id);healthChecks.delete(message.id);if(entry){stats.lastHealthWorkerMs=Number(message.ms)||0;stats.totalWorkerMs=(stats.totalWorkerMs||0)+stats.lastHealthWorkerMs;stats.maxHealthWorkerMs=Math.max(stats.maxHealthWorkerMs||0,stats.lastHealthWorkerMs);entry.resolve(message.unavailable||!Array.isArray(message.issues)?null:{...entry.tag,issues:message.issues});}return;}
       if(message.type==='classes'){const entry=classRequests.get(message.id);classRequests.delete(message.id);if(entry){stats.lastClassesWorkerMs=Number(message.ms)||0;stats.totalWorkerMs=(stats.totalWorkerMs||0)+stats.lastClassesWorkerMs;stats.maxClassesWorkerMs=Math.max(stats.maxClassesWorkerMs||0,stats.lastClassesWorkerMs);entry.resolve(message.unavailable||!Array.isArray(message.rows)?null:{...entry.tag,rows:message.rows,ids:message.ids||null});}return;}
+      if(message.type==='query'){const entry=queryRequests.get(message.id);queryRequests.delete(message.id);if(entry){const ms=Number(message.ms)||0;stats.totalWorkerMs=(stats.totalWorkerMs||0)+ms;stats.maxQueryWorkerMs=Math.max(stats.maxQueryWorkerMs||0,ms);entry.resolve(message.unavailable||!message.result||message.result.legacy?null:{...entry.tag,result:message.result});}return;}
       if(message.type==='inspect'){const resolve=inspections.get(message.id);inspections.delete(message.id);resolve?.(message.missing?null:message);return;}
       if(message.type!=='result')return;
       const ticket=tickets.get(message.id);if(!ticket)return;
@@ -166,6 +167,16 @@
       synced.length=store.length;
       stats.incrementalSyncs++;stats.lastSyncMs=clock()-started;stats.maxSyncMs=Math.max(stats.maxSyncMs,stats.lastSyncMs);
       return routesReady;
+    }
+    // The replica, once the messages posted so far are handled, is exactly this store: with nothing in flight it is
+    // brought to the store first; with a step or window in flight, only once this side replayed its result and wrote
+    // nothing since (both then hold that step). Returns the store's tag (for current()), or null.
+    function replicaIsStore(store){
+      if(disabled||!worker||!STORE.isStore(store)||!synced||synced.store!==store)return null;
+      if(pending&&!pending.applied)return null;
+      if(!pending&&!windowSession){if(!prime(store))return null;}
+      else if(!STORE.replicaClean(store)||STORE.valueChanges(store,synced.values).changes.length||synced.runtime!==STORE.chunkStamp(store).runtime||synced.length!==store.length)return null;
+      return {store,runtime:STORE.chunkStamp(store).runtime,revision:store.revision,structure:store.structure,length:store.length};
     }
     // Keeps the replica current between steps (after load, after commands): a later step then sends only its own
     // changes. Does nothing while a step or window is in flight.
@@ -322,13 +333,17 @@
       // Resolves with {store, runtime, revision, structure, length, rows: [[row, count, index, members], ...], ids}, or
       // null; the caller checks current(result) before it uses one.
       fieldClasses(store,{fields=[],numeric=[],ids=false}={}){
-        if(disabled||!worker||!STORE.isStore(store)||!synced||synced.store!==store)return null;
-        if(pending&&!pending.applied)return null;
-        if(!pending&&!windowSession){if(!prime(store))return null;}
-        else if(!STORE.replicaClean(store)||STORE.valueChanges(store,synced.values).changes.length||synced.runtime!==STORE.chunkStamp(store).runtime||synced.length!==store.length)return null;
-        const id=nextId++,tag={store,runtime:STORE.chunkStamp(store).runtime,revision:store.revision,structure:store.structure,length:store.length};
+        const tag=replicaIsStore(store);if(!tag)return null;const id=nextId++;
         stats.classRequests=(stats.classRequests||0)+1;
         return new Promise(resolve=>{classRequests.set(id,{tag,resolve});post({type:'classes',id,fields:[...fields],numeric:[...numeric],ids:!!ids});});
+      },
+      // Build 372: a fleet-query-core pass (name, params) found by the worker on a replica that is exactly this store (as
+      // fieldClasses). Resolves with {store, runtime, revision, structure, length, result}, or null (no worker, a replica
+      // that is not the store, or a pass that needs the legacy owner table); the caller checks current(result) first.
+      query(store,{name,params={},simSeconds=0}={}){
+        const tag=replicaIsStore(store);if(!tag)return null;const id=nextId++;
+        stats.queryRequests=(stats.queryRequests||0)+1;
+        return new Promise(resolve=>{queryRequests.set(id,{tag,resolve});post({type:'query',id,name:String(name),params,simSeconds:Number(simSeconds)||0});});
       },
       // A result of fieldClasses (or health) still describes this store: the same store, runtime, revision, length and
       // structure (every write moves the revision).

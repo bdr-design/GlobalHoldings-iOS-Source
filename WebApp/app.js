@@ -1801,8 +1801,21 @@
     const core=window.GH_AIR_SEA_NETWORK_CORE;if(!core?.createPlanner)throw new Error('air-sea-network-planner-unavailable');
     const planner=core.createPlanner(input);while(!planner.isDone()){const until=performance.now()+8;do planner.runChunk(192);while(!planner.isDone()&&performance.now()<until);if(!planner.isDone())await yieldFleetPlanning();}return planner.result();
   }
+  // Build 372: a fleet-query-core pass over every row of `s.fleet` (the live store, or a draft sharing it): found by the
+  // fleet engine's worker on a replica that is exactly that store (and still describing it when it arrives), else run
+  // here with the company platform's legacy owner table. Both run the same code on the same rows.
+  async function fleetQuery(s,name,params){
+    const client=fleetEngineThreadClient,store=s?.fleet;
+    if(client&&!client.disabled&&typeof client.query==='function'&&window.GH_FLEET_STORE?.isStore?.(store)){
+      const asked=client.query(store,{name,params,simSeconds:s.simSeconds});
+      if(asked){const found=await asked;if(found&&client.current(found,store)){fleetQueryStats.worker++;return found.result;}}
+    }
+    fleetQueryStats.main++;
+    return window.GH_FLEET_QUERY.run(name,s,window.GH_FLEET_DATA,{...params,legacyOwner:mode=>COMPANY_PLATFORM.ownerForLegacyAssetMode?.(mode)});
+  }
+  const fleetQueryStats={worker:0,main:0};
   // The network planner (GH_AIR_SEA_NETWORK_CORE) plans at most 20,000 assets per call.
-  const SHARED_DISPATCH_LIMIT=20000,SHARED_DISPATCH_FIELDS=Object.freeze(['ownerCompanyId','companyId','assetMode','type','deliveryStatus','phase','departureScheduled','salePending','routeId']);
+  const SHARED_DISPATCH_LIMIT=20000;
   async function dispatchSharedInternationalNetwork(companyInput){
     const companyId=routeCompanyFromInput(companyInput),type=companyId?companyRouteModes(companyId).find(mode=>['air','sea'].includes(mode)):null;
     if(!companyId||!type)throw new Error('unsupported-shared-international-company');
@@ -1816,14 +1829,10 @@
       // Build 358 (million-asset): one row pass finds the company's idle assets of this mode (views only for them, at
       // most the network planner's limit per dispatch; a larger fleet departs in successive dispatches) and counts the
       // assets that stay on their routes.
-      const F=window.GH_FLEET_DATA,eligibleUnsorted=[],initialLoads=new Map();let remaining=0,remainingOnRoutes=0;
-      F.scan(draft,SHARED_DISPATCH_FIELDS,(row,index)=>{
-        if(assetOwnerCompanyId(row)!==companyId||assetModeOf(row)!==type)return;
-        const idle=row.deliveryStatus!=='pending'&&row.phase!=='moving'&&!row.departureScheduled&&!row.salePending;
-        if(idle&&eligibleUnsorted.length<SHARED_DISPATCH_LIMIT){eligibleUnsorted.push(F.viewAt(draft,index));return;}
-        if(idle){remaining++;if(row.routeId)remainingOnRoutes++;}
-        if(row.routeId)initialLoads.set(row.routeId,(initialLoads.get(row.routeId)||0)+1);
-      });
+      // Build 372: that pass (fleet-query-core dispatchEligible) runs on the fleet engine's worker when its replica is
+      // this store (the draft shares the live fleet; nothing is written to it before here), else here, as before.
+      const F=window.GH_FLEET_DATA,idlePass=await fleetQuery(draft,'dispatchEligible',{companyId,type,limit:SHARED_DISPATCH_LIMIT});
+      const eligibleUnsorted=idlePass.indices.map(index=>F.viewAt(draft,index)),initialLoads=new Map(idlePass.initialLoads);let remaining=idlePass.remaining,remainingOnRoutes=idlePass.remainingOnRoutes;
       if(!eligibleUnsorted.length)throw new Error(`لا توجد ${label} متاحة للمغادرة`);
       source.metrics.assetsPlanned=eligibleUnsorted.length;
       if(!source.length)throw new Error(`دليل الوجهات ${routeLabel} فارغ`);
@@ -4886,15 +4895,35 @@
   // asset): how many, ready / scheduled / moving counts, the first asset's id, and the trip margin and revenue sums in
   // row order over assets with a last trip (the former per-card filters and reduces over the views, in the same order).
   const ROUTE_CENTER_LINKED_FIELDS=Object.freeze(['ownerCompanyId','companyId','assetMode','type','routeId','phase','departureScheduled','lastTrip','id']);
+  // Build 372: the pass (fleet-query-core routeCards) runs on the fleet engine's worker; the cards show the latest result
+  // for this company and these routes on this store (at most a step behind) and the drawer is drawn again when a newer
+  // one arrives; until the first, the counts are not shown as zero but as the last known ones (none: zero). Without the
+  // worker the pass runs here, as before.
+  const routeCardsCache={key:'',store:null,revision:-1,cards:null,asking:null};let routeCenterRefreshTimer=null;
+  // Draw the open route center again (its cards changed), once per task however many results arrive.
+  function scheduleRouteCenterRefresh(){if(routeCenterRefreshTimer)return;routeCenterRefreshTimer=setTimeout(()=>{routeCenterRefreshTimer=null;if(activeDrawerPanel==='routes'&&$('drawer')?.classList.contains('open'))openDrawer('routes',activeDrawerArg);},0);}
   function routeCenterLinkedSummary(companyId,routeIds){
-    const fleet=window.GH_FLEET_DATA,wanted=new Set(routeIds),out=new Map();if(!wanted.size)return out;
-    fleet.scan(state,ROUTE_CENTER_LINKED_FIELDS,row=>{
-      if(!row.routeId||!wanted.has(row.routeId)||assetOwnerCompanyId(row)!==companyId)return;
-      let card=out.get(row.routeId);if(!card){card={count:0,turn:0,scheduled:0,inMotion:0,primaryId:row.id,scored:0,margin:0,revenue:0};out.set(row.routeId,card);}
-      card.count++;if(row.phase==='turnaround'){if(row.departureScheduled)card.scheduled++;else card.turn++;}else if(row.phase==='moving')card.inMotion++;
-      if(row.lastTrip){card.scored++;card.margin=card.margin+(Number(row.lastTrip.margin)||0);card.revenue=card.revenue+(Number(row.lastTrip.revenue)||0);}
-    });
-    return out;
+    if(!routeIds.length)return new Map();
+    const client=fleetEngineThreadClient,store=state.fleet;
+    if(!client||client.disabled||typeof client.query!=='function'||!window.GH_FLEET_STORE?.isStore?.(store))
+      return new Map(window.GH_FLEET_QUERY.run('routeCards',state,window.GH_FLEET_DATA,{companyId,routeIds,legacyOwner:mode=>COMPANY_PLATFORM.ownerForLegacyAssetMode?.(mode)}).cards);
+    const key=`${companyId}|${routeIds.join('\u0000')}`,c=routeCardsCache;
+    if(c.key!==key||c.store!==store){c.key=key;c.store=store;c.revision=-1;c.cards=null;c.asking=null;}
+    if(!c.asking&&c.revision!==store.revision){
+      const asked=client.query(store,{name:'routeCards',params:{companyId,routeIds:[...routeIds]},simSeconds:state.simSeconds});
+      if(asked){
+        const token=c.asking={};
+        asked.then(found=>{
+          if(c.asking!==token)return;c.asking=null;
+          // A pass that needs the legacy owner table (null) runs here once.
+          const result=found?found.result:window.GH_FLEET_QUERY.run('routeCards',state,window.GH_FLEET_DATA,{companyId,routeIds,legacyOwner:mode=>COMPANY_PLATFORM.ownerForLegacyAssetMode?.(mode)});
+          const revision=found?found.revision:store.revision;if(c.key!==key||c.store!==store||revision<c.revision)return;
+          const changed=JSON.stringify(result.cards)!==JSON.stringify(c.cards?[...c.cards]:null);c.cards=new Map(result.cards);c.revision=revision;
+          if(changed&&activeDrawerPanel==='routes'&&$('drawer')?.classList.contains('open'))scheduleRouteCenterRefresh();
+        },()=>{if(c.asking===token)c.asking=null;});
+      }
+    }
+    return c.cards||new Map();
   }
   // The first `limit` assets of the company ready for a manual route (not pending delivery, not moving, no departure
   // scheduled, not for sale) whose name, id or catalog id matches `needle` (views, row order).
