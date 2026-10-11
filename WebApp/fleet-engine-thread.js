@@ -172,10 +172,13 @@
     // brought to the store first; with a step or window in flight, only once this side replayed its result and wrote
     // nothing since (both then hold that step). Returns the store's tag (for current()), or null.
     function replicaIsStore(store){
-      if(disabled||!worker||!STORE.isStore(store)||!synced||synced.store!==store)return null;
-      if(pending&&!pending.applied)return null;
-      if(!pending&&!windowSession){if(!prime(store))return null;}
-      else if(!STORE.replicaClean(store)||STORE.valueChanges(store,synced.values).changes.length||synced.runtime!==STORE.chunkStamp(store).runtime||synced.length!==store.length)return null;
+      const refuse=reason=>{const r=stats.replicaRefusals||(stats.replicaRefusals={});r[reason]=(r[reason]||0)+1;return null;};
+      if(disabled||!worker||!STORE.isStore(store)||!synced||synced.store!==store)return refuse('no-replica');
+      if(pending&&!pending.applied)return refuse('step-not-replayed');
+      if(!pending&&!windowSession){if(!prime(store))return refuse('prime');}
+      else if(!STORE.replicaClean(store))return refuse('written-since-step');
+      else if(STORE.valueChanges(store,synced.values).changes.length)return refuse('values-since-step');
+      else if(synced.runtime!==STORE.chunkStamp(store).runtime||synced.length!==store.length)return refuse('store-changed');
       return {store,runtime:STORE.chunkStamp(store).runtime,revision:store.revision,structure:store.structure,length:store.length};
     }
     // Keeps the replica current between steps (after load, after commands): a later step then sends only its own

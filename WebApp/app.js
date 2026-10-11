@@ -995,9 +995,10 @@
       if(!committed&&rootSessions.length)try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');console.error('Durable command fleet rollback failed',rollbackError);}
       const context=window.__GH_DURABLE_COMMAND_CONTEXT__?.draft===draft?window.__GH_DURABLE_COMMAND_CONTEXT__:null;
       if(context)delete window.__GH_DURABLE_COMMAND_CONTEXT__;durableCommandInProgress=false;
-      // Build 372: the fleet a command wrote reaches the engine thread's replica now, in a task of its own (a fleet bought in
-      // back-to-back commands, before any slice, used to reach it as one whole copy when play started).
-      if(committed)setTimeout(primeFleetThreadAfterCommand,0);
+      // Build 372: the rows a command wrote reach the engine thread's replica now, at the end of the command (a fleet bought
+      // in back-to-back commands, before any slice, used to reach it as one whole copy when play started; a later task found
+      // the next command already running).
+      if(committed)try{primeFleetThreadAfterCommand();}catch(error){console.warn("fleet thread prime after command",error);}
       settleDurableCommand?.({committed,saveRevision:Number(state.saveRevision)||0});
       if(context?.notices?.length)setTimeout(()=>{for(const row of context.notices)notice(row.text,row.kind);},0);
     }
