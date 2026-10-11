@@ -1261,8 +1261,12 @@
     // assets that need a patch; only those are written, in row order, each through its own view as before.
     const fleet=window.GH_FLEET_DATA,TX=window.GH_TRANSACTION_CORE;
     const STARTUP_FIELDS=['routeId','reverse','assetMode','type','catalogId','specs','distanceKm','dwellHours','from','to','effectiveSpeedKmh','tripSeconds','phase','progress','fuel','condition'];
+    // Build 371: a later set() of the same field replaces an earlier one, and a final value equal to the asset's drops it.
+    // set() used to keep the first pending value when the second equalled the asset's: the route's speed and trip time
+    // (set first) overwrote every rated speed (set next, unchanged) on each load, about 1% on ships, so a reload moved
+    // arrival times.
     const startupPatch=asset=>{
-      const route=routeTemplates[asset.routeId],specs=asset.specs||catalogItem(asset.type,asset.catalogId)?.specs||null,patch={},set=(key,value)=>{if(!Object.is(asset[key],value))patch[key]=value;};
+      const route=routeTemplates[asset.routeId],specs=asset.specs||catalogItem(asset.type,asset.catalogId)?.specs||null,patch={},set=(key,value)=>{if(Object.is(asset[key],value))delete patch[key];else patch[key]=value;};
       if(route){set('distanceKm',route.distanceKm);set('dwellHours',route.dwellHours);set('from',asset.reverse?route.to:route.from);set('to',asset.reverse?route.from:route.to);set('effectiveSpeedKmh',route.effectiveSpeedKmh);set('tripSeconds',route.tripSeconds);
         if(specs){const mode=assetModeOf(asset),rated=mode==='air'?(specs.speedKmh||route.effectiveSpeedKmh)*.9:mode==='sea'?(specs.speedKn||route.effectiveSpeedKmh/1.852)*1.852*.88:(specs.speedKmh||route.effectiveSpeedKmh)*.76,effective=Math.max(20,Math.min(rated,route.effectiveSpeedKmh*1.08));set('effectiveSpeedKmh',effective);set('tripSeconds',route.distanceKm/effective*3600);}}
       if(!asset.phase)set('phase',asset.routeId?'moving':'idle');if(typeof asset.progress!=='number')set('progress',0);if(typeof asset.fuel!=='number')set('fuel',100);if(typeof asset.condition!=='number')set('condition',100);if(!asset.specs&&specs)set('specs',fleet.plain(specs));
@@ -1475,9 +1479,13 @@
     // templates must never create route-cache entries or appear as operational routes in a new game.
     const activeIds=operationalRouteIds('road'),changedRouteIds=new Set();let stateChanged=false;
     Object.keys(state.routeCache||{}).forEach(id=>{if(routeTemplates[id]?.referenceOnly&&!activeIds.has(id)){delete state.routeCache[id];stateChanged=true;}});
-    const roads=operationalRoutes('road');
+    const roads=operationalRoutes('road'),customRouteIds=new Set((state.customRoutes||[]).map(route=>route.id));
     await Promise.all(roads.map(async tpl=>{
       if(tpl.roadGeometryVersion===311&&tpl.roadNetworkDistanceKm>0)return; // Canonical verified road geometry is already saved; never re-request an active trip.
+      // Build 371: a custom route owns its geometry (state.customRoutes; the route cache keeps only a canonical marker for
+      // it), so a geometry fetched here could only change the in-memory template and the trucks on it, and the next
+      // template rebuild (any command's commit, a reload) put the saved geometry back under trucks normalized to the new one.
+      if(customRouteIds.has(tpl.id))return;
       const cached=state.routeCache[tpl.id];
       if(cached?.canonicalRouteId===tpl.id)return;
       if(isRouteCacheFresh(cached)&&cached.route){if(await applyRoadGeometryWhenSettled(tpl.id,cached,false)){changedRouteIds.add(tpl.id);stateChanged=true;}return;}
