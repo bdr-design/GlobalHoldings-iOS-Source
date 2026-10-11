@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "fa334014f1fb1f68dfa4827bd8e89dfaafd7197ade56b37bee2d248c709840e7",
-  "webapp_tree_sha256": "75c0ed9751c29e7f397aba7b886246ca1d0c0d48f734cad373cb0c7124080634",
+  "source_tree_sha256": "35500494e9a2da8958293f964abba83d47a3b8e0e97ca1b334caa2b30c04f867",
+  "webapp_tree_sha256": "48ab0e4dda228f31c6b404abcae97344d53c15666a52b9f7dabbb5dbe160433d",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 317666,
@@ -19,8 +19,8 @@
       "sha256": "71612fdabc72cbd0327a5dcc28b02576a011d8c710ee24b6a5c11b6d918e24cf"
     },
     "WebApp/app.js": {
-      "bytes": 901326,
-      "sha256": "6f56a4280405236c97b707355ea4b612ef5a62fc012dd6d1ef0956e869788a6d"
+      "bytes": 901855,
+      "sha256": "04e2a5fb55345fa932b9078d61873a7725358bbe219411b0c81f4a9bd5414d5d"
     },
     "WebApp/arabic-copy-core.js": {
       "bytes": 3015,
@@ -3059,8 +3059,8 @@
       "sha256": "3cf8de3f5d25c1c633bd03d6a003f2111700a5293b049f841b83632b7fa10f3c"
     },
     "WebApp/authorization-core.js": {
-      "bytes": 42094,
-      "sha256": "70e98dc067487e8e99ad0cb5ea71222df41ad8e4d10b46a3a2e07dfe37e966b0"
+      "bytes": 44525,
+      "sha256": "ce67d9e05318c08ef30ccf7c10964f3b23f3386f0cd52dc96b2d8d855fba6f41"
     },
     "WebApp/authorization-ui.css": {
       "bytes": 2714,
@@ -3556,7 +3556,7 @@
     },
     "project.yml": {
       "bytes": 2413,
-      "sha256": "7193d3b75e174c8fc7d27f4ab407345abc752d3aebf0f3e91c827e5f59c55d65"
+      "sha256": "6f6f0e9e78cd0a7341ba7b5f9deeca4f9038d16de0f676041364499c13b77c34"
     },
     "BUILD": {
       "bytes": 4,

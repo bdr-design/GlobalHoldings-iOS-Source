@@ -1791,6 +1791,10 @@
     },{afterCommit:result=>{lastDepartureBlocked=[];renderMap();updateKpis();openDrawer('assetManage',result.assetId);}});
   }
   const yieldFleetPlanning=()=>new Promise(resolve=>setTimeout(resolve,0)),DISPATCH_CHUNK=500;
+  // Build 372: a fleet batch command's payload (a chunk of the dispatch and its routes) sealed once (GH_AUTHORIZATION.seal:
+  // a deep-frozen copy whose canonical text is kept), so its idempotency key, envelope, authorization and fingerprint
+  // stop encoding and copying it again; the value itself when it cannot be sealed (every check then runs as before).
+  const sealedFleetPayload=payload=>window.GH_AUTHORIZATION?.seal?.(payload)??payload;
   let airSeaNetworkWorkerRequestId=0;
   function createAirSeaNetworkWorkerClient(){
     if(typeof Worker!=='function')return null;
@@ -1922,7 +1926,7 @@
       const batch=assignments.map(({asset,route})=>({id:asset.id,routeId:route.id,baseFacility:asset.baseFacility,phase:'turnaround',routeRef:routeRefOf(route.id,asset.baseFacility)}));
       const chunkRoutes=rows=>{const table={};for(const row of rows)table[row.routeRef]=routeTable[row.routeRef];return table;};
       const assignmentStarted=performance.now(),assigned=[];for(let from=0;from<batch.length;from+=DISPATCH_CHUNK){
-        await yieldFleetPlanning();const rows=batch.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','assign-routes-batch',{assignments:rows,routes:chunkRoutes(rows)}).result;
+        await yieldFleetPlanning();const rows=batch.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','assign-routes-batch',sealedFleetPayload({assignments:rows,routes:chunkRoutes(rows)})).result;
         if(!Array.isArray(out)||out.length!==rows.length)throw new Error(`رفض محرك الأسطول توزيع ${label}`);assigned.push(...out);
         // The fleet owner returns receipts; normalization is written through drafts.
         const fleetRows=out.map(asset=>window.GH_FLEET_DATA.draft(draft,asset.id));for(const asset of fleetRows){const route=routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility);window.GH_FLEET_CORE.normalizeAsset(asset,{route,catalogItem:catalogItem(asset.type,asset.catalogId)});}window.GH_FLEET_DATA.commit(draft,fleetRows);
@@ -1932,7 +1936,7 @@
       const normalized=assigned.map(asset=>window.GH_FLEET_DATA.get(draft,asset.id));
       const departures=normalized.map(asset=>({id:asset.id,routeRef:routeRefOf(asset.routeId,asset.baseFacility),load:loadLabel(asset),delaySeconds:fleet.departureDelay(asset)}));
       const departureStarted=performance.now(),departed=[];for(let from=0;from<departures.length;from+=DISPATCH_CHUNK){
-        await yieldFleetPlanning();const rows=departures.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','depart-batch',{departures:rows,routes:chunkRoutes(rows)}).result;
+        await yieldFleetPlanning();const rows=departures.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','depart-batch',sealedFleetPayload({departures:rows,routes:chunkRoutes(rows)})).result;
         if(!Array.isArray(out)||out.length!==rows.length)throw new Error(`رفض محرك الأسطول جدولة مغادرة ${label}`);departed.push(...out);
       }
       source.metrics.departureMs=performance.now()-departureStarted;
@@ -2037,7 +2041,7 @@
         const chunkRoutes=rows=>{const table={};for(const row of rows)table[row.routeRef]=routeTable[row.routeRef];return table;};
         for(const row of assignments)row.routeRef=routeRefOf(row.routeId,row.baseFacility);
         for(let from=0;from<assignments.length;from+=DISPATCH_CHUNK){
-          await yieldFleetPlanning();const rows=assignments.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','assign-routes-batch',{assignments:rows,routes:chunkRoutes(rows)}).result;
+          await yieldFleetPlanning();const rows=assignments.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','assign-routes-batch',sealedFleetPayload({assignments:rows,routes:chunkRoutes(rows)})).result;
           if(!Array.isArray(out)||out.length!==rows.length)throw new Error('رفض محرك الأسطول توزيع الشاحنات');
           const fleetRows=rows.map(row=>window.GH_FLEET_DATA.draft(draft,row.id));fleetRows.forEach((asset,index)=>window.GH_FLEET_CORE.normalizeAsset(asset,{route:routeTable[rows[index].routeRef],catalogItem:catalogItem(asset.type,asset.catalogId)}));window.GH_FLEET_DATA.commit(draft,fleetRows);
         }
@@ -2048,7 +2052,7 @@
           const delaySeconds=window.GH_FLEET_CORE.departureDelay(asset);if(delaySeconds>0)scheduled++;departures.push({id:asset.id,routeRef:routeRefOf(asset.routeId,asset.baseFacility),load:loadLabel(asset),delaySeconds});
         }
         for(let from=0;from<departures.length;from+=DISPATCH_CHUNK){
-          await yieldFleetPlanning();const rows=departures.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','depart-batch',{departures:rows,routes:chunkRoutes(rows)}).result;
+          await yieldFleetPlanning();const rows=departures.slice(from,from+DISPATCH_CHUNK),out=dispatch('fleet','depart-batch',sealedFleetPayload({departures:rows,routes:chunkRoutes(rows)})).result;
           if(!Array.isArray(out)||out.length!==rows.length)throw new Error('رفض محرك الأسطول جدولة مغادرة الشاحنات');
           const fleetRows=rows.map(row=>window.GH_FLEET_DATA.draft(draft,row.id));for(const asset of fleetRows)window.GH_FLEET_CORE.normalizeAsset(asset,{route:routeMatchingFacilityFor(draft,routes,asset.routeId,asset.baseFacility),catalogItem:catalogItem(asset.type,asset.catalogId)});window.GH_FLEET_DATA.commit(draft,fleetRows);
         }

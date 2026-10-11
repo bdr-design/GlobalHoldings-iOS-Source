@@ -106,6 +106,10 @@ function installVault(){
     assert.ok(second.budget.used<=second.budget.quota&&second.budget.free>0,`the air quota keeps free slots for later bases: ${JSON.stringify(second.budget)}`);
     assert.equal(second.valid,true,'the save validates');
     assert.deepEqual(errors,[]);
+    // Build 372: the dispatch's batch commands carry sealed payloads (GH_AUTHORIZATION.seal), none refused, and their text
+    // and intent digest are reused.
+    const seal=await page.evaluate(()=>GH_AUTHORIZATION.sealTelemetry());
+    assert.ok(seal.sealed>0&&seal.refused===0&&seal.textHits>seal.sealed&&seal.digestHits>0,`the batch payloads are sealed: ${JSON.stringify(seal)}`);
     console.log(JSON.stringify({suite:'build358-large-fleet-dispatch-browser',aircraft:QTY,dispatchMs,routes:state.routes,maxCapacity:state.maxCapacity,maxUsers:state.maxUsers,after3h:{moving:flown.moving,trips:flown.trips},newBase:{routed:second.routedNew,airRoutes:second.budget.used,free:second.budget.free},environment:`Chromium local DOM; in-page native vault stand-in; ${path.basename(__filename)}`}));
     console.log('BUILD358_LARGE_FLEET_DISPATCH_PASS');
   }finally{await browser.close();}
