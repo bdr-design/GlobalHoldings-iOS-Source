@@ -22,3 +22,14 @@ time about 73 s during play and 38 s during the advance. In this scenario (a fle
 any slice) the first replica was still a whole copy (110 ms, was 449 ms); the next commit primes the replica after each command.
 
 Not resolved: dispatch stalls up to 1.1 s; a 259 ms task in play and 237 ms in the advance (to be attributed).
+
+## Attribution (810b14f, a traced million-asset run: numbers inflated by tracing, not comparable)
+
+- `810b14f-1m-traced.json`: the traced run's report.
+- `810b14f-dispatch-blocks.txt`: busy stretches over 50 ms in the first two dispatch commands (tools/cpuprofile_blocks.py).
+- `810b14f-advance-blocks.txt`: the same for the calendar advance.
+- `810b14f-play-long-tasks.txt`: every main-thread long task of play and what ran in it (tools/attribute_long_tasks.py).
+  The 1179 ms and 108 ms tasks are the measurement tool's own recorderStart/recorderStop.
+- `ec0031a-100k.json`: 100,000 assets on ec0031a (play worst gap 17 ms, advance 50 ms, dispatch 233 ms).
+
+ec0031a, 743eb2e and bd4ccd9 have not been measured at a million assets yet (docs/BUILD372_HANDOFF_AR.md §7).

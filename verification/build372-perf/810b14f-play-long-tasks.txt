@@ -1,0 +1,61 @@
+long tasks >50ms: 15 total ms 3081
+
+=== task 1179ms samples=453 gc=0ms
+ self: ['scanChunk:713@ 219', 'fill:687@ 177', 'classOf:705@ 26', 'classScan:664@ 10', '(program):1@ 4', '(anon):1@ 3']
+ incl: ['(root):1@ 453', '(anon):1@ 447', 'evaluate:284@ 446', 'recorderStart:166@ 444', 'recorderAssetSignal:143@ 437', 'forEachFieldClasses:561@ 436', 'forEachClass:809@ 436', 'countByPhase:581@ 436', 'countByFields:570@ 436', 'classScan:664@ 432', 'scanChunk:713@ 420', 'fill:687@ 177', 'classOf:705@ 26', '(program):1@ 4', 'recorderSample:173@ 4', '(anon):572@ 3']
+
+=== task 334ms samples=1558 gc=23ms
+ self: ['fill:687@ 426', 'scanChunk:713@ 361', 'addKey:836@ 171', 'scanIdCollisions:834@ 168', 'classOf:705@ 94', 'validateEntity:119@ 78']
+ incl: ['(root):1@ 1558', '(anon):34@ 1517', 'tick:37@ 1517', 'frame:378@ 1516', 'frameBody:388@ 1515', 'runChunk:3650@ 1514', 'work:287@ 1514', 'advance:550@ 1514', 'step:562@ 1514', '(anon):562@ 1513', 'executeSteps:566@ 1512', 'runCriticalTask:681@ 1510', '(anon):128@ 1507', 'validationSteps:588@ 1503', 'forEachFieldClasses:561@ 1124', 'forEachSaveAssetClass:23@ 1124']
+
+=== task 288ms samples=1047 gc=1217ms
+ self: ['(garbage collector):1@ 1045', '(program):1@ 2']
+ incl: ['(root):1@ 1047', '(garbage collector):1@ 1045', '(program):1@ 2']
+
+=== task 151ms samples=632 gc=722ms
+ self: ['(garbage collector):1@ 631', '(program):1@ 1']
+ incl: ['(root):1@ 632', '(garbage collector):1@ 631', '(program):1@ 1']
+
+=== task 147ms samples=836 gc=0ms
+ self: ['fill:687@ 276', 'scanChunk:713@ 241', 'financeChecks:29@ 98', 'duplicates:28@ 46', 'checkState:93@ 22', 'validateState:314@ 20']
+ incl: ['(root):1@ 836', 'runChunk:3650@ 833', 'work:287@ 833', 'advance:550@ 833', 'frame:378@ 833', '(anon):34@ 833', 'step:562@ 833', 'frameBody:388@ 833', 'tick:37@ 833', 'executeSteps:566@ 832', '(anon):562@ 832', 'sliceWork:3579@ 830', 'measure:578@ 821', '(anon):3625@ 820', 'processMarket:3005@ 820', '(anon):3011@ 810']
+
+=== task 122ms samples=548 gc=132ms
+ self: ['(garbage collector):1@ 117', 'scanChunk:713@ 113', 'fill:687@ 88', 'financeChecks:29@ 50', 'duplicates:28@ 30', 'classOf:705@ 28']
+ incl: ['(root):1@ 548', '(anon):34@ 429', 'work:287@ 428', 'frame:378@ 428', 'frameBody:388@ 428', 'tick:37@ 428', 'runChunk:3650@ 427', 'advance:550@ 427', 'sliceWork:3579@ 427', 'step:562@ 427', 'executeSteps:566@ 427', '(anon):562@ 427', '(anon):3625@ 421', 'measure:578@ 421', 'processMarket:3005@ 420', '(anon):3011@ 404']
+
+=== task 110ms samples=611 gc=0ms
+ self: ['scanChunk:713@ 193', 'fill:687@ 191', 'financeChecks:29@ 69', 'duplicates:28@ 30', 'classOf:705@ 16', 'validateState:314@ 13']
+ incl: ['(root):1@ 611', 'asked.then.realtimeHealthPending:3781@ 607', 'runRealtimeHealth:3692@ 606', 'runHealthCheck:260@ 600', 'check:92@ 584', 'checkState:93@ 581', 'validateState:314@ 459', 'forEachFieldClasses:561@ 433', 'forEachClass:809@ 433', 'classScan:664@ 406', 'scanChunk:713@ 393', 'fill:687@ 193', 'financeChecks:29@ 103', 'duplicates:28@ 30', 'classOf:705@ 16', 'projectRow:638@ 14']
+
+=== task 108ms samples=558 gc=0ms
+ self: ['scanChunk:713@ 228', 'fill:687@ 217', 'classOf:705@ 33', 'cleanDetail:43@ 27', 'probe.stop:7@ 13', '(anon):1@ 9']
+ incl: ['(root):1@ 558', '(anon):1@ 552', 'evaluate:284@ 548', 'recorderStop:211@ 497', 'recorderSample:173@ 491', 'forEachFieldClasses:561@ 486', 'forEachClass:809@ 486', 'countByPhase:581@ 486', 'countByFields:570@ 486', 'recorderAssetSignal:143@ 486', 'classScan:664@ 484', 'scanChunk:713@ 476', 'fill:687@ 217', 'classOf:705@ 33', 'recorderSnapshotData:88@ 27', 'cleanDetail:43@ 27']
+
+=== task 100ms samples=357 gc=176ms
+ self: ['(garbage collector):1@ 125', 'fill:687@ 75', 'scanChunk:713@ 55', 'financeChecks:29@ 22', 'duplicates:28@ 15', 'receiptDistinctFields:361@ 8']
+ incl: ['(root):1@ 357', 'tick:37@ 231', '(anon):34@ 231', 'work:287@ 230', '(anon):3625@ 230', 'frame:378@ 230', 'step:562@ 230', '(anon):562@ 230', 'runChunk:3650@ 230', 'frameBody:388@ 230', 'measure:578@ 230', 'executeSteps:566@ 230', 'advance:550@ 230', 'sliceWork:3579@ 230', 'processMarket:3005@ 229', 'performDispatch:180@ 222']
+
+=== task 99ms samples=552 gc=0ms
+ self: ['scanChunk:713@ 176', 'fill:687@ 171', 'financeChecks:29@ 63', 'duplicates:28@ 29', 'validateState:314@ 17', 'checkState:93@ 11']
+ incl: ['(root):1@ 552', 'runChunk:3650@ 551', 'work:287@ 551', 'advance:550@ 551', 'sliceWork:3579@ 551', 'frame:378@ 551', '(anon):34@ 551', 'step:562@ 551', 'executeSteps:566@ 551', 'frameBody:388@ 551', '(anon):562@ 551', 'tick:37@ 551', '(anon):3625@ 548', 'measure:578@ 548', 'processMarket:3005@ 548', '(anon):3011@ 541']
+
+=== task 99ms samples=563 gc=0ms
+ self: ['scanChunk:713@ 201', 'fill:687@ 192', 'financeChecks:29@ 61', 'duplicates:28@ 25', 'validateState:314@ 12', 'receiptDistinctFields:361@ 8']
+ incl: ['(root):1@ 563', 'runChunk:3650@ 562', 'work:287@ 562', 'advance:550@ 562', 'sliceWork:3579@ 562', 'frame:378@ 562', '(anon):34@ 562', 'step:562@ 562', 'executeSteps:566@ 562', 'frameBody:388@ 562', '(anon):562@ 562', 'tick:37@ 562', '(anon):3625@ 558', 'measure:578@ 558', 'processMarket:3005@ 558', '(anon):3011@ 553']
+
+=== task 97ms samples=542 gc=0ms
+ self: ['scanChunk:713@ 180', 'fill:687@ 154', 'financeChecks:29@ 68', 'duplicates:28@ 29', 'receiptDistinctFields:361@ 12', 'logRow:231@ 10']
+ incl: ['(root):1@ 542', '(anon):34@ 541', 'work:287@ 540', 'frame:378@ 540', 'frameBody:388@ 540', 'tick:37@ 540', 'runChunk:3650@ 539', 'advance:550@ 539', 'step:562@ 539', 'executeSteps:566@ 539', '(anon):562@ 539', 'sliceWork:3579@ 538', '(anon):3625@ 521', 'processMarket:3005@ 521', 'measure:578@ 521', '(anon):3011@ 511']
+
+=== task 87ms samples=484 gc=0ms
+ self: ['fill:687@ 167', 'scanChunk:713@ 159', 'financeChecks:29@ 49', 'duplicates:28@ 22', 'classOf:705@ 14', 'receiptDistinctFields:361@ 12']
+ incl: ['(root):1@ 484', 'asked.then.realtimeHealthPending:3781@ 483', 'runRealtimeHealth:3692@ 482', 'runHealthCheck:260@ 481', 'check:92@ 474', 'checkState:93@ 471', 'validateState:314@ 381', 'forEachFieldClasses:561@ 362', 'forEachClass:809@ 362', 'classScan:664@ 345', 'scanChunk:713@ 330', 'fill:687@ 169', 'financeChecks:29@ 71', 'duplicates:28@ 22', 'classOf:705@ 14', 'receiptDistinctFields:361@ 12']
+
+=== task 87ms samples=468 gc=0ms
+ self: ['fill:687@ 157', 'scanChunk:713@ 130', 'financeChecks:29@ 57', 'duplicates:28@ 28', 'checkState:93@ 14', 'rowCompanyId:27@ 11']
+ incl: ['(root):1@ 468', 'runRealtimeHealth:3692@ 467', 'asked.then.realtimeHealthPending:3781@ 467', 'runHealthCheck:260@ 466', 'check:92@ 459', 'checkState:93@ 457', 'validateState:314@ 338', 'forEachFieldClasses:561@ 319', 'forEachClass:809@ 319', 'classScan:664@ 300', 'scanChunk:713@ 292', 'fill:687@ 162', 'financeChecks:29@ 96', 'duplicates:28@ 28', 'projectRow:638@ 11', 'rowCompanyId:27@ 11']
+
+=== task 74ms samples=433 gc=0ms
+ self: ['fill:687@ 152', 'scanChunk:713@ 109', 'financeChecks:29@ 61', 'duplicates:28@ 28', 'validateState:314@ 13', 'receiptDistinctFields:361@ 10']
+ incl: ['(root):1@ 433', 'frame:378@ 432', '(anon):34@ 432', 'frameBody:388@ 432', 'tick:37@ 432', 'runChunk:3650@ 431', 'work:287@ 431', 'advance:550@ 431', 'sliceWork:3579@ 431', 'executeSteps:566@ 431', 'step:562@ 431', '(anon):562@ 431', '(anon):3625@ 429', 'measure:578@ 429', 'processMarket:3005@ 429', '(anon):3011@ 424']

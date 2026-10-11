@@ -1,0 +1,526 @@
+{
+  "tool": "measure_fullgame_perf",
+  "options": {
+    "assets": 100000,
+    "play": 60,
+    "days": 1,
+    "batch": 3000,
+    "sites": [
+      "OMDB",
+      "EGLL",
+      "KJFK",
+      "RJTT",
+      "WSSS",
+      "YSSY",
+      "FAOR",
+      "SBGR"
+    ],
+    "out": "/tmp/claude-0/-home-user-GlobalHoldings-iOS-Source/a36ccae1-2af0-59fd-8342-db463a1e9eec/scratchpad/perf/r100k.json",
+    "profile": "",
+    "trace": "",
+    "skipAdvance": 0
+  },
+  "phases": {
+    "dispatch": {
+      "wallMs": 35195,
+      "frames": 1582,
+      "smoothPct": 82.3,
+      "jankyFrames": 280,
+      "p50": 16.7,
+      "p95": 50,
+      "p99": 116.6,
+      "worstMs": 233,
+      "over50": 53,
+      "stalls50": [
+        233,
+        217,
+        200,
+        183,
+        167,
+        167,
+        167,
+        150,
+        150,
+        133,
+        133,
+        133,
+        117,
+        117,
+        117,
+        117,
+        117,
+        117,
+        100,
+        100,
+        83,
+        83,
+        83,
+        83,
+        83,
+        83,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        67,
+        50,
+        50,
+        50,
+        50,
+        50,
+        50
+      ],
+      "stalls50TotalMs": 5133,
+      "over100": 18,
+      "over200": 2,
+      "longTasks": {
+        "count": 120,
+        "totalMs": 9174,
+        "top": [
+          246,
+          224,
+          202,
+          175,
+          171,
+          169,
+          150,
+          145
+        ]
+      },
+      "saves": 5,
+      "seriesMs": 35196,
+      "commands": 3,
+      "commandTotals": [
+        {
+          "totalMs": 5828.6,
+          "applyMs": 5368.9,
+          "validateMs": 77.8,
+          "integrityMs": 2.4,
+          "persistMs": 124,
+          "publishMs": 7,
+          "cloneMs": 12.4,
+          "baselineIntegrityMs": 2.1,
+          "committed": true
+        },
+        {
+          "totalMs": 6142.3,
+          "applyMs": 5613.2,
+          "validateMs": 70.1,
+          "integrityMs": 2.8,
+          "persistMs": 171.6,
+          "publishMs": 7.8,
+          "cloneMs": 16.2,
+          "baselineIntegrityMs": 1.9,
+          "committed": true
+        },
+        {
+          "totalMs": 7070,
+          "applyMs": 6549.5,
+          "validateMs": 99.7,
+          "integrityMs": 2.6,
+          "persistMs": 240.1,
+          "publishMs": 13.5,
+          "cloneMs": 19.7,
+          "baselineIntegrityMs": 2.9,
+          "committed": true
+        }
+      ]
+    },
+    "play": {
+      "wallMs": 60028,
+      "frames": 3602,
+      "smoothPct": 100,
+      "jankyFrames": 0,
+      "p50": 16.7,
+      "p95": 16.7,
+      "p99": 16.8,
+      "worstMs": 17,
+      "over50": 0,
+      "stalls50": [],
+      "stalls50TotalMs": 0,
+      "over100": 0,
+      "over200": 0,
+      "longTasks": {
+        "count": 0,
+        "totalMs": 0,
+        "top": []
+      },
+      "saves": 0,
+      "simDays": 0.41,
+      "engine": {
+        "maxFrame": {
+          "createMs": 0,
+          "chunkMs": 13.299999999813735,
+          "finishMs": 0,
+          "maintenanceMs": 0,
+          "renderMs": 0,
+          "totalMs": 13.299999999813735
+        },
+        "maxCycleMs": 56.099999997764826,
+        "maxFinishMs": 0.40000000037252903,
+        "maxChunkMs": 13.299999999813735,
+        "maxRenderMs": 10.700000000186265,
+        "maxMaintenanceMs": 0,
+        "longTasks": 0,
+        "governor": "GREEN"
+      },
+      "simRender": {
+        "last": {
+          "kpisMs": 0.39999999944120646,
+          "mapStatusMs": 0.10000000055879354,
+          "recorderMs": 0.2999999998137355,
+          "proofAuditMs": 4,
+          "fleetThreadPrimeMs": 0.09999999962747097,
+          "streetHydrationMs": 0.10000000055879354,
+          "recordedAtMs": 1791708930295
+        },
+        "max": {
+          "kpisMs": 6.2000000001862645,
+          "mapStatusMs": 8.900000000372529,
+          "recorderMs": 2.3999999994412065,
+          "proofAuditMs": 5.400000000372529,
+          "streetHydrationMs": 0.2999999998137355,
+          "fleetThreadPrimeMs": 0.40000000037252903
+        },
+        "count": 236
+      },
+      "fleetThread": {
+        "requests": 59,
+        "applied": 59,
+        "fallbacks": 0,
+        "windowBegins": 0,
+        "windowSteps": 0,
+        "windowCommits": 0,
+        "windowRollbacks": 0,
+        "windowFallbacks": 0,
+        "fullSyncs": 1,
+        "seedSyncs": 0,
+        "incrementalSyncs": 242,
+        "columnSyncs": 0,
+        "compactions": 0,
+        "rowsSent": 100000,
+        "routeKeysAnswered": 0,
+        "deferredRequests": 0,
+        "windowDeferred": 0,
+        "lastWorkerMs": 26.5,
+        "lastApplyMs": 1.8999999994412065,
+        "lastSyncMs": 0.09999999962747097,
+        "maxWorkerMs": 811,
+        "maxApplyMs": 9.5,
+        "maxSyncMs": 12.200000000186265,
+        "maxFullSyncMs": 12.100000000558794,
+        "maxSeedSyncMs": 0,
+        "maxRouteAnswerMs": 0.09999999962747097,
+        "lastReason": "",
+        "fullSyncReasons": {
+          "stale": 1
+        },
+        "queryRequests": 10,
+        "classRequests": 68,
+        "totalWorkerMs": 7478.000000001863,
+        "maxQueryWorkerMs": 47.10000000055879,
+        "lastClassesWorkerMs": 11,
+        "maxClassesWorkerMs": 38.90000000037253,
+        "healthRequests": 9,
+        "lastHealthWorkerMs": 4.900000000372529,
+        "maxHealthWorkerMs": 16.299999999813735,
+        "replicaRefusals": {
+          "step-not-replayed": 6
+        },
+        "disabled": null,
+        "pending": false,
+        "window": false
+      },
+      "recorder": {
+        "frameSummary": {
+          "measured": true,
+          "frameCallbacks": 3603,
+          "visibleIntervals": 3602,
+          "effectiveFps": 60,
+          "estimatedRefreshHz": 59.88,
+          "estimatedObservedCadenceHz": 59.88,
+          "hardwareRefreshRateMeasured": false,
+          "expectedFrameIntervalMs": 16.7,
+          "cadenceEstimator": "rolling-modal-visible-interval-v2",
+          "cadenceSamples": 120,
+          "cadenceConfidence": "steady",
+          "cadenceModeShare": 1,
+          "jankyFrames": 0,
+          "estimatedMissedFrames": 0,
+          "longGaps": 0,
+          "longTasks": 0,
+          "maxFrameIntervalMs": 16.8,
+          "p50FrameIntervalMs": 16.75,
+          "p95FrameIntervalMs": 16.75,
+          "maxCallbackDurationMs": 11.9,
+          "p95CallbackDurationMs": 0.75,
+          "recentTraceFrames": 240,
+          "traceCapacity": 240,
+          "percentilesScope": "whole-recording histogram capped at 1000ms; frameTrace contains most recent bounded window"
+        },
+        "findings": [
+          {
+            "type": "LIVE_SPEED_UNDERRUN",
+            "count": 1
+          }
+        ],
+        "dropCauses": {},
+        "keyEvents": {
+          "LIVE_SPEED_UNDERRUN": {
+            "first": {
+              "id": "FR-1791708873695-70",
+              "type": "LIVE_SPEED_UNDERRUN",
+              "severity": "warning",
+              "atMs": 1791708873695,
+              "at": "2026-10-11T08:54:33.695Z",
+              "simSeconds": 1200,
+              "detail": {
+                "requestedRate": 600,
+                "actualRate": 368.8,
+                "windowMs": 3254,
+                "simDelta": 1200,
+                "governor": "GREEN",
+                "backlog": 735.4799999998856
+              }
+            },
+            "last": {
+              "id": "FR-1791708873695-70",
+              "type": "LIVE_SPEED_UNDERRUN",
+              "severity": "warning",
+              "atMs": 1791708873695,
+              "at": "2026-10-11T08:54:33.695Z",
+              "simSeconds": 1200,
+              "detail": {
+                "requestedRate": 600,
+                "actualRate": 368.8,
+                "windowMs": 3254,
+                "simDelta": 1200,
+                "governor": "GREEN",
+                "backlog": 735.4799999998856
+              }
+            }
+          }
+        }
+      },
+      "heap": {
+        "peakMB": 198,
+        "meanMB": 95,
+        "samples": 60
+      },
+      "startedAtS": 1791708870,
+      "endedAtS": 1791708931,
+      "cpu": {
+        "mainThreadTaskSeconds": 4.7,
+        "scriptSeconds": 3.3,
+        "layoutSeconds": 0.1,
+        "styleSeconds": 0.1
+      }
+    },
+    "advance": {
+      "wallMs": 7183,
+      "frames": 426,
+      "smoothPct": 99.3,
+      "jankyFrames": 3,
+      "p50": 16.7,
+      "p95": 16.7,
+      "p99": 16.8,
+      "worstMs": 50,
+      "over50": 0,
+      "stalls50": [],
+      "stalls50TotalMs": 0,
+      "over100": 0,
+      "over200": 0,
+      "longTasks": {
+        "count": 1,
+        "totalMs": 62,
+        "top": [
+          62
+        ]
+      },
+      "saves": 0,
+      "simDays": 1,
+      "engine": {
+        "maxFrame": {
+          "createMs": 0,
+          "chunkMs": 62.700000000186265,
+          "finishMs": 0,
+          "maintenanceMs": 0,
+          "renderMs": 0,
+          "totalMs": 62.700000000186265
+        },
+        "maxCycleMs": 525.6000000005588,
+        "maxFinishMs": 11.599999999627471,
+        "maxChunkMs": 62.700000000186265,
+        "maxRenderMs": 10.700000000186265,
+        "maxMaintenanceMs": 32.59999999962747,
+        "longTasks": 4,
+        "governor": "GREEN"
+      },
+      "simRender": {
+        "last": {
+          "kpisMs": 0.20000000018626451,
+          "mapStatusMs": 0.6000000005587935,
+          "recorderMs": 0.39999999944120646,
+          "proofAuditMs": 4,
+          "fleetThreadPrimeMs": 0.20000000018626451,
+          "streetHydrationMs": 0,
+          "recordedAtMs": 1791708937508
+        },
+        "max": {
+          "kpisMs": 6.2000000001862645,
+          "mapStatusMs": 8.900000000372529,
+          "recorderMs": 2.3999999994412065,
+          "proofAuditMs": 5.7000000001862645,
+          "streetHydrationMs": 0.2999999998137355,
+          "fleetThreadPrimeMs": 0.40000000037252903
+        },
+        "count": 247
+      },
+      "fleetThread": {
+        "requests": 86,
+        "applied": 86,
+        "fallbacks": 0,
+        "windowBegins": 4,
+        "windowSteps": 22,
+        "windowCommits": 4,
+        "windowRollbacks": 0,
+        "windowFallbacks": 0,
+        "fullSyncs": 1,
+        "seedSyncs": 0,
+        "incrementalSyncs": 255,
+        "columnSyncs": 1,
+        "compactions": 0,
+        "rowsSent": 102000,
+        "routeKeysAnswered": 0,
+        "deferredRequests": 0,
+        "windowDeferred": 0,
+        "lastWorkerMs": 48,
+        "lastApplyMs": 16,
+        "lastSyncMs": 0.20000000018626451,
+        "maxWorkerMs": 811,
+        "maxApplyMs": 62.60000000055879,
+        "maxSyncMs": 12.200000000186265,
+        "maxFullSyncMs": 12.100000000558794,
+        "maxSeedSyncMs": 0,
+        "maxRouteAnswerMs": 0.09999999962747097,
+        "lastReason": "",
+        "fullSyncReasons": {
+          "stale": 1
+        },
+        "queryRequests": 10,
+        "classRequests": 72,
+        "totalWorkerMs": 8836.50000000652,
+        "maxQueryWorkerMs": 47.10000000055879,
+        "lastClassesWorkerMs": 17.40000000037253,
+        "maxClassesWorkerMs": 38.90000000037253,
+        "healthRequests": 9,
+        "lastHealthWorkerMs": 4.900000000372529,
+        "maxHealthWorkerMs": 16.299999999813735,
+        "replicaRefusals": {
+          "step-not-replayed": 12,
+          "written-since-step": 1
+        },
+        "disabled": null,
+        "pending": false,
+        "window": false
+      },
+      "recorder": {
+        "frameSummary": {
+          "measured": true,
+          "frameCallbacks": 427,
+          "visibleIntervals": 426,
+          "effectiveFps": 59.44,
+          "estimatedRefreshHz": 59.88,
+          "estimatedObservedCadenceHz": 59.88,
+          "hardwareRefreshRateMeasured": false,
+          "expectedFrameIntervalMs": 16.7,
+          "cadenceEstimator": "rolling-modal-visible-interval-v2",
+          "cadenceSamples": 120,
+          "cadenceConfidence": "steady",
+          "cadenceModeShare": 1,
+          "jankyFrames": 3,
+          "estimatedMissedFrames": 4,
+          "longGaps": 0,
+          "longTasks": 1,
+          "maxFrameIntervalMs": 50,
+          "p50FrameIntervalMs": 16.75,
+          "p95FrameIntervalMs": 16.75,
+          "maxCallbackDurationMs": 1.9,
+          "p95CallbackDurationMs": 0.75,
+          "recentTraceFrames": 240,
+          "traceCapacity": 240,
+          "percentilesScope": "whole-recording histogram capped at 1000ms; frameTrace contains most recent bounded window"
+        },
+        "findings": [
+          {
+            "type": "FRAME_DROP",
+            "count": 3
+          },
+          {
+            "type": "LONG_TASK_TRACE",
+            "count": 1
+          }
+        ],
+        "dropCauses": {
+          "browser-long-task-overlap": 1,
+          "unattributed-scheduler-or-compositor": 2
+        },
+        "keyEvents": {}
+      },
+      "heap": {
+        "peakMB": 87,
+        "meanMB": 75,
+        "samples": 8
+      },
+      "startedAtS": 1791708931,
+      "endedAtS": 1791708939,
+      "cpu": {
+        "mainThreadTaskSeconds": 2.4,
+        "scriptSeconds": 1.9,
+        "layoutSeconds": 0,
+        "styleSeconds": 0
+      },
+      "advanceMs": 8033
+    }
+  },
+  "fleet": {
+    "bought": 100000,
+    "size": 100000,
+    "model": "UA-A320C",
+    "buyMs": 14718
+  },
+  "memory": {
+    "jsHeapUsedMB": 63,
+    "jsHeapTotalMB": 65,
+    "vaultStandInMB": 164,
+    "fleetStoreColumnMB": 12,
+    "fleetStoreStats": {
+      "length": 100000,
+      "live": 100000,
+      "capacity": 120722,
+      "values": 4662,
+      "freeValues": 0,
+      "extras": 2000,
+      "columnBytes": 12800000,
+      "bytesPerAsset": 128
+    },
+    "fleetRows": 100000
+  },
+  "errors": []
+}

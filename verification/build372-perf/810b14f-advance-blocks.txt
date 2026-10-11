@@ -1,0 +1,34 @@
+blocks>50ms 128 total ms 12384
+inclusive over all blocks: ['(root):0@ 21736', '(anon):34@ 16427', 'tick:37@ 16426', 'frame:378@ 16405', 'frameBody:388@ 16402', 'executeSteps:566@ 14754', 'work:287@ 13662', 'runChunk:3650@ 13635', 'advance:550@ 13424', 'step:562@ 13423', '(anon):562@ 13417', 'sliceWork:3579@ 11698', 'measure:578@ 10696', 'forEachFieldClasses:561@ 7138', 'forEachClass:809@ 7132', 'check:92@ 6892', 'checkState:93@ 6843', 'dispatchSystemCommand:1047@ 6705', 'dispatchSystem:202@ 6678', 'performDispatch:180@ 6677', 'join:505@ 6676', 'apply:183@ 6674', '(anon):184@ 6646', 'transactionMemo:312@ 6646', 'classScan:664@ 6593', 'processMarket:3005@ 6494', '(anon):3625@ 6494', '(anon):3011@ 6440', 'scanChunk:713@ 6398', 'validateState:314@ 5698', 'financialDayStages:2862@ 4641', '(garbage collector):0@ 4380', 'onDayStages:511@ 3730', '(anon):2953@ 3730', 'scan:475@ 3396', 'fill:687@ 3357', 'scanStages:672@ 2853', 'fleetDayPass:504@ 2572', 'runDeferredMaintenance:3258@ 2526', 'runDeferredWork:3739@ 2526']
+
+== 239 ms samples=380
+ self ['fill:687@ 120', 'scanChunk:713@ 81', 'classOf:705@ 38', 'safeDisplayText:87@ 17', 'visitAssetClass:630@ 17', 'validateEntity:119@ 13']
+ incl ['(root):0@ 380', 'executeSteps:566@ 371', '(anon):562@ 371', 'advance:550@ 371', 'step:562@ 371', 'runChunk:3650@ 371', 'work:287@ 371', 'frameBody:388@ 371', 'frame:378@ 371', 'tick:37@ 371', '(anon):34@ 371', 'validationSteps:588@ 369', '(anon):128@ 369', 'runCriticalTask:681@ 369', 'forEachFieldClasses:561@ 328', 'forEachSaveAssetClass:23@ 328', 'forEachClass:809@ 327', 'classScan:664@ 243', 'scanChunk:713@ 230', 'fill:687@ 122', 'visitAssetClass:630@ 55', 'classOf:705@ 38']
+
+== 205 ms samples=331
+ self ['fill:687@ 99', 'scanChunk:713@ 69', 'classOf:705@ 35', 'validateEntity:119@ 18', 'visitAssetClass:630@ 12', 'safeAttributeText:94@ 10']
+ incl ['(root):0@ 331', 'executeSteps:566@ 325', '(anon):562@ 325', 'advance:550@ 325', 'step:562@ 325', 'runChunk:3650@ 325', 'work:287@ 325', 'frameBody:388@ 325', 'frame:378@ 325', 'tick:37@ 325', '(anon):34@ 325', 'runCriticalTask:681@ 323', 'validationSteps:588@ 322', '(anon):128@ 322', 'forEachFieldClasses:561@ 284', 'forEachSaveAssetClass:23@ 284', 'forEachClass:809@ 283', 'classScan:664@ 203', 'scanChunk:713@ 194', 'fill:687@ 99', 'visitAssetClass:630@ 46', 'classOf:705@ 35']
+
+== 175 ms samples=280
+ self ['sha256:32@ 46', 'encode:10@ 37', 'validateDocumentProofState:401@ 29', '(garbage collector):0@ 17', 'checkDocument:436@ 16', '(anon):20@ 10']
+ incl ['(root):0@ 280', 'frameBody:388@ 259', 'frame:378@ 259', 'tick:37@ 259', '(anon):34@ 259', 'validationSteps:588@ 257', '(anon):128@ 257', 'runCriticalTask:681@ 257', 'executeSteps:566@ 257', '(anon):562@ 257', 'advance:550@ 257', 'step:562@ 257', 'runChunk:3650@ 257', 'work:287@ 257', 'validateDocumentProofState:401@ 254', 'checkRecord:424@ 170', 'verifyRecord:639@ 149', 'verifyArchivedRecord:588@ 144', 'archivedContentStable:583@ 71', 'encode:10@ 47', 'sha256:32@ 46', 'checkDocument:436@ 44']
+
+== 169 ms samples=261
+ self ['deriveFast:189@ 92', 'scan:475@ 82', 'derive:56@ 24', 'fleetConditionSum:263@ 16', '(anon):266@ 16', 'clamp:41@ 7']
+ incl ['(root):0@ 261', 'frameBody:388@ 252', 'frame:378@ 252', 'tick:37@ 252', '(anon):34@ 252', 'sliceWork:3579@ 250', 'executeSteps:566@ 250', '(anon):562@ 250', 'advance:550@ 250', 'step:562@ 250', 'runChunk:3650@ 250', 'work:287@ 250', 'onDayStages:511@ 249', '(anon):2953@ 249', 'measure:578@ 249', 'financialDayStages:2862@ 249', 'updateInsurance:271@ 248', 'fleetConditionSum:263@ 247', 'scan:475@ 231', 'deriveFast:189@ 130', 'derive:56@ 38', '(anon):266@ 16']
+
+== 165 ms samples=264
+ self ['addKey:836@ 64', 'scanChunk:713@ 60', 'fill:687@ 47', 'scanIdCollisions:834@ 43', 'financeChecks:29@ 13', 'duplicates:28@ 6']
+ incl ['(root):0@ 264', 'runDeferredMaintenance:3258@ 261', 'runDeferredWork:3739@ 261', 'runDeferredWork:280@ 261', 'frameBody:388@ 261', 'frame:378@ 261', 'tick:37@ 261', '(anon):34@ 261', 'runMaintenanceTask:3223@ 260', 'captureExportEvidence:347@ 257', 'captureDiagnosticEvidence:3705@ 257', 'runHealthCheck:260@ 219', 'fleetAssetsHealthy:16@ 216', 'assetIssues:29@ 216', 'forEachClass:809@ 115', 'forEachFieldClasses:561@ 115', 'classScan:664@ 109', 'scanChunk:713@ 108', 'scanIdCollisions:834@ 107', 'idCollisions:829@ 107', 'idCollisions:598@ 107', 'addKey:836@ 64']
+
+== 164 ms samples=248
+ self ['(garbage collector):0@ 82', 'captureMembers:354@ 65', 'compactArchivedRecords:278@ 26', 'encode:10@ 24', 'sha256:32@ 6', 'cleanDetail:43@ 5']
+ incl ['(root):0@ 248', 'frameBody:388@ 159', 'frame:378@ 159', 'tick:37@ 159', '(anon):34@ 159', 'executeSteps:566@ 154', 'execute:540@ 154', 'proofMaintenancePass:3086@ 154', 'runMaintenanceTask:3223@ 154', 'runDeferredMaintenance:3258@ 154', 'runDeferredWork:3739@ 154', 'runDeferredWork:280@ 154', 'compactArchivedProofs:3103@ 136', 'apply:3088@ 88', 'compactArchivedRecords:278@ 87', '(anon):3105@ 87', '(garbage collector):0@ 82', 'captureMembers:354@ 65', 'captureRows:367@ 65', 'captureEntry:380@ 65', 'captureScoped:391@ 65', 'verifyArchivedDocument:658@ 56']
+
+== 161 ms samples=256
+ self ['scanChunk:713@ 62', 'addKey:836@ 59', 'fill:687@ 46', 'scanIdCollisions:834@ 40', 'financeChecks:29@ 11', 'duplicates:28@ 6']
+ incl ['(root):0@ 256', 'tick:37@ 253', '(anon):34@ 253', 'runMaintenanceTask:3223@ 252', 'runDeferredMaintenance:3258@ 252', 'runDeferredWork:3739@ 252', 'runDeferredWork:280@ 252', 'frameBody:388@ 252', 'frame:378@ 252', 'captureDiagnosticEvidence:3705@ 249', 'captureExportEvidence:347@ 248', 'runHealthCheck:260@ 215', 'fleetAssetsHealthy:16@ 212', 'assetIssues:29@ 212', 'forEachClass:809@ 115', 'forEachFieldClasses:561@ 115', 'classScan:664@ 110', 'scanChunk:713@ 109', 'idCollisions:829@ 102', 'idCollisions:598@ 102', 'scanIdCollisions:834@ 100', 'addKey:836@ 59']
+
+== 159 ms samples=237
+ self ['(garbage collector):0@ 185', 'worker.onmessage:46@ 8', 'setTimeout:0@ 4', 'save:0@ 3', 'forEachMapFleetClass:2206@ 3', 'requestAnimationFrame:0@ 2']
+ incl ['(root):0@ 237', '(garbage collector):0@ 185', 'renderMap:2296@ 29', '(anon):1565@ 29', 'loop:5984@ 9', 'worker.onmessage:46@ 9', 'forEachMapFleetClass:2206@ 9', 'operationVehicleCandidates:2246@ 8', 'collectFleetPresentation:2229@ 7', 'draw:209@ 6', '(anon):2254@ 6', 'renderPlaces:2284@ 6', 'request:179@ 5', 'fleetStepPending:3552@ 5', 'runChunk:3650@ 5', 'work:287@ 5', 'frameBody:388@ 5', 'frame:378@ 5', 'tick:37@ 5', '(anon):34@ 5', 'animateMapMarkerPositions:2470@ 5', '(anon):2236@ 5']
