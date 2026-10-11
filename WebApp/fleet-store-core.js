@@ -1050,18 +1050,22 @@
     return {length:values.length,changes};
   }
   // Replica side, outside any journal: sets values by reference number, then rebuilds the free list in ascending order.
+  // Build 372: valuesGeneration moves only when a value held at a ref is replaced or removed (appended values and filled
+  // free slots change no ref a cached table holds); it moved on every exchange, so the worker rebuilt every class table
+  // for each request.
   function applyValueChanges(store,{length,changes}){
-    const r=rt(store),values=store.values;
+    const r=rt(store),values=store.values;let replaced=false;
     for(const [ref,value] of changes){
+      if(ref<values.length&&values[ref]!==null&&values[ref]!==undefined)replaced=true;
       if(ref<values.length)unindexValue(r,values[ref],ref);
       while(values.length<ref)values.push(null);
       values[ref]=value===undefined?null:value;
       if(values[ref]!==null){const key=valueKey(values[ref]);if(!r.index.has(key))r.index.set(key,ref);}
     }
-    if(values.length>length){for(let ref=length;ref<values.length;ref++)unindexValue(r,values[ref],ref);values.length=length;}
+    if(values.length>length){for(let ref=length;ref<values.length;ref++){if(values[ref]!==null&&values[ref]!==undefined)replaced=true;unindexValue(r,values[ref],ref);}values.length=length;}
     while(values.length<length)values.push(null);
     r.free=[];for(let ref=1;ref<values.length;ref++)if(values[ref]===null)r.free.push(ref);
-    r.indexedTo=values.length;r.valuesGeneration=++epochCounter;
+    r.indexedTo=values.length;if(replaced)r.valuesGeneration=++epochCounter;
   }
   // Main side: interns `value` at the reference another realm's intern() gave it. Journaled like intern() (an appended
   // value is removed and a reused slot freed again on rollback). False when that reference holds another value or is not
@@ -1071,7 +1075,10 @@
     const r=rt(store),key=valueKey(value),found=r.index.get(key);
     if(found!==undefined)return found===ref;
     const stored=typeof value==='string'?value:jsonCopy(value);
-    if(ref===store.values.length){store.values.push(stored);r.indexedTo=store.values.length;r.index.set(key,ref);r.valuesGeneration=++epochCounter;return true;}
+    // Build 372: an appended value, as intern() appends one, leaves valuesGeneration alone (no existing ref changes, and rows
+    // that take the new ref are written, which moves their chunks): the replay of every step appended its trips' values and
+    // so dropped every cached class table (the integrity check rebuilt a million rows every market hour and health check).
+    if(ref===store.values.length){store.values.push(stored);r.indexedTo=store.values.length;r.index.set(key,ref);return true;}
     if(!(ref>0&&ref<store.values.length)||(store.values[ref]!==null&&store.values[ref]!==undefined))return false;
     const at=r.free.lastIndexOf(ref);if(at<0)return false;
     r.free.splice(at,1);store.values[ref]=stored;if(r.journal&&r.journal.active)r.journal.reused.push(ref);r.index.set(key,ref);r.valuesGeneration=++epochCounter;return true;
