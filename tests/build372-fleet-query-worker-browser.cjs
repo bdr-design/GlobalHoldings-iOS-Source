@@ -8,6 +8,8 @@
 //   - a store holding a row with neither ownerCompanyId nor companyId (owned through the legacy mode table, which only the
 //     main thread has): the worker declines (null) and the main thread's pass gives the legacy owner;
 //   - with a step in flight: null at once; current(result, store) is false after a write;
+//   - conditionSum (the daily close's insured condition total) is the same double on both sides and equals realism-core's
+//     own pass (a row at 0, NaN or without a condition counts 100);
 //   - the module's passes give exactly what app.js's own passes gave before Build 372 (kept here verbatim).
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
@@ -34,7 +36,7 @@ const workerSource=cores.map(read).join('\n;\n')+'\n;\n'+read('fleet-engine-work
         const asked=client.query(store,{name,params,simSeconds:state.simSeconds});if(!asked)throw new Error(`${label}: refused`);
         const found=await asked;if(!found)throw new Error(`${label}: no result`);if(!client.current(found,store))throw new Error(`${label}: not current`);
         const expected=Q.run(name,state,DATA,{...params,legacyOwner}),ok=same(found.result,expected);
-        log.push({label,ok,size:name==='dispatchEligible'?expected.indices.length:expected.cards.length});if(!ok)throw new Error(`${label}: differs`);
+        log.push({label,ok,size:name==='dispatchEligible'?expected.indices.length:name==='routeCards'?expected.cards.length:expected.sum});if(!ok)throw new Error(`${label}: differs`);
       };
       client.prime(store);await new Promise(resolve=>setTimeout(resolve,300));
       const live=()=>{const out=[];for(let i=0;i<store.length;i++)if(STORE.isAlive(store,i))out.push(i);return out;};
@@ -44,6 +46,9 @@ const workerSource=cores.map(read).join('\n;\n')+'\n;\n'+read('fleet-engine-work
         await compare(`eligible-${companyId}-cut`,'dispatchEligible',{companyId,type,limit:7});
         await compare(`cards-${companyId}`,'routeCards',{companyId,routeIds:Object.keys(routes)});
       }
+      // The insured condition total (a row at 0, one NaN and one without a condition count as 100): the same double.
+      STORE.set(store,rows[900],'condition',0);STORE.set(store,rows[901],'condition',NaN);STORE.set(store,rows[902],'condition',undefined);STORE.set(store,rows[903],'condition',63.17);
+      await compare('condition-sum','conditionSum',{});
       // A legacy-owned row (no ownerCompanyId, no companyId).
       const legacyIndex=rows[700];STORE.set(store,legacyIndex,'ownerCompanyId',undefined);STORE.set(store,legacyIndex,'companyId',undefined);
       const declined=await client.query(store,{name:'dispatchEligible',params:{companyId:'road',type:'road'}})===null;
@@ -74,13 +79,16 @@ const workerSource=cores.map(read).join('\n;\n')+'\n;\n'+read('fleet-engine-work
         });return {legacy:false,cards:[...out]};};
       const asOld=[];for(const [companyId,type] of [['road','road'],['air','air'],['sea','sea']])for(const limit of [20000,7])asOld.push(same(Q.run('dispatchEligible',state,DATA,{companyId,type,limit,legacyOwner}),oldEligible(state,companyId,type,limit)));
       for(const companyId of ['road','air','sea'])asOld.push(same(Q.run('routeCards',state,DATA,{companyId,routeIds:Object.keys(routes),legacyOwner}),oldCards(companyId,Object.keys(routes))));
+      // realism-core fleetConditionSum as it reads the store itself.
+      const oldConditionSum=()=>{let sum=0;DATA.scan(state,['condition'],a=>{sum+=Number(a.condition)||100;});return sum;};
+      asOld.push(Object.is(Q.run('conditionSum',state,DATA,{}).sum,oldConditionSum()));
       const stats=client.stats();client.terminate('done');
       return {log,asOld,declined,legacyCounted:mainLegacy.legacy===false,withoutTableLegacy:withoutTable.legacy===true,refusedInFlight,staleAfterWrite:client.current(late,store)===false,queryRequests:stats.queryRequests,maxQueryWorkerMs:stats.maxQueryWorkerMs};
     },{workerSource,fleet:FIX.fleet(),routes:FIX.routes,context:FIX.context(0)});
     for(const row of result.log)console.log(JSON.stringify(row));
-    assert.deepEqual(errors,[]);assert.ok(result.log.length===9&&result.log.every(row=>row.ok));
+    assert.deepEqual(errors,[]);assert.ok(result.log.length===10&&result.log.every(row=>row.ok));
     assert.ok(result.log.find(row=>row.label==='eligible-road-cut').size===7);
-    assert.deepEqual(result.asOld,Array(9).fill(true),'the module gives what app.js gave (legacy row included)');
+    assert.deepEqual(result.asOld,Array(10).fill(true),'the module gives what app.js gave (legacy row included)');
     assert.equal(result.declined,true,'the worker declines a pass needing the legacy owner table');
     assert.equal(result.legacyCounted,true);assert.equal(result.withoutTableLegacy,true);
     assert.equal(result.refusedInFlight,true);assert.equal(result.staleAfterWrite,true);

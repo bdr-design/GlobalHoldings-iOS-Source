@@ -3,7 +3,8 @@
 // when it cannot (no worker, or a replica that is not exactly its store). Each is the pass app.js made itself, with the
 // same fields, predicates and row order, so both give the same result:
 //   dispatchEligible: the shared international dispatch's pass (app.js dispatchSharedInternationalNetwork);
-//   routeCards: the route center's per-route card counts and trip sums (app.js routeCenterLinkedSummary).
+//   routeCards: the route center's per-route card counts and trip sums (app.js routeCenterLinkedSummary);
+//   conditionSum: the insured fleet's condition total (realism-core fleetConditionSum, the daily close's insurance).
 // The owner of a row is its ownerCompanyId or companyId; a row with neither is owned through the company platform's
 // legacy mode table, which only the main thread has: a pass given no legacyOwner then returns {legacy:true} and the
 // caller runs it on the main thread instead.
@@ -47,9 +48,12 @@
     if(flag.legacy)return {legacy:true};
     return {legacy:false,cards:[...out]};
   }
-  const QUERIES=Object.freeze({dispatchEligible,routeCards});
+  // The insured fleet's condition total (realism-core fleetConditionSum): condition, or 100 without one, over every row
+  // in row order, so the sum is the same number on either side.
+  function conditionSum(state,fleet){let sum=0;fleet.scan(state,['condition'],row=>{sum+=Number(row.condition)||100;});return {legacy:false,sum};}
+  const QUERIES=Object.freeze({dispatchEligible,routeCards,conditionSum});
   function run(name,state,fleet,params){const query=QUERIES[name];if(!query)throw new Error(`fleet-query-unknown:${name}`);return query(state,fleet,params||{});}
-  const API=Object.freeze({VERSION,DISPATCH_FIELDS,CARD_FIELDS,dispatchEligible,routeCards,run,names:Object.freeze(Object.keys(QUERIES))});
+  const API=Object.freeze({VERSION,DISPATCH_FIELDS,CARD_FIELDS,dispatchEligible,routeCards,conditionSum,run,names:Object.freeze(Object.keys(QUERIES))});
   globalThis.GH_FLEET_QUERY=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_QUERY=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;

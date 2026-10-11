@@ -941,6 +941,14 @@
     const store=s.fleet;return asked.then(result=>result?{rows:result.rows,ids:result.ids,current:()=>client.current(result,store)}:null);
   }
   globalThis.GH_FLEET_CLASSES_PROVIDER=(...args)=>fleetClassesForValidation(...args);
+  // Build 372: a fleet-query-core pass found by the fleet engine's worker for a staged stage that waits for it (realism-core:
+  // the daily close's insured condition total). A promise of {result, current()} or null when the worker cannot vouch for
+  // the store as it is (the caller then runs the pass itself).
+  globalThis.GH_FLEET_QUERY_PROVIDER=(s,name,params={})=>{
+    const client=fleetEngineThreadClient;if(!client||client.disabled||typeof client.query!=='function'||!window.GH_FLEET_STORE?.isStore?.(s?.fleet))return null;
+    const store=s.fleet,asked=client.query(store,{name,params,simSeconds:s.simSeconds});if(!asked)return null;
+    return asked.then(found=>found?{result:found.result,current:()=>client.current(found,store)}:null);
+  };
   // Build 371: fields the page writes on the live state while a durable command runs (the player's speed, map layer and
   // mode, open panel, competitor toggle; protective stops that set speed 0: a native process recovery, a failed save
   // status). replaceLiveState(draft) erased them on commit: a protective stop was undone and the simulation resumed.
@@ -3211,6 +3219,7 @@
   // confirmed by a full validation (only then, in that frame); a confirmed fault is reported, stops the simulation and
   // makes every recurring save validate in full (GH_PERSISTENCE.requireFullValidation), as a failed full pass did.
   const PROOF_AUDIT_ITEMS=1000,PROOF_AUDIT_MS=8,PROOF_AUDIT_RENDER_MS=4;let proofAudit=null;
+  const HEALTH_WORKER_WAITS=600;
   function proofAuditStep(budgetMs=PROOF_AUDIT_MS){
     const schema=window.GH_SAVE_SCHEMA;if(typeof schema?.createProofAudit!=='function')return null;
     if(!proofAudit||proofAudit.state!==state)proofAudit={state,audit:schema.createProofAudit()};
@@ -3261,7 +3270,24 @@
       const check=step.value;if(check&&check.ok===false){const reason=check.reason||check.errors?.join(',')||'invalid state';diag('SAVE_SCHEMA_INTEGRITY',{reason:String(reason).slice(0,240),source:'maintenance-compaction'},'critical');haltOnGlobalFault({issues:[{id:'SAVE_SCHEMA_INTEGRITY',severity:'critical'}]});}
       return true;
     }
-    if(entry.task==='health'){const evidence=captureDiagnosticEvidence({trackTransitions:true,storeResult:true}),health=evidence.health,central=window.GH_CONTROL_PLANE?.check?.(state,{evidence});haltOnGlobalFault(health,central);return true;}
+    // Build 372: the fleet's asset issues (fleet-health-core over every row: 165 ms on the main thread at a million assets,
+    // in each maintenance round of a calendar advance) come from the fleet engine's worker on its replica brought to the
+    // store. This part waits for them, one call per frame (the queue holds the next slice meanwhile), at most
+    // HEALTH_WORKER_WAITS, and uses them only if they describe the store exactly as it is (current(): the same store,
+    // runtime, revision, length and structure) at the same time; otherwise, and without the worker, it finds them here.
+    if(entry.task==='health'){
+      if(!entry.asked){
+        entry.asked={done:false,value:null,waits:0};
+        const client=fleetEngineThreadClient,asked=client&&!client.disabled&&window.GH_FLEET_STORE?.isStore?.(state.fleet)?client.health?.(state.fleet,{simSeconds:state.simSeconds}):null;
+        if(asked){const box=entry.asked;asked.then(value=>{box.done=true;box.value=value;},()=>{box.done=true;});return false;}
+        entry.asked.done=true;
+      }
+      if(!entry.asked.done&&++entry.asked.waits<HEALTH_WORKER_WAITS)return false;
+      const found=entry.asked.value,client=fleetEngineThreadClient;
+      const fleetAssetIssues=found&&Array.isArray(found.issues)&&client?.current?.(found,state.fleet)===true&&found.simSeconds===(Number(state.simSeconds)||0)?found.issues:undefined;
+      runtimeInstrumentation.maintenance.healthFromWorker=fleetAssetIssues?1:0;
+      const evidence=captureDiagnosticEvidence({trackTransitions:true,storeResult:true,fleetAssetIssues}),health=evidence.health,central=window.GH_CONTROL_PLANE?.check?.(state,{evidence});haltOnGlobalFault(health,central);return true;
+    }
     return true;
   }
   // One part (or one schema section) per call. True when a part ran, so the engine yields the frame.
@@ -3713,7 +3739,7 @@
   let runtimeGovernor={level:'GREEN',avgChunkMs:0,avgWorkMs:0};
   const governorEventCoalescer=window.GH_DIAGNOSTICS.createGovernorEventCoalescer({windowMs:10000,nowMs:()=>Date.now(),emit:detail=>diag('SIM_GOVERNOR',detail)});
   function captureDiagnosticEvidence(options={}){
-    return window.GH_DIAGNOSTICS.captureExportEvidence(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:options.simulation||simulationEngine.snapshot()},{recordEvent:options.recordEvent===true,trackTransitions:options.trackTransitions===true,storeResult:options.storeResult===true});
+    return window.GH_DIAGNOSTICS.captureExportEvidence(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:options.simulation||simulationEngine.snapshot(),...(Array.isArray(options.fleetAssetIssues)?{fleetAssetIssues:options.fleetAssetIssues}:{})},{recordEvent:options.recordEvent===true,trackTransitions:options.trackTransitions===true,storeResult:options.storeResult===true});
   }
   async function diagnosticLifecycleSettled(){
     for(;;){

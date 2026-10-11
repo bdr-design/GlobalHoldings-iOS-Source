@@ -260,14 +260,36 @@
   // close reads every row's condition already and leaves its total here for the same fleet revision and time.
   let conditionSumMemo=null;
   function conditionSumKey(state){const revision=fleetData().revision(state);return revision===null?null:{fleet:state.fleet,revision,simSeconds:Math.max(0,Number(state.simSeconds)||0)};}
+  // Build 372: the same total found by the fleet engine's worker after the day's incidents and maintenance (they write
+  // conditions, so the fleet pass's total no longer holds and the insurance stage read every row here: 169 ms at a
+  // million assets). Kept for the fleet revision and time it describes.
+  let workerConditionSum=null;
+  const sameKey=(memo,state,key)=>!!key&&!!memo&&memo.state===state&&memo.key.fleet===key.fleet&&memo.key.revision===key.revision&&memo.key.simSeconds===key.simSeconds;
   function fleetConditionSum(state){
     const key=conditionSumKey(state);
-    if(key&&conditionSumMemo&&conditionSumMemo.state===state&&conditionSumMemo.key.fleet===key.fleet&&conditionSumMemo.key.revision===key.revision&&conditionSumMemo.key.simSeconds===key.simSeconds)return conditionSumMemo.sum;
+    if(sameKey(conditionSumMemo,state,key))return conditionSumMemo.sum;
+    if(sameKey(workerConditionSum,state,key))return workerConditionSum.sum;
     let sum=0;fleetData().scan(state,['condition'],a=>{sum+=Number(a.condition)||100;});return sum;
   }
   // The operations cycle's fleet condition total (GH_FLEET_DATA.sum of condition, row order) from the daily close's
   // fleet pass, while the fleet and time are those it read; null otherwise.
   function fleetReadinessTotal(state){const key=conditionSumKey(state);return key&&conditionSumMemo&&conditionSumMemo.state===state&&conditionSumMemo.key.fleet===key.fleet&&conditionSumMemo.key.revision===key.revision&&conditionSumMemo.key.simSeconds===key.simSeconds&&Number.isFinite(conditionSumMemo.readiness)?conditionSumMemo.readiness:null;}
+  // A staged daily close asks the fleet engine's worker for the condition total (app.js GH_FLEET_QUERY_PROVIDER) and waits
+  // for it, one wait per frame ('-wait' ends the staged call), at most CONDITION_SUM_WAITS; it is used only if it still
+  // describes the store (current()) at the fleet revision and time updateInsurance then reads. Otherwise, and in any
+  // other context, updateInsurance reads the store itself as before.
+  const CONDITION_SUM_WAITS=600;
+  function* conditionSumFromWorker(state){
+    workerConditionSum=null;
+    const provider=globalThis.GH_FLEET_QUERY_PROVIDER,key=conditionSumKey(state);
+    if(!key||sameKey(conditionSumMemo,state,key)||typeof provider!=='function'||globalThis.GH_TRANSACTION_CORE?.isStaged?.(state)!==true||!fleetData().size(state))return;
+    let asked=null;try{asked=provider(state,'conditionSum',{});}catch(_error){asked=null;}
+    if(!asked||typeof asked.then!=='function')return;
+    const box={done:false,value:null};asked.then(value=>{box.done=true;box.value=value;},()=>{box.done=true;});
+    for(let waits=0;!box.done&&waits<CONDITION_SUM_WAITS;waits++)yield 'realism.insurance-wait';
+    const found=box.value,sum=Number(found?.result?.sum);
+    if(box.done&&found&&typeof found.current==='function'&&found.current()===true&&Number.isFinite(sum))workerConditionSum={state,key,sum};
+  }
   function updateInsurance(state){
     const r=migrate(state),condition=fleetData().size(state)?fleetConditionSum(state)/fleetData().size(state):100,incidents=(state.advanced?.safety?.incidents||0),claims=(state.advanced?.insurance?.claims||[]),F=globalThis.GH_FINANCE_CORE,internalInsurer=operationalCompanyForCapability(state,'operations.insurance');
     // تسوية المطالبات: بعد فترة فحص محاكاة (3 أيام) تُصرف المطالبة فعليًا عبر الخزينة بدل ما تبقى معلقة "قيد الفحص" للأبد.
@@ -523,7 +545,8 @@
     updateMarketShare(state,day);yield 'realism.market-share';
     updateRisk(state,day);yield 'realism.risk';
     updateRating(state);yield 'realism.rating';
-    updateInsurance(state);yield 'realism.insurance';
+    yield* conditionSumFromWorker(state);
+    updateInsurance(state);workerConditionSum=null;yield 'realism.insurance';
     recordMarketDay(state,day);yield 'realism.market-day';
     updateTaxFxAndDividends(state,day);yield 'realism.tax-fx-dividends';
     updatePrograms(state,day);yield 'realism.programs';
