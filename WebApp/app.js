@@ -4133,9 +4133,18 @@
       await window.GH_PERSISTENCE.drain();diag('BACKGROUND_SAVE_OK',{saveRevision:Number(state.saveRevision)||0,resetEpoch:Number(state.resetEpoch)||0});
       return {saveRevision:Number(state.saveRevision)||0,simSeconds:Number(state.simSeconds)||0,resetEpoch:Number(state.resetEpoch)||0,coalesced:false};
     },
+    // Build 371: GameViewController runs this after it installed a signed pack, whatever the page is doing. A durable
+    // command or a staged slice holding the state made Transaction Core refuse the operations (they wrote nothing), and
+    // GameViewController then rolled the whole pack back and reloaded, dropping the player's command in flight. The
+    // operations now wait for the lifecycle to settle; a refusal for that reason alone (raised before any write) is
+    // retried after the next settle, at most 50 times. Any other failure, and a duplicate (false), is reported as before.
     applyNativeUpdate:async payload=>{
       if(!window.GH_ADVANCED?.applyNativeUpdate)return false;
-      return window.GH_ADVANCED.applyNativeUpdate(payload,advancedContext());
+      for(let attempt=0;;attempt++){
+        await diagnosticLifecycleSettled();
+        try{return await window.GH_ADVANCED.applyNativeUpdate(payload,advancedContext());}
+        catch(error){if(attempt>=50||!/^(durable-live-state-transaction-blocked|staged-transaction-in-progress)$/.test(String(error?.message||'')))throw error;diag('NATIVE_UPDATE_WAITED_FOR_LIFECYCLE',{attempt:attempt+1,reason:String(error.message)});}
+      }
     }
   };
 
