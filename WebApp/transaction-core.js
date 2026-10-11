@@ -542,6 +542,7 @@
     if(!step.done)throw new Error('transaction-unexpected-suspension');
     return step.value;
   }
+  const WAIT_STAGE=/-wait$/;
   function beginStaged(target,options={}){
     if(!target||typeof target!=='object'||Array.isArray(target))throw new TypeError('Transaction target must be an object');
     if(activeContext)throw new Error('Nested state transactions are forbidden; domain commands must join their owner');
@@ -558,8 +559,11 @@
     return {
       label:token.label,
       get done(){return done;},get result(){return result;},get error(){return error;},get stage(){return stage;},get steps(){return count;},
-      // Runs steps until the iterator finishes or the deadline passes (at least one step per call).
-      step(deadline=-Infinity){while(!done){advance(()=>steps.next());if(done||runtimeClock()>=deadline)break;}return done;},
+      // Runs steps until the iterator finishes or the deadline passes (at least one step per call). Build 372: a stage
+      // ending in '-wait' (a section waiting for another thread: the save check's fleet classes from the fleet engine's
+      // worker) ends the call, so its waits are spent one per call (one per frame), as they are counted; a live slice
+      // used to spin through all of them in one frame and then read every row here itself.
+      step(deadline=-Infinity){while(!done){advance(()=>steps.next());if(done||runtimeClock()>=deadline||WAIT_STAGE.test(stage))break;}return done;},
       abort
     };
   }

@@ -3,8 +3,8 @@
   "version": "3.0.0",
   "build": 362,
   "save_schema": "3.0.0",
-  "source_tree_sha256": "0b2a38715b24592b7a674b51689a7049f96d4a5aa5406b86b6279dd69ebb696b",
-  "webapp_tree_sha256": "9ff31cfc8f77bce38e1129acaed1cf39660978455bee55c73a3f746c32ed29de",
+  "source_tree_sha256": "a76b7acbce347c68d3fd788b2fd5e5235f93181708ec1541565bdd7f3cb31c0a",
+  "webapp_tree_sha256": "0657aabbbc9ddad74d5c2ab6bbb60cf11c35a4617af71c6fbc107baf251a658f",
   "files": {
     "WebApp/advanced-core.js": {
       "bytes": 317666,
@@ -3467,8 +3467,8 @@
       "sha256": "9e8deb2e57efa8e78632f708126ee6990c63b7184fbc7a9e1ef9af09718e05cb"
     },
     "WebApp/transaction-core.js": {
-      "bytes": 78603,
-      "sha256": "58b52fd00ed011759216fe3c8fc29ff942558b2f4d48325e5a01facb508c80f4"
+      "bytes": 79007,
+      "sha256": "80dc14f4d6093718dfc1bc41ebd9fd4c4f384d77e54fc7a13d63eb8a40dd8916"
     },
     "WebApp/ui-quality-core.js": {
       "bytes": 6312,
@@ -3556,7 +3556,7 @@
     },
     "project.yml": {
       "bytes": 2413,
-      "sha256": "f2049b89503a6b8f55fd51744a8c999e027b44f7acda9bc00d3c2e8bbae005d6"
+      "sha256": "8786437aae30ec57475328b15e69138df143c9d2492fcc41e7bf5e1d87d55d81"
     },
     "BUILD": {
       "bytes": 4,
