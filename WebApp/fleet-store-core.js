@@ -74,6 +74,10 @@
   const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
   const isObject=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
   function defineData(target,key,value){Object.defineProperty(target,key,{value,writable:true,enumerable:true,configurable:true});}
+  // Build 372: the same own data property (writable, enumerable, configurable, in the same key order) by plain assignment,
+  // and through defineData for any key Object.prototype has (__proto__ would set the prototype, an inherited accessor
+  // would run): defineProperty for every field of every materialized asset was a tenth of a dispatch batch.
+  function putData(target,key,value){if(key in Object.prototype)defineData(target,key,value);else target[key]=value;}
 
   // --------------------------------------------------------------- runtime ---
   // Runtime-only indexes, rebuilt from the persisted data when missing. `epoch`
@@ -597,11 +601,11 @@
   function materialize(store,index){
     const out={},present=presentOf(store,index),profile=groupObject(store,groupRef(store,index,'profile')),binding=groupObject(store,groupRef(store,index,'binding'));
     if(present&1)out.id=readHot(store,index,'id','pattern');
-    for(const key of Object.keys(profile))defineData(out,key,copyValue(profile[key]));
+    for(const key of Object.keys(profile))putData(out,key,copyValue(profile[key]));
     for(let i=1;i<HOT_FIELDS.length;i++){if(present&(1<<i)){const [field,kind]=HOT_FIELDS[i];out[field]=readHot(store,index,field,kind);}}
-    for(const key of Object.keys(binding))defineData(out,key,copyValue(binding[key]));
-    const extras=extrasOf(store,index);if(extras)for(const key of Object.keys(extras))defineData(out,key,copyValue(extras[key]));
-    const result={};for(const key of Object.keys(out))defineData(result,key,out[key]);return result;
+    for(const key of Object.keys(binding))putData(out,key,copyValue(binding[key]));
+    const extras=extrasOf(store,index);if(extras)for(const key of Object.keys(extras))putData(out,key,copyValue(extras[key]));
+    const result={};for(const key of Object.keys(out))putData(result,key,out[key]);return result;
   }
   // Own keys of the materialized asset, in materialize order, without building it.
   function keys(store,index){
