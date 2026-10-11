@@ -1,4 +1,5 @@
-// Convert MIT Rocketbox FBX to baked, metered glTF. Runtime uses no FBX files or network.
+// Conference cast, step 3 (in the page tools/cast/convert.html): window.bakeCast() converts the three MIT Rocketbox FBX
+// characters to baked, metered glTF. Runtime uses no FBX files or network. Called by tools/cast/export-cast.cjs.
 window.bakeCast=async function(){
  const T=CONVERT, output=new T.Group();
  const pngBlank='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';

@@ -1,8 +1,11 @@
 'use strict';
-// Focused benchmark: the main thread's longest task from the first fleet-thread request (a million rows) until its step
-// is ready, with a real worker (no game around it). GH_ROOT selects the source tree (default: this one), so two builds
-// compare on one machine: GH_ROOT=<tree> NODE_PATH=<playwright> node tools/bench_first_sync.cjs 1000000. Not yet run on
-// 1,000,000 rows at the Build 371 handoff (see docs/BUILD371_HANDOFF.md).
+// Focused benchmark (Build 371 tool, not an acceptance gate): the main thread's longest task from the first fleet-thread
+// request until its step is ready, on <rows> road rows (default 1,000,000) with a real worker and no game around it.
+// Prints one JSON line: ticket status, request call and ready times, worst frame gap, long tasks, and the thread's
+// replica stats (maxReplicaPartMs, stagedSyncs, maxSyncMs).
+// Run: [GH_ROOT=<source tree>] NODE_PATH=<node_modules with playwright> node tools/bench_first_sync.cjs [rows]
+// GH_ROOT selects the source tree measured (default: this one), so two builds compare on one machine.
+// Not yet run on 1,000,000 rows at the Build 371 handoff (see docs/BUILD371_HANDOFF_AR.md).
 const fs=require('node:fs'),path=require('node:path');
 const root=process.env.GH_ROOT||path.resolve(__dirname,'..'),web=path.join(root,'WebApp'),read=f=>fs.readFileSync(path.join(web,f),'utf8');
 const {chromium}=require('playwright');const FIX=require(path.join(root,'tests/helpers/fleet-fixture'));

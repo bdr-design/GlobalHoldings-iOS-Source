@@ -1,34 +1,29 @@
 'use strict';
-// Build 371 variant of tools/measure_fullgame_perf.cjs (a tool, not an acceptance gate). Differences:
+// Whole-game freeze measurement on the desktop (Build 371 tool, not an acceptance gate); a variant of
+// tools/measure_fullgame_perf.cjs. The full app runs in Chromium (tests/helpers/local-dom-app), the native vault is an
+// in-page stand-in and the fleet engine thread runs from a blob. It buys an air fleet, dispatches it with the real
+// button, plays at 600x, then advances the calendar, and reports per phase. Differences from measure_fullgame_perf:
 //  - the dispatch phase runs the whole series of commands until every aircraft is routed (48 commands at a million),
-//    with per-command durable timings (commandTotals) and, with --profile, a CPU profile of the first two commands;
+//    with per-command durable timings (commandTotals);
 //  - every frame gap over 50 ms is listed (stalls50, stalls50TotalMs) besides p50/p95/p99/worst;
 //  - main-thread CPU per phase (Performance.getMetrics TaskDuration/ScriptDuration/Layout/Style);
-//  - --trace <file>: a Chrome trace of the play phase (toplevel, devtools.timeline, v8 CPU samples, GC) for
-//    tools/attribute_long_tasks.py; the first ~1.6 s long task of a traced run is CpuProfiler::StartProfiling (ignore it);
 //  - memory after two forced collections: JS heap, fleet store columns (GH_FLEET_DATA.stats) and the in-page vault
-//    stand-in reported apart (it holds the saved chunks, ~2.2 GB at a million assets; not game memory);
-//  - --profile also writes <profile>-advance.cpuprofile for the calendar phase.
-// Example (the baseline in verification/build371-perf/):
+//    stand-in reported apart (it holds the saved chunks, ~2.2 GB at a million assets; not game memory).
+//
+// Run (the baseline in verification/build371-perf/ was made this way):
 //   GH_PERF_ROOT=$PWD NODE_PATH=<node_modules with playwright 1.55.1> node --max-old-space-size=8192 \
 //     tools/measure_fullgame_trace.cjs --assets 1000000 --play 90 --days 2 --out perf.json --trace play.trace.json \
 //     --profile dispatch.cpuprofile
-// A million-asset run takes about 35 minutes (purchase ~7.5 min, dispatch ~15.5 min). Compare builds on one machine only.
-// Build 359: whole-game performance measurement on the desktop (a tool, not an acceptance gate).
-// The full app in Chromium (tests/helpers/local-dom-app), the native vault replaced by an in-page stand-in (as
-// tests/build358-large-fleet-dispatch-browser.cjs), the fleet engine thread running from a blob (as
-// tests/build358-fleet-engine-thread-browser.cjs). It buys an air fleet, dispatches it with the real button, plays at
-// 600x, then advances the calendar, and reports for each phase: frame intervals and janky frames, long tasks, saves,
-// the simulation frame stages (create, chunks, finish, maintenance, render) and the render callback parts, the fleet
-// thread timings, and the fault recorder's summary and causes.
-//
-//   NODE_PATH=/opt/node22/lib/node_modules node tools/measure_fullgame_perf.cjs --assets 24000 --play 120 --days 60 \
-//     [--batch 3000] [--sites OMDB,EGLL,KJFK,RJTT] [--out report.json] [--profile dispatch.cpuprofile]
-//
-// --profile writes a CPU profile (Chrome DevTools Profiler, through CDP) of the dispatch: from the click until its command
-// has committed and the 3 s after it, so the blocks of the dispatch can be named.
-//
-// Numbers are for comparing builds on one machine; an iPhone is about 3 to 5 times slower.
+// Options (defaults): --assets 24000  --play 120 (seconds of play)  --days 60 (calendar advance)  --batch 3000
+//   --sites OMDB,EGLL,KJFK,RJTT,WSSS,YSSY,FAOR,SBGR  --out <report.json> (the report is also printed)
+//   --profile <file.cpuprofile>: a CPU profile of the first two dispatch commands, and <file>-advance.cpuprofile
+//     of the calendar phase
+//   --trace <file>: a Chrome trace of the play phase (toplevel, devtools.timeline, v8 CPU samples, GC) for
+//     tools/attribute_long_tasks.py; the first ~1.6 s long task of a traced run is CpuProfiler::StartProfiling (ignore
+//     it). Take the numbers from a run without --trace and the attribution from a run with it.
+//   (--skipAdvance is parsed but not used.)
+// GH_PERF_ROOT selects the source tree measured (default: this one). A million-asset run takes about 35 minutes
+// (purchase ~7.5 min, dispatch ~15.5 min). Compare builds on one machine only; an iPhone is about 3 to 5 times slower.
 const fs=require('node:fs'),path=require('node:path');
 const root=process.env.GH_PERF_ROOT||path.resolve(__dirname,'..');process.env.GH_AUDIT_ROOT=process.env.GH_AUDIT_ROOT||root;
 const {chromium}=require('playwright'),{boot}=require(path.join(root,'tests/helpers/local-dom-app'));

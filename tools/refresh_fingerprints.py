@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Refresh project.yml / RUNTIME_SOURCE_MANIFEST / RELEASE_GATE / SOURCE_INTEGRITY fingerprints. Run from repo root."""
+"""Refresh the source fingerprints after any change to a tracked file (run before every commit).
+
+What it does: rewrites the WebApp digest in project.yml (GHSourceSnapshotSHA256), the file list and tree digests in
+RUNTIME_SOURCE_MANIFEST.json, the tree digest in RELEASE_GATE.json (which must stay approved=false), and the hashes
+in SOURCE_INTEGRITY_SHA256.txt. Paths given as arguments are added to the integrity list if missing.
+
+Run from the repo root: python3 tools/refresh_fingerprints.py [new/tracked/file ...]
+Then: node tests/lint.cjs && python3 tools/verify_current_source.py
+"""
 import hashlib,json,re,subprocess,sys
 from pathlib import Path
 root=Path('.').resolve();sys.path.insert(0,str(root/'tools'))

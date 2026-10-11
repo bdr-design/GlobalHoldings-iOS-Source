@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Render the executive dark map from the bundled Natural Earth II tiles.
 
-Water is told from land by its blue cast; land keeps the shaded relief as a
-blue-grey ramp; coastlines get a thin light edge. Requires ImageMagick 6
-(`convert`). The output mirrors WebApp/assets/maps/ne2 tile for tile.
+What it does: for every tile in WebApp/assets/maps/ne2, writes the matching tile to WebApp/assets/maps/ne2-dark
+(water is told from land by its blue cast; land keeps the shaded relief as a blue-grey ramp; coastlines get a thin
+light edge), then adds the tiles to WebApp/runtime-required.json. Existing tiles are kept unless --force.
+Requires ImageMagick 6 (`convert`).
+
+Run: python3 tools/render_dark_map_tiles.py [--force]
 """
 from __future__ import annotations
 import argparse, json, shutil, subprocess, tempfile

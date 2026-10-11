@@ -1,3 +1,8 @@
+# Build the Natural Earth II map tiles and the country labels (a one-off asset tool, not part of the build or the tests).
+# What it does: downloads NE2_50M_SR_W (cached in /tmp/gh329-ne2.zip), reprojects it to Web Mercator, writes WebP tiles
+# z0-z4 to WebApp/assets/maps/ne2, writes WebApp/map-labels.js from ne_110m_admin_0_countries, and adds the files to
+# WebApp/runtime-required.json. Needs network access, numpy and Pillow.
+# Run from the repo root: python3 tools/build-terrain.py   (then tools/render_dark_map_tiles.py for the dark tiles)
 from pathlib import Path
 import urllib.request,zipfile,json
 import numpy as np

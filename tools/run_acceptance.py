@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-"""Run the current source's declared tests; always retain failures and source digests.
+"""Run the current source's declared tests (every command of `npm test`) and keep the evidence.
+
+What it does: verifies the source, runs each test command once with the given Node (24 or later is required),
+writes one log per test and results.json (exit codes, timings, source digests before and after) into the output
+directory, and fails if any test fails or the source changed while it ran. Failures are always retained.
 No IPA, historical base application, signing key, or state modification is involved.
+
+Run: python3 tools/run_acceptance.py --output <new directory outside the repo> [--node <node24>] [--timeout 240]
+Browser tests need PLAYWRIGHT_BROWSERS_PATH and NODE_PATH (playwright) in the environment.
 """
 from __future__ import annotations
 import argparse,json,os,shlex,shutil,subprocess,time

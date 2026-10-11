@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Verify the current Build 362 direct source; never an IPA as development source."""
+"""Verify the current Build 362 direct source; never an IPA as development source.
+
+What it does: checks that WebApp/, iOS/ and the root files match RUNTIME_SOURCE_MANIFEST.json byte for byte, that
+BUILD, VERSION and project.yml carry 362 / 3.0.0 (save schema 3.0.0), and that no retired IPA-based tool is present;
+prints the result as JSON. --release also requires an approved RELEASE_GATE.json for this tree.
+Also imported by run_acceptance.py, assemble_test_ipa.py and refresh_fingerprints.py.
+
+Run: python3 tools/verify_current_source.py [--root <checkout>] [--release]
+"""
 from __future__ import annotations
 import argparse,hashlib,json,re
 from pathlib import Path,PurePosixPath

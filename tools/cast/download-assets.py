@@ -1,3 +1,7 @@
+# Conference cast, step 1: download the three Microsoft Rocketbox characters (FBX, textures, LICENSE.md) at a pinned
+# revision into tools/cast/. Needs network access and Pillow.
+# Run: python3 tools/cast/download-assets.py
+# Then: build convert-lib.js (see convert-entry.js) and run node tools/cast/export-cast.cjs.
 import json,pathlib,urllib.request,concurrent.futures
 from PIL import Image
 root=pathlib.Path(__file__).parent;revision='0943055db6ec570bcef9f2c8b41c9e5467c808f9';tree=json.loads(urllib.request.urlopen('https://api.github.com/repos/microsoft/Microsoft-Rocketbox/git/trees/'+revision+'?recursive=1').read())['tree'];base='https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/'+revision+'/'

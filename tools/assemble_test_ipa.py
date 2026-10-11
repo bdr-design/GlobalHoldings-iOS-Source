@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Assemble an unsigned TEST IPA from a freshly compiled, hash-pinned native product.
 
-No old IPA is accepted. The supplied Apple artifact must match the documented CI
-build. Every native byte and every WebApp byte is verified before publication.
-Passing these checks is not physical-device or production-release approval.
+What it does: checks the source (verify_current_source), the acceptance results and the Apple CI artifact, then
+packs the compiled app with the current WebApp into <output>.ipa and writes <output>.verification.json beside it.
+No old IPA is accepted. The supplied Apple artifact must match the documented CI build. Every native byte and every
+WebApp byte is verified before publication. Passing these checks is not physical-device or production-release approval.
+
+Run (from the repo root):
+  python3 tools/assemble_test_ipa.py --apple-artifact <CI artifact .zip> \
+    --acceptance <run_acceptance output>/results.json --output <new path>.ipa [--source <checkout>]
 """
 from __future__ import annotations
 import argparse, hashlib, json, os, plistlib, shutil, stat, struct, tempfile

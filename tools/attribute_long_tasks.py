@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Attribute every main-thread long task (>50 ms) of a Chrome trace to the functions that ran in it (Build 371 tool).
-Usage: python3 tools/attribute_long_tasks.py play.trace.json [N]
-Reads the trace written by tools/measure_fullgame_trace.cjs --trace. Only the renderer main thread's CPU profile is
-used (worker samples share the process and must not be mixed in). Prints, for the N longest tasks, the GC time inside
-them and the top self and inclusive frames (function:line@script; scripts injected by the local harness have no URL).
+"""Name what ran in every main-thread long task (>50 ms) of a Chrome trace (Build 371 tool, not an acceptance gate).
+
+What it does: reads a trace written by tools/measure_fullgame_trace.cjs --trace, keeps only the renderer main thread's
+CPU profile (worker samples share the process and must not be mixed in), and prints the long-task count and total,
+then, for the N longest tasks (default 8), the GC time inside each and its top self and inclusive frames
+(function:line@script; scripts injected by the local harness have no URL).
+
+Run: python3 tools/attribute_long_tasks.py play.trace.json [N]
 """
 import json,sys,collections
 d=json.load(open(sys.argv[1]));ev=d['traceEvents'] if isinstance(d,dict) else d
