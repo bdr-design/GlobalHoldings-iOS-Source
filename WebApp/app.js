@@ -2169,6 +2169,46 @@
   const MAP_AGGREGATE_ASSETS=20000;
   const MAP_CLASS_FIELDS=Object.freeze(['ownerCompanyId','companyId','assetMode','type','baseFacility','routeId','reverse','phase','simulationFault']);
   function mapAggregateMode(){return (window.GH_FLEET_DATA.size(state)||0)>MAP_AGGREGATE_ASSETS;}
+  // Build 372: the fleet's classes over MAP_CLASS_FIELDS for the map and its status line (routes in motion, parked assets
+  // per base, owned bases, phase counts, road routes), found by the fleet engine's worker on its replica (fieldClasses):
+  // with a million moving assets the class tables are rebuilt over every row whenever they are read here (236-277 ms per
+  // map render). The map draws the latest summary of this store (at most a step behind); a newer one replaces it and
+  // redraws, an older one never does, and one for another store or row layout (a reset, a compaction) is not used. With
+  // the worker the main thread never reads the rows for these counts (before the first summary the map draws no fleet);
+  // without it they are read here as before.
+  const mapFleetSummary={store:null,runtime:null,epoch:null,revision:-1,rows:null,asking:false,received:0};
+  function mapFleetSummaryClient(){const client=fleetEngineThreadClient;return client&&!client.disabled&&typeof client.fieldClasses==='function'&&window.GH_FLEET_STORE?.isStore?.(state.fleet)?client:null;}
+  // The summary's class rows ([row, count, index, members]) for the store as it is, or null while there is none; asks
+  // for a newer one when the store has moved on.
+  function mapFleetClassRows(){
+    const client=mapFleetSummaryClient();if(!client)return null;
+    const STORE=window.GH_FLEET_STORE,store=state.fleet,runtime=STORE.chunkStamp(store).runtime,epoch=STORE.epoch(store),m=mapFleetSummary;
+    if(m.store!==store||m.runtime!==runtime){m.store=store;m.runtime=runtime;m.epoch=null;m.revision=-1;m.rows=null;}
+    if(!m.asking&&(m.revision!==store.revision||m.epoch!==epoch)){
+      const asked=client.fieldClasses(store,{fields:MAP_CLASS_FIELDS});
+      if(asked){
+        m.asking=true;
+        asked.then(result=>{
+          m.asking=false;if(!result||result.store!==m.store||result.runtime!==m.runtime||result.revision<m.revision||(result.revision===m.revision&&m.epoch===epoch))return;
+          m.rows=result.rows;m.revision=result.revision;m.epoch=epoch;m.received++;mapStatusCache.assetKey='';mapStatusCache.ownerKey='';
+          if(map)scheduleViewportMapRender(0);
+        },()=>{m.asking=false;});
+      }
+    }
+    // Row indices (representatives) hold while no compaction moved the rows (the store's epoch).
+    return m.rows&&m.epoch===epoch?m.rows:null;
+  }
+  // Every class of the store over MAP_CLASS_FIELDS as forEachFieldClasses gives it: from the summary when the worker
+  // serves the map (nothing until its first one), else read here.
+  function forEachMapFleetClass(fn){
+    if(mapFleetSummaryClient()){const rows=mapFleetClassRows();if(rows)for(const [row,count,index,members] of rows)fn(row,count,{index,members});return;}
+    window.GH_FLEET_DATA.forEachFieldClasses(state,MAP_CLASS_FIELDS,fn);
+  }
+  // countByFields over fields of MAP_CLASS_FIELDS (a class of the summary reads the same on them).
+  function mapFleetCount(fields,keyOf){
+    if(!mapFleetSummaryClient())return window.GH_FLEET_DATA.countByFields(state,fields,keyOf);
+    const counts=new Map();forEachMapFleetClass((row,count)=>{if(!count)return;const key=keyOf(row);counts.set(key,(counts.get(key)||0)+count);});return counts;
+  }
   // The company filter of mapVisibleAssetRows for one owner.
   function mapOwnerVisibility(filterState){
     const companies=filterState?.companies||{mode:'all',included:[],excluded:[]},included=new Set(Array.isArray(companies.included)?companies.included:[]),excluded=new Set(Array.isArray(companies.excluded)?companies.excluded:[]),knownByOwner=new Map(),allCompaniesFilter=MAP_FEATURE_CORE.normalizeFilterState({...filterState,companies:{mode:'all',included:[],excluded:[]}},{state,companyPlatform:COMPANY_PLATFORM});
@@ -2190,7 +2230,7 @@
       return {routes:[...routes.values()],parkedByBase,representatives:null};
     }
     const fleet=window.GH_FLEET_DATA,visible=mapOwnerVisibility(filterState),representatives=new Map();
-    fleet.forEachFieldClasses(state,MAP_CLASS_FIELDS,(row,count,info)=>{
+    forEachMapFleetClass((row,count,info)=>{
       if(!count)return;const owner=assetOwnerCompanyId(row);if(!visible(owner))return;
       if(fleet.presentedPhase(state,row)!=='moving'){addParked(row.baseFacility,count);return;}
       const mode=assetModeOf(row)||'asset';addRoute(owner,mode,row.type,row.routeId,count);
@@ -2212,7 +2252,7 @@
   }
   function placeBubbleHtml(count,kind=''){return `<div class="map-place-bubble${kind?` ${kind}`:''}"><b dir="ltr">${MAP_VIEW.countLabel(count)}</b></div>`;}
   function mapOwnedFacilities(filter){
-    const assetBaseIds=new Set([...window.GH_FLEET_DATA.countByFields(state,['baseFacility'],a=>a.baseFacility).keys()].filter(Boolean));
+    const assetBaseIds=new Set([...mapFleetCount(['baseFacility'],a=>a.baseFacility).keys()].filter(Boolean));
     return getDynamicFacilities().filter(f=>{
       // المنشآت المرجعية تخدم الحسابات والدليل فقط؛ لا تظهر كملكية عند بداية لعبة جديدة.
       const belongsToPlayer=f.owned===true||assetBaseIds.has(f.id)||(f.id==='HQ-GROUP'&&state.onboardingComplete);
@@ -2278,7 +2318,7 @@
       }
       renderAllocatedVehicles(vehicleCandidates,zoom);
     }
-    if(mode==='expansion'||mapCategoryVisible('facilities'))renderPlaces(mode,zoom,presentation?.parkedByBase||window.GH_FLEET_DATA.countByFields(state,['baseFacility','phase','routeId','simulationFault'],row=>window.GH_FLEET_DATA.presentedPhase(state,row)==='moving'?null:row.baseFacility),filter,geography);
+    if(mode==='expansion'||mapCategoryVisible('facilities'))renderPlaces(mode,zoom,presentation?.parkedByBase||mapFleetCount(['baseFacility','phase','routeId','simulationFault'],row=>window.GH_FLEET_DATA.presentedPhase(state,row)==='moving'?null:row.baseFacility),filter,geography);
     if(mode==='network'&&filterState.market.competitors){
       const bounds=map.getBounds();let shownHq=0;
       competitors.forEach(c=>{
@@ -2293,6 +2333,15 @@
 
   const MAP_STATUS_SWEEP_ROWS=50000,MAP_STATUS_SWEEP_MS=4;
   let mapStatusCache={assetKey:'',ownerKey:'',moving:0,idle:0,turn:0,routed:0,ownedFacilities:0,countedAt:0,countedRevision:null,countedAssets:null,pendingRecount:false};
+  // The routed road routes of the status line (operationalRoutes('road') with a routing source): with the fleet engine's
+  // worker the assets' road routes come from the map's fleet summary (the routeId of every class of type road), else from
+  // the store's routeId column (distinctRefs), as before.
+  function mapRoadRouteCount(){
+    if(!mapFleetSummaryClient())return operationalRoutes('road').filter(r=>r.routingSource).length;
+    const ids=new Set();for(const r of state.customRoutes||[])if(r?.id&&r.type==='road')ids.add(r.id);
+    const rows=mapFleetClassRows();if(rows)for(const [row,count] of rows)if(count>0&&row.type==='road'&&row.routeId)ids.add(row.routeId);
+    let routed=0;for(const id of ids){const route=routeTemplates[id];if(route&&route.type==='road'&&route.routingSource)routed++;}return routed;
+  }
   function updateMapStatus(){
     // Expansion mode writes its own line (airports and ports in view).
     if(window.GH_MAP_VIEW_CORE?.normalizeMode?.(state.mapMode)==='expansion'||(mapCategoryVisible('infrastructure')&&['airport','port'].includes(state.activeFilter)))return;
@@ -2314,7 +2363,14 @@
         // A sweep starts at most every 2 s on a fleet of the same size (a moving fleet changes the save revision on most
         // slices); a smaller fleet counts at once when the revision moved, as before.
         const sweeping=!!store&&assetLength>MAP_STATUS_SWEEP_ROWS;
-        if(!sweep&&mapStatusCache.countedAssets===assetLength&&(sliceOnly||sweeping)&&nowMs-(mapStatusCache.countedAt||0)<2000){mapStatusCache.pendingRecount=true;}
+        // Build 372: with the fleet engine's worker the counts come from the map's fleet summary (mapFleetClassRows), read
+        // per class as countByPhase reads them; the line keeps its last counts until the summary of this store arrives.
+        if(store&&mapFleetSummaryClient()){
+          mapStatusCache.sweep=null;const rows=mapFleetClassRows();
+          if(rows){const phases=new Map();for(const [row,count] of rows){if(!count)continue;const phase=F.presentedPhase(state,row);phases.set(phase,(phases.get(phase)||0)+count);}finish(phases,revision);mapStatusCache.summaryRevision=mapFleetSummary.revision;}
+          else mapStatusCache.pendingRecount=true;
+        }
+        else if(!sweep&&mapStatusCache.countedAssets===assetLength&&(sliceOnly||sweeping)&&nowMs-(mapStatusCache.countedAt||0)<2000){mapStatusCache.pendingRecount=true;}
         else if(!sweep&&(!store||assetLength<=MAP_STATUS_SWEEP_ROWS)){finish(F.countByPhase(state),revision);}
         else{
           if(!sweep)sweep=mapStatusCache.sweep={store,membership:F.membershipRevision(state),next:0,counts:new Map(),revision};
@@ -2336,7 +2392,7 @@
     // structure revision is counted at once. The cost kept is the larger of the last one and half the one before: a count
     // served from the store's per-chunk cache (under 5 ms) does not let the next full one (about 100 ms) run at once.
     if(mapStatusCache.ownerKey!==ownerKey){const clock=()=>globalThis.performance?.now?.()??Date.now(),ownerCostMs=Number(mapStatusCache.ownerCostMs)||0,nowMs=Date.now();
-      if(ownerCostMs<5||mapStatusCache.ownerMapRevision!==mapRevision||nowMs-(mapStatusCache.ownerAt||0)>=ownerCostMs*40){const started=clock();mapStatusCache.routed=operationalRoutes('road').filter(r=>r.routingSource).length;mapStatusCache.ownedFacilities=getDynamicFacilities().filter(f=>f?.owned).length;mapStatusCache.ownerKey=ownerKey;mapStatusCache.ownerMapRevision=mapRevision;mapStatusCache.ownerAt=nowMs;mapStatusCache.ownerCostMs=Math.max(clock()-started,ownerCostMs/2);}}
+      if(ownerCostMs<5||mapStatusCache.ownerMapRevision!==mapRevision||nowMs-(mapStatusCache.ownerAt||0)>=ownerCostMs*40){const started=clock();mapStatusCache.routed=mapRoadRouteCount();mapStatusCache.ownedFacilities=getDynamicFacilities().filter(f=>f?.owned).length;mapStatusCache.ownerKey=ownerKey;mapStatusCache.ownerMapRevision=mapRevision;mapStatusCache.ownerAt=nowMs;mapStatusCache.ownerCostMs=Math.max(clock()-started,ownerCostMs/2);}}
     const offline=mapTilesOffline?'تضاريس محلية · ':'';$('mapStatus').textContent=`${offline}${mapStatusCache.moving} في الحركة · ${mapStatusCache.turn} في المحطات · ${assetLength} أصل`;$('mapStatus').title=`${mapStatusCache.idle} متوقف · ${mapStatusCache.ownedFacilities} منشأة · ${mapStatusCache.routed} مسار بري`;
   }
 

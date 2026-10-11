@@ -19,7 +19,7 @@ const state={saveRevision:7,activeFilter:'all',assets:assetRows,mobility:{vehicl
 const window={GH_MAP_STRUCTURE_REVISION:3,GH_MOBILITY_CORE:{mapStructureRevision:()=>{mobilityRevisionReads++;return 11;}},GH_FLEET_DATA:require('../WebApp/fleet-access-core.js')};
 const dom={mapStatus:{textContent:'',title:''}};
 let fakeNow=1000000;
-const context={state,window,Date:{now:()=>fakeNow},mapTilesOffline:false,mapCategoryVisible:()=>false,operationalRoutes:()=>{routeScans++;return [{routingSource:'OSRM'}];},getDynamicFacilities:()=>{facilityScans++;return [{owned:true},{owned:false}];},$:id=>dom[id]};
+const context={state,window,Date:{now:()=>fakeNow},mapFleetSummaryClient:()=>null,mapFleetClassRows:()=>null,mapFleetSummary:{revision:-1},mapTilesOffline:false,mapCategoryVisible:()=>false,operationalRoutes:()=>{routeScans++;return [{routingSource:'OSRM'}];},getDynamicFacilities:()=>{facilityScans++;return [{owned:true},{owned:false}];},$:id=>dom[id]};
 const update=vm.runInNewContext(`(()=>{${source};return updateMapStatus;})()`,context,{filename:'map-status-cache.js'});
 
 update();

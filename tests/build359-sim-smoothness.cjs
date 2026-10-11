@@ -135,7 +135,7 @@ const app=fs.readFileSync(path.join(WEB,'app.js'),'utf8');
   assert.match(app,/onMaintenance:hour=>\{[^\n]*queueMaintenance\(\);\},/,'the maintenance boundary only queues its parts');
   assert.match(app,/runDeferredWork:\(\)=>runDeferredMaintenance\(\)/,'the engine runs the queued parts');
   assert.match(app,/compactSimulationState\(false,\{schemaDue:false\}\)/,'the maintenance compaction does not ask the next hourly slice for a full schema pass');
-  assert.match(app,/validationSteps\(state,\{trustVerified:true\}\)/,'after a compaction the schema is validated in sections');
+  assert.match(app,/validationSteps\(state,\{trustVerified:true(?:,fleetClasses:fleetClassesForValidation)?\}\)/,'after a compaction the schema is validated in sections');
   assert.match(app,/rowRoots:PROOF_MAINTENANCE_ROLLBACK/,'the proof passes use the containers rollback policy');
   assert.match(app,/GH_FLEET_DATA\.maintainStages\?\.\(state\)/,'fleet value collection is resumed across maintenance frames');
   assert.match(app,/function recordGuardedDiagnosticFrame\([^\n]*simulationProgressExpected:false/,'guarded frames tell diagnostics that simulation progress is intentionally paused');
