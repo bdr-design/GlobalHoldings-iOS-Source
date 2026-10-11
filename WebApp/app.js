@@ -781,7 +781,9 @@
   const stagedWaiters=[];let stagedWaitTimer=null;
   function afterStagedState(fn){
     stagedWaiters.push(fn);if(stagedWaitTimer!==null)return;
-    const poll=()=>{if(stagedStateBusy()){stagedWaitTimer=setTimeout(poll,16);return;}stagedWaitTimer=null;const ready=stagedWaiters.splice(0);for(const run of ready)try{run();}catch(error){console.warn('تعذر تنفيذ مهمة مؤجلة بعد الإقفال المرحلي',error);}};
+    // Build 372: one waiter per task, in order (a deferred save and a command resumed by stagedStateSettled used to run in
+    // the same task: 45-51 ms when a staged day close ended), each only while no staged state is busy.
+    const poll=()=>{if(stagedStateBusy()){stagedWaitTimer=setTimeout(poll,16);return;}const run=stagedWaiters.shift();try{run?.();}catch(error){console.warn('تعذر تنفيذ مهمة مؤجلة بعد الإقفال المرحلي',error);}stagedWaitTimer=stagedWaiters.length?setTimeout(poll,0):null;};
     stagedWaitTimer=setTimeout(poll,16);
   }
   function stagedStateSettled(){return stagedStateBusy()?new Promise(resolve=>afterStagedState(resolve)):Promise.resolve();}
