@@ -1409,18 +1409,31 @@
   // holds it; applyRoadGeometryWhenSettled waits for that.
   function liveStateWritable(){return !durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!hardResetInProgress&&!stagedStateBusy()&&window.GH_PERSISTENCE.isLocked()!==true;}
   async function applyRoadGeometryWhenSettled(routeId,geometry,saveCache=true){
-    // A save lock that outlasts about 10 s (a recovery-required save keeps it until a reload) drops the geometry; the next
-    // start fetches it again.
-    for(let attempt=0;attempt<200;attempt++){await diagnosticLifecycleSettled();if(liveStateWritable())return applyRoadGeometry(routeId,geometry,saveCache);await yieldForInteractivePaint(50);}
+    // The geometry belongs to the game and route it was requested for: after a hard reset (resetEpoch), a route rebuilt
+    // between other endpoints, or one whose verified road geometry (or canonical cache entry) arrived meanwhile, it is
+    // dropped. A save lock that outlasts about 10 s (a recovery-required save keeps it until a reload) drops it too; the
+    // next start fetches it again.
+    const epoch=Number(state.resetEpoch)||0,requested=routeTemplates[routeId],from=requested?.fromFacility,to=requested?.toFacility;
+    for(let attempt=0;attempt<200;attempt++){
+      await diagnosticLifecycleSettled();
+      const current=routeTemplates[routeId];
+      if((Number(state.resetEpoch)||0)!==epoch||!current||current.fromFacility!==from||current.toFacility!==to)return false;
+      if((current.roadGeometryVersion===311&&Number(current.roadNetworkDistanceKm)>0)||state.routeCache?.[routeId]?.canonicalRouteId===routeId)return false;
+      if(liveStateWritable())return applyRoadGeometry(routeId,geometry,saveCache);
+      await yieldForInteractivePaint(50);
+    }
     return false;
   }
   function applyRoadGeometry(routeId,geometry,saveCache=true){
     if(!liveStateWritable())return false;
     const tpl=routeTemplates[routeId];if(!tpl||!geometry?.route)return false;
+    const previous={...tpl};
     tpl.route=geometry.route;tpl.routingSource='OSRM · شبكة طرق فعلية';prepareRoute(tpl);
     if(geometry.durationSeconds)tpl.effectiveSpeedKmh=clamp(tpl.distanceKm/(geometry.durationSeconds/3600),42,82);
     tpl.tripSeconds=tpl.distanceKm/tpl.effectiveSpeedKmh*3600;
-    if(saveCache)dispatchSystemCommand({state},'routes','cache-geometry',{id:routeId,route:tpl.route,distanceKm:tpl.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'system-routing-provider'});
+    // A refused cache entry (its size, the cache's capacity) leaves the template as it was and the trucks untouched.
+    if(saveCache)try{dispatchSystemCommand({state},'routes','cache-geometry',{id:routeId,route:tpl.route,distanceKm:tpl.distanceKm,durationSeconds:geometry.durationSeconds},{actor:'system-routing-provider'});}
+    catch(error){for(const key of Object.keys(tpl))if(!(key in previous))delete tpl[key];Object.assign(tpl,previous);nonCritical('road-geometry-cache',error);return false;}
     const rows=window.GH_FLEET_DATA.drafts(state).filter(a=>a?.routeId===routeId);rows.forEach(normalizeAsset);window.GH_FLEET_DATA.commit(state,rows);
     return true;
   }
@@ -1554,7 +1567,7 @@
     map.on('zoomend',()=>{setInteractionState(false);scheduleViewportMapRender(90);});
     map.on('resize',()=>scheduleViewportMapRender(110));
     renderMap();
-    hydrateRoadRoutes();
+    hydrateRoadRoutes().catch(error=>nonCritical('road-geometry-hydration',error));
   }
 
   // Build 358: the group headquarters stands in the city chosen at founding, not in a fixed city.
@@ -3628,7 +3641,9 @@
       if(!jobActive&&!maintenanceQueue.length&&!document.hidden&&!hardResetInProgress&&!durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!window.GH_PERSISTENCE.isLocked()&&!stagedStateBusy())timed('proofAuditMs',()=>proofAuditStep(PROOF_AUDIT_RENDER_MS));
       // Diagnostics may use wall-clock cadence for UI health only. Keep their state writes outside every simulation
       // slice, including the short interval while an independently-driven slice waits for its fleet-thread result.
-      if(!jobActive&&!simulationEngine.snapshot().manualAdvance&&!fleetEngineThreadClient?.busy&&!stagedStateBusy()&&!document.hidden&&!hardResetInProgress&&!window.GH_PERSISTENCE.isLocked()){
+      // Build 371: nor while a durable command holds the state (its draft shares the fleet root, so the health check read
+      // its uncommitted rows and recorded issue transitions a rollback kept; the street hydration's writes were refused).
+      if(!jobActive&&!simulationEngine.snapshot().manualAdvance&&!fleetEngineThreadClient?.busy&&!stagedStateBusy()&&!document.hidden&&!hardResetInProgress&&!durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!window.GH_PERSISTENCE.isLocked()){
         const now=performance.now();
         if(now-lastMobilityStreetHydrationMs>=1200){lastMobilityStreetHydrationMs=now;timed('streetHydrationMs',()=>{void hydrateMobilityStreetRoutes();});}
         // Build 371: with a million assets the check reads every row (180-310 ms in desktop Chromium); the next one waits

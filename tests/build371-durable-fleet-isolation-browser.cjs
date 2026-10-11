@@ -60,10 +60,13 @@ const OBSERVE=()=>{const s=__GH_STATE__,rows={};GH_FLEET_DATA.forEach(s,a=>{cons
 
 async function scenario(page,{roadRoute,interrupt}){
   await page.evaluate(()=>__AUDIT__.openDrawer('routes','sea'));
+  // The road route as an older save holds it: no verified road geometry and no canonical cache entry (the routes
+  // hydrateRoadRoutes still requests from the network).
+  await page.evaluate(roadRoute=>{const tpl=__AUDIT__.routeTemplatesFor(roadRoute);tpl.roadNetworkDistanceKm=0;delete tpl.roadGeometryVersion;delete __GH_STATE__.routeCache[roadRoute];},roadRoute);
   const pre=await page.evaluate(`(${OBSERVE})()`);
   // Pause: the first frame yield of the sea dispatch that sees every ship routed and none departed.
   await page.evaluate(({interrupt})=>{const original=window.__qaTimeout||(window.__qaTimeout=window.setTimeout);window.qaPause={armed:true,held:null};
-    window.setTimeout=function(fn,ms,...rest){if(qaPause.armed&&!ms&&window.__GH_DURABLE_COMMAND_CONTEXT__){const ships=GH_FLEET_DATA.filter(__GH_STATE__,a=>(a.ownerCompanyId||a.companyId)==='sea');if(ships.length&&ships.every(a=>a.routeId&&a.phase!=='moving'&&!a.departureScheduled)){qaPause.armed=false;qaPause.held=()=>fn(...rest);return 0;}}return original.call(window,fn,ms,...rest);};
+    window.setTimeout=function(fn,ms,...rest){if(qaPause.armed&&!ms&&window.__GH_DURABLE_COMMAND_CONTEXT__&&String(fn).includes('[native code]')){const ships=GH_FLEET_DATA.filter(__GH_STATE__,a=>(a.ownerCompanyId||a.companyId)==='sea');if(ships.length&&ships.every(a=>a.routeId&&a.phase!=='moving'&&!a.departureScheduled)){qaPause.armed=false;qaPause.held=()=>fn(...rest);return 0;}}return original.call(window,fn,ms,...rest);};
     const ops=window.__qaOps||(window.__qaOps=window.GH_OPERATIONS_CORE);window.GH_OPERATIONS_CORE=interrupt?{...ops,execute(ctx,cmd,payload){if(cmd==='record-alert'&&payload?.type==='dispatch')throw new Error('qa-interrupted-after-departures');return ops.execute(ctx,cmd,payload);}}:ops;},{interrupt});
   await page.locator('.dispatch-international-network[data-company="sea"]').first().click();
   await page.waitForFunction(()=>!!qaPause.held,null,{timeout:120000});
@@ -78,11 +81,12 @@ async function scenario(page,{roadRoute,interrupt}){
     // A player command is refused before it starts.
     try{out.playerCommand=await __AUDIT__.runAuthorizedDomainCommand('operations','record-alert',{text:'qa',type:'operation'},{silent:true});}catch(error){out.playerCommand=`refused:${error.message}`;}
     // A road geometry arrives (route without verified road geometry, as in an older save).
-    const tpl=__AUDIT__.routeTemplatesFor(roadRoute);tpl.roadNetworkDistanceKm=0;delete tpl.roadGeometryVersion;const templateBefore=tpl.distanceKm;
+    const tpl=__AUDIT__.routeTemplatesFor(roadRoute),templateBefore=tpl.distanceKm;
     const geometry={route:tpl.route.map(([lat,lng],i)=>[lat+(i%2?0.05:0),lng]),durationSeconds:tpl.tripSeconds*1.4};window.qaGeometry=geometry;
     out.directApply=__AUDIT__.applyRoadGeometry(roadRoute,geometry,false);
     window.qaDeferred=typeof __AUDIT__.applyRoadGeometryWhenSettled==='function'?__AUDIT__.applyRoadGeometryWhenSettled(roadRoute,geometry,true):Promise.resolve('unavailable');
-    for(let frame=0;frame<30;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
+    // Longer than the periodic health check (REALTIME_HEALTH_MS, 10 s) and the street-route polling (1.2 s).
+    const windowStart=performance.now();while(performance.now()-windowStart<11000)await new Promise(resolve=>requestAnimationFrame(resolve));
     const after=observe();out.templateUnchanged=__AUDIT__.routeTemplatesFor(roadRoute).distanceKm===templateBefore;
     out.sameRoots=after.roots===at.roots;out.sameStorage=after.storage===at.storage;out.sameTime=after.simSeconds===at.simSeconds;out.sameRoad=JSON.stringify(after.rows.road)===JSON.stringify(at.rows.road);
     return out;
@@ -90,10 +94,10 @@ async function scenario(page,{roadRoute,interrupt}){
   assert.equal(paused.inCommand,true);
   assert(paused.saveNow===false||/^refused:/.test(paused.saveNow),`no save while the command holds the state: ${paused.saveNow}`);
   assert.equal(paused.liveDomainCommand,'Durable state command is in progress','domain commands on the live state are refused');
-  assert(paused.playerCommand===false||/^refused:/.test(paused.playerCommand),`a player command is refused: ${paused.playerCommand}`);
-  assert.equal(paused.directApply,false,'a geometry is not applied while the command holds the state');
-  assert.equal(paused.templateUnchanged,true,'nor does it touch the route template');
-  assert.equal(paused.sameRoad,true,'no truck row written during the pause');
+  assert.equal(paused.playerCommand,'refused:durable-transaction-in-progress','a player command is refused because the command holds the state');
+  assert.equal(paused.sameRoad,true,'a geometry arriving during the pause writes no truck row');
+  assert.equal(paused.templateUnchanged,true,'nor the route template');
+  assert.equal(paused.directApply,false,'and reports it was not applied');
   assert.equal(paused.sameRoots,true,'no other root of the live state changes during the pause');
   assert.equal(paused.sameStorage,true,'nothing is written to storage during the pause');
   assert.equal(paused.sameTime,true,'no simulated time during the pause');
@@ -104,18 +108,29 @@ async function scenario(page,{roadRoute,interrupt}){
   await settled(page,'bulk-shared-departure:sea');
   const applied=await page.evaluate(()=>window.qaDeferred);
   const out=await page.evaluate(({roadRoute,OBSERVE})=>{const at=eval(OBSERVE)(),tpl=__AUDIT__.routeTemplatesFor(roadRoute);return {committed:GH_APP_RUNTIME_METRICS.snapshot().durable.last.committed,at,template:tpl.distanceKm,trucks:at.rows.road.filter(r=>r.routeId===roadRoute).map(r=>r.distanceKm),cached:!!__GH_STATE__.routeCache?.[roadRoute]};},{roadRoute,OBSERVE:`(${OBSERVE})`});
-  assert.equal(applied,true,'the geometry is applied once the command settled');
   assert(out.trucks.length===TRUCKS&&out.trucks.every(d=>Math.abs(d-out.template)<1e-6),`trucks and route template agree after the command: ${JSON.stringify({template:out.template,trucks:out.trucks})}`);
-  assert(Math.abs(out.template-pausedRoots.rows.road[0].distanceKm)>1,'the new geometry was applied');
-  assert.equal(out.cached,true,'its cache entry is written through the routes owner after the command');
+  if(interrupt){
+    // The rollback leaves the live template (unverified here) in place: the geometry is applied after the command.
+    assert.equal(applied,true,'the geometry is applied once the command settled');
+    assert(Math.abs(out.template-pausedRoots.rows.road[0].distanceKm)>1,'the new geometry was applied');
+    assert.equal(out.cached,true,'its cache entry is written through the routes owner after the command');
+  }else{
+    // The commit rebuilds the templates from the committed state, where the route has verified road geometry: a stale
+    // geometry for it is dropped rather than applied over it.
+    assert.equal(applied,false,'a geometry for a route verified meanwhile is dropped');
+    assert(Math.abs(out.template-pausedRoots.rows.road[0].distanceKm)<1e-6,'the verified geometry stays');
+  }
   return {pre,paused,out};
 }
 
 (async()=>{
   const browser=await chromium.launch({headless:true}),errors=[],report=[];
   try{
+    // Each scenario in a game of its own: a geometry applied to a custom route's template outside a command is not
+    // kept by a later commit (a custom route owns its geometry; the route cache keeps only a canonical marker), a
+    // separate, pre-existing behaviour this test does not cover.
     let {page}=await boot({browser,errors,bypassCSP:true});page.setDefaultTimeout(120000);await osrmDouble(page);
-    const roadRoute=await setup(page);assert(roadRoute,'trucks on a road route');
+    let roadRoute=await setup(page);assert(roadRoute,'trucks on a road route');
 
     // 1. Interrupted after its departures: the whole command rolls back.
     const rolled=await scenario(page,{roadRoute,interrupt:true});
@@ -124,8 +139,9 @@ async function scenario(page,{roadRoute,interrupt}){
     assert.equal(rolled.out.at.saveRevision,rolled.pre.saveRevision,'no save revision');
     report.push({name:'paused then interrupted: rolled back, nothing acted on the partial result',refusals:{save:rolled.paused.saveNow,player:rolled.paused.playerCommand},visibleWhilePaused:rolled.paused.visibleShips.join('')});
 
-    // 2. The same pause, then committed.
-    await page.evaluate(()=>{window.GH_OPERATIONS_CORE=window.__qaOps;});
+    // 2. The same pause, then committed (a new game).
+    await page.close();({page}=await boot({browser,errors,bypassCSP:true}));page.setDefaultTimeout(120000);await osrmDouble(page);
+    roadRoute=await setup(page);assert(roadRoute,'trucks on a road route');
     const committed=await scenario(page,{roadRoute,interrupt:false});
     assert.equal(committed.out.committed,true);
     assert(committed.out.at.rows.sea.every(r=>r.routeId&&(r.phase==='moving'||r.departureScheduled)),'every ship routed and underway after the commit');
