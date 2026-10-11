@@ -9,7 +9,7 @@
 importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js');
 
 const STORE=self.GH_FLEET_STORE,EVENTS=self.GH_FLEET_EVENTS,VERSION='GH-FLEET-ENGINE-WORKER-362.1.0';
-let store=null,routes=new Map(),specs={},open=null;
+let store=null,routes=new Map(),specs={},open=null,partial=null;
 
 const routeKey=(routeId,base)=>String(routeId||'')+'\u0000'+String(base||'');
 class MissingRoute extends Error{}
@@ -91,9 +91,24 @@ self.addEventListener('message',event=>{
     switch(message.type){
       case 'replica':
         if(open){STORE.rollbackJournal(open.journal);open=null;}
-        store=STORE.importReplica(message.payload);
+        store=STORE.importReplica(message.payload);partial=null;
         self.postMessage({type:'ready',version:VERSION,id:message.id,length:store.length});
         return;
+      // Build 371: a large replica arrives in parts (fleet-engine-thread beginExport); the store is replaced at its end.
+      case 'replica-begin':
+        if(open){STORE.rollbackJournal(open.journal);open=null;}
+        store=null;partial={id:message.exportId,meta:message,rows:new Uint8Array(Math.max(0,Number(message.length)||0)*STORE.STRIDE)};
+        return;
+      case 'replica-part':
+        if(!partial||partial.id!==message.exportId)return;
+        partial.rows.set(new Uint8Array(message.bytes),Number(message.offset)*STORE.STRIDE);
+        return;
+      case 'replica-end':{
+        if(!partial||partial.id!==message.exportId)return;
+        const meta=partial.meta;store=STORE.importReplica({schema:meta.schema,version:meta.version,length:meta.length,live:meta.live,structure:meta.structure,revision:meta.revision,values:message.values,extras:message.extras,rows:partial.rows.buffer});partial=null;
+        self.postMessage({type:'ready',version:VERSION,id:0,length:store.length});
+        return;
+      }
       case 'sync':{
         if(!store||open){self.postMessage({type:'error',version:VERSION,id:message.id,error:open?'sync-while-step-open':'replica-missing'});return;}
         // Rows appended on the main thread (purchases) arrive with their records; a shorter store means a compaction,

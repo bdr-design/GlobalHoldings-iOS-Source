@@ -470,14 +470,16 @@
   // phase alone needs no derivation: deriveRow presents the stored phase, else 'moving' on a route and 'idle' off one,
   // and time moves only progress, fuel, condition and dwell.
   const STOP=Object.freeze({scan:'stop'}),scanScratch={phase:null,progress:0,fuel:0,condition:0,simCarrySeconds:0,dwellRemaining:undefined,hasDwell:false};
-  function scan(state,fields,fn,{from=0,to=Infinity}={}){
+  // nextRow (Build 371, scanRouted): rows come from nextRow() (ascending indices, -1 to end) instead of from..to, read with
+  // the one plan built here; it is called again only after fn has returned for the previous row.
+  function scan(state,fields,fn,{from=0,to=Infinity,nextRow=null}={}){
     const store=storeOf(state),start=Math.max(0,Math.floor(Number(from)||0));
     if(!store){const n=Math.min(scanLength(state),to);for(let index=start;index<n;index++)if(rowAlive(state,index)&&fn(viewAt(state,index),index)===STOP)return index+1;return Math.max(start,n);}
     const names=Array.isArray(fields)?fields:[],count=names.length,end=Math.min(store.length,to);
     const kind=names.map(field=>STORE_HOT_KIND.get(field)||(PROFILE_FIELD_SET.has(field)?'profile':BINDING_FIELD_SET.has(field)?'binding':'')),bit=names.map(field=>BIT[field]>>>0),derivedField=names.map(field=>DERIVED_SET.has(field));
     const slotOf=names.map(field=>O[field]),patternOf=names.map(field=>STORE.SLOTS[`${field}Pattern`]?[O[`${field}Pattern`],O[`${field}Number`]]:null),timeDerived=names.some(field=>DERIVED_SET.has(field)&&field!=='phase'),extrasDerived=timeDerived||names.includes('phase');
     const v=STORE.views(store),u8=v.u8,W=v.u32,F=v.f64,F32=v.f32,I32=v.i32,V=store.values,t=timeOf(state),SR=STORE.STRIDE,WR=STORE.WORDS_PER_ROW,FR=STORE.F64_PER_ROW,ALIVE=STORE.ALIVE,EXTRAS=STORE.EXTRAS,PHASE=BIT.phase>>>0,ROUTE=BIT.routeId>>>0,row={};
-    for(let index=start;index<end;index++){
+    for(let index=nextRow?nextRow():start;nextRow?index>=0&&index<end:index<end;index=nextRow?nextRow():index+1){
       const flags=u8[index*SR+O.flags];if(!(flags&ALIVE))continue;
       if(flags&EXTRAS){const derived=extrasDerived?deriveRow(store,index,t):null;for(let k=0;k<count;k++){const field=names[k];row[field]=derivedField[k]&&derived&&own(derived,field)?derived[field]:STORE.peek(store,index,field);}if(fn(row,index)===STOP)return index+1;continue;}
       const derived=timeDerived?deriveFast(scanScratch,store,index,t,v,V):null;
@@ -519,18 +521,28 @@
     const names=[...new Set(['routeId',...(Array.isArray(fields)?fields:[])])],skipped=new Set(),store=storeOf(state);
     const visit=(row,index)=>{const routeId=row.routeId;if(!routeId||skipped.has(routeId))return undefined;const out=fn(row,index);if(out===SKIP_ROUTE)skipped.add(routeId);return out;};
     if(!store){scan(state,names,(row,index)=>visit(row,index)===STOP?STOP:undefined);return;}
-    const skippedRefs=new Set(),ROUTE=BIT.routeId>>>0,SR=STORE.STRIDE,WR=STORE.WORDS_PER_ROW,ALIVE=STORE.ALIVE,EXTRAS=STORE.EXTRAS;
-    for(let index=0;index<store.length;index++){
-      // Views and the value table are read per row: fn may not write, but a row decoded below may grow the table.
-      const v=STORE.views(store),flags=v.u8[index*SR+O.flags];if(!(flags&ALIVE))continue;
-      let ref=0;
-      if(!(flags&EXTRAS)){
-        const w=index*WR;if(!(v.u32[w+O.present]&ROUTE))continue;ref=v.u32[w+O.routeId];if(ref===0||skippedRefs.has(ref))continue;
-        const value=store.values[ref];if(!value)continue;if(skipped.has(value)){skippedRefs.add(ref);continue;}
+    // Build 371: the rows come from the store's per-chunk route tables (GH_FLEET_STORE.refRowTables): in each chunk the
+    // rows of every route not yet skipped are merged in row order, and a route's later rows are dropped once fn returns
+    // SKIP_ROUTE. The calls are the former row pass's, in the same order, without reading the rows in between (two passes
+    // over a million rows per 500-asset dispatch chunk).
+    const tables=STORE.refRowTables(store,'routeId');
+    const heapRow=[],heapEntry=[];
+    const push=(row,entry)=>{let i=heapRow.length;heapRow.push(row);heapEntry.push(entry);while(i>0){const p=(i-1)>>1;if(heapRow[p]<=row)break;heapRow[i]=heapRow[p];heapEntry[i]=heapEntry[p];i=p;}heapRow[i]=row;heapEntry[i]=entry;};
+    const pop=()=>{const entry=heapEntry[0],lastRow=heapRow.pop(),lastEntry=heapEntry.pop();const n=heapRow.length;if(n){let i=0;for(;;){let c=2*i+1;if(c>=n)break;if(c+1<n&&heapRow[c+1]<heapRow[c])c++;if(heapRow[c]>=lastRow)break;heapRow[i]=heapRow[c];heapEntry[i]=heapEntry[c];i=c;}heapRow[i]=lastRow;heapEntry[i]=lastEntry;}return entry;};
+    // One scan with the plan built once; nextRow() runs after fn returned for the previous row, so a route skipped by that
+    // call is dropped before its next row.
+    let chunk=0,current=null;
+    const nextRow=()=>{
+      if(current&&!skipped.has(current.value)&&++current.at<current.rows.length)push(current.rows[current.at],current);
+      current=null;
+      while(!heapRow.length){
+        if(chunk>=tables.length)return -1;
+        const table=tables[chunk++];
+        for(let k=0;k<table.values.length;k++){const value=table.values[k];if(!skipped.has(value))push(table.rows[k][0],{value,rows:table.rows[k],at:0});}
       }
-      let out,routeId;scan(state,names,(row,at)=>{routeId=row.routeId;out=visit(row,at);},{from:index,to:index+1});
-      if(out===STOP)return;if(out===SKIP_ROUTE&&ref)skippedRefs.add(ref);
-    }
+      current=pop();return current.rows[current.at];
+    };
+    scan(state,names,(row,index)=>visit(row,index)===STOP?STOP:undefined,{nextRow});
   }
   // Read-only projections keep validation and other narrow consumers off the
   // per-row proxy path while preserving the store boundary. The projection is

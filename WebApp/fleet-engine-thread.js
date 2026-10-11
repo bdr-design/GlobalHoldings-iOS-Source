@@ -20,8 +20,8 @@
   const W_ROUTE=STORE.O.routeId,W_BASE=STORE.O.baseFacility,WR=STORE.WORDS_PER_ROW;
   const routeKey=(routeId,base)=>String(routeId||'')+'\u0000'+String(base||'');
 
-  function create({workerFactory,resolveRoute,catalogSpecs,routesRevision=()=>0,clock=()=>performance.now(),timeoutMs=15000}={}){
-    let worker=null,disabled=null,nextId=1,needsFull=true,synced=null,routeTable=new Map(),routesAt=null,pending=null,windowSession=null,lastBudgetTime=Infinity;
+  function create({workerFactory,resolveRoute,catalogSpecs,routesRevision=()=>0,clock=()=>performance.now(),timeoutMs=15000,replicaPartRows=STORE.CHUNK_ROWS>>1,schedule=fn=>setTimeout(fn,0)}={}){
+    let worker=null,disabled=null,nextId=1,needsFull=true,synced=null,routeTable=new Map(),routesAt=null,pending=null,windowSession=null,lastBudgetTime=Infinity,exporting=null,nextExportId=1;
     const tickets=new Map(),waiters=[],stats={requests:0,applied:0,fallbacks:0,windowBegins:0,windowSteps:0,windowCommits:0,windowRollbacks:0,windowFallbacks:0,fullSyncs:0,incrementalSyncs:0,columnSyncs:0,rowsSent:0,lastWorkerMs:0,lastApplyMs:0,lastSyncMs:0,maxWorkerMs:0,maxApplyMs:0,maxSyncMs:0,maxFullSyncMs:0,lastReason:'',fullSyncReasons:{}};
     const settleWaiters=()=>{if(pending||windowSession)return;while(waiters.length)waiters.shift()();};
     function disable(reason){
@@ -32,7 +32,7 @@
       // it busy until that transaction explicitly settles the session; otherwise
       // an external fleet writer could enter before main has restored leg 1.
       if(windowSession){windowSession.status='failed';windowSession.reason=disabled;}
-      tickets.clear();pending=null;settleWaiters();
+      tickets.clear();pending=null;exporting=null;settleWaiters();
     }
     function ensureWorker(){
       if(disabled)return null;if(worker)return worker;
@@ -89,15 +89,68 @@
       synced={store,runtime:STORE.chunkStamp(store).runtime,since:store.revision,values:store.values.slice(),length:store.length};
       needsFull=false;stats.fullSyncs++;stats.lastSyncMs=clock()-started;stats.maxSyncMs=Math.max(stats.maxSyncMs,stats.lastSyncMs);stats.maxFullSyncMs=Math.max(stats.maxFullSyncMs,stats.lastSyncMs);
     }
+    // Build 371: a store over two parts is sent as a replica in parts (replicaPartRows rows, 2 MB at 16,384 rows), one
+    // part per scheduled task: the single copy of every row (128 MB at a million assets), the major collection that
+    // allocation set off and the pass over every row for route keys made one main-thread block of 500-900 ms the first
+    // time a large fleet reached the thread (and after every stale replica). Rows written while the parts travel are
+    // in the dirty log since the export's revision: the incremental sync that ends the export sends them. A request made
+    // meanwhile waits (its ticket is pending, as for any step in flight) and is posted when the replica is complete.
+    // sync() returns false while the replica is not complete.
+    const stagedReplica=store=>store.length>2*Math.max(1,replicaPartRows);
+    function beginExport(store,reason){
+      stats.fullSyncReasons[reason]=(stats.fullSyncReasons[reason]||0)+1;stats.stagedSyncs=(stats.stagedSyncs||0)+1;
+      const id=nextExportId++;
+      exporting={id,store,reason,revision:store.revision,runtime:STORE.chunkStamp(store).runtime,length:store.length,live:store.live,structure:store.structure,offset:0,keys:new Set(),started:clock(),maxPartMs:0};
+      routesAt=routesRevision();
+      post({type:'replica-begin',exportId:id,schema:store.schema,version:store.version,length:store.length,live:store.live,structure:store.structure,revision:store.revision});
+      STORE.drainDirty(store,store.revision);needsFull=false;synced=null;
+      schedule(exportStep);
+    }
+    function abortExport(reason){if(!exporting)return;stats.stagedSyncAborts=(stats.stagedSyncAborts||0)+1;stats.lastReason=`replica-export:${reason}`;const store=exporting.store;exporting=null;needsFull=true;if(pending?.deferred&&!disabled)beginExport(store,reason);}
+    function exportStep(){
+      const e=exporting;if(!e||disabled)return;
+      const store=e.store,started=clock();
+      // A store replaced, compacted or shortened meanwhile is exported again from its start.
+      if(STORE.chunkStamp(store).runtime!==e.runtime||store.length<e.length){abortExport('store-changed');return;}
+      const stride=STORE.STRIDE,end=Math.min(e.length,e.offset+Math.max(1,replicaPartRows)),part=store.rows.slice(e.offset*stride,end*stride);
+      const indices=new Int32Array(end-e.offset);for(let k=0;k<indices.length;k++)indices[k]=e.offset+k;addRouteKeys(store,e.keys,indices);
+      post({type:'replica-part',exportId:e.id,offset:e.offset,bytes:part},[part]);
+      e.offset=end;e.maxPartMs=Math.max(e.maxPartMs,clock()-started);
+      if(e.offset<e.length){schedule(exportStep);return;}
+      finishExport(e);
+    }
+    function finishExport(e){
+      const store=e.store,started=clock();exporting=null;
+      const values=store.values.map(value=>value===undefined?null:value);
+      post({type:'replica-end',exportId:e.id,values,extras:{...store.extras}});
+      routeTable=new Map();post({type:'routes',replace:true,plans:closeRouteKeys(e.keys)});
+      // The replica holds every row as of its part and the values and extras of now; rows written since the export began
+      // are in the dirty log from e.revision and go next, through the incremental sync.
+      synced={store,runtime:e.runtime,since:e.revision,values:store.values.slice(),length:e.length};
+      stats.fullSyncs++;stats.lastSyncMs=clock()-started;stats.maxSyncMs=Math.max(stats.maxSyncMs,stats.lastSyncMs,e.maxPartMs);stats.lastStagedSyncTotalMs=clock()-e.started;stats.maxReplicaPartMs=Math.max(stats.maxReplicaPartMs||0,e.maxPartMs);
+      const ticket=pending;
+      if(ticket?.deferred&&!ticket.settled){
+        let ready=false;try{ready=sync(ticket.store);}catch(error){disable(`sync:${error?.message||error}`);return;}
+        if(ready)postDeferred(ticket);
+      }
+    }
+    function postDeferred(ticket){
+      const store=ticket.store,request=ticket.deferred;delete ticket.deferred;
+      ticket.revision=store.revision;ticket.valuesLength=store.values.length;ticket.length=store.length;
+      ticket.timer=setTimeout(()=>{if(ticket.status==='pending')disable('worker-timeout');},timeoutMs);
+      post({type:'advance',id:ticket.id,...request});
+    }
+    function fullOrStaged(store,reason){if(stagedReplica(store)){if(!exporting)beginExport(store,reason);return false;}fullSync(store,reason);return true;}
     function sync(store){
+      if(exporting){if(exporting.store===store)return false;abortExport('store-replaced');}
       const reason=needsFull?'stale':!synced?'first':synced.store!==store?'store-replaced':synced.runtime!==STORE.chunkStamp(store).runtime?'store-runtime':store.length<synced.length?'store-shrank':'';
-      if(reason){fullSync(store,reason);return;}
+      if(reason)return fullOrStaged(store,reason);
       const started=clock(),dirty=STORE.drainDirty(store,synced.since);
-      if(!dirty.complete){fullSync(store,'dirty-log-incomplete');return;}
+      if(!dirty.complete)return fullOrStaged(store,'dirty-log-incomplete');
       // Build 359: columns rewritten wholesale (the daily fleet pass) travel as columns, with the presence column (a
       // column writer sets presence bits quietly), instead of the whole store.
       const columnNames=dirty.columns.length?[...new Set([...dirty.columns,'present'])]:null;
-      if(columnNames&&!columnNames.every(name=>Object.prototype.hasOwnProperty.call(STORE.SLOTS,name))){fullSync(store,'column-writes');return;}
+      if(columnNames&&!columnNames.every(name=>Object.prototype.hasOwnProperty.call(STORE.SLOTS,name)))return fullOrStaged(store,'column-writes');
       const indices=Int32Array.from(new Set(dirty.indices.filter(index=>index>=0&&index<store.length))).sort();
       const values=STORE.valueChanges(store,synced.values);
       if(routesRevision()!==routesAt){
@@ -112,14 +165,17 @@
       if(columnNames){const payload=STORE.readColumns(store,columnNames);post({type:'columns',reported:dirty.columns,payload},payload.columns.map(([,buffer])=>buffer));stats.columnSyncs++;}
       synced.since=store.revision;synced.values=store.values.slice();synced.length=store.length;
       stats.incrementalSyncs++;stats.lastSyncMs=clock()-started;stats.maxSyncMs=Math.max(stats.maxSyncMs,stats.lastSyncMs);
+      return true;
     }
     // Posts one step. Returns a ticket ({status:'pending'|'ready'|'fallback'|'failed'}) or null when the thread is not
     // available (the caller runs the step itself).
     function request(store,{from,to,context,contextKey,tripAlertLimit,order,maxEvents,budget}={}){
       if(pending||windowSession||!STORE.isStore(store)||!ensureWorker())return null;
-      try{sync(store);}catch(error){disable(`sync:${error?.message||error}`);return null;}
+      let ready;try{ready=sync(store);}catch(error){disable(`sync:${error?.message||error}`);return null;}
       const ticket={id:nextId++,store,from,to,contextKey:String(contextKey||''),revision:store.revision,valuesLength:store.values.length,length:store.length,status:'pending',result:null,settled:false,discarded:false,applied:false,reason:''};
       tickets.set(ticket.id,ticket);pending=ticket;stats.requests++;
+      // The replica is still travelling: the step is posted (and the ticket stamped) once it is complete.
+      if(!ready){ticket.deferred={from,to,context,tripAlertLimit,order,maxEvents,budget};stats.deferredRequests=(stats.deferredRequests||0)+1;return ticket;}
       ticket.timer=setTimeout(()=>{if(ticket.status==='pending')disable('worker-timeout');},timeoutMs);
       post({type:'advance',id:ticket.id,from,to,context,tripAlertLimit,order,maxEvents,budget});
       return ticket;
@@ -129,7 +185,9 @@
     // Only one step is in flight; commit or rollback settles the whole window.
     function beginWindow(store,{from=0,target=Infinity}={}){
       if(pending||windowSession||!STORE.isStore(store)||!ensureWorker())return null;
-      try{sync(store);}catch(error){disable(`window-sync:${error?.message||error}`);return null;}
+      // A window starts on a complete replica: while one travels (begun here if needed) the caller takes its fallback.
+      let ready;try{ready=sync(store);}catch(error){disable(`window-sync:${error?.message||error}`);return null;}
+      if(!ready){stats.windowDeferred=(stats.windowDeferred||0)+1;return null;}
       const start=Number(from),end=Number(target);if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)return null;
       const session={id:nextId++,store,revision:store.revision,valuesLength:store.values.length,length:store.length,routesRevision:routesRevision(),nextFrom:start,target:end,nextSeq:0,status:'open',reason:'',registered:false,settled:false,steps:0};
       windowSession=session;stats.windowBegins++;post({type:'window-begin',id:session.id,from:start,target:end});return session;

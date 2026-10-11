@@ -684,6 +684,33 @@
     entry.tables.length=Math.ceil(length/CHUNK_ROWS);
     return out;
   }
+  // Build 371: per chunk, every distinct value of a ref field with its rows in row order, kept on the same versions as
+  // distinctRefs (a chunk's table is rebuilt only when a write of the field reached it). GH_FLEET_DATA.scanRouted walks a
+  // route's rows from it, reading a route's later rows only while its caller asks for them, instead of every row of the
+  // fleet (a million-asset dispatch made two such passes per 500-asset chunk). The tables are read-only to callers.
+  function refRowTables(store,field){
+    if(HOT_KIND.get(field)!=='ref')throw new RangeError(`fleet-ref-rows-field:${field}`);
+    const r=rt(store),stamp=`${r.epoch}:${r.massVersion}:${r.valuesGeneration}`,cache=r.refRowsCache||(r.refRowsCache=new Map());
+    let entry=cache.get(field);if(!entry||entry.stamp!==stamp){entry={stamp,tables:[]};cache.set(field,entry);}
+    const versions=ENGINE_FIELDS.has(field)?r.chunkVersions:IDENTITY_EXEMPT.has(field)?r.staticVersions:r.identityVersions;
+    const v=views(store),u8=v.u8,W=v.u32,V=store.values,bit=HOT_BIT[field]>>>0,slot=O[field],length=store.length;
+    const build=(start,end)=>{
+      const byValue=new Map();
+      for(let index=start;index<end;index++){
+        const flags=u8[index*STRIDE+O.flags];if(!(flags&ALIVE))continue;
+        let value;if(flags&EXTRAS)value=peek(store,index,field);else{const w=index*WORDS_PER_ROW;if(!(W[w+O.present]&bit))continue;const ref=W[w+slot];if(ref===0)continue;value=V[ref];}
+        if(!value)continue;let list=byValue.get(value);if(!list){list=[];byValue.set(value,list);}list.push(index);
+      }
+      const values=[],rows=[];for(const [value,list] of byValue){values.push(value);rows.push(Uint32Array.from(list));}
+      return {values,rows};
+    };
+    for(let chunk=0,start=0;start<length;chunk++,start+=CHUNK_ROWS){
+      const end=Math.min(length,start+CHUNK_ROWS),version=versions[chunk];let table=entry.tables[chunk];
+      if(!table||table.version!==version||table.end!==end){table={version,end,...build(start,end)};entry.tables[chunk]=table;}
+    }
+    entry.tables.length=Math.ceil(length/CHUNK_ROWS);
+    return entry.tables;
+  }
   function forEachClass(store,fields,fn,{numeric=[]}={}){
     const names=Array.isArray(fields)?fields:[],numericSet=new Set(numeric);
     const {plan,comps,first,counts,mins,maxs,nans,nums,nCount,singles,members}=classScan(store,names,numericSet);
@@ -994,7 +1021,7 @@
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,I32_NULL,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
     create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,readColumns,writeColumns,drainDirty,staticSnapshot,staticChunksSince,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
-    views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,collectValuesStages,distinctRefs,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,exportReplica,importReplica,valueChanges,applyValueChanges,internAt,readRows,writeRows,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
+    views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,collectValuesStages,distinctRefs,refRowTables,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,exportReplica,importReplica,valueChanges,applyValueChanges,internAt,readRows,writeRows,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;
   if(typeof module!=='undefined'&&module.exports)module.exports=API;
