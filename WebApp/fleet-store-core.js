@@ -194,14 +194,28 @@
   // removed from the index, and id lookups changed inside the transaction are
   // repaired row by row.
   function newLog(capacity){return {count:0,capacity,rows:new Int32Array(capacity),words:new Uint32Array(capacity*WORDS_PER_ROW),extras:new Array(capacity)};}
-  function growLog(log){
-    const capacity=Math.max(64,log.capacity*2),rows=new Int32Array(capacity),words=new Uint32Array(capacity*WORDS_PER_ROW);
-    rows.set(log.rows);words.set(log.words);log.rows=rows;log.words=words;log.extras.length=capacity;log.capacity=capacity;
+  function growLog(log,needed=log.capacity+1){
+    let capacity=Math.max(64,log.capacity*2);while(capacity<needed)capacity*=2;
+    const rows=new Int32Array(capacity),words=new Uint32Array(capacity*WORDS_PER_ROW);
+    rows.set(log.rows.subarray(0,log.count));words.set(log.words.subarray(0,log.count*WORDS_PER_ROW));log.rows=rows;log.words=words;log.extras.length=capacity;log.capacity=capacity;
+  }
+  // Build 372 (a replayed step or slice journals up to every row of a moving fleet: the log grew by doubling, copying
+  // itself at each step, 164 ms in one frame of play at a million assets, and a new log and row mark array were made for
+  // every transaction): a writer that knows how many rows it will log reserves them at once, and an ended journal's log
+  // (up to LOG_POOL_ROWS rows, 32 MB) and row marks are kept on the runtime for the next one. A pooled log is emptied when
+  // it ends (count 0, extras cleared; the marks of its rows are reset there already).
+  const LOG_POOL_ROWS=1<<18;
+  function reserveLog(store,rows){const r=runtime.get(store),journal=r&&r.journal;if(!journal||!journal.active)return;const log=journal.log,needed=log.count+Math.max(0,rows|0);if(needed>log.capacity)growLog(log,needed);}
+  function takeLog(r){const log=r.logPool;r.logPool=null;if(log){log.count=0;return log;}return newLog(64);}
+  function takeSeen(r,capacity){const size=Math.max(16,capacity),seen=r.seenPool;r.seenPool=null;return seen&&seen.length>=size?seen:new Uint8Array(size);}
+  function releaseJournal(r,journal){
+    const log=journal.log;if(log&&log.capacity<=LOG_POOL_ROWS&&(!r.logPool||r.logPool.capacity<log.capacity)){for(let k=0;k<log.count;k++)log.extras[k]=undefined;log.count=0;r.logPool=log;}
+    if(journal.seen&&(!r.seenPool||r.seenPool.length<journal.seen.length))r.seenPool=journal.seen;
   }
   function beginJournal(store){
     const r=rt(store);if(r.journal&&r.journal.active)return r.journal;
     const journal={store,runtime:r,length:store.length,live:store.live,structure:store.structure,revision:store.revision,high:store.revision,highStructure:store.structure,valuesLength:store.values.length,reused:[],
-      log:newLog(64),seen:new Uint8Array(Math.max(16,store.capacity)),fields:new Map(),ids:r.ids,idOps:[],idCollision:false,active:true};
+      log:takeLog(r),seen:takeSeen(r,store.capacity),fields:new Map(),ids:r.ids,idOps:[],idCollision:false,active:true};
     r.journal=journal;return journal;
   }
   function journalFor(store){
@@ -323,6 +337,7 @@
     if(!journal.active)return;journal.active=false;
     const log=journal.log;for(let slotIndex=0;slotIndex<log.count;slotIndex++)journal.seen[log.rows[slotIndex]]=0;
     const r=runtime.get(journal.store);if(r&&r.journal===journal)r.journal=null;
+    if(r&&r===journal.runtime)releaseJournal(r,journal);
   }
   function journalStats(store){const r=rt(store),j=r.journal;return j&&j.active?{rows:j.log.count,columns:[...j.fields.keys()],reused:j.reused.length}:null;}
 
@@ -1090,6 +1105,7 @@
   }
   function writeRows(store,indices,bytes,extras,{revisionDelta=0,staticRows=false}={}){
     const before=store.revision,touch=toucher(store),src=new Uint32Array(bytes),dst=views(store).u32;
+    if(indices.length){journalFor(store);reserveLog(store,indices.length);}
     if(src.length!==indices.length*WORDS_PER_ROW)throw new Error('fleet-replica-rows-invalid');
     for(let k=0;k<indices.length;k++){
       const index=indices[k];if(!(index>=0&&index<store.length))throw new Error('fleet-replica-row-out-of-range');
