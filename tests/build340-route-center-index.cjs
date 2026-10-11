@@ -12,7 +12,7 @@ const vm=require('node:vm');
 const ROOT=process.env.GH_TEST_SOURCE_DIR||path.resolve(__dirname,'..');
 const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8'),start=app.indexOf('  let routeCenterFleetCache=null;'),end=app.indexOf('\n  function renderRouteCenter(arg)',start);
 assert(start>=0&&end>start,'the route-center revision cache is present');
-const STORE=require(path.join(ROOT,'WebApp/fleet-store-core.js')),FLEET=require(path.join(ROOT,'WebApp/fleet-access-core.js'));
+const STORE=require(path.join(ROOT,'WebApp/fleet-store-core.js')),FLEET=require(path.join(ROOT,'WebApp/fleet-access-core.js')),QUERY=require(path.join(ROOT,'WebApp/fleet-query-core.js'));
 const assets=Array.from({length:20000},(_,index)=>({id:`ASSET-${String(index).padStart(5,'0')}`,name:`GH ${index%250===0?'Falcon':'Unit'} ${index}`,catalogId:`CAT-${index%9}`,ownerCompanyId:`company-${index%5}`,type:index%3===0?'air':index%3===1?'sea':'road',baseFacility:`BASE-${index%100}`,routeId:index%4===0?`ROUTE-${index%900}`:null,phase:index%7===0?'moving':index%3===0?'turnaround':'idle',departureScheduled:index%11===0,salePending:index%37===0,deliveryStatus:index%43===0?'pending':'delivered',lastTrip:index%5===0?{margin:index*1.1,revenue:index*10.3}:null}));
 const facilities=new Map(Array.from({length:100},(_,index)=>[`BASE-${index}`,{id:`BASE-${index}`,iata:`A${index%16}`,icao:`ICAO-${index%16}`,code:`C${index%16}`}]));
 const sameUnderlying=(a,b)=>{if(a===b)return true;const left=facilities.get(a),right=facilities.get(b);return Boolean((left?.iata&&left.iata===right?.iata)||(left?.icao&&left.icao===right?.icao)||(left?.code&&left.code===right?.code));};
@@ -23,7 +23,9 @@ function check(label,fleetState){
   let revision=1;
   const context={
     state:{saveRevision:7,simSeconds:0,...fleetState},
-    window:{GH_TRANSACTION_CORE:{revision:()=>revision},GH_MAP_STRUCTURE_REVISION:12,GH_FLEET_DATA:FLEET},
+    // Build 372: route cards come from fleet-query-core here (no fleet engine worker in this context: the main-thread path).
+    window:{GH_TRANSACTION_CORE:{revision:()=>revision},GH_MAP_STRUCTURE_REVISION:12,GH_FLEET_DATA:FLEET,GH_FLEET_QUERY:QUERY,GH_FLEET_STORE:STORE},
+    fleetEngineThreadClient:null,COMPANY_PLATFORM:{ownerForLegacyAssetMode:()=>null},
     assetOwnerCompanyId:asset=>asset.ownerCompanyId,
     assetModeOf:asset=>asset.type,
     normalizeSearch,

@@ -53,8 +53,8 @@ test('a list changed in place is indexed again',()=>{
 test('the dispatch runs in chunks and yields after each new route',()=>{
   const app=fs.readFileSync(path.join(ROOT,'WebApp/app.js'),'utf8');
   assert.match(app,/yieldFleetPlanning=\(\)=>new Promise\(resolve=>setTimeout\(resolve,0\)\),DISPATCH_CHUNK=500;/);
-  assert.match(app,/for\(let from=0;from<batch\.length;from\+=DISPATCH_CHUNK\)\{\s*await yieldFleetPlanning\(\);const rows=batch\.slice\(from,from\+DISPATCH_CHUNK\),out=dispatch\('fleet','assign-routes-batch',\{assignments:rows,routes:chunkRoutes\(rows\)\}\)/);
-  assert.match(app,/for\(let from=0;from<departures\.length;from\+=DISPATCH_CHUNK\)\{\s*await yieldFleetPlanning\(\);const rows=departures\.slice\(from,from\+DISPATCH_CHUNK\),out=dispatch\('fleet','depart-batch',\{departures:rows,routes:chunkRoutes\(rows\)\}\)/);
+  assert.match(app,/for\(let from=0;from<batch\.length;from\+=DISPATCH_CHUNK\)\{\s*await yieldFleetPlanning\(\);const rows=batch\.slice\(from,from\+DISPATCH_CHUNK\),out=dispatch\('fleet','assign-routes-batch',sealedFleetPayload\(\{assignments:rows,routes:chunkRoutes\(rows\)\}\)\)/);
+  assert.match(app,/for\(let from=0;from<departures\.length;from\+=DISPATCH_CHUNK\)\{\s*await yieldFleetPlanning\(\);const rows=departures\.slice\(from,from\+DISPATCH_CHUNK\),out=dispatch\('fleet','depart-batch',sealedFleetPayload\(\{departures:rows,routes:chunkRoutes\(rows\)\}\)\)/);
   assert.match(app,/for\(const asset of members\)assignments\.push\(\{asset,route\}\);\s*await yieldFleetPlanning\(\);/);
   assert.doesNotMatch(app,/dispatch\('fleet','assign-routes-batch',\{assignments:batch,routes:routeTable\}\)/,'no single assignment of the whole batch');
   return {chunk:500};
