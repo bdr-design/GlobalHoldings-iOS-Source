@@ -27,7 +27,7 @@
 
   function create({workerFactory,resolveRoute,catalogSpecs,routesRevision=()=>0,clock=()=>performance.now(),timeoutMs=15000}={}){
     let worker=null,disabled=null,nextId=1,needsFull=true,synced=null,routeTable=new Map(),routesAt=null,pending=null,windowSession=null,lastBudgetTime=Infinity,importId=0,routesReady=true;
-    const tickets=new Map(),waiters=[],inspections=new Map(),stats={requests:0,applied:0,fallbacks:0,windowBegins:0,windowSteps:0,windowCommits:0,windowRollbacks:0,windowFallbacks:0,fullSyncs:0,seedSyncs:0,incrementalSyncs:0,columnSyncs:0,compactions:0,rowsSent:0,routeKeysAnswered:0,deferredRequests:0,windowDeferred:0,lastWorkerMs:0,lastApplyMs:0,lastSyncMs:0,maxWorkerMs:0,maxApplyMs:0,maxSyncMs:0,maxFullSyncMs:0,maxSeedSyncMs:0,maxRouteAnswerMs:0,lastReason:'',fullSyncReasons:{}};
+    const tickets=new Map(),waiters=[],inspections=new Map(),healthChecks=new Map(),stats={requests:0,applied:0,fallbacks:0,windowBegins:0,windowSteps:0,windowCommits:0,windowRollbacks:0,windowFallbacks:0,fullSyncs:0,seedSyncs:0,incrementalSyncs:0,columnSyncs:0,compactions:0,rowsSent:0,routeKeysAnswered:0,deferredRequests:0,windowDeferred:0,lastWorkerMs:0,lastApplyMs:0,lastSyncMs:0,maxWorkerMs:0,maxApplyMs:0,maxSyncMs:0,maxFullSyncMs:0,maxSeedSyncMs:0,maxRouteAnswerMs:0,lastReason:'',fullSyncReasons:{}};
     const settleWaiters=()=>{if(pending||windowSession)return;while(waiters.length)waiters.shift()();};
     function disable(reason){
       if(disabled)return;disabled=String(reason||'disabled');stats.lastReason=disabled;
@@ -37,7 +37,7 @@
       // it busy until that transaction explicitly settles the session; otherwise
       // an external fleet writer could enter before main has restored leg 1.
       if(windowSession){windowSession.status='failed';windowSession.reason=disabled;}
-      tickets.clear();pending=null;routesReady=true;for(const resolve of inspections.values())resolve(null);inspections.clear();settleWaiters();
+      tickets.clear();pending=null;routesReady=true;for(const resolve of inspections.values())resolve(null);inspections.clear();for(const entry of healthChecks.values())entry.resolve(null);healthChecks.clear();settleWaiters();
     }
     function ensureWorker(){
       if(disabled)return null;if(worker)return worker;
@@ -54,6 +54,7 @@
     function receive(message){
       if(message.type==='error'){disable(`worker:${message.error}`);return;}
       if(message.type==='route-keys'){answerRouteKeys(message);return;}
+      if(message.type==='health'){const entry=healthChecks.get(message.id);healthChecks.delete(message.id);if(entry){stats.lastHealthWorkerMs=Number(message.ms)||0;stats.maxHealthWorkerMs=Math.max(stats.maxHealthWorkerMs||0,stats.lastHealthWorkerMs);entry.resolve(message.unavailable||!Array.isArray(message.issues)?null:{...entry.tag,issues:message.issues});}return;}
       if(message.type==='inspect'){const resolve=inspections.get(message.id);inspections.delete(message.id);resolve?.(message.missing?null:message);return;}
       if(message.type!=='result')return;
       const ticket=tickets.get(message.id);if(!ticket)return;
@@ -301,6 +302,16 @@
     function idle(){return pending||windowSession?new Promise(resolve=>waiters.push(resolve)):Promise.resolve();}
     const api={
       VERSION,request,apply,discard,beginWindow,requestWindow,applyWindow,settleWindow,idle,prime,
+      // Build 372: the health check's fleet issues (fleet-health-core), found by the worker on the replica brought to this
+      // store now. Only with no step or window in flight (else null at once: the replica would hold an unsettled step).
+      // Resolves with {store, runtime, revision, structure, length, simSeconds, issues} (the store as it was when asked;
+      // the caller drops a result for another store), or null.
+      health(store,{simSeconds=0}={}){
+        if(!prime(store))return null;
+        const id=nextId++,tag={store,runtime:STORE.chunkStamp(store).runtime,revision:store.revision,structure:store.structure,length:store.length,simSeconds:Number(simSeconds)||0};
+        stats.healthRequests=(stats.healthRequests||0)+1;
+        return new Promise(resolve=>{healthChecks.set(id,{tag,resolve});post({type:'health',id,simSeconds:tag.simSeconds});});
+      },
       // The worker's replica as it is once every message posted so far is handled (null without one). For gates only.
       inspect(){if(disabled||!worker)return Promise.resolve(null);const id=nextId++;return new Promise(resolve=>{inspections.set(id,resolve);post({type:'inspect',id});});},
       markStale(){needsFull=true;},

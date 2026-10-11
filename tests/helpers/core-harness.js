@@ -37,7 +37,7 @@ function harness(names = []) {
   };
   const loaded=new Set();
   // Every owner reads and writes the fleet through Fleet Data Access (Build 355).
-  const load = n => {if(loaded.has(n))return;if(n!=='fleet-store-core'&&n!=='fleet-access-core'&&!loaded.has('fleet-access-core')){load('fleet-store-core');load('fleet-access-core');}if(n==='simulation-core'){if(!loaded.has('simulation-asset-core'))load('simulation-asset-core');if(!loaded.has('fleet-event-core'))load('fleet-event-core');if(!loaded.has('simulation-time-core'))load('simulation-time-core');if(!loaded.has('simulation-pacing-core'))load('simulation-pacing-core');}vm.runInContext(fs.readFileSync(path.join(ROOT, 'WebApp', n + '.js'), 'utf8'), s, {filename: n + '.js'});loaded.add(n);};
+  const load = n => {if(loaded.has(n))return;if(n!=='fleet-store-core'&&n!=='fleet-access-core'&&!loaded.has('fleet-access-core')){load('fleet-store-core');load('fleet-access-core');}if(n==='diagnostics-core'&&!loaded.has('fleet-health-core'))load('fleet-health-core');if(n==='simulation-core'){if(!loaded.has('simulation-asset-core'))load('simulation-asset-core');if(!loaded.has('fleet-event-core'))load('fleet-event-core');if(!loaded.has('simulation-time-core'))load('simulation-time-core');if(!loaded.has('simulation-pacing-core'))load('simulation-pacing-core');}vm.runInContext(fs.readFileSync(path.join(ROOT, 'WebApp', n + '.js'), 'utf8'), s, {filename: n + '.js'});loaded.add(n);};
   names.forEach(load);
   return {s, data, storage, load};
 }

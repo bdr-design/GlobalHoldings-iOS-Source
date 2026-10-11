@@ -5,10 +5,11 @@
 // the main thread settles it: 'commit' keeps it, 'rollback' restores the replica exactly (its own store journal).
 // Messages in:  replica (whole store), seed (Build 372: the chunk buffers a decoded store came from), compact (the main
 //               thread's compaction, by its removed rows), sync (rows and values changed on the main thread), columns
-//               (fields rewritten wholesale), routes, specs, advance, settle, inspect (a copy of the replica, for gates).
+//               (fields rewritten wholesale), routes, specs, advance, settle, health (Build 372: the health check's fleet
+//               issues, fleet-health-core, on the replica), inspect (a copy of the replica, for gates).
 // Messages out: ready, route-keys (after a replica or seed: the (route, base) pairs its rows name, for the main thread to
 //               resolve), result (or fallback with a reason: the main thread then runs that step itself), error.
-importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js');
+importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js','fleet-access-core.js','fleet-health-core.js');
 
 const STORE=self.GH_FLEET_STORE,EVENTS=self.GH_FLEET_EVENTS,VERSION='GH-FLEET-ENGINE-WORKER-372.1.0';
 let store=null,routes=new Map(),specs={},open=null;
@@ -148,6 +149,14 @@ self.addEventListener('message',event=>{
         // Frozen like the main thread's plans, so the engine treats an unchanged plan the same way.
         for(const [key,plan] of message.plans||[])routes.set(key,plan&&typeof plan==='object'?Object.freeze(plan):null);
         return;
+      // Build 372: the health check's fleet issues on the replica (the main thread asks only with no step open, so the
+      // replica is the store as of its last exchange).
+      case 'health':{
+        if(!store||open||!self.GH_FLEET_HEALTH||!self.GH_FLEET_DATA){self.postMessage({type:'health',version:VERSION,id:message.id,unavailable:!store?'replica-missing':open?'step-open':'health-core-missing'});return;}
+        const started=performance.now(),issues=self.GH_FLEET_HEALTH.assetIssues({fleet:store,simSeconds:Number(message.simSeconds)||0},self.GH_FLEET_DATA);
+        self.postMessage({type:'health',version:VERSION,id:message.id,issues,ms:performance.now()-started});
+        return;
+      }
       // A copy of the replica, on request only (the differential gates compare it with the main thread's store).
       case 'inspect':{
         if(!store){self.postMessage({type:'inspect',version:VERSION,id:message.id,missing:true});return;}

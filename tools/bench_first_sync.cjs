@@ -10,7 +10,7 @@
 const fs=require('node:fs'),path=require('node:path');
 const root=process.env.GH_ROOT||path.resolve(__dirname,'..'),web=path.join(root,'WebApp'),read=f=>fs.readFileSync(path.join(web,f),'utf8');
 const {chromium}=require('playwright');const FIX=require(path.join(root,'tests/helpers/fleet-fixture'));
-const workerSource=['fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js'].map(read).join('\n;\n')+'\n;\n'+read('fleet-engine-worker.js').replace(/^importScripts\([^)]*\);$/m,'');
+const workerSource=['fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js','fleet-access-core.js','fleet-health-core.js'].map(read).join('\n;\n')+'\n;\n'+read('fleet-engine-worker.js').replace(/^importScripts\([^)]*\);$/m,'');
 const pageSources=['transaction-core.js','fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js','fleet-engine-thread.js'].map(read);
 const N=Number(process.argv[2]||1000000),HEAP=Number(process.argv[3]??1500000),SEED=process.env.GH_SEED!=='0';
 (async()=>{

@@ -3605,7 +3605,15 @@
   if(!window.GH_TRANSACTION_CORE?.execute)throw new Error('Transaction Core compatibility check failed before app.js');
   if(!window.GH_SIMULATION_CORE?.create)throw new Error('Simulation Core failed to load before app.js');
   if(!window.GH_SIMULATION_RUNTIME_CORE?.create)throw new Error('Simulation Runtime Core failed to load before app.js');
-  let lastRealtimeHealthMs=0,lastUiRefreshMs=0,lastRealtimeHealthCostMs=0;
+  let lastRealtimeHealthMs=0,lastUiRefreshMs=0,lastRealtimeHealthCostMs=0,realtimeHealthPending=false;
+  // The periodic health check may write the state's diagnostics only outside every slice, command, staged state and save.
+  function realtimeHealthAllowed(){const sim=simulationEngine.snapshot();return !sim.jobActive&&!sim.manualAdvance&&!fleetEngineThreadClient?.busy&&!stagedStateBusy()&&!document.hidden&&!hardResetInProgress&&!durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!window.GH_PERSISTENCE.isLocked();}
+  // fleetAssetIssues: the worker's (fleet-health-core rows), or undefined to find them here.
+  function runRealtimeHealth(fleetAssetIssues){
+    const healthStarted=performance.now();
+    try{window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot(),...(fleetAssetIssues?{fleetAssetIssues}:{})},{recordEvent:false,trackTransitions:true});lastRealtimeHealthCostMs=performance.now()-healthStarted;if(activeDrawerPanel==='diagnostics')openDrawer('diagnostics');}
+    catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}
+  }
   const REALTIME_HEALTH_MS=10000;
   const GLOBAL_HALT_IDS=Object.freeze(['CONTROL_JOURNAL_CHAIN_BREAK','CONTROL_JOURNAL_HASH_MISMATCH','CONTROL_JOURNAL_HEAD_MISMATCH','SAVE_SCHEMA_INTEGRITY','TIME_MONOTONICITY','TRANSACTION_ROLLBACK_FAILED','NATIVE_SAVE_RECOVERY_FAILED']);
   function requiresGlobalHalt(...reports){
@@ -3681,7 +3689,25 @@
         // Build 371: with a million assets the check reads every row (180-310 ms in desktop Chromium); the next one waits
         // 40 times the last one's duration when that is longer than REALTIME_HEALTH_MS, so it takes at most a fortieth
         // of the main thread.
-        if(now-lastRealtimeHealthMs>=Math.max(REALTIME_HEALTH_MS,lastRealtimeHealthCostMs*40)){lastRealtimeHealthMs=now;const healthStarted=performance.now();try{timed('healthCheckMs',()=>window.GH_DIAGNOSTICS.runHealthCheck(state,{appVersion:APP_VERSION,saveSchemaVersion:SAVE_SCHEMA_VERSION,simulation:simulationEngine.snapshot()},{recordEvent:false,trackTransitions:true}));lastRealtimeHealthCostMs=performance.now()-healthStarted;if(activeDrawerPanel==='diagnostics')timed('diagnosticsPanelMs',()=>openDrawer('diagnostics'));}catch(error){console.warn('تعذر تحديث صحة النظام الدوري',error);}}
+        if(!realtimeHealthPending&&now-lastRealtimeHealthMs>=Math.max(REALTIME_HEALTH_MS,lastRealtimeHealthCostMs*40)){
+          lastRealtimeHealthMs=now;
+          // Build 372: the fleet's asset issues (every row of the fleet: 485 ms on the main thread at a million assets) come
+          // from the fleet engine's worker, found on its replica of the store as it is now; the check then runs when they
+          // arrive, if nothing has since taken the state (a slice, a command, a save, a reset) and the store is the same
+          // one (a result for another game is dropped). Without the worker they are found here, as before.
+          const asked=fleetEngineThreadClient&&!fleetEngineThreadClient.disabled&&window.GH_FLEET_STORE?.isStore?.(state.fleet)?fleetEngineThreadClient.health?.(state.fleet,{simSeconds:state.simSeconds}):null;
+          if(asked){
+            realtimeHealthPending=true;const askedAt=performance.now();
+            asked.then(result=>{
+              realtimeHealthPending=false;runtimeInstrumentation.realtimeHealth={workerMs:fleetEngineThreadClient?.stats?.().lastHealthWorkerMs??null,waitMs:performance.now()-askedAt,applied:false,reason:''};
+              // A worker that cannot answer (an older worker without fleet-health-core): found here, as before.
+              if(!result){runtimeInstrumentation.realtimeHealth.reason='worker-unavailable';if(realtimeHealthAllowed())runRealtimeHealth(undefined);return;}
+              const reason=result.store!==state.fleet?'store-replaced':!realtimeHealthAllowed()?'state-busy':'';
+              if(reason){runtimeInstrumentation.realtimeHealth.reason=reason;lastRealtimeHealthMs=performance.now()-REALTIME_HEALTH_MS+1000;return;}
+              runRealtimeHealth(result.issues);runtimeInstrumentation.realtimeHealth.applied=true;
+            },()=>{realtimeHealthPending=false;});
+          }else if(!fleetEngineThreadClient||fleetEngineThreadClient.disabled||!window.GH_FLEET_STORE?.isStore?.(state.fleet))timed('healthCheckMs',()=>runRealtimeHealth(undefined));
+        }
       }
       const metric=runtimeInstrumentation.simRender;metric.count++;metric.last={...parts,recordedAtMs:Date.now()};for(const [key,value] of Object.entries(parts))metric.max[key]=Math.max(Number(metric.max[key])||0,value);
     },
