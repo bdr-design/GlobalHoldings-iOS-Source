@@ -3,13 +3,15 @@
 // table, extras) and runs GH_FLEET_EVENTS.advance on it with the same code as the main thread; the main thread replays
 // the result (rows written, values interned) inside the simulation slice's transaction. Each step stays open here until
 // the main thread settles it: 'commit' keeps it, 'rollback' restores the replica exactly (its own store journal).
-// Messages in:  replica (whole store), sync (rows and values changed on the main thread), columns (fields rewritten
-//               wholesale), routes, specs, advance, settle.
-// Messages out: ready, result (or fallback with a reason: the main thread then runs that step itself), error.
+// Messages in:  replica (whole store), seed (Build 372: the chunk buffers a decoded store came from), compact (the main
+//               thread's compaction, by its removed rows), sync (rows and values changed on the main thread), columns
+//               (fields rewritten wholesale), routes, specs, advance, settle, inspect (a copy of the replica, for gates).
+// Messages out: ready, route-keys (after a replica or seed: the (route, base) pairs its rows name, for the main thread to
+//               resolve), result (or fallback with a reason: the main thread then runs that step itself), error.
 importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js');
 
-const STORE=self.GH_FLEET_STORE,EVENTS=self.GH_FLEET_EVENTS,VERSION='GH-FLEET-ENGINE-WORKER-362.1.0';
-let store=null,routes=new Map(),specs={},open=null,partial=null;
+const STORE=self.GH_FLEET_STORE,EVENTS=self.GH_FLEET_EVENTS,VERSION='GH-FLEET-ENGINE-WORKER-372.1.0';
+let store=null,routes=new Map(),specs={},open=null;
 
 const routeKey=(routeId,base)=>String(routeId||'')+'\u0000'+String(base||'');
 class MissingRoute extends Error{}
@@ -18,6 +20,16 @@ function resolveRoute(routeId,base){
   if(!routes.has(key))throw new MissingRoute(`route-plan-missing:${String(routeId).slice(0,80)}`);
   return routes.get(key);
 }
+// The pairs every row names (its route with its base), as the main thread named them before Build 372, for its plans.
+function routeKeys(){
+  const u32=STORE.views(store).u32,values=store.values,WR=STORE.WORDS_PER_ROW,W_ROUTE=STORE.O.routeId,W_BASE=STORE.O.baseFacility,pairs=new Set(),keys=[];
+  for(let index=0;index<store.length;index++){
+    const routeRef=u32[index*WR+W_ROUTE];if(!routeRef)continue;const baseRef=u32[index*WR+W_BASE],pair=routeRef*4294967296+baseRef;
+    if(pairs.has(pair))continue;pairs.add(pair);const routeId=values[routeRef];if(routeId)keys.push(routeKey(routeId,baseRef?values[baseRef]:''));
+  }
+  return keys;
+}
+function imported(importId){self.postMessage({type:'ready',version:VERSION,id:0,length:store.length});self.postMessage({type:'route-keys',version:VERSION,importId,keys:routeKeys()});}
 function catalogSpecs(asset){return asset?.specs?null:(specs[asset?.type]?.[asset?.catalogId]||null);}
 
 function advance(message){
@@ -91,29 +103,34 @@ self.addEventListener('message',event=>{
     switch(message.type){
       case 'replica':
         if(open){STORE.rollbackJournal(open.journal);open=null;}
-        store=STORE.importReplica(message.payload);partial=null;
-        self.postMessage({type:'ready',version:VERSION,id:message.id,length:store.length});
+        store=STORE.importReplica(message.payload);imported(message.importId);
         return;
-      // Build 371: a large replica arrives in parts (fleet-engine-thread beginExport); the store is replaced at its end.
-      case 'replica-begin':
+      // Build 372: the chunks the main thread's store was decoded from (moved here, not copied there), assembled here.
+      case 'seed':{
         if(open){STORE.rollbackJournal(open.journal);open=null;}
-        store=null;partial={id:message.exportId,meta:message,rows:new Uint8Array(Math.max(0,Number(message.length)||0)*STORE.STRIDE)};
-        return;
-      case 'replica-part':
-        if(!partial||partial.id!==message.exportId)return;
-        partial.rows.set(new Uint8Array(message.bytes),Number(message.offset)*STORE.STRIDE);
-        return;
-      case 'replica-end':{
-        if(!partial||partial.id!==message.exportId)return;
-        const meta=partial.meta;store=STORE.importReplica({schema:meta.schema,version:meta.version,length:meta.length,live:meta.live,structure:meta.structure,revision:meta.revision,values:message.values,extras:message.extras,rows:partial.rows.buffer});partial=null;
-        self.postMessage({type:'ready',version:VERSION,id:0,length:store.length});
+        const meta=message.meta||{},byteLength=Number(meta.byteLength),chunkBytes=Number(meta.chunkBytes),chunks=Array.isArray(message.chunks)?message.chunks:[];
+        const length=Number(meta.length),bytes=length*STORE.STRIDE;
+        if(!Number.isSafeInteger(byteLength)||!Number.isSafeInteger(bytes)||bytes<0||bytes>byteLength||!(chunkBytes>0)||chunks.length!==Math.ceil(byteLength/chunkBytes))throw new Error('fleet-seed-invalid');
+        // The chunks are the record buffer as saved (its capacity); the replica keeps the store's rows.
+        const rows=new Uint8Array(bytes);
+        for(let index=0;index<chunks.length;index++){
+          const chunk=chunks[index],view=chunk instanceof ArrayBuffer?new Uint8Array(chunk):null,start=index*chunkBytes;
+          if(!view||view.length!==Math.min(chunkBytes,byteLength-start))throw new Error('fleet-seed-chunk-invalid');
+          if(start<bytes)rows.set(view.subarray(0,Math.min(view.length,bytes-start)),start);
+        }
+        store=STORE.importReplica({length:meta.length,live:meta.live,structure:meta.structure,revision:meta.revision,values:message.values,extras:message.extras,rows:rows.buffer});
+        imported(message.importId);
         return;
       }
+      case 'compact':
+        if(!store||open){self.postMessage({type:'error',version:VERSION,id:message.id,error:open?'compact-while-step-open':'replica-missing'});return;}
+        STORE.compactRowsAt(store,{dead:message.dead,length:message.length});
+        return;
       case 'sync':{
         if(!store||open){self.postMessage({type:'error',version:VERSION,id:message.id,error:open?'sync-while-step-open':'replica-missing'});return;}
-        // Rows appended on the main thread (purchases) arrive with their records; a shorter store means a compaction,
-        // which the main thread sends as a whole replica instead.
-        if(message.length<store.length)throw new Error('sync-length-shrank');
+        // Rows appended on the main thread (purchases) arrive with their records. Build 372: a shorter store is a rollback
+        // of rows appended inside a transaction (compactions arrive before, as 'compact'): those rows go, as there.
+        if(message.length<store.length)STORE.truncateReplica(store,message.length);
         if(message.length>store.length){STORE.ensureCapacity(store,message.length);store.length=message.length;}
         if(message.values)STORE.applyValueChanges(store,message.values);
         if(message.rows&&message.rows.indices.length)STORE.writeRows(store,message.rows.indices,message.rows.bytes,message.rows.extras,{staticRows:true});
@@ -131,6 +148,13 @@ self.addEventListener('message',event=>{
         // Frozen like the main thread's plans, so the engine treats an unchanged plan the same way.
         for(const [key,plan] of message.plans||[])routes.set(key,plan&&typeof plan==='object'?Object.freeze(plan):null);
         return;
+      // A copy of the replica, on request only (the differential gates compare it with the main thread's store).
+      case 'inspect':{
+        if(!store){self.postMessage({type:'inspect',version:VERSION,id:message.id,missing:true});return;}
+        const rows=store.rows.slice(0,store.length*STORE.STRIDE);
+        self.postMessage({type:'inspect',version:VERSION,id:message.id,length:store.length,live:store.live,structure:store.structure,values:store.values,extras:store.extras,rows},[rows]);
+        return;
+      }
       case 'specs':specs=message.specs&&typeof message.specs==='object'?message.specs:{};return;
       case 'advance':{
         const started=performance.now(),result=advance(message),ms=performance.now()-started;

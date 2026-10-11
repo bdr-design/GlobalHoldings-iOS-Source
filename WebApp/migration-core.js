@@ -95,6 +95,11 @@
     // them into __GH_NATIVE_SAVE_CHUNKS__ (id -> ArrayBuffer). A missing chunk is a corrupt save, like invalid JSON.
     const nativeChunks=nativeRaw&&typeof globalThis.__GH_NATIVE_SAVE_CHUNKS__?.get==='function'?globalThis.__GH_NATIVE_SAVE_CHUNKS__:null;let chunkManifest=null;
     let saved,textChunkIds=[];try{saved=JSON.parse(raw);chunkManifest=saved?.fleet?.rows?.$ghBinary==='chunks-v1'?saved.fleet.rows:null;textChunkIds=nativeChunks&&Array.isArray(saved?.stateCodec?.chunks)?saved.stateCodec.chunks.slice():[];if(globalThis.GH_STATE_CODEC?.decodeState)saved=globalThis.GH_STATE_CODEC.decodeState(saved,{resolveChunk:id=>nativeChunks?.get(id)});}catch{throw new Error('MIGRATION_JSON_INVALID');}
+    // Build 372: the fleet chunk buffers, as read, become the engine thread's first replica (moved to its worker, so the
+    // store is not copied again when the thread first runs). Set before anything writes the decoded store.
+    if(chunkManifest&&nativeChunks&&globalThis.GH_FLEET_STORE?.isStore?.(saved?.fleet)===true&&typeof globalThis.GH_FLEET_STORE.setReplicaSeed==='function'){
+      try{globalThis.GH_FLEET_STORE.setReplicaSeed(saved.fleet,{chunks:chunkManifest.chunks.map(id=>nativeChunks.get(id)),chunkBytes:chunkManifest.chunkBytes,byteLength:chunkManifest.byteLength});}catch{}
+    }
     if(nativeRaw)try{delete globalThis.__GH_NATIVE_SAVE_JSON__;}catch{globalThis.__GH_NATIVE_SAVE_JSON__=null;}
     if(nativeChunks)try{delete globalThis.__GH_NATIVE_SAVE_CHUNKS__;}catch{globalThis.__GH_NATIVE_SAVE_CHUNKS__=null;}
     const currentFleet=globalThis.GH_FLEET_STORE?.isStore?.(saved.fleet)===true&&saved.saveVersion===SAVE_V3,

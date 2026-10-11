@@ -88,7 +88,8 @@
       r={values:store.values,views:makeViews(store.rows),index:new Map(),indexedTo:0,free:[],ids:null,profileGroups:null,leaseGroups:null,payrollGroups:null,
         dirty:[],dirtyFrom:store.revision,dirtyLost:false,dirtyColumns:null,suppressDirtyLog:false,
         dirtyChunks:new Uint8Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),allDirty:true,journal:null,epoch:++epochCounter,valuesGeneration:++epochCounter,
-        uid:++epochCounter,chunkVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),staticVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),identityVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),massVersion:0};
+        uid:++epochCounter,chunkVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),staticVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),identityVersions:new Uint32Array(Math.max(1,Math.ceil(store.capacity/CHUNK_ROWS))),massVersion:0,
+        replica:newReplicaLog(store.capacity),replicaSeed:null};
       runtime.set(store,r);
     }
     if(r.indexedTo>store.values.length){r.index=new Map();r.indexedTo=0;r.free=[];r.valuesGeneration=++epochCounter;}
@@ -158,6 +159,8 @@
       if(r.chunkVersions.length<chunks){const next=new Uint32Array(chunks);next.set(r.chunkVersions);r.chunkVersions=next;}
       if(r.staticVersions.length<chunks){const next=new Uint32Array(chunks);next.set(r.staticVersions);r.staticVersions=next;}
       if(r.identityVersions.length<chunks){const next=new Uint32Array(chunks);next.set(r.identityVersions);r.identityVersions=next;}
+      if(r.replica.bits.length<Math.ceil(cap/32)){const next=new Uint32Array(Math.ceil(cap/32));next.set(r.replica.bits);r.replica.bits=next;}
+      if(r.replica.chunks.length<chunks){const next=new Uint8Array(chunks);next.set(r.replica.chunks);r.replica.chunks=next;}
       if(r.journal&&r.journal.active&&r.journal.seen.length<cap){const seen=new Uint8Array(cap);seen.set(r.journal.seen);r.journal.seen=seen;}
     }
   }
@@ -222,7 +225,20 @@
   // Changed-row log for incremental owners (the event queue). An owner drains
   // it; `complete` is false when a change could not be logged (overflow,
   // compaction), and mass field writes are reported by field name.
+  // Build 372: the replica log, for the fleet engine thread's replica alone (the dirty log above has one drainer, and the
+  // event engine on this thread drains it too, which used to cost the thread a whole copy of the store). One bit per
+  // row, so it never overflows: every row written since the last drain, every column rewritten wholesale (quiet ones
+  // too) and every compaction, in order. Rows the thread replays from its own worker are not logged (withoutReplicaLog):
+  // the replica already holds them. The log lives on the runtime: a new runtime (a decoded or restored store) starts a
+  // new one, and the thread then needs a new replica.
+  function newReplicaLog(capacity){const rows=Math.max(1,capacity);return {bits:new Uint32Array(Math.ceil(rows/32)),chunks:new Uint8Array(Math.ceil(rows/CHUNK_ROWS)),any:false,columns:null,compactions:[],suppress:0};}
+  function logReplica(r,index){
+    const log=r.replica;if(log.suppress)return;
+    log.bits[index>>>5]|=1<<(index&31);log.chunks[index>>>CHUNK_SHIFT]=1;log.any=true;
+  }
+  function logReplicaColumn(r,name){const log=r.replica;if(log.suppress)return;if(!log.columns)log.columns=new Set();log.columns.add(name);log.any=true;}
   function logDirty(r,index){
+    logReplica(r,index);
     if(r.suppressDirtyLog||r.dirtyLost)return;
     if(r.dirty.length>=DIRTY_LOG_LIMIT){r.dirtyLost=true;r.dirty=[];}else r.dirty.push(index);
   }
@@ -239,7 +255,7 @@
       if(!resolved){journal=journalFor(store);resolved=true;}
       if(journal!==null&&journal.active&&index<journal.length&&journal.seen[index]===0)logRow(journal,store,r,index);
       store.revision++;if(journal!==null)journal.high=store.revision;
-      if(!r.suppressDirtyLog)logDirty(r,index);
+      if(!r.suppressDirtyLog)logDirty(r,index);else logReplica(r,index);
       markEngineDirty(r,index);
     };
   }
@@ -250,7 +266,7 @@
   function rememberColumn(store,name,{quiet=false}={}){
     if(!own(SLOTS,name))throw new RangeError(`fleet-store-column:${name}`);
     const journal=journalFor(store);if(journal&&!journal.fields.has(name))journal.fields.set(name,{copy:gatherField(store,name),logCount:journal.log.count});
-    const r=rt(store);r.allDirty=true;r.massVersion++;store.revision++;if(journal)journal.high=store.revision;
+    const r=rt(store);r.allDirty=true;r.massVersion++;store.revision++;if(journal)journal.high=store.revision;logReplicaColumn(r,name);
     if(!quiet&&!r.suppressDirtyLog){if(!r.dirtyColumns)r.dirtyColumns=new Set();r.dirtyColumns.add(name);}
   }
   function bumpStructure(store){store.structure++;const r=runtime.get(store);if(r&&r.journal&&r.journal.active&&store.structure>r.journal.highStructure)r.journal.highStructure=store.structure;}
@@ -298,7 +314,7 @@
     // Counters only grow: a value seen during the transaction is never reused.
     if(structureChanged)store.structure++;
     store.revision++;
-    if(journal.fields.size){r.allDirty=true;r.massVersion++;if(!r.dirtyColumns)r.dirtyColumns=new Set();for(const name of journal.fields.keys())r.dirtyColumns.add(name);}
+    if(journal.fields.size){r.allDirty=true;r.massVersion++;if(!r.dirtyColumns)r.dirtyColumns=new Set();for(const name of journal.fields.keys()){r.dirtyColumns.add(name);logReplicaColumn(r,name);}}
     if(idsKept){const rows=new Set();for(const [index] of journal.idOps)rows.add(index);for(const index of rows){if(isAlive(store,index)&&!idsMap(store,r,index,idAt(store,index))){r.ids=null;break;}}}
     if(valuesChanged)r.valuesGeneration=++epochCounter;
     endJournal(journal);
@@ -421,6 +437,68 @@
     const r=rt(store),complete=r.dirtyFrom===sinceRevision&&!r.dirtyLost,indices=r.dirty,columns=r.dirtyColumns?[...r.dirtyColumns]:[];
     r.dirty=[];r.dirtyFrom=store.revision;r.dirtyLost=false;r.dirtyColumns=null;
     return {complete,indices,columns,revision:store.revision,epoch:r.epoch};
+  }
+  // Build 372: the replica log since the last drain (see newReplicaLog): {runtime, rows (ascending, below the store's
+  // length), columns, compactions}. Draining clears it. Cost: one word per 32 rows of the chunks written, and the rows.
+  function drainReplica(store){
+    const r=rt(store),log=r.replica,out={runtime:r.uid,rows:null,columns:log.columns?[...log.columns]:[],compactions:log.compactions};
+    const list=[];
+    if(log.any){
+      const bits=log.bits,length=store.length;
+      for(let chunk=0;chunk<log.chunks.length;chunk++){
+        if(!log.chunks[chunk])continue;log.chunks[chunk]=0;
+        const first=chunk*CHUNK_ROWS>>>5,last=Math.min(bits.length,(chunk+1)*CHUNK_ROWS>>>5);
+        for(let word=first;word<last;word++){
+          let w=bits[word];if(w===0)continue;bits[word]=0;
+          while(w!==0){const bit=31-Math.clz32(w&-w),index=word*32+bit;if(index<length)list.push(index);w&=w-1;}
+        }
+      }
+    }
+    out.rows=Int32Array.from(list);log.columns=null;log.compactions=[];log.any=false;
+    return out;
+  }
+  // The engine thread replays rows its replica computed: they are not logged for it again.
+  function withoutReplicaLog(store,fn){const log=rt(store).replica;log.suppress++;try{return fn();}finally{log.suppress--;}}
+  // Build 372: a store decoded from the native vault's chunks (migration-core) keeps those chunk buffers, untouched since
+  // they were read, as the engine thread's first replica: they are moved to its worker (no copy on this thread) instead
+  // of the whole store being copied when the thread first runs. The seed is the store as decoded (the replica log starts
+  // empty here, so every later write is in it); values and extras are copied as of now. takeReplicaSeed hands it over
+  // once, only to the runtime it was taken on.
+  function setReplicaSeed(store,{chunks,chunkBytes,byteLength}={}){
+    // The vault holds the record buffer as saved (its capacity, at least the store's rows); the replica takes its rows.
+    if(!Array.isArray(chunks)||!Number.isSafeInteger(chunkBytes)||chunkBytes<=0||!Number.isSafeInteger(byteLength)||byteLength%STRIDE!==0||byteLength<store.length*STRIDE||chunks.length!==Math.ceil(byteLength/chunkBytes))return false;
+    for(let index=0;index<chunks.length;index++){const chunk=chunks[index],size=Math.min(chunkBytes,byteLength-index*chunkBytes);if(!(chunk instanceof ArrayBuffer)||chunk.byteLength!==size)return false;}
+    const r=rt(store);r.replica=newReplicaLog(store.capacity);
+    r.replicaSeed={runtime:r.uid,chunks,chunkBytes,byteLength,length:store.length,live:store.live,structure:store.structure,revision:store.revision,values:store.values.map(value=>value===undefined?null:value),extras:{...store.extras}};
+    return true;
+  }
+  function hasReplicaSeed(store){const r=runtime.get(store);return !!r&&!!r.replicaSeed&&r.replicaSeed.runtime===r.uid;}
+  function takeReplicaSeed(store){const r=rt(store),seed=r.replicaSeed;r.replicaSeed=null;return seed&&seed.runtime===r.uid?seed:null;}
+  // Replica side: the main thread's compaction (compactRows) replayed by its list of removed rows, so both stores move
+  // the same rows to the same places, whatever this side's own liveness flags say.
+  function compactRowsAt(store,{dead,length}){
+    if(length!==store.length)throw new Error('fleet-replica-compaction-length');
+    const list=dead instanceof Int32Array?dead:Int32Array.from(dead||[]),u8=views(store).u8;let write=0,read=0,k=0;
+    while(read<length){
+      while(read<length&&k<list.length&&list[k]===read){read++;k++;}
+      const start=read;while(read<length&&!(k<list.length&&list[k]===read))read++;
+      if(read>start){if(write!==start)u8.copyWithin(write*STRIDE,start*STRIDE,read*STRIDE);write+=read-start;}
+    }
+    if(k!==list.length)throw new Error('fleet-replica-compaction-invalid');
+    u8.fill(0,write*STRIDE,length*STRIDE);
+    const extras={};
+    for(const key of Object.keys(store.extras)){
+      const index=Number(key);let lo=0,hi=list.length;while(lo<hi){const mid=(lo+hi)>>1;if(list[mid]<index)lo=mid+1;else hi=mid;}
+      if(lo<list.length&&list[lo]===index)continue;extras[index-lo]=store.extras[key];
+    }
+    store.extras=extras;store.length=write;store.live=write;store.structure++;store.revision++;
+    const r=rt(store);r.allDirty=true;r.massVersion++;r.dirty=[];r.dirtyLost=true;bumpEpoch(store);
+  }
+  // Replica side: rows appended inside a transaction the main thread rolled back leave, as rollbackJournal removes them.
+  function truncateReplica(store,length){
+    if(!(length>=0&&length<=store.length))throw new Error('fleet-replica-truncate-invalid');
+    const u8=views(store).u8;for(let index=length;index<store.length;index++){delete store.extras[index];u8[index*STRIDE+O.flags]=0;}
+    store.length=length;bumpEpoch(store);
   }
   // The owner of the dirty log runs `fn` writing rows it tracks itself (the
   // event engine). When the log was fully drained before, it stays in sync.
@@ -854,6 +932,16 @@
       if(lo<dead.length&&dead[lo]===index)continue;extras[index-lo]=store.extras[key];
     }
     store.extras=extras;const removed=length-write;store.length=write;store.live=write;store.structure++;store.revision++;
+    // The replica log follows the rows: a logged row keeps its bit at its new place, a removed row's bit goes with it, and
+    // the replica removes the same rows (compactRowsAt), in order with the rows logged before and after.
+    const log=r.replica,bits=log.bits;
+    if(log.any){
+      for(let index=0,lo=0;index<length;index++){
+        if(lo<dead.length&&dead[lo]===index){lo++;bits[index>>>5]&=~(1<<(index&31));continue;}
+        if(lo&&(bits[index>>>5]&(1<<(index&31)))){bits[index>>>5]&=~(1<<(index&31));const to=index-lo;bits[to>>>5]|=1<<(to&31);log.chunks[to>>>CHUNK_SHIFT]=1;}
+      }
+    }
+    log.compactions.push({dead:Int32Array.from(dead),length});log.any=true;
     r.allDirty=true;r.massVersion++;r.dirty=[];r.dirtyLost=true;bumpEpoch(store);return {removed,length:write};
   }
   // Reclaim interned values no live row references (mark and sweep) onto the
@@ -1020,7 +1108,7 @@
   }
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,I32_NULL,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
-    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,readColumns,writeColumns,drainDirty,staticSnapshot,staticChunksSince,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
+    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,readColumns,writeColumns,drainDirty,drainReplica,withoutReplicaLog,setReplicaSeed,hasReplicaSeed,takeReplicaSeed,compactRowsAt,truncateReplica,staticSnapshot,staticChunksSince,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
     views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,collectValuesStages,distinctRefs,refRowTables,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,exportReplica,importReplica,valueChanges,applyValueChanges,internAt,readRows,writeRows,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;

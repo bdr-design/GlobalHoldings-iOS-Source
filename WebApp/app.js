@@ -766,7 +766,7 @@
   function departurePerformanceSnapshot(startedAtMs,commandName){const endedAtMs=Date.now(),render=runtimeInstrumentation.render,samples=(render.samples||[]).filter(row=>Number(row.recordedAtMs)>=startedAtMs&&Number(row.recordedAtMs)<=endedAtMs),maxFor=kind=>Math.max(0,...samples.filter(row=>row.kind===kind).map(row=>Number(row.durationMs)||0)),frameSamples=samples.filter(row=>row.kind==='frame'),durable=runtimeInstrumentation.durable.last,matched=durable?.name===commandName?durable:null,faultRecorder=window.GH_DIAGNOSTICS?.recorderSnapshot?.(state)||null;return {startedAtMs,endedAtMs,wallMs:Math.max(0,endedAtMs-startedAtMs),renderWindow:{sampleCount:samples.length,frameCallbacks:frameSamples.length,slowFrameCallbacks:frameSamples.filter(row=>Number(row.durationMs)>=34).length,maxFrameCallbackMs:maxFor('frame'),maxTargetUpdateMs:maxFor('target-update'),maxMarkerAnimationMs:maxFor('marker-animation'),maxStructuralRenderMs:maxFor('structural-render'),ringCapacity:120,mayBeTruncated:samples.length===120||Boolean(render.samples?.[0]&&Number(render.samples[0].recordedAtMs)>startedAtMs)},faultRecorder:{active:faultRecorder?.active===true,frameSummary:faultRecorder?.frameSummary||null,frameTrace:Array.isArray(faultRecorder?.frameTrace)?faultRecorder.frameTrace.slice(-12):[]},durable:matched?{cloneMs:matched.cloneMs,prepareMs:matched.prepareMs,baselineIntegrityMs:matched.baselineIntegrityMs,applyMs:matched.applyMs,validateMs:matched.validateMs,integrityMs:matched.integrityMs,persistMs:matched.persistMs,publishMs:matched.publishMs,totalMs:matched.totalMs,committed:matched.committed}:null};}
   window.__GH_APP_RUNTIME_INSTRUMENTATION__=runtimeInstrumentation;
   // The fleet engine thread's client (created with the first simulation slice, see fleetEngineThread()).
-  let fleetEngineThreadClient=null;
+  let fleetEngineThreadClient=null,lastFleetThreadPrimeMs=-Infinity;
   window.GH_APP_RUNTIME_METRICS=Object.freeze({snapshot:()=>JSON.parse(JSON.stringify({lastCompaction:runtimeInstrumentation.lastCompaction,lastSavePreparation:runtimeInstrumentation.lastSavePreparation,diagnosticExport:runtimeInstrumentation.diagnosticExport,durable:runtimeInstrumentation.durable,render:runtimeInstrumentation.render,simRender:runtimeInstrumentation.simRender,maintenance:runtimeInstrumentation.maintenance,
     // Build 358: whether the fleet engine thread runs the steps (stats: steps replayed, fallbacks and why, syncs, last timings).
     fleetEngineThread:fleetEngineThreadClient?fleetEngineThreadClient.stats():{created:false,worker:typeof Worker==='function',disabledByFlag:globalThis.__GH_FLEET_ENGINE_THREAD__===false}}))});
@@ -3304,7 +3304,7 @@
   // Build 358: the fleet engine's step runs on its own thread (fleet-engine-worker.js, GH_FLEET_ENGINE_THREAD) whenever it
   // can. A slice asks for it first ({pending:true} until the result arrives), then replays it inside its transaction; on
   // any refusal it runs the step here exactly as before. Commands that write the fleet wait for a step in flight.
-  const FLEET_THREAD_EVENT_BUDGET=40000;
+  const FLEET_THREAD_EVENT_BUDGET=40000,FLEET_THREAD_EARLY_ROWS=2048;
   function fleetEngineThread(){
     if(globalThis.__GH_FLEET_ENGINE_THREAD__===false||typeof Worker!=='function'||!window.GH_FLEET_ENGINE_THREAD?.create)return null;
     if(!fleetEngineThreadClient)fleetEngineThreadClient=window.GH_FLEET_ENGINE_THREAD.create({
@@ -3501,7 +3501,8 @@
             const emptyFleet=window.GH_FLEET_DATA.size(state)===0;
             out=emptyFleet?{completeTo:to,effects:makeSimulationEffects(),events:0,fast:0,slow:0,faults:0}:fleetTicket?fleetEngineThreadClient?.apply(fleetTicket,state.fleet,{contextKey:fleetContextKey(context),tx:TX})||null:null;
             if(!out){
-              if(fleetTicket)fleetEngineThreadClient?.markStale();
+              // Build 372: a refused result needs no new replica: the worker rolled its step back and the rows this
+              // thread now writes are in the store's replica log.
               out=EVENTS.advance(state.fleet,{from,to,context,resolveRoute:fleetResolveRoute,
                 catalogSpecs:asset=>asset?.specs?null:(catalogItem(asset?.type,asset?.catalogId)?.specs||null),
                 tripAlertLimit:64,...(manual?{}:{maxEvents}),order});
@@ -3666,6 +3667,16 @@
       // its uncommitted rows and recorded issue transitions a rollback kept; the street hydration's writes were refused).
       if(!jobActive&&!simulationEngine.snapshot().manualAdvance&&!fleetEngineThreadClient?.busy&&!stagedStateBusy()&&!document.hidden&&!hardResetInProgress&&!durableCommandInProgress&&!window.__GH_DURABLE_COMMAND_CONTEXT__&&!window.GH_PERSISTENCE.isLocked()){
         const now=performance.now();
+        // Build 372: the engine thread's replica follows the store between steps (its first replica, the seed of a
+        // native save, moves to the worker here, right after load), so a step only sends what changed since.
+        // The client is created by the first simulation slice, or here once there is a replica worth keeping: the seed of a
+        // native save (its chunks are held until the worker takes them), or a fleet past FLEET_THREAD_EARLY_ROWS (a fleet
+        // bought before the first slice then reaches the worker as it grows, not as one copy when play starts).
+        if(now-lastFleetThreadPrimeMs>=200&&window.GH_FLEET_STORE?.isStore?.(state.fleet)&&window.GH_FLEET_DATA.size(state)>0){
+          lastFleetThreadPrimeMs=now;
+          const early=!fleetEngineThreadClient&&(window.GH_FLEET_STORE.hasReplicaSeed?.(state.fleet)||state.fleet.length>=FLEET_THREAD_EARLY_ROWS);
+          if(fleetEngineThreadClient||early)timed('fleetThreadPrimeMs',()=>{fleetEngineThread()?.prime?.(state.fleet);});
+        }
         if(now-lastMobilityStreetHydrationMs>=1200){lastMobilityStreetHydrationMs=now;timed('streetHydrationMs',()=>{void hydrateMobilityStreetRoutes();});}
         // Build 371: with a million assets the check reads every row (180-310 ms in desktop Chromium); the next one waits
         // 40 times the last one's duration when that is longer than REALTIME_HEALTH_MS, so it takes at most a fortieth
