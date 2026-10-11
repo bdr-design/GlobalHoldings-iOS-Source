@@ -8,6 +8,10 @@
 //    tools/attribute_long_tasks.py; the first ~1.6 s long task of a traced run is CpuProfiler::StartProfiling (ignore it);
 //  - memory after two forced collections: JS heap, fleet store columns (GH_FLEET_DATA.stats) and the in-page vault
 //    stand-in reported apart (it holds the saved chunks, ~2.2 GB at a million assets; not game memory);
+//  - Build 372: per phase the main thread's JS heap sampled every second (heap.peakMB, meanMB) and its start and end
+//    (epoch seconds, as are the log lines), so a resident-memory sampler run beside it (ps over the browser's processes,
+//    the worker included) can be read per phase; fleetThread.totalWorkerMs is the worker's total time (steps, health
+//    and class requests);
 //  - --profile also writes <profile>-advance.cpuprofile for the calendar phase.
 // Example (the baseline in verification/build371-perf/):
 //   GH_PERF_ROOT=$PWD NODE_PATH=<node_modules with playwright 1.55.1> node --max-old-space-size=8192 \
@@ -75,7 +79,7 @@ function installProbe(){
 
 (async()=>{
   const opt=args(),browser=await chromium.launch({headless:true}),errors=[],report={tool:'measure_fullgame_perf',options:opt,phases:{}};
-  const log=(...m)=>console.error('[perf]',...m);
+  const log=(...m)=>console.error('[perf]',Math.round(Date.now()/1000),...m);
   try{
     const {page}=await boot({browser,errors,viewport:{width:844,height:390},bypassCSP:true});page.setDefaultTimeout(0);
     await page.evaluate(installVault);
@@ -115,7 +119,11 @@ function installProbe(){
     const cpu=async()=>{const {metrics}=await perfCdp.send('Performance.getMetrics');const m=Object.fromEntries(metrics.map(x=>[x.name,x.value]));return {task:m.TaskDuration,script:m.ScriptDuration,layout:m.LayoutDuration,style:m.RecalcStyleDuration,heap:m.JSHeapUsedSize};};
     const startTrace=async()=>{if(!opt.trace)return null;const t=await page.context().newCDPSession(page);await t.send('Tracing.start',{categories:'toplevel,devtools.timeline,disabled-by-default-devtools.timeline,v8,v8.execute,disabled-by-default-v8.cpu_profiler,disabled-by-default-v8.gc,blink.user_timing',transferMode:'ReturnAsStream',options:'sampling-frequency=1000'});return t;};
     const stopTrace=async(t,file)=>{if(!t)return;const done=new Promise(r=>t.once('Tracing.tracingComplete',r));await t.send('Tracing.end');const {stream}=await done;const outStream=fs.createWriteStream(file);for(;;){const {data,eof,base64Encoded}=await t.send('IO.read',{handle:stream,size:1<<22});outStream.write(base64Encoded?Buffer.from(data,'base64'):data);if(eof)break;}await new Promise(r=>outStream.end(r));await t.send('IO.close',{handle:stream});await t.detach();};
-    const phase=async(name,run)=>{const cpuBefore=await cpu();const tracer=name==='play'?await startTrace():null;
+    // The main thread's JS heap (used) every second while a phase runs: its peak and mean (the worker's heap is outside it;
+    // the process's resident memory is sampled from outside, tools/measure_fullgame_trace.cjs --rss notes).
+    const heapSampler=()=>{const samples=[];let on=true;const loop=(async()=>{while(on){try{const {usedSize}=await perfCdp.send('Runtime.getHeapUsage');samples.push(usedSize);}catch{}await new Promise(r=>setTimeout(r,1000));}})();
+      return async()=>{on=false;await loop;return samples.length?{peakMB:Math.round(Math.max(...samples)/1048576),meanMB:Math.round(samples.reduce((a,b)=>a+b,0)/samples.length/1048576),samples:samples.length}:null;};};
+    const phase=async(name,run)=>{const cpuBefore=await cpu();const tracer=name==='play'?await startTrace():null;const heapStop=heapSampler();const startedAt=Date.now();
       await page.evaluate(()=>{const s=__GH_STATE__;GH_DIAGNOSTICS.recorderStart(s,__AUDIT__.simulationEngine.snapshot(),{nowMs:Date.now()});__PROBE__.start('x');});
       await page.evaluate(n=>{__PROBE__.phases[n]=__PROBE__.phases.x;delete __PROBE__.phases.x;__PROBE__.phase=n;},name);
       const simBefore=await page.evaluate(()=>__GH_STATE__.simSeconds);
@@ -127,6 +135,7 @@ function installProbe(){
           engine:{maxFrame:engine.maxFrame,maxCycleMs:engine.maxCycleMs,maxFinishMs:engine.maxFinishMs,maxChunkMs:engine.maxChunkMs,maxRenderMs:engine.maxRenderMs,maxMaintenanceMs:engine.maxMaintenanceMs,longTasks:engine.longTasks,governor:engine.governor},
           simRender:m.simRender,fleetThread:m.fleetEngineThread,recorder:{frameSummary:summary?.frameSummary,findings:(summary?.findings||[]).map(f=>({type:f.type,count:f.count})),dropCauses:causes,keyEvents:rec?.keyEvents||{}}};
       },{simBefore});
+      out.heap=await heapStop();out.startedAtS=Math.round(startedAt/1000);out.endedAtS=Math.round(Date.now()/1000);
       await stopTrace(tracer,opt.trace);const cpuAfter=await cpu();out.cpu={mainThreadTaskSeconds:Math.round((cpuAfter.task-cpuBefore.task)*10)/10,scriptSeconds:Math.round((cpuAfter.script-cpuBefore.script)*10)/10,layoutSeconds:Math.round((cpuAfter.layout-cpuBefore.layout)*10)/10,styleSeconds:Math.round((cpuAfter.style-cpuBefore.style)*10)/10};
       report.phases[name]=out;log(name,JSON.stringify({smoothPct:out.smoothPct,p95:out.p95,worstMs:out.worstMs,longTasks:out.longTasks.count,saves:out.saves,simDays:out.simDays,dropCauses:out.recorder.dropCauses}));
     };

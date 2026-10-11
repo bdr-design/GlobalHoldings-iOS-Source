@@ -54,12 +54,12 @@
     function receive(message){
       if(message.type==='error'){disable(`worker:${message.error}`);return;}
       if(message.type==='route-keys'){answerRouteKeys(message);return;}
-      if(message.type==='health'){const entry=healthChecks.get(message.id);healthChecks.delete(message.id);if(entry){stats.lastHealthWorkerMs=Number(message.ms)||0;stats.maxHealthWorkerMs=Math.max(stats.maxHealthWorkerMs||0,stats.lastHealthWorkerMs);entry.resolve(message.unavailable||!Array.isArray(message.issues)?null:{...entry.tag,issues:message.issues});}return;}
-      if(message.type==='classes'){const entry=classRequests.get(message.id);classRequests.delete(message.id);if(entry){stats.lastClassesWorkerMs=Number(message.ms)||0;stats.maxClassesWorkerMs=Math.max(stats.maxClassesWorkerMs||0,stats.lastClassesWorkerMs);entry.resolve(message.unavailable||!Array.isArray(message.rows)?null:{...entry.tag,rows:message.rows,ids:message.ids||null});}return;}
+      if(message.type==='health'){const entry=healthChecks.get(message.id);healthChecks.delete(message.id);if(entry){stats.lastHealthWorkerMs=Number(message.ms)||0;stats.totalWorkerMs=(stats.totalWorkerMs||0)+stats.lastHealthWorkerMs;stats.maxHealthWorkerMs=Math.max(stats.maxHealthWorkerMs||0,stats.lastHealthWorkerMs);entry.resolve(message.unavailable||!Array.isArray(message.issues)?null:{...entry.tag,issues:message.issues});}return;}
+      if(message.type==='classes'){const entry=classRequests.get(message.id);classRequests.delete(message.id);if(entry){stats.lastClassesWorkerMs=Number(message.ms)||0;stats.totalWorkerMs=(stats.totalWorkerMs||0)+stats.lastClassesWorkerMs;stats.maxClassesWorkerMs=Math.max(stats.maxClassesWorkerMs||0,stats.lastClassesWorkerMs);entry.resolve(message.unavailable||!Array.isArray(message.rows)?null:{...entry.tag,rows:message.rows,ids:message.ids||null});}return;}
       if(message.type==='inspect'){const resolve=inspections.get(message.id);inspections.delete(message.id);resolve?.(message.missing?null:message);return;}
       if(message.type!=='result')return;
       const ticket=tickets.get(message.id);if(!ticket)return;
-      clearTimeout(ticket.timer);stats.lastWorkerMs=Number(message.ms)||0;stats.maxWorkerMs=Math.max(stats.maxWorkerMs,stats.lastWorkerMs);
+      clearTimeout(ticket.timer);stats.lastWorkerMs=Number(message.ms)||0;stats.totalWorkerMs=(stats.totalWorkerMs||0)+stats.lastWorkerMs;stats.maxWorkerMs=Math.max(stats.maxWorkerMs,stats.lastWorkerMs);
       if(message.fallback){
         ticket.status='fallback';ticket.reason=String(message.fallback);ticket.settled=true;tickets.delete(ticket.id);if(pending===ticket)pending=null;
         if(ticket.window){ticket.window.status='failed';ticket.window.reason=ticket.reason;stats.windowFallbacks++;needsFull=true;}
