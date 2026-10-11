@@ -6,7 +6,8 @@
 // Messages in:  replica (whole store), seed (Build 372: the chunk buffers a decoded store came from), compact (the main
 //               thread's compaction, by its removed rows), sync (rows and values changed on the main thread), columns
 //               (fields rewritten wholesale), routes, specs, advance, settle, health (Build 372: the health check's fleet
-//               issues, fleet-health-core, on the replica), inspect (a copy of the replica, for gates).
+//               issues, fleet-health-core, on the replica), classes (the save check's classes of rows and id check on
+//               the replica), inspect (a copy of the replica, for gates).
 // Messages out: ready, route-keys (after a replica or seed: the (route, base) pairs its rows name, for the main thread to
 //               resolve), result (or fallback with a reason: the main thread then runs that step itself), error.
 importScripts('fleet-store-core.js','simulation-asset-core.js','fleet-event-core.js','fleet-access-core.js','fleet-health-core.js');
@@ -155,6 +156,18 @@ self.addEventListener('message',event=>{
         if(!store||open||!self.GH_FLEET_HEALTH||!self.GH_FLEET_DATA){self.postMessage({type:'health',version:VERSION,id:message.id,unavailable:!store?'replica-missing':open?'step-open':'health-core-missing'});return;}
         const started=performance.now(),issues=self.GH_FLEET_HEALTH.assetIssues({fleet:store,simSeconds:Number(message.simSeconds)||0},self.GH_FLEET_DATA);
         self.postMessage({type:'health',version:VERSION,id:message.id,issues,ms:performance.now()-started});
+        return;
+      }
+      // Build 372: the fleet's classes of rows (GH_FLEET_STORE.forEachClass: each class's first row and size, then its
+      // numeric extremes) and the id collision check, on the replica, for the save check (save-schema validationSteps).
+      // The main thread asks only when the replica is its store (no step it has not replayed, nothing unsent), so an open
+      // step it replayed is part of both.
+      case 'classes':{
+        if(!store){self.postMessage({type:'classes',version:VERSION,id:message.id,unavailable:'replica-missing'});return;}
+        const started=performance.now(),rows=[];
+        STORE.forEachClass(store,Array.isArray(message.fields)?message.fields:[],(row,count,info)=>{rows.push([row,count,info.index,info.members]);},{numeric:Array.isArray(message.numeric)?message.numeric:[]});
+        const ids=message.ids?STORE.idCollisions(store):null;
+        self.postMessage({type:'classes',version:VERSION,id:message.id,rows,ids,ms:performance.now()-started});
         return;
       }
       // A copy of the replica, on request only (the differential gates compare it with the main thread's store).

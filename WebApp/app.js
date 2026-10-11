@@ -924,10 +924,21 @@
   // private and the lifecycle lock holds the live state still, so the result is the one-shot result.
   async function validateDraftInSlices(draft){
     const schema=window.GH_SAVE_SCHEMA;if(typeof schema.validationSteps!=='function')return schema.validate(draft,{trustVerified:true});
-    const clockNow=()=>globalThis.performance?.now?.()??Date.now(),steps=schema.validationSteps(draft,{trustVerified:true});let slice=clockNow(),step;
-    while(!(step=steps.next()).done)if(clockNow()-slice>=10){await yieldForInteractivePaint();slice=clockNow();}
+    const clockNow=()=>globalThis.performance?.now?.()??Date.now(),steps=schema.validationSteps(draft,{trustVerified:true,fleetClasses:fleetClassesForValidation});let slice=clockNow(),step;
+    // Build 372: while the fleet's classes are on the worker the section waits; this loop sleeps instead of spinning.
+    while(!(step=steps.next()).done){if(step.value==='fleet-classes-wait'){await new Promise(resolve=>setTimeout(resolve,4));slice=clockNow();}else if(clockNow()-slice>=10){await yieldForInteractivePaint();slice=clockNow();}}
     return step.value;
   }
+  // Build 372: the save check's classes of rows and id check over the fleet (every row: 400 ms on the main thread at a
+  // million assets), found by the fleet engine's worker on a replica that is exactly this store (fieldClasses), for the
+  // validations that run their sections across frames (GH_SAVE_SCHEMA validationSteps options.fleetClasses). Null when
+  // the worker cannot vouch for the store as it is (the check then reads the store itself, as before).
+  function fleetClassesForValidation(s,fields,numeric){
+    const client=fleetEngineThreadClient;if(!client||client.disabled||typeof client.fieldClasses!=='function'||!window.GH_FLEET_STORE?.isStore?.(s?.fleet))return null;
+    const asked=client.fieldClasses(s.fleet,{fields,numeric,ids:true});if(!asked)return null;
+    const store=s.fleet;return asked.then(result=>result?{rows:result.rows,ids:result.ids,current:()=>client.current(result,store)}:null);
+  }
+  globalThis.GH_FLEET_CLASSES_PROVIDER=(...args)=>fleetClassesForValidation(...args);
   // Build 371: fields the page writes on the live state while a durable command runs (the player's speed, map layer and
   // mode, open panel, competitor toggle; protective stops that set speed 0: a native process recovery, a failed save
   // status). replaceLiveState(draft) erased them on commit: a protective stop was undone and the simulation resumed.
@@ -3145,7 +3156,7 @@
   function schemaSectionsTask(){
     const schema=window.GH_SAVE_SCHEMA;if(typeof schema?.validationSteps!=='function')return null;
     const mark=()=>`${state.saveRevision}|${state.controlPlane?.revision}|${state.simSeconds}`;
-    return {task:'schema',steps:schema.validationSteps(state,{trustVerified:true}),mark:mark(),markOf:mark};
+    return {task:'schema',steps:schema.validationSteps(state,{trustVerified:true,fleetClasses:fleetClassesForValidation}),mark:mark(),markOf:mark};
   }
   function haltOnGlobalFault(health,central){if(requiresGlobalHalt(health,central)){simulationEngine.cancelAdvance?.('global-halt',{immediate:true});state.speed=0;pushAlert('أُوقفت المحاكاة لأن خللًا في سلامة الحفظ أو سجل الأوامر قد يهدد الحالة كاملة. مشكلات القطاعات الأخرى تبقى معزولة داخل قطاعها.');}}
   function runMaintenanceTask(entry){
@@ -3174,7 +3185,7 @@
       return true;
     }
     if(entry.task==='schema'){
-      if(entry.markOf()!==entry.mark){entry.steps=window.GH_SAVE_SCHEMA.validationSteps(state,{trustVerified:true});entry.mark=entry.markOf();entry.restarts=(entry.restarts||0)+1;}
+      if(entry.markOf()!==entry.mark){entry.steps=window.GH_SAVE_SCHEMA.validationSteps(state,{trustVerified:true,fleetClasses:fleetClassesForValidation});entry.mark=entry.markOf();entry.restarts=(entry.restarts||0)+1;}
       const step=entry.steps.next();if(!step.done)return false;
       const check=step.value;if(check&&check.ok===false){const reason=check.reason||check.errors?.join(',')||'invalid state';diag('SAVE_SCHEMA_INTEGRITY',{reason:String(reason).slice(0,240),source:'maintenance-compaction'},'critical');haltOnGlobalFault({issues:[{id:'SAVE_SCHEMA_INTEGRITY',severity:'critical'}]});}
       return true;

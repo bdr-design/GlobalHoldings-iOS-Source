@@ -457,6 +457,8 @@
     out.rows=Int32Array.from(list);log.columns=null;log.compactions=[];log.any=false;
     return out;
   }
+  // Nothing written since the last drain (the replica, once brought to the store, still equals it).
+  function replicaClean(store){const log=rt(store).replica;return !log.any&&!log.compactions.length&&!log.columns;}
   // The engine thread replays rows its replica computed: they are not logged for it again.
   function withoutReplicaLog(store,fn){const log=rt(store).replica;log.suppress++;try{return fn();}finally{log.suppress--;}}
   // Build 372: a store decoded from the native vault's chunks (migration-core) keeps those chunk buffers, untouched since
@@ -1108,7 +1110,7 @@
   }
 
   const API=Object.freeze({VERSION,SCHEMA,CHUNK_SHIFT,CHUNK_ROWS,ALIVE,EXTRAS,I32_NULL,PROFILE_FIELDS,BINDING_FIELDS,HOT_FIELDS,HOT_BIT,STRIDE,F64_PER_ROW,WORDS_PER_ROW,SLOTS,SLOT_NAMES,O,
-    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,readColumns,writeColumns,drainDirty,drainReplica,withoutReplicaLog,setReplicaSeed,hasReplicaSeed,takeReplicaSeed,compactRowsAt,truncateReplica,staticSnapshot,staticChunksSince,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
+    create,isStore,ensureCapacity,trimCapacity,isAlive,add,replace,remove,removeMany,set,patch,touch,toucher,remember,rememberColumn,readColumns,writeColumns,drainDirty,drainReplica,replicaClean,withoutReplicaLog,setReplicaSeed,hasReplicaSeed,takeReplicaSeed,compactRowsAt,truncateReplica,staticSnapshot,staticChunksSince,withoutDirtyLog,get,peek,keys,setGroupField,materialize,fromAssets,toAssets,forEachLive,buildIndex,indexOf,find,idAt,
     views,slot,setSlot,columnWriter,intern,value,valueKey,forEachPeek,splitPattern,joinPattern,compactRows,collectValues,collectValuesStages,distinctRefs,refRowTables,stats,epoch,valuesGeneration,bumpEpoch,beginJournal,journalFor,rollbackJournal,endJournal,journalStats,isPresent,extrasOf,dirtyChunks,clearDirtyChunks,chunkStamp,exportReplica,importReplica,valueChanges,applyValueChanges,internAt,readRows,writeRows,forEachClass,idCollisions,forEachProfile,forEachLeaseGroup,forEachPayrollGroup});
   globalThis.GH_FLEET_STORE=API;
   if(globalThis.window&&globalThis.window!==globalThis)globalThis.window.GH_FLEET_STORE=API;

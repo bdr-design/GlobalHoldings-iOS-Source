@@ -19,7 +19,7 @@
   // per-field interval check on those three or depends only on class-level values, and errors are a set, so the result
   // is the per-row result. fn(asset,count,info) also gets the class size (0 for an extreme) and its first row index.
   // options.assetScan==='rows' keeps the per-row scan (count 1 per asset) as the reference for equivalence tests.
-  const FLEET_NUMERIC_FIELDS=Object.freeze(['progress','fuel','condition']);
+  const FLEET_NUMERIC_FIELDS=Object.freeze(['progress','fuel','condition']),FLEET_CLASSES_WAITS=1800;
   function forEachSaveAssetClass(state,fn,rows=false){
     if(rows){forEachSaveAsset(state,(asset,index)=>fn(asset,1,{index}));return;}
     fleetData().forEachFieldClasses(state,FLEET_VALIDATION_FIELDS,fn,{numeric:FLEET_NUMERIC_FIELDS});
@@ -610,7 +610,24 @@
     }
     // routeUsers: routeId -> {users, stable (users that are not transitional), first: index and mode of the first user}.
     const routeUsers=new Map();let fleetLogicalRows=0;
-    forEachSaveAssetClass(s,(asset,count,info)=>{
+    // Build 372: options.fleetClasses(s, fields, numeric) -> a promise of {rows: [[row, count, index, members]...], ids,
+    // current()} (or null): the classes of rows and the id check, found by the fleet engine's worker on a replica that is
+    // this store, so the main thread does not read every row. Only a caller that runs these sections across frames passes
+    // it: the section waits for them here (one yield per frame, at most FLEET_CLASSES_WAITS), and uses them only if
+    // current() still holds (the same store at the same revision); otherwise, and without them, it reads the store
+    // itself as before. The checks run on the same rows either way.
+    let workerClasses=null;
+    if(!rowScan&&typeof options?.fleetClasses==='function'){
+      let asked=null;try{asked=options.fleetClasses(s,FLEET_VALIDATION_FIELDS,FLEET_NUMERIC_FIELDS);}catch(_error){asked=null;}
+      if(asked&&typeof asked.then==='function'){
+        const box={done:false,value:null};asked.then(value=>{box.done=true;box.value=value;},()=>{box.done=true;});
+        const waitedAt=metricClock();let waits=0;while(!box.done&&waits<FLEET_CLASSES_WAITS){waits++;yield 'fleet-classes-wait';}
+        const waited=Math.max(0,metricClock()-waitedAt);pausedMs+=waited;sectionStarted+=waited;fleetWork.classWaits=waits;
+        if(box.done&&box.value&&Array.isArray(box.value.rows)&&typeof box.value.current==='function'&&box.value.current()===true)workerClasses=box.value;
+      }
+    }
+    fleetWork.workerClasses=workerClasses?1:0;
+    const visitAssetClass=(asset,count,info)=>{
       fleetWork.assetFieldVisits++;if(count>0)fleetLogicalRows+=count;
       validateAssetPresentation('assets',asset);if(rowScan){const id=asset?.id;if(id===undefined||assetIds.has(id))duplicateAssetId=true;else assetIds.add(id);}
       const mode=assetMode(asset),owner=assetOwner(asset)||globalThis.GH_COMPANY_PLATFORM?.ownerForLegacyAssetMode?.(mode)||mode;if(!object(asset)||!String(asset.id||'').trim()||!knownAssetMode(mode,s,owner)||!dataId(owner)||!String(asset.baseFacility||'').trim())errors.push('asset-shape');
@@ -624,8 +641,10 @@
         if(count>0){let users=routeUsers.get(asset.routeId);if(!users){users={users:0,stable:0,firstIndex:Infinity,firstMode:''};routeUsers.set(asset.routeId,users);}users.users+=count;if(!transitionalRouteUser(asset))users.stable+=count;if(info.index<users.firstIndex){users.firstIndex=info.index;users.firstMode=assetMode(asset);}}
         const route=routeById.get(asset.routeId);if(route&&(routeMode(route)!==mode||routeOwner(route)!==owner))errors.push('asset-route-company');
       }
-    },rowScan);
-    if(!rowScan){fleetWork.idCollisionChecks++;const ids=fleetData().idCollisions(s);if(ids.duplicate||ids.missing)duplicateAssetId=true;}
+    };
+    if(workerClasses)for(const [row,count,index,members] of workerClasses.rows)visitAssetClass(row,count,{index,members});
+    else forEachSaveAssetClass(s,visitAssetClass,rowScan);
+    if(!rowScan){fleetWork.idCollisionChecks++;const ids=workerClasses?.ids||fleetData().idCollisions(s);if(ids.duplicate||ids.missing)duplicateAssetId=true;}
     if(duplicateAssetId)errors.push('asset-id');
     for(const [routeId,users] of routeUsers){fleetWork.routeUserGroups++;const route=routeById.get(routeId),type=routeMode(route)||users.firstMode,capacity=routeCapacity(route||type,type);if(users.stable>capacity)errors.push('asset-route-capacity');}
     for(const group of routeSignatureGroups.values()){fleetWork.routeSignatureGroups++;if(group.length>1){let stable=0;for(const route of group){fleetWork.routeSignatureRows++;const users=routeUsers.get(route.id);if(!users||users.stable>0)stable++;}if(stable!==1)errors.push('route-geometry-duplicate');}}
