@@ -995,6 +995,9 @@
       if(!committed&&rootSessions.length)try{window.GH_TRANSACTION_CORE?.rollbackJournaledRoots?.(rootSessions);}catch(rollbackError){window.GH_PERSISTENCE.markRecoveryRequired('durable-command-fleet-rollback-failed');console.error('Durable command fleet rollback failed',rollbackError);}
       const context=window.__GH_DURABLE_COMMAND_CONTEXT__?.draft===draft?window.__GH_DURABLE_COMMAND_CONTEXT__:null;
       if(context)delete window.__GH_DURABLE_COMMAND_CONTEXT__;durableCommandInProgress=false;
+      // Build 372: the fleet a command wrote reaches the engine thread's replica now, in a task of its own (a fleet bought in
+      // back-to-back commands, before any slice, used to reach it as one whole copy when play started).
+      if(committed)setTimeout(primeFleetThreadAfterCommand,0);
       settleDurableCommand?.({committed,saveRevision:Number(state.saveRevision)||0});
       if(context?.notices?.length)setTimeout(()=>{for(const row of context.notices)notice(row.text,row.kind);},0);
     }
@@ -3374,6 +3377,14 @@
   // can. A slice asks for it first ({pending:true} until the result arrives), then replays it inside its transaction; on
   // any refusal it runs the step here exactly as before. Commands that write the fleet wait for a step in flight.
   const FLEET_THREAD_EVENT_BUDGET=40000,FLEET_THREAD_EARLY_ROWS=2048;
+  // As the idle render callback primes it: only while nothing holds the state, and the client is made only for a replica
+  // worth keeping (a native save's seed, or FLEET_THREAD_EARLY_ROWS rows).
+  function primeFleetThreadAfterCommand(){
+    const sim=simulationEngine.snapshot();if(sim.jobActive||sim.manualAdvance||stagedStateBusy()||hardResetInProgress||durableCommandInProgress||window.__GH_DURABLE_COMMAND_CONTEXT__||window.GH_PERSISTENCE.isLocked())return;
+    if(!window.GH_FLEET_STORE?.isStore?.(state.fleet)||!window.GH_FLEET_DATA.size(state))return;
+    if(!fleetEngineThreadClient&&!(window.GH_FLEET_STORE.hasReplicaSeed?.(state.fleet)||state.fleet.length>=FLEET_THREAD_EARLY_ROWS))return;
+    try{fleetEngineThread()?.prime?.(state.fleet);}catch(error){console.warn('fleet thread prime after command',error);}
+  }
   function fleetEngineThread(){
     if(globalThis.__GH_FLEET_ENGINE_THREAD__===false||typeof Worker!=='function'||!window.GH_FLEET_ENGINE_THREAD?.create)return null;
     if(!fleetEngineThreadClient)fleetEngineThreadClient=window.GH_FLEET_ENGINE_THREAD.create({
