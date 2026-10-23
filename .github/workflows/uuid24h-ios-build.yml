@@ -1,0 +1,64 @@
+name: UUID24h iOS Sandbox
+
+on:
+  push:
+    branches:
+      - uuid24h-ios-sandbox
+    paths:
+      - 'experiments/UUID24h_TestApp/**'
+      - '.github/workflows/uuid24h-ios-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unsigned-ipa:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+
+      - name: Run 24-hour UUID storage tests
+        working-directory: experiments/UUID24h_TestApp
+        run: |
+          cp Tests/TrialUUIDStoreTests.swift "$RUNNER_TEMP/main.swift"
+          swiftc Sources/TrialUUIDStore.swift "$RUNNER_TEMP/main.swift" -o "$RUNNER_TEMP/uuid24h-tests"
+          "$RUNNER_TEMP/uuid24h-tests"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: experiments/UUID24h_TestApp
+        run: xcodegen generate
+
+      - name: Build unsigned iOS application
+        working-directory: experiments/UUID24h_TestApp
+        run: |
+          xcodebuild \
+            -project UUID24hTestApp.xcodeproj \
+            -scheme UUID24hTestApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ./DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Assemble unsigned IPA
+        working-directory: experiments/UUID24h_TestApp
+        run: |
+          mkdir -p build/Payload
+          cp -R DerivedData/Build/Products/Release-iphoneos/UUID24hTestApp.app build/Payload/
+          cd build
+          zip -qry UUID24hTestApp_unsigned.ipa Payload
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UUID24hTestApp_unsigned
+          path: experiments/UUID24h_TestApp/build/UUID24hTestApp_unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
